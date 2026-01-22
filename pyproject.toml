@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aijurisdictionagents"
+version = "0.1.0"
+description = "Multi-agent legal discussion scaffold."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "openai>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+  "ruff>=0.3",
+  "mypy>=1.7",
+]
+
+
+[project.scripts]
+legal-discussion = "aijurisdictionagents.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+strict_optional = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
