@@ -17,6 +17,11 @@ conda activate ./.conda
 
 Then open the folder in VS Code; the Python extension will pick up `.conda` automatically.
 
+Conda notes:
+
+- The local `.conda/` environment is intentionally gitignored.
+- To update the environment later, run: `conda env update -f environment.yml --prune`
+
 
 ## Features
 

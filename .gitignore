@@ -1,0 +1,17 @@
+.conda/**
+runs/**
+.pytest_cache/**
+.vscode/**
+__pycache__/**
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.egg-info/
+dist/
+build/
+.eggs/
+.ipynb_checkpoints/
+.DS_Store
+.env
+.env.*
