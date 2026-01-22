@@ -6,3 +6,4 @@ dependencies:
   - pip
   - pip:
       - -e .[dev]
+      - python-dotenv>=1.0

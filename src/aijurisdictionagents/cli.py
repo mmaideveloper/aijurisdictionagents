@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from .agents import create_judge, create_lawyer
 from .documents import load_documents
@@ -10,7 +14,33 @@ from .observability import TraceRecorder, create_run_dir, setup_logging
 from .orchestration import Orchestrator
 
 
+def _mask_secret(value: str) -> str:
+    if not value:
+        return "unset"
+    if len(value) <= 4:
+        return "*" * len(value)
+    return "*" * (len(value) - 4) + value[-4:]
+
+
+def _log_token_info(logger: logging.Logger, provider: str) -> None:
+    if provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        logger.debug("OpenAI API key: %s", _mask_secret(api_key))
+    if provider in {"azurefoundry", "azure"}:
+        api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+        ad_token = os.getenv("AZURE_OPENAI_AD_TOKEN", "")
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
+        logger.debug("Azure endpoint: %s", endpoint or "unset")
+        logger.debug("Azure deployment: %s", deployment or "unset")
+        if ad_token:
+            logger.debug("Azure AD token: %s", _mask_secret(ad_token))
+        else:
+            logger.debug("Azure API key: %s", _mask_secret(api_key))
+
+
 def main() -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Run the legal discussion demo.")
     parser.add_argument(
         "--data-dir",
@@ -29,6 +59,12 @@ def main() -> int:
         action="store_true",
         help="Enable PDF ingestion (requires pypdf).",
     )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="DEBUG",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR).",
+    )
     args = parser.parse_args()
 
     instruction = args.instruction.strip() or input("Enter your case instructions: ").strip()
@@ -37,13 +73,17 @@ def main() -> int:
         return 1
 
     run_dir = create_run_dir(Path("runs"))
-    logger = setup_logging(run_dir)
+    logger = setup_logging(run_dir, log_level=args.log_level)
     logger.info("Run directory: %s", run_dir)
 
     documents = load_documents(args.data_dir, allow_pdf=args.allow_pdf)
     logger.info("Loaded %d documents", len(documents))
 
+    provider = os.getenv("LLM_PROVIDER", "mock").lower()
+    logger.info("LLM provider requested: %s", provider)
+    _log_token_info(logger, provider)
     llm = get_llm_client()
+    logger.info("LLM provider active: %s (%s)", provider, type(llm).__name__)
     lawyer = create_lawyer(llm)
     judge = create_judge(llm)
 
