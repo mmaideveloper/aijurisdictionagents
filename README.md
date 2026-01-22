@@ -21,6 +21,8 @@ Conda notes:
 
 - The local `.conda/` environment is intentionally gitignored.
 - To update the environment later, run: `conda env update -f environment.yml --prune`
+- Conda manages the interpreter and system packages; `pyproject.toml` defines the Python project metadata,
+  dependencies, and tooling (needed for `pip install -e .`).
 
 
 ## Features
