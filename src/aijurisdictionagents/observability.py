@@ -17,23 +17,31 @@ def create_run_dir(base_dir: Path) -> Path:
     return run_dir
 
 
-def setup_logging(run_dir: Path) -> logging.Logger:
+def setup_logging(run_dir: Path, log_level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger("aijurisdictionagents")
     if logger.handlers:
         return logger
 
-    logger.setLevel(logging.INFO)
+    level = _parse_log_level(log_level)
+    logger.setLevel(level)
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
 
     file_handler = logging.FileHandler(run_dir / "run.log", encoding="utf-8")
     file_handler.setFormatter(formatter)
+    file_handler.setLevel(level)
 
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
+    stream_handler.setLevel(level)
 
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
     return logger
+
+
+def _parse_log_level(log_level: str) -> int:
+    candidate = (log_level or "INFO").upper()
+    return getattr(logging, candidate, logging.INFO)
 
 
 class TraceRecorder:

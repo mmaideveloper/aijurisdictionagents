@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from aijurisdictionagents.agents import create_judge, create_lawyer
 from aijurisdictionagents.documents import load_documents
@@ -10,6 +13,7 @@ from aijurisdictionagents.orchestration import Orchestrator
 
 
 def main() -> None:
+    load_dotenv()
     instruction = (
         "We believe the contract was breached due to late delivery. "
         "Assess the strongest arguments and likely outcome."
@@ -19,7 +23,10 @@ def main() -> None:
     logger = setup_logging(run_dir)
 
     documents = load_documents(Path("data"))
+    provider = os.getenv("LLM_PROVIDER", "mock").lower()
+    logger.info("LLM provider requested: %s", provider)
     llm = get_llm_client()
+    logger.info("LLM provider active: %s (%s)", provider, type(llm).__name__)
     lawyer = create_lawyer(llm)
     judge = create_judge(llm)
 

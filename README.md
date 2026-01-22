@@ -8,6 +8,25 @@ check:
 git config --get user.name
 git config --get user.email
 
+GitHub CLI (multiple accounts, refresh scopes):
+
+```bash
+gh auth status
+gh auth switch --hostname github.com --user <USERNAME>
+gh auth refresh -s read:project --hostname github.com
+```
+
+Project status automation (GitHub Project v2):
+
+```powershell
+.\scripts\project_status.ps1 -IssueNumber 2 -Status "In progress"
+.\scripts\project_status.ps1 -IssueNumber 2 -Status "In review" -Comment "Implemented by Codex"
+```
+
+Requirements:
+- `gh` authenticated to the correct account
+- Scopes: `read:project` (list items) and `project` (edit status)
+
 Auto-activate the conda env on open (workspace setting expects a local env at `.conda`):
 
 ```bash
@@ -59,6 +78,16 @@ Put documents in `data/` and run:
 python -m aijurisdictionagents --instruction "We believe the contract was breached due to late delivery."
 ```
 
+Example (full setup + run):
+
+```bash
+conda activate ./.conda
+python -m aijurisdictionagents --instruction "We believe the contract was breached due to late delivery."
+```
+
+Environment variables are loaded from `.env` if present. Copy `.env.example` to `.env`
+and edit as needed.
+
 To use OpenAI, set:
 
 - `LLM_PROVIDER=openai`
@@ -66,9 +95,24 @@ To use OpenAI, set:
 - `OPENAI_MODEL=gpt-4o-mini` (optional override)
 - `OPENAI_TEMPERATURE=0.2` (optional override)
 
+To use Azure Foundry (Azure OpenAI), set:
+
+- `LLM_PROVIDER=azurefoundry`
+- `AZURE_OPENAI_ENDPOINT=https://YOUR_RESOURCE_NAME.openai.azure.com/`
+- `AZURE_OPENAI_DEPLOYMENT=your_deployment_name`
+- `AZURE_OPENAI_API_KEY=...` (or `AZURE_OPENAI_AD_TOKEN=...`)
+- `AZURE_OPENAI_API_VERSION=2023-09-01-preview` (optional override)
+
 Or use the minimal example script:
 
 ```bash
+python examples/minimal_demo.py
+```
+
+Example (minimal demo with conda):
+
+```bash
+conda activate ./.conda
 python examples/minimal_demo.py
 ```
 
@@ -91,6 +135,36 @@ Trace artifacts are written to `runs/YYYYMMDD_HHMMSS/`:
 
 - `run.log`
 - `trace.jsonl`
+
+`run.log` includes the active LLM provider (mock/OpenAI) at startup.
+When using Azure Foundry, `run.log` also records the auth method, endpoint, deployment, API version, and temperature,
+and temperature at INFO level.
+`run.log` also includes masked token details at DEBUG level (never the full key).
+
+## Debugging
+
+Recommended: run under the VS Code debugger and watch the Debug Console.
+
+1) Open Run & Debug (Ctrl+Shift+D)
+2) Select **Run aijurisdictionagents**
+3) Press **F5**
+
+If it crashes, the full stack trace appears in the Debug Console and is also written to
+the latest `runs/*/run.log`.
+
+You can also run with extra diagnostics in a terminal:
+
+```powershell
+$env:PYTHONFAULTHANDLER="1"
+$env:PYTHONTRACEMALLOC="1"
+python -m aijurisdictionagents --instruction "We believe the contract was breached due to late delivery."
+```
+
+To change verbosity, use `--log-level` (default: DEBUG):
+
+```bash
+python -m aijurisdictionagents --log-level INFO --instruction "..."
+```
 
 ## Tests
 
