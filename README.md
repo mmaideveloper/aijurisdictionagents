@@ -92,6 +92,9 @@ continues with a note that the user could not answer.
 After each round, the CLI asks if you have more questions. Type `finish` to end the
 discussion and generate the final result.
 
+The console log includes the initial user instruction and each agent response so
+the full conversation is visible.
+
 Set a maximum discussion time (minutes); `0` means unlimited:
 
 ```bash

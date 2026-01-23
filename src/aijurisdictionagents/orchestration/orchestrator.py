@@ -60,6 +60,7 @@ class Orchestrator:
         )
         conversation.append(user_message)
         self.trace.record_message(user_message)
+        self.logger.info("User instruction: %s", user_instruction)
 
         citations = select_sources(documents, user_instruction)
         lawyer_prompt = _augment_prompt(
@@ -98,6 +99,7 @@ class Orchestrator:
             conversation.append(lawyer_message)
             self.trace.record_message(lawyer_message)
             last_lawyer_message = lawyer_message
+            self.logger.info("Lawyer response: %s", lawyer_message.content)
 
             if _time_exceeded(start_time, max_seconds):
                 self.logger.info("Discussion stopped before judge turn (time limit).")
@@ -132,6 +134,7 @@ class Orchestrator:
             conversation.append(judge_message)
             self.trace.record_message(judge_message)
             last_judge_message = judge_message
+            self.logger.info("Judge response: %s", judge_message.content)
 
             remaining_seconds = _remaining_seconds(start_time, max_seconds)
             if remaining_seconds is not None and remaining_seconds <= 0:
