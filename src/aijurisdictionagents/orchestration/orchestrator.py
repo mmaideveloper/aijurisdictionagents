@@ -10,7 +10,6 @@ from ..observability import TraceRecorder
 from ..schemas import Document, Message, OrchestrationResult, Source
 
 UserResponseProvider = Callable[[str, float], str | None]
-_NO_RESPONSE_MESSAGE = "User could not answer within 1 minute."
 
 
 class Orchestrator:
@@ -32,11 +31,14 @@ class Orchestrator:
         documents: Sequence[Document],
         country: str,
         language: str | None = None,
+        question_timeout_seconds: float = 300,
         max_discussion_minutes: float = 15,
         user_response_provider: UserResponseProvider | None = None,
     ) -> OrchestrationResult:
         if not country.strip():
             raise ValueError("country is required.")
+        if question_timeout_seconds <= 0:
+            raise ValueError("question_timeout_seconds must be > 0")
         if max_discussion_minutes < 0:
             raise ValueError("max_discussion_minutes must be >= 0")
 
@@ -123,6 +125,7 @@ class Orchestrator:
                 conversation,
                 user_response_provider,
                 remaining_seconds,
+                question_timeout_seconds,
             )
 
             judge_message = self.judge.respond(
@@ -150,6 +153,7 @@ class Orchestrator:
                 conversation,
                 user_response_provider,
                 remaining_seconds,
+                question_timeout_seconds,
             )
 
             remaining_seconds = _remaining_seconds(start_time, max_seconds)
@@ -165,6 +169,7 @@ class Orchestrator:
                 conversation,
                 user_response_provider,
                 remaining_seconds,
+                question_timeout_seconds,
             )
             if not should_continue:
                 self.logger.info("User ended discussion or no follow-up provided.")
@@ -235,13 +240,14 @@ class Orchestrator:
         conversation: List[Message],
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
+        question_timeout_seconds: float,
     ) -> bool:
         question = _extract_question(message.content)
         if not question:
             return False
 
         self.logger.info("Agent asked a question: %s", question)
-        prompt_timeout = 60.0
+        prompt_timeout = question_timeout_seconds
         if remaining_seconds is not None:
             prompt_timeout = min(prompt_timeout, max(0.0, remaining_seconds))
         if prompt_timeout <= 0:
@@ -255,7 +261,7 @@ class Orchestrator:
             content = response.strip()
             answered = True
         else:
-            content = _NO_RESPONSE_MESSAGE
+            content = _no_response_message(prompt_timeout)
             answered = False
             self.trace.record_event(
                 "user_timeout",
@@ -277,11 +283,12 @@ class Orchestrator:
         conversation: List[Message],
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
+        question_timeout_seconds: float,
     ) -> bool:
         if user_response_provider is None:
             return False
 
-        prompt_timeout = 60.0
+        prompt_timeout = question_timeout_seconds
         if remaining_seconds is not None:
             prompt_timeout = min(prompt_timeout, max(0.0, remaining_seconds))
         if prompt_timeout <= 0:
@@ -400,6 +407,16 @@ def _parse_final_summary(text: str) -> tuple[str, str]:
     if not recommendation and text.strip():
         recommendation = text.strip()
     return recommendation, rationale
+
+
+def _no_response_message(timeout_seconds: float) -> str:
+    if timeout_seconds >= 60:
+        minutes = int(round(timeout_seconds / 60))
+        unit = "minute" if minutes == 1 else "minutes"
+        return f"User could not answer within {minutes} {unit}."
+    seconds = int(round(timeout_seconds))
+    unit = "second" if seconds == 1 else "seconds"
+    return f"User could not answer within {seconds} {unit}."
 
 
 def _is_finish_response(content: str) -> bool:

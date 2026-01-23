@@ -32,6 +32,7 @@ def test_orchestrator_flow(tmp_path: Path) -> None:
             documents,
             country="SK",
             language=None,
+            question_timeout_seconds=60,
             user_response_provider=lambda _q, _t: None,
         )
     finally:
@@ -62,6 +63,7 @@ def test_orchestrator_requires_country(tmp_path: Path) -> None:
                 [],
                 country="",
                 language=None,
+                question_timeout_seconds=60,
                 user_response_provider=lambda _q, _t: None,
             )
             raise AssertionError("Expected ValueError for missing country.")
@@ -105,6 +107,7 @@ def test_orchestrator_followup_questions(tmp_path: Path) -> None:
             documents,
             country="SK",
             language=None,
+            question_timeout_seconds=60,
             max_discussion_minutes=0,
             user_response_provider=provider,
         )
