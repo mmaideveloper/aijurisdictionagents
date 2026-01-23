@@ -24,6 +24,8 @@ sequenceDiagram
         Orchestrator->>User: Prompt for answer (60s timeout)
         User-->>Orchestrator: Answer or "no response"
     end
+    Orchestrator->>User: Prompt for more questions ("finish" to end)
+    User-->>Orchestrator: Next question or "finish"
     loop Until time limit or no user response
         Orchestrator->>Lawyer: Continue discussion
         Lawyer-->>Orchestrator: Follow-up response

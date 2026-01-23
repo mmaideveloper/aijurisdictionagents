@@ -89,6 +89,9 @@ During the discussion, agents may ask follow-up questions. You have up to 60 sec
 (or the remaining discussion time) to reply. If you do not respond in time, the system
 continues with a note that the user could not answer.
 
+After each round, the CLI asks if you have more questions. Type `finish` to end the
+discussion and generate the final result.
+
 Set a maximum discussion time (minutes); `0` means unlimited:
 
 ```bash
