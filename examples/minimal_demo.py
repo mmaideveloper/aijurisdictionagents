@@ -38,6 +38,7 @@ def main() -> None:
             documents,
             country="SK",
             language=None,
+            question_timeout_seconds=300,
         )
     finally:
         trace.close()

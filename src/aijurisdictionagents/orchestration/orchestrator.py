@@ -10,7 +10,6 @@ from ..observability import TraceRecorder
 from ..schemas import Document, Message, OrchestrationResult, Source
 
 UserResponseProvider = Callable[[str, float], str | None]
-_NO_RESPONSE_MESSAGE = "User could not answer within 1 minute."
 
 
 class Orchestrator:
@@ -32,11 +31,14 @@ class Orchestrator:
         documents: Sequence[Document],
         country: str,
         language: str | None = None,
+        question_timeout_seconds: float = 300,
         max_discussion_minutes: float = 15,
         user_response_provider: UserResponseProvider | None = None,
     ) -> OrchestrationResult:
         if not country.strip():
             raise ValueError("country is required.")
+        if question_timeout_seconds <= 0:
+            raise ValueError("question_timeout_seconds must be > 0")
         if max_discussion_minutes < 0:
             raise ValueError("max_discussion_minutes must be >= 0")
 
@@ -60,6 +62,7 @@ class Orchestrator:
         )
         conversation.append(user_message)
         self.trace.record_message(user_message)
+        self.logger.info("User instruction: %s", user_instruction)
 
         citations = select_sources(documents, user_instruction)
         lawyer_prompt = _augment_prompt(
@@ -98,6 +101,7 @@ class Orchestrator:
             conversation.append(lawyer_message)
             self.trace.record_message(lawyer_message)
             last_lawyer_message = lawyer_message
+            self.logger.info("Lawyer response: %s", lawyer_message.content)
 
             if _time_exceeded(start_time, max_seconds):
                 self.logger.info("Discussion stopped before judge turn (time limit).")
@@ -116,11 +120,12 @@ class Orchestrator:
                 )
                 break
 
-            user_answered = self._maybe_handle_user_question(
+            self._maybe_handle_user_question(
                 lawyer_message,
                 conversation,
                 user_response_provider,
                 remaining_seconds,
+                question_timeout_seconds,
             )
 
             judge_message = self.judge.respond(
@@ -132,6 +137,7 @@ class Orchestrator:
             conversation.append(judge_message)
             self.trace.record_message(judge_message)
             last_judge_message = judge_message
+            self.logger.info("Judge response: %s", judge_message.content)
 
             remaining_seconds = _remaining_seconds(start_time, max_seconds)
             if remaining_seconds is not None and remaining_seconds <= 0:
@@ -142,15 +148,31 @@ class Orchestrator:
                 )
                 break
 
-            user_answered = self._maybe_handle_user_question(
+            self._maybe_handle_user_question(
                 judge_message,
                 conversation,
                 user_response_provider,
                 remaining_seconds,
-            ) or user_answered
+                question_timeout_seconds,
+            )
 
-            if not user_answered:
-                self.logger.info("No user response received; ending discussion.")
+            remaining_seconds = _remaining_seconds(start_time, max_seconds)
+            if remaining_seconds is not None and remaining_seconds <= 0:
+                self.logger.info("Discussion stopped before follow-up prompt (time limit).")
+                self.trace.record_event(
+                    "discussion_timeout",
+                    {"max_minutes": max_discussion_minutes},
+                )
+                break
+
+            should_continue = self._prompt_for_followup(
+                conversation,
+                user_response_provider,
+                remaining_seconds,
+                question_timeout_seconds,
+            )
+            if not should_continue:
+                self.logger.info("User ended discussion or no follow-up provided.")
                 break
 
         if last_lawyer_message is None:
@@ -218,13 +240,14 @@ class Orchestrator:
         conversation: List[Message],
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
+        question_timeout_seconds: float,
     ) -> bool:
         question = _extract_question(message.content)
         if not question:
             return False
 
         self.logger.info("Agent asked a question: %s", question)
-        prompt_timeout = 60.0
+        prompt_timeout = question_timeout_seconds
         if remaining_seconds is not None:
             prompt_timeout = min(prompt_timeout, max(0.0, remaining_seconds))
         if prompt_timeout <= 0:
@@ -238,7 +261,7 @@ class Orchestrator:
             content = response.strip()
             answered = True
         else:
-            content = _NO_RESPONSE_MESSAGE
+            content = _no_response_message(prompt_timeout)
             answered = False
             self.trace.record_event(
                 "user_timeout",
@@ -255,6 +278,45 @@ class Orchestrator:
         self.trace.record_message(user_message)
         return answered
 
+    def _prompt_for_followup(
+        self,
+        conversation: List[Message],
+        user_response_provider: UserResponseProvider | None,
+        remaining_seconds: float | None,
+        question_timeout_seconds: float,
+    ) -> bool:
+        if user_response_provider is None:
+            return False
+
+        prompt_timeout = question_timeout_seconds
+        if remaining_seconds is not None:
+            prompt_timeout = min(prompt_timeout, max(0.0, remaining_seconds))
+        if prompt_timeout <= 0:
+            return False
+
+        prompt = "Do you have any other questions? Type 'finish' to end."
+        response = user_response_provider(prompt, prompt_timeout)
+        if not response:
+            self.trace.record_event(
+                "user_followup_timeout",
+                {"timeout_seconds": prompt_timeout},
+            )
+            return False
+
+        content = response.strip()
+        user_message = Message(
+            role="user",
+            agent_name="User",
+            content=content,
+            sources=[],
+        )
+        conversation.append(user_message)
+        self.trace.record_message(user_message)
+        if _is_finish_response(content):
+            self.trace.record_event("discussion_finished", {"reason": "user_finished"})
+            return False
+        return True
+
 
 def _build_recommendation(
     lawyer_message: Message, judge_message: Message, citations: Sequence[Source]
@@ -268,6 +330,11 @@ def _build_recommendation(
 
 
 def _extract_question(content: str) -> str | None:
+    marker = "user focus:"
+    lowered = content.lower()
+    if marker in lowered:
+        content = content[: lowered.index(marker)]
+
     if "?" not in content:
         return None
 
@@ -340,3 +407,18 @@ def _parse_final_summary(text: str) -> tuple[str, str]:
     if not recommendation and text.strip():
         recommendation = text.strip()
     return recommendation, rationale
+
+
+def _no_response_message(timeout_seconds: float) -> str:
+    if timeout_seconds >= 60:
+        minutes = int(round(timeout_seconds / 60))
+        unit = "minute" if minutes == 1 else "minutes"
+        return f"User could not answer within {minutes} {unit}."
+    seconds = int(round(timeout_seconds))
+    unit = "second" if seconds == 1 else "seconds"
+    return f"User could not answer within {seconds} {unit}."
+
+
+def _is_finish_response(content: str) -> bool:
+    cleaned = content.strip().lower()
+    return cleaned in {"finish", "no", "nope", "done", "exit", "quit", "stop"}

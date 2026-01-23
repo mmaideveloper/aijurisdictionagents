@@ -15,15 +15,17 @@ sequenceDiagram
     Orchestrator->>Lawyer: Provide instruction + documents + citations
     Lawyer-->>Orchestrator: Advocacy response (uses citations)
     alt Lawyer asks a question
-        Orchestrator->>User: Prompt for answer (60s timeout)
+        Orchestrator->>User: Prompt for answer (configurable timeout, default 5 min)
         User-->>Orchestrator: Answer or "no response"
     end
     Orchestrator->>Judge: Provide instruction + discussion history + documents + citations
     Judge-->>Orchestrator: Evaluation, questions, decision
     alt Judge asks a question
-        Orchestrator->>User: Prompt for answer (60s timeout)
+        Orchestrator->>User: Prompt for answer (configurable timeout, default 5 min)
         User-->>Orchestrator: Answer or "no response"
     end
+    Orchestrator->>User: Prompt for more questions ("finish" to end)
+    User-->>Orchestrator: Next question or "finish"
     loop Until time limit or no user response
         Orchestrator->>Lawyer: Continue discussion
         Lawyer-->>Orchestrator: Follow-up response

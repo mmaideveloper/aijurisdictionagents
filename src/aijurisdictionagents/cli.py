@@ -104,7 +104,14 @@ def _prompt_user_with_timeout(question: str, timeout_seconds: float) -> str | No
 
     print(f"\nAgent question: {question}")
     seconds_display = int(round(timeout_seconds))
-    print(f"You have {seconds_display} seconds to answer. Press Enter to skip.")
+    if seconds_display >= 60:
+        minutes = seconds_display // 60
+        print(
+            f"You have {minutes} minutes ({seconds_display} seconds) to answer. "
+            "Press Enter to skip."
+        )
+    else:
+        print(f"You have {seconds_display} seconds to answer. Press Enter to skip.")
     response = _timed_input("Your answer: ", timeout_seconds)
     if response is None:
         print("No response received within the allotted time.")
@@ -137,6 +144,12 @@ def main() -> int:
         type=str,
         default="",
         help="Output language for final results (BCP-47 tag recommended).",
+    )
+    parser.add_argument(
+        "--question-timeout-minutes",
+        type=float,
+        default=5,
+        help="Minutes to wait for each user answer (default: 5).",
     )
     parser.add_argument(
         "--allow-pdf",
@@ -190,6 +203,7 @@ def main() -> int:
             documents,
             country=args.country,
             language=args.language or None,
+            question_timeout_seconds=args.question_timeout_minutes * 60,
             max_discussion_minutes=args.discussion_max_minutes,
             user_response_provider=_prompt_user_with_timeout,
         )

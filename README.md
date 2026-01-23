@@ -85,9 +85,21 @@ Put documents in `data/` and run (country required):
 python -m aijurisdictionagents --country SK --instruction "We believe the contract was breached due to late delivery."
 ```
 
-During the discussion, agents may ask follow-up questions. You have up to 60 seconds
-(or the remaining discussion time) to reply. If you do not respond in time, the system
-continues with a note that the user could not answer.
+During the discussion, agents may ask follow-up questions. You have up to 5 minutes
+(or the remaining discussion time) to reply by default. If you do not respond in time,
+the system continues with a note that the user could not answer.
+
+After each round, the CLI asks if you have more questions. Type `finish` to end the
+discussion and generate the final result.
+
+Override the answer timeout (minutes):
+
+```bash
+python -m aijurisdictionagents --country SK --question-timeout-minutes 2 --instruction "..."
+```
+
+The console log includes the initial user instruction and each agent response so
+the full conversation is visible.
 
 Set a maximum discussion time (minutes); `0` means unlimited:
 
