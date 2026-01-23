@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sys
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -39,6 +41,76 @@ def _log_token_info(logger: logging.Logger, provider: str) -> None:
             logger.debug("Azure API key: %s", _mask_secret(api_key))
 
 
+def _timed_input(prompt: str, timeout_seconds: float) -> str | None:
+    if os.name == "nt":
+        return _timed_input_windows(prompt, timeout_seconds)
+    return _timed_input_posix(prompt, timeout_seconds)
+
+
+def _timed_input_windows(prompt: str, timeout_seconds: float) -> str | None:
+    import msvcrt  # pylint: disable=import-outside-toplevel
+
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    buffer: list[str] = []
+    start_time = time.monotonic()
+    while True:
+        if msvcrt.kbhit():
+            char = msvcrt.getwch()
+            if char in ("\r", "\n"):
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                break
+            if char == "\003":
+                raise KeyboardInterrupt
+            if char == "\b":
+                if buffer:
+                    buffer.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+                continue
+            buffer.append(char)
+            sys.stdout.write(char)
+            sys.stdout.flush()
+
+        if (time.monotonic() - start_time) >= timeout_seconds:
+            return None
+        time.sleep(0.05)
+
+    value = "".join(buffer).strip()
+    return value or None
+
+
+def _timed_input_posix(prompt: str, timeout_seconds: float) -> str | None:
+    import select  # pylint: disable=import-outside-toplevel
+
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
+    if not ready:
+        return None
+
+    line = sys.stdin.readline()
+    value = line.strip()
+    return value or None
+
+
+def _prompt_user_with_timeout(question: str, timeout_seconds: float) -> str | None:
+    if timeout_seconds <= 0:
+        print("\nNo time remaining for a user response.")
+        return None
+
+    print(f"\nAgent question: {question}")
+    seconds_display = int(round(timeout_seconds))
+    print(f"You have {seconds_display} seconds to answer. Press Enter to skip.")
+    response = _timed_input("Your answer: ", timeout_seconds)
+    if response is None:
+        print("No response received within the allotted time.")
+    return response
+
+
 def main() -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(description="Run the legal discussion demo.")
@@ -65,6 +137,12 @@ def main() -> int:
         default="DEBUG",
         help="Logging level (DEBUG, INFO, WARNING, ERROR).",
     )
+    parser.add_argument(
+        "--discussion-max-minutes",
+        type=float,
+        default=15,
+        help="Max discussion time in minutes (0 for unlimited).",
+    )
     args = parser.parse_args()
 
     instruction = args.instruction.strip() or input("Enter your case instructions: ").strip()
@@ -90,7 +168,12 @@ def main() -> int:
     trace = TraceRecorder(run_dir)
     try:
         orchestrator = Orchestrator(lawyer=lawyer, judge=judge, trace=trace, logger=logger)
-        result = orchestrator.run(instruction, documents)
+        result = orchestrator.run(
+            instruction,
+            documents,
+            max_discussion_minutes=args.discussion_max_minutes,
+            user_response_provider=_prompt_user_with_timeout,
+        )
     finally:
         trace.close()
 

@@ -23,6 +23,8 @@ Each agent message includes:
 1. User instruction is recorded.
 2. Lawyer responds with advocacy grounded in documents.
 3. Judge responds with questions and evaluation.
-4. Orchestrator synthesizes a recommendation and stores trace artifacts.
+4. If either agent asks a question, the user is prompted (up to 60s, or the remaining discussion time). A timeout is recorded as "User could not answer within 1 minute."
+5. Discussion continues while user answers are provided, or until the max discussion time is reached (default 15 minutes, 0 = unlimited).
+6. Orchestrator synthesizes a recommendation and stores trace artifacts.
 
 See `docs/SEQUENCE.md` for a high-level sequence diagram.
