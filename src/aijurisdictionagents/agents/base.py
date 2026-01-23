@@ -18,8 +18,10 @@ class Agent:
         conversation: Sequence[Message],
         documents: Sequence[Document],
         sources: Sequence[Source],
+        system_prompt_override: str | None = None,
     ) -> Message:
-        content = self.llm.complete(self.name, self.system_prompt, conversation, documents)
+        prompt = system_prompt_override or self.system_prompt
+        content = self.llm.complete(self.name, prompt, conversation, documents)
         return Message(
             role="assistant",
             agent_name=self.name,

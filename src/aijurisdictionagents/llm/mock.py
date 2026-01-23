@@ -33,6 +33,11 @@ class MockLLMClient:
                 "Clarifying question: What jurisdiction or governing law applies? "
                 f"User focus: {user_message}"
             )
+        if "finalsummary" in agent_key:
+            return (
+                "Recommendation: Proceed with the user's requested position.\n"
+                "Rationale: The discussion supports the user's arguments based on the provided facts."
+            )
 
         return f"Response prepared for {agent_name}. User focus: {user_message}"
 

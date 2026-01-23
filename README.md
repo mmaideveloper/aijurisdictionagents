@@ -79,10 +79,10 @@ conda activate aijurisdictionagents
 
 ## Run the demo
 
-Put documents in `data/` and run:
+Put documents in `data/` and run (country required):
 
 ```bash
-python -m aijurisdictionagents --instruction "We believe the contract was breached due to late delivery."
+python -m aijurisdictionagents --country SK --instruction "We believe the contract was breached due to late delivery."
 ```
 
 During the discussion, agents may ask follow-up questions. You have up to 60 seconds
@@ -92,15 +92,19 @@ continues with a note that the user could not answer.
 Set a maximum discussion time (minutes); `0` means unlimited:
 
 ```bash
-python -m aijurisdictionagents --discussion-max-minutes 15 --instruction "We believe the contract was breached due to late delivery."
+python -m aijurisdictionagents --country SK --discussion-max-minutes 15 --instruction "We believe the contract was breached due to late delivery."
 ```
 
 Example (full setup + run):
 
 ```bash
 conda activate ./.conda
-python -m aijurisdictionagents --instruction "We believe the contract was breached due to late delivery."
+python -m aijurisdictionagents --country SK --instruction "We believe the contract was breached due to late delivery."
 ```
+
+Country and language parameters:
+- `--country` is required (ISO 3166-1 alpha-2 or alpha-3 recommended, e.g. `SK`, `US`).
+- `--language` is optional (BCP-47 tag recommended, e.g. `sk-SK`, `en-US`). If omitted, outputs default to the user's input language.
 
 Environment variables are loaded from `.env` if present. Copy `.env.example` to `.env`
 and edit as needed.

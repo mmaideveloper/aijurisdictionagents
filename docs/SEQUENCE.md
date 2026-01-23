@@ -9,7 +9,7 @@ sequenceDiagram
     participant Judge
     participant Docs as Document Loader
 
-    User->>Orchestrator: Submit instruction + documents folder
+    User->>Orchestrator: Submit instruction + documents folder + country (+ language optional)
     Orchestrator->>Docs: Load & rank relevant documents
     Docs-->>Orchestrator: Documents + citations
     Orchestrator->>Lawyer: Provide instruction + documents + citations

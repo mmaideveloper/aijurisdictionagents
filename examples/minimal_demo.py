@@ -33,7 +33,12 @@ def main() -> None:
     trace = TraceRecorder(run_dir)
     try:
         orchestrator = Orchestrator(lawyer=lawyer, judge=judge, trace=trace, logger=logger)
-        result = orchestrator.run(instruction, documents)
+        result = orchestrator.run(
+            instruction,
+            documents,
+            country="SK",
+            language=None,
+        )
     finally:
         trace.close()
 
