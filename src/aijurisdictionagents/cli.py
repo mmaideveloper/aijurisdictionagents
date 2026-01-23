@@ -127,6 +127,18 @@ def main() -> int:
         help="User instruction to feed the agents.",
     )
     parser.add_argument(
+        "--country",
+        type=str,
+        required=True,
+        help="Country/jurisdiction for the case (ISO 3166-1 code recommended).",
+    )
+    parser.add_argument(
+        "--language",
+        type=str,
+        default="",
+        help="Output language for final results (BCP-47 tag recommended).",
+    )
+    parser.add_argument(
         "--allow-pdf",
         action="store_true",
         help="Enable PDF ingestion (requires pypdf).",
@@ -156,6 +168,11 @@ def main() -> int:
 
     documents = load_documents(args.data_dir, allow_pdf=args.allow_pdf)
     logger.info("Loaded %d documents", len(documents))
+    logger.info(
+        "Case context: country=%s output_language=%s",
+        args.country,
+        args.language or "user_input_language",
+    )
 
     provider = os.getenv("LLM_PROVIDER", "mock").lower()
     logger.info("LLM provider requested: %s", provider)
@@ -171,6 +188,8 @@ def main() -> int:
         result = orchestrator.run(
             instruction,
             documents,
+            country=args.country,
+            language=args.language or None,
             max_discussion_minutes=args.discussion_max_minutes,
             user_response_provider=_prompt_user_with_timeout,
         )

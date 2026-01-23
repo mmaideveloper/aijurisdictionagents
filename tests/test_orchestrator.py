@@ -30,6 +30,8 @@ def test_orchestrator_flow(tmp_path: Path) -> None:
         result = orchestrator.run(
             "Late delivery dispute",
             documents,
+            country="SK",
+            language=None,
             user_response_provider=lambda _q, _t: None,
         )
     finally:
@@ -40,4 +42,31 @@ def test_orchestrator_flow(tmp_path: Path) -> None:
     assert result.citations
     assert len(result.messages) == 4
     assert "could not answer" in result.messages[-1].content.lower()
+
+
+def test_orchestrator_requires_country(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    trace = TraceRecorder(run_dir)
+    try:
+        llm = MockLLMClient()
+        orchestrator = Orchestrator(
+            lawyer=create_lawyer(llm),
+            judge=create_judge(llm),
+            trace=trace,
+        )
+        try:
+            orchestrator.run(
+                "Instruction",
+                [],
+                country="",
+                language=None,
+                user_response_provider=lambda _q, _t: None,
+            )
+            raise AssertionError("Expected ValueError for missing country.")
+        except ValueError:
+            pass
+    finally:
+        trace.close()
     assert (run_dir / "trace.jsonl").exists()
