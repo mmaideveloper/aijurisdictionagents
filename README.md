@@ -8,6 +8,12 @@ check:
 git config --get user.name
 git config --get user.email
 
+Recommended: open the workspace file so the `.conda` interpreter is auto-detected.
+
+```bash
+code aijurisdictionagents.code-workspace
+```
+
 GitHub CLI (multiple accounts, refresh scopes):
 
 ```bash
@@ -35,6 +41,7 @@ conda activate ./.conda
 ```
 
 Then open the folder in VS Code; the Python extension will pick up `.conda` automatically.
+For more details, see `docs/WORKSPACE.md`.
 
 Conda notes:
 
