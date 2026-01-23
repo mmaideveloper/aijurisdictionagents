@@ -78,8 +78,9 @@ Put documents in `data/` and run:
 python -m aijurisdictionagents --instruction "We believe the contract was breached due to late delivery."
 ```
 
-During the discussion, agents may ask follow-up questions. You have 60 seconds to reply.
-If you do not respond in time, the system continues with a note that the user could not answer.
+During the discussion, agents may ask follow-up questions. You have up to 60 seconds
+(or the remaining discussion time) to reply. If you do not respond in time, the system
+continues with a note that the user could not answer.
 
 Set a maximum discussion time (minutes); `0` means unlimited:
 

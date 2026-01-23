@@ -9,7 +9,7 @@ from ..documents import select_sources
 from ..observability import TraceRecorder
 from ..schemas import Document, Message, OrchestrationResult, Source
 
-UserResponseProvider = Callable[[str], str | None]
+UserResponseProvider = Callable[[str, float], str | None]
 _NO_RESPONSE_MESSAGE = "User could not answer within 1 minute."
 
 
@@ -77,10 +77,20 @@ class Orchestrator:
                 )
                 break
 
+            remaining_seconds = _remaining_seconds(start_time, max_seconds)
+            if remaining_seconds is not None and remaining_seconds <= 0:
+                self.logger.info("Discussion stopped before judge prompt (time limit).")
+                self.trace.record_event(
+                    "discussion_timeout",
+                    {"max_minutes": max_discussion_minutes},
+                )
+                break
+
             user_answered = self._maybe_handle_user_question(
                 lawyer_message,
                 conversation,
                 user_response_provider,
+                remaining_seconds,
             )
 
             judge_message = self.judge.respond(conversation, documents, citations)
@@ -88,10 +98,20 @@ class Orchestrator:
             self.trace.record_message(judge_message)
             last_judge_message = judge_message
 
+            remaining_seconds = _remaining_seconds(start_time, max_seconds)
+            if remaining_seconds is not None and remaining_seconds <= 0:
+                self.logger.info("Discussion stopped before user prompt (time limit).")
+                self.trace.record_event(
+                    "discussion_timeout",
+                    {"max_minutes": max_discussion_minutes},
+                )
+                break
+
             user_answered = self._maybe_handle_user_question(
                 judge_message,
                 conversation,
                 user_response_provider,
+                remaining_seconds,
             ) or user_answered
 
             if not user_answered:
@@ -141,15 +161,22 @@ class Orchestrator:
         message: Message,
         conversation: List[Message],
         user_response_provider: UserResponseProvider | None,
+        remaining_seconds: float | None,
     ) -> bool:
         question = _extract_question(message.content)
         if not question:
             return False
 
         self.logger.info("Agent asked a question: %s", question)
-        response = None
-        if user_response_provider is not None:
-            response = user_response_provider(question)
+        prompt_timeout = 60.0
+        if remaining_seconds is not None:
+            prompt_timeout = min(prompt_timeout, max(0.0, remaining_seconds))
+        if prompt_timeout <= 0:
+            response = None
+        elif user_response_provider is not None:
+            response = user_response_provider(question, prompt_timeout)
+        else:
+            response = None
 
         if response:
             content = response.strip()
@@ -157,7 +184,10 @@ class Orchestrator:
         else:
             content = _NO_RESPONSE_MESSAGE
             answered = False
-            self.trace.record_event("user_timeout", {"question": question})
+            self.trace.record_event(
+                "user_timeout",
+                {"question": question, "timeout_seconds": prompt_timeout},
+            )
 
         user_message = Message(
             role="user",
@@ -196,3 +226,10 @@ def _time_exceeded(start_time: float, max_seconds: float | None) -> bool:
     if max_seconds is None:
         return False
     return (time.monotonic() - start_time) >= max_seconds
+
+
+def _remaining_seconds(start_time: float, max_seconds: float | None) -> float | None:
+    if max_seconds is None:
+        return None
+    remaining = max_seconds - (time.monotonic() - start_time)
+    return remaining

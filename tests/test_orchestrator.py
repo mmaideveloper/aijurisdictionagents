@@ -30,7 +30,7 @@ def test_orchestrator_flow(tmp_path: Path) -> None:
         result = orchestrator.run(
             "Late delivery dispute",
             documents,
-            user_response_provider=lambda _: None,
+            user_response_provider=lambda _q, _t: None,
         )
     finally:
         trace.close()

@@ -41,13 +41,13 @@ def _log_token_info(logger: logging.Logger, provider: str) -> None:
             logger.debug("Azure API key: %s", _mask_secret(api_key))
 
 
-def _timed_input(prompt: str, timeout_seconds: int) -> str | None:
+def _timed_input(prompt: str, timeout_seconds: float) -> str | None:
     if os.name == "nt":
         return _timed_input_windows(prompt, timeout_seconds)
     return _timed_input_posix(prompt, timeout_seconds)
 
 
-def _timed_input_windows(prompt: str, timeout_seconds: int) -> str | None:
+def _timed_input_windows(prompt: str, timeout_seconds: float) -> str | None:
     import msvcrt  # pylint: disable=import-outside-toplevel
 
     sys.stdout.write(prompt)
@@ -82,7 +82,7 @@ def _timed_input_windows(prompt: str, timeout_seconds: int) -> str | None:
     return value or None
 
 
-def _timed_input_posix(prompt: str, timeout_seconds: int) -> str | None:
+def _timed_input_posix(prompt: str, timeout_seconds: float) -> str | None:
     import select  # pylint: disable=import-outside-toplevel
 
     sys.stdout.write(prompt)
@@ -97,12 +97,17 @@ def _timed_input_posix(prompt: str, timeout_seconds: int) -> str | None:
     return value or None
 
 
-def _prompt_user_with_timeout(question: str) -> str | None:
+def _prompt_user_with_timeout(question: str, timeout_seconds: float) -> str | None:
+    if timeout_seconds <= 0:
+        print("\nNo time remaining for a user response.")
+        return None
+
     print(f"\nAgent question: {question}")
-    print("You have 60 seconds to answer. Press Enter to skip.")
-    response = _timed_input("Your answer: ", 60)
+    seconds_display = int(round(timeout_seconds))
+    print(f"You have {seconds_display} seconds to answer. Press Enter to skip.")
+    response = _timed_input("Your answer: ", timeout_seconds)
     if response is None:
-        print("No response received within 60 seconds.")
+        print("No response received within the allotted time.")
     return response
 
 
