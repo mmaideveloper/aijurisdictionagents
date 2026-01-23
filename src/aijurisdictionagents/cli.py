@@ -3,7 +3,8 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import threading
+import sys
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -41,21 +42,58 @@ def _log_token_info(logger: logging.Logger, provider: str) -> None:
 
 
 def _timed_input(prompt: str, timeout_seconds: int) -> str | None:
-    result: dict[str, str | None] = {"value": None}
+    if os.name == "nt":
+        return _timed_input_windows(prompt, timeout_seconds)
+    return _timed_input_posix(prompt, timeout_seconds)
 
-    def _reader() -> None:
-        try:
-            result["value"] = input(prompt)
-        except EOFError:
-            result["value"] = ""
 
-    thread = threading.Thread(target=_reader, daemon=True)
-    thread.start()
-    thread.join(timeout_seconds)
-    if thread.is_alive():
+def _timed_input_windows(prompt: str, timeout_seconds: int) -> str | None:
+    import msvcrt  # pylint: disable=import-outside-toplevel
+
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    buffer: list[str] = []
+    start_time = time.monotonic()
+    while True:
+        if msvcrt.kbhit():
+            char = msvcrt.getwch()
+            if char in ("\r", "\n"):
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                break
+            if char == "\003":
+                raise KeyboardInterrupt
+            if char == "\b":
+                if buffer:
+                    buffer.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+                continue
+            buffer.append(char)
+            sys.stdout.write(char)
+            sys.stdout.flush()
+
+        if (time.monotonic() - start_time) >= timeout_seconds:
+            return None
+        time.sleep(0.05)
+
+    value = "".join(buffer).strip()
+    return value or None
+
+
+def _timed_input_posix(prompt: str, timeout_seconds: int) -> str | None:
+    import select  # pylint: disable=import-outside-toplevel
+
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
+    if not ready:
         return None
 
-    value = (result["value"] or "").strip()
+    line = sys.stdin.readline()
+    value = line.strip()
     return value or None
 
 
