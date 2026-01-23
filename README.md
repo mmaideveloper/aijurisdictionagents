@@ -189,6 +189,10 @@ python -m aijurisdictionagents --log-level INFO --instruction "..."
 pytest
 ```
 
+## CI
+
+GitHub Actions runs unit tests on every pull request and on pushes to `main`.
+
 ## Architecture
 
 See `docs/ARCHITECTURE.md` for module boundaries and flow.
