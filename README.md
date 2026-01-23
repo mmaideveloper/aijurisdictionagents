@@ -78,6 +78,15 @@ Put documents in `data/` and run:
 python -m aijurisdictionagents --instruction "We believe the contract was breached due to late delivery."
 ```
 
+During the discussion, agents may ask follow-up questions. You have 60 seconds to reply.
+If you do not respond in time, the system continues with a note that the user could not answer.
+
+Set a maximum discussion time (minutes); `0` means unlimited:
+
+```bash
+python -m aijurisdictionagents --discussion-max-minutes 15 --instruction "We believe the contract was breached due to late delivery."
+```
+
 Example (full setup + run):
 
 ```bash

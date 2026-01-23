@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -39,6 +40,34 @@ def _log_token_info(logger: logging.Logger, provider: str) -> None:
             logger.debug("Azure API key: %s", _mask_secret(api_key))
 
 
+def _timed_input(prompt: str, timeout_seconds: int) -> str | None:
+    result: dict[str, str | None] = {"value": None}
+
+    def _reader() -> None:
+        try:
+            result["value"] = input(prompt)
+        except EOFError:
+            result["value"] = ""
+
+    thread = threading.Thread(target=_reader, daemon=True)
+    thread.start()
+    thread.join(timeout_seconds)
+    if thread.is_alive():
+        return None
+
+    value = (result["value"] or "").strip()
+    return value or None
+
+
+def _prompt_user_with_timeout(question: str) -> str | None:
+    print(f"\nAgent question: {question}")
+    print("You have 60 seconds to answer. Press Enter to skip.")
+    response = _timed_input("Your answer: ", 60)
+    if response is None:
+        print("No response received within 60 seconds.")
+    return response
+
+
 def main() -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(description="Run the legal discussion demo.")
@@ -65,6 +94,12 @@ def main() -> int:
         default="DEBUG",
         help="Logging level (DEBUG, INFO, WARNING, ERROR).",
     )
+    parser.add_argument(
+        "--discussion-max-minutes",
+        type=float,
+        default=15,
+        help="Max discussion time in minutes (0 for unlimited).",
+    )
     args = parser.parse_args()
 
     instruction = args.instruction.strip() or input("Enter your case instructions: ").strip()
@@ -90,7 +125,12 @@ def main() -> int:
     trace = TraceRecorder(run_dir)
     try:
         orchestrator = Orchestrator(lawyer=lawyer, judge=judge, trace=trace, logger=logger)
-        result = orchestrator.run(instruction, documents)
+        result = orchestrator.run(
+            instruction,
+            documents,
+            max_discussion_minutes=args.discussion_max_minutes,
+            user_response_provider=_prompt_user_with_timeout,
+        )
     finally:
         trace.close()
 

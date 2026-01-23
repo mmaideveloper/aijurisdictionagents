@@ -27,12 +27,17 @@ def test_orchestrator_flow(tmp_path: Path) -> None:
             judge=create_judge(llm),
             trace=trace,
         )
-        result = orchestrator.run("Late delivery dispute", documents)
+        result = orchestrator.run(
+            "Late delivery dispute",
+            documents,
+            user_response_provider=lambda _: None,
+        )
     finally:
         trace.close()
 
     assert result.final_recommendation
     assert result.judge_rationale
     assert result.citations
-    assert len(result.messages) == 3
+    assert len(result.messages) == 4
+    assert "could not answer" in result.messages[-1].content.lower()
     assert (run_dir / "trace.jsonl").exists()
