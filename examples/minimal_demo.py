@@ -39,6 +39,7 @@ def main() -> None:
             country="SK",
             language=None,
             question_timeout_seconds=300,
+            discussion_type="advice",
         )
     finally:
         trace.close()

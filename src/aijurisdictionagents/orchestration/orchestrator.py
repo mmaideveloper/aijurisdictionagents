@@ -33,6 +33,7 @@ class Orchestrator:
         language: str | None = None,
         question_timeout_seconds: float = 300,
         max_discussion_minutes: float = 15,
+        discussion_type: str = "advice",
         user_response_provider: UserResponseProvider | None = None,
     ) -> OrchestrationResult:
         if not country.strip():
@@ -41,6 +42,9 @@ class Orchestrator:
             raise ValueError("question_timeout_seconds must be > 0")
         if max_discussion_minutes < 0:
             raise ValueError("max_discussion_minutes must be >= 0")
+        discussion_type = _normalize_discussion_type(discussion_type)
+        if discussion_type not in {"advice", "court"}:
+            raise ValueError("discussion_type must be 'advice' or 'court'")
 
         self.logger.info("Starting orchestration with %d documents", len(documents))
         output_language_hint = _output_language_hint(language)
@@ -50,6 +54,7 @@ class Orchestrator:
                 "country": country,
                 "output_language": language or "",
                 "discussion_language": "user_input_language",
+                "discussion_type": discussion_type,
             },
         )
 
@@ -70,12 +75,16 @@ class Orchestrator:
             country,
             output_language_hint,
             discussion_only=True,
+            discussion_type=discussion_type,
+            role="lawyer",
         )
         judge_prompt = _augment_prompt(
             self.judge.system_prompt,
             country,
             output_language_hint,
             discussion_only=True,
+            discussion_type=discussion_type,
+            role="judge",
         )
         max_seconds = None if max_discussion_minutes == 0 else max_discussion_minutes * 60
         start_time = time.monotonic()
@@ -128,33 +137,76 @@ class Orchestrator:
                 question_timeout_seconds,
             )
 
-            judge_message = self.judge.respond(
-                conversation,
-                documents,
-                citations,
-                system_prompt_override=judge_prompt,
-            )
-            conversation.append(judge_message)
-            self.trace.record_message(judge_message)
-            last_judge_message = judge_message
-            self.logger.info("Judge response: %s", judge_message.content)
-
-            remaining_seconds = _remaining_seconds(start_time, max_seconds)
-            if remaining_seconds is not None and remaining_seconds <= 0:
-                self.logger.info("Discussion stopped before user prompt (time limit).")
-                self.trace.record_event(
-                    "discussion_timeout",
-                    {"max_minutes": max_discussion_minutes},
+            if discussion_type == "advice":
+                wants_judge = self._prompt_for_judge_review(
+                    conversation,
+                    user_response_provider,
+                    remaining_seconds,
+                    question_timeout_seconds,
                 )
-                break
+                if wants_judge:
+                    judge_message = self.judge.respond(
+                        conversation,
+                        [],
+                        citations,
+                        system_prompt_override=judge_prompt,
+                    )
+                    conversation.append(judge_message)
+                    self.trace.record_message(judge_message)
+                    last_judge_message = judge_message
+                    self.logger.info("Judge response: %s", judge_message.content)
 
-            self._maybe_handle_user_question(
-                judge_message,
-                conversation,
-                user_response_provider,
-                remaining_seconds,
-                question_timeout_seconds,
-            )
+                    remaining_seconds = _remaining_seconds(start_time, max_seconds)
+                    if remaining_seconds is not None and remaining_seconds <= 0:
+                        self.logger.info("Discussion stopped before user prompt (time limit).")
+                        self.trace.record_event(
+                            "discussion_timeout",
+                            {"max_minutes": max_discussion_minutes},
+                        )
+                        break
+
+                    self._maybe_handle_user_question(
+                        judge_message,
+                        conversation,
+                        user_response_provider,
+                        remaining_seconds,
+                        question_timeout_seconds,
+                    )
+            else:
+                judge_message = self.judge.respond(
+                    conversation,
+                    [],
+                    citations,
+                    system_prompt_override=judge_prompt,
+                )
+                conversation.append(judge_message)
+                self.trace.record_message(judge_message)
+                last_judge_message = judge_message
+                self.logger.info("Judge response: %s", judge_message.content)
+
+                remaining_seconds = _remaining_seconds(start_time, max_seconds)
+                if remaining_seconds is not None and remaining_seconds <= 0:
+                    self.logger.info("Discussion stopped before user prompt (time limit).")
+                    self.trace.record_event(
+                        "discussion_timeout",
+                        {"max_minutes": max_discussion_minutes},
+                    )
+                    break
+
+                self._maybe_handle_user_question(
+                    judge_message,
+                    conversation,
+                    user_response_provider,
+                    remaining_seconds,
+                    question_timeout_seconds,
+                )
+
+                decision = _parse_judge_decision(judge_message.content)
+                if decision:
+                    self.trace.record_event("judge_decision", {"decision": decision})
+                if decision == "rejected":
+                    self.logger.info("Judge rejected lawyer response; requesting another solution.")
+                    continue
 
             remaining_seconds = _remaining_seconds(start_time, max_seconds)
             if remaining_seconds is not None and remaining_seconds <= 0:
@@ -192,7 +244,7 @@ class Orchestrator:
 
         final_text = self._generate_final_summary(
             conversation,
-            documents,
+            [],
             country,
             output_language_hint,
         )
@@ -317,6 +369,42 @@ class Orchestrator:
             return False
         return True
 
+    def _prompt_for_judge_review(
+        self,
+        conversation: List[Message],
+        user_response_provider: UserResponseProvider | None,
+        remaining_seconds: float | None,
+        question_timeout_seconds: float,
+    ) -> bool:
+        if user_response_provider is None:
+            return False
+
+        prompt_timeout = question_timeout_seconds
+        if remaining_seconds is not None:
+            prompt_timeout = min(prompt_timeout, max(0.0, remaining_seconds))
+        if prompt_timeout <= 0:
+            return False
+
+        prompt = "Do you want the judge to review this advice? (yes/no)"
+        response = user_response_provider(prompt, prompt_timeout)
+        if not response:
+            self.trace.record_event(
+                "user_judge_review_timeout",
+                {"timeout_seconds": prompt_timeout},
+            )
+            return False
+
+        content = response.strip()
+        user_message = Message(
+            role="user",
+            agent_name="User",
+            content=content,
+            sources=[],
+        )
+        conversation.append(user_message)
+        self.trace.record_message(user_message)
+        return _wants_judge_review(content)
+
 
 def _build_recommendation(
     lawyer_message: Message, judge_message: Message, citations: Sequence[Source]
@@ -363,16 +451,26 @@ def _augment_prompt(
     country: str,
     output_language_hint: str,
     discussion_only: bool,
+    discussion_type: str,
+    role: str,
 ) -> str:
     language_line = "Respond in the same language as the user's instruction."
     if not discussion_only:
         language_line = f"Respond in {output_language_hint}."
+
+    decision_line = ""
+    if discussion_type == "court" and role == "judge":
+        decision_line = (
+            "\nAfter your response, include a line exactly as "
+            "'Decision: APPROVED' or 'Decision: REJECTED'."
+        )
 
     return (
         f"{base_prompt}\n\n"
         f"Jurisdiction focus: Only use laws/regulations applicable to {country} "
         "or supranational rules accepted in that jurisdiction.\n"
         f"{language_line}"
+        f"{decision_line}"
     )
 
 
@@ -422,3 +520,31 @@ def _no_response_message(timeout_seconds: float) -> str:
 def _is_finish_response(content: str) -> bool:
     cleaned = content.strip().lower()
     return cleaned in {"finish", "no", "nope", "done", "exit", "quit", "stop"}
+
+
+def _wants_judge_review(content: str) -> bool:
+    cleaned = content.strip().lower()
+    if not cleaned:
+        return False
+    if "judge" in cleaned:
+        return True
+    return cleaned in {"yes", "y", "ok", "okay", "sure"}
+
+
+def _parse_judge_decision(content: str) -> str | None:
+    lowered = content.lower()
+    for line in lowered.splitlines():
+        if "decision:" in line:
+            if "approved" in line:
+                return "approved"
+            if "rejected" in line:
+                return "rejected"
+    if "decision: approved" in lowered:
+        return "approved"
+    if "decision: rejected" in lowered:
+        return "rejected"
+    return None
+
+
+def _normalize_discussion_type(value: str) -> str:
+    return (value or "").strip().lower()
