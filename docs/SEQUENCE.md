@@ -9,16 +9,16 @@ sequenceDiagram
     participant Judge
     participant Docs as Document Loader
 
-    User->>Orchestrator: Submit instruction + documents folder + country (+ language optional)
+    User->>Orchestrator: Submit instruction + (optional) documents folder + country (+ language optional)
     Orchestrator->>Docs: Load & rank relevant documents
     Docs-->>Orchestrator: Documents + citations
-    Orchestrator->>Lawyer: Provide instruction + documents + citations
+    Orchestrator->>Lawyer: Provide instruction + documents (optional) + citations
     Lawyer-->>Orchestrator: Advocacy response (uses citations)
     alt Lawyer asks a question
         Orchestrator->>User: Prompt for answer (configurable timeout, default 5 min)
         User-->>Orchestrator: Answer or "no response"
     end
-    Orchestrator->>Judge: Provide instruction + discussion history + documents + citations
+    Orchestrator->>Judge: Provide instruction + discussion history + citations
     Judge-->>Orchestrator: Evaluation, questions, decision
     alt Judge asks a question
         Orchestrator->>User: Prompt for answer (configurable timeout, default 5 min)

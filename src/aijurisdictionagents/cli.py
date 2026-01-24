@@ -124,8 +124,8 @@ def main() -> int:
     parser.add_argument(
         "--data-dir",
         type=Path,
-        default=Path("data"),
-        help="Folder containing documents to ingest.",
+        default=None,
+        help="Folder containing documents to ingest (optional).",
     )
     parser.add_argument(
         "--instruction",
@@ -168,6 +168,13 @@ def main() -> int:
         default=15,
         help="Max discussion time in minutes (0 for unlimited).",
     )
+    parser.add_argument(
+        "--discussion-type",
+        type=str,
+        default="advice",
+        choices=["advice", "court"],
+        help="Type of discussion: advice or court.",
+    )
     args = parser.parse_args()
 
     instruction = args.instruction.strip() or input("Enter your case instructions: ").strip()
@@ -179,8 +186,12 @@ def main() -> int:
     logger = setup_logging(run_dir, log_level=args.log_level)
     logger.info("Run directory: %s", run_dir)
 
-    documents = load_documents(args.data_dir, allow_pdf=args.allow_pdf)
-    logger.info("Loaded %d documents", len(documents))
+    if args.data_dir is None:
+        documents = []
+        logger.info("Loaded 0 documents (no data directory provided).")
+    else:
+        documents = load_documents(args.data_dir, allow_pdf=args.allow_pdf)
+        logger.info("Loaded %d documents", len(documents))
     logger.info(
         "Case context: country=%s output_language=%s",
         args.country,
@@ -205,6 +216,7 @@ def main() -> int:
             language=args.language or None,
             question_timeout_seconds=args.question_timeout_minutes * 60,
             max_discussion_minutes=args.discussion_max_minutes,
+            discussion_type=args.discussion_type,
             user_response_provider=_prompt_user_with_timeout,
         )
     finally:

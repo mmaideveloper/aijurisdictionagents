@@ -82,8 +82,10 @@ conda activate aijurisdictionagents
 Put documents in `data/` and run (country required):
 
 ```bash
-python -m aijurisdictionagents --country SK --instruction "We believe the contract was breached due to late delivery."
+python -m aijurisdictionagents --country SK --data-dir data --instruction "We believe the contract was breached due to late delivery."
 ```
+
+To run without documents, omit `--data-dir` (it defaults to none).
 
 During the discussion, agents may ask follow-up questions. You have up to 5 minutes
 (or the remaining discussion time) to reply by default. If you do not respond in time,
@@ -104,19 +106,23 @@ the full conversation is visible.
 Set a maximum discussion time (minutes); `0` means unlimited:
 
 ```bash
-python -m aijurisdictionagents --country SK --discussion-max-minutes 15 --instruction "We believe the contract was breached due to late delivery."
+python -m aijurisdictionagents --country SK --data-dir data --discussion-max-minutes 15 --instruction "We believe the contract was breached due to late delivery."
 ```
 
 Example (full setup + run):
 
 ```bash
 conda activate ./.conda
-python -m aijurisdictionagents --country SK --instruction "We believe the contract was breached due to late delivery."
+python -m aijurisdictionagents --country SK --data-dir data --instruction "We believe the contract was breached due to late delivery."
 ```
 
 Country and language parameters:
 - `--country` is required (ISO 3166-1 alpha-2 or alpha-3 recommended, e.g. `SK`, `US`).
 - `--language` is optional (BCP-47 tag recommended, e.g. `sk-SK`, `en-US`). If omitted, outputs default to the user's input language.
+
+Discussion type:
+- `--discussion-type advice` (default): Lawyer gives advice; judge review is optional.
+- `--discussion-type court`: Judge must approve or reject the lawyer's response; on rejection the lawyer retries.
 
 Environment variables are loaded from `.env` if present. Copy `.env.example` to `.env`
 and edit as needed.
