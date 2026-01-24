@@ -526,9 +526,15 @@ def _wants_judge_review(content: str) -> bool:
     cleaned = content.strip().lower()
     if not cleaned:
         return False
+    if cleaned in {"no", "n", "nope", "nah", "not now", "no thanks", "don't", "dont"}:
+        return False
+    if cleaned.startswith("no "):
+        return False
+    if "no judge" in cleaned or "don't judge" in cleaned or "dont judge" in cleaned:
+        return False
     if "judge" in cleaned:
         return True
-    return cleaned in {"yes", "y", "ok", "okay", "sure"}
+    return cleaned in {"yes", "y", "ok", "okay", "sure", "please"}
 
 
 def _parse_judge_decision(content: str) -> str | None:
