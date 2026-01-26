@@ -30,8 +30,7 @@ jobs:
         run: |
           test -f src/corporate-web/index.html
 
-      - name: Deploy via FTP (dev)
-        if: ${{ inputs.environment == 'dev' }}
+      - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ vars.corporate_web_ftp }}
@@ -39,9 +38,3 @@ jobs:
           password: ${{ secrets.corporate_web_ftp_password }}
           local-dir: src/corporate-web/
           server-dir: /www_root_aiagenticsolutions_eu/
-
-      - name: Deployment placeholder
-        if: ${{ inputs.environment != 'dev' }}
-        run: |
-          echo "Deployment for '${{ inputs.environment }}' is not implemented yet."
-          echo "Configure environment-specific steps when ready."

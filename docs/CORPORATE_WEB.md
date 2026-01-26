@@ -28,7 +28,7 @@ Workflow: `.github/workflows/corporate_web_deploy.yml`
 
 Environments: `dev`, `test`, `prod` (manual dispatch).
 
-DEV is implemented with FTP upload. Configure the `dev` GitHub Environment with:
+FTP upload is used for all environments. Configure each GitHub Environment with:
 
 - `corporate_web_ftp` (URL/host)
 - `corporate_web_ftp_username`
