@@ -1,6 +1,0 @@
-2026-01-22 15:15:20,809 | INFO | Run directory: runs\20260122_151520
-2026-01-22 15:15:20,811 | INFO | Loaded 1 documents
-2026-01-22 15:15:20,811 | INFO | LLM provider requested: mock
-2026-01-22 15:15:20,811 | INFO | LLM provider active: mock (MockLLMClient)
-2026-01-22 15:15:20,811 | INFO | Starting orchestration with 1 documents
-2026-01-22 15:15:20,813 | INFO | Orchestration complete
