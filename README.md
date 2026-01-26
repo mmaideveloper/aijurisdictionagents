@@ -219,6 +219,19 @@ GitHub Actions runs unit tests on every pull request and on pushes to `main`.
 
 See `docs/ARCHITECTURE.md` for module boundaries and flow.
 
+## Corporate website
+
+The static corporate presentation site lives in `src/corporate-web`.
+
+Quick preview:
+
+```bash
+cd src/corporate-web
+python -m http.server 8000
+```
+
+Then open `http://localhost:8000` in a browser. For details, see `docs/CORPORATE_WEB.md`.
+
 ## Assumptions
 
 - The default LLM provider is a deterministic mock (`LLM_PROVIDER=mock`).

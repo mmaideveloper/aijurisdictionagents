@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Jurisdiction Agents</title>
+  <meta id="meta-description" name="description" content="Firemná prezentačná stránka pre AI Jurisdiction agentov: orchestrácia právneho uvažovania s auditovateľnými výstupmi." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-glow"></div>
+  <div class="bg-grid"></div>
+
+  <header class="site-header">
+    <nav class="nav">
+      <a class="brand" href="#top" aria-label="AI Jurisdiction home">
+        <img src="assets/aj-logo.svg" alt="Logo AI Jurisdiction" data-i18n-alt="brand_logo_alt" />
+        <span>AI Jurisdiction</span>
+      </a>
+      <div class="nav-links">
+        <a href="#overview" data-i18n="nav_overview">Prehľad</a>
+        <a href="#agents" data-i18n="nav_agents">Agenti</a>
+        <a href="#architecture" data-i18n="nav_architecture">Architektúra</a>
+        <a href="#assurance" data-i18n="nav_assurance">Záruky</a>
+        <a href="#faq" data-i18n="nav_faq">FAQ</a>
+        <a href="#contact" class="nav-cta" data-i18n="nav_contact">Kontakt</a>
+      </div>
+      <div class="lang-switch" aria-label="Language switch">
+        <span class="lang-label">Jazyk / Sprache / Language</span>
+        <button type="button" class="lang-btn" data-lang="sk" aria-pressed="true">SK</button>
+        <button type="button" class="lang-btn" data-lang="de" aria-pressed="false">DE</button>
+        <button type="button" class="lang-btn" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section id="overview" class="hero">
+      <div class="hero-content">
+        <p class="eyebrow" data-i18n="hero_eyebrow">Multi-agentné právne uvažovanie</p>
+        <h1 data-i18n="hero_title">AI Jurisdiction agenti pre komplexné právne workflow.</h1>
+        <p class="hero-lede" data-i18n="hero_lede">
+          Orchestrácia právnikov, sudcov a analytikov, ktorí spracujú dôkazy, diskutujú
+          predpoklady a pripravia auditovateľné výstupy pre regulované prostredia.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#contact" data-i18n="hero_cta_primary">Požiadať o briefing</a>
+          <a class="button ghost" href="#agents" data-i18n="hero_cta_secondary">Spoznajte agentov</a>
+        </div>
+        <div class="hero-metrics">
+          <div>
+            <span class="metric">4</span>
+            <span class="label" data-i18n="hero_metric_roles">Kľúčové agentné roly</span>
+          </div>
+          <div>
+            <span class="metric">120+</span>
+            <span class="label" data-i18n="hero_metric_checks">Kontrolné body dôkazov</span>
+          </div>
+          <div>
+            <span class="metric">100%</span>
+            <span class="label" data-i18n="hero_metric_trace">Sledovateľnosť od začiatku</span>
+          </div>
+        </div>
+      </div>
+      <div class="hero-card">
+        <div class="card-header">
+          <span data-i18n="hero_card_title">Živá orchestrácia</span>
+          <span class="status" data-i18n="hero_card_status">V prevádzke</span>
+        </div>
+        <img src="assets/hero-graph.svg" alt="Diagram orchestrácie agentov" data-i18n-alt="hero_graph_alt" />
+        <div class="card-list">
+          <div>
+            <strong data-i18n="hero_card_ingest_title">Ingest dokumentov</strong>
+            <p data-i18n="hero_card_ingest_body">Štruktúrovaná extrakcia, tagovanie metadát a overenie.</p>
+          </div>
+          <div>
+            <strong data-i18n="hero_card_judge_title">Sudcovská revízia</strong>
+            <p data-i18n="hero_card_judge_body">Protiargumenty, compliance kontroly a rozhodovacie brány.</p>
+          </div>
+          <div>
+            <strong data-i18n="hero_card_final_title">Finálna syntéza</strong>
+            <p data-i18n="hero_card_final_body">Výstupná správa s citáciami a rizikovými flagmi.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="agents" class="section">
+      <div class="section-head">
+        <h2 data-i18n="agents_title">Špecializovaní agenti, jeden spoločný spis.</h2>
+        <p data-i18n="agents_lede">
+          Každý agent prináša špecifickú perspektívu a zároveň pracuje s rovnakými dôkazmi, aby bola
+          konzistentnosť zachovaná v každom odporúčaní.
+        </p>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <h3 data-i18n="agent_lawyer_title">AI Právnik</h3>
+          <p data-i18n="agent_lawyer_body">Buduje naratív, identifikuje nároky a navrhuje právne stratégie.</p>
+          <ul>
+            <li data-i18n="agent_lawyer_item_1">Extrakcia faktov a nárokov</li>
+            <li data-i18n="agent_lawyer_item_2">Mapovanie relevantného práva</li>
+            <li data-i18n="agent_lawyer_item_3">Pripravené návrhy odpovedí</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3 data-i18n="agent_judge_title">AI Sudca</h3>
+          <p data-i18n="agent_judge_body">Testuje predpoklady, kontroluje právnu relevanciu a validuje výstupy.</p>
+          <ul>
+            <li data-i18n="agent_judge_item_1">Kontrola dostatočnosti dôkazov</li>
+            <li data-i18n="agent_judge_item_2">Riziká a compliance revízia</li>
+            <li data-i18n="agent_judge_item_3">Rozhodovacie brány</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3 data-i18n="agent_orchestrator_title">Orchestrátor</h3>
+          <p data-i18n="agent_orchestrator_body">Koordinuje ťahy, spravuje časové limity a chráni auditnú stopu.</p>
+          <ul>
+            <li data-i18n="agent_orchestrator_item_1">Riadenie konverzácie</li>
+            <li data-i18n="agent_orchestrator_item_2">Syntéza výsledkov</li>
+            <li data-i18n="agent_orchestrator_item_3">Procesná governance</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3 data-i18n="agent_intake_title">Evidence Intake</h3>
+          <p data-i18n="agent_intake_body">Normalizuje dokumenty a udržiava indexovaný znalostný korpus.</p>
+          <ul>
+            <li data-i18n="agent_intake_item_1">Štruktúrované metadáta</li>
+            <li data-i18n="agent_intake_item_2">Úložisko pripravené na vektory</li>
+            <li data-i18n="agent_intake_item_3">Jurisdikčné filtre</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="architecture" class="section alt">
+      <div class="section-head">
+        <h2 data-i18n="arch_title">Architektúra postavená na správe a kontrole.</h2>
+        <p data-i18n="arch_lede">Navrhnuté pre sledovateľnosť, modulárnych agentov a jasné handoffy.</p>
+      </div>
+      <div class="split">
+        <div class="stack">
+          <div class="pill" data-i18n="arch_pill">Orchestration layer</div>
+          <h3 data-i18n="arch_stack_title">Štruktúrované, časované a zodpovedné diskusie.</h3>
+          <p data-i18n="arch_stack_body">
+            Orchestration layer zabezpečuje striedanie ťahov, zaznamenáva každý prompt a odpoveď a
+            uzatvára diskusiu so súhrnom, ktorý obsahuje zdroje a kontrolu istoty.
+          </p>
+          <div class="timeline">
+            <div>
+              <span class="step">01</span>
+              <div>
+                <strong data-i18n="arch_step1_title">Intake</strong>
+                <p data-i18n="arch_step1_body">Zber užívateľského príbehu a dôkazových súborov.</p>
+              </div>
+            </div>
+            <div>
+              <span class="step">02</span>
+              <div>
+                <strong data-i18n="arch_step2_title">Layer debate</strong>
+                <p data-i18n="arch_step2_body">Právnik a sudca vedú riadenú výmenu argumentov.</p>
+              </div>
+            </div>
+            <div>
+              <span class="step">03</span>
+              <div>
+                <strong data-i18n="arch_step3_title">Outcome</strong>
+                <p data-i18n="arch_step3_body">Výstupný balík s citáciami a ďalšími krokmi.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h4 data-i18n="arch_panel_title">Auditovateľný záznam</h4>
+          <ul>
+            <li data-i18n="arch_panel_item_1">Záznam všetkých promptov a dokumentov</li>
+            <li data-i18n="arch_panel_item_2">Jurisdikčne ukotvené odpovede</li>
+            <li data-i18n="arch_panel_item_3">Explicitné rizikové flagy</li>
+          </ul>
+          <div class="stat-grid">
+            <div>
+              <span class="stat">15 min</span>
+              <span data-i18n="arch_stat_session">predvolená max. dĺžka</span>
+            </div>
+            <div>
+              <span class="stat">5 min</span>
+              <span data-i18n="arch_stat_answer">predvolené okno odpovede</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="assurance" class="section">
+      <div class="section-head">
+        <h2 data-i18n="assurance_title">Postavené pre compliance a neustále učenie.</h2>
+        <p data-i18n="assurance_lede">Každý krok je logovaný, kontrolovateľný a prispôsobiteľný.</p>
+      </div>
+      <div class="assurance-grid">
+        <div class="assurance-card">
+          <h3 data-i18n="assurance_card1_title">Hodnotenie a posudzovanie</h3>
+          <p data-i18n="assurance_card1_body">Výstupy agentov sa kontrolujú podľa jasných kritérií.</p>
+        </div>
+        <div class="assurance-card">
+          <h3 data-i18n="assurance_card2_title">Ingest dokumentov</h3>
+          <p data-i18n="assurance_card2_body">Vrstvený ingest podporuje štruktúrované dáta, PDF a jurisdikčné metadáta.</p>
+        </div>
+        <div class="assurance-card">
+          <h3 data-i18n="assurance_card3_title">Logovanie</h3>
+          <p data-i18n="assurance_card3_body">Run artefakty ukladajú prompty, rozhodnutia a trace súhrny.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq" class="section alt">
+      <div class="section-head">
+        <h2 data-i18n="faq_title">FAQ</h2>
+        <p data-i18n="faq_lede">Najčastejšie otázky o AI Jurisdiction agentoch a správe.</p>
+      </div>
+      <div class="faq">
+        <details>
+          <summary data-i18n="faq_q1">Aké jurisdikcie podporujete?</summary>
+          <p data-i18n="faq_a1">Rozsah jurisdikcie sa definuje pre každý prípad. Agenti pracujú iba s akceptovanými pravidlami krajiny a cezhraničnou compliance.</p>
+        </details>
+        <details>
+          <summary data-i18n="faq_q2">Ako predchádzate nepodloženým výstupom?</summary>
+          <p data-i18n="faq_a2">Sudca vyžaduje dôkazové kontroly a orchestrátor pred finalizáciou vyžaduje citácie.</p>
+        </details>
+        <details>
+          <summary data-i18n="faq_q3">Viete sa napojiť na interné znalostné databázy?</summary>
+          <p data-i18n="faq_a3">Áno. Ingest podporuje vektorové indexy a zdieľané repozitáre pre regulačné aktualizácie.</p>
+        </details>
+      </div>
+    </section>
+
+    <section id="contact" class="section contact">
+      <div class="contact-card">
+        <div>
+          <h2 data-i18n="contact_title">Ste pripravení na detailný walkthrough?</h2>
+          <p data-i18n="contact_body">Požiadajte o briefing a prispôsobíme demo vašej jurisdikcii a workflow.</p>
+        </div>
+        <a class="button primary" href="mailto:contact@aijurisdiction.eu" data-i18n="contact_cta">Kontaktujte tím</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div>
+      <strong>AI Jurisdiction</strong>
+      <p data-i18n="footer_tagline">Multi-agentná právna inteligencia pre regulované operácie.</p>
+    </div>
+    <div class="footer-meta">
+      <span>(c) 2026 AI Jurisdiction</span>
+      <span>info@aijurisdiction.eu</span>
+    </div>
+  </footer>
+
+  <script>
+    const translations = {
+      sk: {
+        meta_description: "Firemná prezentačná stránka pre AI Jurisdiction agentov: orchestrácia právneho uvažovania s auditovateľnými výstupmi.",
+        brand_logo_alt: "Logo AI Jurisdiction",
+        hero_graph_alt: "Diagram orchestrácie agentov",
+        nav_overview: "Prehľad",
+        nav_agents: "Agenti",
+        nav_architecture: "Architektúra",
+        nav_assurance: "Záruky",
+        nav_faq: "FAQ",
+        nav_contact: "Kontakt",
+        hero_eyebrow: "Multi-agentné právne uvažovanie",
+        hero_title: "AI Jurisdiction agenti pre komplexné právne workflow.",
+        hero_lede: "Orchestrácia právnikov, sudcov a analytikov, ktorí spracujú dôkazy, diskutujú predpoklady a pripravia auditovateľné výstupy pre regulované prostredia.",
+        hero_cta_primary: "Požiadať o briefing",
+        hero_cta_secondary: "Spoznajte agentov",
+        hero_metric_roles: "Kľúčové agentné roly",
+        hero_metric_checks: "Kontrolné body dôkazov",
+        hero_metric_trace: "Sledovateľnosť od začiatku",
+        hero_card_title: "Živá orchestrácia",
+        hero_card_status: "V prevádzke",
+        hero_card_ingest_title: "Ingest dokumentov",
+        hero_card_ingest_body: "Štruktúrovaná extrakcia, tagovanie metadát a overenie.",
+        hero_card_judge_title: "Sudcovská revízia",
+        hero_card_judge_body: "Protiargumenty, compliance kontroly a rozhodovacie brány.",
+        hero_card_final_title: "Finálna syntéza",
+        hero_card_final_body: "Výstupná správa s citáciami a rizikovými flagmi.",
+        agents_title: "Špecializovaní agenti, jeden spoločný spis.",
+        agents_lede: "Každý agent prináša špecifickú perspektívu a zároveň pracuje s rovnakými dôkazmi, aby bola konzistentnosť zachovaná v každom odporúčaní.",
+        agent_lawyer_title: "AI Právnik",
+        agent_lawyer_body: "Buduje naratív, identifikuje nároky a navrhuje právne stratégie.",
+        agent_lawyer_item_1: "Extrakcia faktov a nárokov",
+        agent_lawyer_item_2: "Mapovanie relevantného práva",
+        agent_lawyer_item_3: "Pripravené návrhy odpovedí",
+        agent_judge_title: "AI Sudca",
+        agent_judge_body: "Testuje predpoklady, kontroluje právnu relevanciu a validuje výstupy.",
+        agent_judge_item_1: "Kontrola dostatočnosti dôkazov",
+        agent_judge_item_2: "Riziká a compliance revízia",
+        agent_judge_item_3: "Rozhodovacie brány",
+        agent_orchestrator_title: "Orchestrátor",
+        agent_orchestrator_body: "Koordinuje ťahy, spravuje časové limity a chráni auditnú stopu.",
+        agent_orchestrator_item_1: "Riadenie konverzácie",
+        agent_orchestrator_item_2: "Syntéza výsledkov",
+        agent_orchestrator_item_3: "Procesná governance",
+        agent_intake_title: "Evidence Intake",
+        agent_intake_body: "Normalizuje dokumenty a udržiava indexovaný znalostný korpus.",
+        agent_intake_item_1: "Štruktúrované metadáta",
+        agent_intake_item_2: "Úložisko pripravené na vektory",
+        agent_intake_item_3: "Jurisdikčné filtre",
+        arch_title: "Architektúra postavená na správe a kontrole.",
+        arch_lede: "Navrhnuté pre sledovateľnosť, modulárnych agentov a jasné handoffy.",
+        arch_pill: "Orchestration layer",
+        arch_stack_title: "Štruktúrované, časované a zodpovedné diskusie.",
+        arch_stack_body: "Orchestration layer zabezpečuje striedanie ťahov, zaznamenáva každý prompt a odpoveď a uzatvára diskusiu so súhrnom, ktorý obsahuje zdroje a kontrolu istoty.",
+        arch_step1_title: "Intake",
+        arch_step1_body: "Zber užívateľského príbehu a dôkazových súborov.",
+        arch_step2_title: "Layer debate",
+        arch_step2_body: "Právnik a sudca vedú riadenú výmenu argumentov.",
+        arch_step3_title: "Outcome",
+        arch_step3_body: "Výstupný balík s citáciami a ďalšími krokmi.",
+        arch_panel_title: "Auditovateľný záznam",
+        arch_panel_item_1: "Záznam všetkých promptov a dokumentov",
+        arch_panel_item_2: "Jurisdikčne ukotvené odpovede",
+        arch_panel_item_3: "Explicitné rizikové flagy",
+        arch_stat_session: "predvolená max. dĺžka",
+        arch_stat_answer: "predvolené okno odpovede",
+        assurance_title: "Postavené pre compliance a neustále učenie.",
+        assurance_lede: "Každý krok je logovaný, kontrolovateľný a prispôsobiteľný.",
+        assurance_card1_title: "Hodnotenie a posudzovanie",
+        assurance_card1_body: "Výstupy agentov sa kontrolujú podľa jasných kritérií.",
+        assurance_card2_title: "Ingest dokumentov",
+        assurance_card2_body: "Vrstvený ingest podporuje štruktúrované dáta, PDF a jurisdikčné metadáta.",
+        assurance_card3_title: "Logovanie",
+        assurance_card3_body: "Run artefakty ukladajú prompty, rozhodnutia a trace súhrny.",
+        faq_title: "FAQ",
+        faq_lede: "Najčastejšie otázky o AI Jurisdiction agentoch a správe.",
+        faq_q1: "Aké jurisdikcie podporujete?",
+        faq_a1: "Rozsah jurisdikcie sa definuje pre každý prípad. Agenti pracujú iba s akceptovanými pravidlami krajiny a cezhraničnou compliance.",
+        faq_q2: "Ako predchádzate nepodloženým výstupom?",
+        faq_a2: "Sudca vyžaduje dôkazové kontroly a orchestrátor pred finalizáciou vyžaduje citácie.",
+        faq_q3: "Viete sa napojiť na interné znalostné databázy?",
+        faq_a3: "Áno. Ingest podporuje vektorové indexy a zdieľané repozitáre pre regulačné aktualizácie.",
+        contact_title: "Ste pripravení na detailný walkthrough?",
+        contact_body: "Požiadajte o briefing a prispôsobíme demo vašej jurisdikcii a workflow.",
+        contact_cta: "Kontaktujte tím",
+        footer_tagline: "Multi-agentná právna inteligencia pre regulované operácie."
+      },
+      de: {
+        meta_description: "Unternehmenspräsentation für AI Jurisdiction Agents: orchestriertes juristisches Denken mit auditierbaren Ergebnissen.",
+        brand_logo_alt: "Logo von AI Jurisdiction",
+        hero_graph_alt: "Diagramm der Agenten-Orchestrierung",
+        nav_overview: "Überblick",
+        nav_agents: "Agenten",
+        nav_architecture: "Architektur",
+        nav_assurance: "Absicherung",
+        nav_faq: "FAQ",
+        nav_contact: "Kontakt",
+        hero_eyebrow: "Multi-Agenten-Rechtsanalyse",
+        hero_title: "AI Jurisdiction Agents für komplexe juristische Workflows.",
+        hero_lede: "Orchestrierte Teams aus Anwalt, Richter und Analyst, die Beweise aufnehmen, Annahmen prüfen und auditierbare Ergebnisse für regulierte Umgebungen liefern.",
+        hero_cta_primary: "Briefing anfragen",
+        hero_cta_secondary: "Agenten kennenlernen",
+        hero_metric_roles: "Kernrollen der Agenten",
+        hero_metric_checks: "Beweis-Checkpoints",
+        hero_metric_trace: "Nachvollziehbarkeit by Design",
+        hero_card_title: "Live-Orchestrierung",
+        hero_card_status: "Betriebsbereit",
+        hero_card_ingest_title: "Dokumenten-Ingestion",
+        hero_card_ingest_body: "Strukturierte Extraktion, Metadaten-Tagging und Verifikation.",
+        hero_card_judge_title: "Richterliche Prüfung",
+        hero_card_judge_body: "Gegenargumente, Compliance-Prüfungen und Entscheidungsgates.",
+        hero_card_final_title: "Finale Synthese",
+        hero_card_final_body: "Ergebnisbericht mit Zitaten und Risiko-Flags.",
+        agents_title: "Spezialisierte Agenten, eine gemeinsame Akte.",
+        agents_lede: "Jeder Agent bringt eine eigene Perspektive ein, arbeitet aber mit derselben Evidenzbasis, damit jede Empfehlung konsistent bleibt.",
+        agent_lawyer_title: "KI-Anwalt",
+        agent_lawyer_body: "Baut das Narrativ, identifiziert Ansprüche und schlägt juristische Strategien vor.",
+        agent_lawyer_item_1: "Fakten- und Anspruchsextraktion",
+        agent_lawyer_item_2: "Mapping relevanter Gesetze",
+        agent_lawyer_item_3: "Entwurfsreife Antworten",
+        agent_judge_title: "KI-Richter",
+        agent_judge_body: "Prüft Annahmen, bewertet die rechtliche Passung und validiert Ergebnisse.",
+        agent_judge_item_1: "Prüfung der Beweisstärke",
+        agent_judge_item_2: "Risiko- und Compliance-Review",
+        agent_judge_item_3: "Entscheidungsgates",
+        agent_orchestrator_title: "Orchestrator",
+        agent_orchestrator_body: "Koordiniert Turns, verwaltet Timeouts und bewahrt die Auditspur.",
+        agent_orchestrator_item_1: "Konversationssteuerung",
+        agent_orchestrator_item_2: "Ergebnissynthese",
+        agent_orchestrator_item_3: "Prozess-Governance",
+        agent_intake_title: "Evidence Intake",
+        agent_intake_body: "Normalisiert Dokumente und pflegt einen indexierten Wissenskorpus.",
+        agent_intake_item_1: "Strukturierte Metadaten",
+        agent_intake_item_2: "Vektorbereites Repository",
+        agent_intake_item_3: "Jurisdiktionsfilter",
+        arch_title: "Architektur für Governance gebaut.",
+        arch_lede: "Entwickelt für Nachvollziehbarkeit, modulare Agenten und klare Übergaben.",
+        arch_pill: "Orchestration Layer",
+        arch_stack_title: "Strukturiert, getaktet und verantwortlich moderiert.",
+        arch_stack_body: "Der Orchestration Layer steuert die Turn-Reihenfolge, protokolliert jeden Prompt und jede Antwort und liefert am Ende eine Zusammenfassung mit Quellen und Confidence Checks.",
+        arch_step1_title: "Intake",
+        arch_step1_body: "Erfassung der Nutzererzählung und der Beweisdokumente.",
+        arch_step2_title: "Layer Debate",
+        arch_step2_body: "Anwalt und Richter führen eine geführte Argumentation.",
+        arch_step3_title: "Outcome",
+        arch_step3_body: "Ergebnispaket mit Zitaten und nächsten Schritten.",
+        arch_panel_title: "Auditfähiger Nachweis",
+        arch_panel_item_1: "Alle Prompts und Dokumente protokolliert",
+        arch_panel_item_2: "Jurisdiktionsbasiert geerdet",
+        arch_panel_item_3: "Explizite Risiko-Flags",
+        arch_stat_session: "Standard: maximale Session",
+        arch_stat_answer: "Standard: Antwortfenster",
+        assurance_title: "Für Compliance und kontinuierliches Lernen gebaut.",
+        assurance_lede: "Jeder Schritt ist geloggt, prüfbar und anpassbar.",
+        assurance_card1_title: "Evaluation & Judging",
+        assurance_card1_body: "Agentenoutputs werden anhand klarer Kriterien geprüft.",
+        assurance_card2_title: "Dokumenten-Ingestion",
+        assurance_card2_body: "Mehrstufiger Intake unterstützt strukturierte Daten, PDFs und Jurisdiktionsmetadaten.",
+        assurance_card3_title: "Logging",
+        assurance_card3_body: "Run-Artefakte speichern Prompts, Entscheidungen und Trace-Summaries.",
+        faq_title: "FAQ",
+        faq_lede: "Häufige Fragen zu AI Jurisdiction und Governance.",
+        faq_q1: "Welche Jurisdiktionen werden unterstützt?",
+        faq_a1: "Der Jurisdiktionsumfang wird pro Fall definiert. Agenten arbeiten nur mit akzeptierten Landesregeln und grenzüberschreitender Compliance.",
+        faq_q2: "Wie vermeiden Sie unbelegte Antworten?",
+        faq_a2: "Der Richter erzwingt Evidenzprüfungen und der Orchestrator verlangt Zitate vor der Finalisierung.",
+        faq_q3: "Können wir private Wissensbasen integrieren?",
+        faq_a3: "Ja. Der Intake unterstützt Vektorindizes und gemeinsame Repositories für regulatorische Updates.",
+        contact_title: "Bereit für einen detaillierten Walkthrough?",
+        contact_body: "Briefing anfragen und wir passen die Demo an Jurisdiktion und Workflow an.",
+        contact_cta: "Team kontaktieren",
+        footer_tagline: "Multi-Agenten-Rechtsintelligenz für regulierte Abläufe."
+      },
+      en: {
+        meta_description: "Corporate presentation site for AI Jurisdiction agents: orchestrated legal reasoning with audit-ready outputs.",
+        brand_logo_alt: "AI Jurisdiction logo",
+        hero_graph_alt: "Diagram of agent orchestration",
+        nav_overview: "Overview",
+        nav_agents: "Agents",
+        nav_architecture: "Architecture",
+        nav_assurance: "Assurance",
+        nav_faq: "FAQ",
+        nav_contact: "Contact",
+        hero_eyebrow: "Multi-agent legal reasoning",
+        hero_title: "AI Jurisdiction agents for complex legal workflows.",
+        hero_lede: "An orchestrated system of lawyer, judge, and analyst agents that ingest evidence, debate assumptions, and produce audit-ready outputs for regulated environments.",
+        hero_cta_primary: "Request a briefing",
+        hero_cta_secondary: "Meet the agents",
+        hero_metric_roles: "Core agent roles",
+        hero_metric_checks: "Evidence checkpoints",
+        hero_metric_trace: "Traceability by design",
+        hero_card_title: "Live orchestration",
+        hero_card_status: "Operational",
+        hero_card_ingest_title: "Document ingestion",
+        hero_card_ingest_body: "Structured extraction, metadata tagging, and verification.",
+        hero_card_judge_title: "Judge review",
+        hero_card_judge_body: "Counter-arguments, compliance checks, and decision gates.",
+        hero_card_final_title: "Final synthesis",
+        hero_card_final_body: "Outcome report with citations and risk flags.",
+        agents_title: "Specialized agents, one shared record.",
+        agents_lede: "Each agent contributes a specific perspective while sharing the same evidence pack, ensuring consistency across every recommendation.",
+        agent_lawyer_title: "AI Lawyer",
+        agent_lawyer_body: "Builds the narrative, identifies claims, and proposes legal strategies.",
+        agent_lawyer_item_1: "Facts and claims extraction",
+        agent_lawyer_item_2: "Applicable law mapping",
+        agent_lawyer_item_3: "Draft-ready responses",
+        agent_judge_title: "AI Judge",
+        agent_judge_body: "Challenges assumptions, checks legal fit, and validates outcomes.",
+        agent_judge_item_1: "Evidence sufficiency checks",
+        agent_judge_item_2: "Risk and compliance review",
+        agent_judge_item_3: "Decision gating",
+        agent_orchestrator_title: "Orchestrator",
+        agent_orchestrator_body: "Coordinates agent turns, manages timeouts, and preserves the audit trail.",
+        agent_orchestrator_item_1: "Conversation control",
+        agent_orchestrator_item_2: "Outcome synthesis",
+        agent_orchestrator_item_3: "Process governance",
+        agent_intake_title: "Evidence Intake",
+        agent_intake_body: "Normalizes documents and maintains an indexed knowledge corpus.",
+        agent_intake_item_1: "Structured metadata",
+        agent_intake_item_2: "Vector-ready storage",
+        agent_intake_item_3: "Jurisdiction filters",
+        arch_title: "Architecture built for governance.",
+        arch_lede: "Designed around traceability, modular agents, and clear handoffs.",
+        arch_pill: "Orchestration layer",
+        arch_stack_title: "Structured, timed, and accountable discussions.",
+        arch_stack_body: "The orchestration layer enforces turn-taking, records every prompt and response, and concludes with a summary that includes sources and confidence checks.",
+        arch_step1_title: "Intake",
+        arch_step1_body: "Collect user narrative and evidence files.",
+        arch_step2_title: "Layer debate",
+        arch_step2_body: "Lawyer and Judge exchange guided arguments.",
+        arch_step3_title: "Outcome",
+        arch_step3_body: "Generate a decision pack with citations and next steps.",
+        arch_panel_title: "Audit-ready record",
+        arch_panel_item_1: "All prompts and documents logged",
+        arch_panel_item_2: "Jurisdiction-aware grounding",
+        arch_panel_item_3: "Explicit risk flags",
+        arch_stat_session: "default max session",
+        arch_stat_answer: "default answer window",
+        assurance_title: "Built for compliance and continuous learning.",
+        assurance_lede: "Every step is logged, reviewable, and adjustable as regulations evolve.",
+        assurance_card1_title: "Evaluation & judging",
+        assurance_card1_body: "Agent outputs are reviewed with explicit criteria to reduce hallucination risk.",
+        assurance_card2_title: "Document ingestion",
+        assurance_card2_body: "Layered ingestion supports structured data, PDFs, and jurisdiction metadata.",
+        assurance_card3_title: "Logging",
+        assurance_card3_body: "Run artifacts are stored with prompts, decisions, and trace summaries.",
+        faq_title: "FAQ",
+        faq_lede: "Common questions about AI Jurisdiction agents and governance.",
+        faq_q1: "What jurisdictions are supported?",
+        faq_a1: "Jurisdiction scope is defined per case. Agents operate only on accepted country rules and cross-border compliance.",
+        faq_q2: "How do you prevent unsupported outputs?",
+        faq_a2: "The judge agent enforces evidence checks and the orchestrator requires citations before finalizing results.",
+        faq_q3: "Can we integrate with private knowledge bases?",
+        faq_a3: "Yes. Evidence ingestion supports vector indexes and shared repositories for regulatory updates.",
+        contact_title: "Ready for a deeper walkthrough?",
+        contact_body: "Request a briefing and we will tailor a demo to your jurisdiction and workflow.",
+        contact_cta: "Contact the team",
+        footer_tagline: "Multi-agent legal intelligence for regulated operations."
+      }
+    };
+
+    const languageButtons = document.querySelectorAll(".lang-btn");
+    const metaDescription = document.getElementById("meta-description");
+
+    function applyTranslations(lang) {
+      const dictionary = translations[lang] || translations.sk;
+      document.documentElement.lang = lang;
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        const key = element.dataset.i18n;
+        if (dictionary[key]) {
+          element.textContent = dictionary[key];
+        }
+      });
+      document.querySelectorAll("[data-i18n-alt]").forEach((element) => {
+        const key = element.dataset.i18nAlt;
+        if (dictionary[key]) {
+          element.setAttribute("alt", dictionary[key]);
+        }
+      });
+      if (metaDescription && dictionary.meta_description) {
+        metaDescription.setAttribute("content", dictionary.meta_description);
+      }
+    }
+
+    function setLanguage(lang) {
+      const next = translations[lang] ? lang : "sk";
+      localStorage.setItem("aj_lang", next);
+      languageButtons.forEach((button) => {
+        button.setAttribute("aria-pressed", button.dataset.lang === next ? "true" : "false");
+      });
+      applyTranslations(next);
+    }
+
+    languageButtons.forEach((button) => {
+      button.addEventListener("click", () => setLanguage(button.dataset.lang));
+    });
+
+    const storedLang = localStorage.getItem("aj_lang");
+    setLanguage(storedLang || "sk");
+  </script>
+</body>
+</html>
