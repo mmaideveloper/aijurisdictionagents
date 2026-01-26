@@ -22,6 +22,20 @@ Then open `http://localhost:8000` in a browser.
 - Additional languages: German (`de`), English (`en`).
 - The toggle persists in `localStorage` under `aj_lang`.
 
+## Deployment (GitHub Actions)
+
+Workflow: `.github/workflows/corporate_web_deploy.yml`
+
+Environments: `dev`, `test`, `prod` (manual dispatch).
+
+FTP upload is used for all environments. Configure each GitHub Environment with:
+
+- `corporate_web_ftp` (URL/host)
+- `corporate_web_ftp_username`
+- secret `corporate_web_ftp_password`
+
+Remote FTP folder: `www_root_aiagenticsolutions_eu`.
+
 ## Files
 
 - `index.html` - main single-page layout
