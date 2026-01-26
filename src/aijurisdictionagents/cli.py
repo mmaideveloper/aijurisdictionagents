@@ -102,7 +102,7 @@ def _prompt_user_with_timeout(question: str, timeout_seconds: float) -> str | No
         print("\nNo time remaining for a user response.")
         return None
 
-    print(f"\nAgent question: {question}")
+    print(f"\nLayer Agent question: {question}")
     seconds_display = int(round(timeout_seconds))
     if seconds_display >= 60:
         minutes = seconds_display // 60
