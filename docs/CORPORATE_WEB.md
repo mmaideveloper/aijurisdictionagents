@@ -16,9 +16,16 @@ python -m http.server 8000
 
 Then open `http://localhost:8000` in a browser.
 
+## Language
+
+- Default language: Slovak (`sk`).
+- Additional language: German (`de`).
+- The toggle persists in `localStorage` under `aj_lang`.
+
 ## Files
 
 - `index.html` - main single-page layout
 - `styles.css` - branding, layout, and motion
 - `assets/aj-logo.svg` - placeholder logo
 - `assets/hero-graph.svg` - hero illustration
+- `README.md` - local debugging notes
