@@ -232,6 +232,11 @@ python -m http.server 8000
 
 Then open `http://localhost:8000` in a browser. For details, see `docs/CORPORATE_WEB.md`.
 
+### Deployment
+
+The corporate site is deployed via GitHub Actions (`corporate_web` workflow) using FTP per environment.
+Live URL: `https://www.aiagenticsolutions.eu/`
+
 ## Assumptions
 
 - The default LLM provider is a deterministic mock (`LLM_PROVIDER=mock`).
