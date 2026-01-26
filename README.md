@@ -123,7 +123,7 @@ Country and language parameters:
 
 Discussion type:
 - `--discussion-type advice` (default): Lawyer gives advice; judge review is optional.
-- `--discussion-type court`: Judge must approve or reject the lawyer's response; on rejection the lawyer retries.
+- `--discussion-type court`: Judge must approve or reject the lawyer's response; on rejection the lawyer retries. In court mode, the lawyer asks whether to draft filings when a court action is recommended, and the judge challenges weaknesses and requests missing documents.
 
 Environment variables are loaded from `.env` if present. Copy `.env.example` to `.env`
 and edit as needed.
