@@ -1,0 +1,12 @@
+2026-01-23 15:22:53,213 | INFO | Run directory: runs\20260123_152253
+2026-01-23 15:22:53,213 | INFO | Loaded 1 documents
+2026-01-23 15:22:53,213 | INFO | Case context: country=SK output_language=user_input_language
+2026-01-23 15:22:53,213 | INFO | LLM provider requested: azurefoundry
+2026-01-23 15:22:53,213 | DEBUG | Azure endpoint: https://azureopenai-bmcboot-local2.openai.azure.com/
+2026-01-23 15:22:53,213 | DEBUG | Azure deployment: gpt-4o
+2026-01-23 15:22:53,213 | DEBUG | Azure API key: ********************************************************************************EdP7
+2026-01-23 15:22:53,213 | INFO | Azure Foundry config: auth_method=api_key endpoint=https://azureopenai-bmcboot-local2.openai.azure.com/ deployment=gpt-4o api_version=2025-01-01-preview temperature=0.2
+2026-01-23 15:22:53,254 | INFO | LLM provider active: azurefoundry (AzureFoundryClient)
+2026-01-23 15:22:53,254 | INFO | Starting orchestration with 1 documents
+2026-01-23 15:22:56,046 | INFO | No user response received; ending discussion.
+2026-01-23 15:22:57,965 | INFO | Orchestration complete

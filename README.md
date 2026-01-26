@@ -176,6 +176,8 @@ Trace artifacts are written to `runs/YYYYMMDD_HHMMSS/`:
 - `run.log`
 - `trace.jsonl`
 
+Sample run artifacts are committed under `runs/` to support debugging and regression checks.
+
 `run.log` includes the active LLM provider (mock/OpenAI) at startup.
 When using Azure Foundry, `run.log` also records the auth method, endpoint, deployment, API version, and temperature,
 and temperature at INFO level.

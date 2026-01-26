@@ -1,0 +1,6 @@
+2026-01-22 16:20:32,503 | INFO | Run directory: runs\20260122_162032
+2026-01-22 16:20:32,503 | INFO | Loaded 1 documents
+2026-01-22 16:20:32,503 | INFO | LLM provider requested: azurefoundry
+2026-01-22 16:20:32,503 | DEBUG | Azure endpoint: https://ai-mmatonok5424ai065948220724.openai.azure.com/
+2026-01-22 16:20:32,503 | DEBUG | Azure deployment: unset
+2026-01-22 16:20:32,505 | DEBUG | Azure API key: ********************************************************************************Odza

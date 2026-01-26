@@ -1,0 +1,5 @@
+2026-01-22 15:17:45,688 | INFO | Run directory: runs\20260122_151745
+2026-01-22 15:17:45,688 | INFO | Loaded 1 documents
+2026-01-22 15:17:45,690 | INFO | LLM provider requested: openai
+2026-01-22 15:17:45,722 | INFO | LLM provider active: openai (OpenAIClient)
+2026-01-22 15:17:45,724 | INFO | Starting orchestration with 1 documents

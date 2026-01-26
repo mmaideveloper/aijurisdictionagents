@@ -1,0 +1,14 @@
+2026-01-23 16:06:20,572 | INFO | Run directory: runs\20260123_160620
+2026-01-23 16:06:20,572 | WARNING | Data directory not found: data\sample-case1.text
+2026-01-23 16:06:20,572 | INFO | Loaded 0 documents
+2026-01-23 16:06:20,572 | INFO | Case context: country=SK output_language=user_input_language
+2026-01-23 16:06:20,572 | INFO | LLM provider requested: azurefoundry
+2026-01-23 16:06:20,572 | DEBUG | Azure endpoint: https://azureopenai-bmcboot-local2.openai.azure.com/
+2026-01-23 16:06:20,572 | DEBUG | Azure deployment: gpt-4o
+2026-01-23 16:06:20,572 | DEBUG | Azure API key: ********************************************************************************EdP7
+2026-01-23 16:06:20,572 | INFO | Azure Foundry config: auth_method=api_key endpoint=https://azureopenai-bmcboot-local2.openai.azure.com/ deployment=gpt-4o api_version=2025-01-01-preview temperature=0.2
+2026-01-23 16:06:20,615 | INFO | LLM provider active: azurefoundry (AzureFoundryClient)
+2026-01-23 16:06:20,615 | INFO | Starting orchestration with 0 documents
+2026-01-23 16:07:06,589 | INFO | Agent asked a question: Sudca: Informácie poskytnuté právnikom sú presné a v súlade so zákonom č. 190/2003 Z. z. o strelných zbraniach a strelive. Máte nejaké ďalšie otázky alebo potrebujete objasnenie konkrétneho kroku v procese získania zbrojného preukazu?
+2026-01-23 16:09:35,504 | INFO | User ended discussion or no follow-up provided.
+2026-01-23 16:09:41,784 | INFO | Orchestration complete

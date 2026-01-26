@@ -1,0 +1,8 @@
+2026-01-22 16:25:06,315 | INFO | Run directory: runs\20260122_162506
+2026-01-22 16:25:06,317 | INFO | Loaded 1 documents
+2026-01-22 16:25:06,317 | INFO | LLM provider requested: azurefoundry
+2026-01-22 16:25:06,317 | DEBUG | Azure endpoint: https://ai-mmatonok5424ai065948220724.openai.azure.com/
+2026-01-22 16:25:06,317 | DEBUG | Azure deployment: gpt-4o-mini
+2026-01-22 16:25:06,317 | DEBUG | Azure API key: ********************************************************************************Odza
+2026-01-22 16:25:06,351 | INFO | LLM provider active: azurefoundry (AzureFoundryClient)
+2026-01-22 16:25:06,353 | INFO | Starting orchestration with 1 documents

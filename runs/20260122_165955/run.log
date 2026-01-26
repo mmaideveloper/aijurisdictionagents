@@ -1,0 +1,8 @@
+2026-01-22 16:59:55,613 | INFO | Run directory: runs\20260122_165955
+2026-01-22 16:59:55,613 | INFO | Loaded 1 documents
+2026-01-22 16:59:55,613 | INFO | LLM provider requested: azurefoundry
+2026-01-22 16:59:55,613 | DEBUG | Azure endpoint: https://azureopenai-bmcboot-local2.openai.azure.com/
+2026-01-22 16:59:55,615 | DEBUG | Azure deployment: gpt-4o
+2026-01-22 16:59:55,615 | DEBUG | Azure API key: ********************************************************************************EdP7
+2026-01-22 16:59:55,653 | INFO | LLM provider active: azurefoundry (AzureFoundryClient)
+2026-01-22 16:59:55,653 | INFO | Starting orchestration with 1 documents

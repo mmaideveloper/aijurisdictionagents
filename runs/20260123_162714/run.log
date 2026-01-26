@@ -1,0 +1,100 @@
+2026-01-23 16:27:14,694 | INFO | Run directory: runs\20260123_162714
+2026-01-23 16:27:14,694 | WARNING | Data directory not found: data\sample-case1.text
+2026-01-23 16:27:14,694 | INFO | Loaded 0 documents
+2026-01-23 16:27:14,694 | INFO | Case context: country=SK output_language=user_input_language
+2026-01-23 16:27:14,697 | INFO | LLM provider requested: azurefoundry
+2026-01-23 16:27:14,697 | DEBUG | Azure endpoint: https://azureopenai-bmcboot-local2.openai.azure.com/
+2026-01-23 16:27:14,697 | DEBUG | Azure deployment: gpt-4o
+2026-01-23 16:27:14,697 | DEBUG | Azure API key: ********************************************************************************EdP7
+2026-01-23 16:27:14,697 | INFO | Azure Foundry config: auth_method=api_key endpoint=https://azureopenai-bmcboot-local2.openai.azure.com/ deployment=gpt-4o api_version=2025-01-01-preview temperature=0.2
+2026-01-23 16:27:14,732 | INFO | LLM provider active: azurefoundry (AzureFoundryClient)
+2026-01-23 16:27:14,732 | INFO | Starting orchestration with 0 documents
+2026-01-23 16:27:14,733 | INFO | User instruction: Chcemi kupit zbran. Aky je postup mat legalne zbran.
+2026-01-23 16:27:47,277 | INFO | Lawyer response: Na Slovensku je držanie a nosenie zbraní upravené zákonom č. 190/2003 Z. z. o strelných zbraniach a strelive (ďalej len „zákon o zbraniach“). Ak chcete legálne vlastniť zbraň, musíte postupovať podľa nasledujúcich krokov:
+
+1. **Určenie kategórie zbrane**  
+   Zbrane sú rozdelené do kategórií A, B, C a D. Kategória určuje, aké povolenia alebo registrácie sú potrebné. Napríklad:
+   - Zbrane kategórie A (zakázané zbrane) sú vo všeobecnosti zakázané, s výnimkami pre špecifické prípady.
+   - Zbrane kategórie B (zbrane podliehajúce povoleniu) vyžadujú povolenie na držanie a nosenie.
+   - Zbrane kategórie C (zbrane podliehajúce ohláseniu) vyžadujú ohlásenie na polícii.
+   - Zbrane kategórie D (napr. historické alebo plynové zbrane) nevyžadujú povolenie, ale môžu podliehať iným obmedzeniam.
+
+2. **Získanie zbrojného preukazu**  
+   Ak chcete vlastniť zbraň kategórie B alebo C, musíte získať zbrojný preukaz. Postup je nasledovný:
+   - **Podanie žiadosti**: Žiadosť sa podáva na príslušnom oddelení Policajného zboru podľa miesta vášho trvalého bydliska.
+   - **Splnenie podmienok**: Musíte splniť tieto podmienky:
+     - Byť starší ako 21 rokov (18 rokov v prípade športovej alebo loveckej zbrane).
+     - Byť bezúhonný a spoľahlivý (polícia preveruje váš register trestov a ďalšie okolnosti).
+     - Zdravotná spôsobilosť: Potrebujete potvrdenie od lekára o vašej zdravotnej a psychickej spôsobilosti.
+     - Absolvovať odbornú prípravu a skúšku z odbornej spôsobilosti (skúška zahŕňa teoretickú a praktickú časť).
+   - **Účel zbrojného preukazu**: Musíte uviesť účel, na ktorý chcete zbraň používať (napr. šport, lov, ochrana osôb a majetku).
+
+3. **Kúpa zbrane**  
+   Po získaní zbrojného preukazu môžete zakúpiť zbraň. Ak ide o zbraň kategórie B alebo C, musíte:
+   - Požiadať o povolenie na nadobudnutie konkrétnej zbrane (kategória B).
+   - Ohlásiť nadobudnutie zbrane na polícii do 7 dní (kategória C).
+
+4. **Registrácia zbrane**  
+   Každá zbraň kategórie B a C musí byť registrovaná na polícii. Pri registrácii predložíte:
+   - Zbrojný preukaz.
+   - Doklad o nadobudnutí zbrane (napr. kúpna zmluva alebo faktúra).
+   - Povolenie na nadobudnutie zbrane (ak ide o kategóriu B).
+
+5. **Dodržiavanie povinností**  
+   Ako držiteľ zbrojného preukazu a zbrane máte povinnosť:
+   - Dodržiavať bezpečnostné pravidlá pri manipulácii so zbraňou.
+   - Uchovávať zbraň v bezpečnom stave (napr. v trezore).
+   - Obnovovať zdravotné a psychologické potvrdenia podľa potreby.
+
+Ak máte ďalšie otázky alebo potrebujete pomoc s konkrétnym krokom, odporúčam konzultáciu s odborníkom na zbraňovú legislatívu alebo priamo s príslušným oddelením Policajného zboru.
+2026-01-23 16:27:51,793 | INFO | Judge response: Rozhodnutie: Na základe uvedených informácií je postup na získanie legálnej zbrane na Slovensku jasne definovaný zákonom č. 190/2003 Z. z. o strelných zbraniach a strelive. Odporúčam, aby ste dôsledne dodržiavali všetky kroky a požiadavky uvedené v zákone, vrátane získania zbrojného preukazu, registrácie zbrane a dodržiavania bezpečnostných pravidiel. Ak by ste mali akékoľvek pochybnosti alebo nejasnosti, kontaktujte príslušné oddelenie Policajného zboru alebo právneho odborníka na túto oblasť.
+2026-01-23 16:29:18,495 | INFO | Lawyer response: Lawyer: Na Slovensku je možné vlastniť zbraň, vrátane zbraní ako Magnum, avšak musíte splniť určité podmienky a rešpektovať limity stanovené zákonom č. 190/2003 Z. z. o strelných zbraniach a strelive. Pri posudzovaní, či môžete vlastniť konkrétnu zbraň (napríklad revolver alebo pištoľ Magnum), je potrebné zohľadniť nasledujúce faktory:
+
+### 1. **Kategória zbrane**
+   - Zbrane ako Magnum (napr. revolver .357 Magnum alebo .44 Magnum) spadajú do kategórie B (zbrane podliehajúce povoleniu). To znamená, že na ich nadobudnutie a držanie potrebujete povolenie od polície.
+   - Ak ide o zbraň kategórie A (zakázané zbrane, napr. automatické zbrane), tieto sú pre bežných občanov nedostupné, s výnimkou špecifických prípadov (napr. zberateľské účely s osobitným povolením).
+
+### 2. **Požiadavky na zbrojný preukaz**
+   - Na vlastnenie zbrane kategórie B musíte mať zbrojný preukaz na príslušný účel (napr. šport, lov, ochrana osôb a majetku).
+   - Pri žiadosti o povolenie na konkrétnu zbraň musíte uviesť účel jej použitia.
+
+### 3. **Technické limity**
+   - Zákon neustanovuje konkrétne obmedzenia na kaliber alebo výkon zbrane, pokiaľ ide o zbrane kategórie B. To znamená, že zbrane ako Magnum sú legálne, ak spĺňajú technické požiadavky a nie sú upravené na plne automatickú streľbu.
+   - Dôležité je, aby zbraň bola schválená na civilné použitie a nebola zaradená medzi zakázané zbrane (napr. vojenské alebo špeciálne upravené zbrane).
+
+### 4. **Povolenie na nadobudnutie zbrane**
+   - Pred kúpou zbrane kategórie B (napr. Magnum) musíte požiadať o povolenie na nadobudnutie konkrétnej zbrane na príslušnom oddelení Policajného zboru. Povolenie je viazané na konkrétnu zbraň a predajcu.
+
+### 5. **Bezpečné uchovávanie**
+   - Ak vlastníte zbraň, musíte ju uchovávať v súlade s bezpečnostnými pravidlami. To zahŕňa napríklad uloženie zbrane v trezore alebo inom bezpečnom úložisku, ktoré je schválené podľa zákona.
+
+### 6. **Počet zbraní**
+   - Zákon neustanovuje konkrétny limit na počet zbraní, ktoré môžete vlastniť, pokiaľ spĺňate všetky zákonné požiadavky a máte platné povolenia na každú zbraň.
+
+### Záver:
+Áno, môžete vlastniť zbraň ako Magnum, ak spĺňate všetky zákonné požiadavky, vrátane získania zbrojného preukazu a povolenia na nadobudnutie konkrétnej zbrane. Neexistujú špecifické limity na kaliber alebo výkon zbrane kategórie B, pokiaľ je zbraň legálna a schválená na civilné použitie. Ak máte záujem o konkrétny model, odporúčam konzultovať s predajcom zbraní alebo príslušným oddelením Policajného zboru, aby ste si overili, či daná zbraň spĺňa všetky zákonné požiadavky.
+2026-01-23 16:29:22,400 | INFO | Judge response: Judge: Rozhodnutie: Na základe zákona č. 190/2003 Z. z. o strelných zbraniach a strelive je možné vlastniť zbraň, ako je Magnum, za predpokladu, že spĺňate všetky zákonné požiadavky, vrátane získania zbrojného preukazu a povolenia na nadobudnutie konkrétnej zbrane. Neexistujú špecifické limity na kaliber alebo výkon zbrane kategórie B, pokiaľ je zbraň legálna a schválená na civilné použitie. Odporúčam dôsledne dodržiavať všetky kroky a konzultovať s príslušnými orgánmi, aby ste sa uistili, že postupujete v súlade so zákonom.
+2026-01-23 16:30:30,341 | INFO | Lawyer response: Lawyer: Na Slovensku je držanie a používanie zbraní bez povolenia obmedzené na zbrane kategórie D podľa zákona č. 190/2003 Z. z. o strelných zbraniach a strelive. Ak hľadáte zbraň na obranu proti vlkom a medveďom, ktorá nevyžaduje zbrojný preukaz ani povolenie, je potrebné zvážiť nasledujúce možnosti:
+
+### 1. **Zbrane kategórie D**
+   Zbrane kategórie D sú voľne dostupné osobám starším ako 18 rokov a nevyžadujú zbrojný preukaz. Patria sem:
+   - **Plynové zbrane**: Plynové pištole alebo revolvery, ktoré vystreľujú slzotvorné alebo dráždivé látky. Tieto zbrane môžu byť účinné na odplašenie zvierat, ale ich účinnosť proti veľkým predátorom, ako sú medvede, je obmedzená.
+   - **Expanzné zbrane**: Zbrane, ktoré sú upravené na vystreľovanie slepých nábojov. Tieto môžu slúžiť na odplašenie zvierat hlukom.
+   - **Historické zbrane**: Zbrane vyrobené pred rokom 1890 alebo ich repliky, ak sú na čierny prach. Tieto zbrane sú však menej praktické na obranu v reálnych situáciách.
+   - **Mechanické zbrane**: Napríklad luky, kuše alebo iné mechanické zariadenia, ktoré môžu byť použité na obranu. Tieto zbrane však vyžadujú určitú zručnosť a nie sú ideálne na rýchlu obranu.
+
+### 2. **Obmedzenia a použitie**
+   - Zbrane kategórie D môžete vlastniť a používať bez povolenia, ale ich použitie musí byť v súlade so zákonom. Použitie zbrane na obranu proti zvieratám je prípustné, ak ide o nevyhnutnú obranu vášho života alebo zdravia.
+   - Pri použití zbrane na obranu proti zvieratám je dôležité zvážiť, či nejde o chránené druhy (napr. medveď hnedý je na Slovensku chránený). Ak by ste zviera zranili alebo usmrtili, mohli by ste čeliť právnym dôsledkom, pokiaľ by nešlo o nevyhnutnú obranu.
+
+### 3. **Alternatívy k zbraniam**
+   Ak nechcete riešiť otázku zbraní, môžete zvážiť aj iné prostriedky na obranu proti zvieratám:
+   - **Pepřový sprej na medvede**: Špeciálne spreje určené na odplašenie veľkých zvierat, ako sú medvede. Tieto spreje sú legálne a voľne dostupné.
+   - **Zvukové plašiče**: Zariadenia, ktoré vydávajú hlasné zvuky na odplašenie zvierat.
+   - **Silné baterky alebo sirény**: Môžu byť účinné na odplašenie zvierat v noci.
+
+### Záver:
+Ak hľadáte zbraň na obranu proti vlkom a medveďom, ktorá nevyžaduje povolenie, najvhodnejšou možnosťou sú zbrane kategórie D, ako sú plynové zbrane alebo expanzné zbrane. Avšak ich účinnosť proti veľkým predátorom je obmedzená. Odporúčam zvážiť aj alternatívne prostriedky, ako je pepřový sprej na medvede, ktorý je špeciálne navrhnutý na tento účel a je legálny a voľne dostupný. Pri akejkoľvek interakcii s chránenými zvieratami je dôležité konať v súlade so zákonom, aby ste sa vyhli právnym následkom.
+2026-01-23 16:30:34,528 | INFO | Judge response: Judge: Rozhodnutie: Na základe zákona č. 190/2003 Z. z. o strelných zbraniach a strelive je možné vlastniť zbrane kategórie D bez potreby zbrojného preukazu, avšak ich účinnosť na obranu proti veľkým predátorom, ako sú vlci a medvede, je obmedzená. Najvhodnejšou možnosťou na tento účel sú legálne dostupné alternatívy, ako je pepřový sprej na medvede alebo zvukové plašiče. Pri použití akejkoľvek zbrane alebo prostriedku na obranu proti zvieratám je potrebné konať v súlade so zákonom, najmä ak ide o chránené druhy, aby ste sa vyhli právnym dôsledkom. Odporúčam konzultovať konkrétnu situáciu s odborníkom na ochranu prírody alebo právnikom.
+2026-01-23 16:31:34,573 | INFO | User ended discussion or no follow-up provided.
+2026-01-23 16:31:40,831 | INFO | Orchestration complete

@@ -1,0 +1,13 @@
+2026-01-23 15:45:48,994 | INFO | Run directory: runs\20260123_154548
+2026-01-23 15:45:48,994 | WARNING | Data directory not found: data\sample-case1.text
+2026-01-23 15:45:48,994 | INFO | Loaded 0 documents
+2026-01-23 15:45:48,994 | INFO | Case context: country=SK output_language=user_input_language
+2026-01-23 15:45:48,994 | INFO | LLM provider requested: azurefoundry
+2026-01-23 15:45:48,994 | DEBUG | Azure endpoint: https://azureopenai-bmcboot-local2.openai.azure.com/
+2026-01-23 15:45:48,994 | DEBUG | Azure deployment: gpt-4o
+2026-01-23 15:45:48,994 | DEBUG | Azure API key: ********************************************************************************EdP7
+2026-01-23 15:45:48,994 | INFO | Azure Foundry config: auth_method=api_key endpoint=https://azureopenai-bmcboot-local2.openai.azure.com/ deployment=gpt-4o api_version=2025-01-01-preview temperature=0.2
+2026-01-23 15:45:49,036 | INFO | LLM provider active: azurefoundry (AzureFoundryClient)
+2026-01-23 15:45:49,036 | INFO | Starting orchestration with 0 documents
+2026-01-23 15:46:11,426 | INFO | No user response received; ending discussion.
+2026-01-23 15:46:15,791 | INFO | Orchestration complete
