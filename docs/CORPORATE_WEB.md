@@ -19,7 +19,7 @@ Then open `http://localhost:8000` in a browser.
 ## Language
 
 - Default language: Slovak (`sk`).
-- Additional language: German (`de`).
+- Additional languages: German (`de`), English (`en`).
 - The toggle persists in `localStorage` under `aj_lang`.
 
 ## Files

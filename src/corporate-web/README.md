@@ -21,5 +21,5 @@ python -m http.server 8001
 
 ## Language switch
 
-The page ships with Slovak (default) and German translations. Use the `SK/DE` toggle in the header.
+The page ships with Slovak (default), German, and English translations. Use the `SK/DE/EN` toggle in the header.
 The selection is stored in `localStorage` (`aj_lang`).
