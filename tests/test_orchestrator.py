@@ -87,17 +87,24 @@ def test_orchestrator_followup_questions(tmp_path: Path) -> None:
         )
     ]
 
-    question_answers = iter(["Jurisdiction is SK.", "Second answer."])
     followup_questions = iter(["What if we export to EU?", "finish"])
 
     def provider(prompt: str, _timeout: float) -> str | None:
         if "other questions" in prompt.lower():
             return next(followup_questions)
-        return next(question_answers)
+        raise AssertionError("Unexpected prompt for agent question.")
 
     trace = TraceRecorder(run_dir)
+    class NoQuestionLLM:
+        def complete(self, agent_name: str, _prompt: str, _conv, _docs) -> str:
+            if agent_name == "Lawyer":
+                return "LAWYER RESPONSE"
+            if agent_name == "Judge":
+                return "Decision: APPROVED"
+            return "Recommendation: OK\nRationale: OK"
+
     try:
-        llm = MockLLMClient()
+        llm = NoQuestionLLM()
         orchestrator = Orchestrator(
             lawyer=create_lawyer(llm),
             judge=create_judge(llm),
@@ -118,7 +125,44 @@ def test_orchestrator_followup_questions(tmp_path: Path) -> None:
 
     assert result.messages[-1].content.lower() == "finish"
     assert any("export to eu" in message.content.lower() for message in result.messages)
-    assert len(result.messages) == 9
+    assert len(result.messages) == 7
+
+
+def test_court_mode_skips_followup_when_agent_asks(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    prompts: list[str] = []
+
+    def provider(prompt: str, _timeout: float) -> str | None:
+        prompts.append(prompt)
+        if "other questions" in prompt.lower():
+            raise AssertionError("Follow-up prompt should be skipped when agent asks a question.")
+        return "finish"
+
+    trace = TraceRecorder(run_dir)
+    try:
+        llm = MockLLMClient()
+        orchestrator = Orchestrator(
+            lawyer=create_lawyer(llm),
+            judge=create_judge(llm),
+            trace=trace,
+        )
+        result = orchestrator.run(
+            "Late delivery dispute",
+            [],
+            country="SK",
+            language=None,
+            question_timeout_seconds=60,
+            max_discussion_minutes=0,
+            discussion_type="court",
+            user_response_provider=provider,
+        )
+    finally:
+        trace.close()
+
+    assert result.messages[-1].content.lower() == "finish"
+    assert len(prompts) == 1
 
 
 def test_advice_mode_skips_judge_without_request(tmp_path: Path) -> None:
