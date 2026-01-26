@@ -92,7 +92,8 @@ During the discussion, agents may ask follow-up questions. You have up to 5 minu
 the system continues with a note that the user could not answer.
 
 After each round, the CLI asks if you have more questions. Type `finish` to end the
-discussion and generate the final result.
+discussion and generate the final result. If an agent asks you a question and you
+answer it, the CLI will proceed without asking an extra follow-up prompt in that round.
 
 Override the answer timeout (minutes):
 

@@ -93,6 +93,9 @@ class Orchestrator:
         last_judge_message: Message | None = None
 
         while True:
+            asked_user_question = False
+            answered_user_question = False
+            user_finished = False
             if _time_exceeded(start_time, max_seconds):
                 self.logger.info("Discussion stopped due to max time limit.")
                 self.trace.record_event(
@@ -129,14 +132,23 @@ class Orchestrator:
                 )
                 break
 
-            self._maybe_handle_user_question(
+            asked, answered, finished = self._maybe_handle_user_question(
                 lawyer_message,
                 conversation,
                 user_response_provider,
                 remaining_seconds,
                 question_timeout_seconds,
             )
+            if asked:
+                asked_user_question = True
+            if answered:
+                answered_user_question = True
+            if finished:
+                user_finished = True
 
+            if user_finished:
+                self.logger.info("User ended discussion during agent question.")
+                break
             if discussion_type == "advice":
                 wants_judge = self._prompt_for_judge_review(
                     conversation,
@@ -165,13 +177,23 @@ class Orchestrator:
                         )
                         break
 
-                    self._maybe_handle_user_question(
+                    asked, answered, finished = self._maybe_handle_user_question(
                         judge_message,
                         conversation,
                         user_response_provider,
                         remaining_seconds,
                         question_timeout_seconds,
                     )
+                    if asked:
+                        asked_user_question = True
+                    if answered:
+                        answered_user_question = True
+                    if finished:
+                        user_finished = True
+
+                    if user_finished:
+                        self.logger.info("User ended discussion during agent question.")
+                        break
             else:
                 judge_message = self.judge.respond(
                     conversation,
@@ -193,13 +215,23 @@ class Orchestrator:
                     )
                     break
 
-                self._maybe_handle_user_question(
+                asked, answered, finished = self._maybe_handle_user_question(
                     judge_message,
                     conversation,
                     user_response_provider,
                     remaining_seconds,
                     question_timeout_seconds,
                 )
+                if asked:
+                    asked_user_question = True
+                if answered:
+                    answered_user_question = True
+                if finished:
+                    user_finished = True
+
+                if user_finished:
+                    self.logger.info("User ended discussion during agent question.")
+                    break
 
                 decision = _parse_judge_decision(judge_message.content)
                 if decision:
@@ -207,6 +239,9 @@ class Orchestrator:
                 if decision == "rejected":
                     self.logger.info("Judge rejected lawyer response; requesting another solution.")
                     continue
+
+            if user_finished:
+                break
 
             remaining_seconds = _remaining_seconds(start_time, max_seconds)
             if remaining_seconds is not None and remaining_seconds <= 0:
@@ -216,6 +251,9 @@ class Orchestrator:
                     {"max_minutes": max_discussion_minutes},
                 )
                 break
+
+            if asked_user_question and answered_user_question:
+                continue
 
             should_continue = self._prompt_for_followup(
                 conversation,
@@ -293,10 +331,10 @@ class Orchestrator:
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
         question_timeout_seconds: float,
-    ) -> bool:
+    ) -> tuple[bool, bool, bool]:
         question = _extract_question(message.content)
         if not question:
-            return False
+            return False, False, False
 
         self.logger.info("Agent asked a question: %s", question)
         prompt_timeout = question_timeout_seconds
@@ -328,7 +366,10 @@ class Orchestrator:
         )
         conversation.append(user_message)
         self.trace.record_message(user_message)
-        return answered
+        if answered and _is_finish_response(content):
+            self.trace.record_event("discussion_finished", {"reason": "user_finished"})
+            return True, True, True
+        return True, answered, False
 
     def _prompt_for_followup(
         self,
