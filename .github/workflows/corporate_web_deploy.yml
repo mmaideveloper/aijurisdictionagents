@@ -1,0 +1,47 @@
+name: corporate_web
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        type: choice
+        required: true
+        default: dev
+        options:
+          - dev
+          - test
+          - prod
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy corporate_web
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify corporate web build
+        run: |
+          test -f src/corporate-web/index.html
+
+      - name: Deploy via FTP (dev)
+        if: ${{ inputs.environment == 'dev' }}
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ vars.corporate_web_ftp }}
+          username: ${{ vars.corporate_web_ftp_username }}
+          password: ${{ secrets.corporate_web_ftp_password }}
+          local-dir: src/corporate-web/
+          server-dir: /www_root_aiagenticsolutions_eu/
+
+      - name: Deployment placeholder
+        if: ${{ inputs.environment != 'dev' }}
+        run: |
+          echo "Deployment for '${{ inputs.environment }}' is not implemented yet."
+          echo "Configure environment-specific steps when ready."
