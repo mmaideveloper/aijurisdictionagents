@@ -19,11 +19,12 @@ If you finish change status to In review and send me notice.
 Add a comment to the issue: "Implemented by Codex".
 Use scripts/project_status.ps1 when possible and ensure gh has read:project + project scopes.
 
+Always activate the conda environment in `./conda` before running any project command.
+
 If the user asks to close a task:
 - Review the PR and perform a code review.
 - If acceptable, approve and merge to `main`.
 - Add a comment to the issue with the review/merge outcome.
 - Delete the feature branch and comment that deletion on the issue.
 - Move the task to Done (closed).
-
 
