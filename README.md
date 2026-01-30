@@ -122,7 +122,7 @@ Country and language parameters:
 - `--language` is optional (BCP-47 tag recommended, e.g. `sk-SK`, `en-US`). If omitted, outputs default to the user's input language. If set, agent discussion and final outputs follow the requested language.
 
 Discussion type:
-- `--discussion-type advice` (default): Lawyer gives advice; judge review is optional.
+- `--discussion-type advice` (default): Lawyer gives advice without judge review.
 - `--discussion-type court`: Judge must approve or reject the lawyer's response; on rejection the lawyer retries. In court mode, the lawyer asks whether to draft filings when a court action is recommended, and the judge challenges weaknesses and requests missing documents.
 
 Case storage (Slovak advice mode):

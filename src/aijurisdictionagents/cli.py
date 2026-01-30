@@ -212,7 +212,7 @@ def main() -> int:
     llm = get_llm_client()
     logger.info("LLM provider active: %s (%s)", provider, type(llm).__name__)
     lawyer = create_lawyer_agent(llm, args.country)
-    judge = create_judge(llm)
+    judge = create_judge(llm) if args.discussion_type == "court" else None
 
     trace = TraceRecorder(run_dir)
     try:

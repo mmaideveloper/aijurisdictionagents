@@ -304,3 +304,38 @@ def test_discussion_prompt_respects_language_override() -> None:
     )
 
     assert "Respond in English." in prompt
+
+
+def test_orchestrator_advice_without_judge(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    documents = [
+        Document(
+            doc_id="doc-1",
+            path=str(tmp_path / "doc.txt"),
+            content="Payment was made and no delivery occurred.",
+        )
+    ]
+
+    trace = TraceRecorder(run_dir)
+    try:
+        llm = MockLLMClient()
+        orchestrator = Orchestrator(
+            lawyer=create_lawyer(llm),
+            judge=None,
+            trace=trace,
+        )
+        result = orchestrator.run(
+            "Advice request",
+            documents,
+            country="SK",
+            language="en",
+            question_timeout_seconds=60,
+            discussion_type="advice",
+            user_response_provider=lambda _q, _t: None,
+        )
+    finally:
+        trace.close()
+
+    assert result.final_recommendation

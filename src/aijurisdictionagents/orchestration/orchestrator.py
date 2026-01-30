@@ -16,7 +16,7 @@ class Orchestrator:
     def __init__(
         self,
         lawyer: Agent,
-        judge: Agent,
+        judge: Agent | None,
         trace: TraceRecorder,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -45,6 +45,8 @@ class Orchestrator:
         discussion_type = _normalize_discussion_type(discussion_type)
         if discussion_type not in {"advice", "court"}:
             raise ValueError("discussion_type must be 'advice' or 'court'")
+        if discussion_type == "court" and self.judge is None:
+            raise ValueError("judge is required for court discussion type")
 
         self.logger.info("Starting orchestration with %d documents", len(documents))
         output_language_hint = _output_language_hint(language)
@@ -78,14 +80,16 @@ class Orchestrator:
             discussion_type=discussion_type,
             role="lawyer",
         )
-        judge_prompt = _augment_prompt(
-            self.judge.system_prompt,
-            country,
-            output_language_hint,
-            discussion_only=True,
-            discussion_type=discussion_type,
-            role="judge",
-        )
+        judge_prompt = None
+        if self.judge is not None:
+            judge_prompt = _augment_prompt(
+                self.judge.system_prompt,
+                country,
+                output_language_hint,
+                discussion_only=True,
+                discussion_type=discussion_type,
+                role="judge",
+            )
         max_seconds = None if max_discussion_minutes == 0 else max_discussion_minutes * 60
         start_time = time.monotonic()
 
@@ -150,51 +154,54 @@ class Orchestrator:
                 self.logger.info("User ended discussion during agent question.")
                 break
             if discussion_type == "advice":
-                wants_judge = self._prompt_for_judge_review(
-                    conversation,
-                    user_response_provider,
-                    remaining_seconds,
-                    question_timeout_seconds,
-                )
-                if wants_judge:
-                    judge_message = self.judge.respond(
-                        conversation,
-                        [],
-                        citations,
-                        system_prompt_override=judge_prompt,
-                    )
-                    conversation.append(judge_message)
-                    self.trace.record_message(judge_message)
-                    last_judge_message = judge_message
-                    self.logger.info("Judge response: %s", judge_message.content)
-
-                    remaining_seconds = _remaining_seconds(start_time, max_seconds)
-                    if remaining_seconds is not None and remaining_seconds <= 0:
-                        self.logger.info("Discussion stopped before user prompt (time limit).")
-                        self.trace.record_event(
-                            "discussion_timeout",
-                            {"max_minutes": max_discussion_minutes},
-                        )
-                        break
-
-                    asked, answered, finished = self._maybe_handle_user_question(
-                        judge_message,
+                if self.judge is not None:
+                    wants_judge = self._prompt_for_judge_review(
                         conversation,
                         user_response_provider,
                         remaining_seconds,
                         question_timeout_seconds,
                     )
-                    if asked:
-                        asked_user_question = True
-                    if answered:
-                        answered_user_question = True
-                    if finished:
-                        user_finished = True
+                    if wants_judge:
+                        judge_message = self.judge.respond(
+                            conversation,
+                            [],
+                            citations,
+                            system_prompt_override=judge_prompt,
+                        )
+                        conversation.append(judge_message)
+                        self.trace.record_message(judge_message)
+                        last_judge_message = judge_message
+                        self.logger.info("Judge response: %s", judge_message.content)
 
-                    if user_finished:
-                        self.logger.info("User ended discussion during agent question.")
-                        break
+                        remaining_seconds = _remaining_seconds(start_time, max_seconds)
+                        if remaining_seconds is not None and remaining_seconds <= 0:
+                            self.logger.info("Discussion stopped before user prompt (time limit).")
+                            self.trace.record_event(
+                                "discussion_timeout",
+                                {"max_minutes": max_discussion_minutes},
+                            )
+                            break
+
+                        asked, answered, finished = self._maybe_handle_user_question(
+                            judge_message,
+                            conversation,
+                            user_response_provider,
+                            remaining_seconds,
+                            question_timeout_seconds,
+                        )
+                        if asked:
+                            asked_user_question = True
+                        if answered:
+                            answered_user_question = True
+                        if finished:
+                            user_finished = True
+
+                        if user_finished:
+                            self.logger.info("User ended discussion during agent question.")
+                            break
             else:
+                if self.judge is None or judge_prompt is None:
+                    raise ValueError("judge is required for court discussion type")
                 judge_message = self.judge.respond(
                     conversation,
                     [],
@@ -273,12 +280,15 @@ class Orchestrator:
                 sources=list(citations),
             )
         if last_judge_message is None:
-            last_judge_message = Message(
-                role="assistant",
-                agent_name=self.judge.name,
-                content="No judge response generated.",
-                sources=list(citations),
-            )
+            if self.judge is None:
+                last_judge_message = last_lawyer_message
+            else:
+                last_judge_message = Message(
+                    role="assistant",
+                    agent_name=self.judge.name,
+                    content="No judge response generated.",
+                    sources=list(citations),
+                )
 
         final_text = self._generate_final_summary(
             conversation,
@@ -322,7 +332,8 @@ class Orchestrator:
         output_language_hint: str,
     ) -> str:
         system_prompt = _final_summary_prompt(country, output_language_hint)
-        return self.judge.llm.complete("FinalSummary", system_prompt, conversation, documents)
+        llm = self.judge.llm if self.judge is not None else self.lawyer.llm
+        return llm.complete("FinalSummary", system_prompt, conversation, documents)
 
     def _maybe_handle_user_question(
         self,
