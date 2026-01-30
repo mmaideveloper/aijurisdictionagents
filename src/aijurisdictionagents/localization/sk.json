@@ -12,6 +12,7 @@
   "cli.trace_saved": "Záznam uložený do: {path}",
   "cli.case_stored": "Prípad uložený: {case_id}",
   "cli.case_folder": "Priečinok prípadu: {path}",
+  "cli.case_not_found_create": "Prípad pre {case_id} nebol nájdený, zakladám nový prípad.",
   "cli.ignore_case_id": "Ignorujem --case-id, pretože toto nie je slovenský poradenský režim.",
   "cli.none": "Žiadne",
   "orchestrator.no_response_minutes": "Používateľ nemohol odpovedať do {minutes} minút.",

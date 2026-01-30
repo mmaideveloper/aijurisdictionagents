@@ -127,8 +127,8 @@ Discussion type:
 
 Case storage (Slovak advice mode):
 - For `--discussion-type advice` with `--country SK` (or Slovakia), a case folder is created under `cases/`.
-- Uploaded files are copied to `cases/<CASE-ID>/documents/` with a date prefix.
-- Use `--case-id CASE-...` to append a new discussion entry to an existing case.
+- Uploaded files are copied to `cases/<case-id>/documents/` with a date prefix.
+- Use `--case-id <guid>` to append a new discussion entry to an existing case.
 
 Environment variables are loaded from `.env` if present. Copy `.env.example` to `.env`
 and edit as needed.

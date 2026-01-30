@@ -310,7 +310,9 @@ class Orchestrator:
                 citations,
                 language,
             )
-        if not final_rationale:
+        if self.judge is None and discussion_type == "advice":
+            final_rationale = ""
+        elif not final_rationale:
             final_rationale = last_judge_message.content
 
         result = OrchestrationResult(

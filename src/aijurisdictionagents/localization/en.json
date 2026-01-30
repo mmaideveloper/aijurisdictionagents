@@ -12,6 +12,7 @@
   "cli.trace_saved": "Trace saved to: {path}",
   "cli.case_stored": "Case stored: {case_id}",
   "cli.case_folder": "Case folder: {path}",
+  "cli.case_not_found_create": "Case not found for {case_id}, creating a new case.",
   "cli.ignore_case_id": "Ignoring --case-id because this is not Slovak advice mode.",
   "cli.none": "None",
   "orchestrator.no_response_minutes": "User could not answer within {minutes} minutes.",

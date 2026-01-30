@@ -42,7 +42,7 @@ def test_case_store_creates_case_and_copies_files(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
 
-    assert record.case_id.startswith("CASE-")
+    assert len(record.case_id) >= 32
     assert (record.path / "case.json").exists()
     assert (record.path / "description.md").exists()
     documents_dir = record.path / "documents"

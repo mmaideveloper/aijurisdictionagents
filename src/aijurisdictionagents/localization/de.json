@@ -12,6 +12,7 @@
   "cli.trace_saved": "Trace gespeichert unter: {path}",
   "cli.case_stored": "Fall gespeichert: {case_id}",
   "cli.case_folder": "Fallordner: {path}",
+  "cli.case_not_found_create": "Fall für {case_id} nicht gefunden, erstelle einen neuen Fall.",
   "cli.ignore_case_id": "Ignoriere --case-id, da dies kein slowakischer Beratungsmodus ist.",
   "cli.none": "Keine",
   "orchestrator.no_response_minutes": "Der Nutzer konnte nicht innerhalb von {minutes} Minuten antworten.",

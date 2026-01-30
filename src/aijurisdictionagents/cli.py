@@ -249,22 +249,43 @@ def main() -> int:
     else:
         print(f"- {translate('cli.none', args.language or None)}")
 
-    print(f"\n{translate('cli.judge_rationale', args.language or None)}")
-    print(result.judge_rationale)
+    if args.discussion_type == "court":
+        print(f"\n{translate('cli.judge_rationale', args.language or None)}")
+        print(result.judge_rationale)
     print(f"\n{translate('cli.trace_saved', args.language or None, path=run_dir)}")
 
     case_id = (args.case_id or "").strip()
     if args.discussion_type == "advice" and is_slovakia(args.country):
-        case_store = CaseStore(Path("cases"))
+        repo_root = Path(__file__).resolve().parents[2]
+        case_store = CaseStore(repo_root / "cases")
         try:
             if case_id:
-                case_record = case_store.append_discussion(
-                    case_id=case_id,
-                    messages=result.messages,
-                    result=result,
-                    agent_name=lawyer.name,
-                    data_dir=args.data_dir,
-                )
+                try:
+                    case_record = case_store.append_discussion(
+                        case_id=case_id,
+                        messages=result.messages,
+                        result=result,
+                        agent_name=lawyer.name,
+                        data_dir=args.data_dir,
+                    )
+                except FileNotFoundError:
+                    logger.warning(
+                        translate(
+                            "cli.case_not_found_create",
+                            args.language or None,
+                            case_id=case_id,
+                        )
+                    )
+                    case_record = case_store.create_case(
+                        instruction=instruction,
+                        country=args.country,
+                        language=args.language or None,
+                        messages=result.messages,
+                        result=result,
+                        agent_name=lawyer.name,
+                        data_dir=args.data_dir,
+                        case_id=case_id,
+                    )
             else:
                 case_record = case_store.create_case(
                     instruction=instruction,

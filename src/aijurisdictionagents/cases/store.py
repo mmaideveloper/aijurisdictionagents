@@ -77,6 +77,14 @@ class CaseStore:
         case_dir = self.root / case_id
         case_path = case_dir / "case.json"
         if not case_path.exists():
+            legacy_id = f"CASE-{case_id}" if not case_id.startswith("CASE-") else ""
+            if legacy_id:
+                legacy_dir = self.root / legacy_id
+                legacy_path = legacy_dir / "case.json"
+                if legacy_path.exists():
+                    with legacy_path.open("r", encoding="utf-8") as handle:
+                        data = json.load(handle)
+                    return CaseRecord(case_id=legacy_id, path=legacy_dir, data=data)
             raise FileNotFoundError(f"Case not found: {case_id}")
         with case_path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
@@ -133,7 +141,7 @@ def _isoformat(value: datetime) -> str:
 
 
 def _generate_case_id() -> str:
-    return f"CASE-{uuid.uuid4()}"
+    return str(uuid.uuid4())
 
 
 def _ensure_case_dirs(case_dir: Path) -> None:
