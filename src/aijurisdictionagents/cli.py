@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from .agents import create_judge, create_lawyer_agent
 from .cases import CaseStore
 from .documents import load_documents
-from .jurisdiction import is_slovakia
+from .jurisdiction import is_slovakia, is_slovak_language
 from .llm import get_llm_client
 from .observability import TraceRecorder, create_run_dir, setup_logging
 from .orchestration import Orchestrator
@@ -99,24 +99,45 @@ def _timed_input_posix(prompt: str, timeout_seconds: float) -> str | None:
     return value or None
 
 
-def _prompt_user_with_timeout(question: str, timeout_seconds: float) -> str | None:
+def _prompt_user_with_timeout(
+    question: str, timeout_seconds: float, language: str | None
+) -> str | None:
     if timeout_seconds <= 0:
-        print("\nNo time remaining for a user response.")
+        if is_slovak_language(language):
+            print("\nNezostal žiadny čas na odpoveď používateľa.")
+        else:
+            print("\nNo time remaining for a user response.")
         return None
 
-    print(f"\nLawyer Agent question: {question}")
+    if is_slovak_language(language):
+        print(f"\nOtázka advokáta: {question}")
+    else:
+        print(f"\nLawyer Agent question: {question}")
     seconds_display = int(round(timeout_seconds))
     if seconds_display >= 60:
         minutes = seconds_display // 60
-        print(
-            f"You have {minutes} minutes ({seconds_display} seconds) to answer. "
-            "Press Enter to skip."
-        )
+        if is_slovak_language(language):
+            print(
+                f"Na odpoveď máte {minutes} minút ({seconds_display} sekúnd). "
+                "Stlačte Enter pre preskočenie."
+            )
+        else:
+            print(
+                f"You have {minutes} minutes ({seconds_display} seconds) to answer. "
+                "Press Enter to skip."
+            )
     else:
-        print(f"You have {seconds_display} seconds to answer. Press Enter to skip.")
-    response = _timed_input("Your answer: ", timeout_seconds)
+        if is_slovak_language(language):
+            print(f"Na odpoveď máte {seconds_display} sekúnd. Stlačte Enter pre preskočenie.")
+        else:
+            print(f"You have {seconds_display} seconds to answer. Press Enter to skip.")
+    response_prompt = "Vaša odpoveď: " if is_slovak_language(language) else "Your answer: "
+    response = _timed_input(response_prompt, timeout_seconds)
     if response is None:
-        print("No response received within the allotted time.")
+        if is_slovak_language(language):
+            print("V stanovenom čase neprišla žiadna odpoveď.")
+        else:
+            print("No response received within the allotted time.")
     return response
 
 
@@ -225,7 +246,9 @@ def main() -> int:
             question_timeout_seconds=args.question_timeout_minutes * 60,
             max_discussion_minutes=args.discussion_max_minutes,
             discussion_type=args.discussion_type,
-            user_response_provider=_prompt_user_with_timeout,
+            user_response_provider=lambda q, t: _prompt_user_with_timeout(
+                q, t, args.language or None
+            ),
         )
     finally:
         trace.close()

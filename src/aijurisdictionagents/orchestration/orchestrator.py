@@ -6,6 +6,7 @@ from typing import Callable, List, Sequence
 
 from ..agents import Agent
 from ..documents import select_sources
+from ..jurisdiction import is_slovak_language
 from ..observability import TraceRecorder
 from ..schemas import Document, Message, OrchestrationResult, Source
 
@@ -142,6 +143,7 @@ class Orchestrator:
                 user_response_provider,
                 remaining_seconds,
                 question_timeout_seconds,
+                language,
             )
             if asked:
                 asked_user_question = True
@@ -160,6 +162,7 @@ class Orchestrator:
                         user_response_provider,
                         remaining_seconds,
                         question_timeout_seconds,
+                        language,
                     )
                     if wants_judge:
                         judge_message = self.judge.respond(
@@ -188,6 +191,7 @@ class Orchestrator:
                             user_response_provider,
                             remaining_seconds,
                             question_timeout_seconds,
+                            language,
                         )
                         if asked:
                             asked_user_question = True
@@ -228,6 +232,7 @@ class Orchestrator:
                     user_response_provider,
                     remaining_seconds,
                     question_timeout_seconds,
+                    language,
                 )
                 if asked:
                     asked_user_question = True
@@ -267,6 +272,7 @@ class Orchestrator:
                 user_response_provider,
                 remaining_seconds,
                 question_timeout_seconds,
+                language,
             )
             if not should_continue:
                 self.logger.info("User ended discussion or no follow-up provided.")
@@ -342,6 +348,7 @@ class Orchestrator:
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
         question_timeout_seconds: float,
+        language: str | None,
     ) -> tuple[bool, bool, bool]:
         question = _extract_question(message.content)
         if not question:
@@ -362,7 +369,7 @@ class Orchestrator:
             content = response.strip()
             answered = True
         else:
-            content = _no_response_message(prompt_timeout)
+            content = _no_response_message(prompt_timeout, language)
             answered = False
             self.trace.record_event(
                 "user_timeout",
@@ -388,6 +395,7 @@ class Orchestrator:
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
         question_timeout_seconds: float,
+        language: str | None,
     ) -> bool:
         if user_response_provider is None:
             return False
@@ -398,7 +406,7 @@ class Orchestrator:
         if prompt_timeout <= 0:
             return False
 
-        prompt = "Do you have any other questions? Type 'finish' to end."
+        prompt = _followup_prompt(language)
         response = user_response_provider(prompt, prompt_timeout)
         if not response:
             self.trace.record_event(
@@ -427,6 +435,7 @@ class Orchestrator:
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
         question_timeout_seconds: float,
+        language: str | None,
     ) -> bool:
         if user_response_provider is None:
             return False
@@ -437,7 +446,7 @@ class Orchestrator:
         if prompt_timeout <= 0:
             return False
 
-        prompt = "Do you want the judge to review this advice? (yes/no)"
+        prompt = _judge_review_prompt(language)
         response = user_response_provider(prompt, prompt_timeout)
         if not response:
             self.trace.record_event(
@@ -578,14 +587,32 @@ def _parse_final_summary(text: str) -> tuple[str, str]:
     return recommendation, rationale
 
 
-def _no_response_message(timeout_seconds: float) -> str:
+def _no_response_message(timeout_seconds: float, language: str | None) -> str:
     if timeout_seconds >= 60:
         minutes = int(round(timeout_seconds / 60))
         unit = "minute" if minutes == 1 else "minutes"
+        if is_slovak_language(language):
+            unit = "minúty" if minutes in {2, 3, 4} else "minút"
+            return f"Používateľ nemohol odpovedať do {minutes} {unit}."
         return f"User could not answer within {minutes} {unit}."
     seconds = int(round(timeout_seconds))
     unit = "second" if seconds == 1 else "seconds"
+    if is_slovak_language(language):
+        unit = "sekundy" if seconds in {2, 3, 4} else "sekúnd"
+        return f"Používateľ nemohol odpovedať do {seconds} {unit}."
     return f"User could not answer within {seconds} {unit}."
+
+
+def _followup_prompt(language: str | None) -> str:
+    if is_slovak_language(language):
+        return "Máte ešte nejaké otázky? Napíšte 'finish' na ukončenie."
+    return "Do you have any other questions? Type 'finish' to end."
+
+
+def _judge_review_prompt(language: str | None) -> str:
+    if is_slovak_language(language):
+        return "Chcete, aby sudca preskúmal toto stanovisko? (áno/nie)"
+    return "Do you want the judge to review this advice? (yes/no)"
 
 
 def _is_finish_response(content: str) -> bool:
