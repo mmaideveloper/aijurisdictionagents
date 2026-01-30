@@ -5,8 +5,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from aijurisdictionagents.agents import create_judge, create_lawyer
+from aijurisdictionagents.agents import create_lawyer_agent
+from aijurisdictionagents.cases import CaseStore
 from aijurisdictionagents.documents import load_documents
+from aijurisdictionagents.jurisdiction import is_slovakia
 from aijurisdictionagents.llm import get_llm_client
 from aijurisdictionagents.observability import TraceRecorder, create_run_dir, setup_logging
 from aijurisdictionagents.orchestration import Orchestrator
@@ -27,8 +29,8 @@ def main() -> None:
     logger.info("LLM provider requested: %s", provider)
     llm = get_llm_client()
     logger.info("LLM provider active: %s (%s)", provider, type(llm).__name__)
-    lawyer = create_lawyer(llm)
-    judge = create_judge(llm)
+    lawyer = create_lawyer_agent(llm, country="SK")
+    judge = None
 
     trace = TraceRecorder(run_dir)
     try:
@@ -37,7 +39,7 @@ def main() -> None:
             instruction,
             documents,
             country="SK",
-            language=None,
+            language="en",
             question_timeout_seconds=300,
             discussion_type="advice",
         )
@@ -51,6 +53,19 @@ def main() -> None:
         print(f"- {source.filename}: {source.snippet}")
     print("\nJudge Rationale:")
     print(result.judge_rationale)
+    if is_slovakia("SK"):
+        case_store = CaseStore(Path("cases"))
+        case_record = case_store.create_case(
+            instruction=instruction,
+            country="SK",
+            language="en",
+            messages=result.messages,
+            result=result,
+            agent_name=lawyer.name,
+            data_dir=Path("data"),
+        )
+        print(f"\nCase stored: {case_record.case_id}")
+        print(f"Case folder: {case_record.path}")
 
 
 if __name__ == "__main__":

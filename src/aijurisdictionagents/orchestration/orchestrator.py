@@ -6,6 +6,7 @@ from typing import Callable, List, Sequence
 
 from ..agents import Agent
 from ..documents import select_sources
+from ..localization import translate
 from ..observability import TraceRecorder
 from ..schemas import Document, Message, OrchestrationResult, Source
 
@@ -16,7 +17,7 @@ class Orchestrator:
     def __init__(
         self,
         lawyer: Agent,
-        judge: Agent,
+        judge: Agent | None,
         trace: TraceRecorder,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -45,6 +46,8 @@ class Orchestrator:
         discussion_type = _normalize_discussion_type(discussion_type)
         if discussion_type not in {"advice", "court"}:
             raise ValueError("discussion_type must be 'advice' or 'court'")
+        if discussion_type == "court" and self.judge is None:
+            raise ValueError("judge is required for court discussion type")
 
         self.logger.info("Starting orchestration with %d documents", len(documents))
         output_language_hint = _output_language_hint(language)
@@ -78,14 +81,16 @@ class Orchestrator:
             discussion_type=discussion_type,
             role="lawyer",
         )
-        judge_prompt = _augment_prompt(
-            self.judge.system_prompt,
-            country,
-            output_language_hint,
-            discussion_only=True,
-            discussion_type=discussion_type,
-            role="judge",
-        )
+        judge_prompt = None
+        if self.judge is not None:
+            judge_prompt = _augment_prompt(
+                self.judge.system_prompt,
+                country,
+                output_language_hint,
+                discussion_only=True,
+                discussion_type=discussion_type,
+                role="judge",
+            )
         max_seconds = None if max_discussion_minutes == 0 else max_discussion_minutes * 60
         start_time = time.monotonic()
 
@@ -138,6 +143,7 @@ class Orchestrator:
                 user_response_provider,
                 remaining_seconds,
                 question_timeout_seconds,
+                language,
             )
             if asked:
                 asked_user_question = True
@@ -150,51 +156,56 @@ class Orchestrator:
                 self.logger.info("User ended discussion during agent question.")
                 break
             if discussion_type == "advice":
-                wants_judge = self._prompt_for_judge_review(
-                    conversation,
-                    user_response_provider,
-                    remaining_seconds,
-                    question_timeout_seconds,
-                )
-                if wants_judge:
-                    judge_message = self.judge.respond(
-                        conversation,
-                        [],
-                        citations,
-                        system_prompt_override=judge_prompt,
-                    )
-                    conversation.append(judge_message)
-                    self.trace.record_message(judge_message)
-                    last_judge_message = judge_message
-                    self.logger.info("Judge response: %s", judge_message.content)
-
-                    remaining_seconds = _remaining_seconds(start_time, max_seconds)
-                    if remaining_seconds is not None and remaining_seconds <= 0:
-                        self.logger.info("Discussion stopped before user prompt (time limit).")
-                        self.trace.record_event(
-                            "discussion_timeout",
-                            {"max_minutes": max_discussion_minutes},
-                        )
-                        break
-
-                    asked, answered, finished = self._maybe_handle_user_question(
-                        judge_message,
+                if self.judge is not None:
+                    wants_judge = self._prompt_for_judge_review(
                         conversation,
                         user_response_provider,
                         remaining_seconds,
                         question_timeout_seconds,
+                        language,
                     )
-                    if asked:
-                        asked_user_question = True
-                    if answered:
-                        answered_user_question = True
-                    if finished:
-                        user_finished = True
+                    if wants_judge:
+                        judge_message = self.judge.respond(
+                            conversation,
+                            [],
+                            citations,
+                            system_prompt_override=judge_prompt,
+                        )
+                        conversation.append(judge_message)
+                        self.trace.record_message(judge_message)
+                        last_judge_message = judge_message
+                        self.logger.info("Judge response: %s", judge_message.content)
 
-                    if user_finished:
-                        self.logger.info("User ended discussion during agent question.")
-                        break
+                        remaining_seconds = _remaining_seconds(start_time, max_seconds)
+                        if remaining_seconds is not None and remaining_seconds <= 0:
+                            self.logger.info("Discussion stopped before user prompt (time limit).")
+                            self.trace.record_event(
+                                "discussion_timeout",
+                                {"max_minutes": max_discussion_minutes},
+                            )
+                            break
+
+                        asked, answered, finished = self._maybe_handle_user_question(
+                            judge_message,
+                            conversation,
+                            user_response_provider,
+                            remaining_seconds,
+                            question_timeout_seconds,
+                            language,
+                        )
+                        if asked:
+                            asked_user_question = True
+                        if answered:
+                            answered_user_question = True
+                        if finished:
+                            user_finished = True
+
+                        if user_finished:
+                            self.logger.info("User ended discussion during agent question.")
+                            break
             else:
+                if self.judge is None or judge_prompt is None:
+                    raise ValueError("judge is required for court discussion type")
                 judge_message = self.judge.respond(
                     conversation,
                     [],
@@ -221,6 +232,7 @@ class Orchestrator:
                     user_response_provider,
                     remaining_seconds,
                     question_timeout_seconds,
+                    language,
                 )
                 if asked:
                     asked_user_question = True
@@ -260,6 +272,7 @@ class Orchestrator:
                 user_response_provider,
                 remaining_seconds,
                 question_timeout_seconds,
+                language,
             )
             if not should_continue:
                 self.logger.info("User ended discussion or no follow-up provided.")
@@ -269,16 +282,19 @@ class Orchestrator:
             last_lawyer_message = Message(
                 role="assistant",
                 agent_name=self.lawyer.name,
-                content="No lawyer response generated.",
+                content=translate("orchestrator.no_lawyer_response", language),
                 sources=list(citations),
             )
         if last_judge_message is None:
-            last_judge_message = Message(
-                role="assistant",
-                agent_name=self.judge.name,
-                content="No judge response generated.",
-                sources=list(citations),
-            )
+            if self.judge is None:
+                last_judge_message = last_lawyer_message
+            else:
+                last_judge_message = Message(
+                    role="assistant",
+                    agent_name=self.judge.name,
+                    content=translate("orchestrator.no_judge_response", language),
+                    sources=list(citations),
+                )
 
         final_text = self._generate_final_summary(
             conversation,
@@ -292,8 +308,11 @@ class Orchestrator:
                 last_lawyer_message,
                 last_judge_message,
                 citations,
+                language,
             )
-        if not final_rationale:
+        if self.judge is None and discussion_type == "advice":
+            final_rationale = ""
+        elif not final_rationale:
             final_rationale = last_judge_message.content
 
         result = OrchestrationResult(
@@ -322,7 +341,8 @@ class Orchestrator:
         output_language_hint: str,
     ) -> str:
         system_prompt = _final_summary_prompt(country, output_language_hint)
-        return self.judge.llm.complete("FinalSummary", system_prompt, conversation, documents)
+        llm = self.judge.llm if self.judge is not None else self.lawyer.llm
+        return llm.complete("FinalSummary", system_prompt, conversation, documents)
 
     def _maybe_handle_user_question(
         self,
@@ -331,6 +351,7 @@ class Orchestrator:
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
         question_timeout_seconds: float,
+        language: str | None,
     ) -> tuple[bool, bool, bool]:
         question = _extract_question(message.content)
         if not question:
@@ -351,7 +372,7 @@ class Orchestrator:
             content = response.strip()
             answered = True
         else:
-            content = _no_response_message(prompt_timeout)
+            content = _no_response_message(prompt_timeout, language)
             answered = False
             self.trace.record_event(
                 "user_timeout",
@@ -377,6 +398,7 @@ class Orchestrator:
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
         question_timeout_seconds: float,
+        language: str | None,
     ) -> bool:
         if user_response_provider is None:
             return False
@@ -387,7 +409,7 @@ class Orchestrator:
         if prompt_timeout <= 0:
             return False
 
-        prompt = "Do you have any other questions? Type 'finish' to end."
+        prompt = _followup_prompt(language)
         response = user_response_provider(prompt, prompt_timeout)
         if not response:
             self.trace.record_event(
@@ -416,6 +438,7 @@ class Orchestrator:
         user_response_provider: UserResponseProvider | None,
         remaining_seconds: float | None,
         question_timeout_seconds: float,
+        language: str | None,
     ) -> bool:
         if user_response_provider is None:
             return False
@@ -426,7 +449,7 @@ class Orchestrator:
         if prompt_timeout <= 0:
             return False
 
-        prompt = "Do you want the judge to review this advice? (yes/no)"
+        prompt = _judge_review_prompt(language)
         response = user_response_provider(prompt, prompt_timeout)
         if not response:
             self.trace.record_event(
@@ -448,14 +471,13 @@ class Orchestrator:
 
 
 def _build_recommendation(
-    lawyer_message: Message, judge_message: Message, citations: Sequence[Source]
+    lawyer_message: Message,
+    judge_message: Message,
+    citations: Sequence[Source],
+    language: str | None,
 ) -> str:
-    sources_note = "" if citations else " No supporting documents were cited."
-    return (
-        "Recommendation: Proceed with the user's requested position, "
-        "but address the judge's clarifying question and emphasize the strongest facts."
-        f"{sources_note}"
-    )
+    sources_note = "" if citations else translate("orchestrator.sources_note", language)
+    return translate("orchestrator.recommendation_default", language) + sources_note
 
 
 def _extract_question(content: str) -> str | None:
@@ -495,9 +517,9 @@ def _augment_prompt(
     discussion_type: str,
     role: str,
 ) -> str:
-    language_line = "Respond in the same language as the user's instruction."
-    if not discussion_only:
-        language_line = f"Respond in {output_language_hint}."
+    language_line = f"Respond in {output_language_hint}."
+    if discussion_only and output_language_hint == "the same language as the user's instruction":
+        language_line = "Respond in the same language as the user's instruction."
 
     court_guidance = ""
     if discussion_type == "court":
@@ -567,14 +589,20 @@ def _parse_final_summary(text: str) -> tuple[str, str]:
     return recommendation, rationale
 
 
-def _no_response_message(timeout_seconds: float) -> str:
+def _no_response_message(timeout_seconds: float, language: str | None) -> str:
     if timeout_seconds >= 60:
         minutes = int(round(timeout_seconds / 60))
-        unit = "minute" if minutes == 1 else "minutes"
-        return f"User could not answer within {minutes} {unit}."
+        return translate("orchestrator.no_response_minutes", language, minutes=minutes)
     seconds = int(round(timeout_seconds))
-    unit = "second" if seconds == 1 else "seconds"
-    return f"User could not answer within {seconds} {unit}."
+    return translate("orchestrator.no_response_seconds", language, seconds=seconds)
+
+
+def _followup_prompt(language: str | None) -> str:
+    return translate("orchestrator.followup_prompt", language)
+
+
+def _judge_review_prompt(language: str | None) -> str:
+    return translate("orchestrator.judge_review_prompt", language)
 
 
 def _is_finish_response(content: str) -> bool:
