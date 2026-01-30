@@ -4,6 +4,7 @@ from aijurisdictionagents.agents import create_judge, create_lawyer
 from aijurisdictionagents.llm import MockLLMClient
 from aijurisdictionagents.observability import TraceRecorder
 from aijurisdictionagents.orchestration import Orchestrator
+from aijurisdictionagents.orchestration.orchestrator import _augment_prompt
 from aijurisdictionagents.schemas import Document
 
 
@@ -264,3 +265,28 @@ def test_court_mode_retries_on_rejection(tmp_path: Path) -> None:
 
     assert calls.count("Lawyer") >= 2
     assert calls.count("Judge") == 2
+
+
+def test_court_prompt_guidance_included() -> None:
+    base_prompt = "BASE PROMPT"
+    lawyer_prompt = _augment_prompt(
+        base_prompt,
+        country="SK",
+        output_language_hint="English",
+        discussion_only=True,
+        discussion_type="court",
+        role="lawyer",
+    )
+    judge_prompt = _augment_prompt(
+        base_prompt,
+        country="SK",
+        output_language_hint="English",
+        discussion_only=True,
+        discussion_type="court",
+        role="judge",
+    )
+
+    assert "represent the user's position" in lawyer_prompt
+    assert "draft the proposal/pleading" in lawyer_prompt
+    assert "validator of the lawyer's advice" in judge_prompt
+    assert "Decision: APPROVED" in judge_prompt

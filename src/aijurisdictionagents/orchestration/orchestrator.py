@@ -499,6 +499,24 @@ def _augment_prompt(
     if not discussion_only:
         language_line = f"Respond in {output_language_hint}."
 
+    court_guidance = ""
+    if discussion_type == "court":
+        if role == "lawyer":
+            court_guidance = (
+                "\nCourt mode: You represent the user's position as their legal counsel. "
+                "If the recommended next step involves filing or formal court action, "
+                "explicitly ask whether the user wants you to draft the proposal/pleading "
+                "or prepare the court submission. Ask one clear question ending with a '?'. "
+                "If key facts or documents are missing, request them directly."
+            )
+        elif role == "judge":
+            court_guidance = (
+                "\nCourt mode: Act as a validator of the lawyer's advice. Challenge weak points, "
+                "surface the strongest likely opposing arguments, and request missing documents "
+                "or clarifications. If the advice is incomplete or risky, explain why and what is needed. "
+                "Ask specific questions ending with a '?' when information is missing."
+            )
+
     decision_line = ""
     if discussion_type == "court" and role == "judge":
         decision_line = (
@@ -511,6 +529,7 @@ def _augment_prompt(
         f"Jurisdiction focus: Only use laws/regulations applicable to {country} "
         "or supranational rules accepted in that jurisdiction.\n"
         f"{language_line}"
+        f"{court_guidance}"
         f"{decision_line}"
     )
 
