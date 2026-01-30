@@ -6,7 +6,7 @@ from typing import Callable, List, Sequence
 
 from ..agents import Agent
 from ..documents import select_sources
-from ..jurisdiction import is_slovak_language
+from ..localization import translate
 from ..observability import TraceRecorder
 from ..schemas import Document, Message, OrchestrationResult, Source
 
@@ -282,7 +282,7 @@ class Orchestrator:
             last_lawyer_message = Message(
                 role="assistant",
                 agent_name=self.lawyer.name,
-                content="No lawyer response generated.",
+                content=translate("orchestrator.no_lawyer_response", language),
                 sources=list(citations),
             )
         if last_judge_message is None:
@@ -292,7 +292,7 @@ class Orchestrator:
                 last_judge_message = Message(
                     role="assistant",
                     agent_name=self.judge.name,
-                    content="No judge response generated.",
+                    content=translate("orchestrator.no_judge_response", language),
                     sources=list(citations),
                 )
 
@@ -308,6 +308,7 @@ class Orchestrator:
                 last_lawyer_message,
                 last_judge_message,
                 citations,
+                language,
             )
         if not final_rationale:
             final_rationale = last_judge_message.content
@@ -468,14 +469,13 @@ class Orchestrator:
 
 
 def _build_recommendation(
-    lawyer_message: Message, judge_message: Message, citations: Sequence[Source]
+    lawyer_message: Message,
+    judge_message: Message,
+    citations: Sequence[Source],
+    language: str | None,
 ) -> str:
-    sources_note = "" if citations else " No supporting documents were cited."
-    return (
-        "Recommendation: Proceed with the user's requested position, "
-        "but address the judge's clarifying question and emphasize the strongest facts."
-        f"{sources_note}"
-    )
+    sources_note = "" if citations else translate("orchestrator.sources_note", language)
+    return translate("orchestrator.recommendation_default", language) + sources_note
 
 
 def _extract_question(content: str) -> str | None:
@@ -590,29 +590,17 @@ def _parse_final_summary(text: str) -> tuple[str, str]:
 def _no_response_message(timeout_seconds: float, language: str | None) -> str:
     if timeout_seconds >= 60:
         minutes = int(round(timeout_seconds / 60))
-        unit = "minute" if minutes == 1 else "minutes"
-        if is_slovak_language(language):
-            unit = "minúty" if minutes in {2, 3, 4} else "minút"
-            return f"Používateľ nemohol odpovedať do {minutes} {unit}."
-        return f"User could not answer within {minutes} {unit}."
+        return translate("orchestrator.no_response_minutes", language, minutes=minutes)
     seconds = int(round(timeout_seconds))
-    unit = "second" if seconds == 1 else "seconds"
-    if is_slovak_language(language):
-        unit = "sekundy" if seconds in {2, 3, 4} else "sekúnd"
-        return f"Používateľ nemohol odpovedať do {seconds} {unit}."
-    return f"User could not answer within {seconds} {unit}."
+    return translate("orchestrator.no_response_seconds", language, seconds=seconds)
 
 
 def _followup_prompt(language: str | None) -> str:
-    if is_slovak_language(language):
-        return "Máte ešte nejaké otázky? Napíšte 'finish' na ukončenie."
-    return "Do you have any other questions? Type 'finish' to end."
+    return translate("orchestrator.followup_prompt", language)
 
 
 def _judge_review_prompt(language: str | None) -> str:
-    if is_slovak_language(language):
-        return "Chcete, aby sudca preskúmal toto stanovisko? (áno/nie)"
-    return "Do you want the judge to review this advice? (yes/no)"
+    return translate("orchestrator.judge_review_prompt", language)
 
 
 def _is_finish_response(content: str) -> bool:

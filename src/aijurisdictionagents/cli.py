@@ -12,8 +12,9 @@ from dotenv import load_dotenv
 from .agents import create_judge, create_lawyer_agent
 from .cases import CaseStore
 from .documents import load_documents
-from .jurisdiction import is_slovakia, is_slovak_language
+from .jurisdiction import is_slovakia
 from .llm import get_llm_client
+from .localization import translate
 from .observability import TraceRecorder, create_run_dir, setup_logging
 from .orchestration import Orchestrator
 
@@ -103,41 +104,27 @@ def _prompt_user_with_timeout(
     question: str, timeout_seconds: float, language: str | None
 ) -> str | None:
     if timeout_seconds <= 0:
-        if is_slovak_language(language):
-            print("\nNezostal žiadny čas na odpoveď používateľa.")
-        else:
-            print("\nNo time remaining for a user response.")
+        print(f"\n{translate('cli.no_time_remaining', language)}")
         return None
 
-    if is_slovak_language(language):
-        print(f"\nOtázka advokáta: {question}")
-    else:
-        print(f"\nLawyer Agent question: {question}")
+    print(f"\n{translate('cli.question_prefix', language, question=question)}")
     seconds_display = int(round(timeout_seconds))
     if seconds_display >= 60:
         minutes = seconds_display // 60
-        if is_slovak_language(language):
-            print(
-                f"Na odpoveď máte {minutes} minút ({seconds_display} sekúnd). "
-                "Stlačte Enter pre preskočenie."
+        print(
+            translate(
+                "cli.answer_time_minutes",
+                language,
+                minutes=minutes,
+                seconds=seconds_display,
             )
-        else:
-            print(
-                f"You have {minutes} minutes ({seconds_display} seconds) to answer. "
-                "Press Enter to skip."
-            )
+        )
     else:
-        if is_slovak_language(language):
-            print(f"Na odpoveď máte {seconds_display} sekúnd. Stlačte Enter pre preskočenie.")
-        else:
-            print(f"You have {seconds_display} seconds to answer. Press Enter to skip.")
-    response_prompt = "Vaša odpoveď: " if is_slovak_language(language) else "Your answer: "
+        print(translate("cli.answer_time_seconds", language, seconds=seconds_display))
+    response_prompt = translate("cli.answer_prompt", language)
     response = _timed_input(response_prompt, timeout_seconds)
     if response is None:
-        if is_slovak_language(language):
-            print("V stanovenom čase neprišla žiadna odpoveď.")
-        else:
-            print("No response received within the allotted time.")
+        print(translate("cli.no_response", language))
     return response
 
 
@@ -208,7 +195,7 @@ def main() -> int:
 
     instruction = args.instruction.strip() or input("Enter your case instructions: ").strip()
     if not instruction:
-        print("No instruction provided. Exiting.")
+        print(translate("cli.no_instruction", args.language or None))
         return 1
 
     run_dir = create_run_dir(Path("runs"))
@@ -253,16 +240,18 @@ def main() -> int:
     finally:
         trace.close()
 
-    print("\nFinal Recommendation:\n" + result.final_recommendation)
-    print("\nKey Citations:")
+    print(f"\n{translate('cli.final_recommendation', args.language or None)}")
+    print(result.final_recommendation)
+    print(f"\n{translate('cli.key_citations', args.language or None)}")
     if result.citations:
         for source in result.citations:
             print(f"- {source.filename}: {source.snippet}")
     else:
-        print("- None")
+        print(f"- {translate('cli.none', args.language or None)}")
 
-    print("\nJudge Rationale:\n" + result.judge_rationale)
-    print(f"\nTrace saved to: {run_dir}")
+    print(f"\n{translate('cli.judge_rationale', args.language or None)}")
+    print(result.judge_rationale)
+    print(f"\n{translate('cli.trace_saved', args.language or None, path=run_dir)}")
 
     case_id = (args.case_id or "").strip()
     if args.discussion_type == "advice" and is_slovakia(args.country):
@@ -286,12 +275,12 @@ def main() -> int:
                     agent_name=lawyer.name,
                     data_dir=args.data_dir,
                 )
-            print(f"\nCase stored: {case_record.case_id}")
-            print(f"Case folder: {case_record.path}")
+            print(f"\n{translate('cli.case_stored', args.language or None, case_id=case_record.case_id)}")
+            print(translate("cli.case_folder", args.language or None, path=case_record.path))
         except Exception as exc:
             logger.exception("Failed to store case: %s", exc)
     elif case_id:
-        logger.warning("Ignoring --case-id because this is not Slovak advice mode.")
+        logger.warning(translate("cli.ignore_case_id", args.language or None))
     return 0
 
 

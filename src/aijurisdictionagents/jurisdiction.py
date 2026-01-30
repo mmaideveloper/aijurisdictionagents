@@ -12,4 +12,9 @@ def is_slovak_language(language: str | None) -> bool:
     if not language:
         return False
     normalized = language.strip().lower()
-    return normalized.startswith("sk") or normalized in {"slovak", "slovakian", "slovensky"}
+    return normalized.startswith("sk") or normalized in {
+        "slovak",
+        "slovakian",
+        "slovensky",
+        "slovakia",
+    }
