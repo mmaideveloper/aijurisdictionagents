@@ -290,3 +290,17 @@ def test_court_prompt_guidance_included() -> None:
     assert "draft the proposal/pleading" in lawyer_prompt
     assert "validator of the lawyer's advice" in judge_prompt
     assert "Decision: APPROVED" in judge_prompt
+
+
+def test_discussion_prompt_respects_language_override() -> None:
+    base_prompt = "BASE PROMPT"
+    prompt = _augment_prompt(
+        base_prompt,
+        country="SK",
+        output_language_hint="English",
+        discussion_only=True,
+        discussion_type="advice",
+        role="lawyer",
+    )
+
+    assert "Respond in English." in prompt

@@ -5,6 +5,7 @@
 - Agents: `Lawyer` advocates for the user and `Judge` evaluates and asks clarifying questions.
 - Orchestration: `Orchestrator` manages the turn-taking and synthesis.
 - Documents: `load_documents` ingests files from `data/` and `select_sources` builds citations.
+- Cases: `CaseStore` persists Slovak advice cases to `cases/` (case.json, documents, discussion logs).
 - Observability: `TraceRecorder` writes `trace.jsonl` and `setup_logging` writes `run.log`.
 - LLM Clients: `MockLLMClient` for offline runs, `OpenAIClient` for OpenAI, and `AzureFoundryClient` for Azure OpenAI.
 - Logs include the LLM provider name and client class at startup.
@@ -29,5 +30,6 @@ Each agent message includes:
 7. After each round, the user is prompted for additional questions (type "finish" to end).
 8. Discussion continues while follow-up questions are provided, or until the max discussion time is reached (default 15 minutes, 0 = unlimited).
 9. Orchestrator synthesizes a final recommendation and rationale in the requested output language and stores trace artifacts.
+10. For Slovak advice runs, the CLI persists a case folder under `cases/` with documents and discussion logs.
 
 See `docs/SEQUENCE.md` for a high-level sequence diagram.

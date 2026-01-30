@@ -1,5 +1,6 @@
 .conda/**
 runs/
+/cases/
 .pytest_cache/**
 .vscode/**
 __pycache__/**

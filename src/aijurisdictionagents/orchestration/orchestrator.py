@@ -495,9 +495,9 @@ def _augment_prompt(
     discussion_type: str,
     role: str,
 ) -> str:
-    language_line = "Respond in the same language as the user's instruction."
-    if not discussion_only:
-        language_line = f"Respond in {output_language_hint}."
+    language_line = f"Respond in {output_language_hint}."
+    if discussion_only and output_language_hint == "the same language as the user's instruction":
+        language_line = "Respond in the same language as the user's instruction."
 
     court_guidance = ""
     if discussion_type == "court":

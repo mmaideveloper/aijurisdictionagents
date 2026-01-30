@@ -9,8 +9,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .agents import create_judge, create_lawyer
+from .agents import create_judge, create_layer_agent
+from .cases import CaseStore
 from .documents import load_documents
+from .jurisdiction import is_slovakia
 from .llm import get_llm_client
 from .observability import TraceRecorder, create_run_dir, setup_logging
 from .orchestration import Orchestrator
@@ -175,6 +177,12 @@ def main() -> int:
         choices=["advice", "court"],
         help="Type of discussion: advice or court.",
     )
+    parser.add_argument(
+        "--case-id",
+        type=str,
+        default="",
+        help="Existing case ID to append a new discussion entry (advice + Slovakia only).",
+    )
     args = parser.parse_args()
 
     instruction = args.instruction.strip() or input("Enter your case instructions: ").strip()
@@ -203,7 +211,7 @@ def main() -> int:
     _log_token_info(logger, provider)
     llm = get_llm_client()
     logger.info("LLM provider active: %s (%s)", provider, type(llm).__name__)
-    lawyer = create_lawyer(llm)
+    lawyer = create_layer_agent(llm, args.country)
     judge = create_judge(llm)
 
     trace = TraceRecorder(run_dir)
@@ -232,6 +240,35 @@ def main() -> int:
 
     print("\nJudge Rationale:\n" + result.judge_rationale)
     print(f"\nTrace saved to: {run_dir}")
+
+    case_id = (args.case_id or "").strip()
+    if args.discussion_type == "advice" and is_slovakia(args.country):
+        case_store = CaseStore(Path("cases"))
+        try:
+            if case_id:
+                case_record = case_store.append_discussion(
+                    case_id=case_id,
+                    messages=result.messages,
+                    result=result,
+                    agent_name=lawyer.name,
+                    data_dir=args.data_dir,
+                )
+            else:
+                case_record = case_store.create_case(
+                    instruction=instruction,
+                    country=args.country,
+                    language=args.language or None,
+                    messages=result.messages,
+                    result=result,
+                    agent_name=lawyer.name,
+                    data_dir=args.data_dir,
+                )
+            print(f"\nCase stored: {case_record.case_id}")
+            print(f"Case folder: {case_record.path}")
+        except Exception as exc:
+            logger.exception("Failed to store case: %s", exc)
+    elif case_id:
+        logger.warning("Ignoring --case-id because this is not Slovak advice mode.")
     return 0
 
 
