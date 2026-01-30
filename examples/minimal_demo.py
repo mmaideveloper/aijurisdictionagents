@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from aijurisdictionagents.agents import create_judge, create_layer_agent
+from aijurisdictionagents.agents import create_judge, create_lawyer_agent
 from aijurisdictionagents.cases import CaseStore
 from aijurisdictionagents.documents import load_documents
 from aijurisdictionagents.jurisdiction import is_slovakia
@@ -29,7 +29,7 @@ def main() -> None:
     logger.info("LLM provider requested: %s", provider)
     llm = get_llm_client()
     logger.info("LLM provider active: %s (%s)", provider, type(llm).__name__)
-    lawyer = create_layer_agent(llm, country="SK")
+    lawyer = create_lawyer_agent(llm, country="SK")
     judge = create_judge(llm)
 
     trace = TraceRecorder(run_dir)

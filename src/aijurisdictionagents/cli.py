@@ -9,7 +9,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .agents import create_judge, create_layer_agent
+from .agents import create_judge, create_lawyer_agent
 from .cases import CaseStore
 from .documents import load_documents
 from .jurisdiction import is_slovakia
@@ -104,7 +104,7 @@ def _prompt_user_with_timeout(question: str, timeout_seconds: float) -> str | No
         print("\nNo time remaining for a user response.")
         return None
 
-    print(f"\nLayer Agent question: {question}")
+    print(f"\nLawyer Agent question: {question}")
     seconds_display = int(round(timeout_seconds))
     if seconds_display >= 60:
         minutes = seconds_display // 60
@@ -211,7 +211,7 @@ def main() -> int:
     _log_token_info(logger, provider)
     llm = get_llm_client()
     logger.info("LLM provider active: %s (%s)", provider, type(llm).__name__)
-    lawyer = create_layer_agent(llm, args.country)
+    lawyer = create_lawyer_agent(llm, args.country)
     judge = create_judge(llm)
 
     trace = TraceRecorder(run_dir)

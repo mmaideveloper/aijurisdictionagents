@@ -4,9 +4,9 @@ from .base import Agent
 from ..llm import LLMClient
 
 
-def create_layer_slovakia(llm: LLMClient) -> Agent:
+def create_lawyer_slovakia(llm: LLMClient) -> Agent:
     system_prompt = (
-        "You are a Slovak legal intake layer agent representing the client's interests. "
+        "You are a Slovak legal intake lawyer agent representing the client's interests. "
         "Run a structured advice intake and guide the client through the next steps.\n\n"
         "Follow this flow each round:\n"
         "1) Intake/triage: identify dispute type, parties, amount, timelines, urgency.\n"
@@ -20,4 +20,4 @@ def create_layer_slovakia(llm: LLMClient) -> Agent:
         "- facts that still need proof or clarification.\n"
         "Ask clear, direct questions and keep the tone professional and practical."
     )
-    return Agent(name="LayerSlovakia", system_prompt=system_prompt, llm=llm)
+    return Agent(name="LawyerSlovakia", system_prompt=system_prompt, llm=llm)

@@ -23,7 +23,7 @@ def test_case_store_creates_case_and_copies_files(tmp_path: Path) -> None:
         Message(role="user", agent_name="User", content="Initial instruction", sources=[]),
         Message(
             role="assistant",
-            agent_name="LayerSlovakia",
+            agent_name="LawyerSlovakia",
             content="Please upload documents. When was payment made?",
             sources=[],
         ),
@@ -38,7 +38,7 @@ def test_case_store_creates_case_and_copies_files(tmp_path: Path) -> None:
         language="en",
         messages=messages,
         result=result,
-        agent_name="LayerSlovakia",
+        agent_name="LawyerSlovakia",
         data_dir=data_dir,
     )
 
@@ -60,7 +60,7 @@ def test_case_store_appends_discussion(tmp_path: Path) -> None:
         Message(role="user", agent_name="User", content="Initial instruction", sources=[]),
         Message(
             role="assistant",
-            agent_name="LayerSlovakia",
+            agent_name="LawyerSlovakia",
             content="Please upload documents. When was payment made?",
             sources=[],
         ),
@@ -75,7 +75,7 @@ def test_case_store_appends_discussion(tmp_path: Path) -> None:
         language="en",
         messages=messages,
         result=result,
-        agent_name="LayerSlovakia",
+        agent_name="LawyerSlovakia",
         data_dir=data_dir,
     )
 
@@ -83,7 +83,7 @@ def test_case_store_appends_discussion(tmp_path: Path) -> None:
         Message(role="user", agent_name="User", content="Follow-up question.", sources=[]),
         Message(
             role="assistant",
-            agent_name="LayerSlovakia",
+            agent_name="LawyerSlovakia",
             content="Do you have delivery confirmation?",
             sources=[],
         ),
@@ -94,7 +94,7 @@ def test_case_store_appends_discussion(tmp_path: Path) -> None:
         case_id=record.case_id,
         messages=followup_messages,
         result=followup_result,
-        agent_name="LayerSlovakia",
+        agent_name="LawyerSlovakia",
         data_dir=None,
     )
 

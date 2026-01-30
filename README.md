@@ -251,7 +251,7 @@ Live URL: `https://www.aiagenticsolutions.eu/`
 
 ## Tech info
 
-1. set of ai agents to simulate layer, judge, mediator ...
+1. set of ai agents to simulate lawyer, judge, mediator ...
 2. allow user input about case ( question, set of documents, images)
 3. start discussion and store discussion
 4. create report with summary and final case results and store to folder together with case files
