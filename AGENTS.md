@@ -13,6 +13,8 @@ Software Development Life Cycle:
 Read task for implementation from project https://github.com/users/mmaideveloper/projects/5 and 
 tasks with status "Ready". 
 
+Frontend tasks: read tasks from project https://github.com/users/mmaideveloper/projects/6 (Ready status) and do not execute conda commands.
+
 Ask for implementation of task.  Create for each task separate branch.
 If you start working move task to in progress.
 Before moving a task to In review:
@@ -30,4 +32,3 @@ If the user asks to close a task:
 - Add a comment to the issue with the review/merge outcome.
 - Delete the feature branch and comment that deletion on the issue.
 - Move the task to Done (closed).
-
