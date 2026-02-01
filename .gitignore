@@ -17,3 +17,8 @@ build/
 .env
 .env.*
 !.env.example
+src/avatar-speech-demo/node_modules/
+src/avatar-speech-demo/dist/
+frontend/**/node_modules/
+frontend/**/dist/
+frontend/**/.vite/

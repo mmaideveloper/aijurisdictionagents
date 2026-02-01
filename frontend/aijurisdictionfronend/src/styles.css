@@ -1,0 +1,225 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Space+Grotesk:wght@400;500;600&display=swap");
+
+:root {
+  color-scheme: light;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  --font-display: "Playfair Display", "Times New Roman", serif;
+  --bg-deep: #0b1220;
+  --bg-surface: #111c33;
+  --bg-soft: #172548;
+  --accent: #36c6c2;
+  --accent-strong: #f4c24f;
+  --text: #f5f7ff;
+  --text-soft: #c7d3f0;
+  --stroke: rgba(255, 255, 255, 0.12);
+  --shadow: 0 24px 60px rgba(6, 10, 20, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top right, rgba(54, 198, 194, 0.2), transparent 40%),
+    radial-gradient(circle at 10% 20%, rgba(244, 194, 79, 0.18), transparent 45%),
+    linear-gradient(160deg, var(--bg-deep), #0f1b36 45%, #0f172a 100%);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 72px 24px 96px;
+  display: grid;
+  gap: 48px;
+}
+
+.hero {
+  background: linear-gradient(135deg, rgba(17, 28, 51, 0.9), rgba(15, 23, 42, 0.95));
+  border: 1px solid var(--stroke);
+  border-radius: 28px;
+  padding: 48px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 20px;
+  animation: rise 0.6s ease-out both;
+}
+
+.hero__badge {
+  width: fit-content;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(54, 198, 194, 0.15);
+  color: var(--accent);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 3vw, 3.4rem);
+}
+
+.hero p {
+  margin: 0;
+  color: var(--text-soft);
+  max-width: 640px;
+  line-height: 1.6;
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.btn {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn:focus {
+  outline: 2px solid rgba(54, 198, 194, 0.6);
+  outline-offset: 2px;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #08131d;
+  box-shadow: 0 16px 30px rgba(54, 198, 194, 0.3);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--text);
+}
+
+.btn--accent {
+  background: var(--accent-strong);
+  color: #221a08;
+  width: fit-content;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+.hero__panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(199, 211, 240, 0.7);
+}
+
+.value {
+  margin: 6px 0 0;
+  font-size: 1.1rem;
+}
+
+.grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.card {
+  padding: 24px;
+  border-radius: 20px;
+  border: 1px solid var(--stroke);
+  background: rgba(17, 28, 51, 0.6);
+  backdrop-filter: blur(6px);
+  animation: fadeIn 0.5s ease-out both;
+}
+
+.card h3 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 1.2rem;
+}
+
+.card p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.6;
+}
+
+.callout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+  align-items: center;
+}
+
+.callout ul {
+  padding-left: 18px;
+  margin: 16px 0 0;
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.callout__panel {
+  border-radius: 22px;
+  padding: 28px;
+  background: rgba(244, 194, 79, 0.12);
+  border: 1px solid rgba(244, 194, 79, 0.4);
+  display: grid;
+  gap: 12px;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 720px) {
+  .hero {
+    padding: 32px;
+  }
+
+  .hero__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn {
+    width: 100%;
+  }
+}

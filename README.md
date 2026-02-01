@@ -238,6 +238,20 @@ python -m http.server 8000
 
 Then open `http://localhost:8000` in a browser. For details, see `docs/CORPORATE_WEB.md`.
 
+## Frontend demo app
+
+The React + TypeScript demo app lives in `frontend/aijurisdictionfronend`.
+
+Quick start:
+
+```bash
+cd frontend/aijurisdictionfronend
+npm install
+npm run dev
+```
+
+Then open `http://localhost:5173` in a browser. For details, see `docs/FRONTEND_DEMO.md`.
+
 ### Deployment
 
 The corporate site is deployed via GitHub Actions (`corporate_web` workflow) using FTP per environment.
