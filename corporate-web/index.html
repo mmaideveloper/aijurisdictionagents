@@ -98,13 +98,14 @@
       </div>
       <div class="video-shell">
         <video
+          id="jurisdigta-video"
           controls
           playsinline
           preload="metadata"
           aria-label="Jurisdigta demo video"
           data-i18n-aria="video_aria"
         >
-          <source src="assets/jurisdigta.mp4" type="video/mp4" />
+          <source id="jurisdigta-video-source" src="assets/jurisdigta-sk.mp4" type="video/mp4" />
           <p data-i18n="video_fallback">Váš prehliadač nepodporuje prehrávanie videa.</p>
         </video>
       </div>
@@ -556,6 +557,13 @@
 
     const languageButtons = document.querySelectorAll(".lang-btn");
     const metaDescription = document.getElementById("meta-description");
+    const videoElement = document.getElementById("jurisdigta-video");
+    const videoSource = document.getElementById("jurisdigta-video-source");
+    const videoSources = {
+      sk: "assets/jurisdigta-sk.mp4",
+      de: "assets/jurisdigta-ge.mp4",
+      en: "assets/jurisdigta-en.mp4"
+    };
 
     function applyTranslations(lang) {
       const dictionary = translations[lang] || translations.sk;
@@ -583,6 +591,21 @@
       }
     }
 
+    function updateVideoSource(lang) {
+      if (!videoElement || !videoSource) {
+        return;
+      }
+      const nextSrc = videoSources[lang] || videoSources.sk;
+      if (videoSource.getAttribute("src") !== nextSrc) {
+        const wasPlaying = !videoElement.paused;
+        videoSource.setAttribute("src", nextSrc);
+        videoElement.load();
+        if (wasPlaying) {
+          videoElement.play().catch(() => {});
+        }
+      }
+    }
+
     function setLanguage(lang) {
       const next = translations[lang] ? lang : "sk";
       localStorage.setItem("aj_lang", next);
@@ -590,6 +613,7 @@
         button.setAttribute("aria-pressed", button.dataset.lang === next ? "true" : "false");
       });
       applyTranslations(next);
+      updateVideoSource(next);
     }
 
     languageButtons.forEach((button) => {
