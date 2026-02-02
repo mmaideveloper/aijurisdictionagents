@@ -256,17 +256,19 @@ main {
   padding: 1.5rem;
   box-shadow: var(--shadow);
   border: 1px solid rgba(19, 28, 52, 0.08);
-  max-width: 960px;
   margin: 0 auto;
+  display: flex;
+  justify-content: center;
 }
 
 .video-shell video {
   width: 100%;
+  max-width: 960px;
   display: block;
   border-radius: 18px;
   background: #000;
   height: auto;
-  max-height: min(70vh, 560px);
+  max-height: 70vh;
   object-fit: contain;
 }
 
