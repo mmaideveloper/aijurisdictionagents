@@ -32,6 +32,8 @@ The homepage switches the Jurisdigta avatar video per language:
 - `assets/jurisdigta-ge.mp4` (DE)
 - `assets/jurisdigta-en.mp4` (EN)
 
+The video container constrains height to prevent oversized display on large screens.
+
 ## Minimal runnable example
 
 Repo default: `python examples/minimal_demo.py`
