@@ -7,7 +7,7 @@ Static single-page site for AI Jurisdiction.
 From repo root:
 
 ```bash
-cd src/corporate-web
+cd corporate-web
 python -m http.server 8000
 ```
 
@@ -23,3 +23,8 @@ python -m http.server 8001
 
 The page ships with Slovak (default), German, and English translations. Use the `SK/DE/EN` toggle in the header.
 The selection is stored in `localStorage` (`aj_lang`).
+
+## Minimal runnable example
+
+Repo default: `python examples/minimal_demo.py`
+Corporate web preview: `python -m http.server 8000` from `corporate-web`.

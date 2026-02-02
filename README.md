@@ -227,12 +227,12 @@ See `docs/ARCHITECTURE.md` for module boundaries and flow.
 
 ## Corporate website
 
-The static corporate presentation site lives in `src/corporate-web`.
+The static corporate presentation site lives in `corporate-web`.
 
 Quick preview:
 
 ```bash
-cd src/corporate-web
+cd corporate-web
 python -m http.server 8000
 ```
 
