@@ -256,6 +256,8 @@ main {
   padding: 1.5rem;
   box-shadow: var(--shadow);
   border: 1px solid rgba(19, 28, 52, 0.08);
+  max-width: 960px;
+  margin: 0 auto;
 }
 
 .video-shell video {
@@ -263,6 +265,9 @@ main {
   display: block;
   border-radius: 18px;
   background: #000;
+  height: auto;
+  max-height: min(70vh, 560px);
+  object-fit: contain;
 }
 
 @keyframes floatIn {
