@@ -1,6 +1,6 @@
 # Corporate Website
 
-Location: `src/corporate-web`
+Location: `corporate-web`
 
 This folder contains a single-page corporate presentation site for AI Jurisdiction.
 It is static HTML/CSS and can be hosted on any static web server.
@@ -10,7 +10,7 @@ It is static HTML/CSS and can be hosted on any static web server.
 From repo root:
 
 ```bash
-cd src/corporate-web
+cd corporate-web
 python -m http.server 8000
 ```
 

@@ -28,7 +28,7 @@ jobs:
 
       - name: Verify corporate web build
         run: |
-          test -f src/corporate-web/index.html
+          test -f corporate-web/index.html
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -36,5 +36,5 @@ jobs:
           server: ${{ vars.corporate_web_ftp }}
           username: ${{ vars.corporate_web_ftp_username }}
           password: ${{ secrets.corporate_web_ftp_password }}
-          local-dir: src/corporate-web/
+          local-dir: corporate-web/
           server-dir: /www_root_aiagenticsolutions_eu/
