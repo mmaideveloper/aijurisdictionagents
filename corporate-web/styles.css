@@ -246,6 +246,25 @@ main {
   animation: floatIn 1s ease;
 }
 
+.video-demo .section-head {
+  max-width: 720px;
+}
+
+.video-shell {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 24px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(19, 28, 52, 0.08);
+}
+
+.video-shell video {
+  width: 100%;
+  display: block;
+  border-radius: 18px;
+  background: #000;
+}
+
 @keyframes floatIn {
   from {
     transform: translateY(16px);

@@ -89,6 +89,28 @@
       </div>
     </section>
 
+    <section id="demo" class="section video-demo">
+      <div class="section-head">
+        <h2 data-i18n="video_title">Jurisdigta v praxi.</h2>
+        <p data-i18n="video_lede">
+          Pozrite si ako Jurisdigta agent komunikuje kľúčové zistenia a vedie používateľa krok za krokom.
+        </p>
+      </div>
+      <div class="video-shell">
+        <video
+          id="jurisdigta-video"
+          controls
+          playsinline
+          preload="metadata"
+          aria-label="Jurisdigta demo video"
+          data-i18n-aria="video_aria"
+        >
+          <source id="jurisdigta-video-source" src="assets/jurisdigta-sk.mp4" type="video/mp4" />
+          <p data-i18n="video_fallback">Váš prehliadač nepodporuje prehrávanie videa.</p>
+        </video>
+      </div>
+    </section>
+
     <section id="agents" class="section">
       <div class="section-head">
         <h2 data-i18n="agents_title">Špecializovaní agenti, jeden spoločný spis.</h2>
@@ -287,6 +309,10 @@
         hero_card_judge_body: "Protiargumenty, compliance kontroly a rozhodovacie brány.",
         hero_card_final_title: "Finálna syntéza",
         hero_card_final_body: "Výstupná správa s citáciami a rizikovými flagmi.",
+        video_title: "Jurisdigta v praxi.",
+        video_lede: "Pozrite si ako Jurisdigta agent komunikuje kľúčové zistenia a vedie používateľa krok za krokom.",
+        video_aria: "Demo video Jurisdigta",
+        video_fallback: "Váš prehliadač nepodporuje prehrávanie videa.",
         agents_title: "Špecializovaní agenti, jeden spoločný spis.",
         agents_lede: "Každý agent prináša špecifickú perspektívu a zároveň pracuje s rovnakými dôkazmi, aby bola konzistentnosť zachovaná v každom odporúčaní.",
         agent_lawyer_title: "AI Právnik",
@@ -373,6 +399,10 @@
         hero_card_judge_body: "Gegenargumente, Compliance-Prüfungen und Entscheidungsgates.",
         hero_card_final_title: "Finale Synthese",
         hero_card_final_body: "Ergebnisbericht mit Zitaten und Risiko-Flags.",
+        video_title: "Jurisdigta in Aktion.",
+        video_lede: "Sehen Sie, wie der Jurisdigta-Agent zentrale Erkenntnisse vermittelt und Nutzer Schritt für Schritt begleitet.",
+        video_aria: "Jurisdigta Demo-Video",
+        video_fallback: "Ihr Browser unterstützt keine Videowiedergabe.",
         agents_title: "Spezialisierte Agenten, eine gemeinsame Akte.",
         agents_lede: "Jeder Agent bringt eine eigene Perspektive ein, arbeitet aber mit derselben Evidenzbasis, damit jede Empfehlung konsistent bleibt.",
         agent_lawyer_title: "KI-Anwalt",
@@ -459,6 +489,10 @@
         hero_card_judge_body: "Counter-arguments, compliance checks, and decision gates.",
         hero_card_final_title: "Final synthesis",
         hero_card_final_body: "Outcome report with citations and risk flags.",
+        video_title: "Jurisdigta in action.",
+        video_lede: "Watch how the Jurisdigta agent delivers key findings and guides users step by step.",
+        video_aria: "Jurisdigta demo video",
+        video_fallback: "Your browser does not support video playback.",
         agents_title: "Specialized agents, one shared record.",
         agents_lede: "Each agent contributes a specific perspective while sharing the same evidence pack, ensuring consistency across every recommendation.",
         agent_lawyer_title: "AI Lawyer",
@@ -523,6 +557,13 @@
 
     const languageButtons = document.querySelectorAll(".lang-btn");
     const metaDescription = document.getElementById("meta-description");
+    const videoElement = document.getElementById("jurisdigta-video");
+    const videoSource = document.getElementById("jurisdigta-video-source");
+    const videoSources = {
+      sk: "assets/jurisdigta-sk.mp4",
+      de: "assets/jurisdigta-ge.mp4",
+      en: "assets/jurisdigta-en.mp4"
+    };
 
     function applyTranslations(lang) {
       const dictionary = translations[lang] || translations.sk;
@@ -539,8 +580,29 @@
           element.setAttribute("alt", dictionary[key]);
         }
       });
+      document.querySelectorAll("[data-i18n-aria]").forEach((element) => {
+        const key = element.dataset.i18nAria;
+        if (dictionary[key]) {
+          element.setAttribute("aria-label", dictionary[key]);
+        }
+      });
       if (metaDescription && dictionary.meta_description) {
         metaDescription.setAttribute("content", dictionary.meta_description);
+      }
+    }
+
+    function updateVideoSource(lang) {
+      if (!videoElement || !videoSource) {
+        return;
+      }
+      const nextSrc = videoSources[lang] || videoSources.sk;
+      if (videoSource.getAttribute("src") !== nextSrc) {
+        const wasPlaying = !videoElement.paused;
+        videoSource.setAttribute("src", nextSrc);
+        videoElement.load();
+        if (wasPlaying) {
+          videoElement.play().catch(() => {});
+        }
       }
     }
 
@@ -551,6 +613,7 @@
         button.setAttribute("aria-pressed", button.dataset.lang === next ? "true" : "false");
       });
       applyTranslations(next);
+      updateVideoSource(next);
     }
 
     languageButtons.forEach((button) => {
