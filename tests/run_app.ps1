@@ -6,16 +6,18 @@ $env:CONDA_PREFIX = $condaPrefix
 $env:PATH = "$condaPrefix;$condaPrefix\Scripts;$env:PATH"
 
 $pythonExe = Join-Path $condaPrefix "python.exe"
-$instruction = "We believe the contract was breached due to late delivery."
+$instruction = "Chcem získať právnu radu ohľadom prenájmu bytu v Slovenskej republike."
 $caseId = [guid]::NewGuid().ToString()
 
+# Run the AI Jurisdiction Agents application with specified parameters
+# --data-dir (Join-Path $repoRoot "data") `
 & $pythonExe -m aijurisdictionagents `
   --country "SK" `
-  --language "en" `
+  --language "sk" `
   --discussion-type "advice" `
   --discussion-max-minutes 15 `
   --question-timeout-minutes 5 `
   --log-level "DEBUG" `
-  --data-dir (Join-Path $repoRoot "data") `
+  --data-dir None `
   --case-id $caseId `
   --instruction $instruction
