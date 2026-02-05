@@ -1,0 +1,13 @@
+{
+  "owner": "mmaideveloper",
+  "repo": "mmaideveloper/aijurisdictionagents",
+  "project_number": 5,
+  "status_field": "Status",
+  "selection_strategy": "oldest_ready",
+  "labels": {
+    "selected": "auto:selected",
+    "in_review": "auto:in-review",
+    "tested": "auto:tested",
+    "merged": "auto:merged"
+  }
+}
