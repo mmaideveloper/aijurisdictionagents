@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "content": {
+        "number": 55,
+        "title": "Automation: create tasks and set Ready status",
+        "url": "https://example.invalid/issues/55"
+      },
+      "status": "Ready"
+    },
+    {
+      "content": {
+        "number": 56,
+        "title": "Cortex: select next implementation task",
+        "url": "https://example.invalid/issues/56"
+      },
+      "status": "In progress"
+    }
+  ]
+}

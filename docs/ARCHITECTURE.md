@@ -10,6 +10,7 @@
 - LLM Clients: `MockLLMClient` for offline runs, `OpenAIClient` for OpenAI, and `AzureFoundryClient` for Azure OpenAI.
 - Logs include the LLM provider name and client class at startup.
 - Azure Foundry logs auth method plus endpoint, deployment, API version, and temperature on client init.
+- Project Polling: `scripts/project_poll.py` snapshots Project V2 items for scheduled automation.
 
 ## Message Schema
 

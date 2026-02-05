@@ -33,6 +33,20 @@ Requirements:
 - `gh` authenticated to the correct account
 - Scopes: `read:project` (list items) and `project` (edit status)
 
+Project polling automation (scheduled GitHub Action):
+
+```bash
+python scripts/project_poll.py --config .github/automation.yml --output runs/automation/latest_snapshot.json
+```
+
+Offline fixture demo:
+
+```bash
+python examples/project_poll_demo.py
+```
+
+For details, see `docs/AUTOMATION_POLLING.md`.
+
 Auto-activate the conda env on open (workspace setting expects a local env at `.conda`):
 
 ```bash
