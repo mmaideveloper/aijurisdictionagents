@@ -11,13 +11,14 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class PollingConfig:
+class ProjectConfig:
     owner: str
     repo: str
     project_number: int
     status_field: str = "Status"
     selection_strategy: str = "oldest_ready"
     labels: dict[str, str] = field(default_factory=dict)
+    name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -28,26 +29,49 @@ class ProjectItem:
     status: str
 
 
-def load_config(path: Path) -> PollingConfig:
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def load_config(path: Path) -> list[ProjectConfig]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    owner = str(data.get("owner", "")).strip()
-    repo = str(data.get("repo", "")).strip()
-    project_number = int(data.get("project_number", 0))
-    if not owner or not repo or not project_number:
-        raise ValueError("Config requires owner, repo, and project_number")
-    status_field = str(data.get("status_field", "Status"))
-    selection_strategy = str(data.get("selection_strategy", "oldest_ready"))
-    labels = data.get("labels") or {}
-    if not isinstance(labels, dict):
-        raise ValueError("labels must be a JSON object")
-    return PollingConfig(
-        owner=owner,
-        repo=repo,
-        project_number=project_number,
-        status_field=status_field,
-        selection_strategy=selection_strategy,
-        labels={str(k): str(v) for k, v in labels.items()},
-    )
+    if isinstance(data, dict) and "projects" in data:
+        entries = data.get("projects", [])
+    elif isinstance(data, list):
+        entries = data
+    else:
+        entries = [data]
+
+    if not isinstance(entries, list):
+        raise ValueError("Config must contain a list of projects")
+
+    projects: list[ProjectConfig] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("Each project config must be an object")
+        owner = str(entry.get("owner", "")).strip()
+        repo = str(entry.get("repo", "")).strip()
+        project_number = int(entry.get("project_number", 0))
+        if not owner or not repo or not project_number:
+            raise ValueError("Each project requires owner, repo, and project_number")
+        status_field = str(entry.get("status_field", "Status"))
+        selection_strategy = str(entry.get("selection_strategy", "oldest_ready"))
+        labels = entry.get("labels") or {}
+        if not isinstance(labels, dict):
+            raise ValueError("labels must be a JSON object")
+        name = str(entry.get("name")).strip() if entry.get("name") else None
+        projects.append(
+            ProjectConfig(
+                owner=owner,
+                repo=repo,
+                project_number=project_number,
+                status_field=status_field,
+                selection_strategy=selection_strategy,
+                labels={str(k): str(v) for k, v in labels.items()},
+                name=name,
+            )
+        )
+    return projects
 
 
 def _run_gh(args: list[str]) -> dict[str, Any]:
@@ -93,7 +117,7 @@ def parse_items(raw_items: list[dict[str, Any]]) -> list[ProjectItem]:
     return items
 
 
-def fetch_project_items(config: PollingConfig, limit: int) -> list[ProjectItem]:
+def fetch_project_items(config: ProjectConfig, limit: int) -> list[ProjectItem]:
     payload = _run_gh(
         [
             "project",
@@ -113,9 +137,20 @@ def fetch_project_items(config: PollingConfig, limit: int) -> list[ProjectItem]:
     return parse_items(raw_items)
 
 
-def load_fixture(path: Path) -> list[ProjectItem]:
+def load_fixture(path: Path, project_number: int | None = None) -> list[ProjectItem]:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    raw_items = payload.get("items", payload)
+    raw_items: Any
+    if isinstance(payload, dict) and "projects" in payload:
+        projects = payload.get("projects")
+        if not isinstance(projects, dict):
+            raise ValueError("Fixture projects must be an object")
+        if project_number is None:
+            raise ValueError("Fixture requires project_number when using projects map")
+        raw_items = projects.get(str(project_number)) or projects.get(project_number)
+        if raw_items is None:
+            raise ValueError(f"Fixture missing project {project_number}")
+    else:
+        raw_items = payload.get("items", payload)
     if not isinstance(raw_items, list):
         raise ValueError("Fixture must contain an items list")
     return parse_items(raw_items)
@@ -129,9 +164,9 @@ def summarize_items(items: list[ProjectItem]) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda kv: kv[0]))
 
 
-def build_snapshot(config: PollingConfig, items: list[ProjectItem]) -> dict[str, Any]:
-    return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+def build_project_snapshot(config: ProjectConfig, items: list[ProjectItem]) -> dict[str, Any]:
+    snapshot = {
+        "generated_at": _now_iso(),
         "project": {
             "owner": config.owner,
             "repo": config.repo,
@@ -154,6 +189,38 @@ def build_snapshot(config: PollingConfig, items: list[ProjectItem]) -> dict[str,
             for item in items
         ],
     }
+    if config.name:
+        snapshot["project"]["name"] = config.name
+    return snapshot
+
+
+def build_multi_summary(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+    total = 0
+    aggregated: dict[str, int] = {}
+    projects: list[dict[str, Any]] = []
+
+    for snapshot in snapshots:
+        summary = snapshot.get("summary", {})
+        total += int(summary.get("total", 0))
+        for status, count in (summary.get("by_status") or {}).items():
+            aggregated[status] = aggregated.get(status, 0) + int(count)
+        project_info = snapshot.get("project", {})
+        projects.append(
+            {
+                "project_number": project_info.get("project_number"),
+                "name": project_info.get("name"),
+                "summary": summary,
+            }
+        )
+
+    return {
+        "generated_at": _now_iso(),
+        "summary": {
+            "total": total,
+            "by_status": dict(sorted(aggregated.items(), key=lambda kv: kv[0])),
+        },
+        "projects": projects,
+    }
 
 
 def write_snapshot(snapshot: dict[str, Any], path: Path) -> None:
@@ -164,6 +231,19 @@ def write_snapshot(snapshot: dict[str, Any], path: Path) -> None:
 def _default_output_path() -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return Path("runs") / "automation" / stamp / "project_snapshot.json"
+
+
+def _default_output_dir() -> Path:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return Path("runs") / "automation" / stamp
+
+
+def _resolve_output_dir(output: Path | None) -> Path:
+    if output is None:
+        return _default_output_dir()
+    if output.suffix:
+        return output.with_suffix("")
+    return output
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -192,7 +272,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=None,
-        help="Output path for snapshot JSON.",
+        help="Output file (single project) or directory (multi-project).",
     )
     return parser
 
@@ -202,22 +282,43 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        config = load_config(args.config)
-        if args.fixture:
-            items = load_fixture(args.fixture)
-        else:
-            items = fetch_project_items(config, args.max_items)
+        projects = load_config(args.config)
+        snapshots: list[dict[str, Any]] = []
+        for project in projects:
+            if args.fixture:
+                items = load_fixture(args.fixture, project.project_number)
+            else:
+                items = fetch_project_items(project, args.max_items)
+            snapshots.append(build_project_snapshot(project, items))
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    snapshot = build_snapshot(config, items)
-    output_path = args.output or _default_output_path()
-    write_snapshot(snapshot, output_path)
+    if len(snapshots) == 1:
+        output_path = args.output or _default_output_path()
+        write_snapshot(snapshots[0], output_path)
+        print(f"Snapshot saved: {output_path}")
+        for status, count in snapshots[0]["summary"]["by_status"].items():
+            print(f"- {status}: {count}")
+        return 0
 
-    print(f"Snapshot saved: {output_path}")
-    for status, count in snapshot["summary"]["by_status"].items():
+    output_dir = _resolve_output_dir(args.output)
+    for snapshot in snapshots:
+        project_number = snapshot["project"]["project_number"]
+        path = output_dir / f"project_{project_number}.json"
+        write_snapshot(snapshot, path)
+        project_name = snapshot["project"].get("name") or project_number
+        print(f"Snapshot saved: {path} (project {project_name})")
+        for status, count in snapshot["summary"]["by_status"].items():
+            print(f"- {status}: {count}")
+
+    summary = build_multi_summary(snapshots)
+    summary_path = output_dir / "summary.json"
+    write_snapshot(summary, summary_path)
+    print(f"Summary saved: {summary_path}")
+    for status, count in summary["summary"]["by_status"].items():
         print(f"- {status}: {count}")
+
     return 0
 
 

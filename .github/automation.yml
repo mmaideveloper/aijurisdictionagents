@@ -1,13 +1,46 @@
 {
-  "owner": "mmaideveloper",
-  "repo": "mmaideveloper/aijurisdictionagents",
-  "project_number": 5,
-  "status_field": "Status",
-  "selection_strategy": "oldest_ready",
-  "labels": {
-    "selected": "auto:selected",
-    "in_review": "auto:in-review",
-    "tested": "auto:tested",
-    "merged": "auto:merged"
-  }
+  "projects": [
+    {
+      "name": "core",
+      "owner": "mmaideveloper",
+      "repo": "mmaideveloper/aijurisdictionagents",
+      "project_number": 5,
+      "status_field": "Status",
+      "selection_strategy": "oldest_ready",
+      "labels": {
+        "selected": "auto:selected",
+        "in_review": "auto:in-review",
+        "tested": "auto:tested",
+        "merged": "auto:merged"
+      }
+    },
+    {
+      "name": "frontend",
+      "owner": "mmaideveloper",
+      "repo": "mmaideveloper/aijurisdictionagents",
+      "project_number": 6,
+      "status_field": "Status",
+      "selection_strategy": "oldest_ready",
+      "labels": {
+        "selected": "auto:selected",
+        "in_review": "auto:in-review",
+        "tested": "auto:tested",
+        "merged": "auto:merged"
+      }
+    },
+    {
+      "name": "project-7",
+      "owner": "mmaideveloper",
+      "repo": "mmaideveloper/aijurisdictionagents",
+      "project_number": 7,
+      "status_field": "Status",
+      "selection_strategy": "oldest_ready",
+      "labels": {
+        "selected": "auto:selected",
+        "in_review": "auto:in-review",
+        "tested": "auto:tested",
+        "merged": "auto:merged"
+      }
+    }
+  ]
 }
