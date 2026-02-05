@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from automation.github import GitHubClient, ProjectStatusUpdater
-from automation.models import TaskSpec
-from automation.runner import DryRunRunner
-from automation.tasks import create_ready_tasks, load_task_specs
+from aijurisdictionagents.automation.github import GitHubClient, ProjectStatusUpdater
+from aijurisdictionagents.automation.models import TaskSpec
+from aijurisdictionagents.automation.runner import DryRunRunner
+from aijurisdictionagents.automation.tasks import create_ready_tasks, load_task_specs
 
 
 def test_load_task_specs_accepts_list(tmp_path: Path) -> None:

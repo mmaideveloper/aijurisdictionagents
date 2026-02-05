@@ -26,13 +26,13 @@ Example `automation_tasks.json`:
 Run the command:
 
 ```bash
-python -m automation.cli create-ready --file examples/automation_tasks.json
+python -m aijurisdictionagents.automation.cli create-ready --file examples/automation_tasks.json
 ```
 
 Dry-run (no GitHub changes):
 
 ```bash
-python -m automation.cli create-ready --file examples/automation_tasks.json --dry-run
+python -m aijurisdictionagents.automation.cli create-ready --file examples/automation_tasks.json --dry-run
 ```
 
 A minimal example script is available at `examples/automation_demo.py`.

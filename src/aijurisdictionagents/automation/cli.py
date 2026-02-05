@@ -7,7 +7,7 @@ from pathlib import Path
 from .github import GitHubClient, ProjectStatusUpdater
 from .runner import DryRunRunner, SubprocessRunner
 from .tasks import create_ready_tasks, load_task_specs
-from aijurisdictionagents.observability import create_run_dir, setup_logging
+from ..observability import create_run_dir, setup_logging
 
 
 def _configure_logging(log_level: str) -> tuple[Path, logging.Logger]:
