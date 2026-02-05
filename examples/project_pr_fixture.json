@@ -1,0 +1,24 @@
+{
+  "pull_requests": [
+    {
+      "number": 101,
+      "title": "Implement automation for #55",
+      "url": "https://example.invalid/pull/101",
+      "headRefName": "issue-55-automation",
+      "isDraft": false,
+      "closingIssuesReferences": [
+        {"number": 55}
+      ]
+    },
+    {
+      "number": 102,
+      "title": "WIP for #56",
+      "url": "https://example.invalid/pull/102",
+      "headRefName": "issue-56-work",
+      "isDraft": true,
+      "closingIssuesReferences": [
+        {"number": 56}
+      ]
+    }
+  ]
+}

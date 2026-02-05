@@ -39,6 +39,12 @@ Project polling automation (scheduled GitHub Action):
 python scripts/project_poll.py --config .github/automation.yml --output runs/automation/latest_snapshot
 ```
 
+Move Ready tasks with PRs to In review:
+
+```bash
+python scripts/project_in_review.py --config .github/automation.yml --plan-output runs/automation/latest_snapshot/in_review_plan.json
+```
+
 Offline fixture demo:
 
 ```bash
