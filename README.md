@@ -33,20 +33,6 @@ Requirements:
 - `gh` authenticated to the correct account
 - Scopes: `read:project` (list items) and `project` (edit status)
 
-Automation CLI (task creation + Ready status):
-
-```bash
-python -m aijurisdictionagents.automation.cli create-ready --file examples/automation_tasks.json
-```
-
-Dry-run example:
-
-```bash
-python -m aijurisdictionagents.automation.cli create-ready --file examples/automation_tasks.json --dry-run
-```
-
-For details, see `docs/AUTOMATION.md`.
-
 Auto-activate the conda env on open (workspace setting expects a local env at `.conda`):
 
 ```bash

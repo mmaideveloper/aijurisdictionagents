@@ -10,7 +10,6 @@
 - LLM Clients: `MockLLMClient` for offline runs, `OpenAIClient` for OpenAI, and `AzureFoundryClient` for Azure OpenAI.
 - Logs include the LLM provider name and client class at startup.
 - Azure Foundry logs auth method plus endpoint, deployment, API version, and temperature on client init.
-- Automation: `aijurisdictionagents.automation` manages GitHub Project workflows (task creation and status updates) using `gh`.
 
 ## Message Schema
 
