@@ -7,7 +7,7 @@ This repository uses a scheduled polling workflow to drive Project V2 automation
 
 - File: `.github/workflows/project_polling.yml`
 - Triggers: `schedule` (default: every 15 minutes) and `workflow_dispatch`
-- Purpose: fetch Project V2 items and write a snapshot JSON for downstream automation steps
+- Purpose: fetch Project V2 items and write snapshot JSON files for downstream automation steps
 
 ## Configuration
 
@@ -15,17 +15,36 @@ Config file: `.github/automation.yml` (JSON content, YAML-compatible).
 
 ```json
 {
-  "owner": "mmaideveloper",
-  "repo": "mmaideveloper/aijurisdictionagents",
-  "project_number": 5,
-  "status_field": "Status",
-  "selection_strategy": "oldest_ready",
-  "labels": {
-    "selected": "auto:selected",
-    "in_review": "auto:in-review",
-    "tested": "auto:tested",
-    "merged": "auto:merged"
-  }
+  "projects": [
+    {
+      "name": "core",
+      "owner": "mmaideveloper",
+      "repo": "mmaideveloper/aijurisdictionagents",
+      "project_number": 5,
+      "status_field": "Status",
+      "selection_strategy": "oldest_ready",
+      "labels": {
+        "selected": "auto:selected",
+        "in_review": "auto:in-review",
+        "tested": "auto:tested",
+        "merged": "auto:merged"
+      }
+    },
+    {
+      "name": "frontend",
+      "owner": "mmaideveloper",
+      "repo": "mmaideveloper/aijurisdictionagents",
+      "project_number": 6,
+      "status_field": "Status",
+      "selection_strategy": "oldest_ready",
+      "labels": {
+        "selected": "auto:selected",
+        "in_review": "auto:in-review",
+        "tested": "auto:tested",
+        "merged": "auto:merged"
+      }
+    }
+  ]
 }
 ```
 
@@ -41,8 +60,13 @@ The workflow uses `GH_PROJECT_TOKEN` when set, otherwise falls back to `GITHUB_T
 ## Local usage
 
 ```bash
-python scripts/project_poll.py --config .github/automation.yml --output runs/automation/latest_snapshot.json
+python scripts/project_poll.py --config .github/automation.yml --output runs/automation/latest_snapshot
 ```
+
+For multiple projects, the script writes:
+
+- `runs/automation/latest_snapshot/project_<project_number>.json`
+- `runs/automation/latest_snapshot/summary.json`
 
 Offline fixture run:
 

@@ -8,7 +8,7 @@ from pathlib import Path
 def main() -> None:
     script = Path("scripts") / "project_poll.py"
     fixture = Path("examples") / "project_poll_fixture.json"
-    output = Path("runs") / "automation" / "example_snapshot.json"
+    output = Path("runs") / "automation" / "example_snapshot"
 
     result = subprocess.run(
         [
@@ -26,7 +26,7 @@ def main() -> None:
     if result.returncode != 0:
         raise SystemExit(result.returncode)
 
-    print(f"Wrote snapshot to {output}")
+    print(f"Wrote snapshots to {output}")
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ Requirements:
 Project polling automation (scheduled GitHub Action):
 
 ```bash
-python scripts/project_poll.py --config .github/automation.yml --output runs/automation/latest_snapshot.json
+python scripts/project_poll.py --config .github/automation.yml --output runs/automation/latest_snapshot
 ```
 
 Offline fixture demo:

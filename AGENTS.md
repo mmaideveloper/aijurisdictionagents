@@ -24,7 +24,8 @@ If you finish change status to In review and send me notice.
 Add a comment to the issue: "Implemented by Codex".
 Use scripts/project_status.ps1 when possible and ensure gh has read:project + project scopes.
 
-Activate the conda environment in `./conda` before running first project command and remember that information, for the next command check if conda has been ran.
+Activate the conda environment in `./conda` before running first project command and remember that information, for the next command check if conda has been ran. Run conda only if task if is implementing
+python code.
 
 If the user asks to close a task:
 - Review the PR and perform a code review.
