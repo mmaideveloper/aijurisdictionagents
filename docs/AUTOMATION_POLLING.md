@@ -7,7 +7,7 @@ This repository uses a scheduled polling workflow to drive Project V2 automation
 
 - File: `.github/workflows/project_polling.yml`
 - Triggers: `schedule` (default: every 15 minutes) and `workflow_dispatch`
-- Purpose: fetch Project V2 items and write snapshot JSON files for downstream automation steps
+- Purpose: fetch Project V2 items and write snapshot JSON files, then move Ready tasks with PRs to In review
 
 ## Configuration
 
@@ -43,6 +43,20 @@ Config file: `.github/automation.yml` (JSON content, YAML-compatible).
         "tested": "auto:tested",
         "merged": "auto:merged"
       }
+    },
+    {
+      "name": "project-7",
+      "owner": "mmaideveloper",
+      "repo": "mmaideveloper/aijurisdictionagents",
+      "project_number": 7,
+      "status_field": "Status",
+      "selection_strategy": "oldest_ready",
+      "labels": {
+        "selected": "auto:selected",
+        "in_review": "auto:in-review",
+        "tested": "auto:tested",
+        "merged": "auto:merged"
+      }
     }
   ]
 }
@@ -63,6 +77,12 @@ The workflow uses `GH_PROJECT_TOKEN` when set, otherwise falls back to `GITHUB_T
 python scripts/project_poll.py --config .github/automation.yml --output runs/automation/latest_snapshot
 ```
 
+Move Ready tasks with PRs to In review:
+
+```bash
+python scripts/project_in_review.py --config .github/automation.yml --plan-output runs/automation/latest_snapshot/in_review_plan.json
+```
+
 For multiple projects, the script writes:
 
 - `runs/automation/latest_snapshot/project_<project_number>.json`
@@ -74,8 +94,20 @@ Offline fixture run:
 python scripts/project_poll.py --config .github/automation.yml --fixture examples/project_poll_fixture.json
 ```
 
+Offline in-review dry run:
+
+```bash
+python scripts/project_in_review.py --config .github/automation.yml --fixture examples/project_poll_fixture.json --pr-fixture examples/project_pr_fixture.json --dry-run
+```
+
 ## Minimal runnable example
 
 ```bash
 python examples/project_poll_demo.py
+```
+
+In-review dry-run example:
+
+```bash
+python examples/project_in_review_demo.py
 ```
