@@ -36,13 +36,13 @@ Requirements:
 Automation CLI (task creation + Ready status):
 
 ```bash
-python -m aijurisdictionagents.automation.cli create-ready --file examples/automation_tasks.json
+python -m automation.cli create-ready --file examples/automation_tasks.json
 ```
 
 Dry-run example:
 
 ```bash
-python -m aijurisdictionagents.automation.cli create-ready --file examples/automation_tasks.json --dry-run
+python -m automation.cli create-ready --file examples/automation_tasks.json --dry-run
 ```
 
 For details, see `docs/AUTOMATION.md`.

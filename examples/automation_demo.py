@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aijurisdictionagents.automation.github import GitHubClient, ProjectStatusUpdater
-from aijurisdictionagents.automation.runner import DryRunRunner
-from aijurisdictionagents.automation.tasks import create_ready_tasks, load_task_specs
+from automation.github import GitHubClient, ProjectStatusUpdater
+from automation.runner import DryRunRunner
+from automation.tasks import create_ready_tasks, load_task_specs
 from aijurisdictionagents.observability import create_run_dir, setup_logging
 
 
