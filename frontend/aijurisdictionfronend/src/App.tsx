@@ -1,3 +1,8 @@
+import { useMemo, useState } from "react";
+import AuthCallbackView from "./auth/AuthCallbackView";
+import { clearSession, getSession, type UserSession } from "./auth/session";
+import Header from "./components/Header";
+
 const highlights = [
   {
     title: "Secure Intake",
@@ -21,23 +26,51 @@ const workflow = [
 ];
 
 export default function App() {
+  const [session, setSession] = useState<UserSession | null>(() => getSession());
+
+  const googleStartUrl = import.meta.env.VITE_AUTH_GOOGLE_START_URL;
+  const xStartUrl = import.meta.env.VITE_AUTH_X_START_URL;
+  const googleEnabled = Boolean(googleStartUrl);
+  const xEnabled = Boolean(xStartUrl);
+
+  const pathname = useMemo(() => window.location.pathname, []);
+
+  const startAuth = (startUrl: string | undefined) => {
+    if (!startUrl) {
+      return;
+    }
+    window.location.assign(startUrl);
+  };
+
+  const handleLogout = () => {
+    clearSession();
+    setSession(null);
+  };
+
+  if (pathname === "/auth/callback") {
+    return <AuthCallbackView onSessionReady={setSession} />;
+  }
+
   return (
     <div className="page">
-      <header className="hero">
-        <div className="hero__badge">Frontend demo</div>
-        <h1>AI Jurisdiction Frontend</h1>
+      <Header
+        session={session}
+        onGoogleSignIn={() => startAuth(googleStartUrl)}
+        onXSignIn={() => startAuth(xStartUrl)}
+        onLogout={handleLogout}
+        googleEnabled={googleEnabled}
+        xEnabled={xEnabled}
+      />
+
+      <section className="hero">
         <p>
           A React + TypeScript starter for the AI Jurisdiction system. Build the
           client workspace, orchestrate live sessions, and keep every decision in view.
         </p>
-        <div className="hero__actions">
-          <button className="btn btn--primary" type="button">Start session</button>
-          <button className="btn btn--ghost" type="button">View agent stream</button>
-        </div>
         <div className="hero__panel">
           <div>
             <span className="label">Status</span>
-            <p className="value">Awaiting intake</p>
+            <p className="value">{session ? "Authenticated" : "Awaiting intake"}</p>
           </div>
           <div>
             <span className="label">Region</span>
@@ -48,7 +81,7 @@ export default function App() {
             <p className="value">Advice</p>
           </div>
         </div>
-      </header>
+      </section>
 
       <section className="grid">
         {highlights.map((item) => (
