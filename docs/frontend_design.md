@@ -21,6 +21,9 @@ UI strings are available in English, Slovak, and German via a simple translation
 ## Corporate Web Update
 The corporate site includes a pricing section for the four subscription tiers.
 
+## Local Dev Hygiene
+`frontend_design` build outputs and `node_modules` are excluded from git via `.gitignore`.
+
 ## Minimal Runnable Example (Project Default)
 ```bash
 python examples/minimal_demo.py

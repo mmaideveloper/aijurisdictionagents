@@ -22,3 +22,6 @@ src/avatar-speech-demo/dist/
 frontend/**/node_modules/
 frontend/**/dist/
 frontend/**/.vite/
+frontend_design/**/node_modules/
+frontend_design/**/dist/
+frontend_design/**/.vite/
