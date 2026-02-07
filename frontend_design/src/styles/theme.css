@@ -1,0 +1,74 @@
+﻿:root {
+  color-scheme: light;
+  font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --font-display: "Fraunces", "Times New Roman", serif;
+  --bg: #f5f0ea;
+  --bg-dark: #1f1b16;
+  --surface: #ffffff;
+  --surface-muted: #f0e9e2;
+  --surface-contrast: #251c13;
+  --accent: #d0632c;
+  --accent-soft: #f5c7a6;
+  --ink: #1f1b16;
+  --ink-muted: #5f564b;
+  --border: rgba(31, 27, 22, 0.12);
+  --shadow: 0 24px 60px rgba(31, 27, 22, 0.12);
+  --radius: 24px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: radial-gradient(circle at top, #fdf7f1 0%, var(--bg) 45%, #e8dfd4 100%);
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea {
+  font-family: inherit;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+p {
+  color: var(--ink-muted);
+  line-height: 1.6;
+}
+
+.reveal {
+  animation: fadeUp 0.8s ease var(--delay, 0ms) both;
+}
+
+@keyframes fadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
