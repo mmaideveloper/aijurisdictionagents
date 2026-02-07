@@ -428,6 +428,46 @@ main {
   color: #fff;
 }
 
+.pricing-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.pricing-card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 2rem;
+  box-shadow: 0 12px 30px rgba(11, 18, 32, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pricing-card .price {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 0.4rem 0;
+}
+
+.pricing-card ul {
+  padding-left: 1.2rem;
+  margin: 0;
+}
+
+.pricing-card.highlight {
+  border: 2px solid var(--teal);
+  transform: translateY(-6px);
+}
+
+.pricing-note {
+  margin-top: 1.5rem;
+  font-family: "Space Grotesk", sans-serif;
+  color: rgba(11, 18, 32, 0.7);
+}
+
 .faq details {
   background: #fff;
   padding: 1.2rem 1.6rem;
