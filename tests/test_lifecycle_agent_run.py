@@ -95,8 +95,6 @@ def test_lifecycle_agent_run_requirements_failure(tmp_path: Path) -> None:
             "backend",
             "--technical-requirements",
             "quantum-resistant ledger mesh",
-            "--task-status",
-            "In progress",
             "--output",
             str(output),
         ],

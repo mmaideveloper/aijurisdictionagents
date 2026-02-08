@@ -16,11 +16,6 @@ from aijurisdictionagents.lifecycle import (
 
 ALLOWED_STATUS_BEFORE_STAGE: dict[str, tuple[str, ...]] = {
     "solution": ("Ready For Solution",),
-    "requirements": ("In progress",),
-    "developer": ("In progress",),
-    "testing": ("In progress",),
-    "review": ("In review",),
-    "deployment": ("In review",),
 }
 
 FINAL_STATUS_ON_SUCCESS: dict[str, str] = {
