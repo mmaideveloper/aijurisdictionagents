@@ -37,6 +37,33 @@ Each workflow is manually triggerable (`workflow_dispatch`) and uploads a stage 
 The selected stage runs with prerequisites (for example, `testing` runs `solution -> requirements ->
 developer -> testing`) so agent context is available.
 
+## Task Status Flow Per Agent
+
+Project status values used in this repository:
+
+- `Backlog`
+- `Ready`
+- `In progress`
+- `In review`
+- `Done`
+
+Recommended status transition per lifecycle agent:
+
+| Agent | Task status before agent runs | Final status after agent runs (success) | Final status after agent runs (issues found) |
+| --- | --- | --- | --- |
+| `SolutionAgent` | `Ready` | `In progress` | `Ready` |
+| `RequirementsAgent` | `In progress` | `In progress` | `In progress` |
+| `DeveloperAgent` | `In progress` | `In progress` | `In progress` |
+| `TestAgent` | `In progress` | `In review` | `In progress` |
+| `CodeReviewAgent` | `In review` | `In review` (approved and waiting merge/deploy) | `In progress` (changes requested) |
+| `DeploymentAgent` | `In review` | `Done` | `In review` |
+
+Notes:
+
+- Status changes are policy guidance for task orchestration.
+- Current lifecycle workflows generate stage artifacts and do not directly change GitHub Project status.
+- Project status updates can be applied with `scripts/project_status.ps1`.
+
 ## Configuring Agents for New Projects
 
 Use `LifecycleAutomationConfig` to choose the active stages:
