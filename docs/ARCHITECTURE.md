@@ -11,6 +11,7 @@
 - Logs include the LLM provider name and client class at startup.
 - Azure Foundry logs auth method plus endpoint, deployment, API version, and temperature on client init.
 - Project Polling: `scripts/project_poll.py` snapshots Project V2 items across configured projects; `scripts/project_in_review.py` moves Ready tasks with PRs to In review.
+- Lifecycle Automation: `aijurisdictionagents.lifecycle` provides modular SDLC agents (solution, requirements, developer, testing, review, deployment) and a configurable pipeline orchestrator.
 
 ## Message Schema
 

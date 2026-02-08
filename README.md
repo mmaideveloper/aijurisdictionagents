@@ -53,6 +53,14 @@ python examples/project_poll_demo.py
 
 For details, see `docs/AUTOMATION_POLLING.md`.
 
+Lifecycle automation demo (issue #69 MVP):
+
+```bash
+python examples/lifecycle_automation_demo.py
+```
+
+For details, see `docs/LIFECYCLE_AUTOMATION.md`.
+
 Auto-activate the conda env on open (workspace setting expects a local env at `.conda`):
 
 ```bash
