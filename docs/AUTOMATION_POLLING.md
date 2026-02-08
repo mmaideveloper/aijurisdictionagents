@@ -64,12 +64,15 @@ Config file: `.github/automation.yml` (JSON content, YAML-compatible).
 
 ## Secrets
 
-For Project V2 read/write access, prefer a PAT stored as `GH_PROJECT_TOKEN` with scopes:
+For Project V2 read/write access, set a PAT as `GH_PROJECT_TOKEN` with scopes:
 
 - `read:project`
 - `project`
 
-The workflow uses `GH_PROJECT_TOKEN` when set, otherwise falls back to `GITHUB_TOKEN`.
+`GH_PROJECT_TOKEN` is required by the workflow. `GITHUB_TOKEN` is not used for Project V2 access
+because it can fail with errors like:
+
+- `GraphQL: Could not resolve to a ProjectV2 with the number <N>. (user.projectV2)`
 
 ## Local usage
 

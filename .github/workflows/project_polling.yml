@@ -19,12 +19,58 @@ jobs:
   poll:
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN || github.token }}
+      GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+      - name: Validate project token and access
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Missing GH_PROJECT_TOKEN secret. Configure a PAT with read:project and project scopes."
+            exit 1
+          fi
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          config = json.load(open(".github/automation.yml", encoding="utf-8"))
+          projects = config.get("projects", [])
+          if not isinstance(projects, list):
+              print("::error::.github/automation.yml must define a projects list", file=sys.stderr)
+              raise SystemExit(1)
+
+          for project in projects:
+              owner = project.get("owner")
+              number = project.get("project_number")
+              name = project.get("name") or f"{owner}#{number}"
+              if not owner or not number:
+                  print("::error::Each project requires owner and project_number", file=sys.stderr)
+                  raise SystemExit(1)
+              cmd = [
+                  "gh",
+                  "project",
+                  "view",
+                  str(number),
+                  "--owner",
+                  str(owner),
+                  "--format",
+                  "json",
+              ]
+              proc = subprocess.run(cmd, capture_output=True, text=True)
+              if proc.returncode != 0:
+                  message = proc.stderr.strip() or proc.stdout.strip() or "Unknown error"
+                  print(
+                      f"::error::Project access failed for '{name}'. "
+                      f"Verify owner/project_number and GH_PROJECT_TOKEN scopes (read:project, project). "
+                      f"Details: {message}",
+                      file=sys.stderr,
+                  )
+                  raise SystemExit(1)
+              print(f"Validated project access: {name}")
+          PY
       - name: Poll project items
         run: |
           python scripts/project_poll.py --config .github/automation.yml --output runs/automation/latest_snapshot
