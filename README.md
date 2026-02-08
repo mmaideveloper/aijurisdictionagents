@@ -59,6 +59,14 @@ Lifecycle automation demo (issue #69 MVP):
 python examples/lifecycle_automation_demo.py
 ```
 
+Per-agent lifecycle workflows:
+- `lifecycle-solution-agent`
+- `lifecycle-requirements-agent`
+- `lifecycle-developer-agent`
+- `lifecycle-testing-agent`
+- `lifecycle-review-agent`
+- `lifecycle-deployment-agent`
+
 For details, see `LIFECYCLE_AUTOMATION.md`.
 
 Auto-activate the conda env on open (workspace setting expects a local env at `.conda`):

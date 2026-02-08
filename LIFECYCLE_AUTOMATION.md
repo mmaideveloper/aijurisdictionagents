@@ -18,6 +18,24 @@ solution design to deployment planning.
 - `src/aijurisdictionagents/lifecycle/agents.py`
 - `src/aijurisdictionagents/lifecycle/factory.py`
 - `src/aijurisdictionagents/lifecycle/pipeline.py`
+- `scripts/lifecycle_agent_run.py`
+
+## GitHub Workflows (One Per Agent)
+
+- `.github/workflows/lifecycle_solution_agent.yml`
+- `.github/workflows/lifecycle_requirements_agent.yml`
+- `.github/workflows/lifecycle_developer_agent.yml`
+- `.github/workflows/lifecycle_testing_agent.yml`
+- `.github/workflows/lifecycle_review_agent.yml`
+- `.github/workflows/lifecycle_deployment_agent.yml`
+
+Shared reusable workflow:
+
+- `.github/workflows/lifecycle_agent_runner.yml`
+
+Each workflow is manually triggerable (`workflow_dispatch`) and uploads a stage JSON artifact.
+The selected stage runs with prerequisites (for example, `testing` runs `solution -> requirements ->
+developer -> testing`) so agent context is available.
 
 ## Configuring Agents for New Projects
 
@@ -43,4 +61,10 @@ Default project minimal example remains:
 
 ```bash
 python examples/minimal_demo.py
+```
+
+Single-stage local run example:
+
+```bash
+python scripts/lifecycle_agent_run.py --stage solution --project-name "Demo" --idea "Build a fullstack app." --output runs/lifecycle/solution_agent_result.json
 ```

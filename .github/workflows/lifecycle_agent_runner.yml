@@ -1,0 +1,79 @@
+name: lifecycle-agent-runner
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        required: true
+        type: string
+      project_name:
+        required: true
+        type: string
+      idea:
+        required: true
+        type: string
+      project_type:
+        required: false
+        type: string
+        default: fullstack
+      preferred_stack:
+        required: false
+        type: string
+        default: python,react
+      business_requirements:
+        required: false
+        type: string
+        default: Frontend portal,API access,Data storage
+      technical_requirements:
+        required: false
+        type: string
+        default: CI pipeline,deployment rollback
+      deployment_targets:
+        required: false
+        type: string
+        default: dev,staging,production
+      ci_cd_platforms:
+        required: false
+        type: string
+        default: github_actions,azure_devops
+
+permissions:
+  contents: read
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Run lifecycle stage
+        run: |
+          python scripts/lifecycle_agent_run.py \
+            --stage "${{ inputs.stage }}" \
+            --project-name "${{ inputs.project_name }}" \
+            --idea "${{ inputs.idea }}" \
+            --project-type "${{ inputs.project_type }}" \
+            --preferred-stack "${{ inputs.preferred_stack }}" \
+            --business-requirements "${{ inputs.business_requirements }}" \
+            --technical-requirements "${{ inputs.technical_requirements }}" \
+            --deployment-targets "${{ inputs.deployment_targets }}" \
+            --ci-cd-platforms "${{ inputs.ci_cd_platforms }}" \
+            --output "runs/lifecycle/${{ inputs.stage }}_agent_result.json"
+
+      - name: Upload stage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifecycle-${{ inputs.stage }}-agent-result
+          path: runs/lifecycle/${{ inputs.stage }}_agent_result.json
