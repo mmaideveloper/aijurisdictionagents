@@ -42,7 +42,7 @@ developer -> testing`) so agent context is available.
 Project status values used in this repository:
 
 - `Backlog`
-- `Ready`
+- `Ready For Solution`
 - `In progress`
 - `In review`
 - `Done`
@@ -51,7 +51,7 @@ Recommended status transition per lifecycle agent:
 
 | Agent | Task status before agent runs | Final status after agent runs (success) | Final status after agent runs (issues found) |
 | --- | --- | --- | --- |
-| `SolutionAgent` | `Ready` | `In progress` | `Ready` |
+| `SolutionAgent` | `Ready For Solution` | `In progress` | `Ready For Solution` |
 | `RequirementsAgent` | `In progress` | `In progress` | `In progress` |
 | `DeveloperAgent` | `In progress` | `In progress` | `In progress` |
 | `TestAgent` | `In progress` | `In review` | `In progress` |
@@ -63,6 +63,8 @@ Notes:
 - Status changes are policy guidance for task orchestration.
 - Current lifecycle workflows generate stage artifacts and do not directly change GitHub Project status.
 - Project status updates can be applied with `scripts/project_status.ps1`.
+- `Backlog` is reserved for raw ideas and is not processed by `SolutionAgent`.
+- `SolutionAgent` runs only when `task_status=Ready For Solution` (enforced in `scripts/lifecycle_agent_run.py` and `lifecycle-solution-agent` workflow).
 
 ## Configuring Agents for New Projects
 

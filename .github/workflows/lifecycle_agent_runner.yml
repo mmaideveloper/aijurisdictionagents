@@ -36,6 +36,10 @@ on:
         required: false
         type: string
         default: github_actions,azure_devops
+      task_status:
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -70,6 +74,7 @@ jobs:
             --technical-requirements "${{ inputs.technical_requirements }}" \
             --deployment-targets "${{ inputs.deployment_targets }}" \
             --ci-cd-platforms "${{ inputs.ci_cd_platforms }}" \
+            --task-status "${{ inputs.task_status }}" \
             --output "runs/lifecycle/${{ inputs.stage }}_agent_result.json"
 
       - name: Upload stage artifact

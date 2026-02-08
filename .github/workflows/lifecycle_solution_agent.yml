@@ -35,6 +35,10 @@ on:
         description: CI/CD platforms separated by comma/newline/|/;
         required: false
         default: github_actions,azure_devops
+      task_status:
+        description: Current project task status. Solution agent processes only Ready For Solution.
+        required: true
+        default: Backlog
 
 permissions:
   contents: read
@@ -52,3 +56,4 @@ jobs:
       technical_requirements: ${{ github.event.inputs.technical_requirements }}
       deployment_targets: ${{ github.event.inputs.deployment_targets }}
       ci_cd_platforms: ${{ github.event.inputs.ci_cd_platforms }}
+      task_status: ${{ github.event.inputs.task_status }}
