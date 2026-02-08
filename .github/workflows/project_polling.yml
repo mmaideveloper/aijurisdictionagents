@@ -9,7 +9,7 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
-  projects: write
+  repository-projects: write
 
 concurrency:
   group: project-polling
