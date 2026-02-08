@@ -45,7 +45,7 @@ Config file: `.github/automation.yml` (JSON content, YAML-compatible).
       }
     },
     {
-      "name": "project-7",
+      "name": "corporate-web",
       "owner": "mmaideveloper",
       "repo": "mmaideveloper/aijurisdictionagents",
       "project_number": 7,
