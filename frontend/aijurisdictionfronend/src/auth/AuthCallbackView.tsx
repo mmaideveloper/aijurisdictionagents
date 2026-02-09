@@ -63,7 +63,7 @@ export default function AuthCallbackView({ onSessionReady }: AuthCallbackViewPro
       <main className="callback callback--error">
         <h1>Authentication failed</h1>
         <p>{error}</p>
-        <a className="btn btn--primary callback__back" href="/">
+        <a className="button primary callback__back" href="/">
           Return to home
         </a>
       </main>
