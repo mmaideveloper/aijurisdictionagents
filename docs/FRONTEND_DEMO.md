@@ -44,3 +44,4 @@ npm run preview
 - Hero header with session status and region
 - Feature cards for intake, orchestration, and outputs
 - Callout panel for upcoming API integration
+- Navbar reacts to mock auth state: sign-in link when logged out, profile menu with name + email when logged in

@@ -1,10 +1,12 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../components/LanguageProvider";
 import { MOCK_USER, useAuth } from "../auth/mockAuth";
 
 const Auth: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, user, signIn, signOut } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [message, setMessage] = React.useState<string | null>(null);
@@ -14,12 +16,13 @@ const Auth: React.FC = () => {
     const normalizedEmail = email.trim();
     const ok = signIn(normalizedEmail, password);
     if (!ok) {
-      setError("Invalid credentials. Use admin@admin.com / admin123.");
+      setError("Invalid credentials.");
       setMessage(null);
       return;
     }
     setError(null);
     setMessage(`Signed in as ${MOCK_USER.email}.`);
+    navigate("/");
   };
 
   const handleSignOut = () => {
