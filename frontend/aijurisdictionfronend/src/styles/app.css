@@ -58,6 +58,12 @@
   align-items: center;
 }
 
+.nav-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
 .nav-links a {
   position: relative;
   padding-bottom: 0.2rem;
