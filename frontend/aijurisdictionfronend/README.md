@@ -1,6 +1,8 @@
 # AI Jurisdiction Frontend
 
-React + TypeScript + Vite frontend workspace for AI Jurisdiction.
+React + TypeScript + Vite frontend workspace for AI Jurisdiction. This UI is aligned with the
+`frontend_design` proposal and includes the public marketing pages plus authenticated workflow
+screens.
 
 ## Runtime
 
@@ -17,17 +19,6 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
-
-## Auth Configuration
-
-Configure OAuth start URLs in `.env`:
-
-```bash
-VITE_AUTH_GOOGLE_START_URL=https://your-auth-service.example.com/oauth/google/start
-VITE_AUTH_X_START_URL=https://your-auth-service.example.com/oauth/x/start
-```
-
-If these values are missing, the login buttons remain disabled and the UI shows a configuration hint.
 
 ## Callback Contract
 
@@ -52,9 +43,22 @@ Example callback URL:
 On success, the app stores the session in `localStorage` and redirects to `/`.
 On invalid payloads, the callback page shows an explicit error state.
 
+## Lint & Test
+
+```bash
+npm run lint
+npm run test
+```
+
 ## Build
 
 ```bash
 npm run build
 npm run preview
+```
+
+## Minimal Runnable Example (Project Default)
+
+```bash
+python examples/minimal_demo.py
 ```
