@@ -70,6 +70,7 @@ export const Navigation: React.FC = () => {
           <NavLink to="/app">{t("navApp")}</NavLink>
         </div>
         <div className="nav-actions">
+          <LanguageSwitcher />
           {isAuthenticated ? (
             <div className="profile-menu" ref={profileRef}>
               <button
@@ -92,7 +93,6 @@ export const Navigation: React.FC = () => {
               ) : null}
             </div>
           ) : null}
-          <LanguageSwitcher />
         </div>
       </nav>
     </header>
