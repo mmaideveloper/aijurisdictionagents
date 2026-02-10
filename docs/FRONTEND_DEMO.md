@@ -17,6 +17,13 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## Simulated login (frontend-only)
+
+The demo includes an in-memory auth state for UI development. It resets on refresh.
+
+- Email: `admin@admin.com`
+- Password: `admin123`
+
 ## Minimal runnable example
 
 From repo root (PowerShell):
