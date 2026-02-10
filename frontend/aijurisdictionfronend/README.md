@@ -20,6 +20,13 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## Simulated Login (Frontend-only)
+
+The UI includes an in-memory auth state used for local development. It resets on refresh.
+
+- Email: `admin@admin.com`
+- Password: `admin123`
+
 ## Callback Contract
 
 The frontend expects auth callback requests to hit:
