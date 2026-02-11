@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "./LanguageProvider";
@@ -52,15 +52,6 @@ export const Navigation: React.FC = () => {
   return (
     <header className="site-header">
       <nav className="nav">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            AJ
-          </div>
-          <div>
-            <strong>{t("appName")}</strong>
-            <span>{t("tagline")}</span>
-          </div>
-        </div>
         <div className="nav-links">
           <NavLink to="/">{t("navHome")}</NavLink>
           <NavLink to="/pricing">{t("navPricing")}</NavLink>
