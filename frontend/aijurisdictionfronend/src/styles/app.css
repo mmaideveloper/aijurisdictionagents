@@ -921,3 +921,18 @@ textarea {
 
 
 
+
+.sidebar-reopen {
+  width: 52px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.sidebar-reopen svg {
+  width: 22px;
+  height: 22px;
+}
+
