@@ -922,8 +922,8 @@ textarea {
   position: fixed;
   left: 10px;
   top: 100px;
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: #2c2c2c;
   color: #fff;
@@ -1000,8 +1000,8 @@ textarea {
 
 
 .sidebar-close-btn {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -1015,3 +1015,4 @@ textarea {
   width: 48px;
   height: 48px;
 }
+
