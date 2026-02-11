@@ -235,12 +235,18 @@
   overflow-y: auto;
 }
 
+
 .workspace-panel--left {
   align-self: stretch;
-  width: 260px;
+  width: 300px;
   transition: width 0.3s ease;
   overflow: hidden;
 }
+
+.workspace-panel--left.is-collapsed {
+  width: 0;
+  border-right: none;
+}\n\n\n
 
 .sidebar {
   position: relative;
@@ -923,28 +929,11 @@ textarea {
 
 
 
-.sidebar-bubble {
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  box-shadow: 0 10px 20px rgba(31, 27, 22, 0.12);
-}
+.sidebar-bubble {\n  width: 52px;\n  height: 52px;\n  border-radius: 999px;\n  border: 1px solid var(--border);\n  background: var(--surface);\n  display: grid;\n  place-items: center;\n  cursor: pointer;\n  box-shadow: 0 10px 20px rgba(31, 27, 22, 0.12);\n}\n
 
-.sidebar-bubble svg {
-  width: 20px;
-  height: 20px;
-}
+.sidebar-bubble svg {\n  width: 28px;\n  height: 28px;\n}\n
 
-.sidebar-bubble--close {
-  position: absolute;
-  right: -20px;
-  top: 20px;
-}
+.sidebar-bubble--close {\n  position: absolute;\n  right: -26px;\n  top: 18px;\n}\n
 
 .sidebar-bubble--open {
   position: absolute;
@@ -977,16 +966,7 @@ textarea {
   overflow: hidden;
 }
 
-.workspace-panel--left {
-  width: 260px;
-  transition: width 0.3s ease;
-  overflow: hidden;
-}
-
-.workspace-panel--left.is-collapsed {
-  width: 0;
-  border-right: none;
-}
+\n\n\n
 
 .sidebar--collapsed {
   opacity: 0;
@@ -995,7 +975,45 @@ textarea {
 
 .sidebar-brand .brand-mark {
   flex-shrink: 0;
+}\n/* workspace-main override mobile */@media (max-width: 900px) {  .app-shell--workspace .main-content {    padding: 0;  }}
+.workspace-page .workspace-grid {  display: grid;  grid-template-columns: minmax(0, 1fr) 280px;  gap: 1.5rem;  align-items: start;  height: 100%;  padding: 0 3vw 2rem;}
+
+.app-shell--workspace .main-content {
+  padding: 0;
+  overflow: hidden;
 }
-\r\n/* workspace-page override */\r\n.workspace-page {\r\n  height: 100%;\r\n  margin-left: 0;\r\n  margin-right: 0;\r\n}\r\n
-\r\n/* workspace-main override mobile */\r\n@media (max-width: 900px) {\r\n  .app-shell--workspace .main-content {\r\n    padding: 0;\r\n  }\r\n}\r\n
-\r\n.workspace-page .workspace-grid {\r\n  display: grid;\r\n  grid-template-columns: minmax(0, 1fr) 280px;\r\n  gap: 1.5rem;\r\n  align-items: start;\r\n  height: 100%;\r\n  padding: 0 3vw 2rem;\r\n}\r\n
+
+.workspace-page .workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 1.5rem;
+  align-items: start;
+  height: 100%;
+  padding: 0 3vw 2rem;
+}
+.app-shell--workspace .main-content {
+  padding: 0;
+  overflow: hidden;
+}
+
+.workspace-page {
+  height: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.workspace-page .workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 1.5rem;
+  align-items: start;
+  height: 100%;
+  padding: 0 3vw 2rem;
+}
+
+@media (max-width: 900px) {
+  .app-shell--workspace .main-content {
+    padding: 0;
+  }
+}
+
