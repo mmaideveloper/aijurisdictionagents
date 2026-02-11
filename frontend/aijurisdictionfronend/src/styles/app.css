@@ -19,6 +19,11 @@
   border-bottom: 1px solid var(--border);
 }
 
+.site-header.has-sidebar {
+  margin-left: 260px;
+  width: calc(100% - 260px);
+}
+
 .nav {
   display: flex;
   align-items: center;
@@ -836,6 +841,11 @@ textarea {
 
   .workspace-panel {
     display: none;
+  }
+
+  .site-header.has-sidebar {
+    margin-left: 0;
+    width: 100%;
   }
 }
 

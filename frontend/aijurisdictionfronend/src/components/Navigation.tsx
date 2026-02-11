@@ -1,5 +1,5 @@
 ﻿import React from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "./LanguageProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
@@ -7,6 +7,7 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 export const Navigation: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, user } = useAuth();
+  const { pathname } = useLocation();
   const [profileOpen, setProfileOpen] = React.useState(false);
   const profileRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -49,8 +50,10 @@ export const Navigation: React.FC = () => {
   const profileEmail = user?.email ?? "";
   const profileInitial = profileName.slice(0, 1).toUpperCase();
 
+  const hasSidebar = isAuthenticated && pathname === "/";
+
   return (
-    <header className="site-header">
+    <header className={`site-header${hasSidebar ? " has-sidebar" : ""}`}>
       <nav className="nav">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
