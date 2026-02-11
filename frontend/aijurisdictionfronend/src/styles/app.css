@@ -918,11 +918,6 @@ textarea {
 }
 
 
-
-
-
-
-
 .sidebar-bubble {
   width: 40px;
   height: 40px;
@@ -955,21 +950,9 @@ textarea {
 }
 
 
-
 .app-shell--sidebar-collapsed .app-shell__main {
   margin-left: 0;
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 .app-shell--workspace .main-content {
@@ -977,11 +960,6 @@ textarea {
   overflow: hidden;
 }
 
-.workspace-panel--left {
-  width: 260px;
-  transition: width 0.3s ease;
-  overflow: hidden;
-}
 
 .workspace-panel--left.is-collapsed {
   width: 0;
@@ -996,9 +974,8 @@ textarea {
 .sidebar-brand .brand-mark {
   flex-shrink: 0;
 }
-\r\n/* workspace-page override */\r\n.workspace-page {\r\n  height: 100%;\r\n  margin-left: 0;\r\n  margin-right: 0;\r\n}\r\n
-\r\n/* workspace-main override mobile */\r\n@media (max-width: 900px) {\r\n  .app-shell--workspace .main-content {\r\n    padding: 0;\r\n  }\r\n}\r\n
-\r\n.workspace-page .workspace-grid {\r\n  display: grid;\r\n  grid-template-columns: minmax(0, 1fr) 280px;\r\n  gap: 1.5rem;\r\n  align-items: start;\r\n  height: 100%;\r\n  padding: 0 3vw 2rem;\r\n}\r\n
+
+
 /* Workspace layout overrides to avoid content under sidebar */
 .app-shell--workspace .main-content {
   padding: 0;
