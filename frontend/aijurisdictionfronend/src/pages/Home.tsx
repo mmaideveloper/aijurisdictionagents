@@ -3,18 +3,14 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { useCases } from "../state/CaseProvider";
+import { Sidebar } from "../components/Sidebar";
 
 const Home: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, user } = useAuth();
-  const { cases, activeCase, createCase, setActiveCase } = useCases();
-  const statusClass = (status: string) => status.toLowerCase().replace(/\s+/g, "-");
+  const { cases, activeCase } = useCases();
 
   if (isAuthenticated) {
-    const handleCreateCase = () => {
-      createCase();
-    };
-
     const activeMatterCount = cases.filter((caseItem) => caseItem.status !== "Completed").length;
 
     return (
@@ -34,38 +30,7 @@ const Home: React.FC = () => {
           </header>
 
           <div className="workspace-grid">
-            <aside className="workspace-panel workspace-panel--left">
-              <div className="panel-card">
-                <div className="panel-card__header">
-                  <h2>Case Sidebar</h2>
-                  <button type="button" className="button ghost small" onClick={handleCreateCase}>
-                    + New case
-                  </button>
-                </div>
-                <ul className="case-list">
-                  {cases.map((caseItem) => {
-                    const isActive = caseItem.id === activeCase?.id;
-                    return (
-                      <li key={caseItem.id}>
-                        <button
-                          type="button"
-                          className={`case-item${isActive ? " active" : ""}`}
-                          onClick={() => setActiveCase(caseItem.id)}
-                        >
-                          <div>
-                            <strong>{caseItem.title}</strong>
-                            <span className="case-meta">{caseItem.workspace.meta}</span>
-                          </div>
-                          <span className={`case-status ${statusClass(caseItem.status)}`}>
-                            {caseItem.status}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </aside>
+            <Sidebar />
 
             <section className="workspace-center">
               <div className="panel-card">
