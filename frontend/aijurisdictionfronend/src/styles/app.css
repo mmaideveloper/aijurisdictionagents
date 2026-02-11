@@ -921,7 +921,7 @@ textarea {
 .sidebar-bubble {
   position: fixed;
   left: 10px;
-  top: 100px;
+  top: 40px;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -1016,6 +1016,7 @@ textarea {
   width: 20px;
   height: 20px;
 }
+
 
 
 
