@@ -27,6 +27,10 @@ The UI includes an in-memory auth state used for local development. It resets on
 - Email: `admin@admin.com`
 - Password: `admin123`
 
+## Signed-in Homepage
+
+When authenticated, the home page switches to a 3-column workspace layout (case sidebar, active workspace, AI configuration). On smaller screens the side panels collapse for a single-column layout.
+
 ## Callback Contract
 
 The frontend expects auth callback requests to hit:
