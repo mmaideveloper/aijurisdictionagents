@@ -32,10 +32,6 @@
   border-bottom: 1px solid var(--border);
 }
 
-.site-header.has-sidebar {
-  margin-left: 260px;
-  width: calc(100% - 260px);
-}
 
 .nav {
   display: flex;
@@ -216,12 +212,13 @@
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   gap: 1.5rem;
   align-items: start;
   height: 100%;
-  padding: 0 6vw;
+  padding: 0 3vw 2rem;
 }
+
 
 .workspace-center,
 .workspace-panel {
@@ -240,14 +237,19 @@
 
 .workspace-panel--left {
   align-self: stretch;
+  width: 260px;
+  transition: width 0.3s ease;
+  overflow: hidden;
 }
 
 .sidebar {
+  position: relative;
   background: var(--surface);
   border-radius: 0;
   border-right: 1px solid rgba(31, 27, 22, 0.08);
   box-shadow: none;
   height: 100%;
+  transition: opacity 0.2s ease;
 }
 
 .sidebar-inner {
@@ -262,6 +264,7 @@
   display: flex;
   align-items: center;
   gap: 0.8rem;
+  justify-content: space-between;
 }
 
 .sidebar-brand strong {
@@ -855,11 +858,6 @@ textarea {
   .workspace-panel {
     display: none;
   }
-
-  .site-header.has-sidebar {
-    margin-left: 0;
-    width: 100%;
-  }
 }
 
 @media (max-width: 700px) {
@@ -957,3 +955,47 @@ textarea {
 }
 
 
+
+.app-shell--sidebar-collapsed .app-shell__main {
+  margin-left: 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+.app-shell--workspace .main-content {
+  padding: 0;
+  overflow: hidden;
+}
+
+.workspace-panel--left {
+  width: 260px;
+  transition: width 0.3s ease;
+  overflow: hidden;
+}
+
+.workspace-panel--left.is-collapsed {
+  width: 0;
+  border-right: none;
+}
+
+.sidebar--collapsed {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-brand .brand-mark {
+  flex-shrink: 0;
+}
+\r\n/* workspace-page override */\r\n.workspace-page {\r\n  height: 100%;\r\n  margin-left: 0;\r\n  margin-right: 0;\r\n}\r\n
+\r\n/* workspace-main override mobile */\r\n@media (max-width: 900px) {\r\n  .app-shell--workspace .main-content {\r\n    padding: 0;\r\n  }\r\n}\r\n
+\r\n.workspace-page .workspace-grid {\r\n  display: grid;\r\n  grid-template-columns: minmax(0, 1fr) 280px;\r\n  gap: 1.5rem;\r\n  align-items: start;\r\n  height: 100%;\r\n  padding: 0 3vw 2rem;\r\n}\r\n

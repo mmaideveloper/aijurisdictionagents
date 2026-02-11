@@ -30,7 +30,7 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
       <div
         className={`app-shell app-shell--workspace${sidebarOpen ? "" : " app-shell--sidebar-collapsed"}`}
       >
-        {sidebarOpen ? <Sidebar onClose={() => setSidebarOpen(false)} /> : null}
+        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         {!sidebarOpen ? (
           <button
             type="button"
@@ -57,4 +57,3 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
     </div>
   );
 };
-

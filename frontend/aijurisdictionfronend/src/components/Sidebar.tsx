@@ -25,15 +25,19 @@ const BookOpenIcon: React.FC = () => (
 
 type SidebarProps = {
   onClose?: () => void;
+  open?: boolean;
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ onClose, open = true }) => {
   const { cases, activeCase, createCase, setActiveCase } = useCases();
   const { t } = useLanguage();
 
   return (
-    <aside className="workspace-panel workspace-panel--left">
-      <div className="sidebar">
+    <aside
+      className={`workspace-panel workspace-panel--left${open ? "" : " is-collapsed"}`}
+      aria-hidden={!open}
+    >
+      <div className={`sidebar${open ? "" : " sidebar--collapsed"}`}>
         <div className="sidebar-inner">
           <div className="sidebar-brand">
             <div className="brand-mark" aria-hidden="true">
@@ -111,4 +115,3 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
     </aside>
   );
 };
-
