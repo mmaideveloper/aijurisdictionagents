@@ -1,6 +1,18 @@
-﻿.app-shell {
+.app-shell {
   position: relative;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell--workspace {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.app-shell__main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -606,7 +618,7 @@
 }
 
 .card ul li::before {
-  content: "• ";
+  content: "� ";
   color: var(--accent);
 }
 
@@ -905,3 +917,6 @@ textarea {
 .callback__back {
   justify-self: center;
 }
+
+
+

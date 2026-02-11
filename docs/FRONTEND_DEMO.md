@@ -57,7 +57,7 @@ Case sidebar behavior:
 - The sidebar is now componentized and uses a branded header plus section grouping.
 - Each case row stays the same background as the sidebar with a status-colored dot.
 - The workspace view is full-height with internal scrolling, so the page itself does not scroll.
-- On the authenticated home view, the top navbar shifts right to sit beside the left sidebar.
+- On the authenticated home view, the layout is a full-height flex row: sidebar on the left, navbar + content on the right.
 
 ## Case state model
 
