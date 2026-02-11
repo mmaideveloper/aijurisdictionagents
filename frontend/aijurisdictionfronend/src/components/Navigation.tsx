@@ -4,7 +4,17 @@ import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "./LanguageProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 
-export const Navigation: React.FC = () => {
+type NavigationProps = {
+  showSidebarToggle?: boolean;
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
+};
+
+export const Navigation: React.FC<NavigationProps> = ({
+  showSidebarToggle = false,
+  sidebarOpen = true,
+  onToggleSidebar
+}) => {
   const { t } = useLanguage();
   const { isAuthenticated, user } = useAuth();
   const [profileOpen, setProfileOpen] = React.useState(false);
@@ -52,14 +62,17 @@ export const Navigation: React.FC = () => {
   return (
     <header className="site-header">
       <nav className="nav">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            AJ
-          </div>
-          <div>
-            <strong>{t("appName")}</strong>
-            <span>{t("tagline")}</span>
-          </div>
+        <div className="nav-left">
+          {showSidebarToggle ? (
+            <button
+              type="button"
+              className="sidebar-toggle"
+              onClick={onToggleSidebar}
+              aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            >
+              {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            </button>
+          ) : null}
         </div>
         <div className="nav-links">
           <NavLink to="/">{t("navHome")}</NavLink>

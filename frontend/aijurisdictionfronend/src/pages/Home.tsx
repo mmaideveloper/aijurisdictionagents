@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { useCases } from "../state/CaseProvider";
-import { Sidebar } from "../components/Sidebar";
 
 const Home: React.FC = () => {
   const { t } = useLanguage();
@@ -30,7 +29,6 @@ const Home: React.FC = () => {
           </header>
 
           <div className="workspace-grid">
-            <Sidebar />
 
             <section className="workspace-center">
               <div className="panel-card">

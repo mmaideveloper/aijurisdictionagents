@@ -1,21 +1,39 @@
 import React from "react";
 import { useCases } from "../state/CaseProvider";
+import { useLanguage } from "./LanguageProvider";
 
 const statusClass = (status: string) => status.toLowerCase().replace(/\s+/g, "-");
 
-export const Sidebar: React.FC = () => {
+type SidebarProps = {
+  onClose?: () => void;
+};
+
+export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { cases, activeCase, createCase, setActiveCase } = useCases();
+  const { t } = useLanguage();
 
   return (
     <aside className="workspace-panel workspace-panel--left">
       <div className="sidebar">
         <div className="sidebar-inner">
           <div className="sidebar-brand">
-            <div className="sidebar-mark">AJ</div>
-            <div>
-              <strong>JurAI</strong>
-              <span>Case workspace</span>
+            <div className="brand-mark" aria-hidden="true">
+              AJ
             </div>
+            <div>
+              <strong>{t("appName")}</strong>
+              <span>{t("tagline")}</span>
+            </div>
+            {onClose ? (
+              <button
+                type="button"
+                className="sidebar-close"
+                onClick={onClose}
+                aria-label="Close sidebar"
+              >
+                ×
+              </button>
+            ) : null}
           </div>
 
           <div className="sidebar-section sidebar-section--cases">

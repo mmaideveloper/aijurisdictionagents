@@ -9,13 +9,20 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
   const { isAuthenticated } = useAuth();
   const { pathname } = useLocation();
   const hasWorkspaceLayout = isAuthenticated && pathname === "/";
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
 
   if (hasWorkspaceLayout) {
     return (
-      <div className="app-shell app-shell--workspace">
-        <Sidebar />
+      <div
+        className={`app-shell app-shell--workspace${sidebarOpen ? "" : " app-shell--sidebar-collapsed"}`}
+      >
+        {sidebarOpen ? <Sidebar onClose={() => setSidebarOpen(false)} /> : null}
         <div className="app-shell__main">
-          <Navigation />
+          <Navigation
+            showSidebarToggle
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          />
           <main className="main-content">{children}</main>
         </div>
       </div>
