@@ -918,23 +918,28 @@ textarea {
 }
 
 
-.sidebar-bubble {\n  position: fixed;\n  left: 10px;\n  top: 100px;\n  width: 48px;\n  height: 48px;\n  border-radius: 50%;\n  background: #2c2c2c;\n  color: #fff;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);\n  z-index: 1000;\n}\n
-
-.sidebar-icon {
-  width: 24px;
-  height: 24px;
-}
-
-.sidebar-toggle-btn {
-  width: 40px;
-  height: 40px;
+.sidebar-bubble {
+  position: fixed;
+  left: 10px;
+  top: 100px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #2c2c2c;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
 }
 
+
+.sidebar-icon {
+  width: 48px;
+  height: 48px;
+}
 
 .app-shell--sidebar-collapsed .app-shell__main {
   margin-left: 0;
@@ -993,4 +998,20 @@ textarea {
   overflow-y: auto;
 }
 
-\n.sidebar-icon {\n  width: 24px;\n  height: 24px;\n}\n\n.sidebar-close-btn {\n  width: 40px;\n  height: 40px;\n  border-radius: 8px;\n  border: 1px solid var(--border);\n  background: var(--surface);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n}\n\n.sidebar-close-btn .sidebar-icon {\n  width: 22px;\n  height: 22px;\n}\n
+
+.sidebar-close-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.sidebar-close-btn .sidebar-icon {
+  width: 48px;
+  height: 48px;
+}
