@@ -54,3 +54,13 @@ Case sidebar behavior:
 - `+ New case` creates a mock case and makes it active.
 - Clicking a case loads its data into the center workspace and AI configuration panel.
 - The case list scrolls independently while the sidebar stays sticky during page scroll.
+
+## Case state model
+
+The frontend now includes a session-scoped case store exposed via a context provider.
+Each case includes:
+- `id`, `title`, `description`, `status`, `createdAt`
+- `interactionHistory` entries with timestamps, actors, and messages
+- `selectedRole` and `selectedMode` stored per case
+
+The active case is available globally via the `CaseProvider` context.
