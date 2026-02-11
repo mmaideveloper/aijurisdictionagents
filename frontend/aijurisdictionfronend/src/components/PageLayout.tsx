@@ -34,7 +34,7 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
         {!sidebarOpen ? (
           <button
             type="button"
-            className="sidebar-reopen"
+            className="sidebar-bubble sidebar-bubble--open"
             onClick={() => setSidebarOpen(true)}
             aria-label="Open sidebar"
           >
@@ -57,3 +57,4 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
     </div>
   );
 };
+

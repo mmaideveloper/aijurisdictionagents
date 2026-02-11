@@ -46,7 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
             {onClose ? (
               <button
                 type="button"
-                className="sidebar-close"
+                className="sidebar-bubble sidebar-bubble--close"
                 onClick={onClose}
                 aria-label="Close sidebar"
               >
@@ -111,3 +111,4 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
     </aside>
   );
 };
+

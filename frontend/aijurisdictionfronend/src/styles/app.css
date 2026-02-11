@@ -8,6 +8,7 @@
 .app-shell--workspace {
   flex-direction: row;
   align-items: stretch;
+  position: relative;
 }
 
 .app-shell__main {
@@ -922,17 +923,37 @@ textarea {
 
 
 
-.sidebar-reopen {
-  width: 52px;
+
+
+.sidebar-bubble {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
   background: var(--surface);
-  border-right: 1px solid var(--border);
   display: grid;
   place-items: center;
   cursor: pointer;
+  box-shadow: 0 10px 20px rgba(31, 27, 22, 0.12);
 }
 
-.sidebar-reopen svg {
-  width: 22px;
-  height: 22px;
+.sidebar-bubble svg {
+  width: 20px;
+  height: 20px;
 }
+
+.sidebar-bubble--close {
+  position: absolute;
+  right: -20px;
+  top: 20px;
+}
+
+.sidebar-bubble--open {
+  position: absolute;
+  left: 0;
+  top: 90px;
+  transform: translateX(-50%);
+  z-index: 9;
+}
+
 
