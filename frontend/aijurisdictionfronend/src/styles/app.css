@@ -856,9 +856,10 @@ textarea {
   }
 
   .workspace-panel {
-    display: none;
+    display: block;
   }
 }
+
 
 @media (max-width: 700px) {
   .workspace-header {
@@ -952,16 +953,6 @@ textarea {
 }
 
 
-.workspace-panel--left.is-collapsed {
-  width: 0;
-  border-right: none;
-}
-
-.sidebar--collapsed {
-  opacity: 0;
-  pointer-events: none;
-}
-
 .sidebar-brand .brand-mark {
   flex-shrink: 0;
 }
@@ -997,26 +988,3 @@ textarea {
   height: 100%;
   overflow-y: auto;
 }
-
-
-.sidebar-close-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  align-self: flex-start;
-}
-
-.sidebar-close-btn .sidebar-icon {
-  width: 20px;
-  height: 20px;
-}
-
-
-
-
