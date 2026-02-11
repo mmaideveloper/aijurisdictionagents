@@ -999,3 +999,33 @@ textarea {
 \r\n/* workspace-page override */\r\n.workspace-page {\r\n  height: 100%;\r\n  margin-left: 0;\r\n  margin-right: 0;\r\n}\r\n
 \r\n/* workspace-main override mobile */\r\n@media (max-width: 900px) {\r\n  .app-shell--workspace .main-content {\r\n    padding: 0;\r\n  }\r\n}\r\n
 \r\n.workspace-page .workspace-grid {\r\n  display: grid;\r\n  grid-template-columns: minmax(0, 1fr) 280px;\r\n  gap: 1.5rem;\r\n  align-items: start;\r\n  height: 100%;\r\n  padding: 0 3vw 2rem;\r\n}\r\n
+/* Workspace layout overrides to avoid content under sidebar */
+.app-shell--workspace .main-content {
+  padding: 0;
+  overflow: hidden;
+}
+
+.app-shell--workspace .workspace-page {
+  height: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.app-shell--workspace .workspace-shell {
+  height: 100%;
+}
+
+.app-shell--workspace .workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 1.5rem;
+  align-items: start;
+  height: 100%;
+  padding: 0 3vw 2rem;
+}
+
+.app-shell--workspace .workspace-center,
+.app-shell--workspace .workspace-panel--right {
+  height: 100%;
+  overflow-y: auto;
+}
