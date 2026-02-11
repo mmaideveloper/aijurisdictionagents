@@ -937,8 +937,8 @@ textarea {
 
 
 .sidebar-icon {
-  width: 48px;
-  height: 48px;
+  width: 20px;
+  height: 20px;
 }
 
 .app-shell--sidebar-collapsed .app-shell__main {
@@ -1012,7 +1012,8 @@ textarea {
 }
 
 .sidebar-close-btn .sidebar-icon {
-  width: 48px;
-  height: 48px;
+  width: 20px;
+  height: 20px;
 }
+
 
