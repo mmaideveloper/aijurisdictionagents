@@ -262,7 +262,7 @@
 
 .sidebar-brand {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.8rem;
   justify-content: space-between;
 }
@@ -1009,11 +1009,13 @@ textarea {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  align-self: flex-start;
 }
 
 .sidebar-close-btn .sidebar-icon {
   width: 20px;
   height: 20px;
 }
+
 
 
