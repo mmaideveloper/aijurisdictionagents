@@ -1,9 +1,124 @@
 ﻿import React from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
 const Home: React.FC = () => {
   const { t } = useLanguage();
+  const { isAuthenticated, user } = useAuth();
+
+  if (isAuthenticated) {
+    return (
+      <div className="page workspace-page">
+        <section className="workspace-shell">
+          <header className="workspace-header">
+            <div>
+              <h1>Workspace</h1>
+              <p className="hint">
+                Welcome back, {user?.name ?? "Admin"}. Pick a case to continue your work.
+              </p>
+            </div>
+            <div className="workspace-meta">
+              <span className="pill active">Signed in</span>
+              <span className="pill">3 active matters</span>
+            </div>
+          </header>
+
+          <div className="workspace-grid">
+            <aside className="workspace-panel workspace-panel--left">
+              <div className="panel-card">
+                <div className="panel-card__header">
+                  <h2>Case Sidebar</h2>
+                  <button type="button" className="button ghost small">+ New case</button>
+                </div>
+                <ul className="case-list">
+                  <li className="case-item active">
+                    <div>
+                      <strong>Keystone Holdings Intake</strong>
+                      <span className="case-meta">Due in 2 days</span>
+                    </div>
+                    <span className="case-status">In progress</span>
+                  </li>
+                  <li className="case-item">
+                    <div>
+                      <strong>Atlas Contract Review</strong>
+                      <span className="case-meta">Waiting on docs</span>
+                    </div>
+                    <span className="case-status muted">On hold</span>
+                  </li>
+                  <li className="case-item">
+                    <div>
+                      <strong>Meridian Audit Prep</strong>
+                      <span className="case-meta">Kickoff today</span>
+                    </div>
+                    <span className="case-status">Scheduled</span>
+                  </li>
+                </ul>
+              </div>
+            </aside>
+
+            <section className="workspace-center">
+              <div className="panel-card">
+                <div className="panel-card__header">
+                  <h2>Active Workspace</h2>
+                  <span className="pill">Case 01</span>
+                </div>
+                <div className="workspace-stream">
+                  <article>
+                    <h3>Current objective</h3>
+                    <p>
+                      Consolidate jurisdiction analysis and prepare a briefing memo for counsel
+                      review.
+                    </p>
+                  </article>
+                  <article>
+                    <h3>Recent activity</h3>
+                    <ul className="activity-list">
+                      <li>Drafted timeline summary from uploaded exhibits.</li>
+                      <li>Reviewed contract variance clauses for compliance risk.</li>
+                      <li>Queued agent sync with regional legal guidance.</li>
+                    </ul>
+                  </article>
+                  <article className="workspace-callout">
+                    <h3>Next recommended action</h3>
+                    <p>Schedule a 15-minute voice session with the AI agent to confirm scope.</p>
+                    <button type="button" className="button primary">Start voice session</button>
+                  </article>
+                </div>
+              </div>
+            </section>
+
+            <aside className="workspace-panel workspace-panel--right">
+              <div className="panel-card">
+                <div className="panel-card__header">
+                  <h2>AI Configuration</h2>
+                  <span className="pill">Draft mode</span>
+                </div>
+                <div className="config-list">
+                  <div>
+                    <h4>Primary agent</h4>
+                    <p>Compliance Counsel</p>
+                  </div>
+                  <div>
+                    <h4>Jurisdiction focus</h4>
+                    <p>EU + UK</p>
+                  </div>
+                  <div>
+                    <h4>Output</h4>
+                    <p>Briefing memo + checklist</p>
+                  </div>
+                  <div className="config-actions">
+                    <button type="button" className="button ghost full">Edit settings</button>
+                    <button type="button" className="button primary full">Run evaluation</button>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="page">

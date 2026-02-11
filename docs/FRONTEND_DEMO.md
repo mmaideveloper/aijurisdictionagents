@@ -45,3 +45,7 @@ npm run preview
 - Feature cards for intake, orchestration, and outputs
 - Callout panel for upcoming API integration
 - Navbar reacts to mock auth state: sign-in link when logged out, profile menu with name + email when logged in
+
+## Signed-in homepage
+
+When authenticated, the home page swaps to a 3-column workspace layout: case sidebar, active workspace, and AI configuration panel. On narrow screens the side panels collapse and the center workspace takes full width.
