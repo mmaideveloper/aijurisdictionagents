@@ -97,3 +97,11 @@ Single-stage local run example:
 ```bash
 python scripts/lifecycle_agent_run.py --stage solution --project-name "Demo" --idea "Build a fullstack app." --output runs/lifecycle/solution_agent_result.json
 ```
+
+## MCP Server Setup (Microsoft Learn)
+
+Add the Microsoft Learn MCP server to Codex:
+
+```bash
+codex mcp add "microsoft-learn" --url "https://learn.microsoft.com/api/mcp"
+```
