@@ -930,11 +930,6 @@ textarea {
   box-shadow: 0 10px 20px rgba(31, 27, 22, 0.12);
 }
 
-.sidebar-bubble svg {
-  width: 20px;
-  height: 20px;
-}
-
 .sidebar-bubble--close {
   position: absolute;
   right: -20px;
@@ -947,6 +942,21 @@ textarea {
   top: 90px;
   transform: translateX(-50%);
   z-index: 9;
+}
+
+.sidebar-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.sidebar-toggle-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
 }
 
 
@@ -1006,3 +1016,4 @@ textarea {
   height: 100%;
   overflow-y: auto;
 }
+

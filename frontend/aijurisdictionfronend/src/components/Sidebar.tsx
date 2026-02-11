@@ -5,7 +5,7 @@ import { useLanguage } from "./LanguageProvider";
 const statusClass = (status: string) => status.toLowerCase().replace(/\s+/g, "-");
 
 const BookOpenIcon: React.FC = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  <svg viewBox="0 0 24 24" className="sidebar-icon" aria-hidden="true" focusable="false">
     <path
       d="M3.5 4h7c1.66 0 3 1.34 3 3v12c0-1.1-.9-2-2-2h-8V4z"
       fill="currentColor"
@@ -25,19 +25,15 @@ const BookOpenIcon: React.FC = () => (
 
 type SidebarProps = {
   onClose?: () => void;
-  open?: boolean;
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ onClose, open = true }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { cases, activeCase, createCase, setActiveCase } = useCases();
   const { t } = useLanguage();
 
   return (
-    <aside
-      className={`workspace-panel workspace-panel--left${open ? "" : " is-collapsed"}`}
-      aria-hidden={!open}
-    >
-      <div className={`sidebar${open ? "" : " sidebar--collapsed"}`}>
+    <aside className="workspace-panel workspace-panel--left">
+      <div className="sidebar">
         <div className="sidebar-inner">
           <div className="sidebar-brand">
             <div className="brand-mark" aria-hidden="true">
@@ -50,7 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose, open = true }) => {
             {onClose ? (
               <button
                 type="button"
-                className="sidebar-bubble sidebar-bubble--close"
+                className="sidebar-bubble sidebar-bubble--close sidebar-toggle-btn"
                 onClick={onClose}
                 aria-label="Close sidebar"
               >
