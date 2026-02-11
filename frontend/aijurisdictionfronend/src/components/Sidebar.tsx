@@ -18,7 +18,7 @@ export const Sidebar: React.FC = () => {
             </div>
           </div>
 
-          <div className="sidebar-section">
+          <div className="sidebar-section sidebar-section--cases">
             <div className="sidebar-section__header">
               <h3>Cases</h3>
               <span>{cases.length}</span>

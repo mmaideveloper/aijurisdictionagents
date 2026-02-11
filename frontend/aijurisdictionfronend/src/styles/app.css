@@ -168,13 +168,18 @@
 }
 
 .workspace-page {
-  padding-top: 2rem;
+  padding-top: 0;
+  height: calc(100vh - 6rem);
+  overflow: hidden;
+  margin-left: -6vw;
+  margin-right: -6vw;
 }
 
 .workspace-shell {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  height: 100%;
 }
 
 .workspace-header {
@@ -196,6 +201,8 @@
   grid-template-columns: 260px minmax(0, 1fr) 280px;
   gap: 1.5rem;
   align-items: start;
+  height: 100%;
+  padding: 0 6vw;
 }
 
 .workspace-center,
@@ -203,17 +210,25 @@
   min-width: 0;
 }
 
+.workspace-center {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.workspace-panel--right {
+  height: 100%;
+  overflow-y: auto;
+}
+
 .workspace-panel--left {
-  position: sticky;
-  top: 6rem;
-  align-self: start;
+  align-self: stretch;
 }
 
 .sidebar {
   background: var(--surface);
-  border-radius: var(--radius);
-  border: 1px solid rgba(31, 27, 22, 0.08);
-  box-shadow: var(--shadow);
+  border-radius: 0;
+  border-right: 1px solid rgba(31, 27, 22, 0.08);
+  box-shadow: none;
   height: 100%;
 }
 
@@ -222,6 +237,7 @@
   flex-direction: column;
   gap: 1.6rem;
   padding: 1.6rem;
+  height: 100%;
 }
 
 .sidebar-brand {
@@ -257,6 +273,11 @@
   gap: 0.9rem;
 }
 
+.sidebar-section--cases {
+  flex: 1;
+  min-height: 0;
+}
+
 .sidebar-section__header {
   display: flex;
   justify-content: space-between;
@@ -271,7 +292,8 @@
 }
 
 .case-list-scroll {
-  max-height: calc(100vh - 23rem);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 0.3rem;
 }
@@ -335,10 +357,10 @@
 .case-item.active::before {
   content: "";
   position: absolute;
-  left: -0.4rem;
-  top: 12%;
-  bottom: 12%;
-  width: 3px;
+  left: -0.6rem;
+  top: 10%;
+  bottom: 10%;
+  width: 4px;
   background: var(--accent);
   border-radius: 999px;
 }
@@ -406,6 +428,7 @@
 }
 
 .sidebar-footer {
+  margin-top: auto;
   font-size: 0.8rem;
   color: var(--ink-muted);
   border-top: 1px solid var(--border);

@@ -53,9 +53,10 @@ When authenticated, the home page swaps to a 3-column workspace layout: case sid
 Case sidebar behavior:
 - `+ New case` creates a mock case and makes it active.
 - Clicking a case loads its data into the center workspace and AI configuration panel.
-- The case list scrolls independently while the sidebar stays sticky during page scroll.
+- The case list scrolls independently within the full-height sidebar.
 - The sidebar is now componentized and uses a branded header plus section grouping.
 - Each case row stays the same background as the sidebar with a status-colored dot.
+- The workspace view is full-height with internal scrolling, so the page itself does not scroll.
 
 ## Case state model
 
