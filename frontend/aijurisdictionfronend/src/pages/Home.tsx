@@ -3,11 +3,116 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
+type CaseStatus = "In progress" | "On hold" | "Scheduled" | "Completed";
+
+type CaseWorkspace = {
+  id: string;
+  title: string;
+  status: CaseStatus;
+  meta: string;
+  objective: string;
+  activity: string[];
+  nextAction: string;
+  agent: string;
+  jurisdiction: string;
+  output: string;
+};
+
+const initialCases: CaseWorkspace[] = [
+  {
+    id: "case-001",
+    title: "Keystone Holdings Intake",
+    status: "In progress",
+    meta: "Due in 2 days",
+    objective: "Consolidate jurisdiction analysis and prepare a briefing memo for counsel review.",
+    activity: [
+      "Drafted timeline summary from uploaded exhibits.",
+      "Reviewed contract variance clauses for compliance risk.",
+      "Queued agent sync with regional legal guidance.",
+    ],
+    nextAction: "Schedule a 15-minute voice session with the AI agent to confirm scope.",
+    agent: "Compliance Counsel",
+    jurisdiction: "EU + UK",
+    output: "Briefing memo + checklist",
+  },
+  {
+    id: "case-002",
+    title: "Atlas Contract Review",
+    status: "On hold",
+    meta: "Waiting on docs",
+    objective: "Gather missing vendor exhibits and align on scope with procurement leadership.",
+    activity: [
+      "Requested updated vendor packet from counsel.",
+      "Flagged missing data privacy addendum.",
+      "Prepared negotiation highlights for review.",
+    ],
+    nextAction: "Follow up with counsel on outstanding document set.",
+    agent: "Contract Analyst",
+    jurisdiction: "US + Canada",
+    output: "Clause redline + risk summary",
+  },
+  {
+    id: "case-003",
+    title: "Meridian Audit Prep",
+    status: "Scheduled",
+    meta: "Kickoff today",
+    objective: "Align audit prep checklist and confirm timeline with internal teams.",
+    activity: [
+      "Outlined audit scope with finance partners.",
+      "Mapped evidence checklist to control owners.",
+      "Drafted opening statement for kickoff.",
+    ],
+    nextAction: "Start kickoff session and capture action items.",
+    agent: "Audit Strategist",
+    jurisdiction: "EU + US",
+    output: "Audit kickoff deck",
+  },
+  {
+    id: "case-004",
+    title: "Northwind Arbitration",
+    status: "Completed",
+    meta: "Closed last week",
+    objective: "Finalize arbitration summary and archive case documentation.",
+    activity: [
+      "Generated final arbitration brief.",
+      "Collected final stakeholder sign-offs.",
+      "Archived evidence package.",
+    ],
+    nextAction: "Send closing memo to executive stakeholders.",
+    agent: "Litigation Lead",
+    jurisdiction: "UK",
+    output: "Arbitration summary pack",
+  },
+];
+
 const Home: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, user } = useAuth();
+  const [cases, setCases] = React.useState<CaseWorkspace[]>(initialCases);
+  const [activeCaseId, setActiveCaseId] = React.useState<string>(initialCases[0]?.id ?? "");
+  const activeCase = cases.find((caseItem) => caseItem.id === activeCaseId) ?? cases[0];
+  const statusClass = (status: CaseStatus) => status.toLowerCase().replace(/\s+/g, "-");
 
   if (isAuthenticated) {
+    const handleCreateCase = () => {
+      const timestamp = Date.now();
+      const newCase: CaseWorkspace = {
+        id: `case-${timestamp}`,
+        title: `New matter ${cases.length + 1}`,
+        status: "In progress",
+        meta: "Just created",
+        objective: "Define scope, assign roles, and request initial documents.",
+        activity: ["Opened new case workspace.", "Set initial jurisdiction focus."],
+        nextAction: "Add key facts and upload first evidence set.",
+        agent: "General Counsel",
+        jurisdiction: "TBD",
+        output: "Intake brief",
+      };
+
+      setCases((prev) => [newCase, ...prev]);
+      setActiveCaseId(newCase.id);
+    };
+
     return (
       <div className="page workspace-page">
         <section className="workspace-shell">
@@ -29,30 +134,31 @@ const Home: React.FC = () => {
               <div className="panel-card">
                 <div className="panel-card__header">
                   <h2>Case Sidebar</h2>
-                  <button type="button" className="button ghost small">+ New case</button>
+                  <button type="button" className="button ghost small" onClick={handleCreateCase}>
+                    + New case
+                  </button>
                 </div>
                 <ul className="case-list">
-                  <li className="case-item active">
-                    <div>
-                      <strong>Keystone Holdings Intake</strong>
-                      <span className="case-meta">Due in 2 days</span>
-                    </div>
-                    <span className="case-status">In progress</span>
-                  </li>
-                  <li className="case-item">
-                    <div>
-                      <strong>Atlas Contract Review</strong>
-                      <span className="case-meta">Waiting on docs</span>
-                    </div>
-                    <span className="case-status muted">On hold</span>
-                  </li>
-                  <li className="case-item">
-                    <div>
-                      <strong>Meridian Audit Prep</strong>
-                      <span className="case-meta">Kickoff today</span>
-                    </div>
-                    <span className="case-status">Scheduled</span>
-                  </li>
+                  {cases.map((caseItem) => {
+                    const isActive = caseItem.id === activeCase?.id;
+                    return (
+                      <li key={caseItem.id}>
+                        <button
+                          type="button"
+                          className={`case-item${isActive ? " active" : ""}`}
+                          onClick={() => setActiveCaseId(caseItem.id)}
+                        >
+                          <div>
+                            <strong>{caseItem.title}</strong>
+                            <span className="case-meta">{caseItem.meta}</span>
+                          </div>
+                          <span className={`case-status ${statusClass(caseItem.status)}`}>
+                            {caseItem.status}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             </aside>
@@ -61,27 +167,24 @@ const Home: React.FC = () => {
               <div className="panel-card">
                 <div className="panel-card__header">
                   <h2>Active Workspace</h2>
-                  <span className="pill">Case 01</span>
+                  <span className="pill">{activeCase?.id ?? "Case"}</span>
                 </div>
                 <div className="workspace-stream">
                   <article>
                     <h3>Current objective</h3>
-                    <p>
-                      Consolidate jurisdiction analysis and prepare a briefing memo for counsel
-                      review.
-                    </p>
+                    <p>{activeCase?.objective}</p>
                   </article>
                   <article>
                     <h3>Recent activity</h3>
                     <ul className="activity-list">
-                      <li>Drafted timeline summary from uploaded exhibits.</li>
-                      <li>Reviewed contract variance clauses for compliance risk.</li>
-                      <li>Queued agent sync with regional legal guidance.</li>
+                      {activeCase?.activity?.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
                     </ul>
                   </article>
                   <article className="workspace-callout">
                     <h3>Next recommended action</h3>
-                    <p>Schedule a 15-minute voice session with the AI agent to confirm scope.</p>
+                    <p>{activeCase?.nextAction}</p>
                     <button type="button" className="button primary">Start voice session</button>
                   </article>
                 </div>
@@ -97,15 +200,15 @@ const Home: React.FC = () => {
                 <div className="config-list">
                   <div>
                     <h4>Primary agent</h4>
-                    <p>Compliance Counsel</p>
+                    <p>{activeCase?.agent}</p>
                   </div>
                   <div>
                     <h4>Jurisdiction focus</h4>
-                    <p>EU + UK</p>
+                    <p>{activeCase?.jurisdiction}</p>
                   </div>
                   <div>
                     <h4>Output</h4>
-                    <p>Briefing memo + checklist</p>
+                    <p>{activeCase?.output}</p>
                   </div>
                   <div className="config-actions">
                     <button type="button" className="button ghost full">Edit settings</button>

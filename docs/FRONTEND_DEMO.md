@@ -49,3 +49,8 @@ npm run preview
 ## Signed-in homepage
 
 When authenticated, the home page swaps to a 3-column workspace layout: case sidebar, active workspace, and AI configuration panel. On narrow screens the side panels collapse and the center workspace takes full width.
+
+Case sidebar behavior:
+- `+ New case` creates a mock case and makes it active.
+- Clicking a case loads its data into the center workspace and AI configuration panel.
+- The case list scrolls independently while the sidebar stays sticky during page scroll.
