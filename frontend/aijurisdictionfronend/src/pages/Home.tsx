@@ -135,7 +135,7 @@ const Home: React.FC = () => {
             <aside className="workspace-panel workspace-panel--right">
               <div className="panel-card">
                 <div className="panel-card__header">
-                  <h2>AI Configuration</h2>
+                  <h2>Configurations</h2>
                   <span className="pill">{activeCase?.selectedMode ?? "Draft"} mode</span>
                 </div>
                 <div className="config-list">
@@ -168,18 +168,6 @@ const Home: React.FC = () => {
                       })}
                     </div>
                   </fieldset>
-                  <div>
-                    <h4>Primary agent</h4>
-                    <p>{activeCase?.selectedRole}</p>
-                  </div>
-                  <div>
-                    <h4>Jurisdiction focus</h4>
-                    <p>{activeCase?.workspace.jurisdiction}</p>
-                  </div>
-                  <div>
-                    <h4>Output</h4>
-                    <p>{activeCase?.workspace.output}</p>
-                  </div>
                   <div className="config-actions">
                     <button type="button" className="button ghost full">Edit settings</button>
                     <button type="button" className="button primary full">Run evaluation</button>
