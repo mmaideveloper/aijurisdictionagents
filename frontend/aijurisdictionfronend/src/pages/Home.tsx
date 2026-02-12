@@ -3,14 +3,41 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import WorkspaceWelcome from "../components/WorkspaceWelcome";
-import { useCases } from "../state/CaseProvider";
+import { CaseRole, useCases } from "../state/CaseProvider";
 
 const Home: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, user } = useAuth();
-  const { cases, activeCase, hasSelectedCase, continueRequested, setContinueRequested, addInteraction } =
-    useCases();
+  const {
+    cases,
+    activeCase,
+    hasSelectedCase,
+    continueRequested,
+    setContinueRequested,
+    addInteraction,
+    setCaseRole
+  } = useCases();
   const [draftMessage, setDraftMessage] = React.useState("");
+  const roleOptions = React.useMemo(
+    () => [
+      {
+        role: "AI Lawyer" as CaseRole,
+        label: t("workspaceLawyerTitle"),
+        intent: t("roleIntentLawyer")
+      },
+      {
+        role: "AI Judge" as CaseRole,
+        label: t("workspaceJudgeTitle"),
+        intent: t("roleIntentJudge")
+      },
+      {
+        role: "Opposing Counsel" as CaseRole,
+        label: t("workspaceOpposingTitle"),
+        intent: t("roleIntentOpposing")
+      }
+    ],
+    [t]
+  );
 
   if (isAuthenticated) {
     const activeMatterCount = cases.filter((caseItem) => caseItem.status !== "Completed").length;
@@ -108,26 +135,38 @@ const Home: React.FC = () => {
             <aside className="workspace-panel workspace-panel--right">
               <div className="panel-card">
                 <div className="panel-card__header">
-                  <h2>AI Configuration</h2>
-                  <span className="pill">{activeCase?.selectedMode ?? "Draft"} mode</span>
+                  <h2>Configurations</h2>
                 </div>
                 <div className="config-list">
-                  <div>
-                    <h4>Primary agent</h4>
-                    <p>{activeCase?.selectedRole}</p>
-                  </div>
-                  <div>
-                    <h4>Jurisdiction focus</h4>
-                    <p>{activeCase?.workspace.jurisdiction}</p>
-                  </div>
-                  <div>
-                    <h4>Output</h4>
-                    <p>{activeCase?.workspace.output}</p>
-                  </div>
-                  <div className="config-actions">
-                    <button type="button" className="button ghost full">Edit settings</button>
-                    <button type="button" className="button primary full">Run evaluation</button>
-                  </div>
+                  <fieldset className="role-selector" disabled={!activeCase}>
+                    <legend>{t("roleSelectorTitle")}</legend>
+                    <p className="hint">{t("roleSelectorHint")}</p>
+                    <div className="role-options" role="radiogroup">
+                      {roleOptions.map((option) => {
+                        const isActive = activeCase?.selectedRole === option.role;
+                        return (
+                          <label
+                            key={option.role}
+                            className={`role-option${isActive ? " is-active" : ""}`}
+                          >
+                            <input
+                              type="radio"
+                              name={`case-role-${activeCase?.id ?? "current"}`}
+                              value={option.role}
+                              checked={isActive}
+                              onChange={() => {
+                                if (activeCase) {
+                                  setCaseRole(activeCase.id, option.role);
+                                }
+                              }}
+                            />
+                            <span className="role-option__label">{option.label}</span>
+                            <span className="role-option__intent">{option.intent}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
                 </div>
               </div>
             </aside>
