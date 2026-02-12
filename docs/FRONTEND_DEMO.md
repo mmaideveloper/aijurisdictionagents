@@ -32,6 +32,12 @@ From repo root (PowerShell):
 .\examples\frontend_demo.ps1
 ```
 
+Default repo minimal runnable example:
+
+```powershell
+python examples/minimal_demo.py
+```
+
 ## Build
 
 ```bash
@@ -59,6 +65,7 @@ Case sidebar behavior:
 - The workspace view is full-height with internal scrolling, so the page itself does not scroll.
 - On the authenticated home view, the layout is a full-height flex row: sidebar on the left, navbar + content on the right.
 - The center workspace starts with a welcome state prompting the user to start a new case or continue by selecting a case in the sidebar.
+- The AI configuration panel includes a role selector with intent hints and highlights the active perspective.
 
 ## Case state model
 

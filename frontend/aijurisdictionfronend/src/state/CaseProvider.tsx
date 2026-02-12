@@ -2,12 +2,7 @@ import React from "react";
 
 export type CaseStatus = "In progress" | "On hold" | "Scheduled" | "Completed";
 export type CaseMode = "Draft" | "Review" | "Live" | "Archive";
-export type CaseRole =
-  | "Compliance Counsel"
-  | "Contract Analyst"
-  | "Audit Strategist"
-  | "Litigation Lead"
-  | "General Counsel";
+export type CaseRole = "AI Lawyer" | "AI Judge" | "Opposing Counsel";
 
 export type CaseInteraction = {
   id: string;
@@ -65,23 +60,23 @@ const initialCases: CaseRecord[] = [
       {
         id: "case-001-1",
         createdAt: "2026-02-09T10:00:00.000Z",
-        actor: "Compliance Counsel",
+        actor: "AI Lawyer",
         message: "Drafted timeline summary from uploaded exhibits."
       },
       {
         id: "case-001-2",
         createdAt: "2026-02-10T12:30:00.000Z",
-        actor: "Compliance Counsel",
+        actor: "AI Lawyer",
         message: "Reviewed contract variance clauses for compliance risk."
       },
       {
         id: "case-001-3",
         createdAt: "2026-02-10T16:00:00.000Z",
-        actor: "Compliance Counsel",
+        actor: "AI Lawyer",
         message: "Queued agent sync with regional legal guidance."
       }
     ],
-    selectedRole: "Compliance Counsel",
+    selectedRole: "AI Lawyer",
     selectedMode: "Draft",
     workspace: {
       meta: "Due in 2 days",
@@ -101,23 +96,23 @@ const initialCases: CaseRecord[] = [
       {
         id: "case-002-1",
         createdAt: "2026-02-06T09:10:00.000Z",
-        actor: "Contract Analyst",
+        actor: "AI Judge",
         message: "Requested updated vendor packet from counsel."
       },
       {
         id: "case-002-2",
         createdAt: "2026-02-07T11:45:00.000Z",
-        actor: "Contract Analyst",
+        actor: "AI Judge",
         message: "Flagged missing data privacy addendum."
       },
       {
         id: "case-002-3",
         createdAt: "2026-02-08T15:20:00.000Z",
-        actor: "Contract Analyst",
+        actor: "AI Judge",
         message: "Prepared negotiation highlights for review."
       }
     ],
-    selectedRole: "Contract Analyst",
+    selectedRole: "AI Judge",
     selectedMode: "Review",
     workspace: {
       meta: "Waiting on docs",
@@ -137,23 +132,23 @@ const initialCases: CaseRecord[] = [
       {
         id: "case-003-1",
         createdAt: "2026-02-10T08:45:00.000Z",
-        actor: "Audit Strategist",
+        actor: "Opposing Counsel",
         message: "Outlined audit scope with finance partners."
       },
       {
         id: "case-003-2",
         createdAt: "2026-02-10T13:05:00.000Z",
-        actor: "Audit Strategist",
+        actor: "Opposing Counsel",
         message: "Mapped evidence checklist to control owners."
       },
       {
         id: "case-003-3",
         createdAt: "2026-02-10T17:30:00.000Z",
-        actor: "Audit Strategist",
+        actor: "Opposing Counsel",
         message: "Drafted opening statement for kickoff."
       }
     ],
-    selectedRole: "Audit Strategist",
+    selectedRole: "Opposing Counsel",
     selectedMode: "Live",
     workspace: {
       meta: "Kickoff today",
@@ -173,23 +168,23 @@ const initialCases: CaseRecord[] = [
       {
         id: "case-004-1",
         createdAt: "2026-02-04T09:00:00.000Z",
-        actor: "Litigation Lead",
+        actor: "AI Lawyer",
         message: "Generated final arbitration brief."
       },
       {
         id: "case-004-2",
         createdAt: "2026-02-04T12:20:00.000Z",
-        actor: "Litigation Lead",
+        actor: "AI Lawyer",
         message: "Collected final stakeholder sign-offs."
       },
       {
         id: "case-004-3",
         createdAt: "2026-02-04T16:05:00.000Z",
-        actor: "Litigation Lead",
+        actor: "AI Lawyer",
         message: "Archived evidence package."
       }
     ],
-    selectedRole: "Litigation Lead",
+    selectedRole: "AI Lawyer",
     selectedMode: "Archive",
     workspace: {
       meta: "Closed last week",
@@ -214,17 +209,17 @@ const buildNewCase = (index: number): CaseRecord => {
       {
         id: `case-${idBase}-1`,
         createdAt,
-        actor: "General Counsel",
+        actor: "AI Lawyer",
         message: "Opened new case workspace."
       },
       {
         id: `case-${idBase}-2`,
         createdAt,
-        actor: "General Counsel",
+        actor: "AI Lawyer",
         message: "Set initial jurisdiction focus."
       }
     ],
-    selectedRole: "General Counsel",
+    selectedRole: "AI Lawyer",
     selectedMode: "Draft",
     workspace: {
       meta: "Just created",

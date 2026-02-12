@@ -481,6 +481,67 @@
   gap: 1rem;
 }
 
+.role-selector {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.role-selector legend {
+  font-weight: 600;
+  padding: 0 0.35rem;
+}
+
+.role-options {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.role-option {
+  position: relative;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  background: var(--surface-muted);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.role-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.role-option__label {
+  font-weight: 600;
+}
+
+.role-option__intent {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+.role-option:hover {
+  border-color: rgba(31, 27, 22, 0.12);
+}
+
+.role-option.is-active {
+  border-color: var(--accent);
+  background: rgba(159, 70, 34, 0.08);
+  box-shadow: 0 12px 24px rgba(31, 27, 22, 0.12);
+}
+
+.role-selector[disabled] .role-option {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .config-actions {
   display: grid;
   gap: 0.6rem;
