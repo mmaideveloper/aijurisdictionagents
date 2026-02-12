@@ -54,3 +54,14 @@ npx playwright test
 ```
 
 This approach keeps one tool for UI + API E2E while still allowing pytest integration tests for backend internals.
+
+
+## Current Task #7 progress
+
+- Subtask 1 complete: architecture RFC + ADR (`docs/API_ARCHITECTURE_RFC.md`, `docs/adr/ADR-0001-api-framework-and-streaming.md`).
+- Subtask 3 started: in-memory session/message domain model and initial chat endpoints.
+
+New endpoints:
+- `POST /v1/chat/sessions`
+- `POST /v1/chat/messages`
+- `GET /v1/chat/sessions/{session_id}/messages`

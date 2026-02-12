@@ -1,72 +1,25 @@
+"""Minimal runnable demo for Task #7 API skeleton.
+
+Run API first:
+    uvicorn app.main:app --reload --port 8080 --app-dir api/aijuristiction-api
+
+Then:
+    python examples/minimal_demo.py
+"""
+
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
-from dotenv import load_dotenv
-
-from aijurisdictionagents.agents import create_lawyer_agent
-from aijurisdictionagents.cases import CaseStore
-from aijurisdictionagents.documents import load_documents
-from aijurisdictionagents.jurisdiction import is_slovakia
-from aijurisdictionagents.llm import get_llm_client
-from aijurisdictionagents.observability import TraceRecorder, create_run_dir, setup_logging
-from aijurisdictionagents.orchestration import Orchestrator
+import json
+from urllib import request
 
 
-def main() -> None:
-    load_dotenv()
-    instruction = (
-        "We believe the contract was breached due to late delivery. "
-        "Assess the strongest arguments and likely outcome."
-    )
-
-    run_dir = create_run_dir(Path("runs"))
-    logger = setup_logging(run_dir)
-
-    documents = load_documents(Path("data"))
-    provider = os.getenv("LLM_PROVIDER", "mock").lower()
-    logger.info("LLM provider requested: %s", provider)
-    llm = get_llm_client()
-    logger.info("LLM provider active: %s (%s)", provider, type(llm).__name__)
-    lawyer = create_lawyer_agent(llm, country="SK")
-    judge = None
-
-    trace = TraceRecorder(run_dir)
-    try:
-        orchestrator = Orchestrator(lawyer=lawyer, judge=judge, trace=trace, logger=logger)
-        result = orchestrator.run(
-            instruction,
-            documents,
-            country="SK",
-            language="en",
-            question_timeout_seconds=300,
-            discussion_type="advice",
-        )
-    finally:
-        trace.close()
-
-    print("Final Recommendation:")
-    print(result.final_recommendation)
-    print("\nCitations:")
-    for source in result.citations:
-        print(f"- {source.filename}: {source.snippet}")
-    print("\nJudge Rationale:")
-    print(result.judge_rationale)
-    if is_slovakia("SK"):
-        case_store = CaseStore(Path("cases"))
-        case_record = case_store.create_case(
-            instruction=instruction,
-            country="SK",
-            language="en",
-            messages=result.messages,
-            result=result,
-            agent_name=lawyer.name,
-            data_dir=Path("data"),
-        )
-        print(f"\nCase stored: {case_record.case_id}")
-        print(f"Case folder: {case_record.path}")
+def get_json(url: str) -> dict:
+    with request.urlopen(url, timeout=10) as response:  # noqa: S310
+        return json.loads(response.read().decode("utf-8"))
 
 
 if __name__ == "__main__":
-    main()
+    health = get_json("http://localhost:8080/health")
+    version = get_json("http://localhost:8080/version")
+    print("health:", health)
+    print("version:", version)
