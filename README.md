@@ -115,6 +115,9 @@ conda activate aijurisdictionagents
 
 ## Run the demo
 
+For a complete execution matrix (all CLI options and both discussion types), see
+`docs/RUN_DISCUSSION_TYPES.md`.
+
 Put documents in `data/` and run (country required):
 
 ```bash
