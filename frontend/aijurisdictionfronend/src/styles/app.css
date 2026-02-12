@@ -237,7 +237,7 @@
 
 .workspace-panel--left {
   align-self: stretch;
-  width: 260px;
+  width: 360px;
   transition: width 0.3s ease;
   overflow: hidden;
 }
