@@ -1,0 +1,79 @@
+name: API Build and Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/aijuristiction-api/**"
+      - ".github/workflows/api_build_deploy.yml"
+  pull_request:
+    paths:
+      - "api/aijuristiction-api/**"
+      - ".github/workflows/api_build_deploy.yml"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy to Azure Container Apps"
+        required: true
+        default: "false"
+
+jobs:
+  test_and_build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api/aijuristiction-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Lint
+        run: ruff check app tests
+
+      - name: Type check
+        run: mypy app
+
+      - name: Unit tests
+        run: pytest
+
+      - name: Build Docker image
+        run: docker build -t aijuristiction-api:${{ github.sha }} .
+
+  deploy_to_azure:
+    runs-on: ubuntu-latest
+    needs: test_and_build
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy == 'true'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image to ACR
+        run: |
+          az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/aijuristiction-api:${{ github.sha }} api/aijuristiction-api
+          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/aijuristiction-api:${{ github.sha }}
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          acrName: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+          containerAppName: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
+          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          containerAppEnvironment: ${{ secrets.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+          imageToDeploy: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/aijuristiction-api:${{ github.sha }}
