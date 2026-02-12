@@ -167,10 +167,6 @@ const Home: React.FC = () => {
                       })}
                     </div>
                   </fieldset>
-                  <div className="config-actions">
-                    <button type="button" className="button ghost full">Edit settings</button>
-                    <button type="button" className="button primary full">Run evaluation</button>
-                  </div>
                 </div>
               </div>
             </aside>
