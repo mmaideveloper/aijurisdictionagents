@@ -1052,7 +1052,6 @@ textarea {
 
 .workspace-welcome {
   min-height: 320px;
-  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
