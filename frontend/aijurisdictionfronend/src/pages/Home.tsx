@@ -136,7 +136,6 @@ const Home: React.FC = () => {
               <div className="panel-card">
                 <div className="panel-card__header">
                   <h2>Configurations</h2>
-                  <span className="pill">{activeCase?.selectedMode ?? "Draft"} mode</span>
                 </div>
                 <div className="config-list">
                   <fieldset className="role-selector" disabled={!activeCase}>
