@@ -1,0 +1,36 @@
+[project]
+name = "aijuristiction-api"
+version = "0.1.0"
+description = "Dedicated API service for aijurisdictionagents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.116.1",
+  "uvicorn[standard]>=0.35.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.4.2",
+  "httpx>=0.28.1",
+  "ruff>=0.12.8",
+  "mypy>=1.17.1",
+]
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
