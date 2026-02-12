@@ -58,6 +58,7 @@ Case sidebar behavior:
 - Each case row stays the same background as the sidebar with a status-colored dot.
 - The workspace view is full-height with internal scrolling, so the page itself does not scroll.
 - On the authenticated home view, the layout is a full-height flex row: sidebar on the left, navbar + content on the right.
+- The center workspace starts with a welcome state prompting the user to start a new case or continue by selecting a case in the sidebar.
 
 ## Case state model
 

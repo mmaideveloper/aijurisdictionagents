@@ -40,8 +40,13 @@ type CaseContextValue = {
   cases: CaseRecord[];
   activeCaseId: string | null;
   activeCase: CaseRecord | null;
+  hasSelectedCase: boolean;
+  continueRequested: boolean;
   createCase: () => CaseRecord;
   setActiveCase: (caseId: string) => void;
+  selectCase: (caseId: string) => void;
+  setContinueRequested: (value: boolean) => void;
+  addInteraction: (caseId: string, actor: string, message: string) => void;
   updateCase: (caseId: string, update: Partial<CaseRecord>) => void;
   setCaseRole: (caseId: string, role: CaseRole) => void;
   setCaseMode: (caseId: string, mode: CaseMode) => void;
@@ -234,6 +239,8 @@ const buildNewCase = (index: number): CaseRecord => {
 export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [cases, setCases] = React.useState<CaseRecord[]>(initialCases);
   const [activeCaseId, setActiveCaseId] = React.useState<string | null>(initialCases[0]?.id ?? null);
+  const [hasSelectedCase, setHasSelectedCase] = React.useState(false);
+  const [continueRequested, setContinueRequested] = React.useState(false);
 
   const activeCase = React.useMemo(() => {
     return cases.find((caseItem) => caseItem.id === activeCaseId) ?? cases[0] ?? null;
@@ -243,6 +250,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newCase = buildNewCase(cases.length);
     setCases((prev) => [newCase, ...prev]);
     setActiveCaseId(newCase.id);
+    setHasSelectedCase(true);
+    setContinueRequested(false);
     return newCase;
   }, [cases.length]);
 
@@ -250,11 +259,37 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveCaseId(caseId);
   }, []);
 
+  const selectCase = React.useCallback((caseId: string) => {
+    setActiveCaseId(caseId);
+    setHasSelectedCase(true);
+    setContinueRequested(false);
+  }, []);
+
   const updateCase = React.useCallback((caseId: string, update: Partial<CaseRecord>) => {
     setCases((prev) =>
       prev.map((caseItem) => (caseItem.id === caseId ? { ...caseItem, ...update } : caseItem))
     );
   }, []);
+
+  const addInteraction = React.useCallback(
+    (caseId: string, actor: string, message: string) => {
+      const createdAt = new Date().toISOString();
+      const interaction: CaseInteraction = {
+        id: `${caseId}-${Date.now()}`,
+        createdAt,
+        actor,
+        message
+      };
+      setCases((prev) =>
+        prev.map((caseItem) =>
+          caseItem.id === caseId
+            ? { ...caseItem, interactionHistory: [...caseItem.interactionHistory, interaction] }
+            : caseItem
+        )
+      );
+    },
+    []
+  );
 
   const setCaseRole = React.useCallback((caseId: string, role: CaseRole) => {
     updateCase(caseId, { selectedRole: role });
@@ -269,13 +304,32 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       cases,
       activeCaseId,
       activeCase,
+      hasSelectedCase,
+      continueRequested,
       createCase,
       setActiveCase,
+      selectCase,
+      setContinueRequested,
+      addInteraction,
       updateCase,
       setCaseRole,
       setCaseMode
     }),
-    [cases, activeCaseId, activeCase, createCase, setActiveCase, updateCase, setCaseRole, setCaseMode]
+    [
+      cases,
+      activeCaseId,
+      activeCase,
+      hasSelectedCase,
+      continueRequested,
+      createCase,
+      setActiveCase,
+      selectCase,
+      setContinueRequested,
+      addInteraction,
+      updateCase,
+      setCaseRole,
+      setCaseMode
+    ]
   );
 
   return <CaseContext.Provider value={value}>{children}</CaseContext.Provider>;

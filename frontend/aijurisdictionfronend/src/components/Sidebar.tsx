@@ -10,7 +10,7 @@ type SidebarProps = {
 };
 
 export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
-  const { cases, activeCase, createCase, setActiveCase } = useCases();
+  const { cases, activeCase, createCase, selectCase } = useCases();
   const { t } = useLanguage();
 
   return (
@@ -54,7 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                       <button
                         type="button"
                         className={`case-item${isActive ? " active" : ""}`}
-                        onClick={() => setActiveCase(caseItem.id)}
+                        onClick={() => selectCase(caseItem.id)}
                       >
                         <div className="case-title">
                           <span
