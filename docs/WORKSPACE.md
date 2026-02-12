@@ -33,3 +33,7 @@ python examples/conda_workspace_smoke.py
 ```
 
 The script prints the active Python executable and verifies the `.conda` path.
+
+## Task #7 tracking location
+
+Task #7 breakdown/plan is maintained directly in GitHub project task/issue #7 (not in a dedicated repository markdown file).
