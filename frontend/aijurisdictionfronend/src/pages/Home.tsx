@@ -1,116 +1,56 @@
-﻿import React from "react";
+import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
-
-type CaseStatus = "In progress" | "On hold" | "Scheduled" | "Completed";
-
-type CaseWorkspace = {
-  id: string;
-  title: string;
-  status: CaseStatus;
-  meta: string;
-  objective: string;
-  activity: string[];
-  nextAction: string;
-  agent: string;
-  jurisdiction: string;
-  output: string;
-};
-
-const initialCases: CaseWorkspace[] = [
-  {
-    id: "case-001",
-    title: "Keystone Holdings Intake",
-    status: "In progress",
-    meta: "Due in 2 days",
-    objective: "Consolidate jurisdiction analysis and prepare a briefing memo for counsel review.",
-    activity: [
-      "Drafted timeline summary from uploaded exhibits.",
-      "Reviewed contract variance clauses for compliance risk.",
-      "Queued agent sync with regional legal guidance.",
-    ],
-    nextAction: "Schedule a 15-minute voice session with the AI agent to confirm scope.",
-    agent: "Compliance Counsel",
-    jurisdiction: "EU + UK",
-    output: "Briefing memo + checklist",
-  },
-  {
-    id: "case-002",
-    title: "Atlas Contract Review",
-    status: "On hold",
-    meta: "Waiting on docs",
-    objective: "Gather missing vendor exhibits and align on scope with procurement leadership.",
-    activity: [
-      "Requested updated vendor packet from counsel.",
-      "Flagged missing data privacy addendum.",
-      "Prepared negotiation highlights for review.",
-    ],
-    nextAction: "Follow up with counsel on outstanding document set.",
-    agent: "Contract Analyst",
-    jurisdiction: "US + Canada",
-    output: "Clause redline + risk summary",
-  },
-  {
-    id: "case-003",
-    title: "Meridian Audit Prep",
-    status: "Scheduled",
-    meta: "Kickoff today",
-    objective: "Align audit prep checklist and confirm timeline with internal teams.",
-    activity: [
-      "Outlined audit scope with finance partners.",
-      "Mapped evidence checklist to control owners.",
-      "Drafted opening statement for kickoff.",
-    ],
-    nextAction: "Start kickoff session and capture action items.",
-    agent: "Audit Strategist",
-    jurisdiction: "EU + US",
-    output: "Audit kickoff deck",
-  },
-  {
-    id: "case-004",
-    title: "Northwind Arbitration",
-    status: "Completed",
-    meta: "Closed last week",
-    objective: "Finalize arbitration summary and archive case documentation.",
-    activity: [
-      "Generated final arbitration brief.",
-      "Collected final stakeholder sign-offs.",
-      "Archived evidence package.",
-    ],
-    nextAction: "Send closing memo to executive stakeholders.",
-    agent: "Litigation Lead",
-    jurisdiction: "UK",
-    output: "Arbitration summary pack",
-  },
-];
+import WorkspaceWelcome from "../components/WorkspaceWelcome";
+import { CaseRole, useCases } from "../state/CaseProvider";
 
 const Home: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, user } = useAuth();
-  const [cases, setCases] = React.useState<CaseWorkspace[]>(initialCases);
-  const [activeCaseId, setActiveCaseId] = React.useState<string>(initialCases[0]?.id ?? "");
-  const activeCase = cases.find((caseItem) => caseItem.id === activeCaseId) ?? cases[0];
-  const statusClass = (status: CaseStatus) => status.toLowerCase().replace(/\s+/g, "-");
+  const {
+    cases,
+    activeCase,
+    hasSelectedCase,
+    continueRequested,
+    setContinueRequested,
+    addInteraction,
+    setCaseRole
+  } = useCases();
+  const [draftMessage, setDraftMessage] = React.useState("");
+  const roleOptions = React.useMemo(
+    () => [
+      {
+        role: "AI Lawyer" as CaseRole,
+        label: t("workspaceLawyerTitle"),
+        intent: t("roleIntentLawyer")
+      },
+      {
+        role: "AI Judge" as CaseRole,
+        label: t("workspaceJudgeTitle"),
+        intent: t("roleIntentJudge")
+      },
+      {
+        role: "Opposing Counsel" as CaseRole,
+        label: t("workspaceOpposingTitle"),
+        intent: t("roleIntentOpposing")
+      }
+    ],
+    [t]
+  );
 
   if (isAuthenticated) {
-    const handleCreateCase = () => {
-      const timestamp = Date.now();
-      const newCase: CaseWorkspace = {
-        id: `case-${timestamp}`,
-        title: `New matter ${cases.length + 1}`,
-        status: "In progress",
-        meta: "Just created",
-        objective: "Define scope, assign roles, and request initial documents.",
-        activity: ["Opened new case workspace.", "Set initial jurisdiction focus."],
-        nextAction: "Add key facts and upload first evidence set.",
-        agent: "General Counsel",
-        jurisdiction: "TBD",
-        output: "Intake brief",
-      };
+    const activeMatterCount = cases.filter((caseItem) => caseItem.status !== "Completed").length;
 
-      setCases((prev) => [newCase, ...prev]);
-      setActiveCaseId(newCase.id);
+    const showWelcome = !hasSelectedCase;
+
+    const handleSendMessage = (event: React.FormEvent) => {
+      event.preventDefault();
+      if (!activeCase || !draftMessage.trim()) {
+        return;
+      }
+      addInteraction(activeCase.id, "You", draftMessage.trim());
+      setDraftMessage("");
     };
 
     return (
@@ -125,95 +65,108 @@ const Home: React.FC = () => {
             </div>
             <div className="workspace-meta">
               <span className="pill active">Signed in</span>
-              <span className="pill">3 active matters</span>
+              <span className="pill">{activeMatterCount} active matters</span>
             </div>
           </header>
 
           <div className="workspace-grid">
-            <aside className="workspace-panel workspace-panel--left">
-              <div className="panel-card">
-                <div className="panel-card__header">
-                  <h2>Case Sidebar</h2>
-                  <button type="button" className="button ghost small" onClick={handleCreateCase}>
-                    + New case
-                  </button>
-                </div>
-                <ul className="case-list">
-                  {cases.map((caseItem) => {
-                    const isActive = caseItem.id === activeCase?.id;
-                    return (
-                      <li key={caseItem.id}>
-                        <button
-                          type="button"
-                          className={`case-item${isActive ? " active" : ""}`}
-                          onClick={() => setActiveCaseId(caseItem.id)}
-                        >
-                          <div>
-                            <strong>{caseItem.title}</strong>
-                            <span className="case-meta">{caseItem.meta}</span>
-                          </div>
-                          <span className={`case-status ${statusClass(caseItem.status)}`}>
-                            {caseItem.status}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </aside>
 
             <section className="workspace-center">
               <div className="panel-card">
-                <div className="panel-card__header">
-                  <h2>Active Workspace</h2>
-                  <span className="pill">{activeCase?.id ?? "Case"}</span>
-                </div>
-                <div className="workspace-stream">
-                  <article>
-                    <h3>Current objective</h3>
-                    <p>{activeCase?.objective}</p>
-                  </article>
-                  <article>
-                    <h3>Recent activity</h3>
-                    <ul className="activity-list">
-                      {activeCase?.activity?.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  </article>
-                  <article className="workspace-callout">
-                    <h3>Next recommended action</h3>
-                    <p>{activeCase?.nextAction}</p>
-                    <button type="button" className="button primary">Start voice session</button>
-                  </article>
-                </div>
+                {showWelcome ? (
+                  <WorkspaceWelcome
+                    onContinue={() => setContinueRequested(true)}
+                    showHint={continueRequested}
+                  />
+                ) : (
+                  <>
+                    <div className="panel-card__header">
+                      <div className="workspace-case-header">
+                        <h2>{activeCase?.title ?? "Active Case"}</h2>
+                        <p className="hint">{activeCase?.description}</p>
+                      </div>
+                      <div className="workspace-case-meta">
+                        <span className="pill">{activeCase?.status ?? "In progress"}</span>
+                        <span className="pill">{activeCase?.workspace.meta ?? "Case"}</span>
+                      </div>
+                    </div>
+                    <div className="workspace-stream">
+                      <div className="workspace-chat">
+                        <div className="workspace-chat__history">
+                          {activeCase?.interactionHistory.map((item) => {
+                            const isUser = item.actor === "You";
+                            return (
+                              <article
+                                key={item.id}
+                                className={`chat-message${isUser ? " chat-message--user" : ""}`}
+                              >
+                                <div className="chat-message__meta">
+                                  <strong>{item.actor}</strong>
+                                  <span>{new Date(item.createdAt).toLocaleString()}</span>
+                                </div>
+                                <p>{item.message}</p>
+                              </article>
+                            );
+                          })}
+                        </div>
+                        <form className="workspace-chat__composer" onSubmit={handleSendMessage}>
+                          <input
+                            type="text"
+                            value={draftMessage}
+                            onChange={(event) => setDraftMessage(event.target.value)}
+                            placeholder="Type your message..."
+                          />
+                          <button type="submit" className="button primary">
+                            Send
+                          </button>
+                        </form>
+                      </div>
+                      <article className="workspace-callout">
+                        <h3>Next recommended action</h3>
+                        <p>{activeCase?.workspace.nextAction}</p>
+                        <button type="button" className="button primary">Start voice session</button>
+                      </article>
+                    </div>
+                  </>
+                )}
               </div>
             </section>
 
             <aside className="workspace-panel workspace-panel--right">
               <div className="panel-card">
                 <div className="panel-card__header">
-                  <h2>AI Configuration</h2>
-                  <span className="pill">Draft mode</span>
+                  <h2>Configurations</h2>
                 </div>
                 <div className="config-list">
-                  <div>
-                    <h4>Primary agent</h4>
-                    <p>{activeCase?.agent}</p>
-                  </div>
-                  <div>
-                    <h4>Jurisdiction focus</h4>
-                    <p>{activeCase?.jurisdiction}</p>
-                  </div>
-                  <div>
-                    <h4>Output</h4>
-                    <p>{activeCase?.output}</p>
-                  </div>
-                  <div className="config-actions">
-                    <button type="button" className="button ghost full">Edit settings</button>
-                    <button type="button" className="button primary full">Run evaluation</button>
-                  </div>
+                  <fieldset className="role-selector" disabled={!activeCase}>
+                    <legend>{t("roleSelectorTitle")}</legend>
+                    <p className="hint">{t("roleSelectorHint")}</p>
+                    <div className="role-options" role="radiogroup">
+                      {roleOptions.map((option) => {
+                        const isActive = activeCase?.selectedRole === option.role;
+                        return (
+                          <label
+                            key={option.role}
+                            className={`role-option${isActive ? " is-active" : ""}`}
+                          >
+                            <input
+                              type="radio"
+                              name={`case-role-${activeCase?.id ?? "current"}`}
+                              value={option.role}
+                              checked={isActive}
+                              onChange={() => {
+                                if (activeCase) {
+                                  setCaseRole(activeCase.id, option.role);
+                                }
+                              }}
+                            />
+                            <span className="role-option__label">{option.label}</span>
+                            <span className="role-option__intent">{option.intent}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
                 </div>
               </div>
             </aside>

@@ -32,6 +32,12 @@ From repo root (PowerShell):
 .\examples\frontend_demo.ps1
 ```
 
+Default repo minimal runnable example:
+
+```powershell
+python examples/minimal_demo.py
+```
+
 ## Build
 
 ```bash
@@ -53,4 +59,20 @@ When authenticated, the home page swaps to a 3-column workspace layout: case sid
 Case sidebar behavior:
 - `+ New case` creates a mock case and makes it active.
 - Clicking a case loads its data into the center workspace and AI configuration panel.
-- The case list scrolls independently while the sidebar stays sticky during page scroll.
+- The case list scrolls independently within the full-height sidebar.
+- The sidebar is now componentized and uses a branded header plus section grouping.
+- Each case row stays the same background as the sidebar with a status-colored dot.
+- The workspace view is full-height with internal scrolling, so the page itself does not scroll.
+- On the authenticated home view, the layout is a full-height flex row: sidebar on the left, navbar + content on the right.
+- The center workspace starts with a welcome state prompting the user to start a new case or continue by selecting a case in the sidebar.
+- The AI configuration panel includes a role selector with intent hints and highlights the active perspective.
+
+## Case state model
+
+The frontend now includes a session-scoped case store exposed via a context provider.
+Each case includes:
+- `id`, `title`, `description`, `status`, `createdAt`
+- `interactionHistory` entries with timestamps, actors, and messages
+- `selectedRole` and `selectedMode` stored per case
+
+The active case is available globally via the `CaseProvider` context.

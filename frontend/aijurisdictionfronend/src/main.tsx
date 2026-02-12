@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { LanguageProvider } from "./components/LanguageProvider";
 import { AuthProvider } from "./auth/mockAuth";
+import { CaseProvider } from "./state/CaseProvider";
 import "./styles/theme.css";
 import "./styles/app.css";
 
@@ -11,9 +12,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <LanguageProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <CaseProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </CaseProvider>
       </AuthProvider>
     </LanguageProvider>
   </React.StrictMode>
