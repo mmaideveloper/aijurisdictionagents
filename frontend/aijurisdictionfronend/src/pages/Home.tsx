@@ -2,15 +2,29 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
+import WorkspaceWelcome from "../components/WorkspaceWelcome";
 import { useCases } from "../state/CaseProvider";
 
 const Home: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, user } = useAuth();
-  const { cases, activeCase } = useCases();
+  const { cases, activeCase, hasSelectedCase, continueRequested, setContinueRequested, addInteraction } =
+    useCases();
+  const [draftMessage, setDraftMessage] = React.useState("");
 
   if (isAuthenticated) {
     const activeMatterCount = cases.filter((caseItem) => caseItem.status !== "Completed").length;
+
+    const showWelcome = !hasSelectedCase;
+
+    const handleSendMessage = (event: React.FormEvent) => {
+      event.preventDefault();
+      if (!activeCase || !draftMessage.trim()) {
+        return;
+      }
+      addInteraction(activeCase.id, "You", draftMessage.trim());
+      setDraftMessage("");
+    };
 
     return (
       <div className="page workspace-page">
@@ -32,29 +46,62 @@ const Home: React.FC = () => {
 
             <section className="workspace-center">
               <div className="panel-card">
-                <div className="panel-card__header">
-                  <h2>Active Workspace</h2>
-                  <span className="pill">{activeCase?.id ?? "Case"}</span>
-                </div>
-                <div className="workspace-stream">
-                  <article>
-                    <h3>Current objective</h3>
-                    <p>{activeCase?.workspace.objective}</p>
-                  </article>
-                  <article>
-                    <h3>Recent activity</h3>
-                    <ul className="activity-list">
-                      {activeCase?.interactionHistory.map((item) => (
-                        <li key={item.id}>{item.message}</li>
-                      ))}
-                    </ul>
-                  </article>
-                  <article className="workspace-callout">
-                    <h3>Next recommended action</h3>
-                    <p>{activeCase?.workspace.nextAction}</p>
-                    <button type="button" className="button primary">Start voice session</button>
-                  </article>
-                </div>
+                {showWelcome ? (
+                  <WorkspaceWelcome
+                    onContinue={() => setContinueRequested(true)}
+                    showHint={continueRequested}
+                  />
+                ) : (
+                  <>
+                    <div className="panel-card__header">
+                      <div className="workspace-case-header">
+                        <h2>{activeCase?.title ?? "Active Case"}</h2>
+                        <p className="hint">{activeCase?.description}</p>
+                      </div>
+                      <div className="workspace-case-meta">
+                        <span className="pill">{activeCase?.status ?? "In progress"}</span>
+                        <span className="pill">{activeCase?.workspace.meta ?? "Case"}</span>
+                      </div>
+                    </div>
+                    <div className="workspace-stream">
+                      <div className="workspace-chat">
+                        <div className="workspace-chat__history">
+                          {activeCase?.interactionHistory.map((item) => {
+                            const isUser = item.actor === "You";
+                            return (
+                              <article
+                                key={item.id}
+                                className={`chat-message${isUser ? " chat-message--user" : ""}`}
+                              >
+                                <div className="chat-message__meta">
+                                  <strong>{item.actor}</strong>
+                                  <span>{new Date(item.createdAt).toLocaleString()}</span>
+                                </div>
+                                <p>{item.message}</p>
+                              </article>
+                            );
+                          })}
+                        </div>
+                        <form className="workspace-chat__composer" onSubmit={handleSendMessage}>
+                          <input
+                            type="text"
+                            value={draftMessage}
+                            onChange={(event) => setDraftMessage(event.target.value)}
+                            placeholder="Type your message..."
+                          />
+                          <button type="submit" className="button primary">
+                            Send
+                          </button>
+                        </form>
+                      </div>
+                      <article className="workspace-callout">
+                        <h3>Next recommended action</h3>
+                        <p>{activeCase?.workspace.nextAction}</p>
+                        <button type="button" className="button primary">Start voice session</button>
+                      </article>
+                    </div>
+                  </>
+                )}
               </div>
             </section>
 
