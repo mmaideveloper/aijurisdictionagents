@@ -111,7 +111,7 @@ OpenAI:
 
 ```powershell
 $env:LLM_PROVIDER="openai"
-$env:OPENAI_API_KEY="..."
+$env:OPENAI_KEY="..."
 python -m aijurisdictionagents --country SK --discussion-type advice --instruction "Provide legal guidance."
 ```
 

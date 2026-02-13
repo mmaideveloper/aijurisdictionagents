@@ -59,13 +59,8 @@ Lifecycle automation demo (issue #69 MVP):
 python examples/lifecycle_automation_demo.py
 ```
 
-Per-agent lifecycle workflows:
-- `lifecycle-solution-agent`
-- `lifecycle-requirements-agent`
-- `lifecycle-developer-agent`
-- `lifecycle-testing-agent`
-- `lifecycle-review-agent`
-- `lifecycle-deployment-agent`
+Lifecycle workflow:
+- `lifecycle-implementation-agent` (`.github/workflows/lifecycle_implementation_agent.yml`)
 
 For details, see `LIFECYCLE_AUTOMATION.md`.
 
@@ -175,7 +170,7 @@ and edit as needed.
 To use OpenAI, set:
 
 - `LLM_PROVIDER=openai`
-- `OPENAI_API_KEY=...`
+- `OPENAI_KEY=...`
 - `OPENAI_MODEL=gpt-4o-mini` (optional override)
 - `OPENAI_TEMPERATURE=0.2` (optional override)
 

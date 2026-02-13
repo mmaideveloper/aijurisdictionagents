@@ -29,7 +29,7 @@ def _mask_secret(value: str) -> str:
 
 def _log_token_info(logger: logging.Logger, provider: str) -> None:
     if provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY", "")
+        api_key = os.getenv("OPENAI_KEY", "")
         logger.debug("OpenAI API key: %s", _mask_secret(api_key))
     if provider in {"azurefoundry", "azure"}:
         api_key = os.getenv("AZURE_OPENAI_API_KEY", "")

@@ -1,0 +1,308 @@
+name: lifecycle-implementation-agent
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      project_owner:
+        description: GitHub project owner
+        required: true
+        default: mmaideveloper
+      project_number:
+        description: Project V2 number
+        required: true
+        default: "5"
+      repo:
+        description: Target repository (owner/name)
+        required: true
+        default: mmaideveloper/aijurisdictionagents
+      ready_status:
+        description: Status value used for task selection
+        required: true
+        default: Ready
+      base_branch:
+        description: Base branch for PRs
+        required: true
+        default: main
+      codex_model:
+        description: Codex model for implementation
+        required: true
+        default: gpt-5
+      max_items:
+        description: Max project items to scan
+        required: true
+        default: "200"
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  repository-projects: write
+
+concurrency:
+  group: lifecycle-implementation-agent
+  cancel-in-progress: false
+
+jobs:
+  implement-ready-task:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_OWNER: ${{ github.event.inputs.project_owner || 'mmaideveloper' }}
+      PROJECT_NUMBER: ${{ github.event.inputs.project_number || '5' }}
+      PROJECT_REPO: ${{ github.event.inputs.repo || 'mmaideveloper/aijurisdictionagents' }}
+      READY_STATUS: ${{ github.event.inputs.ready_status || 'Ready' }}
+      BASE_BRANCH: ${{ github.event.inputs.base_branch || 'main' }}
+      CODEX_MODEL: ${{ github.event.inputs.codex_model || 'gpt-5' }}
+      MAX_ITEMS: ${{ github.event.inputs.max_items || '200' }}
+      OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate required secrets
+        env:
+          GH_PROJECT_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
+        run: |
+          if [ -z "$GH_PROJECT_TOKEN" ]; then
+            echo "::error::Missing GH_PROJECT_TOKEN secret (required: read:project + project scopes)."
+            exit 1
+          fi
+          if [ -z "$OPENAI_KEY" ]; then
+            echo "::error::Missing OPENAI_KEY secret (required for Codex CLI)."
+            exit 1
+          fi
+
+      - name: Select oldest ready issue from project
+        id: select
+        env:
+          GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          owner = os.environ["PROJECT_OWNER"]
+          project_number = os.environ["PROJECT_NUMBER"]
+          ready_status = os.environ["READY_STATUS"].strip().lower()
+          max_items = os.environ["MAX_ITEMS"]
+          output_path = os.environ["GITHUB_OUTPUT"]
+
+          cmd = [
+              "gh",
+              "project",
+              "item-list",
+              project_number,
+              "--owner",
+              owner,
+              "--format",
+              "json",
+              "--limit",
+              str(max_items),
+          ]
+          proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+          if proc.returncode != 0:
+              message = proc.stderr.strip() or proc.stdout.strip() or "gh project item-list failed"
+              print(f"::error::{message}", file=sys.stderr)
+              raise SystemExit(1)
+
+          payload = json.loads(proc.stdout)
+          raw_items = payload.get("items", payload)
+          if not isinstance(raw_items, list):
+              print("::error::Unexpected payload from gh project item-list.", file=sys.stderr)
+              raise SystemExit(1)
+
+          ready_items = []
+          for raw in raw_items:
+              content = raw.get("content") or {}
+              issue_number = content.get("number")
+              if issue_number is None:
+                  continue
+              issue_type = str(content.get("type", "Issue")).lower()
+              if issue_type != "issue":
+                  continue
+
+              status = raw.get("status")
+              if isinstance(status, dict):
+                  status_name = str(status.get("name", ""))
+              else:
+                  status_name = str(status or "")
+              if status_name.strip().lower() != ready_status:
+                  continue
+
+              ready_items.append(
+                  {
+                      "item_id": str(raw.get("id", "")),
+                      "issue_number": int(issue_number),
+                      "title": str(content.get("title", "")),
+                      "url": str(content.get("url", "")),
+                      "status": status_name,
+                  }
+              )
+
+          with open(output_path, "a", encoding="utf-8") as out:
+              if not ready_items:
+                  out.write("found=false\n")
+                  print("No ready issues were found in the project.")
+                  raise SystemExit(0)
+
+              selected = sorted(ready_items, key=lambda item: item["issue_number"])[0]
+              out.write("found=true\n")
+              out.write(f"issue_number={selected['issue_number']}\n")
+              out.write(f"item_id={selected['item_id']}\n")
+              out.write(f"issue_url={selected['url']}\n")
+              print(
+                  "Selected issue #{issue_number}: {title}".format(
+                      issue_number=selected["issue_number"],
+                      title=selected["title"],
+                  )
+              )
+          PY
+
+      - name: Skip when project has no ready tasks
+        if: steps.select.outputs.found != 'true'
+        run: echo "No task in '$READY_STATUS' state was found."
+
+      - name: Move issue to In progress
+        if: steps.select.outputs.found == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
+        run: |
+          ./scripts/project_status.ps1 `
+            -IssueNumber ${{ steps.select.outputs.issue_number }} `
+            -Status "In progress" `
+            -Owner "$env:PROJECT_OWNER" `
+            -ProjectNumber ([int]$env:PROJECT_NUMBER) `
+            -Repo "$env:PROJECT_REPO" `
+            -Comment "Implementation started by Codex."
+
+      - name: Create implementation branch
+        if: steps.select.outputs.found == 'true'
+        id: branch
+        run: |
+          branch_name="codex/issue-${{ steps.select.outputs.issue_number }}-implementation-${GITHUB_RUN_ID}"
+          git checkout -b "$branch_name"
+          echo "name=$branch_name" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Codex CLI
+        if: steps.select.outputs.found == 'true'
+        run: npm install -g @openai/codex
+
+      - name: Authenticate Codex CLI
+        if: steps.select.outputs.found == 'true'
+        run: |
+          printf "%s" "$OPENAI_KEY" | codex login --with-api-key
+
+      - name: Run Codex implementation
+        if: steps.select.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p runs/lifecycle
+          ISSUE_JSON=$(gh issue view "${{ steps.select.outputs.issue_number }}" --repo "$PROJECT_REPO" --json number,title,body,url)
+          export ISSUE_JSON
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          issue = json.loads(os.environ["ISSUE_JSON"])
+          prompt = f"""Implement GitHub issue #{issue['number']} in this repository.
+
+          Issue URL: {issue['url']}
+          Issue title: {issue['title']}
+
+          Issue body:
+          {issue.get('body', '').strip() or '(no body)'}
+
+          Requirements:
+          - Follow repository rules in AGENTS.md and existing coding standards.
+          - Implement the requested change end-to-end.
+          - Add or update tests when behavior changes.
+          - Update documentation for the change and include a minimal runnable example command.
+          - Run relevant tests/validation commands.
+          - Do not open a PR or push; leave changes in the current git branch.
+          """
+          Path("runs/lifecycle/codex_issue_prompt.md").write_text(prompt, encoding="utf-8")
+          PY
+          codex exec --dangerously-bypass-approvals-and-sandbox --model "$CODEX_MODEL" -C "$GITHUB_WORKSPACE" - < runs/lifecycle/codex_issue_prompt.md
+
+      - name: Commit and push branch
+        if: steps.select.outputs.found == 'true'
+        id: commit
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "codex-bot"
+            git config user.email "codex-bot@users.noreply.github.com"
+            git add -A
+            git commit -m "feat: implement issue #${{ steps.select.outputs.issue_number }}"
+          fi
+
+          ahead_count=$(git rev-list --count "${{ steps.branch.outputs.base_sha }}..HEAD")
+          if [ "$ahead_count" -eq 0 ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No commits produced by Codex; skipping PR creation."
+            exit 0
+          fi
+
+          git push --set-upstream origin "${{ steps.branch.outputs.name }}"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        if: steps.select.outputs.found == 'true' && steps.commit.outputs.has_changes == 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          issue_title=$(gh issue view "${{ steps.select.outputs.issue_number }}" --repo "$PROJECT_REPO" --json title --jq '.title')
+          pr_url=$(gh pr create \
+            --repo "$PROJECT_REPO" \
+            --base "$BASE_BRANCH" \
+            --head "${{ steps.branch.outputs.name }}" \
+            --title "feat: implement #${{ steps.select.outputs.issue_number }} - ${issue_title}" \
+            --body "Implements #${{ steps.select.outputs.issue_number }}.
+
+          Automated by lifecycle-implementation-agent using Codex CLI.
+          Source task: ${{ steps.select.outputs.issue_url }}")
+          echo "url=$pr_url" >> "$GITHUB_OUTPUT"
+          echo "Created PR: $pr_url"
+
+      - name: Move issue to In review
+        if: steps.select.outputs.found == 'true' && steps.commit.outputs.has_changes == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
+        run: |
+          $comment = @"
+          Implemented by Codex
+          PR: ${{ steps.pr.outputs.url }}
+          "@
+          ./scripts/project_status.ps1 `
+            -IssueNumber ${{ steps.select.outputs.issue_number }} `
+            -Status "In review" `
+            -Owner "$env:PROJECT_OWNER" `
+            -ProjectNumber ([int]$env:PROJECT_NUMBER) `
+            -Repo "$env:PROJECT_REPO" `
+            -Comment $comment
+
+      - name: Mark run as no-op when no commits were made
+        if: steps.select.outputs.found == 'true' && steps.commit.outputs.has_changes != 'true'
+        run: |
+          echo "::warning::Codex did not produce commits. Issue remains In progress."

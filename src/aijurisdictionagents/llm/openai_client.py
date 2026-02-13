@@ -57,9 +57,9 @@ class OpenAIClient:
 
 
 def load_openai_config_from_env() -> OpenAIConfig:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key = os.getenv("OPENAI_KEY", "").strip()
     if not api_key:
-        raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER=openai.")
+        raise ValueError("OPENAI_KEY is required when LLM_PROVIDER=openai.")
 
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
     temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
