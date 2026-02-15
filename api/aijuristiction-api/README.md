@@ -56,6 +56,8 @@ Required GitHub Environment variables:
 
 The workflow dispatch input `github_environment` selects which GitHub Environment
 supplies these variables.
+`AZURE_CONTAINER_REGISTRY` should be the registry name (example: `arcjuris`).
+The workflow also normalizes values like `arc-juris.azurecr.io` to `arcjuris`.
 
 For Azure OIDC federation setup (GitHub -> Entra app federated credential for
 `AZURE_CLIENT_ID`), see `infra/README.md` section `GitHub workflow deployment setup (OIDC federation)`.

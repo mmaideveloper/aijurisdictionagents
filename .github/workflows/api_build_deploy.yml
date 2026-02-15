@@ -83,6 +83,26 @@ jobs:
             exit 1
           fi
 
+      - name: Normalize ACR settings
+        id: acr
+        run: |
+          raw="$AZURE_CONTAINER_REGISTRY"
+          lowered="$(echo "$raw" | tr '[:upper:]' '[:lower:]')"
+          no_suffix="${lowered%.azurecr.io}"
+          acr_name="$(echo "$no_suffix" | tr -cd 'a-z0-9')"
+
+          if [ -z "$acr_name" ] || [ "${#acr_name}" -lt 5 ] || [ "${#acr_name}" -gt 50 ]; then
+            echo "::error::Invalid ACR value '$raw'. Normalized name '$acr_name' must be 5-50 alphanumeric characters."
+            exit 1
+          fi
+
+          if [ "$raw" != "$acr_name" ] && [ "$raw" != "${acr_name}.azurecr.io" ]; then
+            echo "::warning::Normalized AZURE_CONTAINER_REGISTRY from '$raw' to '$acr_name'."
+          fi
+
+          echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
+          echo "acr_login_server=${acr_name}.azurecr.io" >> "$GITHUB_OUTPUT"
+
       - uses: azure/login@v2
         with:
           client-id: ${{ env.AZURE_CLIENT_ID }}
@@ -91,15 +111,15 @@ jobs:
 
       - name: Build and push image to ACR
         run: |
-          az acr login --name $AZURE_CONTAINER_REGISTRY
-          docker build -t $AZURE_CONTAINER_REGISTRY.azurecr.io/aijuristiction-api:${{ github.sha }} api/aijuristiction-api
-          docker push $AZURE_CONTAINER_REGISTRY.azurecr.io/aijuristiction-api:${{ github.sha }}
+          az acr login --name ${{ steps.acr.outputs.acr_name }}
+          docker build -t ${{ steps.acr.outputs.acr_login_server }}/aijuristiction-api:${{ github.sha }} api/aijuristiction-api
+          docker push ${{ steps.acr.outputs.acr_login_server }}/aijuristiction-api:${{ github.sha }}
 
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
-          acrName: ${{ env.AZURE_CONTAINER_REGISTRY }}
+          acrName: ${{ steps.acr.outputs.acr_name }}
           containerAppName: ${{ env.AZURE_CONTAINER_APP_NAME }}
           resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
           containerAppEnvironment: ${{ env.AZURE_CONTAINERAPPS_ENVIRONMENT }}
-          imageToDeploy: ${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io/aijuristiction-api:${{ github.sha }}
+          imageToDeploy: ${{ steps.acr.outputs.acr_login_server }}/aijuristiction-api:${{ github.sha }}
