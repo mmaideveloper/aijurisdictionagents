@@ -54,7 +54,7 @@ jobs:
   deploy_to_azure:
     runs-on: ubuntu-latest
     needs: test_and_build
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy == 'true'
+    if: inputs.deploy == 'true'
     environment: ${{ inputs.github_environment }}
     permissions:
       id-token: write
