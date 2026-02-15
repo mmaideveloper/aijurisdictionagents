@@ -33,7 +33,7 @@ Requirements:
 - `gh` authenticated to the correct account
 - Scopes: `read:project` (list items) and `project` (edit status)
 
-Project polling automation (scheduled GitHub Action):
+Project polling automation (local scripts):
 
 ```bash
 python scripts/project_poll.py --config .github/automation.yml --output runs/automation/latest_snapshot
@@ -60,7 +60,7 @@ python examples/lifecycle_automation_demo.py
 ```
 
 Lifecycle workflow:
-- `lifecycle-implementation-agent` (`.github/workflows/lifecycle_implementation_agent.yml`)
+- GitHub workflow automation for lifecycle is currently removed; use local lifecycle scripts/docs.
 
 For details, see `LIFECYCLE_AUTOMATION.md`.
 
