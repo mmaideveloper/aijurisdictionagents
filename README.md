@@ -53,6 +53,10 @@ python examples/project_poll_demo.py
 
 For details, see `docs/AUTOMATION_POLLING.md`.
 
+Note:
+- Automatic project polling/pooling and lifecycle GitHub workflows were removed.
+- Reason: Codex automation requires `OPENAI_KEY` and a separate paid OpenAI API account (ChatGPT subscription alone is not sufficient).
+
 Lifecycle automation demo (issue #69 MVP):
 
 ```bash
