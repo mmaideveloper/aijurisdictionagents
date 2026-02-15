@@ -162,3 +162,13 @@ az role assignment create `
 ```
 
 If `AZURE_CONTAINER_REGISTRY` in `.env` contains `*.azurecr.io`, the deploy script now normalizes it to the registry name automatically.
+
+If deployment fails with `MANIFEST_UNKNOWN` for Container App image update, verify that the ACR build produced the expected `repository:tag`.
+The deploy script now waits for image manifest availability in ACR and fails early when the tag is missing.
+
+If deployment fails with `AuthenticationFailed` and message `Signed expiry time ... must be after signed start time ...` during `az acr build`,
+the script automatically falls back to local `docker build` + `docker push` (after `az acr login`).
+If this still fails, ensure system time is synchronized and retry.
+
+If Azure CLI on Windows throws `UnicodeEncodeError ... cp1252` during ACR build log streaming,
+the deploy script uses `az acr build --no-logs` to avoid that stream encoding failure.

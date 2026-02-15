@@ -281,6 +281,99 @@ function Convert-EnvFileToPairs {
     return $pairs.ToArray()
 }
 
+function Wait-ForAcrImage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RegistryName,
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+        [Parameter(Mandatory = $true)]
+        [string]$Tag,
+        [int]$MaxAttempts = 12,
+        [int]$DelaySeconds = 5
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $checkRaw = az acr repository show `
+            --name $RegistryName `
+            --image "${Repository}:${Tag}" `
+            --output json 2>$null
+
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$checkRaw)) {
+            return $true
+        }
+
+        Start-Sleep -Seconds $DelaySeconds
+    }
+
+    return $false
+}
+
+function Build-AndPushImage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RegistryName,
+        [Parameter(Mandatory = $true)]
+        [string]$AcrLoginServer,
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+        [Parameter(Mandatory = $true)]
+        [string]$Tag,
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$BuildContextPath,
+        [Parameter(Mandatory = $true)]
+        [string]$DockerfilePath
+    )
+
+    $fullImageRef = "${AcrLoginServer}/${Repository}:${Tag}"
+
+    Push-Location $RepoRoot
+    try {
+        $acrBuildRaw = az acr build `
+            --registry $RegistryName `
+            --image "${Repository}:${Tag}" `
+            --file $DockerfilePath `
+            $BuildContextPath `
+            --no-logs `
+            --only-show-errors `
+            --output json 2>&1
+
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+
+        $acrBuildErrorText = if ($acrBuildRaw -is [System.Array]) { $acrBuildRaw -join "`n" } else { [string]$acrBuildRaw }
+        $isSasAuthError = ($acrBuildErrorText -match "AuthenticationFailed") -and ($acrBuildErrorText -match "Signed expiry time")
+
+        if (-not $isSasAuthError) {
+            throw "ACR build failed for image '${Repository}:${Tag}'.`n$acrBuildErrorText"
+        }
+
+        Write-Host "Detected ACR task SAS authentication issue. Falling back to local Docker build/push..."
+        Assert-ToolInstalled -ToolName "docker"
+
+        az acr login --name $RegistryName --only-show-errors --output none
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to login to ACR '$RegistryName' before Docker fallback."
+        }
+
+        docker build -t $fullImageRef -f $DockerfilePath $BuildContextPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Docker build failed for image '$fullImageRef'."
+        }
+
+        docker push $fullImageRef
+        if ($LASTEXITCODE -ne 0) {
+            throw "Docker push failed for image '$fullImageRef'."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 Assert-ToolInstalled -ToolName "az"
 
 $scriptRoot = Split-Path -Parent $PSCommandPath
@@ -440,21 +533,24 @@ if ([string]::IsNullOrWhiteSpace($acrLoginServer)) {
 }
 
 Write-Host "Building image in ACR: ${acrLoginServer}/${ImageRepository}:${ImageTag}"
-Push-Location $repoRoot
-try {
-    az acr build `
-        --registry $AcrName `
-        --image "${ImageRepository}:${ImageTag}" `
-        --file "api/aijuristiction-api/Dockerfile" `
-        . `
-        --only-show-errors `
-        --output none
-}
-finally {
-    Pop-Location
-}
+$apiBuildContextPath = "api/aijuristiction-api"
+$apiDockerfilePath = "api/aijuristiction-api/Dockerfile"
+Build-AndPushImage `
+    -RegistryName $AcrName `
+    -AcrLoginServer $acrLoginServer `
+    -Repository $ImageRepository `
+    -Tag $ImageTag `
+    -RepoRoot $repoRoot `
+    -BuildContextPath $apiBuildContextPath `
+    -DockerfilePath $apiDockerfilePath
 
 $imageRef = "${acrLoginServer}/${ImageRepository}:${ImageTag}"
+Write-Host "Waiting for image manifest in ACR: $imageRef"
+$imageReady = Wait-ForAcrImage -RegistryName $AcrName -Repository $ImageRepository -Tag $ImageTag
+if (-not $imageReady) {
+    throw "Image manifest not found in ACR after build: $imageRef"
+}
+
 Write-Host "Updating Container App image: $imageRef"
 
 $envPairs = Convert-EnvFileToPairs -Path $resolvedEnvFilePath
