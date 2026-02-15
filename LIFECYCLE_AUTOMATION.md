@@ -3,6 +3,10 @@
 GitHub Actions lifecycle workflow automation is removed from this repository.
 Use local scripts and project automation helpers for lifecycle operations.
 
+Reason:
+- Codex automation requires `OPENAI_KEY`.
+- It also requires a separate paid OpenAI API account (a ChatGPT-only paid account is not sufficient).
+
 ## Local flow
 
 1. Select task in `Ready`.

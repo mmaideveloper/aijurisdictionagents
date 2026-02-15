@@ -2,6 +2,9 @@
 
 This repository uses local polling scripts to drive Project V2 automation.
 
+Automatic polling/pooling GitHub workflow execution is disabled/removed.
+Reason: Codex-based automation requires `OPENAI_KEY` and a separate paid OpenAI API account.
+
 ## Local automation
 
 - Purpose: fetch Project V2 items and write snapshot JSON files, then move Ready tasks with PRs to In review.
