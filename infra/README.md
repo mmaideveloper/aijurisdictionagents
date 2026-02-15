@@ -1,0 +1,164 @@
+# Infrastructure (Azure)
+
+This folder contains local-first infrastructure automation for deploying the API to Azure.
+
+## Recommended deployment approach
+
+- **Runtime:** Azure Container Apps
+- **Image registry:** Azure Container Registry (ACR)
+- **Infrastructure as code:** Bicep
+- **Local execution:** Azure CLI + PowerShell from your workstation
+
+This keeps deployment simple while matching the existing API container workflow.
+
+## What gets provisioned
+
+- Resource Group (created by script)
+- Log Analytics Workspace
+- Azure Container Apps Environment
+- Azure Container Registry (ACR)
+- User-assigned Managed Identity with `AcrPull` on ACR
+- Azure Container App (public ingress on port `8080`)
+
+## Prerequisites
+
+- Azure subscription with permission to create resources
+- Azure CLI (`az`) installed
+- Azure CLI Container Apps extension
+- PowerShell 7+ (recommended)
+
+Login once (interactive):
+
+```powershell
+az login
+```
+
+## Service principal login (recommended for automation)
+
+Create a deployment resource group (one-time):
+
+```powershell
+az login
+az account set --subscription "<SUBSCRIPTION_ID>"
+az group create -n "rg-aijurisdiction-dev" -l "eastus"
+```
+
+Create a service principal scoped to that resource group:
+
+```powershell
+az ad sp create-for-rbac `
+  --name "sp-aijurisdiction-deploy" `
+  --role Contributor `
+  --scopes "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/rg-aijurisdiction-dev"
+```
+
+Save output values:
+
+- `appId` -> `AZURE_CLIENT_ID`
+- `password` -> `AZURE_CLIENT_SECRET`
+- `tenant` -> `AZURE_TENANT_ID`
+
+Grant RBAC assignment permissions required by infra deployment:
+
+```powershell
+az role assignment create `
+  --assignee "<AZURE_CLIENT_ID>" `
+  --role "User Access Administrator" `
+  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/rg-aijurisdiction-dev"
+```
+
+Login locally using the service principal:
+
+```powershell
+$env:AZURE_CLIENT_ID="<appId>"
+$env:AZURE_CLIENT_SECRET="<password>"
+$env:AZURE_TENANT_ID="<tenantId>"
+$env:AZURE_SUBSCRIPTION_ID="<subscriptionId>"
+
+az login --service-principal `
+  --username $env:AZURE_CLIENT_ID `
+  --password $env:AZURE_CLIENT_SECRET `
+  --tenant $env:AZURE_TENANT_ID
+
+az account set --subscription $env:AZURE_SUBSCRIPTION_ID
+```
+
+Use helper script (priority: parameters -> `.env` -> process env vars):
+
+```powershell
+.\infra\scripts\login_service_principal.ps1 -EnvFilePath ".env"
+```
+
+Skip reading `.env` if needed:
+
+```powershell
+.\infra\scripts\login_service_principal.ps1 -SkipEnvFile
+```
+
+## Deploy from local machine
+
+From repository root:
+
+```powershell
+.\infra\scripts\deploy_api.ps1
+```
+
+Note: ACR registry names must be `5-50` characters, lowercase alphanumeric only.
+If `.env` contains `AZURE_CONTAINER_REGISTRY` with `-` or `.azurecr.io`, the script normalizes it automatically.
+The script also checks whether the current Azure login matches `AZURE_CLIENT_ID` from `.env`.
+If it does not match (or no login exists), it runs `infra/scripts/login_service_principal.ps1` automatically.
+For `AZURE_API_IMAGE_TAG`, both `tag` (for example `latest`) and `repository:tag`
+(for example `ai-api-juris-dev:latest`) are supported.
+
+The script will:
+
+1. Provision/update Azure infrastructure via `infra/bicep/main.bicep`
+2. Build the API image in ACR using `az acr build`
+3. Update the Container App to the new image
+
+Parameter resolution priority in `deploy_api.ps1`:
+
+1. Explicit script parameters
+2. Values from `.env`
+3. Existing process environment variables
+4. Built-in defaults (for non-secret naming/location values)
+
+## Environment variables for the API
+
+By default, the script reads selected keys from repo `.env` and sets them on the Container App.
+
+If your `.env` is at the repo root, no extra flag is needed. To use a different file:
+
+```powershell
+.\infra\scripts\deploy_api.ps1 `
+  -SubscriptionId "<your-subscription-id>" `
+  -AcrName "aijurdevacr12345" `
+  -EnvFilePath ".env"
+```
+
+## Files
+
+- `infra/bicep/main.bicep`: Azure resources definition
+- `infra/bicep/main.parameters.example.json`: example parameters file
+- `infra/scripts/deploy_api.ps1`: local deployment entrypoint
+- `infra/scripts/login_service_principal.ps1`: service principal login helper
+
+## Troubleshooting
+
+If deployment fails with `Microsoft.Authorization/roleAssignments/write`, your service principal can deploy resources but cannot create RBAC role assignments.
+
+Grant one of these roles to your service principal at RG scope:
+
+- `User Access Administrator` (recommended minimum for RBAC writes)
+- `Owner`
+
+Example:
+
+```powershell
+az role assignment create `
+  --assignee "<AZURE_CLIENT_ID>" `
+  --role "User Access Administrator" `
+  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP_NAME>"
+```
+
+If `AZURE_CONTAINER_REGISTRY` in `.env` contains `*.azurecr.io`, the deploy script now normalizes it to the registry name automatically.

@@ -3,7 +3,7 @@ name = "aijuristiction-api"
 version = "0.1.0"
 description = "Dedicated API service for aijurisdictionagents"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.116.1",
   "uvicorn[standard]>=0.35.0",
@@ -29,7 +29,7 @@ addopts = "-q"
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 strict = true
 
 [tool.hatch.build.targets.wheel]
