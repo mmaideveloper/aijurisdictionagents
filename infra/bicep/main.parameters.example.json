@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "environmentName": {
+      "value": "cae-aijurisdiction-dev"
+    },
+    "containerAppName": {
+      "value": "ca-aijuristiction-api-dev"
+    },
+    "acrName": {
+      "value": "aijurdevacr12345"
+    },
+    "logAnalyticsWorkspaceName": {
+      "value": "log-aijurisdiction-dev"
+    },
+    "managedIdentityName": {
+      "value": "id-aijurisdiction-api-dev"
+    },
+    "tags": {
+      "value": {
+        "project": "aijurisdictionagents",
+        "environment": "dev"
+      }
+    }
+  }
+}
+

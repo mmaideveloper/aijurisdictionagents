@@ -2,15 +2,29 @@
 
 Dedicated API service project for exposing `aijurisdictionagents` to frontend clients.
 
-## Run locally (Python)
+## Azure infrastructure
+
+Use the root `infra/` folder to provision Azure resources and deploy from local machine:
+
+```powershell
+.\infra\scripts\deploy_api.ps1 -SubscriptionId "<your-subscription-id>" -AcrName "<globally-unique-acr-name>"
+```
+
+See `infra/README.md` for full setup.
+
+## Run locally (Conda)
+
+From the repository root:
 
 ```bash
+conda env create -f environment.yml -p ./.conda
+conda activate ./.conda
 cd api/aijuristiction-api
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
+pip install -e ".[dev]"
 uvicorn app.main:app --reload --port 8080
 ```
+
+If the `.conda` environment already exists, skip `conda env create`.
 
 ## Run with Docker
 
@@ -31,7 +45,7 @@ GitHub workflow: `.github/workflows/api_build_deploy.yml`
 - CI checks: install deps, lint (`ruff`), type-check (`mypy`), tests (`pytest`), and Docker build.
 - Deploy path: on manual dispatch with `deploy=true`, push image to Azure Container Registry and deploy/update Azure Container App.
 
-Required secrets:
+Required GitHub Environment variables:
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
@@ -39,6 +53,9 @@ Required secrets:
 - `AZURE_CONTAINERAPPS_ENVIRONMENT`
 - `AZURE_CONTAINER_APP_NAME`
 - `AZURE_CONTAINER_REGISTRY`
+
+The workflow dispatch input `github_environment` selects which GitHub Environment
+supplies these variables.
 
 ## E2E testing recommendation
 

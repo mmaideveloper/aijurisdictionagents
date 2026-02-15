@@ -259,6 +259,18 @@ GitHub Actions runs unit tests on every pull request and on pushes to `main`.
 
 See `docs/ARCHITECTURE.md` for module boundaries and flow.
 
+## API infrastructure (Azure)
+
+Infrastructure-as-code and local deployment scripts for the API are in `infra/`.
+
+Quick start:
+
+```powershell
+.\infra\scripts\deploy_api.ps1 -SubscriptionId "<your-subscription-id>" -AcrName "<globally-unique-acr-name>"
+```
+
+For full details, see `infra/README.md`.
+
 ## Corporate website
 
 The static corporate presentation site lives in `corporate-web`.
