@@ -15,7 +15,7 @@ on:
       deploy:
         description: "Deploy to Azure Container Apps"
         required: true
-        default: "false"
+        default: "true"
       github_environment:
         description: "GitHub Environment that contains Azure variables"
         required: true

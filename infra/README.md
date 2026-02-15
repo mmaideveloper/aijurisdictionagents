@@ -136,6 +136,73 @@ If your `.env` is at the repo root, no extra flag is needed. To use a different 
   -EnvFilePath ".env"
 ```
 
+## GitHub workflow deployment setup (OIDC federation)
+
+The API workflow `.github/workflows/api_build_deploy.yml` logs into Azure using OIDC
+(`azure/login@v2`) and expects `AZURE_CLIENT_ID` to be an Entra application that has
+a federated credential for GitHub.
+
+1. Create an Entra app and service principal:
+
+```powershell
+$SubscriptionId = "<SUBSCRIPTION_ID>"
+$ResourceGroupName = "<RESOURCE_GROUP_NAME>"
+$AcrName = "<ACR_NAME>"
+$RepoOwner = "<GITHUB_OWNER>"
+$RepoName = "<GITHUB_REPO>"
+$GithubEnvironment = "dev"   # must match workflow input github_environment
+
+az account set --subscription $SubscriptionId
+$TenantId = az account show --query tenantId -o tsv
+$ClientId = az ad app create --display-name "aijurisdiction-api-deploy" --query appId -o tsv
+az ad sp create --id $ClientId
+```
+
+2. Grant required Azure roles:
+
+```powershell
+az role assignment create `
+  --assignee $ClientId `
+  --role "Contributor" `
+  --scope "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName"
+
+az role assignment create `
+  --assignee $ClientId `
+  --role "AcrPush" `
+  --scope "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.ContainerRegistry/registries/$AcrName"
+```
+
+3. Create federated credential for GitHub Environment:
+
+```powershell
+$federatedCredential = @{
+  name        = "github-${RepoOwner}-${RepoName}-${GithubEnvironment}"
+  issuer      = "https://token.actions.githubusercontent.com"
+  subject     = "repo:${RepoOwner}/${RepoName}:environment:${GithubEnvironment}"
+  description = "OIDC federation for API deployment workflow"
+  audiences   = @("api://AzureADTokenExchange")
+} | ConvertTo-Json -Depth 5
+
+$tempFile = Join-Path $env:TEMP "github-federated-credential.json"
+$federatedCredential | Out-File -FilePath $tempFile -Encoding utf8
+az ad app federated-credential create --id $ClientId --parameters $tempFile
+```
+
+4. Configure GitHub Environment variables (Settings -> Environments -> `<environment>` -> Variables):
+
+- `AZURE_CLIENT_ID` = `$ClientId`
+- `AZURE_TENANT_ID` = `$TenantId`
+- `AZURE_SUBSCRIPTION_ID` = `<SUBSCRIPTION_ID>`
+- `AZURE_RESOURCE_GROUP` = `<RESOURCE_GROUP_NAME>`
+- `AZURE_CONTAINERAPPS_ENVIRONMENT` = `<CONTAINERAPPS_ENV_NAME>`
+- `AZURE_CONTAINER_APP_NAME` = `<CONTAINER_APP_NAME>`
+- `AZURE_CONTAINER_REGISTRY` = `<ACR_NAME>`
+
+5. Run the workflow:
+
+- Workflow: `API Build and Deploy`
+- Inputs: `deploy=true`, `github_environment=<environment>`
+
 ## Files
 
 - `infra/bicep/main.bicep`: Azure resources definition
