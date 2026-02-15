@@ -1,13 +1,11 @@
 # Project Polling Automation
 
-This repository uses a scheduled polling workflow to drive Project V2 automation (GitHub Actions has no native
-"project status changed" trigger).
+This repository uses local polling scripts to drive Project V2 automation.
 
-## Workflow
+## Local automation
 
-- File: `.github/workflows/project_polling.yml`
-- Triggers: `schedule` (default: every 15 minutes) and `workflow_dispatch`
-- Purpose: fetch Project V2 items and write snapshot JSON files, then move Ready tasks with PRs to In review
+- Purpose: fetch Project V2 items and write snapshot JSON files, then move Ready tasks with PRs to In review.
+- Run manually or from your own scheduler/CI.
 
 ## Configuration
 
