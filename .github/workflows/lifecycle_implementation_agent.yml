@@ -1,8 +1,6 @@
 name: lifecycle-implementation-agent
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       project_owner:
@@ -46,6 +44,7 @@ concurrency:
 
 jobs:
   implement-ready-task:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     env:
       PROJECT_OWNER: ${{ github.event.inputs.project_owner || 'mmaideveloper' }}

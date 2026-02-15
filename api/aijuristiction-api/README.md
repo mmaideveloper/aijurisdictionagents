@@ -57,6 +57,9 @@ Required GitHub Environment variables:
 The workflow dispatch input `github_environment` selects which GitHub Environment
 supplies these variables.
 
+For Azure OIDC federation setup (GitHub -> Entra app federated credential for
+`AZURE_CLIENT_ID`), see `infra/README.md` section `GitHub workflow deployment setup (OIDC federation)`.
+
 ## E2E testing recommendation
 
 Because you are familiar with Playwright, use **Playwright API testing** (`APIRequestContext`) for API E2E:
