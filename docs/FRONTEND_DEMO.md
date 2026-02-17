@@ -66,6 +66,8 @@ Case sidebar behavior:
 - On the authenticated home view, the layout is a full-height flex row: sidebar on the left, navbar + content on the right.
 - The center workspace starts with a welcome state prompting the user to start a new case or continue by selecting a case in the sidebar.
 - The AI configuration panel includes a role selector with intent hints and highlights the active perspective.
+- The AI configuration panel now includes a communication mode segmented control (`Chat`, `Voice`, `Video`).
+- Communication mode changes are stored per case and switch the center workspace view without dropping case context.
 
 ## Case state model
 
@@ -74,5 +76,6 @@ Each case includes:
 - `id`, `title`, `description`, `status`, `createdAt`
 - `interactionHistory` entries with timestamps, actors, and messages
 - `selectedRole` and `selectedMode` stored per case
+- `selectedCommunicationMode` (`Chat`/`Voice`/`Video`) stored per case
 
 The active case is available globally via the `CaseProvider` context.
