@@ -3,6 +3,7 @@ import React from "react";
 export type CaseStatus = "In progress" | "On hold" | "Scheduled" | "Completed";
 export type CaseMode = "Draft" | "Review" | "Live" | "Archive";
 export type CaseRole = "AI Lawyer" | "AI Judge" | "Opposing Counsel";
+export type CaseCommunicationMode = "Chat" | "Voice" | "Video";
 
 export type CaseInteraction = {
   id: string;
@@ -28,6 +29,7 @@ export type CaseRecord = {
   interactionHistory: CaseInteraction[];
   selectedRole: CaseRole;
   selectedMode: CaseMode;
+  selectedCommunicationMode: CaseCommunicationMode;
   workspace: CaseWorkspace;
 };
 
@@ -45,6 +47,7 @@ type CaseContextValue = {
   updateCase: (caseId: string, update: Partial<CaseRecord>) => void;
   setCaseRole: (caseId: string, role: CaseRole) => void;
   setCaseMode: (caseId: string, mode: CaseMode) => void;
+  setCaseCommunicationMode: (caseId: string, mode: CaseCommunicationMode) => void;
 };
 
 const CaseContext = React.createContext<CaseContextValue | undefined>(undefined);
@@ -78,6 +81,7 @@ const initialCases: CaseRecord[] = [
     ],
     selectedRole: "AI Lawyer",
     selectedMode: "Draft",
+    selectedCommunicationMode: "Chat",
     workspace: {
       meta: "Due in 2 days",
       objective: "Consolidate jurisdiction analysis and prepare a briefing memo for counsel review.",
@@ -114,6 +118,7 @@ const initialCases: CaseRecord[] = [
     ],
     selectedRole: "AI Judge",
     selectedMode: "Review",
+    selectedCommunicationMode: "Voice",
     workspace: {
       meta: "Waiting on docs",
       objective: "Gather missing vendor exhibits and align on scope with procurement leadership.",
@@ -150,6 +155,7 @@ const initialCases: CaseRecord[] = [
     ],
     selectedRole: "Opposing Counsel",
     selectedMode: "Live",
+    selectedCommunicationMode: "Video",
     workspace: {
       meta: "Kickoff today",
       objective: "Align audit prep checklist and confirm timeline with internal teams.",
@@ -186,6 +192,7 @@ const initialCases: CaseRecord[] = [
     ],
     selectedRole: "AI Lawyer",
     selectedMode: "Archive",
+    selectedCommunicationMode: "Chat",
     workspace: {
       meta: "Closed last week",
       objective: "Finalize arbitration summary and archive case documentation.",
@@ -221,6 +228,7 @@ const buildNewCase = (index: number): CaseRecord => {
     ],
     selectedRole: "AI Lawyer",
     selectedMode: "Draft",
+    selectedCommunicationMode: "Chat",
     workspace: {
       meta: "Just created",
       objective: "Define scope, assign roles, and request initial documents.",
@@ -294,6 +302,13 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     updateCase(caseId, { selectedMode: mode });
   }, [updateCase]);
 
+  const setCaseCommunicationMode = React.useCallback(
+    (caseId: string, mode: CaseCommunicationMode) => {
+      updateCase(caseId, { selectedCommunicationMode: mode });
+    },
+    [updateCase]
+  );
+
   const value = React.useMemo(
     () => ({
       cases,
@@ -308,7 +323,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addInteraction,
       updateCase,
       setCaseRole,
-      setCaseMode
+      setCaseMode,
+      setCaseCommunicationMode
     }),
     [
       cases,
@@ -323,7 +339,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addInteraction,
       updateCase,
       setCaseRole,
-      setCaseMode
+      setCaseMode,
+      setCaseCommunicationMode
     ]
   );
 
