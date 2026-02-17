@@ -159,10 +159,50 @@ jobs:
           docker push ${{ steps.acr.outputs.acr_login_server }}/aijurisdiction-frontend:${{ github.sha }}
 
       - name: Deploy to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          acrName: ${{ steps.acr.outputs.acr_name }}
-          containerAppName: ${{ env.AZURE_FRONTEND_CONTAINER_APP_NAME }}
-          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
-          containerAppEnvironment: ${{ env.AZURE_CONTAINERAPPS_ENVIRONMENT }}
-          imageToDeploy: ${{ steps.acr.outputs.acr_login_server }}/aijurisdiction-frontend:${{ github.sha }}
+        run: |
+          app_name="${AZURE_FRONTEND_CONTAINER_APP_NAME}"
+          rg="${AZURE_RESOURCE_GROUP}"
+          image_ref="${{ steps.acr.outputs.acr_login_server }}/aijurisdiction-frontend:${{ github.sha }}"
+
+          provisioning_state="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "properties.provisioningState" --output tsv 2>/dev/null || true)"
+          echo "Current provisioning state: ${provisioning_state:-unknown}"
+
+          if [ "$provisioning_state" = "Failed" ]; then
+            echo "::warning::Container App is in Failed provisioning state. Attempting recovery with a public image first."
+            az containerapp update \
+              --name "$app_name" \
+              --resource-group "$rg" \
+              --image "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest" \
+              --only-show-errors \
+              --output none || true
+          fi
+
+          az containerapp update \
+            --name "$app_name" \
+            --resource-group "$rg" \
+            --image "$image_ref" \
+            --only-show-errors \
+            --output none
+
+      - name: Verify deployment and print diagnostics on failure
+        run: |
+          app_name="${AZURE_FRONTEND_CONTAINER_APP_NAME}"
+          rg="${AZURE_RESOURCE_GROUP}"
+
+          for _ in {1..18}; do
+            provisioning_state="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "properties.provisioningState" --output tsv 2>/dev/null || true)"
+            latest_revision="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "properties.latestRevisionName" --output tsv 2>/dev/null || true)"
+            health_state="$(az containerapp revision show --name "$app_name" --resource-group "$rg" --revision "$latest_revision" --query "properties.healthState" --output tsv 2>/dev/null || true)"
+
+            if [ "$provisioning_state" = "Succeeded" ] && [ "$health_state" = "Healthy" ]; then
+              echo "Deployment healthy on revision: $latest_revision"
+              exit 0
+            fi
+
+            sleep 10
+          done
+
+          echo "::error::Container App failed to reach healthy state. Dumping diagnostics."
+          az containerapp show --name "$app_name" --resource-group "$rg" --output json
+          az containerapp revision list --name "$app_name" --resource-group "$rg" --output table
+          exit 1
