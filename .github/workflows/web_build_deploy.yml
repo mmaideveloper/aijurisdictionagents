@@ -111,47 +111,6 @@ jobs:
       - name: Ensure Azure Container Apps extension
         run: az extension add --name containerapp --upgrade --only-show-errors
 
-      - name: Configure Container App ACR pull auth
-        run: |
-          app_name="${AZURE_FRONTEND_CONTAINER_APP_NAME}"
-          rg="${AZURE_RESOURCE_GROUP}"
-          acr_name="${{ steps.acr.outputs.acr_name }}"
-          acr_server="${{ steps.acr.outputs.acr_login_server }}"
-
-          acr_id="$(az acr show --name "$acr_name" --query id --output tsv)"
-          user_identity_id="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "keys(identity.userAssignedIdentities)[0]" --output tsv 2>/dev/null || true)"
-
-          if [ -n "$user_identity_id" ] && [ "$user_identity_id" != "null" ]; then
-            principal_id="$(az identity show --ids "$user_identity_id" --query principalId --output tsv)"
-            registry_identity="$user_identity_id"
-          else
-            identity_type="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "identity.type" --output tsv 2>/dev/null || true)"
-            if [[ "$identity_type" != *"SystemAssigned"* ]]; then
-              az containerapp identity assign --name "$app_name" --resource-group "$rg" --system-assigned --only-show-errors --output none
-            fi
-            principal_id="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "identity.principalId" --output tsv)"
-            registry_identity="system"
-          fi
-
-          role_count="$(az role assignment list --assignee-object-id "$principal_id" --scope "$acr_id" --query "[?roleDefinitionName=='AcrPull'] | length(@)" --output tsv)"
-          if [ "$role_count" = "0" ]; then
-            az role assignment create \
-              --assignee-object-id "$principal_id" \
-              --assignee-principal-type ServicePrincipal \
-              --scope "$acr_id" \
-              --role AcrPull \
-              --only-show-errors \
-              --output none
-          fi
-
-          az containerapp registry set \
-            --name "$app_name" \
-            --resource-group "$rg" \
-            --server "$acr_server" \
-            --identity "$registry_identity" \
-            --only-show-errors \
-            --output none
-
       - name: Build and push image to ACR
         run: |
           az acr login --name ${{ steps.acr.outputs.acr_name }}
@@ -162,13 +121,21 @@ jobs:
         run: |
           app_name="${AZURE_FRONTEND_CONTAINER_APP_NAME}"
           rg="${AZURE_RESOURCE_GROUP}"
+          acr_name="${{ steps.acr.outputs.acr_name }}"
+          acr_server="${{ steps.acr.outputs.acr_login_server }}"
           image_ref="${{ steps.acr.outputs.acr_login_server }}/aijurisdiction-frontend:${{ github.sha }}"
 
-          provisioning_state="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "properties.provisioningState" --output tsv 2>/dev/null || true)"
-          echo "Current provisioning state: ${provisioning_state:-unknown}"
+          if ! az resource show --resource-group "$rg" --resource-type "Microsoft.App/containerApps" --name "$app_name" --output none 2>/dev/null; then
+            echo "::error::Container App '$app_name' was not found in resource group '$rg'."
+            exit 1
+          fi
 
-          if [ "$provisioning_state" = "Failed" ]; then
-            echo "::warning::Container App is in Failed provisioning state. Attempting recovery with a public image first."
+          provisioning_state="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "properties.provisioningState" --output tsv 2>/dev/null || true)"
+          provisioning_state="${provisioning_state:-Unknown}"
+          echo "Current provisioning state: $provisioning_state"
+
+          if [ "$provisioning_state" = "Failed" ] || [ "$provisioning_state" = "Unknown" ]; then
+            echo "::warning::Container App is in '$provisioning_state' provisioning state. Attempting recovery with a public image first."
             az containerapp update \
               --name "$app_name" \
               --resource-group "$rg" \
@@ -177,24 +144,93 @@ jobs:
               --output none || true
           fi
 
-          az containerapp update \
-            --name "$app_name" \
-            --resource-group "$rg" \
-            --image "$image_ref" \
-            --only-show-errors \
-            --output none
+          configure_acr_pull_auth() {
+            local acr_id
+            local user_identity_id
+            local principal_id
+            local registry_identity
+            local identity_type
+            local role_count
+
+            acr_id="$(az acr show --name "$acr_name" --query id --output tsv)"
+            user_identity_id="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "keys(identity.userAssignedIdentities)[0]" --output tsv 2>/dev/null || true)"
+
+            if [ -n "$user_identity_id" ] && [ "$user_identity_id" != "null" ]; then
+              principal_id="$(az identity show --ids "$user_identity_id" --query principalId --output tsv)"
+              registry_identity="$user_identity_id"
+            else
+              identity_type="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "identity.type" --output tsv 2>/dev/null || true)"
+              if [[ "$identity_type" != *"SystemAssigned"* ]]; then
+                az containerapp identity assign --name "$app_name" --resource-group "$rg" --system-assigned --only-show-errors --output none
+              fi
+              principal_id="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "identity.principalId" --output tsv)"
+              registry_identity="system"
+            fi
+
+            role_count="$(az role assignment list --assignee-object-id "$principal_id" --scope "$acr_id" --query "[?roleDefinitionName=='AcrPull'] | length(@)" --output tsv)"
+            if [ "$role_count" = "0" ]; then
+              az role assignment create \
+                --assignee-object-id "$principal_id" \
+                --assignee-principal-type ServicePrincipal \
+                --scope "$acr_id" \
+                --role AcrPull \
+                --only-show-errors \
+                --output none
+            fi
+
+            az containerapp registry set \
+              --name "$app_name" \
+              --resource-group "$rg" \
+              --server "$acr_server" \
+              --identity "$registry_identity" \
+              --only-show-errors \
+              --output none
+          }
+
+          configure_acr_pull_auth
+
+          deploy_succeeded=false
+          for attempt in 1 2 3; do
+            if az containerapp update \
+              --name "$app_name" \
+              --resource-group "$rg" \
+              --image "$image_ref" \
+              --only-show-errors \
+              --output none; then
+              deploy_succeeded=true
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Container App image update failed on attempt $attempt. Retrying after 20s to allow RBAC propagation."
+              sleep 20
+            fi
+          done
+
+          if [ "$deploy_succeeded" != "true" ]; then
+            echo "::error::Failed to update Container App image after retries."
+            exit 1
+          fi
 
       - name: Verify deployment and print diagnostics on failure
         run: |
           app_name="${AZURE_FRONTEND_CONTAINER_APP_NAME}"
           rg="${AZURE_RESOURCE_GROUP}"
 
-          for _ in {1..18}; do
+          for _ in {1..24}; do
             provisioning_state="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "properties.provisioningState" --output tsv 2>/dev/null || true)"
             latest_revision="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "properties.latestRevisionName" --output tsv 2>/dev/null || true)"
-            health_state="$(az containerapp revision show --name "$app_name" --resource-group "$rg" --revision "$latest_revision" --query "properties.healthState" --output tsv 2>/dev/null || true)"
+            health_state="Unknown"
+            running_state="Unknown"
+            if [ -n "$latest_revision" ] && [ "$latest_revision" != "null" ]; then
+              health_state="$(az containerapp revision show --name "$app_name" --resource-group "$rg" --revision "$latest_revision" --query "properties.healthState" --output tsv 2>/dev/null || true)"
+              running_state="$(az containerapp revision show --name "$app_name" --resource-group "$rg" --revision "$latest_revision" --query "properties.runningState" --output tsv 2>/dev/null || true)"
+            fi
+            provisioning_state="${provisioning_state:-Unknown}"
+            health_state="${health_state:-Unknown}"
+            running_state="${running_state:-Unknown}"
+            echo "State check: provisioning=$provisioning_state revision=${latest_revision:-none} health=$health_state running=$running_state"
 
-            if [ "$provisioning_state" = "Succeeded" ] && [ "$health_state" = "Healthy" ]; then
+            if [ "$provisioning_state" = "Succeeded" ] && ([ "$health_state" = "Healthy" ] || [ "$running_state" = "Running" ]); then
               echo "Deployment healthy on revision: $latest_revision"
               exit 0
             fi
@@ -205,4 +241,10 @@ jobs:
           echo "::error::Container App failed to reach healthy state. Dumping diagnostics."
           az containerapp show --name "$app_name" --resource-group "$rg" --output json
           az containerapp revision list --name "$app_name" --resource-group "$rg" --output table
+          latest_revision="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "properties.latestRevisionName" --output tsv 2>/dev/null || true)"
+          if [ -n "$latest_revision" ] && [ "$latest_revision" != "null" ]; then
+            az containerapp revision show --name "$app_name" --resource-group "$rg" --revision "$latest_revision" --output json || true
+            az containerapp logs show --name "$app_name" --resource-group "$rg" --revision "$latest_revision" --tail 200 || true
+          fi
+          az containerapp logs show --name "$app_name" --resource-group "$rg" --type system --tail 200 || true
           exit 1
