@@ -239,3 +239,16 @@ If this still fails, ensure system time is synchronized and retry.
 
 If Azure CLI on Windows throws `UnicodeEncodeError ... cp1252` during ACR build log streaming,
 the deploy script uses `az acr build --no-logs` to avoid that stream encoding failure.
+
+## Frontend container and workflow
+
+New frontend deployment assets:
+
+- `frontend/aijurisdictionfronend/Dockerfile`: multi-stage frontend image build (Node build + Nginx runtime)
+- `infra/bicep/frontend.containerapp.bicep`: dedicated Azure Container App template for frontend
+- `infra/bicep/frontend.containerapp.parameters.example.json`: example parameter values
+- `.github/workflows/frondend.yml`: frontend CI/CD workflow
+
+Required GitHub Environment variable for frontend deployment:
+
+- `AZURE_FRONTEND_CONTAINER_APP_NAME`
