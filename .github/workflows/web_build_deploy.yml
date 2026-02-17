@@ -1,4 +1,4 @@
-name: frondend
+name: web_build_deploy
 
 on:
   push:
@@ -6,12 +6,12 @@ on:
     paths:
       - "frontend/aijurisdictionfronend/**"
       - "frontend/aijurisdictionfronend/Dockerfile"
-      - ".github/workflows/frondend.yml"
+      - ".github/workflows/web_build_deploy.yml"
   pull_request:
     paths:
       - "frontend/aijurisdictionfronend/**"
       - "frontend/aijurisdictionfronend/Dockerfile"
-      - ".github/workflows/frondend.yml"
+      - ".github/workflows/web_build_deploy.yml"
   workflow_dispatch:
     inputs:
       deploy:

@@ -247,7 +247,8 @@ New frontend deployment assets:
 - `frontend/aijurisdictionfronend/Dockerfile`: multi-stage frontend image build (Node build + Nginx runtime)
 - `infra/bicep/frontend.containerapp.bicep`: dedicated Azure Container App template for frontend
 - `infra/bicep/frontend.containerapp.parameters.example.json`: example parameter values
-- `.github/workflows/frondend.yml`: frontend CI/CD workflow
+- `.github/workflows/web_build_deploy.yml`: frontend CI/CD workflow
+- `.github/workflows/infra_deploy.yml`: infrastructure provisioning workflow (Bicep)
 
 Required GitHub Environment variable for frontend deployment:
 

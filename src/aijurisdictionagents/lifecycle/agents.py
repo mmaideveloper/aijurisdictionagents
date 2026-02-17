@@ -320,7 +320,7 @@ class DeploymentAgent:
 
         if "github_actions" in platforms:
             pipelines["github_actions"] = {
-                "workflow": ".github/workflows/ci.yml",
+                "workflow": ".github/workflows/core_build.yml",
                 "stages": ["build", "test", *targets],
                 "rollback": "re-deploy previous successful artifact",
             }

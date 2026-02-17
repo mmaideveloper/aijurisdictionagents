@@ -1,0 +1,110 @@
+name: infra_deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra_deploy.yml"
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra_deploy.yml"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy infrastructure to Azure"
+        required: true
+        default: "true"
+      github_environment:
+        description: "GitHub Environment that contains Azure variables"
+        required: true
+        default: "dev"
+
+jobs:
+  validate_bicep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Bicep template compiles
+        run: az bicep build --file infra/bicep/main.bicep
+
+  deploy_infrastructure:
+    runs-on: ubuntu-latest
+    needs: validate_bicep
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy == 'true')
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.github_environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      AZURE_CONTAINER_APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
+      AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
+      AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required environment variables
+        run: |
+          missing=0
+          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_LOCATION AZURE_CONTAINERAPPS_ENVIRONMENT AZURE_CONTAINER_APP_NAME AZURE_CONTAINER_REGISTRY AZURE_LOG_ANALYTICS_WORKSPACE_NAME AZURE_MANAGED_IDENTITY_NAME; do
+            if [ -z "${!key}" ]; then
+              echo "Missing GitHub Environment variable: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Normalize ACR settings
+        id: acr
+        run: |
+          raw="$AZURE_CONTAINER_REGISTRY"
+          lowered="$(echo "$raw" | tr '[:upper:]' '[:lower:]')"
+          no_suffix="${lowered%.azurecr.io}"
+          acr_name="$(echo "$no_suffix" | tr -cd 'a-z0-9')"
+
+          if [ -z "$acr_name" ] || [ "${#acr_name}" -lt 5 ] || [ "${#acr_name}" -gt 50 ]; then
+            echo "::error::Invalid ACR value '$raw'. Normalized name '$acr_name' must be 5-50 alphanumeric characters."
+            exit 1
+          fi
+
+          echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure Azure Container Apps extension
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Ensure resource group exists
+        run: |
+          if [ "$(az group exists --name "$AZURE_RESOURCE_GROUP" --output tsv)" != "true" ]; then
+            az group create --name "$AZURE_RESOURCE_GROUP" --location "$AZURE_LOCATION" --only-show-errors --output none
+          fi
+
+      - name: Deploy infrastructure from Bicep
+        run: |
+          az deployment group create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "infra-${{ github.run_id }}-${{ github.run_attempt }}" \
+            --template-file infra/bicep/main.bicep \
+            --parameters \
+              location="$AZURE_LOCATION" \
+              environmentName="$AZURE_CONTAINERAPPS_ENVIRONMENT" \
+              containerAppName="$AZURE_CONTAINER_APP_NAME" \
+              acrName="${{ steps.acr.outputs.acr_name }}" \
+              logAnalyticsWorkspaceName="$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+              managedIdentityName="$AZURE_MANAGED_IDENTITY_NAME"

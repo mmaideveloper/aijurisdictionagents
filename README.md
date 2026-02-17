@@ -258,6 +258,10 @@ pytest
 ## CI
 
 GitHub Actions runs unit tests on every pull request and on pushes to `main`.
+Primary workflow names:
+- `CoreSystemBuild`
+- `web_build_deploy`
+- `infra_deploy`
 
 ## Architecture
 
