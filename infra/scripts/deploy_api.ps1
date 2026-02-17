@@ -173,6 +173,30 @@ function Require-Value {
     }
 }
 
+function Get-ResourceLocationInGroup {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceGroupName,
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceName,
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceType
+    )
+
+    $location = az resource show `
+        --resource-group $ResourceGroupName `
+        --name $ResourceName `
+        --resource-type $ResourceType `
+        --query location `
+        --output tsv 2>$null
+
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$location)) {
+        return ""
+    }
+
+    return [string]$location
+}
+
 function Ensure-ServicePrincipalLogin {
     param(
         [string]$ExpectedClientId,
@@ -478,6 +502,59 @@ else {
         --output none
 }
 
+Write-Host "Inspecting existing resources to avoid re-creation..."
+$logAnalyticsWorkspaceLocation = Get-ResourceLocationInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $LogAnalyticsWorkspaceName `
+    -ResourceType "Microsoft.OperationalInsights/workspaces"
+$managedEnvironmentLocation = Get-ResourceLocationInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $EnvironmentName `
+    -ResourceType "Microsoft.App/managedEnvironments"
+$acrLocation = Get-ResourceLocationInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $AcrName `
+    -ResourceType "Microsoft.ContainerRegistry/registries"
+$managedIdentityLocation = Get-ResourceLocationInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $ManagedIdentityName `
+    -ResourceType "Microsoft.ManagedIdentity/userAssignedIdentities"
+$containerAppLocation = Get-ResourceLocationInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $ContainerAppName `
+    -ResourceType "Microsoft.App/containerApps"
+
+$createLogAnalyticsWorkspace = [string]::IsNullOrWhiteSpace($logAnalyticsWorkspaceLocation)
+$createManagedEnvironment = [string]::IsNullOrWhiteSpace($managedEnvironmentLocation)
+$createAcr = [string]::IsNullOrWhiteSpace($acrLocation)
+$createManagedIdentity = [string]::IsNullOrWhiteSpace($managedIdentityLocation)
+$createContainerApp = [string]::IsNullOrWhiteSpace($containerAppLocation)
+
+$existingLocations = @(
+    $logAnalyticsWorkspaceLocation,
+    $managedEnvironmentLocation,
+    $acrLocation,
+    $managedIdentityLocation,
+    $containerAppLocation
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique
+
+if ($existingLocations.Count -gt 0) {
+    if ($existingLocations.Count -gt 1) {
+        Write-Warning "Existing resources were found in multiple locations: $($existingLocations -join ', '). Using '$($existingLocations[0])' for newly created resources."
+    }
+    if ($Location -ne $existingLocations[0]) {
+        Write-Host "Overriding deployment location from '$Location' to '$($existingLocations[0])' to match existing resources."
+        $Location = [string]$existingLocations[0]
+    }
+}
+
+Write-Host "Create plan:"
+Write-Host " - Log Analytics Workspace: $createLogAnalyticsWorkspace"
+Write-Host " - Container Apps Environment: $createManagedEnvironment"
+Write-Host " - Container Registry: $createAcr"
+Write-Host " - Managed Identity: $createManagedIdentity"
+Write-Host " - Container App: $createContainerApp"
+
 Write-Host "Deploying Azure infrastructure with Bicep..."
 $outputsRaw = az deployment group create `
     --resource-group $ResourceGroupName `
@@ -490,6 +567,11 @@ $outputsRaw = az deployment group create `
       acrName=$AcrName `
       logAnalyticsWorkspaceName=$LogAnalyticsWorkspaceName `
       managedIdentityName=$ManagedIdentityName `
+      createLogAnalyticsWorkspace=$($createLogAnalyticsWorkspace.ToString().ToLower()) `
+      createManagedEnvironment=$($createManagedEnvironment.ToString().ToLower()) `
+      createAcr=$($createAcr.ToString().ToLower()) `
+      createManagedIdentity=$($createManagedIdentity.ToString().ToLower()) `
+      createContainerApp=$($createContainerApp.ToString().ToLower()) `
     --query properties.outputs `
     --output json 2>&1
 

@@ -95,6 +95,63 @@ jobs:
             az group create --name "$AZURE_RESOURCE_GROUP" --location "$AZURE_LOCATION" --only-show-errors --output none
           fi
 
+      - name: Detect existing resources and resolve deployment mode
+        id: existing
+        run: |
+          get_location() {
+            az resource show \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$1" \
+              --resource-type "$2" \
+              --query location \
+              --output tsv 2>/dev/null || true
+          }
+
+          log_location="$(get_location "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" "Microsoft.OperationalInsights/workspaces")"
+          env_location="$(get_location "$AZURE_CONTAINERAPPS_ENVIRONMENT" "Microsoft.App/managedEnvironments")"
+          acr_location="$(get_location "${{ steps.acr.outputs.acr_name }}" "Microsoft.ContainerRegistry/registries")"
+          identity_location="$(get_location "$AZURE_MANAGED_IDENTITY_NAME" "Microsoft.ManagedIdentity/userAssignedIdentities")"
+          app_location="$(get_location "$AZURE_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
+
+          create_log_analytics_workspace=true
+          create_managed_environment=true
+          create_acr=true
+          create_managed_identity=true
+          create_container_app=true
+
+          [ -n "$log_location" ] && create_log_analytics_workspace=false
+          [ -n "$env_location" ] && create_managed_environment=false
+          [ -n "$acr_location" ] && create_acr=false
+          [ -n "$identity_location" ] && create_managed_identity=false
+          [ -n "$app_location" ] && create_container_app=false
+
+          resolved_location="$AZURE_LOCATION"
+          first_existing_location=""
+          for current in "$log_location" "$env_location" "$acr_location" "$identity_location" "$app_location"; do
+            if [ -z "$current" ]; then
+              continue
+            fi
+            if [ -z "$first_existing_location" ]; then
+              first_existing_location="$current"
+              continue
+            fi
+            if [ "$current" != "$first_existing_location" ]; then
+              echo "::warning::Existing resources use multiple locations ('$first_existing_location' and '$current')."
+            fi
+          done
+
+          if [ -n "$first_existing_location" ]; then
+            resolved_location="$first_existing_location"
+            echo "Using existing resource location: $resolved_location"
+          fi
+
+          echo "resolved_location=$resolved_location" >> "$GITHUB_OUTPUT"
+          echo "create_log_analytics_workspace=$create_log_analytics_workspace" >> "$GITHUB_OUTPUT"
+          echo "create_managed_environment=$create_managed_environment" >> "$GITHUB_OUTPUT"
+          echo "create_acr=$create_acr" >> "$GITHUB_OUTPUT"
+          echo "create_managed_identity=$create_managed_identity" >> "$GITHUB_OUTPUT"
+          echo "create_container_app=$create_container_app" >> "$GITHUB_OUTPUT"
+
       - name: Deploy infrastructure from Bicep
         run: |
           az deployment group create \
@@ -102,9 +159,14 @@ jobs:
             --name "infra-${{ github.run_id }}-${{ github.run_attempt }}" \
             --template-file infra/bicep/main.bicep \
             --parameters \
-              location="$AZURE_LOCATION" \
+              location="${{ steps.existing.outputs.resolved_location }}" \
               environmentName="$AZURE_CONTAINERAPPS_ENVIRONMENT" \
               containerAppName="$AZURE_CONTAINER_APP_NAME" \
               acrName="${{ steps.acr.outputs.acr_name }}" \
               logAnalyticsWorkspaceName="$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
-              managedIdentityName="$AZURE_MANAGED_IDENTITY_NAME"
+              managedIdentityName="$AZURE_MANAGED_IDENTITY_NAME" \
+              createLogAnalyticsWorkspace="${{ steps.existing.outputs.create_log_analytics_workspace }}" \
+              createManagedEnvironment="${{ steps.existing.outputs.create_managed_environment }}" \
+              createAcr="${{ steps.existing.outputs.create_acr }}" \
+              createManagedIdentity="${{ steps.existing.outputs.create_managed_identity }}" \
+              createContainerApp="${{ steps.existing.outputs.create_container_app }}"

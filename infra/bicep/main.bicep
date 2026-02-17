@@ -4,9 +4,14 @@ param containerAppName string
 param acrName string
 param logAnalyticsWorkspaceName string
 param managedIdentityName string
+param createLogAnalyticsWorkspace bool = true
+param createManagedEnvironment bool = true
+param createAcr bool = true
+param createManagedIdentity bool = true
+param createContainerApp bool = true
 param tags object = {}
 
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (createLogAnalyticsWorkspace) {
   name: logAnalyticsWorkspaceName
   location: location
   tags: tags
@@ -18,7 +23,18 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09
   }
 }
 
-resource managedEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
+resource logAnalyticsWorkspaceExisting 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = if (!createLogAnalyticsWorkspace) {
+  name: logAnalyticsWorkspaceName
+}
+
+var logAnalyticsCustomerId = createLogAnalyticsWorkspace
+  ? logAnalyticsWorkspace.properties.customerId
+  : logAnalyticsWorkspaceExisting.properties.customerId
+var logAnalyticsSharedKey = createLogAnalyticsWorkspace
+  ? logAnalyticsWorkspace.listKeys().primarySharedKey
+  : logAnalyticsWorkspaceExisting.listKeys().primarySharedKey
+
+resource managedEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (createManagedEnvironment) {
   name: environmentName
   location: location
   tags: tags
@@ -26,14 +42,18 @@ resource managedEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
-        customerId: logAnalyticsWorkspace.properties.customerId
-        sharedKey: logAnalyticsWorkspace.listKeys().primarySharedKey
+        customerId: logAnalyticsCustomerId
+        sharedKey: logAnalyticsSharedKey
       }
     }
   }
 }
 
-resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+resource managedEnvironmentExisting 'Microsoft.App/managedEnvironments@2024-03-01' existing = if (!createManagedEnvironment) {
+  name: environmentName
+}
+
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = if (createAcr) {
   name: acrName
   location: location
   tags: tags
@@ -45,17 +65,34 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
 }
 
-resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+resource acrExisting 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (!createAcr) {
+  name: acrName
+}
+
+var acrId = createAcr ? acr.id : acrExisting.id
+var acrLoginServer = createAcr ? acr.properties.loginServer : acrExisting.properties.loginServer
+
+resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (createManagedIdentity) {
   name: managedIdentityName
   location: location
   tags: tags
 }
 
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(acr.id, managedIdentity.id, 'AcrPull')
+resource managedIdentityExisting 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = if (!createManagedIdentity) {
+  name: managedIdentityName
+}
+
+var managedIdentityId = createManagedIdentity ? managedIdentity.id : managedIdentityExisting.id
+var managedIdentityPrincipalId = createManagedIdentity
+  ? managedIdentity.properties.principalId
+  : managedIdentityExisting.properties.principalId
+var createAcrPullRoleAssignment = createContainerApp || createAcr || createManagedIdentity
+
+resource acrPullRoleAssignmentOnNewAcr 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createAcrPullRoleAssignment && createAcr) {
+  name: guid(acrId, managedIdentityId, 'AcrPull')
   scope: acr
   properties: {
-    principalId: managedIdentity.properties.principalId
+    principalId: managedIdentityPrincipalId
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
       '7f951dda-4ed3-4680-a7ca-43fe172d538d'
@@ -64,18 +101,31 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource acrPullRoleAssignmentOnExistingAcr 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createAcrPullRoleAssignment && !createAcr) {
+  name: guid(acrId, managedIdentityId, 'AcrPull')
+  scope: acrExisting
+  properties: {
+    principalId: managedIdentityPrincipalId
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+    )
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource containerApp 'Microsoft.App/containerApps@2024-03-01' = if (createContainerApp) {
   name: containerAppName
   location: location
   tags: tags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${managedIdentity.id}': {}
+      '${managedIdentityId}': {}
     }
   }
   properties: {
-    managedEnvironmentId: managedEnvironment.id
+    managedEnvironmentId: createManagedEnvironment ? managedEnvironment.id : managedEnvironmentExisting.id
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
@@ -85,8 +135,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       }
       registries: [
         {
-          server: acr.properties.loginServer
-          identity: managedIdentity.id
+          server: acrLoginServer
+          identity: managedIdentityId
         }
       ]
     }
@@ -108,12 +158,23 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     }
   }
   dependsOn: [
-    acrPullRoleAssignment
+    acrPullRoleAssignmentOnNewAcr
+    acrPullRoleAssignmentOnExistingAcr
   ]
 }
 
-output acrLoginServer string = acr.properties.loginServer
-output containerAppName string = containerApp.name
-output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
-output containerAppUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
-output containerAppsEnvironmentName string = managedEnvironment.name
+resource containerAppExisting 'Microsoft.App/containerApps@2024-03-01' existing = if (!createContainerApp) {
+  name: containerAppName
+}
+
+output acrLoginServer string = acrLoginServer
+output containerAppName string = createContainerApp ? containerApp.name : containerAppExisting.name
+output containerAppFqdn string = createContainerApp
+  ? containerApp.properties.configuration.ingress.fqdn
+  : containerAppExisting.properties.configuration.ingress.fqdn
+output containerAppUrl string = createContainerApp
+  ? 'https://${containerApp.properties.configuration.ingress.fqdn}'
+  : 'https://${containerAppExisting.properties.configuration.ingress.fqdn}'
+output containerAppsEnvironmentName string = createManagedEnvironment
+  ? managedEnvironment.name
+  : managedEnvironmentExisting.name

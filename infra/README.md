@@ -116,6 +116,11 @@ The script will:
 2. Build the API image in ACR using `az acr build`
 3. Update the Container App to the new image
 
+Existing-resource behavior:
+
+- If a named resource already exists in the target resource group, deployment reuses it instead of creating it again.
+- The deploy script detects existing resource locations and aligns new resources to avoid location conflicts.
+
 Parameter resolution priority in `deploy_api.ps1`:
 
 1. Explicit script parameters
