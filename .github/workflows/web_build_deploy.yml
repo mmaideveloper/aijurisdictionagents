@@ -108,6 +108,50 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Ensure Azure Container Apps extension
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Configure Container App ACR pull auth
+        run: |
+          app_name="${AZURE_FRONTEND_CONTAINER_APP_NAME}"
+          rg="${AZURE_RESOURCE_GROUP}"
+          acr_name="${{ steps.acr.outputs.acr_name }}"
+          acr_server="${{ steps.acr.outputs.acr_login_server }}"
+
+          acr_id="$(az acr show --name "$acr_name" --query id --output tsv)"
+          user_identity_id="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "keys(identity.userAssignedIdentities)[0]" --output tsv 2>/dev/null || true)"
+
+          if [ -n "$user_identity_id" ] && [ "$user_identity_id" != "null" ]; then
+            principal_id="$(az identity show --ids "$user_identity_id" --query principalId --output tsv)"
+            registry_identity="$user_identity_id"
+          else
+            identity_type="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "identity.type" --output tsv 2>/dev/null || true)"
+            if [[ "$identity_type" != *"SystemAssigned"* ]]; then
+              az containerapp identity assign --name "$app_name" --resource-group "$rg" --system-assigned --only-show-errors --output none
+            fi
+            principal_id="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "identity.principalId" --output tsv)"
+            registry_identity="system"
+          fi
+
+          role_count="$(az role assignment list --assignee-object-id "$principal_id" --scope "$acr_id" --query "[?roleDefinitionName=='AcrPull'] | length(@)" --output tsv)"
+          if [ "$role_count" = "0" ]; then
+            az role assignment create \
+              --assignee-object-id "$principal_id" \
+              --assignee-principal-type ServicePrincipal \
+              --scope "$acr_id" \
+              --role AcrPull \
+              --only-show-errors \
+              --output none
+          fi
+
+          az containerapp registry set \
+            --name "$app_name" \
+            --resource-group "$rg" \
+            --server "$acr_server" \
+            --identity "$registry_identity" \
+            --only-show-errors \
+            --output none
+
       - name: Build and push image to ACR
         run: |
           az acr login --name ${{ steps.acr.outputs.acr_name }}
