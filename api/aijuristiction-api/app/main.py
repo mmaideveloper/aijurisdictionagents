@@ -8,9 +8,18 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.chat.api import router as chat_router
+from app.telemetry import configure_telemetry
 
-app = FastAPI(title="AI Juristiction API", version="0.1.0")
+app = FastAPI(
+    title="AI Juristiction API",
+    version="0.1.0",
+    description=(
+        "API for AI Juristiction services. "
+        "Chat endpoints require `x-api-key` header."
+    ),
+)
 app.include_router(chat_router)
+configure_telemetry(app, service_name="aijuristiction-api", service_version=app.version)
 
 
 @app.middleware("http")

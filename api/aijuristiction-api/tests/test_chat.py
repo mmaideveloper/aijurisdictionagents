@@ -4,10 +4,11 @@ from app.main import app
 
 
 client = TestClient(app)
+AUTH_HEADERS = {"x-api-key": "aijuris"}
 
 
 def test_create_session_and_messages_roundtrip() -> None:
-    session_response = client.post("/v1/chat/sessions", json={})
+    session_response = client.post("/v1/chat/sessions", json={}, headers=AUTH_HEADERS)
     assert session_response.status_code == 200
     session_id = session_response.json()["id"]
 
@@ -18,11 +19,12 @@ def test_create_session_and_messages_roundtrip() -> None:
             "role": "user",
             "content": "Hello API",
         },
+        headers=AUTH_HEADERS,
     )
     assert create_message_response.status_code == 200
     assert create_message_response.json()["content"] == "Hello API"
 
-    list_response = client.get(f"/v1/chat/sessions/{session_id}/messages")
+    list_response = client.get(f"/v1/chat/sessions/{session_id}/messages", headers=AUTH_HEADERS)
     assert list_response.status_code == 200
     messages = list_response.json()
     assert len(messages) == 1
@@ -37,5 +39,11 @@ def test_create_message_returns_404_for_unknown_session() -> None:
             "role": "user",
             "content": "Hi",
         },
+        headers=AUTH_HEADERS,
     )
     assert response.status_code == 404
+
+
+def test_chat_endpoints_require_api_key() -> None:
+    response = client.post("/v1/chat/sessions", json={})
+    assert response.status_code == 401

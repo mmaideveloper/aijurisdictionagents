@@ -3,13 +3,14 @@ from __future__ import annotations
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.chat.models import Message, MessageRole, Session
 from app.chat.repository import InMemoryChatRepository
+from app.security import require_api_key
 
-router = APIRouter(prefix="/v1/chat", tags=["chat"])
+router = APIRouter(prefix="/v1/chat", tags=["chat"], dependencies=[Depends(require_api_key)])
 _repository = InMemoryChatRepository()
 
 

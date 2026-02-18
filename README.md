@@ -277,6 +277,10 @@ Quick start:
 .\infra\scripts\deploy_api.ps1 -SubscriptionId "<your-subscription-id>" -AcrName "<globally-unique-acr-name>"
 ```
 
+Local API docs (when API runs on port `8080`):
+- Swagger UI: `http://localhost:8080/docs`
+- OpenAPI JSON: `http://localhost:8080/openapi.json`
+
 For full details, see `infra/README.md`.
 
 ## Corporate website

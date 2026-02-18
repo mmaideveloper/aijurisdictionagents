@@ -38,6 +38,28 @@ docker compose up --build
 - `GET /health`
 - `GET /version`
 
+## Swagger and authentication
+
+- Swagger UI (local): `http://localhost:8080/docs`
+- OpenAPI JSON (local): `http://localhost:8080/openapi.json`
+- Chat endpoints under `/v1/chat/*` require header:
+  - `x-api-key: aijuris` (currently hardcoded for initial integration)
+
+Example:
+
+```bash
+curl -X POST "http://localhost:8080/v1/chat/sessions" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: aijuris" \
+  -d "{}"
+```
+
+## OpenTelemetry
+
+- FastAPI is instrumented with OpenTelemetry spans.
+- If `OTEL_EXPORTER_OTLP_ENDPOINT` is set, traces are exported to that OTLP endpoint.
+- If not set, traces are written via console exporter.
+
 ## Build + deployment workflow
 
 GitHub workflow: `.github/workflows/api_build_deploy.yml`
