@@ -8,7 +8,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, SERVICE_VERSION, Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SpanExporter
 
 _TELEMETRY_CONFIGURED = False
 
@@ -28,6 +28,7 @@ def configure_telemetry(app: FastAPI, service_name: str, service_version: str) -
     tracer_provider = TracerProvider(resource=resource)
 
     otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    exporter: SpanExporter
     if otlp_endpoint:
         exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
     else:
