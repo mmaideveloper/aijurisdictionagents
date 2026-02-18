@@ -32,6 +32,7 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
         <div className="app-shell__main">
           <Navigation />
           <main className="main-content">{children}</main>
+          <Footer />
         </div>
       </div>
     );

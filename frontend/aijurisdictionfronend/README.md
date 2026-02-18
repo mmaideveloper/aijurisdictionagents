@@ -31,6 +31,16 @@ The UI includes an in-memory auth state used for local development. It resets on
 
 When authenticated, the home page switches to a 3-column workspace layout (case sidebar, active workspace, AI configuration). On smaller screens the side panels collapse for a single-column layout.
 
+## Legal pages and footer links
+
+Global footer links are available in all language modes (`en`, `sk`, `de`) and are visible on both public and signed-in screens.
+
+- `/privacy`
+- `/disclaimer`
+- `/terms`
+
+The disclaimer page includes AI disclosure, no-legal-advice notice, no attorney-client relationship, limitation of liability, no warranty, jurisdiction scope, user responsibility, external resources clause, right-to-modify clause, and a `Last Updated` timestamp.
+
 ## Callback Contract
 
 The frontend expects auth callback requests to hit:

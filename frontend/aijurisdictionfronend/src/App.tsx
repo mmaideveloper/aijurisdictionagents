@@ -13,6 +13,9 @@ import Communication from "./pages/Communication";
 import LawValidation from "./pages/LawValidation";
 import LawRecommendation from "./pages/LawRecommendation";
 import Profile from "./pages/Profile";
+import Disclaimer from "./pages/Disclaimer";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
 import NotFound from "./pages/NotFound";
 
 const App: React.FC = () => {
@@ -34,6 +37,9 @@ const App: React.FC = () => {
         <Route path="/app/law-validation" element={<LawValidation />} />
         <Route path="/app/law-recommendation" element={<LawRecommendation />} />
         <Route path="/app/profile" element={<Profile />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/disclaimer" element={<Disclaimer />} />
+        <Route path="/terms" element={<TermsOfService />} />
         <Route path="/home" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

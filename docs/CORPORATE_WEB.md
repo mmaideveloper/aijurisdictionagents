@@ -22,6 +22,12 @@ Then open `http://localhost:8000` in a browser.
 - Additional languages: German (`de`), English (`en`).
 - The toggle persists in `localStorage` under `aj_lang`.
 
+## Legal links
+
+- Footer includes links to Privacy Policy, Disclaimer, and Terms of Service.
+- Legal section content is translated for `sk`, `de`, and `en`.
+- Disclaimer includes a visible `Last Updated` date.
+
 ## Deployment (GitHub Actions)
 
 Workflow: `.github/workflows/corporate_web_deploy.yml`
