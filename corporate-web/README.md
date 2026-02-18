@@ -24,6 +24,16 @@ python -m http.server 8001
 The page ships with Slovak (default), German, and English translations. Use the `SK/DE/EN` toggle in the header.
 The selection is stored in `localStorage` (`aj_lang`).
 
+## Legal links
+
+Footer now includes multilingual links for:
+
+- Privacy Policy
+- Disclaimer
+- Terms of Service
+
+The page also includes a legal section with a structured disclaimer and `Last Updated` timestamp.
+
 ## Video demo
 
 The homepage switches the Jurisdigta avatar video per language:

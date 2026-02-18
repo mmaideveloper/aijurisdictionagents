@@ -1,8 +1,11 @@
-﻿import React from "react";
+import React from "react";
+import { Link } from "react-router-dom";
 import { useLanguage } from "./LanguageProvider";
+import { legalContent } from "../content/legal";
 
 export const Footer: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const links = legalContent[language].footerLinks;
 
   return (
     <footer className="site-footer">
@@ -10,8 +13,13 @@ export const Footer: React.FC = () => {
         <strong>{t("appName")}</strong>
         <p>{t("footerCopy")}</p>
       </div>
+      <nav className="footer-links" aria-label="Legal links">
+        <Link to="/privacy">{links.privacy}</Link>
+        <Link to="/disclaimer">{links.disclaimer}</Link>
+        <Link to="/terms">{links.terms}</Link>
+      </nav>
       <div className="footer-meta">
-        <span>© 2026 AIJurisdiction</span>
+        <span>(c) 2026 AIJurisdiction</span>
         <span>contact@aijurisdiction.eu</span>
       </div>
     </footer>
