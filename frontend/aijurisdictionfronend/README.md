@@ -30,6 +30,13 @@ The UI includes an in-memory auth state used for local development. It resets on
 ## Signed-in Homepage
 
 When authenticated, the home page switches to a 3-column workspace layout (case sidebar, active workspace, AI configuration). On smaller screens the side panels collapse for a single-column layout.
+The right panel now includes a collapsible **Legal tools** section (shown only for an active selected case) with placeholder actions:
+- Summarize Case
+- Risk Analysis
+- Generate Argument
+- Explain Legal Terms
+
+Each tool click appends an AI-generated placeholder entry to the active case interaction history.
 
 ## Legal pages and footer links
 

@@ -6,6 +6,8 @@ import { useLanguage } from "../components/LanguageProvider";
 import WorkspaceWelcome from "../components/WorkspaceWelcome";
 import { CaseCommunicationMode, CaseRole, useCases } from "../state/CaseProvider";
 
+type LegalToolId = "summarize" | "risk" | "argument" | "terms";
+
 const Home: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, user } = useAuth();
@@ -63,11 +65,21 @@ const Home: React.FC = () => {
     ],
     [t]
   );
+  const legalTools = React.useMemo(
+    () => [
+      { id: "summarize" as LegalToolId, label: t("legalToolSummarize") },
+      { id: "risk" as LegalToolId, label: t("legalToolRisk") },
+      { id: "argument" as LegalToolId, label: t("legalToolArgument") },
+      { id: "terms" as LegalToolId, label: t("legalToolTerms") }
+    ],
+    [t]
+  );
 
   if (isAuthenticated) {
     const activeMatterCount = cases.filter((caseItem) => caseItem.status !== "Completed").length;
 
     const showWelcome = !hasSelectedCase;
+    const showLegalTools = hasSelectedCase && Boolean(activeCase);
 
     const handleSendMessage = (event: React.FormEvent) => {
       event.preventDefault();
@@ -76,6 +88,21 @@ const Home: React.FC = () => {
       }
       addInteraction(activeCase.id, "You", draftMessage.trim());
       setDraftMessage("");
+    };
+
+    const handleRunLegalTool = (toolId: LegalToolId) => {
+      if (!activeCase) {
+        return;
+      }
+
+      const toolResponses: Record<LegalToolId, string> = {
+        summarize: `${t("legalToolSummarizeResult")} ${activeCase.title}.`,
+        risk: `${t("legalToolRiskResult")} ${activeCase.title}.`,
+        argument: `${t("legalToolArgumentResult")} ${activeCase.title}.`,
+        terms: `${t("legalToolTermsResult")} ${activeCase.title}.`
+      };
+
+      addInteraction(activeCase.id, t("legalToolsActor"), toolResponses[toolId]);
     };
 
     return (
@@ -244,6 +271,24 @@ const Home: React.FC = () => {
                       })}
                     </div>
                   </fieldset>
+                  {showLegalTools ? (
+                    <details className="legal-tools">
+                      <summary>{t("legalToolsTitle")}</summary>
+                      <p className="hint">{t("legalToolsHint")}</p>
+                      <div className="legal-tools__actions">
+                        {legalTools.map((tool) => (
+                          <button
+                            key={tool.id}
+                            type="button"
+                            className="legal-tools__button"
+                            onClick={() => handleRunLegalTool(tool.id)}
+                          >
+                            {tool.label}
+                          </button>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
                 </div>
               </div>
             </aside>

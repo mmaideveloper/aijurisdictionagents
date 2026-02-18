@@ -68,6 +68,9 @@ Case sidebar behavior:
 - The AI configuration panel includes a role selector with intent hints and highlights the active perspective.
 - The AI configuration panel now includes a communication mode segmented control (`Chat`, `Voice`, `Video`).
 - Communication mode changes are stored per case and switch the center workspace view without dropping case context.
+- The AI configuration panel includes a collapsible legal tools section for active selected cases only.
+- Legal tools currently provide placeholder AI outputs for: `Summarize Case`, `Risk Analysis`, `Generate Argument`, and `Explain Legal Terms`.
+- Triggering any legal tool appends a new AI-generated entry into the active case interaction history.
 
 ## Case state model
 
