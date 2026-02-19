@@ -1,0 +1,11 @@
+{
+  "folders": [
+    {
+      "path": "api/aijuristiction-api/e2e-playwright"
+    }
+  ],
+  "settings": {
+    "workbench.externalBrowser": "chrome",
+    "liveServer.settings.CustomBrowser": "chrome"
+  }
+}

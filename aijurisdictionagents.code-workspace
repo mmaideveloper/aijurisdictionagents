@@ -16,6 +16,8 @@
     ],
     "python.analysis.extraPaths": [
       "${workspaceFolder}/src"
-    ]
+    ],
+    "workbench.externalBrowser": "chrome",
+    "liveServer.settings.CustomBrowser": "chrome"
   }
 }

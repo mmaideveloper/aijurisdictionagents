@@ -23,6 +23,25 @@ code aijurisdictionagents.code-workspace
 If you open the folder directly, ensure the interpreter is set to
 `${workspaceFolder}\\.conda\\python.exe`.
 
+For Playwright test discovery in VS Code Testing view, use the dedicated E2E workspace:
+
+```bash
+code playwright-e2e.code-workspace
+```
+
+This opens `api/aijuristiction-api/e2e-playwright` as the workspace root so the
+Playwright extension resolves local `@playwright/test` correctly.
+
+## Open Redirects In Chrome
+
+Workspace settings are configured to open external links/redirects in Chrome:
+
+- `workbench.externalBrowser = "chrome"`
+- `liveServer.settings.CustomBrowser = "chrome"`
+
+These settings are present in both `.vscode/settings.json` and
+`aijurisdictionagents.code-workspace`.
+
 ## Minimal runnable example
 
 After activating the local environment, run:

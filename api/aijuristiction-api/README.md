@@ -88,8 +88,7 @@ For Azure OIDC federation setup (GitHub -> Entra app federated credential for
 
 Because you are familiar with Playwright, use **Playwright API testing** (`APIRequestContext`) for API E2E:
 
-1. Bring up the API (`docker compose up --build`).
-2. Run tests from `e2e-playwright/`.
+1. Run tests from `e2e-playwright/` (API auto-start is enabled by default).
 
 ```bash
 cd api/aijuristiction-api/e2e-playwright
@@ -97,7 +96,38 @@ npm install
 npx playwright test
 ```
 
+Playwright auto-start details:
+- Default behavior: starts API before tests when `API_BASE_URL` is not set.
+- If `API_BASE_URL` is set, Playwright targets that URL and does not auto-start local API unless `PW_START_API=1`.
+- Python resolution order for local API start:
+  1. `API_PYTHON`
+  2. repo local `.conda` interpreter
+  3. `python`/`py` from PATH
+
+Run only the chat simulation test:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+API_KEY=aijuris npx playwright test tests/chat.spec.ts
+```
+
+On Windows PowerShell:
+
+```powershell
+cd api/aijuristiction-api/e2e-playwright
+$env:API_KEY="aijuris"
+npx playwright test tests/chat.spec.ts
+```
+
 This approach keeps one tool for UI + API E2E while still allowing pytest integration tests for backend internals.
+
+### Behavior when API is not running
+
+Playwright E2E tests target a live API and fail fast if the API is unavailable.
+
+- When auto-start is enabled and Python is missing, run fails immediately with startup error.
+- When targeting an external `API_BASE_URL`, each test checks `/health` and fails with connection details if unavailable.
+- To tune readiness probe timeout, set `API_HEALTH_TIMEOUT_MS` (default `2000`).
 
 
 ## Current Task #7 progress

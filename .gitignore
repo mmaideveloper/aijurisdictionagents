@@ -1,4 +1,5 @@
 .conda/**
+conda/**
 runs/
 /cases/
 .pytest_cache/**
@@ -17,6 +18,7 @@ build/
 .env
 .env.*
 !.env.example
+node_modules/
 src/avatar-speech-demo/node_modules/
 src/avatar-speech-demo/dist/
 frontend/**/node_modules/
@@ -25,3 +27,5 @@ frontend/**/.vite/
 frontend_design/**/node_modules/
 frontend_design/**/dist/
 frontend_design/**/.vite/
+api/aijuristiction-api/e2e-playwright/test-results/
+api/aijuristiction-api/e2e-playwright/playwright-report/
