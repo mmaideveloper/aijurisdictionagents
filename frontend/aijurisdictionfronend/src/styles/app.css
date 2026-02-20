@@ -36,9 +36,10 @@
 .nav {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   padding: 1.2rem 6vw;
-  gap: 1rem;
+  gap: 1.1rem;
 }
 
 .brand {
@@ -47,7 +48,18 @@
   gap: 0.8rem;
 }
 
-.brand span {
+.nav-brand {
+  text-decoration: none;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.brand-copy strong {
+  display: block;
+  line-height: 1.1;
+}
+
+.brand-copy span {
   display: block;
   font-size: 0.85rem;
   color: var(--ink-muted);
@@ -70,12 +82,17 @@
   gap: 1.6rem;
   font-weight: 500;
   align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .nav-actions {
   display: inline-flex;
   align-items: center;
   gap: 0.8rem;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .nav-links a {
@@ -1032,12 +1049,19 @@ textarea {
 
 @media (max-width: 900px) {
   .nav {
-    flex-direction: column;
+    gap: 0.9rem;
     align-items: flex-start;
   }
 
   .nav-links {
-    flex-wrap: wrap;
+    width: 100%;
+    gap: 1rem;
+  }
+
+  .nav-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
   }
 
   .main-content {
@@ -1060,6 +1084,15 @@ textarea {
 }
 
 @media (max-width: 600px) {
+  .nav-brand .brand-copy span {
+    display: none;
+  }
+
+  .nav-brand .brand-mark {
+    width: 40px;
+    height: 40px;
+  }
+
   .hero-actions {
     flex-direction: column;
     align-items: stretch;
