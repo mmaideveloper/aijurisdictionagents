@@ -33,9 +33,9 @@ When authenticated, the home page switches to a 3-column workspace layout (case 
 
 ## Navbar Branding
 
-The top navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + app name/tagline).
+The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + app name/tagline).
 
-- The logo is rendered on the left side of the navbar.
+- The logo is rendered on the left side of the navbar only when the user is not signed in.
 - The logo links to `/` (marketing homepage).
 - The navbar layout is responsive so brand, links, and actions do not overlap at mobile widths.
 

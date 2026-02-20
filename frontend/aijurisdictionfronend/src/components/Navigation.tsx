@@ -52,15 +52,17 @@ export const Navigation: React.FC = () => {
   return (
     <header className="site-header">
       <nav className="nav">
-        <Link className="brand nav-brand" to="/">
-          <div className="brand-mark" aria-hidden="true">
-            AJ
-          </div>
-          <div className="brand-copy">
-            <strong>{t("appName")}</strong>
-            <span>{t("tagline")}</span>
-          </div>
-        </Link>
+        {!isAuthenticated ? (
+          <Link className="brand nav-brand" to="/">
+            <div className="brand-mark" aria-hidden="true">
+              AJ
+            </div>
+            <div className="brand-copy">
+              <strong>{t("appName")}</strong>
+              <span>{t("tagline")}</span>
+            </div>
+          </Link>
+        ) : null}
         <div className="nav-links">
           <NavLink to="/">{t("navHome")}</NavLink>
           <NavLink to="/pricing">{t("navPricing")}</NavLink>
