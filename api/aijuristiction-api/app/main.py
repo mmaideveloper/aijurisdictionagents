@@ -9,10 +9,13 @@ from fastapi.responses import JSONResponse
 
 from app.chat.api import router as chat_router
 from app.telemetry import configure_telemetry
+from app.versioning import get_api_version, get_core_version
+
+API_VERSION = get_api_version()
 
 app = FastAPI(
     title="AI Juristiction API",
-    version="0.1.0",
+    version=API_VERSION,
     description=(
         "API for AI Juristiction services. "
         "Chat endpoints require `x-api-key` header."
@@ -52,4 +55,11 @@ def health() -> JSONResponse:
 
 @app.get("/version")
 def version() -> JSONResponse:
-    return JSONResponse({"service": "aijuristiction-api", "version": app.version})
+    return JSONResponse(
+        {
+            "service": "aijuristiction-api",
+            "version": app.version,
+            "api_version": app.version,
+            "core_version": get_core_version(),
+        }
+    )

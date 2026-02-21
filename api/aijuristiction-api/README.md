@@ -38,6 +38,30 @@ docker compose up --build
 - `GET /health`
 - `GET /version`
 
+`GET /version` response includes:
+- `api_version`: API package version (`api/aijuristiction-api/pyproject.toml`).
+- `core_version`: core system version from installed `aijurisdictionagents` package or local `src/aijurisdictionagents/__init__.py` during monorepo development.
+
+Example:
+
+```json
+{
+  "service": "aijuristiction-api",
+  "version": "0.1.0",
+  "api_version": "0.1.0",
+  "core_version": "0.1.0"
+}
+```
+
+## Version bump workflow
+
+When API code changes:
+1. Bump `version` in `api/aijuristiction-api/pyproject.toml`.
+
+When core (`/src`) code changes:
+1. Bump `__version__` in `src/aijurisdictionagents/__init__.py`.
+2. Bump `[project].version` in root `pyproject.toml`.
+
 ## Swagger and authentication
 
 - Swagger UI (local): `http://localhost:8080/docs`
