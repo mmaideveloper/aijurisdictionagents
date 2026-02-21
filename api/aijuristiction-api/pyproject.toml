@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.116.1",
+  "jinja2>=3.1.4",
   "opentelemetry-api>=1.27.0",
   "opentelemetry-exporter-otlp>=1.27.0",
   "opentelemetry-instrumentation-fastapi>=0.48b0",
@@ -38,3 +39,8 @@ strict = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+include = [
+  "app/chat/templates/*.html",
+  "app/chat/static/*.css",
+  "app/chat/static/*.js",
+]

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ page_title }}</title>
+    <link rel="stylesheet" href="/chat-simulator-assets/simulator.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <h1>Chat Simulator</h1>
+      <p>Use this test app to validate API chat behavior before frontend deployment.</p>
+
+      <section class="grid">
+        <div>
+          <label for="baseUrl">API base URL</label>
+          <input id="baseUrl" value="" placeholder="http://localhost:8080" />
+        </div>
+        <div>
+          <label for="apiKey">x-api-key</label>
+          <input id="apiKey" value="aijuris" />
+        </div>
+      </section>
+
+      <section class="row">
+        <button id="createSession">Create Session</button>
+        <button id="clearSession" class="secondary">Clear Session</button>
+        <pre id="sessionStatus">No session created yet.</pre>
+      </section>
+
+      <section class="row grid">
+        <div>
+          <label for="role">Role</label>
+          <select id="role">
+            <option value="user">user</option>
+            <option value="assistant">assistant</option>
+            <option value="system">system</option>
+          </select>
+        </div>
+        <div class="stretch">
+          <label for="content">Message content</label>
+          <textarea id="content" placeholder="Type a message"></textarea>
+        </div>
+      </section>
+
+      <section class="row">
+        <button id="sendMessage">Send Message</button>
+      </section>
+
+      <section class="row">
+        <button id="refreshMessages">Refresh Messages</button>
+        <pre id="messages">[]</pre>
+      </section>
+    </main>
+
+    <script src="/chat-simulator-assets/simulator.js"></script>
+  </body>
+</html>
