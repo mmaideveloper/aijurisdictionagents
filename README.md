@@ -110,6 +110,7 @@ Or using `environment.yml`:
 ```bash
 conda env create -f environment.yml
 conda activate aijurisdictionagents
+pip install -e ".[dev]"
 ```
 
 ## Run the demo
@@ -120,7 +121,17 @@ For a complete execution matrix (all CLI options and both discussion types), see
 Put documents in `data/` and run (country required):
 
 ```bash
-python -m aijurisdictionagents --country SK --data-dir data --instruction "We believe the contract was breached due to late delivery."
+python -m aijurisdictionagents --country SK --data-dir "data/case_prenajom" --instruction "Priprav mi zmluvu na prenajom bytu." --discussion-type advice
+```
+
+Windows note: if `python` is not available in PATH, use one of:
+
+```powershell
+py -m aijurisdictionagents --country SK --data-dir "data/case_prenajom" --instruction "Priprav mi zmluvu na prenajom bytu." --discussion-type advice
+```
+
+```powershell
+.\.conda\python.exe -m aijurisdictionagents --country SK --data-dir "data/case_prenajom" --instruction "Priprav mi zmluvu na prenajom bytu." --discussion-type advice
 ```
 
 To run without documents, omit `--data-dir` (it defaults to none).
