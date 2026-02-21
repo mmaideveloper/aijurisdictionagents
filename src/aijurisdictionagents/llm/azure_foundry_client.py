@@ -76,7 +76,7 @@ def load_azure_foundry_config_from_env() -> AzureFoundryConfig:
     )
     temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
     api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip() or None
-    azure_ad_token = os.getenv("AZURE_OPENAI_AD_TOKEN", "").strip() or None
+    azure_ad_token = _optional_env("AZURE_OPENAI_AD_TOKEN")
 
     if not endpoint:
         raise ValueError("AZURE_OPENAI_ENDPOINT is required for LLM_PROVIDER=azurefoundry.")
@@ -105,6 +105,19 @@ def load_azure_foundry_config_from_env() -> AzureFoundryConfig:
         api_key=api_key,
         azure_ad_token=azure_ad_token,
     )
+
+
+def _optional_env(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    if not normalized:
+        # Remove empty values so downstream SDK env fallbacks do not treat them as credentials.
+        os.environ.pop(name, None)
+        return None
+    return normalized
 
 
 def _render_documents(documents: Iterable[Document], max_chars: int = 4000) -> str:
