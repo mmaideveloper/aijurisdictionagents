@@ -78,6 +78,12 @@ curl -X POST "http://localhost:8080/v1/chat/sessions" \
   -d "{}"
 ```
 
+## Chat simulator
+
+The chat simulator has been moved to a separate application: `api/chat-simulator-app`.
+
+Run it independently to test chat flows before frontend deployment.
+
 ## OpenTelemetry
 
 - FastAPI is instrumented with OpenTelemetry spans.
