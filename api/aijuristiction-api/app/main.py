@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 from uuid import uuid4
 
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.chat.api import router as chat_router
-from app.chat.simulator import router as chat_simulator_router
 from app.telemetry import configure_telemetry
 from app.versioning import get_api_version, get_core_version
 
@@ -25,12 +22,6 @@ app = FastAPI(
     ),
 )
 app.include_router(chat_router)
-app.include_router(chat_simulator_router)
-app.mount(
-    "/chat-simulator-assets",
-    StaticFiles(directory=str(Path(__file__).parent / "chat" / "static")),
-    name="chat-simulator-assets",
-)
 configure_telemetry(app, service_name="aijuristiction-api", service_version=app.version)
 
 

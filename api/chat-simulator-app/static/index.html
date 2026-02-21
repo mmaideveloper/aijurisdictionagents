@@ -3,18 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ page_title }}</title>
-    <link rel="stylesheet" href="/chat-simulator-assets/simulator.css" />
+    <title>AI Juristiction Chat Simulator</title>
+    <link rel="stylesheet" href="/static/simulator.css" />
   </head>
   <body>
     <main class="shell">
       <h1>Chat Simulator</h1>
-      <p>Use this test app to validate API chat behavior before frontend deployment.</p>
+      <p>Standalone simulator app for validating chat API behavior before frontend deploy.</p>
 
       <section class="grid">
         <div>
           <label for="baseUrl">API base URL</label>
-          <input id="baseUrl" value="" placeholder="http://localhost:8080" />
+          <input id="baseUrl" value="http://localhost:8080" placeholder="http://localhost:8080" />
         </div>
         <div>
           <label for="apiKey">x-api-key</label>
@@ -43,16 +43,12 @@
         </div>
       </section>
 
-      <section class="row">
-        <button id="sendMessage">Send Message</button>
-      </section>
-
+      <section class="row"><button id="sendMessage">Send Message</button></section>
       <section class="row">
         <button id="refreshMessages">Refresh Messages</button>
         <pre id="messages">[]</pre>
       </section>
     </main>
-
-    <script src="/chat-simulator-assets/simulator.js"></script>
+    <script src="/static/simulator.js"></script>
   </body>
 </html>

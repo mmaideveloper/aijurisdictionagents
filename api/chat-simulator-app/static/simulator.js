@@ -8,35 +8,26 @@ const contentEl = document.getElementById("content");
 let sessionId = null;
 
 function getBaseUrl() {
-  const candidate = baseUrlInput.value.trim();
-  return candidate || window.location.origin;
+  return baseUrlInput.value.trim();
 }
 
 function requestHeaders(includeContentType = true) {
   const headers = { "x-api-key": apiKeyInput.value.trim() };
-  if (includeContentType) {
-    headers["Content-Type"] = "application/json";
-  }
+  if (includeContentType) headers["Content-Type"] = "application/json";
   return headers;
 }
 
 function requireSession() {
-  if (!sessionId) {
-    throw new Error("Create a session first.");
-  }
+  if (!sessionId) throw new Error("Create a session first.");
 }
 
 function requireNonEmptyMessage() {
-  if (!contentEl.value.trim()) {
-    throw new Error("Message content cannot be empty.");
-  }
+  if (!contentEl.value.trim()) throw new Error("Message content cannot be empty.");
 }
 
 async function parseResponse(response) {
   const body = await response.json();
-  if (!response.ok) {
-    throw new Error(JSON.stringify(body));
-  }
+  if (!response.ok) throw new Error(JSON.stringify(body));
   return body;
 }
 
@@ -46,7 +37,6 @@ async function createSession() {
     headers: requestHeaders(),
     body: JSON.stringify({}),
   });
-
   const body = await parseResponse(response);
   sessionId = body.id;
   sessionStatus.textContent = JSON.stringify(body, null, 2);
@@ -56,17 +46,11 @@ async function createSession() {
 async function sendMessage() {
   requireSession();
   requireNonEmptyMessage();
-
   const response = await fetch(`${getBaseUrl()}/v1/chat/messages`, {
     method: "POST",
     headers: requestHeaders(),
-    body: JSON.stringify({
-      session_id: sessionId,
-      role: roleEl.value,
-      content: contentEl.value,
-    }),
+    body: JSON.stringify({ session_id: sessionId, role: roleEl.value, content: contentEl.value }),
   });
-
   await parseResponse(response);
   contentEl.value = "";
   await refreshMessages();
@@ -74,11 +58,9 @@ async function sendMessage() {
 
 async function refreshMessages() {
   requireSession();
-
   const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/messages`, {
     headers: requestHeaders(false),
   });
-
   const body = await parseResponse(response);
   messagesEl.textContent = JSON.stringify(body, null, 2);
 }

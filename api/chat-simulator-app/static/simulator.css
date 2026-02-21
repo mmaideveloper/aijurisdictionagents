@@ -18,9 +18,7 @@ body {
   padding: 1.25rem;
 }
 
-h1 {
-  margin-top: 0;
-}
+h1 { margin-top: 0; }
 
 .grid {
   display: grid;
@@ -28,11 +26,7 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-label {
-  display: block;
-  font-size: 0.875rem;
-  margin-bottom: 0.35rem;
-}
+label { display: block; font-size: 0.875rem; margin-bottom: 0.35rem; }
 
 input,
 textarea,
@@ -47,39 +41,10 @@ button {
   color: inherit;
 }
 
-textarea {
-  min-height: 90px;
-}
-
-button {
-  cursor: pointer;
-  background: #3b82f6;
-  border: 0;
-  font-weight: 600;
-}
-
-button.secondary {
-  margin-top: 0.5rem;
-  background: #475569;
-}
-
-.row {
-  margin-top: 1rem;
-}
-
-pre {
-  background: #020617;
-  border: 1px solid #1e293b;
-  border-radius: 10px;
-  padding: 0.75rem;
-  overflow-x: auto;
-}
-
-#messages {
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.stretch {
-  grid-column: 1 / -1;
-}
+textarea { min-height: 90px; }
+button { cursor: pointer; background: #3b82f6; border: 0; font-weight: 600; }
+button.secondary { margin-top: 0.5rem; background: #475569; }
+.row { margin-top: 1rem; }
+pre { background: #020617; border: 1px solid #1e293b; border-radius: 10px; padding: 0.75rem; overflow-x: auto; }
+#messages { max-height: 320px; overflow-y: auto; }
+.stretch { grid-column: 1 / -1; }

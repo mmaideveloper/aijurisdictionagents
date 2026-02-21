@@ -78,25 +78,11 @@ curl -X POST "http://localhost:8080/v1/chat/sessions" \
   -d "{}"
 ```
 
-## Chat simulator (test app for frontend integration)
+## Chat simulator
 
-Use the lightweight simulator page to exercise chat endpoints before deploying frontend changes. The page is now implemented as a maintainable template + static assets bundle:
+The chat simulator has been moved to a separate application: `api/chat-simulator-app`.
 
-- URL: `http://localhost:8080/chat-simulator`
-- Features:
-  - Create a session (`POST /v1/chat/sessions`)
-  - Send messages (`POST /v1/chat/messages`)
-  - Refresh conversation history (`GET /v1/chat/sessions/{session_id}/messages`)
-  - Clear current session state without reloading the page
-  - Override API base URL and API key for remote environment testing
-
-Minimal runnable example:
-
-```bash
-cd api/aijuristiction-api
-uvicorn app.main:app --reload --port 8080
-# open http://localhost:8080/chat-simulator
-```
+Run it independently to test chat flows before frontend deployment.
 
 ## OpenTelemetry
 
