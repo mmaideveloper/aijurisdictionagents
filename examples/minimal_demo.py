@@ -23,3 +23,5 @@ if __name__ == "__main__":
     version = get_json("http://localhost:8080/version")
     print("health:", health)
     print("version:", version)
+    print("api_version:", version.get("api_version"))
+    print("core_version:", version.get("core_version"))
