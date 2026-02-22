@@ -62,6 +62,10 @@ When core (`/src`) code changes:
 1. Bump `__version__` in `src/aijurisdictionagents/__init__.py`.
 2. Bump `[project].version` in root `pyproject.toml`.
 
+When chat simulator code changes:
+1. Bump `version` in `api/chat-simulator-app/pyproject.toml`.
+2. Bump `version` in `api/chat-simulator-app/app/main.py`.
+
 ## Swagger and authentication
 
 - Swagger UI (local): `http://localhost:8080/docs`
@@ -169,3 +173,15 @@ New endpoints:
 - `POST /v1/chat/sessions`
 - `POST /v1/chat/messages`
 - `GET /v1/chat/sessions/{session_id}/messages`
+- `POST /v1/chat/sessions/{session_id}/stream` (SSE streaming from core orchestrator)
+- `GET /v1/chat/sessions/{session_id}/result`
+- `GET /v1/chat/sessions/{session_id}/export?format=json|pdf`
+
+
+## Minimal runnable example (streaming API + core)
+
+Start API first, then run:
+
+```bash
+python examples/api_streaming_demo.py
+```

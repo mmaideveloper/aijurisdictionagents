@@ -4,13 +4,14 @@ from threading import Lock
 from typing import Dict, List
 from uuid import UUID
 
-from app.chat.models import Message, Session
+from app.chat.models import Message, Session, SessionResult, SessionState
 
 
 class InMemoryChatRepository:
     def __init__(self) -> None:
         self._sessions: Dict[UUID, Session] = {}
         self._messages_by_session: Dict[UUID, List[Message]] = {}
+        self._results: Dict[UUID, SessionResult] = {}
         self._lock = Lock()
 
     def create_session(self, session: Session) -> Session:
@@ -31,3 +32,18 @@ class InMemoryChatRepository:
 
     def list_messages(self, session_id: UUID) -> List[Message]:
         return list(self._messages_by_session.get(session_id, []))
+
+    def set_result(self, session_id: UUID, result: SessionResult) -> None:
+        with self._lock:
+            if session_id not in self._sessions:
+                raise KeyError(f"Session {session_id} not found")
+            self._results[session_id] = result
+            self._sessions[session_id].state = SessionState.COMPLETED
+
+    def get_result(self, session_id: UUID) -> SessionResult | None:
+        return self._results.get(session_id)
+
+    def mark_failed(self, session_id: UUID) -> None:
+        with self._lock:
+            if session_id in self._sessions:
+                self._sessions[session_id].state = SessionState.FAILED

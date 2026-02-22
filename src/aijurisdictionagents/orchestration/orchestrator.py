@@ -11,6 +11,7 @@ from ..observability import TraceRecorder
 from ..schemas import Document, Message, OrchestrationResult, Source
 
 UserResponseProvider = Callable[[str, float], str | None]
+MessageCallback = Callable[[Message], None]
 
 
 class Orchestrator:
@@ -36,6 +37,7 @@ class Orchestrator:
         max_discussion_minutes: float = 15,
         discussion_type: str = "advice",
         user_response_provider: UserResponseProvider | None = None,
+        message_callback: MessageCallback | None = None,
     ) -> OrchestrationResult:
         if not country.strip():
             raise ValueError("country is required.")
@@ -68,8 +70,7 @@ class Orchestrator:
             content=user_instruction,
             sources=[],
         )
-        conversation.append(user_message)
-        self.trace.record_message(user_message)
+        self._record_message(conversation, user_message, message_callback)
         self.logger.info("User instruction: %s", user_instruction)
 
         citations = select_sources(documents, user_instruction)
@@ -115,8 +116,7 @@ class Orchestrator:
                 citations,
                 system_prompt_override=lawyer_prompt,
             )
-            conversation.append(lawyer_message)
-            self.trace.record_message(lawyer_message)
+            self._record_message(conversation, lawyer_message, message_callback)
             last_lawyer_message = lawyer_message
             self.logger.info("Lawyer response: %s", lawyer_message.content)
 
@@ -144,6 +144,7 @@ class Orchestrator:
                 remaining_seconds,
                 question_timeout_seconds,
                 language,
+                message_callback,
             )
             if asked:
                 asked_user_question = True
@@ -171,8 +172,7 @@ class Orchestrator:
                             citations,
                             system_prompt_override=judge_prompt,
                         )
-                        conversation.append(judge_message)
-                        self.trace.record_message(judge_message)
+                        self._record_message(conversation, judge_message, message_callback)
                         last_judge_message = judge_message
                         self.logger.info("Judge response: %s", judge_message.content)
 
@@ -212,8 +212,7 @@ class Orchestrator:
                     citations,
                     system_prompt_override=judge_prompt,
                 )
-                conversation.append(judge_message)
-                self.trace.record_message(judge_message)
+                self._record_message(conversation, judge_message, message_callback)
                 last_judge_message = judge_message
                 self.logger.info("Judge response: %s", judge_message.content)
 
@@ -233,6 +232,7 @@ class Orchestrator:
                     remaining_seconds,
                     question_timeout_seconds,
                     language,
+                    message_callback,
                 )
                 if asked:
                     asked_user_question = True
@@ -273,6 +273,7 @@ class Orchestrator:
                 remaining_seconds,
                 question_timeout_seconds,
                 language,
+                message_callback,
             )
             if not should_continue:
                 self.logger.info("User ended discussion or no follow-up provided.")
@@ -333,6 +334,17 @@ class Orchestrator:
         self.logger.info("Orchestration complete")
         return result
 
+    def _record_message(
+        self,
+        conversation: List[Message],
+        message: Message,
+        message_callback: MessageCallback | None,
+    ) -> None:
+        conversation.append(message)
+        self.trace.record_message(message)
+        if message_callback is not None:
+            message_callback(message)
+
     def _generate_final_summary(
         self,
         conversation: Sequence[Message],
@@ -352,6 +364,7 @@ class Orchestrator:
         remaining_seconds: float | None,
         question_timeout_seconds: float,
         language: str | None,
+        message_callback: MessageCallback | None,
     ) -> tuple[bool, bool, bool]:
         question = _extract_question(message.content)
         if not question:
@@ -385,8 +398,7 @@ class Orchestrator:
             content=content,
             sources=[],
         )
-        conversation.append(user_message)
-        self.trace.record_message(user_message)
+        self._record_message(conversation, user_message, message_callback)
         if answered and _is_finish_response(content):
             self.trace.record_event("discussion_finished", {"reason": "user_finished"})
             return True, True, True
@@ -399,6 +411,7 @@ class Orchestrator:
         remaining_seconds: float | None,
         question_timeout_seconds: float,
         language: str | None,
+        message_callback: MessageCallback | None,
     ) -> bool:
         if user_response_provider is None:
             return False
@@ -425,8 +438,7 @@ class Orchestrator:
             content=content,
             sources=[],
         )
-        conversation.append(user_message)
-        self.trace.record_message(user_message)
+        self._record_message(conversation, user_message, message_callback)
         if _is_finish_response(content):
             self.trace.record_event("discussion_finished", {"reason": "user_finished"})
             return False
@@ -439,6 +451,7 @@ class Orchestrator:
         remaining_seconds: float | None,
         question_timeout_seconds: float,
         language: str | None,
+        message_callback: MessageCallback | None,
     ) -> bool:
         if user_response_provider is None:
             return False
@@ -465,8 +478,7 @@ class Orchestrator:
             content=content,
             sources=[],
         )
-        conversation.append(user_message)
-        self.trace.record_message(user_message)
+        self._record_message(conversation, user_message, message_callback)
         return _wants_judge_review(content)
 
 

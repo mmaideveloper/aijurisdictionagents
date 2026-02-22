@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -37,6 +37,7 @@ class Message(BaseModel):
     session_id: UUID
     role: MessageRole
     content: str
+    agent_name: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     attachments: List[Attachment] = Field(default_factory=list)
 
@@ -50,5 +51,16 @@ class GenerationJob(BaseModel):
 class Session(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     user_id: Optional[UUID] = None
+    country: str = ""
+    language: str | None = None
+    discussion_type: str = "advice"
     state: SessionState = SessionState.ACTIVE
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class SessionResult(BaseModel):
+    final_recommendation: str
+    judge_rationale: str
+    citations: List[dict[str, str]] = Field(default_factory=list)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict[str, Any] = Field(default_factory=dict)

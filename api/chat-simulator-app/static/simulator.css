@@ -11,14 +11,21 @@ body {
 }
 
 .shell {
-  max-width: 900px;
+  max-width: 980px;
   margin: 0 auto;
   background: #1e293b;
   border-radius: 16px;
   padding: 1.25rem;
 }
 
-h1 { margin-top: 0; }
+h1, h2 {
+  margin-top: 0;
+}
+
+h2 {
+  margin-bottom: 0.5rem;
+  font-size: 1.05rem;
+}
 
 .grid {
   display: grid;
@@ -26,7 +33,17 @@ h1 { margin-top: 0; }
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-label { display: block; font-size: 0.875rem; margin-bottom: 0.35rem; }
+label {
+  display: block;
+  font-size: 0.875rem;
+  margin-bottom: 0.35rem;
+}
+
+small {
+  color: #cbd5e1;
+  display: block;
+  margin-top: 0.4rem;
+}
 
 input,
 textarea,
@@ -41,10 +58,42 @@ button {
   color: inherit;
 }
 
-textarea { min-height: 90px; }
-button { cursor: pointer; background: #3b82f6; border: 0; font-weight: 600; }
-button.secondary { margin-top: 0.5rem; background: #475569; }
-.row { margin-top: 1rem; }
-pre { background: #020617; border: 1px solid #1e293b; border-radius: 10px; padding: 0.75rem; overflow-x: auto; }
-#messages { max-height: 320px; overflow-y: auto; }
-.stretch { grid-column: 1 / -1; }
+textarea {
+  min-height: 100px;
+}
+
+button {
+  cursor: pointer;
+  background: #3b82f6;
+  border: 0;
+  font-weight: 600;
+}
+
+button.secondary {
+  background: #475569;
+}
+
+.row {
+  margin-top: 1rem;
+}
+
+pre {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+
+#streamLog,
+#messages,
+#result {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.actions {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
