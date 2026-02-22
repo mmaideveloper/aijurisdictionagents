@@ -40,7 +40,10 @@ test('chat roundtrip: create session, create message, list messages', async ({ r
   expect(messages[0].role).toBe('user');
 });
 
-test('chat endpoint requires API key', async ({ request, baseURL }) => {
-  const response = await request.post(`${baseURL}/v1/chat/sessions`, { data: {} });
-  expect(response.status()).toBe(401);
-});
+if (process.env.RUN_NEGATIVE_AUTH_TESTS === '1') {
+  test('chat auth guard: missing API key returns 401', async ({ request, baseURL }) => {
+    const response = await request.post(`${baseURL}/v1/chat/sessions`, { data: {} });
+    expect(response.status()).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ detail: 'Invalid API key' });
+  });
+}

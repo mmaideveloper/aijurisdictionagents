@@ -133,10 +133,17 @@ npx playwright test
 Playwright auto-start details:
 - Default behavior: starts API before tests when `API_BASE_URL` is not set.
 - If `API_BASE_URL` is set, Playwright targets that URL and does not auto-start local API unless `PW_START_API=1`.
+- Existing local API is not reused by default. Set `PW_REUSE_EXISTING_SERVER=1` to reuse one.
 - Python resolution order for local API start:
   1. `API_PYTHON`
   2. repo local `.conda` interpreter
   3. `python`/`py` from PATH
+
+Current E2E specs:
+- `tests/health.spec.ts`
+- `tests/version.spec.ts`
+- `tests/chat.spec.ts`
+- Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
 Run only the chat simulation test:
 
@@ -151,6 +158,20 @@ On Windows PowerShell:
 cd api/aijuristiction-api/e2e-playwright
 $env:API_KEY="aijuris"
 npx playwright test tests/chat.spec.ts
+```
+
+Run chat test with negative auth coverage enabled:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+RUN_NEGATIVE_AUTH_TESTS=1 npx playwright test tests/chat.spec.ts
+```
+
+Run only the version endpoint test:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+npx playwright test tests/version.spec.ts
 ```
 
 This approach keeps one tool for UI + API E2E while still allowing pytest integration tests for backend internals.

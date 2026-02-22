@@ -4,6 +4,7 @@ const baseURL = process.env.API_BASE_URL ?? 'http://127.0.0.1:8080';
 
 const wantsAutoStart = process.env.PW_START_API === '1' || !process.env.API_BASE_URL;
 const enableWebServer = wantsAutoStart;
+const reuseExistingServer = process.env.PW_REUSE_EXISTING_SERVER === '1';
 
 export default defineConfig({
   testDir: './tests',
@@ -15,7 +16,7 @@ export default defineConfig({
     ? {
         command: 'node ./scripts/start-api.mjs',
         url: `${baseURL}/health`,
-        reuseExistingServer: true,
+        reuseExistingServer,
         timeout: 120_000,
         stdout: 'pipe',
         stderr: 'pipe',

@@ -64,7 +64,16 @@ function resolvePythonCommand() {
 }
 
 const python = resolvePythonCommand();
-const args = ['-m', 'uvicorn', 'app.main:app', '--host', host, '--port', port];
+const args = [
+  '-m',
+  'uvicorn',
+  'app.main:app',
+  '--host',
+  host,
+  '--port',
+  port,
+  '--no-access-log',
+];
 
 console.log(
   `[playwright-api] starting: ${python} ${args.join(' ')} (cwd=${apiRoot})`
