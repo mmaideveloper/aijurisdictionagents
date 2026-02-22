@@ -18,6 +18,16 @@ The simulator now supports:
 - starting `POST /v1/chat/sessions/{session_id}/stream` and viewing streamed events in real time
 - fetching result payload and downloading exports as JSON or PDF
 
+## Default simulator inputs
+
+Default values are loaded from:
+
+- `static/default-inputs.json`
+
+Current defaults:
+- `language`: `SK`
+- `instruction`: `Priprav vzor o prenajme`
+
 ## Endpoints
 
 - `GET /health`

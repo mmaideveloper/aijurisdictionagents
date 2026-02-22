@@ -11,11 +11,29 @@ const documentsInput = document.getElementById("documents");
 const streamLog = document.getElementById("streamLog");
 const messagesEl = document.getElementById("messages");
 const resultEl = document.getElementById("result");
+const defaultsUrl = "/static/default-inputs.json";
 
 let sessionId = null;
 
 function getBaseUrl() {
   return baseUrlInput.value.trim();
+}
+
+async function applyDefaultInputs() {
+  try {
+    const response = await fetch(defaultsUrl, { cache: "no-store" });
+    if (!response.ok) return;
+    const defaults = await response.json();
+
+    if (typeof defaults.language === "string") {
+      languageInput.value = defaults.language;
+    }
+    if (typeof defaults.instruction === "string") {
+      instructionInput.value = defaults.instruction;
+    }
+  } catch {
+    // Keep current values if defaults file is missing or invalid.
+  }
 }
 
 function requestHeaders(includeContentType = true) {
@@ -123,9 +141,10 @@ async function startStream() {
 
   const decoder = new TextDecoder();
   let buffer = "";
+  const reader = response.body.getReader();
 
   while (true) {
-    const { done, value } = await response.body.getReader().read();
+    const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const split = buffer.split("\n\n");
@@ -214,3 +233,5 @@ bind("getResult", getResult);
 bind("downloadJson", async () => downloadResult("json"));
 bind("downloadPdf", async () => downloadResult("pdf"));
 bind("clearSession", async () => clearSession());
+
+applyDefaultInputs();

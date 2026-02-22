@@ -33,3 +33,16 @@ def test_openapi_contains_api_key_security_scheme() -> None:
     components = response.json().get("components", {})
     security_schemes = components.get("securitySchemes", {})
     assert "APIKeyHeader" in security_schemes
+
+
+def test_cors_preflight_allows_local_chat_simulator() -> None:
+    response = client.options(
+        "/v1/chat/sessions",
+        headers={
+            "Origin": "http://localhost:8090",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-api-key,content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:8090"

@@ -29,3 +29,4 @@ frontend_design/**/dist/
 frontend_design/**/.vite/
 api/aijuristiction-api/e2e-playwright/test-results/
 api/aijuristiction-api/e2e-playwright/playwright-report/
+.codex/runlogs/**

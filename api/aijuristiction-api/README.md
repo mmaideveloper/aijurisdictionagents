@@ -82,6 +82,17 @@ curl -X POST "http://localhost:8080/v1/chat/sessions" \
   -d "{}"
 ```
 
+## CORS for local simulator
+
+- API enables CORS for local chat simulator origins by default:
+  - `http://localhost:8090`
+  - `http://127.0.0.1:8090`
+- Override allowed origins with `CORS_ALLOW_ORIGINS` (comma-separated), for example:
+
+```bash
+CORS_ALLOW_ORIGINS=http://localhost:8090,http://127.0.0.1:8090 uvicorn app.main:app --reload --port 8080
+```
+
 ## Chat simulator
 
 The chat simulator has been moved to a separate application: `api/chat-simulator-app`.

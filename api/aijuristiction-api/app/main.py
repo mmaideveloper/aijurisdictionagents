@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from uuid import uuid4
 
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.chat.api import router as chat_router
@@ -13,6 +15,16 @@ from app.versioning import get_api_version, get_core_version
 
 API_VERSION = get_api_version()
 
+
+def _cors_allow_origins() -> list[str]:
+    value = os.getenv("CORS_ALLOW_ORIGINS")
+    if value:
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
+    return [
+        "http://localhost:8090",
+        "http://127.0.0.1:8090",
+    ]
+
 app = FastAPI(
     title="AI Juristiction API",
     version=API_VERSION,
@@ -20,6 +32,13 @@ app = FastAPI(
         "API for AI Juristiction services. "
         "Chat endpoints require `x-api-key` header."
     ),
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_allow_origins(),
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 app.include_router(chat_router)
 configure_telemetry(app, service_name="aijuristiction-api", service_version=app.version)
