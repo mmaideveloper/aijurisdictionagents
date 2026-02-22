@@ -1,9 +1,16 @@
 const baseUrlInput = document.getElementById("baseUrl");
 const apiKeyInput = document.getElementById("apiKey");
+const countryInput = document.getElementById("country");
+const languageInput = document.getElementById("language");
+const discussionTypeInput = document.getElementById("discussionType");
 const sessionStatus = document.getElementById("sessionStatus");
+const instructionInput = document.getElementById("instruction");
+const questionTimeoutInput = document.getElementById("questionTimeout");
+const maxDiscussionInput = document.getElementById("maxDiscussion");
+const documentsInput = document.getElementById("documents");
+const streamLog = document.getElementById("streamLog");
 const messagesEl = document.getElementById("messages");
-const roleEl = document.getElementById("role");
-const contentEl = document.getElementById("content");
+const resultEl = document.getElementById("result");
 
 let sessionId = null;
 
@@ -21,8 +28,13 @@ function requireSession() {
   if (!sessionId) throw new Error("Create a session first.");
 }
 
-function requireNonEmptyMessage() {
-  if (!contentEl.value.trim()) throw new Error("Message content cannot be empty.");
+function appendStream(text) {
+  if (streamLog.textContent === "No stream started yet.") {
+    streamLog.textContent = text;
+    return;
+  }
+  streamLog.textContent += `\n${text}`;
+  streamLog.scrollTop = streamLog.scrollHeight;
 }
 
 async function parseResponse(response) {
@@ -32,10 +44,15 @@ async function parseResponse(response) {
 }
 
 async function createSession() {
+  const payload = {
+    country: countryInput.value.trim() || "SK",
+    language: languageInput.value.trim() || null,
+    discussion_type: discussionTypeInput.value,
+  };
   const response = await fetch(`${getBaseUrl()}/v1/chat/sessions`, {
     method: "POST",
     headers: requestHeaders(),
-    body: JSON.stringify({}),
+    body: JSON.stringify(payload),
   });
   const body = await parseResponse(response);
   sessionId = body.id;
@@ -43,16 +60,92 @@ async function createSession() {
   await refreshMessages();
 }
 
-async function sendMessage() {
+async function readSelectedDocuments() {
+  const files = Array.from(documentsInput.files || []);
+  const docs = [];
+  for (const file of files) {
+    const content = await file.text();
+    docs.push({
+      doc_id: file.name,
+      path: file.name,
+      content,
+    });
+  }
+  return docs;
+}
+
+function parseSseChunk(rawChunk) {
+  const events = [];
+  const blocks = rawChunk.split("\n\n");
+  for (const block of blocks) {
+    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) continue;
+    const eventLine = lines.find((line) => line.startsWith("event:"));
+    const dataLine = lines.find((line) => line.startsWith("data:"));
+    if (!eventLine || !dataLine) continue;
+    const event = eventLine.slice(6).trim();
+    const dataText = dataLine.slice(5).trim();
+    try {
+      events.push({ event, data: JSON.parse(dataText) });
+    } catch {
+      events.push({ event, data: dataText });
+    }
+  }
+  return events;
+}
+
+async function startStream() {
   requireSession();
-  requireNonEmptyMessage();
-  const response = await fetch(`${getBaseUrl()}/v1/chat/messages`, {
+  const instruction = instructionInput.value.trim();
+  if (!instruction) throw new Error("Case instruction is required.");
+
+  streamLog.textContent = "Starting stream...";
+  const payload = {
+    instruction,
+    documents: await readSelectedDocuments(),
+    question_timeout_seconds: Number(questionTimeoutInput.value || 300),
+    max_discussion_minutes: Number(maxDiscussionInput.value || 15),
+  };
+
+  const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/stream`, {
     method: "POST",
     headers: requestHeaders(),
-    body: JSON.stringify({ session_id: sessionId, role: roleEl.value, content: contentEl.value }),
+    body: JSON.stringify(payload),
   });
-  await parseResponse(response);
-  contentEl.value = "";
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Failed to stream, status=${response.status}`);
+  }
+  if (!response.body) {
+    throw new Error("Streaming body is not available in this browser.");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await response.body.getReader().read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const split = buffer.split("\n\n");
+    buffer = split.pop() || "";
+
+    for (const block of split) {
+      const events = parseSseChunk(`${block}\n\n`);
+      for (const e of events) {
+        appendStream(`${e.event}: ${JSON.stringify(e.data)}`);
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    const trailingEvents = parseSseChunk(buffer);
+    for (const e of trailingEvents) {
+      appendStream(`${e.event}: ${JSON.stringify(e.data)}`);
+    }
+  }
+
   await refreshMessages();
 }
 
@@ -65,10 +158,41 @@ async function refreshMessages() {
   messagesEl.textContent = JSON.stringify(body, null, 2);
 }
 
+async function getResult() {
+  requireSession();
+  const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/result`, {
+    headers: requestHeaders(false),
+  });
+  const body = await parseResponse(response);
+  resultEl.textContent = JSON.stringify(body, null, 2);
+}
+
+async function downloadResult(format) {
+  requireSession();
+  const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/export?format=${format}`, {
+    headers: requestHeaders(false),
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = `session-${sessionId}.${format}`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(href);
+}
+
 function clearSession() {
   sessionId = null;
   sessionStatus.textContent = "No session created yet.";
+  streamLog.textContent = "No stream started yet.";
   messagesEl.textContent = "[]";
+  resultEl.textContent = "No result fetched yet.";
 }
 
 function bind(id, fn) {
@@ -77,12 +201,16 @@ function bind(id, fn) {
       await fn();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      appendStream(`error: ${message}`);
       sessionStatus.textContent = message;
     }
   });
 }
 
 bind("createSession", createSession);
-bind("sendMessage", sendMessage);
+bind("startStream", startStream);
 bind("refreshMessages", refreshMessages);
+bind("getResult", getResult);
+bind("downloadJson", async () => downloadResult("json"));
+bind("downloadPdf", async () => downloadResult("pdf"));
 bind("clearSession", async () => clearSession());
