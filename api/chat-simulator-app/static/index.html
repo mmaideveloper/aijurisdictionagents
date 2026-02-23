@@ -101,6 +101,16 @@
             <p class="chat-placeholder">No chat messages yet. Start a stream or refresh messages.</p>
           </div>
           <form id="chatReplyForm" class="chat-reply-form">
+            <label for="userSimulationMode">Reply mode</label>
+            <select id="userSimulationMode">
+              <option value="ReadUser" selected>ReadUser</option>
+              <option value="AIUserSimulatorAgent">AIUserSimulatorAgent</option>
+            </select>
+            <small>Choose how user replies are provided during core streaming.</small>
+
+            <label for="communicationMinutes">Communication minutes</label>
+            <input id="communicationMinutes" type="number" min="1" value="3" />
+
             <label for="userReplyInput">End user answer</label>
             <textarea id="userReplyInput" placeholder="Type end user response..." required></textarea>
             <button id="sendUserReply" type="submit">Send answer</button>

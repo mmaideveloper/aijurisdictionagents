@@ -14,6 +14,8 @@ const resultEl = document.getElementById("result");
 const chatTranscriptEl = document.getElementById("chatTranscript");
 const chatReplyForm = document.getElementById("chatReplyForm");
 const userReplyInput = document.getElementById("userReplyInput");
+const userSimulationModeInput = document.getElementById("userSimulationMode");
+const communicationMinutesInput = document.getElementById("communicationMinutes");
 const defaultsUrl = "/static/default-inputs.json";
 
 let sessionId = null;
@@ -179,6 +181,8 @@ async function startStream() {
     documents: await readSelectedDocuments(),
     question_timeout_seconds: Number(questionTimeoutInput.value || 300),
     max_discussion_minutes: Number(maxDiscussionInput.value || 15),
+    communication_minutes: Number(communicationMinutesInput.value || 3),
+    user_simulation_mode: userSimulationModeInput.value || "ReadUser",
   };
 
   const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/stream`, {
@@ -333,5 +337,12 @@ chatReplyForm.addEventListener("submit", async (event) => {
   }
 });
 
+userSimulationModeInput.addEventListener("change", () => {
+  const readUserMode = userSimulationModeInput.value === "ReadUser";
+  userReplyInput.required = readUserMode;
+  userReplyInput.disabled = !readUserMode;
+});
+
 ensureChatPlaceholder();
 applyDefaultInputs();
+userSimulationModeInput.dispatchEvent(new Event("change"));

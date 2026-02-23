@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections import deque
 from queue import Queue
 from threading import Thread
@@ -47,6 +48,8 @@ class StartSessionStreamRequest(BaseModel):
     documents: List[InputDocument] = Field(default_factory=list)
     question_timeout_seconds: float = 300
     max_discussion_minutes: float = 15
+    communication_minutes: float | None = None
+    user_simulation_mode: Literal["ReadUser", "AIUserSimulatorAgent"] = "ReadUser"
     user_replies: List[str] = Field(default_factory=list)
 
 
@@ -88,8 +91,33 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
 
     event_queue: Queue[tuple[str, dict[str, object]] | None] = Queue()
     replies = deque(payload.user_replies)
+    communication_minutes = payload.communication_minutes or payload.max_discussion_minutes
+    simulation_deadline = time.monotonic() + max(communication_minutes, 0) * 60
+
+    simulator = None
+    simulator_documents = [CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content) for d in payload.documents]
+    if payload.user_simulation_mode == "AIUserSimulatorAgent":
+        from aijurisdictionagents.agents import AIUserSimulatorAgent
+        from aijurisdictionagents.llm import get_llm_client
+
+        simulator = AIUserSimulatorAgent(get_llm_client(), language=session.language)
 
     def user_response_provider(_question: str, _timeout: float) -> str | None:
+        if time.monotonic() > simulation_deadline:
+            return None
+        if simulator is not None and communication_minutes > 0:
+            conversation = [
+                CoreMessage(
+                    role="assistant",
+                    content=_question,
+                    agent_name="CoreSystem",
+                )
+            ]
+            return simulator.prepare_random_answer(
+                _question,
+                conversation=conversation,
+                documents=simulator_documents,
+            )
         if replies:
             return replies.popleft()
         return None

@@ -52,7 +52,9 @@ def test_stream_core_orchestration_and_export_json_pdf() -> None:
             "instruction": "Need legal advice about lease termination.",
             "documents": [{"doc_id": "d1", "path": "lease.txt", "content": "Lease terms"}],
             "question_timeout_seconds": 1,
-            "max_discussion_minutes": 1,
+            "max_discussion_minutes": 0.05,
+            "communication_minutes": 0.03,
+            "user_simulation_mode": "AIUserSimulatorAgent",
         },
     ) as response:
         assert response.status_code == 200
@@ -61,6 +63,7 @@ def test_stream_core_orchestration_and_export_json_pdf() -> None:
     assert "event: message" in events
     assert "event: result" in events
     assert "event: done" in events
+    assert '"role": "user"' in events
 
     result_response = client.get(f"/v1/chat/sessions/{session_id}/result", headers=AUTH_HEADERS)
     assert result_response.status_code == 200
