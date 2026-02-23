@@ -31,7 +31,7 @@
             </div>
             <div>
               <label for="language">Language (optional)</label>
-              <input id="language" value="en-US" placeholder="en-US" />
+              <input id="language" value="SK" placeholder="SK" />
             </div>
             <div>
               <label for="discussionType">Discussion type</label>
@@ -75,7 +75,8 @@
             <button id="refreshMessages" class="secondary">Refresh Messages</button>
             <button id="getResult" class="secondary">Get Result</button>
             <button id="downloadJson" class="secondary">Download JSON</button>
-            <button id="downloadPdf" class="secondary">Download PDF</button>
+            <button id="downloadPdf" class="secondary">Download Summary PDF</button>
+            <button id="downloadDocumentPdf" class="secondary">Download Document PDF</button>
           </section>
 
           <section class="row">
@@ -103,10 +104,11 @@
           <form id="chatReplyForm" class="chat-reply-form">
             <label for="userSimulationMode">Reply mode</label>
             <select id="userSimulationMode">
-              <option value="ReadUser" selected>ReadUser</option>
-              <option value="AIUserSimulatorAgent">AIUserSimulatorAgent</option>
+              <option value="ReadUser">ReadUser</option>
+              <option value="AIUserSimulatorAgent" selected>AIUserSimulatorAgent</option>
             </select>
             <small>Choose how user replies are provided during core streaming.</small>
+            <small>If user requests PDF and later says thank you, simulator auto-downloads PDF on stream completion.</small>
 
             <label for="communicationMinutes">Communication minutes</label>
             <input id="communicationMinutes" type="number" min="1" value="3" />

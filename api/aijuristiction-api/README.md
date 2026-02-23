@@ -192,6 +192,17 @@ The test persists question/answer review output to the Playwright test-results f
 For simulator-style streaming automation, the stream payload also supports:
 - `communication_minutes`: how long simulated user responses are allowed
 - `user_simulation_mode`: `ReadUser` (default) or `AIUserSimulatorAgent`
+- Lawyer asks at the end whether the user wants result export in PDF format.
+- In `AIUserSimulatorAgent` mode, the closing sequence is automated:
+  - answer lawyer questions first
+  - request PDF result
+  - send thank-you
+  - send `finish` to close discussion
+- AI user simulation now uses full conversation context and avoids exact repeated replies across turns.
+
+PDF export options:
+- `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary` -> discussion summary PDF
+- `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` -> generated lawyer document PDF
 
 Run only the version endpoint test:
 
@@ -219,10 +230,11 @@ Playwright E2E tests target a live API and fail fast if the API is unavailable.
 New endpoints:
 - `POST /v1/chat/sessions`
 - `POST /v1/chat/messages`
+- `POST /v1/chat/sessions/{session_id}/reply` (store user message and generate immediate lawyer answer)
 - `GET /v1/chat/sessions/{session_id}/messages`
 - `POST /v1/chat/sessions/{session_id}/stream` (SSE streaming from core orchestrator)
 - `GET /v1/chat/sessions/{session_id}/result`
-- `GET /v1/chat/sessions/{session_id}/export?format=json|pdf`
+- `GET /v1/chat/sessions/{session_id}/export?format=json|pdf&kind=summary|document` (`kind` applies to `pdf`)
 
 
 ## Minimal runnable example (streaming API + core)

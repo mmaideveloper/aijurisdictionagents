@@ -19,6 +19,10 @@ const communicationMinutesInput = document.getElementById("communicationMinutes"
 const defaultsUrl = "/static/default-inputs.json";
 
 let sessionId = null;
+let pdfRequestedByUser = false;
+let thankYouDetected = false;
+let autoPdfDownloaded = false;
+let documentRequestedByUser = false;
 
 function getBaseUrl() {
   return baseUrlInput.value.trim();
@@ -47,6 +51,41 @@ function isUserMessage(message) {
   return message.role === "user";
 }
 
+function hasPdfIntent(text) {
+  const normalized = String(text || "").toLowerCase();
+  return normalized.includes("pdf");
+}
+
+function hasDocumentIntent(text) {
+  const normalized = String(text || "").toLowerCase();
+  return (
+    normalized.includes("vzor") ||
+    normalized.includes("template") ||
+    normalized.includes("zmluv") ||
+    normalized.includes("contract") ||
+    normalized.includes("dokument") ||
+    normalized.includes("document") ||
+    normalized.includes("draft")
+  );
+}
+
+function hasThankYou(text) {
+  const normalized = String(text || "").toLowerCase();
+  return (
+    normalized.includes("thank you") ||
+    normalized.includes("thanks") ||
+    normalized.includes("dakujem") ||
+    normalized.includes("danke")
+  );
+}
+
+function trackUserSignals(message) {
+  if (!message || message.role !== "user") return;
+  if (hasPdfIntent(message.content)) pdfRequestedByUser = true;
+  if (hasDocumentIntent(message.content)) documentRequestedByUser = true;
+  if (hasThankYou(message.content)) thankYouDetected = true;
+}
+
 function buildChatMessageNode(message) {
   const article = document.createElement("article");
   article.className = `chat-message ${isUserMessage(message) ? "user" : "core"}`;
@@ -63,18 +102,39 @@ function buildChatMessageNode(message) {
 }
 
 function appendChatMessage(message) {
+  trackUserSignals(message);
   clearChatPlaceholder();
   chatTranscriptEl.appendChild(buildChatMessageNode(message));
   chatTranscriptEl.scrollTop = chatTranscriptEl.scrollHeight;
 }
 
 function renderChatMessages(messages) {
+  pdfRequestedByUser = false;
+  thankYouDetected = false;
+  documentRequestedByUser = false;
   chatTranscriptEl.innerHTML = "";
   for (const message of messages) {
+    trackUserSignals(message);
     chatTranscriptEl.appendChild(buildChatMessageNode(message));
   }
   ensureChatPlaceholder();
   chatTranscriptEl.scrollTop = chatTranscriptEl.scrollHeight;
+}
+
+async function maybeAutoDownloadPdf() {
+  if (autoPdfDownloaded) return;
+  if (!pdfRequestedByUser || !thankYouDetected) return;
+  try {
+    await downloadResult("pdf", "summary");
+    if (documentRequestedByUser) {
+      await downloadResult("pdf", "document");
+    }
+    autoPdfDownloaded = true;
+    appendStream("auto_download: PDF export(s) downloaded after user PDF request and thank you.");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendStream(`auto_download_error: ${message}`);
+  }
 }
 
 async function applyDefaultInputs() {
@@ -132,6 +192,10 @@ async function createSession() {
   });
   const body = await parseResponse(response);
   sessionId = body.id;
+  pdfRequestedByUser = false;
+  thankYouDetected = false;
+  autoPdfDownloaded = false;
+  documentRequestedByUser = false;
   sessionStatus.textContent = JSON.stringify(body, null, 2);
   await refreshMessages();
 }
@@ -182,7 +246,7 @@ async function startStream() {
     question_timeout_seconds: Number(questionTimeoutInput.value || 300),
     max_discussion_minutes: Number(maxDiscussionInput.value || 15),
     communication_minutes: Number(communicationMinutesInput.value || 3),
-    user_simulation_mode: userSimulationModeInput.value || "ReadUser",
+    user_simulation_mode: userSimulationModeInput.value || "AIUserSimulatorAgent",
   };
 
   const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/stream`, {
@@ -217,6 +281,9 @@ async function startStream() {
         if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
           appendChatMessage(eventItem.data);
         }
+        if (eventItem.event === "done") {
+          await maybeAutoDownloadPdf();
+        }
       }
     }
   }
@@ -228,10 +295,14 @@ async function startStream() {
       if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
         appendChatMessage(eventItem.data);
       }
+      if (eventItem.event === "done") {
+        await maybeAutoDownloadPdf();
+      }
     }
   }
 
   await refreshMessages();
+  await maybeAutoDownloadPdf();
 }
 
 async function refreshMessages() {
@@ -249,18 +320,15 @@ async function sendUserReply() {
   const content = userReplyInput.value.trim();
   if (!content) throw new Error("End user answer is required.");
 
-  const response = await fetch(`${getBaseUrl()}/v1/chat/messages`, {
+  const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/reply`, {
     method: "POST",
     headers: requestHeaders(),
-    body: JSON.stringify({
-      session_id: sessionId,
-      role: "user",
-      content,
-    }),
+    body: JSON.stringify({ content }),
   });
 
-  const body = await parseResponse(response);
-  appendChatMessage(body);
+  const lawyerReply = await parseResponse(response);
+  appendChatMessage({ role: "user", content, agent_name: "User" });
+  appendChatMessage(lawyerReply);
   userReplyInput.value = "";
   appendStream(`user_reply: ${content}`);
   await refreshMessages();
@@ -275,9 +343,10 @@ async function getResult() {
   resultEl.textContent = JSON.stringify(body, null, 2);
 }
 
-async function downloadResult(format) {
+async function downloadResult(format, kind = "summary") {
   requireSession();
-  const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/export?format=${format}`, {
+  const url = `${getBaseUrl()}/v1/chat/sessions/${sessionId}/export?format=${format}&kind=${encodeURIComponent(kind)}`;
+  const response = await fetch(url, {
     headers: requestHeaders(false),
   });
   if (!response.ok) {
@@ -288,7 +357,8 @@ async function downloadResult(format) {
   const href = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = href;
-  anchor.download = `session-${sessionId}.${format}`;
+  const suffix = format === "pdf" ? `-${kind}` : "";
+  anchor.download = `session-${sessionId}${suffix}.${format}`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -297,6 +367,10 @@ async function downloadResult(format) {
 
 function clearSession() {
   sessionId = null;
+  pdfRequestedByUser = false;
+  thankYouDetected = false;
+  autoPdfDownloaded = false;
+  documentRequestedByUser = false;
   sessionStatus.textContent = "No session created yet.";
   streamLog.textContent = "No stream started yet.";
   messagesEl.textContent = "[]";
@@ -323,7 +397,19 @@ bind("startStream", startStream);
 bind("refreshMessages", refreshMessages);
 bind("getResult", getResult);
 bind("downloadJson", async () => downloadResult("json"));
-bind("downloadPdf", async () => downloadResult("pdf"));
+bind("downloadPdf", async () => downloadResult("pdf", "summary"));
+const downloadDocumentButton = document.getElementById("downloadDocumentPdf");
+if (downloadDocumentButton) {
+  downloadDocumentButton.addEventListener("click", async () => {
+    try {
+      await downloadResult("pdf", "document");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendStream(`error: ${message}`);
+      sessionStatus.textContent = message;
+    }
+  });
+}
 bind("clearSession", async () => clearSession());
 
 chatReplyForm.addEventListener("submit", async (event) => {

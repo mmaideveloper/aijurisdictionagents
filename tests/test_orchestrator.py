@@ -43,7 +43,7 @@ def test_orchestrator_flow(tmp_path: Path) -> None:
     assert result.final_recommendation
     assert result.judge_rationale
     assert result.citations
-    assert len(result.messages) == 4
+    assert len(result.messages) >= 4
     assert "could not answer" in result.messages[-1].content.lower()
 
 

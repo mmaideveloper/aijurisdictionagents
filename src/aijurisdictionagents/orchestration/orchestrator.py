@@ -553,6 +553,13 @@ def _augment_prompt(
                 "Ask specific questions ending with a '?' when information is missing."
             )
 
+    pdf_closing_guidance = ""
+    if role == "lawyer":
+        pdf_closing_guidance = (
+            "\nWhen discussion is close to completion, explicitly ask the user if they want the final "
+            "result in PDF format. Ask exactly one clear question ending with '?'."
+        )
+
     decision_line = ""
     if discussion_type == "court" and role == "judge":
         decision_line = (
@@ -566,6 +573,7 @@ def _augment_prompt(
         "or supranational rules accepted in that jurisdiction.\n"
         f"{language_line}"
         f"{court_guidance}"
+        f"{pdf_closing_guidance}"
         f"{decision_line}"
     )
 
@@ -585,6 +593,13 @@ def _final_summary_prompt(country: str, output_language_hint: str) -> str:
 def _output_language_hint(language: str | None) -> str:
     cleaned = (language or "").strip()
     if cleaned:
+        lowered = cleaned.lower()
+        if lowered in {"sk", "sk-sk", "slovak"}:
+            return "Slovak (sk-SK)"
+        if lowered in {"de", "de-de", "german"}:
+            return "German (de-DE)"
+        if lowered in {"en", "en-us", "en-gb", "english"}:
+            return "English (en-US)"
         return cleaned
     return "the same language as the user's instruction"
 
