@@ -11,12 +11,68 @@ const documentsInput = document.getElementById("documents");
 const streamLog = document.getElementById("streamLog");
 const messagesEl = document.getElementById("messages");
 const resultEl = document.getElementById("result");
+const chatTranscriptEl = document.getElementById("chatTranscript");
+const chatReplyForm = document.getElementById("chatReplyForm");
+const userReplyInput = document.getElementById("userReplyInput");
 const defaultsUrl = "/static/default-inputs.json";
 
 let sessionId = null;
 
 function getBaseUrl() {
   return baseUrlInput.value.trim();
+}
+
+function ensureChatPlaceholder() {
+  if (chatTranscriptEl.childElementCount > 0) return;
+  const placeholder = document.createElement("p");
+  placeholder.className = "chat-placeholder";
+  placeholder.textContent = "No chat messages yet. Start a stream or refresh messages.";
+  chatTranscriptEl.appendChild(placeholder);
+}
+
+function clearChatPlaceholder() {
+  const placeholder = chatTranscriptEl.querySelector(".chat-placeholder");
+  if (placeholder) placeholder.remove();
+}
+
+function messageSpeaker(message) {
+  if (message.role === "user") return "End user";
+  if (message.agent_name) return `Core (${message.agent_name})`;
+  return "Core system";
+}
+
+function isUserMessage(message) {
+  return message.role === "user";
+}
+
+function buildChatMessageNode(message) {
+  const article = document.createElement("article");
+  article.className = `chat-message ${isUserMessage(message) ? "user" : "core"}`;
+
+  const meta = document.createElement("span");
+  meta.className = "chat-meta";
+  meta.textContent = messageSpeaker(message);
+
+  const body = document.createElement("p");
+  body.textContent = message.content;
+
+  article.append(meta, body);
+  return article;
+}
+
+function appendChatMessage(message) {
+  clearChatPlaceholder();
+  chatTranscriptEl.appendChild(buildChatMessageNode(message));
+  chatTranscriptEl.scrollTop = chatTranscriptEl.scrollHeight;
+}
+
+function renderChatMessages(messages) {
+  chatTranscriptEl.innerHTML = "";
+  for (const message of messages) {
+    chatTranscriptEl.appendChild(buildChatMessageNode(message));
+  }
+  ensureChatPlaceholder();
+  chatTranscriptEl.scrollTop = chatTranscriptEl.scrollHeight;
 }
 
 async function applyDefaultInputs() {
@@ -152,16 +208,22 @@ async function startStream() {
 
     for (const block of split) {
       const events = parseSseChunk(`${block}\n\n`);
-      for (const e of events) {
-        appendStream(`${e.event}: ${JSON.stringify(e.data)}`);
+      for (const eventItem of events) {
+        appendStream(`${eventItem.event}: ${JSON.stringify(eventItem.data)}`);
+        if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
+          appendChatMessage(eventItem.data);
+        }
       }
     }
   }
 
   if (buffer.trim()) {
     const trailingEvents = parseSseChunk(buffer);
-    for (const e of trailingEvents) {
-      appendStream(`${e.event}: ${JSON.stringify(e.data)}`);
+    for (const eventItem of trailingEvents) {
+      appendStream(`${eventItem.event}: ${JSON.stringify(eventItem.data)}`);
+      if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
+        appendChatMessage(eventItem.data);
+      }
     }
   }
 
@@ -175,6 +237,29 @@ async function refreshMessages() {
   });
   const body = await parseResponse(response);
   messagesEl.textContent = JSON.stringify(body, null, 2);
+  renderChatMessages(body);
+}
+
+async function sendUserReply() {
+  requireSession();
+  const content = userReplyInput.value.trim();
+  if (!content) throw new Error("End user answer is required.");
+
+  const response = await fetch(`${getBaseUrl()}/v1/chat/messages`, {
+    method: "POST",
+    headers: requestHeaders(),
+    body: JSON.stringify({
+      session_id: sessionId,
+      role: "user",
+      content,
+    }),
+  });
+
+  const body = await parseResponse(response);
+  appendChatMessage(body);
+  userReplyInput.value = "";
+  appendStream(`user_reply: ${content}`);
+  await refreshMessages();
 }
 
 async function getResult() {
@@ -212,6 +297,9 @@ function clearSession() {
   streamLog.textContent = "No stream started yet.";
   messagesEl.textContent = "[]";
   resultEl.textContent = "No result fetched yet.";
+  chatTranscriptEl.innerHTML = "";
+  ensureChatPlaceholder();
+  userReplyInput.value = "";
 }
 
 function bind(id, fn) {
@@ -234,4 +322,16 @@ bind("downloadJson", async () => downloadResult("json"));
 bind("downloadPdf", async () => downloadResult("pdf"));
 bind("clearSession", async () => clearSession());
 
+chatReplyForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await sendUserReply();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendStream(`error: ${message}`);
+    sessionStatus.textContent = message;
+  }
+});
+
+ensureChatPlaceholder();
 applyDefaultInputs();
