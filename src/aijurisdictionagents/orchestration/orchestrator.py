@@ -164,6 +164,7 @@ class Orchestrator:
                         remaining_seconds,
                         question_timeout_seconds,
                         language,
+                        message_callback,
                     )
                     if wants_judge:
                         judge_message = self.judge.respond(
@@ -192,6 +193,7 @@ class Orchestrator:
                             remaining_seconds,
                             question_timeout_seconds,
                             language,
+                            message_callback,
                         )
                         if asked:
                             asked_user_question = True

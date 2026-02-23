@@ -203,6 +203,14 @@ Or use the minimal example script:
 python examples/minimal_demo.py
 ```
 
+Validator demo (conversation scoring):
+
+```bash
+python examples/validator_demo.py
+```
+
+For details, see `docs/AI_AGENTS_VALIDATOR.md`.
+
 Example (minimal demo with conda):
 
 ```bash
