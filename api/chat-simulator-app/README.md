@@ -16,6 +16,8 @@ The simulator now supports:
 - creating chat sessions with country/language/discussion type
 - submitting a case instruction and uploading text documents
 - starting `POST /v1/chat/sessions/{session_id}/stream` and viewing streamed events in real time
+- using the new right-side **End User Chat View** panel that renders core messages as user-facing chat bubbles
+- sending manual end-user answers from the bottom input box (stored via `POST /v1/chat/messages`)
 - fetching result payload and downloading exports as JSON or PDF
 
 ## Default simulator inputs

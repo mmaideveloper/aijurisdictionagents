@@ -8,88 +8,105 @@
   </head>
   <body>
     <main class="shell">
-      <h1>Chat Simulator</h1>
-      <p>Start a chat session, submit your case with documents, and watch streamed core messages in real-time.</p>
+      <div class="simulator-layout">
+        <div class="simulator-controls">
+          <h1>Chat Simulator</h1>
+          <p>Start a chat session, submit your case with documents, and watch streamed core messages in real-time.</p>
 
-      <section class="grid">
-        <div>
-          <label for="baseUrl">API base URL</label>
-          <input id="baseUrl" value="http://localhost:8080" placeholder="http://localhost:8080" />
+          <section class="grid">
+            <div>
+              <label for="baseUrl">API base URL</label>
+              <input id="baseUrl" value="http://localhost:8080" placeholder="http://localhost:8080" />
+            </div>
+            <div>
+              <label for="apiKey">x-api-key</label>
+              <input id="apiKey" value="aijuris" />
+            </div>
+          </section>
+
+          <section class="grid row">
+            <div>
+              <label for="country">Country</label>
+              <input id="country" value="SK" placeholder="SK" />
+            </div>
+            <div>
+              <label for="language">Language (optional)</label>
+              <input id="language" value="en-US" placeholder="en-US" />
+            </div>
+            <div>
+              <label for="discussionType">Discussion type</label>
+              <select id="discussionType">
+                <option value="advice">advice</option>
+                <option value="court">court</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="row">
+            <button id="createSession">Create Session</button>
+            <button id="clearSession" class="secondary">Clear Session</button>
+            <pre id="sessionStatus">No session created yet.</pre>
+          </section>
+
+          <section class="row">
+            <label for="instruction">Case instruction</label>
+            <textarea id="instruction" placeholder="Describe your case and request legal support..."></textarea>
+          </section>
+
+          <section class="grid row">
+            <div>
+              <label for="questionTimeout">Question timeout (seconds)</label>
+              <input id="questionTimeout" type="number" min="1" value="300" />
+            </div>
+            <div>
+              <label for="maxDiscussion">Max discussion (minutes)</label>
+              <input id="maxDiscussion" type="number" min="0" step="1" value="15" />
+            </div>
+          </section>
+
+          <section class="row">
+            <label for="documents">Upload documents (text-based files)</label>
+            <input id="documents" type="file" multiple />
+            <small>Uploaded file contents are sent as API document payloads.</small>
+          </section>
+
+          <section class="row actions">
+            <button id="startStream">Start Stream</button>
+            <button id="refreshMessages" class="secondary">Refresh Messages</button>
+            <button id="getResult" class="secondary">Get Result</button>
+            <button id="downloadJson" class="secondary">Download JSON</button>
+            <button id="downloadPdf" class="secondary">Download PDF</button>
+          </section>
+
+          <section class="row">
+            <h2>Streamed events</h2>
+            <pre id="streamLog">No stream started yet.</pre>
+          </section>
+
+          <section class="row">
+            <h2>Session messages</h2>
+            <pre id="messages">[]</pre>
+          </section>
+
+          <section class="row">
+            <h2>Result</h2>
+            <pre id="result">No result fetched yet.</pre>
+          </section>
         </div>
-        <div>
-          <label for="apiKey">x-api-key</label>
-          <input id="apiKey" value="aijuris" />
-        </div>
-      </section>
 
-      <section class="grid row">
-        <div>
-          <label for="country">Country</label>
-          <input id="country" value="SK" placeholder="SK" />
-        </div>
-        <div>
-          <label for="language">Language (optional)</label>
-          <input id="language" value="en-US" placeholder="en-US" />
-        </div>
-        <div>
-          <label for="discussionType">Discussion type</label>
-          <select id="discussionType">
-            <option value="advice">advice</option>
-            <option value="court">court</option>
-          </select>
-        </div>
-      </section>
-
-      <section class="row">
-        <button id="createSession">Create Session</button>
-        <button id="clearSession" class="secondary">Clear Session</button>
-        <pre id="sessionStatus">No session created yet.</pre>
-      </section>
-
-      <section class="row">
-        <label for="instruction">Case instruction</label>
-        <textarea id="instruction" placeholder="Describe your case and request legal support..."></textarea>
-      </section>
-
-      <section class="grid row">
-        <div>
-          <label for="questionTimeout">Question timeout (seconds)</label>
-          <input id="questionTimeout" type="number" min="1" value="300" />
-        </div>
-        <div>
-          <label for="maxDiscussion">Max discussion (minutes)</label>
-          <input id="maxDiscussion" type="number" min="0" step="1" value="15" />
-        </div>
-      </section>
-
-      <section class="row">
-        <label for="documents">Upload documents (text-based files)</label>
-        <input id="documents" type="file" multiple />
-        <small>Uploaded file contents are sent as API document payloads.</small>
-      </section>
-
-      <section class="row actions">
-        <button id="startStream">Start Stream</button>
-        <button id="refreshMessages" class="secondary">Refresh Messages</button>
-        <button id="getResult" class="secondary">Get Result</button>
-        <button id="downloadJson" class="secondary">Download JSON</button>
-        <button id="downloadPdf" class="secondary">Download PDF</button>
-      </section>
-
-      <section class="row">
-        <h2>Streamed events</h2>
-        <pre id="streamLog">No stream started yet.</pre>
-      </section>
-
-      <section class="row">
-        <h2>Session messages</h2>
-        <pre id="messages">[]</pre>
-      </section>
-
-      <section class="row">
-        <h2>Result</h2>
-        <pre id="result">No result fetched yet.</pre>
-      </section>
+        <aside class="simulator-chat">
+          <h2>End User Chat View</h2>
+          <p>Core streamed messages are rendered as the end-user conversation.</p>
+          <div id="chatTranscript" class="chat-transcript">
+            <p class="chat-placeholder">No chat messages yet. Start a stream or refresh messages.</p>
+          </div>
+          <form id="chatReplyForm" class="chat-reply-form">
+            <label for="userReplyInput">End user answer</label>
+            <textarea id="userReplyInput" placeholder="Type end user response..." required></textarea>
+            <button id="sendUserReply" type="submit">Send answer</button>
+          </form>
+        </aside>
+      </div>
     </main>
     <script src="/static/simulator.js"></script>
   </body>
