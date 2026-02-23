@@ -1,0 +1,10 @@
+{
+  "country": "SK",
+  "language": "sk",
+  "discussionType": "advice",
+  "firstQuestion": "Prosím o pomoc s prenájmom bytu a povinnosťami nájomcu.",
+  "questionTimeoutSeconds": 1,
+  "maxDiscussionMinutes": 0.05,
+  "communicationMinutes": 0.03,
+  "userSimulationMode": "AIUserSimulatorAgent"
+}

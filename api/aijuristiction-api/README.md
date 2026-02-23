@@ -154,6 +154,7 @@ Current E2E specs:
 - `tests/health.spec.ts`
 - `tests/version.spec.ts`
 - `tests/chat.spec.ts`
+- `tests/chat-simulator.spec.ts`
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
 Run only the chat simulation test:
@@ -177,6 +178,20 @@ Run chat test with negative auth coverage enabled:
 cd api/aijuristiction-api/e2e-playwright
 RUN_NEGATIVE_AUTH_TESTS=1 npx playwright test tests/chat.spec.ts
 ```
+
+
+Run the chat simulator streaming test with fixture input and uploaded txt document:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+API_KEY=aijuris npx playwright test tests/chat-simulator.spec.ts
+```
+
+The test persists question/answer review output to the Playwright test-results folder as `chat-simulator-qa.json` and attaches it to the report.
+
+For simulator-style streaming automation, the stream payload also supports:
+- `communication_minutes`: how long simulated user responses are allowed
+- `user_simulation_mode`: `ReadUser` (default) or `AIUserSimulatorAgent`
 
 Run only the version endpoint test:
 
