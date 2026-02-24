@@ -188,7 +188,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
             if _is_pdf_format_question(_question):
                 if answered_agent_questions < 1:
                     answered_agent_questions += 1
-                    reply = _continue_discussion_reply(session.language, simulation_turn)
+                    reply = _defer_pdf_reply(session.language)
                     last_simulator_reply = reply
                     return reply
                 if not pdf_request_sent:
@@ -231,14 +231,6 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 reply = _continue_discussion_reply(session.language, simulation_turn)
                 last_simulator_reply = reply
                 return reply
-            if question_count >= 2:
-                answered_agent_questions += 1
-                reply = _repeated_question_reply(session.language, _question, question_count)
-                if last_simulator_reply and reply.strip().lower() == last_simulator_reply.strip().lower():
-                    reply = _continue_discussion_reply(session.language, simulation_turn + question_count)
-                last_simulator_reply = reply
-                return reply
-
             conversation = list(core_conversation)
             simulator_question = _question
             if question_count > 1:
@@ -352,6 +344,15 @@ def _request_pdf_reply(language: str | None) -> str:
     if lang.startswith("de"):
         return "Bitte bereiten Sie das Ergebnis auch im PDF-Format vor."
     return "Please prepare the result in PDF format as well."
+
+
+def _defer_pdf_reply(language: str | None) -> str:
+    lang = (language or "").strip().lower()
+    if lang.startswith("sk"):
+        return "Najprv prosim dokoncime vsetky otazky, potom potvrdim PDF format."
+    if lang.startswith("de"):
+        return "Bitte lassen Sie uns zuerst alle Rueckfragen klaeren; danach bestaetige ich das PDF-Format."
+    return "Please finish all clarifying questions first; then I will confirm PDF format."
 
 
 def _thank_you_reply(language: str | None) -> str:

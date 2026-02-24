@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -89,6 +92,76 @@ def test_stream_core_orchestration_and_export_json_pdf() -> None:
     assert export_doc_pdf.status_code == 200
     assert export_doc_pdf.headers["content-type"].startswith("application/pdf")
     assert export_doc_pdf.content.startswith(b"%PDF")
+
+
+def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
+    defaults_path = (
+        Path(__file__).resolve().parents[2] / "chat-simulator-app" / "static" / "default-inputs.json"
+    )
+    defaults = json.loads(defaults_path.read_text(encoding="utf-8"))
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": defaults["instruction"],
+            "documents": [],
+            "question_timeout_seconds": 1,
+            "max_discussion_minutes": 0.2,
+            "communication_minutes": 0.2,
+            "user_simulation_mode": "AIUserSimulatorAgent",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert "event: done" in events
+
+    messages_response = client.get(
+        f"/v1/chat/sessions/{session_id}/messages",
+        headers=AUTH_HEADERS,
+    )
+    assert messages_response.status_code == 200
+    messages = messages_response.json()
+
+    assistant_messages = [m["content"] for m in messages if m["role"] == "assistant"]
+    user_messages = [m["content"].strip().lower() for m in messages if m["role"] == "user"]
+    assert assistant_messages
+    assert any(("?" in content and "pdf" not in content.lower()) for content in assistant_messages)
+    assert any("navrh najomnej zmluvy" in content.lower() for content in assistant_messages)
+    assert any("pdf" in content for content in user_messages)
+    assert any("dakujem" in content or "thank you" in content for content in user_messages)
+    assert "finish" in user_messages
+
+    summary_pdf = client.get(
+        f"/v1/chat/sessions/{session_id}/export?format=pdf&kind=summary",
+        headers=AUTH_HEADERS,
+    )
+    assert summary_pdf.status_code == 200
+    assert summary_pdf.content.startswith(b"%PDF")
+
+    document_pdf = client.get(
+        f"/v1/chat/sessions/{session_id}/export?format=pdf&kind=document",
+        headers=AUTH_HEADERS,
+    )
+    assert document_pdf.status_code == 200
+    assert document_pdf.content.startswith(b"%PDF")
+
+    summary_text = summary_pdf.content.decode("latin-1", errors="ignore").lower()
+    document_text = document_pdf.content.decode("latin-1", errors="ignore").lower()
+    assert "zhrnutie" in summary_text or "summary" in summary_text
+    assert "doba najmu" in document_text
+    assert "vypovedna lehota" in document_text
+    assert "platba vopred" in document_text
 
 
 def test_create_message_returns_404_for_unknown_session() -> None:

@@ -192,9 +192,9 @@ The test persists question/answer review output to the Playwright test-results f
 For simulator-style streaming automation, the stream payload also supports:
 - `communication_minutes`: how long simulated user responses are allowed
 - `user_simulation_mode`: `ReadUser` (default) or `AIUserSimulatorAgent`
-- Lawyer asks at the end whether the user wants result export in PDF format.
+- Lawyer asks about PDF export only after clarifying questions are resolved.
 - In `AIUserSimulatorAgent` mode, the closing sequence is automated:
-  - answer lawyer questions first
+  - answer each AI agent question first
   - request PDF result
   - send thank-you
   - send `finish` to close discussion

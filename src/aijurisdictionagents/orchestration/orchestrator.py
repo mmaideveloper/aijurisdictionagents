@@ -504,10 +504,20 @@ def _extract_question(content: str) -> str | None:
         return None
 
     lines = [line.strip() for line in content.splitlines() if line.strip()]
-    for line in reversed(lines):
-        if "?" in line:
+    question_lines = [line for line in lines if "?" in line]
+    if not question_lines:
+        return None
+
+    # Prioritize substantive clarifying questions before PDF-format questions.
+    for line in reversed(question_lines):
+        if not _is_pdf_question(line):
             return line
-    return None
+    return question_lines[-1]
+
+
+def _is_pdf_question(line: str) -> bool:
+    lowered = line.lower()
+    return "pdf" in lowered and "?" in line
 
 
 def _time_exceeded(start_time: float, max_seconds: float | None) -> bool:
@@ -557,7 +567,9 @@ def _augment_prompt(
     if role == "lawyer":
         pdf_closing_guidance = (
             "\nWhen discussion is close to completion, explicitly ask the user if they want the final "
-            "result in PDF format. Ask exactly one clear question ending with '?'."
+            "result in PDF format. Ask exactly one clear question ending with '?'. "
+            "Do not ask about PDF until all your clarifying questions have been answered. "
+            "Never combine a PDF question with other unresolved questions in the same message."
         )
 
     decision_line = ""

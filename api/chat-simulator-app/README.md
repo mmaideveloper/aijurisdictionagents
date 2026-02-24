@@ -19,6 +19,7 @@ The simulator now supports:
 - using the new right-side **End User Chat View** panel that renders core messages as user-facing chat bubbles
 - selecting reply mode (`ReadUser` or `AIUserSimulatorAgent`) from the right-side bottom chat panel (`AIUserSimulatorAgent` is default)
 - setting communication minutes for AI user simulation responses
+- in `AIUserSimulatorAgent` mode, the simulator answers each AI agent question before conversation finish flow
 - sending manual end-user answers from the bottom input box and getting immediate lawyer response via `POST /v1/chat/sessions/{session_id}/reply`
 - auto-downloading PDF export when user requests PDF and later says thank you during a completed stream
 - fetching result payload and downloading exports as JSON or PDF (summary + requested document as separate PDF files)

@@ -4,7 +4,7 @@ from aijurisdictionagents.agents import create_judge, create_lawyer
 from aijurisdictionagents.llm import MockLLMClient
 from aijurisdictionagents.observability import TraceRecorder
 from aijurisdictionagents.orchestration import Orchestrator
-from aijurisdictionagents.orchestration.orchestrator import _augment_prompt
+from aijurisdictionagents.orchestration.orchestrator import _augment_prompt, _extract_question
 from aijurisdictionagents.schemas import Document
 
 
@@ -304,6 +304,16 @@ def test_discussion_prompt_respects_language_override() -> None:
     )
 
     assert "Respond in English." in prompt
+
+
+def test_extract_question_prefers_non_pdf_question() -> None:
+    content = (
+        "Najprv doplnte, kto je prenajimatel a najomca?\n"
+        "Chcete finalny vystup aj vo formate PDF?"
+    )
+    question = _extract_question(content)
+    assert question is not None
+    assert "prenajimatel" in question.lower()
 
 
 def test_orchestrator_advice_without_judge(tmp_path: Path) -> None:
