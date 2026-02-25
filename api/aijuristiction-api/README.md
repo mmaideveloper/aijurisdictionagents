@@ -203,6 +203,10 @@ For simulator-style streaming automation, the stream payload also supports:
 PDF export options:
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary` -> discussion summary PDF
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` -> generated lawyer document PDF
+- Both PDF variants include `AI Jurisdiction` branding and session metadata (session ID, country, language).
+- PDF filenames:
+  - document/final: `{case_id}-{yyyyMMddHHmmss}-final.pdf`
+  - summary: `{case_id}-{yyyyMMddHHmmss}-summary.pdf`
 
 Run only the version endpoint test:
 

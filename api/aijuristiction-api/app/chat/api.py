@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import time
+import textwrap
 from collections import deque
+from datetime import datetime, timezone
 from queue import Queue
 from threading import Thread
 from typing import List, Literal, Optional
@@ -483,17 +485,19 @@ def export_session_result(
         title, lines = _build_document_export_content(
             session_id=session_id,
             messages=messages,
+            country=session.country,
             language=session.language,
         )
-        filename = f"session-{session_id}-document.pdf"
+        filename = _build_pdf_filename(session_id=session_id, kind="document")
     else:
         title, lines = _build_summary_export_content(
             session_id=session_id,
             result=result,
             messages=messages,
+            country=session.country,
             language=session.language,
         )
-        filename = f"session-{session_id}-summary.pdf"
+        filename = _build_pdf_filename(session_id=session_id, kind="summary")
 
     pdf_content = _build_simple_pdf(title=title, lines=lines)
     return Response(
@@ -504,21 +508,46 @@ def export_session_result(
 
 
 def _build_simple_pdf(title: str, lines: List[str]) -> bytes:
-    escaped_lines = [line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") for line in lines]
-    text_lines = [f"({title}) Tj", "T*", "(----------------) Tj", "T*"]
-    for line in escaped_lines:
-        text_lines.append(f"({line}) Tj")
-        text_lines.append("T*")
-    content_stream = "BT /F1 11 Tf 50 770 Td " + " ".join(text_lines) + " ET"
-    stream_bytes = content_stream.encode("latin-1", errors="replace")
+    prepared_lines = [title, "----------------"] + _wrap_pdf_lines(lines)
+    lines_per_page = 48
+    pages: list[list[str]] = []
+    for index in range(0, len(prepared_lines), lines_per_page):
+        pages.append(prepared_lines[index : index + lines_per_page])
+    if not pages:
+        pages = [[title, "----------------"]]
 
-    objects = [
+    page_count = len(pages)
+    font_id = 3
+    first_page_id = 4
+    page_ids = [first_page_id + i * 2 for i in range(page_count)]
+    content_ids = [page_id + 1 for page_id in page_ids]
+
+    kids_refs = " ".join(f"{page_id} 0 R" for page_id in page_ids)
+    objects: list[bytes] = [
         b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
-        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
-        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n",
-        f"4 0 obj << /Length {len(stream_bytes)} >> stream\n".encode("latin-1") + stream_bytes + b"\nendstream endobj\n",
-        b"5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
+        f"2 0 obj << /Type /Pages /Kids [{kids_refs}] /Count {page_count} >> endobj\n".encode("latin-1"),
+        b"3 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
     ]
+
+    for page_id, content_id, page_lines in zip(page_ids, content_ids, pages):
+        objects.append(
+            f"{page_id} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            f"/Contents {content_id} 0 R /Resources << /Font << /F1 {font_id} 0 R >> >> >> endobj\n".encode(
+                "latin-1"
+            )
+        )
+        escaped_lines = [_escape_pdf_line(line) for line in page_lines]
+        text_ops = ["BT", "/F1 11 Tf", "14 TL", "50 790 Td"]
+        for line in escaped_lines:
+            text_ops.append(f"({line}) Tj")
+            text_ops.append("T*")
+        text_ops.append("ET")
+        stream_bytes = " ".join(text_ops).encode("latin-1", errors="replace")
+        objects.append(
+            f"{content_id} 0 obj << /Length {len(stream_bytes)} >> stream\n".encode("latin-1")
+            + stream_bytes
+            + b"\nendstream endobj\n"
+        )
 
     output = bytearray(b"%PDF-1.4\n")
     offsets: list[int] = [0]
@@ -531,11 +560,37 @@ def _build_simple_pdf(title: str, lines: List[str]) -> bytes:
     for off in offsets[1:]:
         output.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
     output.extend(
-        f"trailer << /Root 1 0 R /Size {len(objects)+1} >>\nstartxref\n{xref_pos}\n%%EOF".encode(
-            "latin-1"
-        )
+        f"trailer << /Root 1 0 R /Size {len(objects)+1} >>\nstartxref\n{xref_pos}\n%%EOF".encode("latin-1")
     )
     return bytes(output)
+
+
+def _wrap_pdf_lines(lines: List[str], width: int = 90) -> List[str]:
+    wrapped: List[str] = []
+    for line in lines:
+        text = line.strip()
+        if not text:
+            wrapped.append("")
+            continue
+        chunks = textwrap.wrap(
+            text,
+            width=width,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+        wrapped.extend(chunks or [""])
+    return wrapped
+
+
+def _escape_pdf_line(line: str) -> str:
+    return line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _build_pdf_filename(*, session_id: UUID, kind: Literal["summary", "document"]) -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    if kind == "document":
+        return f"{session_id}-{timestamp}-final.pdf"
+    return f"{session_id}-{timestamp}-summary.pdf"
 
 
 def _build_summary_export_content(
@@ -543,15 +598,24 @@ def _build_summary_export_content(
     session_id: UUID,
     result: SessionResult,
     messages: List[Message],
+    country: str,
     language: str | None,
 ) -> tuple[str, List[str]]:
     user_count = len([m for m in messages if m.role == MessageRole.USER])
     assistant_count = len([m for m in messages if m.role == MessageRole.ASSISTANT])
+    lang_label = (language or "auto").strip() or "auto"
+    generated = result.generated_at.isoformat()
     if (language or "").strip().lower().startswith("sk"):
         return (
             f"Zhrnutie diskusie {session_id}",
             [
+                "AI Jurisdiction",
                 "Zhrnutie diskusie",
+                "",
+                f"Session ID: {session_id}",
+                f"Krajina: {country}",
+                f"Jazyk: {lang_label}",
+                f"Vygenerovane: {generated}",
                 "",
                 f"Finalne odporucanie: {result.final_recommendation}",
                 f"Odovodnenie: {result.judge_rationale or 'neposkytnute'}",
@@ -562,7 +626,13 @@ def _build_summary_export_content(
     return (
         f"Discussion Summary {session_id}",
         [
+            "AI Jurisdiction",
             "Discussion summary",
+            "",
+            f"Session ID: {session_id}",
+            f"Country: {country}",
+            f"Language: {lang_label}",
+            f"Generated at: {generated}",
             "",
             f"Final recommendation: {result.final_recommendation}",
             f"Rationale: {result.judge_rationale or 'not provided'}",
@@ -576,6 +646,7 @@ def _build_document_export_content(
     *,
     session_id: UUID,
     messages: List[Message],
+    country: str,
     language: str | None,
 ) -> tuple[str, List[str]]:
     lawyer_messages = [
@@ -590,11 +661,27 @@ def _build_document_export_content(
 
     if (language or "").strip().lower().startswith("sk"):
         title = f"Generovany Dokument {session_id}"
-        lines = ["Generovany dokument podla diskusie", ""] + source_lines
+        lines = [
+            "AI Jurisdiction",
+            "Generovany dokument podla diskusie",
+            "",
+            f"Session ID: {session_id}",
+            f"Krajina: {country}",
+            f"Jazyk: {(language or 'auto').strip() or 'auto'}",
+            "",
+        ] + source_lines
         return title, lines
 
     title = f"Generated Document {session_id}"
-    lines = ["Generated document from discussion", ""] + source_lines
+    lines = [
+        "AI Jurisdiction",
+        "Generated document from discussion",
+        "",
+        f"Session ID: {session_id}",
+        f"Country: {country}",
+        f"Language: {(language or 'auto').strip() or 'auto'}",
+        "",
+    ] + source_lines
     return title, lines
 
 

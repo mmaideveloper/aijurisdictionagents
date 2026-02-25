@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Callable, List, Sequence
 
@@ -511,8 +512,16 @@ def _extract_question(content: str) -> str | None:
     # Prioritize substantive clarifying questions before PDF-format questions.
     for line in reversed(question_lines):
         if not _is_pdf_question(line):
-            return line
-    return question_lines[-1]
+            return _extract_question_sentence(line)
+    return _extract_question_sentence(question_lines[-1])
+
+
+def _extract_question_sentence(line: str) -> str:
+    matches = re.findall(r"[^?]*\?", line)
+    if not matches:
+        return line.strip()
+    # Prefer the last explicit question in the line.
+    return matches[-1].strip()
 
 
 def _is_pdf_question(line: str) -> bool:
@@ -544,6 +553,7 @@ def _augment_prompt(
     language_line = f"Respond in {output_language_hint}."
     if discussion_only and output_language_hint == "the same language as the user's instruction":
         language_line = "Respond in the same language as the user's instruction."
+    language_line += " Use only this language in every answer and do not mix languages."
 
     court_guidance = ""
     if discussion_type == "court":

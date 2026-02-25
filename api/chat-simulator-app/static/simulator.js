@@ -9,6 +9,7 @@ const questionTimeoutInput = document.getElementById("questionTimeout");
 const maxDiscussionInput = document.getElementById("maxDiscussion");
 const documentsInput = document.getElementById("documents");
 const streamLog = document.getElementById("streamLog");
+const agentQuestionsLog = document.getElementById("agentQuestionsLog");
 const messagesEl = document.getElementById("messages");
 const resultEl = document.getElementById("result");
 const chatTranscriptEl = document.getElementById("chatTranscript");
@@ -23,6 +24,41 @@ let pdfRequestedByUser = false;
 let thankYouDetected = false;
 let autoPdfDownloaded = false;
 let documentRequestedByUser = false;
+
+function clearAgentQuestionsLog() {
+  if (!agentQuestionsLog) return;
+  agentQuestionsLog.textContent = "No AI agent questions yet.";
+}
+
+function appendAgentQuestion(question) {
+  if (!agentQuestionsLog) return;
+  const text = String(question || "").trim();
+  if (!text) return;
+  if (agentQuestionsLog.textContent === "No AI agent questions yet.") {
+    agentQuestionsLog.textContent = text;
+    return;
+  }
+  agentQuestionsLog.textContent += `\n${text}`;
+  agentQuestionsLog.scrollTop = agentQuestionsLog.scrollHeight;
+}
+
+function extractAgentQuestion(text) {
+  const raw = String(text || "");
+  if (!raw.includes("?")) return "";
+  const lines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => line.includes("?"));
+  if (!lines.length) return "";
+  const nonPdf = lines.filter((line) => !line.toLowerCase().includes("pdf"));
+  const target = nonPdf.length ? nonPdf[nonPdf.length - 1] : lines[lines.length - 1];
+  const fragments = target.match(/[^?]*\?/g);
+  if (fragments && fragments.length) {
+    return fragments[fragments.length - 1].trim();
+  }
+  return target;
+}
 
 function getBaseUrl() {
   return baseUrlInput.value.trim();
@@ -103,6 +139,9 @@ function buildChatMessageNode(message) {
 
 function appendChatMessage(message) {
   trackUserSignals(message);
+  if (message && message.role === "assistant") {
+    appendAgentQuestion(extractAgentQuestion(message.content));
+  }
   clearChatPlaceholder();
   chatTranscriptEl.appendChild(buildChatMessageNode(message));
   chatTranscriptEl.scrollTop = chatTranscriptEl.scrollHeight;
@@ -113,8 +152,12 @@ function renderChatMessages(messages) {
   thankYouDetected = false;
   documentRequestedByUser = false;
   chatTranscriptEl.innerHTML = "";
+  clearAgentQuestionsLog();
   for (const message of messages) {
     trackUserSignals(message);
+    if (message && message.role === "assistant") {
+      appendAgentQuestion(extractAgentQuestion(message.content));
+    }
     chatTranscriptEl.appendChild(buildChatMessageNode(message));
   }
   ensureChatPlaceholder();
@@ -357,12 +400,25 @@ async function downloadResult(format, kind = "summary") {
   const href = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = href;
-  const suffix = format === "pdf" ? `-${kind}` : "";
-  anchor.download = `session-${sessionId}${suffix}.${format}`;
+  const headerName = extractFilenameFromContentDisposition(response.headers.get("Content-Disposition"));
+  if (headerName) {
+    anchor.download = headerName;
+  } else {
+    const suffix = format === "pdf" ? `-${kind}` : "";
+    anchor.download = `session-${sessionId}${suffix}.${format}`;
+  }
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(href);
+}
+
+function extractFilenameFromContentDisposition(value) {
+  const header = String(value || "");
+  if (!header) return "";
+  const match = header.match(/filename="([^"]+)"/i);
+  if (match && match[1]) return match[1];
+  return "";
 }
 
 function clearSession() {
@@ -373,6 +429,7 @@ function clearSession() {
   documentRequestedByUser = false;
   sessionStatus.textContent = "No session created yet.";
   streamLog.textContent = "No stream started yet.";
+  clearAgentQuestionsLog();
   messagesEl.textContent = "[]";
   resultEl.textContent = "No result fetched yet.";
   chatTranscriptEl.innerHTML = "";
@@ -430,5 +487,6 @@ userSimulationModeInput.addEventListener("change", () => {
 });
 
 ensureChatPlaceholder();
+clearAgentQuestionsLog();
 applyDefaultInputs();
 userSimulationModeInput.dispatchEvent(new Event("change"));

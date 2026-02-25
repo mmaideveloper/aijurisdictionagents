@@ -307,7 +307,17 @@ def _wants_slovak_rental_template(user_message: str) -> bool:
 
 def _prefers_slovak(system_prompt: str, first_user_message: str, latest_user_message: str) -> bool:
     combined = _normalize_text(f"{system_prompt}\n{first_user_message}\n{latest_user_message}")
-    slovak_markers = ("respond in slovak", "sk-sk", "slovak", "prosim", "dakujem", "zmluv", "prenaj")
+    slovak_markers = (
+        "respond in slovak",
+        "respond in sk",
+        "sk-sk",
+        "slovak",
+        "language: sk",
+        "prosim",
+        "dakujem",
+        "zmluv",
+        "prenaj",
+    )
     return any(marker in combined for marker in slovak_markers)
 
 

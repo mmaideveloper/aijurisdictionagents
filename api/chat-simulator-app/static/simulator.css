@@ -110,6 +110,7 @@ pre {
 }
 
 #streamLog,
+#agentQuestionsLog,
 #messages,
 #result {
   max-height: 280px;

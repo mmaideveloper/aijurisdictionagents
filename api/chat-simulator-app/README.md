@@ -16,6 +16,7 @@ The simulator now supports:
 - creating chat sessions with country/language/discussion type
 - submitting a case instruction and uploading text documents
 - starting `POST /v1/chat/sessions/{session_id}/stream` and viewing streamed events in real time
+- showing a dedicated **AI Agent Questions** log (question-only view extracted from assistant turns)
 - using the new right-side **End User Chat View** panel that renders core messages as user-facing chat bubbles
 - selecting reply mode (`ReadUser` or `AIUserSimulatorAgent`) from the right-side bottom chat panel (`AIUserSimulatorAgent` is default)
 - setting communication minutes for AI user simulation responses

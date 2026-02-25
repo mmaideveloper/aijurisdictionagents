@@ -92,6 +92,9 @@ def test_stream_core_orchestration_and_export_json_pdf() -> None:
     assert export_doc_pdf.status_code == 200
     assert export_doc_pdf.headers["content-type"].startswith("application/pdf")
     assert export_doc_pdf.content.startswith(b"%PDF")
+    doc_disposition = export_doc_pdf.headers.get("content-disposition", "")
+    assert f"{session_id}-" in doc_disposition
+    assert "-final.pdf" in doc_disposition
 
 
 def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
@@ -158,6 +161,9 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
 
     summary_text = summary_pdf.content.decode("latin-1", errors="ignore").lower()
     document_text = document_pdf.content.decode("latin-1", errors="ignore").lower()
+    assert "ai jurisdiction" in summary_text
+    assert "ai jurisdiction" in document_text
+    assert "session id" in summary_text
     assert "zhrnutie" in summary_text or "summary" in summary_text
     assert "doba najmu" in document_text
     assert "vypovedna lehota" in document_text
@@ -215,6 +221,25 @@ def test_reply_endpoint_persists_user_and_returns_lawyer_message() -> None:
     lawyer_message_2 = reply_response_2.json()
     assert lawyer_message_2["role"] == "assistant"
     assert "vzor najomnej zmluvy" in lawyer_message_2["content"].lower()
+
+
+def test_reply_endpoint_respects_session_language_sk() -> None:
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Please review my lease dispute and suggest next step."},
+        headers=AUTH_HEADERS,
+    )
+    assert reply_response.status_code == 200
+    lawyer_message = reply_response.json()["content"].lower()
+    assert "pravne posudenie" in lawyer_message or "aby som mohol pripravit presny navrh" in lawyer_message
 
 
 def test_chat_endpoints_require_api_key() -> None:
