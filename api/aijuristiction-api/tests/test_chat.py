@@ -94,7 +94,7 @@ def test_stream_core_orchestration_and_export_json_pdf() -> None:
     assert export_doc_pdf.content.startswith(b"%PDF")
     doc_disposition = export_doc_pdf.headers.get("content-disposition", "")
     assert f"{session_id}-" in doc_disposition
-    assert "-final.pdf" in doc_disposition
+    assert "-final-document.pdf" in doc_disposition
 
 
 def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
@@ -162,9 +162,21 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     summary_text = summary_pdf.content.decode("latin-1", errors="ignore").lower()
     document_text = document_pdf.content.decode("latin-1", errors="ignore").lower()
     assert "ai jurisdiction" in summary_text
-    assert "ai jurisdiction" in document_text
+    assert "ai jurisdicta solution" in document_text
+    assert "generated:" in document_text
+    assert "aij | api " in document_text
+    assert "api " in document_text
+    assert "core " in document_text
+    assert "generovany dokument podla diskusie" not in document_text
+    assert "session id:" not in document_text
+    assert "krajina:" not in document_text
+    assert "jazyk:" not in document_text
     assert "session id" in summary_text
     assert "zhrnutie" in summary_text or "summary" in summary_text
+    assert "najomna zmluva" in document_text
+    assert "cl. i - zmluvne strany" in document_text
+    assert "cl. vi - skoncenie najmu" in document_text
+    assert "podpis prenajimatela" in document_text
     assert "doba najmu" in document_text
     assert "vypovedna lehota" in document_text
     assert "platba vopred" in document_text

@@ -203,10 +203,15 @@ For simulator-style streaming automation, the stream payload also supports:
 PDF export options:
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary` -> discussion summary PDF
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` -> generated lawyer document PDF
-- Both PDF variants include `AI Jurisdiction` branding and session metadata (session ID, country, language).
+- Summary PDF includes `AI Jurisdiction` branding and session metadata (session ID, country, language).
+- Document PDF (`kind=document`) includes:
+  - one-line header: `AI Jurisdicta Solution | Generated: <timestamp>`
+  - one-line footer: `AIJ | API <api_version> | Core <core_version>`
+  - right-top logo mark (`AI Jurisdicta [AIJ]`)
+- Document PDF uses a formal legal-agreement structure (articles/clauses and signature fields) when generating final contract output.
 - PDF filenames:
-  - document/final: `{case_id}-{yyyyMMddHHmmss}-final.pdf`
-  - summary: `{case_id}-{yyyyMMddHHmmss}-summary.pdf`
+  - document/final: `{case_id}-{yyyyMMddHHmmss}-final-document.pdf`
+  - summary: `{case_id}-{yyyyMMddHHmmss}-discussion-summary.pdf`
 
 Run only the version endpoint test:
 

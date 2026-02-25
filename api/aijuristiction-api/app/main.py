@@ -39,6 +39,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "x-request-id"],
 )
 app.include_router(chat_router)
 configure_telemetry(app, service_name="aijuristiction-api", service_version=app.version)

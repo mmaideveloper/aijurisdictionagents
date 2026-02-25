@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import textwrap
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 from queue import Queue
 from threading import Thread
 from typing import List, Literal, Optional
@@ -18,6 +20,7 @@ from app.chat.core_runtime import core_message_role, run_orchestration
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.repository import InMemoryChatRepository
 from app.security import require_api_key
+from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
@@ -25,6 +28,11 @@ from aijurisdictionagents.schemas import Message as CoreMessage
 router = APIRouter(prefix="/v1/chat", tags=["chat"], dependencies=[Depends(require_api_key)])
 _repository = InMemoryChatRepository()
 _FINISH_RESPONSES = {"finish", "no", "nope", "done", "exit", "quit", "stop"}
+_API_VERSION = get_api_version()
+_CORE_VERSION = get_core_version()
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
+_LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
 
 
 class CreateSessionRequest(BaseModel):
@@ -499,7 +507,16 @@ def export_session_result(
         )
         filename = _build_pdf_filename(session_id=session_id, kind="summary")
 
-    pdf_content = _build_simple_pdf(title=title, lines=lines)
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    footer_line = f"AIJ | API {_API_VERSION} | Core {_CORE_VERSION}"
+    pdf_content = _build_simple_pdf(
+        title=title,
+        lines=lines,
+        header_line=(f"AI Jurisdicta Solution | Generated: {generated_at}" if kind == "document" else None),
+        footer_line=(footer_line if kind == "document" else None),
+        draw_logo_mark=(kind == "document"),
+        include_title_block=(kind != "document"),
+    )
     return Response(
         content=pdf_content,
         media_type="application/pdf",
@@ -507,8 +524,23 @@ def export_session_result(
     )
 
 
-def _build_simple_pdf(title: str, lines: List[str]) -> bytes:
-    prepared_lines = [title, "----------------"] + _wrap_pdf_lines(lines)
+def _build_simple_pdf(
+    title: str,
+    lines: List[str],
+    *,
+    header_line: str | None = None,
+    footer_line: str | None = None,
+    draw_logo_mark: bool = False,
+    include_title_block: bool = True,
+) -> bytes:
+    header_lines: list[str] = []
+    if header_line:
+        header_lines.append(header_line)
+    if header_lines:
+        header_lines.append("")
+
+    title_block: list[str] = [title, "----------------"] if include_title_block else []
+    prepared_lines = header_lines + title_block + _wrap_pdf_lines(lines)
     lines_per_page = 48
     pages: list[list[str]] = []
     for index in range(0, len(prepared_lines), lines_per_page):
@@ -542,6 +574,19 @@ def _build_simple_pdf(title: str, lines: List[str]) -> bytes:
             text_ops.append(f"({line}) Tj")
             text_ops.append("T*")
         text_ops.append("ET")
+        if draw_logo_mark:
+            text_ops.extend(_ai_jurisdicta_logo_ops(x=500.0, y=718.0, size=66.0))
+        if footer_line:
+            escaped_footer = _escape_pdf_line(footer_line)
+            text_ops.extend(
+                [
+                    "BT",
+                    "/F1 9 Tf",
+                    "50 30 Td",
+                    f"({escaped_footer}) Tj",
+                    "ET",
+                ]
+            )
         stream_bytes = " ".join(text_ops).encode("latin-1", errors="replace")
         objects.append(
             f"{content_id} 0 obj << /Length {len(stream_bytes)} >> stream\n".encode("latin-1")
@@ -589,8 +634,8 @@ def _escape_pdf_line(line: str) -> str:
 def _build_pdf_filename(*, session_id: UUID, kind: Literal["summary", "document"]) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     if kind == "document":
-        return f"{session_id}-{timestamp}-final.pdf"
-    return f"{session_id}-{timestamp}-summary.pdf"
+        return f"{session_id}-{timestamp}-final-document.pdf"
+    return f"{session_id}-{timestamp}-discussion-summary.pdf"
 
 
 def _build_summary_export_content(
@@ -658,30 +703,15 @@ def _build_document_export_content(
     source_lines = _normalize_document_lines(source)
     if not source_lines:
         source_lines = ["No lawyer-generated document content found in this session."]
+    facts = _extract_document_facts(source_lines)
 
     if (language or "").strip().lower().startswith("sk"):
         title = f"Generovany Dokument {session_id}"
-        lines = [
-            "AI Jurisdiction",
-            "Generovany dokument podla diskusie",
-            "",
-            f"Session ID: {session_id}",
-            f"Krajina: {country}",
-            f"Jazyk: {(language or 'auto').strip() or 'auto'}",
-            "",
-        ] + source_lines
+        lines = _build_standard_slovak_agreement_lines(facts)
         return title, lines
 
     title = f"Generated Document {session_id}"
-    lines = [
-        "AI Jurisdiction",
-        "Generated document from discussion",
-        "",
-        f"Session ID: {session_id}",
-        f"Country: {country}",
-        f"Language: {(language or 'auto').strip() or 'auto'}",
-        "",
-    ] + source_lines
+    lines = _build_standard_english_agreement_lines(facts)
     return title, lines
 
 
@@ -712,3 +742,169 @@ def _normalize_document_lines(content: str) -> List[str]:
             continue
         filtered.append(line)
     return filtered
+
+
+def _extract_document_facts(source_lines: List[str]) -> dict[str, str]:
+    text = " ".join(source_lines)
+
+    def _capture(pattern: str, default: str, flags: int = re.IGNORECASE) -> str:
+        match = re.search(pattern, text, flags)
+        if not match:
+            return default
+        return " ".join(match.group(1).strip().split())
+
+    parties_line = _capture(r"zmluvne strany:\s*(.+?)(?:\s+\d+\)|$)", "")
+    prenajimatel = _capture(r"prenajimatel\s*([^,.;]+)", "Prenajimatel [doplnit udaje]")
+    najomca = _capture(r"najomca\s*([^,.;]+)", "Najomca [doplnit udaje]")
+    if parties_line and "doplnit" in prenajimatel.lower():
+        prenajimatel = parties_line
+    predmet = _capture(r"predmet najmu:\s*(.+?)(?:\s+\d+\)|$)", "Byt [adresa a identifikacia]")
+    doba = _capture(r"doba najmu:\s*(.+?)(?:\s+\d+\)|$)", "Na dobu urcitu 1 rok")
+    najomne = _capture(r"najomne:\s*(.+?)(?:\s+\d+\)|$)", "850 EUR mesacne, splatne do 5. dna v mesiaci")
+    advance = _capture(r"platba vopred:\s*(.+?)(?:\s+\d+\)|$)", "2 mesacne najomne vopred")
+    deposit = _capture(r"kaucia:\s*(.+?)(?:\s+\d+\)|$)", "1 mesacne najomne")
+    notice = _capture(r"(vypovedna lehota[^.]+)", "Vypovedna lehota 1 mesiac, dorucenie pisomne aj emailom")
+
+    return {
+        "prenajimatel": prenajimatel,
+        "najomca": najomca,
+        "predmet": predmet,
+        "doba": doba,
+        "najomne": najomne,
+        "advance": advance,
+        "deposit": deposit,
+        "notice": notice,
+    }
+
+
+def _build_standard_slovak_agreement_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "NAJOMNA ZMLUVA",
+        "uzatvorena podla paragrafu 663 a nasl. Obcianskeho zakonnika",
+        "",
+        "Cl. I - Zmluvne strany",
+        f"Prenajimatel: {facts['prenajimatel']}",
+        f"Najomca: {facts['najomca']}",
+        "",
+        "Cl. II - Predmet najmu",
+        _with_period(facts["predmet"]),
+        "",
+        "Cl. III - Doba najmu",
+        _with_period(facts["doba"]),
+        "",
+        "Cl. IV - Najomne a platobne podmienky",
+        f"Najomne: {_with_period(facts['najomne'])}",
+        f"Platba vopred: {_with_period(facts['advance'])}",
+        f"Kaucia: {_with_period(facts['deposit'])}",
+        "",
+        "Cl. V - Prava a povinnosti zmluvnych stran",
+        "Najomca je povinny uzivat predmet najmu riadne, setrne a v sulade so zmluvou.",
+        "Prenajimatel je povinny odovzdat predmet najmu sposobily na dohodnute uzivanie.",
+        "",
+        "Cl. VI - Skoncenie najmu",
+        _with_period(facts["notice"]),
+        "",
+        "Cl. VII - Zaverecne ustanovenia",
+        "Zmluva nadobuda platnost dnom podpisu oboma zmluvnymi stranami.",
+        "Zmeny zmluvy je mozne vykonat len pisomnym dodatkom.",
+        "",
+        "V [mesto], dna [datum]",
+        "",
+        "Podpis prenajimatela: ____________________________",
+        "Podpis najomcu: _________________________________",
+    ]
+
+
+def _build_standard_english_agreement_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "RESIDENTIAL LEASE AGREEMENT",
+        "",
+        "Article I - Parties",
+        f"Landlord: {facts['prenajimatel']}",
+        f"Tenant: {facts['najomca']}",
+        "",
+        "Article II - Leased Premises",
+        _with_period(facts["predmet"]),
+        "",
+        "Article III - Lease Term",
+        _with_period(facts["doba"]),
+        "",
+        "Article IV - Rent and Payments",
+        f"Rent: {_with_period(facts['najomne'])}",
+        f"Advance payment: {_with_period(facts['advance'])}",
+        f"Security deposit: {_with_period(facts['deposit'])}",
+        "",
+        "Article V - Termination",
+        _with_period(facts["notice"]),
+        "",
+        "Article VI - Final Provisions",
+        "This agreement becomes effective upon signature by both parties.",
+        "Any amendment must be made in writing.",
+        "",
+        "Signed at [city], on [date]",
+        "",
+        "Landlord signature: ____________________________",
+        "Tenant signature: ______________________________",
+    ]
+
+
+def _with_period(value: str) -> str:
+    cleaned = value.strip()
+    while cleaned.endswith("."):
+        cleaned = cleaned[:-1].rstrip()
+    return f"{cleaned}."
+
+
+def _ai_jurisdicta_logo_ops(*, x: float, y: float, size: float) -> List[str]:
+    if not (_LOGO_SVG_PRIMARY.exists() or _LOGO_SVG_FALLBACK.exists()):
+        return []
+
+    scale = size / 120.0
+    teal = "0.106 0.498 0.557"
+    dark = "0.043 0.071 0.125"
+    gold = "0.843 0.659 0.310"
+    ops: List[str] = [
+        "q",
+        f"{scale:.6f} 0 0 {-scale:.6f} {x:.2f} {y + size:.2f} cm",
+        "1 J",
+        "1 j",
+        f"{teal} RG",
+        "3 w",
+        # outer frame (square fallback for rounded SVG frame)
+        "6 6 108 108 re S",
+        f"{dark} RG",
+        "4 w",
+        "60 26 m 60 74 l S",
+        "34 44 m 60 34 l 86 44 l S",
+        "3 w",
+        "34 44 m 22 64 l S",
+        "86 44 m 98 64 l S",
+        f"{gold} rg",
+    ]
+    ops.extend(_pdf_circle_ops(22.0, 64.0, 6.0))
+    ops.append("f")
+    ops.extend(_pdf_circle_ops(98.0, 64.0, 6.0))
+    ops.append("f")
+    ops.append(f"{teal} rg")
+    ops.extend(_pdf_circle_ops(60.0, 34.0, 6.0))
+    ops.append("f")
+    ops.append(f"{dark} rg")
+    ops.append("44 74 32 18 re f")
+    ops.append("Q")
+    return ops
+
+
+def _pdf_circle_ops(cx: float, cy: float, r: float) -> List[str]:
+    k = 0.5522847498 * r
+    x0 = cx - r
+    x1 = cx + r
+    y0 = cy - r
+    y1 = cy + r
+    return [
+        f"{x1:.3f} {cy:.3f} m",
+        f"{x1:.3f} {cy + k:.3f} {cx + k:.3f} {y1:.3f} {cx:.3f} {y1:.3f} c",
+        f"{cx - k:.3f} {y1:.3f} {x0:.3f} {cy + k:.3f} {x0:.3f} {cy:.3f} c",
+        f"{x0:.3f} {cy - k:.3f} {cx - k:.3f} {y0:.3f} {cx:.3f} {y0:.3f} c",
+        f"{cx + k:.3f} {y0:.3f} {x1:.3f} {cy - k:.3f} {x1:.3f} {cy:.3f} c",
+        "h",
+    ]

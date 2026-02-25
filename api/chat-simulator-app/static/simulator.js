@@ -404,8 +404,7 @@ async function downloadResult(format, kind = "summary") {
   if (headerName) {
     anchor.download = headerName;
   } else {
-    const suffix = format === "pdf" ? `-${kind}` : "";
-    anchor.download = `session-${sessionId}${suffix}.${format}`;
+    anchor.download = createFallbackFilename(kind, format);
   }
   document.body.appendChild(anchor);
   anchor.click();
@@ -419,6 +418,19 @@ function extractFilenameFromContentDisposition(value) {
   const match = header.match(/filename="([^"]+)"/i);
   if (match && match[1]) return match[1];
   return "";
+}
+
+function createFallbackFilename(kind, format) {
+  const now = new Date();
+  const yyyy = String(now.getFullYear());
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mi = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  const ts = `${yyyy}${mm}${dd}${hh}${mi}${ss}`;
+  const docName = kind === "document" ? "final-document" : "discussion-summary";
+  return `${sessionId}-${ts}-${docName}.${format}`;
 }
 
 function clearSession() {
