@@ -104,12 +104,28 @@ Run it independently to test chat flows before frontend deployment.
 - FastAPI is instrumented with OpenTelemetry spans.
 - If `OTEL_EXPORTER_OTLP_ENDPOINT` is set, traces are exported to that OTLP endpoint.
 - If not set, traces are written via console exporter.
+- In local/CI test runs, you may occasionally see a shutdown-time console exporter `ValueError` after tests finish; this is non-fatal and does not fail the pytest run.
 
 ## Build + deployment workflow
 
 GitHub workflow: `.github/workflows/api_build_deploy.yml`
 
+Before opening a PR from a feature branch, sync it with latest `main`:
+
+```bash
+git fetch origin
+git merge origin/main
+```
+
 - CI checks: install deps, lint (`ruff`), type-check (`mypy`), tests (`pytest`), and Docker build.
+- Local pre-flight command to mirror CI from this folder:
+
+```bash
+ruff check . && mypy app && pytest -q
+```
+
+The API `pyproject.toml` also sets `mypy_path = ["../../src"]` so strict type checks can resolve the monorepo core package during CI and local runs.
+The `pytest` command is configured with `pythonpath = ["."]` in `pyproject.toml`, so direct invocation works consistently in local runs and GitHub Actions.
 - Deploy path: on manual dispatch with `deploy=true`, push image to Azure Container Registry and deploy/update Azure Container App.
 
 Required GitHub Environment variables:
