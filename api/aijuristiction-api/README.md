@@ -110,6 +110,13 @@ Run it independently to test chat flows before frontend deployment.
 GitHub workflow: `.github/workflows/api_build_deploy.yml`
 
 - CI checks: install deps, lint (`ruff`), type-check (`mypy`), tests (`pytest`), and Docker build.
+- Local pre-flight command to mirror CI from this folder:
+
+```bash
+ruff check . && mypy app && pytest -q
+```
+
+The `pytest` command is configured with `pythonpath = ["."]` in `pyproject.toml`, so direct invocation works consistently in local runs and GitHub Actions.
 - Deploy path: on manual dispatch with `deploy=true`, push image to Azure Container Registry and deploy/update Azure Container App.
 
 Required GitHub Environment variables:
