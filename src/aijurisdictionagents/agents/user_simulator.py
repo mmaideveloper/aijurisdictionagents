@@ -25,6 +25,7 @@ USER_SIMULATOR_PROMPT = textwrap.dedent(
     - If the question asks for unknown facts, provide a plausible placeholder and
       clearly indicate uncertainty.
     - Prefer one short paragraph.
+    - Keep style natural, as if written by a real client in chat (small imperfections are acceptable).
     """
 ).strip()
 

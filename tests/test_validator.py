@@ -33,6 +33,8 @@ def test_validator_evaluates_payload() -> None:
     assert 0 <= report.weighted_accuracy <= 100
     assert report.scores
     assert "Strongest axis" in report.summary
+    assert 0 <= report.human_likeness <= 100
+    assert 0 <= report.contract_similarity <= 100
 
 
 def test_validator_reads_payload_from_file(tmp_path: Path) -> None:
@@ -51,3 +53,4 @@ def test_validator_reads_payload_from_file(tmp_path: Path) -> None:
     )
 
     assert report.weighted_accuracy >= 0
+    assert report.human_likeness >= 0
