@@ -5,8 +5,12 @@ import sys
 import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.chat.models import Session
+
+if TYPE_CHECKING:
+    from aijurisdictionagents.schemas import Document, OrchestrationResult
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC_ROOT = REPO_ROOT / "src"
@@ -17,7 +21,7 @@ from aijurisdictionagents.agents import create_judge, create_lawyer_agent  # noq
 from aijurisdictionagents.llm import get_llm_client  # noqa: E402
 from aijurisdictionagents.observability import TraceRecorder  # noqa: E402
 from aijurisdictionagents.orchestration import Orchestrator  # noqa: E402
-from aijurisdictionagents.schemas import Document, Message, OrchestrationResult  # noqa: E402
+from aijurisdictionagents.schemas import Message  # noqa: E402
 
 UserResponseProvider = Callable[[str, float], str | None] | None
 MessageCallback = Callable[[Message], None] | None

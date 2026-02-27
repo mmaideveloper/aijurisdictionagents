@@ -1,0 +1,63 @@
+name: mobile_flutter_build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile_app/**'
+      - '.github/workflows/mobile_flutter_build.yml'
+  pull_request:
+    paths:
+      - 'mobile_app/**'
+      - '.github/workflows/mobile_flutter_build.yml'
+
+jobs:
+  build-mobile:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: mobile_app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-jurisdiction-mobile-apk
+          path: mobile_app/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Build Web bundle
+        run: flutter build web --release
+
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-jurisdiction-mobile-web
+          path: mobile_app/build/web

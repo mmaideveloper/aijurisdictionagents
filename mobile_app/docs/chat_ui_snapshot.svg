@@ -1,0 +1,23 @@
+<svg width="900" height="980" viewBox="0 0 900 980" xmlns="http://www.w3.org/2000/svg">
+  <rect width="900" height="980" fill="#eef1f7"/>
+  <rect x="255" y="40" width="390" height="844" rx="36" fill="white" stroke="#111" stroke-width="8"/>
+  <rect x="263" y="48" width="374" height="64" rx="18" fill="#e7e9ff"/>
+  <text x="278" y="86" font-family="Arial" font-size="16" font-weight="700" fill="#1e2235">AI Jurisdiction Assistant</text>
+  <rect x="505" y="62" width="116" height="30" rx="12" fill="white"/>
+  <text x="513" y="82" font-family="Arial" font-size="10" fill="#43495e">AI User Simulator</text>
+  <rect x="275" y="130" width="350" height="38" rx="10" fill="#f2f4ff"/>
+  <text x="287" y="153" font-family="Arial" font-size="12" fill="#4a4d75">Attached: tenant_contract.jpg</text>
+  <rect x="275" y="200" width="220" height="52" rx="12" fill="#eceef4"/>
+  <text x="287" y="232" font-family="Arial" font-size="12" fill="#2d3140">Welcome! Upload a document photo.</text>
+  <rect x="375" y="268" width="250" height="52" rx="12" fill="#d9e7ff"/>
+  <text x="387" y="300" font-family="Arial" font-size="12" fill="#2d3140">Can I terminate this rental agreement early?</text>
+  <rect x="275" y="336" width="260" height="52" rx="12" fill="#eceef4"/>
+  <text x="287" y="368" font-family="Arial" font-size="12" fill="#2d3140">It depends on notice and breach clauses.</text>
+  <rect x="263" y="806" width="374" height="70" fill="white" stroke="#e6e8f2"/>
+  <rect x="275" y="820" width="36" height="36" rx="8" fill="#e8edff"/>
+  <text x="286" y="843" font-family="Arial" font-size="16">📷</text>
+  <rect x="319" y="820" width="262" height="36" rx="8" fill="white" stroke="#ccd3e0"/>
+  <text x="331" y="842" font-family="Arial" font-size="12" fill="#788293">Ask your legal question...</text>
+  <rect x="589" y="820" width="36" height="36" rx="8" fill="#4c67ff"/>
+  <text x="602" y="842" font-family="Arial" font-size="14" fill="white">➤</text>
+</svg>
