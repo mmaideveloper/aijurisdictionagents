@@ -104,7 +104,7 @@ Run it independently to test chat flows before frontend deployment.
 - FastAPI is instrumented with OpenTelemetry spans.
 - If `OTEL_EXPORTER_OTLP_ENDPOINT` is set, traces are exported to that OTLP endpoint.
 - If not set, traces are written via console exporter.
-- In local/CI test runs, you may occasionally see a shutdown-time console exporter `ValueError` after tests finish; this is non-fatal and does not fail the pytest run.
+- Console trace export uses a synchronous processor in local default mode to avoid shutdown-time exporter thread errors during tests.
 
 ## Build + deployment workflow
 
