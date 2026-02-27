@@ -19,7 +19,6 @@ from aijurisdictionagents.observability import TraceRecorder  # noqa: E402
 from aijurisdictionagents.orchestration import Orchestrator  # noqa: E402
 from aijurisdictionagents.schemas import Document, Message, OrchestrationResult  # noqa: E402
 
-
 UserResponseProvider = Callable[[str, float], str | None] | None
 MessageCallback = Callable[[Message], None] | None
 
