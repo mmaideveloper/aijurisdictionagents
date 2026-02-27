@@ -3,21 +3,28 @@ from __future__ import annotations
 import logging
 import sys
 import tempfile
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING
 
 from app.chat.models import Session
+
+if TYPE_CHECKING:
+    from aijurisdictionagents.schemas import Document, OrchestrationResult
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from aijurisdictionagents.agents import create_judge, create_lawyer_agent
-from aijurisdictionagents.llm import get_llm_client
-from aijurisdictionagents.observability import TraceRecorder
-from aijurisdictionagents.orchestration import Orchestrator
-from aijurisdictionagents.schemas import Document, Message, OrchestrationResult
+from aijurisdictionagents.agents import create_judge, create_lawyer_agent  # noqa: E402
+from aijurisdictionagents.llm import get_llm_client  # noqa: E402
+from aijurisdictionagents.observability import TraceRecorder  # noqa: E402
+from aijurisdictionagents.orchestration import Orchestrator  # noqa: E402
+from aijurisdictionagents.schemas import Message  # noqa: E402
+
+UserResponseProvider = Callable[[str, float], str | None] | None
+MessageCallback = Callable[[Message], None] | None
 
 
 def run_orchestration(
@@ -26,8 +33,8 @@ def run_orchestration(
     documents: Sequence[Document],
     question_timeout_seconds: float,
     max_discussion_minutes: float,
-    user_response_provider,
-    message_callback,
+    user_response_provider: UserResponseProvider,
+    message_callback: MessageCallback,
 ) -> OrchestrationResult:
     llm = get_llm_client()
     lawyer = create_lawyer_agent(llm, session.country)
