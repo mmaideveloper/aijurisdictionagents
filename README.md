@@ -357,3 +357,15 @@ Technical requirements:
 
 Codex:
 /prompt:draftpr
+
+## Flutter mobile app (local test)
+
+A Flutter mobile client is available in `mobile_app/` with chat UI, camera document capture, and local API mode toggles.
+
+```bash
+cd mobile_app
+flutter pub get
+flutter run
+```
+
+Technical design details: `docs/MOBILE_TECHNICAL_DESIGN.md`.

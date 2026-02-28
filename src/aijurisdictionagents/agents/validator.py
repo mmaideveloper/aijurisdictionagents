@@ -39,28 +39,40 @@ class ValidationReport:
     weighted_accuracy: float
     scores: Sequence[CriterionScore]
     summary: str
+    contract_similarity: float
+    human_likeness: float
 
 
 DEFAULT_CRITERIA: tuple[EvaluationCriterion, ...] = (
     EvaluationCriterion(
         name="legal_accuracy",
         description="Whether the final answer aligns with expected legal anchors.",
-        weight=0.45,
+        weight=0.30,
     ),
     EvaluationCriterion(
         name="coverage",
         description="Whether the conversation addresses all key expected points.",
-        weight=0.30,
+        weight=0.20,
     ),
     EvaluationCriterion(
         name="clarity",
         description="Whether the final answer is concise and understandable.",
-        weight=0.15,
+        weight=0.10,
     ),
     EvaluationCriterion(
         name="risk_awareness",
         description="Whether caveats/next steps are communicated.",
         weight=0.10,
+    ),
+    EvaluationCriterion(
+        name="human_likeness",
+        description="Whether the exchange resembles a human lawyer-client intake conversation.",
+        weight=0.15,
+    ),
+    EvaluationCriterion(
+        name="contract_alignment",
+        description="Whether the final contract follows public Slovak rental contract patterns.",
+        weight=0.15,
     ),
 )
 
@@ -86,18 +98,45 @@ class AIAgentsValidator:
         communication_path: str | Path,
         inputs: ValidatorInputs,
         final_result: str,
+        final_contract: str | None = None,
+        reference_contracts: Sequence[str] = (),
     ) -> ValidationReport:
         payload = json.loads(Path(communication_path).read_text(encoding="utf-8"))
-        return self.evaluate(payload, inputs, final_result)
+        return self.evaluate(
+            payload,
+            inputs,
+            final_result,
+            final_contract=final_contract,
+            reference_contracts=reference_contracts,
+        )
 
     def evaluate(
         self,
         communication_payload: dict[str, Any],
         inputs: ValidatorInputs,
         final_result: str,
+        final_contract: str | None = None,
+        reference_contracts: Sequence[str] = (),
     ) -> ValidationReport:
         transcript = _extract_transcript(communication_payload)
         heuristic_scores = self._heuristic_scores(transcript, inputs, final_result)
+        contract_similarity = _contract_similarity(final_contract or final_result, reference_contracts)
+        human_likeness = _human_likeness(transcript)
+
+        heuristic_scores.extend(
+            [
+                CriterionScore(
+                    name="human_likeness",
+                    score=human_likeness,
+                    rationale="Measures whether the conversation mirrors realistic lawyer-client intake behavior.",
+                ),
+                CriterionScore(
+                    name="contract_alignment",
+                    score=contract_similarity,
+                    rationale="Measures overlap between generated contract and reference Slovak rental templates.",
+                ),
+            ]
+        )
 
         if self.llm is None:
             scores = heuristic_scores
@@ -111,6 +150,8 @@ class AIAgentsValidator:
             weighted_accuracy=weighted_accuracy,
             scores=scores,
             summary=summary,
+            contract_similarity=contract_similarity,
+            human_likeness=human_likeness,
         )
 
     def _heuristic_scores(
@@ -127,9 +168,16 @@ class AIAgentsValidator:
         coverage_overlap = _safe_ratio(len(expected_tokens & transcript_tokens), max(1, len(expected_tokens)))
 
         sentence_count = max(1, len([s for s in re.split(r"[.!?]+", final_result) if s.strip()]))
-        clarity = min(1.0, 1 / sentence_count + 0.4)
+        has_structured_clauses = bool(re.search(r"\b\d+\)", final_result))
+        if has_structured_clauses:
+            clarity = 0.9
+        else:
+            clarity = min(1.0, 1 / sentence_count + 0.4)
 
-        risk_markers = {"risk", "uncertain", "depends", "recommend", "consult", "limitation", "deadline"}
+        risk_markers = {
+            "risk", "uncertain", "depends", "recommend", "consult", "limitation", "deadline",
+            "riziko", "odporucat", "odporucam", "lehota", "vypoved", "pisomne", "upozornenie",
+        }
         risk_awareness = 1.0 if (risk_markers & final_tokens) else 0.45
 
         return [
@@ -245,7 +293,7 @@ def _extract_transcript(payload: dict[str, Any]) -> str:
 
 
 def _tokens(text: str) -> set[str]:
-    return {token.lower() for token in re.findall(r"[a-zA-Z]{3,}", text)}
+    return {token.lower() for token in re.findall(r"[^\W\d_]{3,}", text, flags=re.UNICODE)}
 
 
 def _safe_ratio(numerator: int, denominator: int) -> float:
@@ -275,3 +323,56 @@ def _build_summary(scores: Sequence[CriterionScore]) -> str:
         f"Strongest axis: {best.name} ({best.score:.1f}). "
         f"Needs improvement: {weakest.name} ({weakest.score:.1f})."
     )
+
+
+def _contract_similarity(final_contract: str, reference_contracts: Sequence[str]) -> float:
+    final_tokens = _tokens(final_contract)
+    if not final_tokens:
+        return 0.0
+
+    required_sections = {
+        "zmluvne", "strany", "predmet", "najmu", "doba", "najomne", "kaucia", "ukoncenie", "vypovedna", "pisomne"
+    }
+    section_coverage = _safe_ratio(len(final_tokens & required_sections), len(required_sections))
+
+    references = list(reference_contracts)
+    if not references:
+        references = [
+            "zmluvne strany predmet najmu doba najmu najomne splatnost kaucia vypovedna lehota podpis",
+        ]
+
+    best_f1 = 0.0
+    for sample in references:
+        sample_tokens = _tokens(sample)
+        if not sample_tokens:
+            continue
+        overlap = len(final_tokens & sample_tokens)
+        precision = _safe_ratio(overlap, len(final_tokens))
+        recall = _safe_ratio(overlap, len(sample_tokens))
+        f1 = 0.0 if (precision + recall) == 0 else (2 * precision * recall) / (precision + recall)
+        best_f1 = max(best_f1, f1)
+
+    combined = 0.6 * section_coverage + 0.4 * best_f1
+    return round(combined * 100, 2)
+
+
+def _human_likeness(transcript: str) -> float:
+    lowered = transcript.lower()
+    if not lowered.strip():
+        return 0.0
+
+    question_mark_count = transcript.count("?")
+    qa_markers = sum(1 for marker in ("q:", "a:", "user:", "assistant:") if marker in lowered)
+    empathy_markers = sum(
+        1
+        for marker in ("rozumiem", "ďakujem", "dakujem", "prosím", "prosim", "i understand", "thank you")
+        if marker in lowered
+    )
+    legal_markers = sum(
+        1
+        for marker in ("zmluva", "nájom", "najom", "výpoveď", "vypoved", "lehota", "jurisdikcia", "dôkaz")
+        if marker in lowered
+    )
+
+    score = min(1.0, 0.2 + question_mark_count * 0.03 + qa_markers * 0.08 + empathy_markers * 0.05 + legal_markers * 0.05)
+    return round(score * 100, 2)

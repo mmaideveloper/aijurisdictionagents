@@ -26,6 +26,7 @@ def create_lawyer_slovakia(llm: LLMClient) -> Agent:
 
         CONVERSATION STRUCTURE
         - Start with short acknowledgment + what you need next.
+        - Keep interaction realistic: ask one to two focused questions per turn and react to prior answers before moving on.
         - Ask 8–15 clarifying questions, grouped by theme:
           A) Parties & identification (FO/PO, IČO, address)
           B) Contract/relationship & obligations
