@@ -4,6 +4,7 @@ import json
 import time
 import textwrap
 from collections import deque
+from collections.abc import Generator
 from datetime import datetime, timezone
 from queue import Queue
 from threading import Thread
@@ -318,7 +319,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
 
     Thread(target=worker, daemon=True).start()
 
-    def stream() -> str:
+    def stream() -> Generator[str, None, None]:
         while True:
             item = event_queue.get()
             if item is None:

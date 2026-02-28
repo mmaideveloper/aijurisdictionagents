@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import sys
 import tempfile
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
@@ -32,8 +33,8 @@ def run_orchestration(
     documents: Sequence[Document],
     question_timeout_seconds: float,
     max_discussion_minutes: float,
-    user_response_provider,
-    message_callback,
+    user_response_provider: UserResponseProvider,
+    message_callback: MessageCallback,
 ) -> OrchestrationResult:
     create_judge, create_lawyer_agent, get_llm_client, trace_recorder, orchestrator_class = (
         _load_core_dependencies()
