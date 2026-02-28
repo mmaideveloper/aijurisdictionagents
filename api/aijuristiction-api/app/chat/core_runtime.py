@@ -3,14 +3,15 @@ from __future__ import annotations
 import logging
 import sys
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any
 
 from app.chat.models import Session
 
 if TYPE_CHECKING:
     from aijurisdictionagents.schemas import Document, OrchestrationResult
+    from aijurisdictionagents.orchestration.orchestrator import MessageCallback, UserResponseProvider
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC_ROOT = REPO_ROOT / "src"
@@ -18,7 +19,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 
-def _load_core_dependencies():
+def _load_core_dependencies() -> tuple[Any, Any, Any, Any, Any]:
     from aijurisdictionagents.agents import create_judge, create_lawyer_agent
     from aijurisdictionagents.llm import get_llm_client
     from aijurisdictionagents.observability import TraceRecorder

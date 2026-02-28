@@ -124,6 +124,9 @@ git merge origin/main
 ruff check . && mypy app && pytest -q
 ```
 
+Typing note: keep `UserResponseProvider` and `MessageCallback` imports in `app/chat/core_runtime.py`
+inside the `TYPE_CHECKING` block so both `ruff` and `mypy --strict` stay green.
+
 Telemetry processor selection (OTLP vs console) is covered by unit tests in `tests/test_telemetry.py`.
 
 The API `pyproject.toml` also sets `mypy_path = ["../../src"]` so strict type checks can resolve the monorepo core package during CI and local runs.
