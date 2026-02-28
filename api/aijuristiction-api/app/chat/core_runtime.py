@@ -5,7 +5,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 from app.chat.models import Session
 
@@ -17,14 +17,14 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from aijurisdictionagents.agents import create_judge, create_lawyer_agent  # noqa: E402
-from aijurisdictionagents.llm import get_llm_client  # noqa: E402
-from aijurisdictionagents.observability import TraceRecorder  # noqa: E402
-from aijurisdictionagents.orchestration import Orchestrator  # noqa: E402
-from aijurisdictionagents.schemas import Message  # noqa: E402
 
-UserResponseProvider = Callable[[str, float], str | None] | None
-MessageCallback = Callable[[Message], None] | None
+def _load_core_dependencies():
+    from aijurisdictionagents.agents import create_judge, create_lawyer_agent
+    from aijurisdictionagents.llm import get_llm_client
+    from aijurisdictionagents.observability import TraceRecorder
+    from aijurisdictionagents.orchestration import Orchestrator
+
+    return create_judge, create_lawyer_agent, get_llm_client, TraceRecorder, Orchestrator
 
 
 def run_orchestration(
@@ -36,15 +36,18 @@ def run_orchestration(
     user_response_provider: UserResponseProvider,
     message_callback: MessageCallback,
 ) -> OrchestrationResult:
+    create_judge, create_lawyer_agent, get_llm_client, trace_recorder, orchestrator_class = (
+        _load_core_dependencies()
+    )
     llm = get_llm_client()
     lawyer = create_lawyer_agent(llm, session.country)
     judge = create_judge(llm) if session.discussion_type == "court" else None
 
     logger = logging.getLogger("aijuristiction-api.core")
     with tempfile.TemporaryDirectory(prefix="aijuris_api_run_") as temp_dir:
-        trace = TraceRecorder(Path(temp_dir))
+        trace = trace_recorder(Path(temp_dir))
         try:
-            orchestrator = Orchestrator(lawyer=lawyer, judge=judge, trace=trace, logger=logger)
+            orchestrator = orchestrator_class(lawyer=lawyer, judge=judge, trace=trace, logger=logger)
             return orchestrator.run(
                 instruction,
                 documents,
