@@ -4,6 +4,15 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+const String _apiBaseUrl = String.fromEnvironment(
+  'AIJ_API_BASE_URL',
+  defaultValue: 'http://10.0.2.2:8080',
+);
+const String _apiKey = String.fromEnvironment(
+  'AIJ_API_KEY',
+  defaultValue: 'aijuris',
+);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final cameras = await availableCameras();
@@ -45,34 +54,94 @@ class ChatMessage {
   final DateTime? createdAt;
 }
 
-class LocalApiClient {
-  LocalApiClient({required this.baseUri});
+class ApiClient {
+  ApiClient({required this.baseUri, required this.apiKey});
 
   final Uri baseUri;
+  final String apiKey;
+  String? _sessionId;
+
+  Map<String, String> get _headers => <String, String>{
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      };
+
+  Future<String> _createSession({required ResponderMode responderMode}) async {
+    final discussionType = responderMode == ResponderMode.realPerson
+        ? 'court'
+        : 'advice';
+    final sessionResponse = await http.post(
+      baseUri.resolve('/v1/chat/sessions'),
+      headers: _headers,
+      body: jsonEncode(<String, String>{'discussion_type': discussionType}),
+    );
+
+    if (sessionResponse.statusCode < 200 || sessionResponse.statusCode >= 300) {
+      throw Exception(
+        'Session creation failed with status ${sessionResponse.statusCode}.',
+      );
+    }
+
+    final body = jsonDecode(sessionResponse.body) as Map<String, dynamic>;
+    final sessionId = body['id'] as String?;
+    if (sessionId == null || sessionId.isEmpty) {
+      throw Exception('Session creation succeeded but no session id was returned.');
+    }
+    return sessionId;
+  }
+
+  Future<String> _ensureSession({required ResponderMode responderMode}) async {
+    final existing = _sessionId;
+    if (existing != null && existing.isNotEmpty) {
+      return existing;
+    }
+    final created = await _createSession(responderMode: responderMode);
+    _sessionId = created;
+    return created;
+  }
 
   Future<String> sendMessage({
     required String message,
     required ResponderMode responderMode,
     String? documentPath,
   }) async {
-    final payload = <String, Object?>{
-      'message': message,
-      'mode': responderMode.name,
-      'documentPath': documentPath,
-    };
+    final sessionId = await _ensureSession(responderMode: responderMode);
+    final content = documentPath == null
+        ? message
+        : '$message\n\n[Attached local document path: $documentPath]';
+    final payload = <String, Object?>{'content': content};
 
     final response = await http.post(
-      baseUri.resolve('/chat'),
-      headers: {'Content-Type': 'application/json'},
+      baseUri.resolve('/v1/chat/sessions/$sessionId/reply'),
+      headers: _headers,
       body: jsonEncode(payload),
     );
 
+    if (response.statusCode == 404) {
+      _sessionId = null;
+      final retrySessionId = await _ensureSession(responderMode: responderMode);
+      final retryResponse = await http.post(
+        baseUri.resolve('/v1/chat/sessions/$retrySessionId/reply'),
+        headers: _headers,
+        body: jsonEncode(payload),
+      );
+      return _parseReply(retryResponse);
+    }
+
+    return _parseReply(response);
+  }
+
+  String _parseReply(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Local API failed with status ${response.statusCode}.');
+      throw Exception('API call failed with status ${response.statusCode}.');
     }
 
     final body = jsonDecode(response.body) as Map<String, dynamic>;
-    return body['response'] as String? ?? 'No response message.';
+    return body['content'] as String? ?? 'No response message.';
+  }
+
+  void resetSession() {
+    _sessionId = null;
   }
 }
 
@@ -94,7 +163,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
     ),
   ];
 
-  late final LocalApiClient _apiClient;
+  late final ApiClient _apiClient;
   ResponderMode _responderMode = ResponderMode.aiUserSimulator;
   String? _documentPath;
   bool _isSending = false;
@@ -102,7 +171,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
   @override
   void initState() {
     super.initState();
-    _apiClient = LocalApiClient(baseUri: Uri.parse('http://10.0.2.2:8000'));
+    _apiClient = ApiClient(baseUri: Uri.parse(_apiBaseUrl), apiKey: _apiKey);
   }
 
   @override
@@ -122,6 +191,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
         builder: (_) => CameraCapturePage(camera: widget.cameras.first),
       ),
     );
+    if (!mounted) {
+      return;
+    }
 
     if (path != null) {
       setState(() {
@@ -167,7 +239,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
         );
       });
     } catch (error) {
-      _showSnackbar('Failed to reach local API: $error');
+      _showSnackbar('Failed to reach API at $_apiBaseUrl: $error');
     } finally {
       if (mounted) {
         setState(() {
@@ -201,6 +273,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   setState(() {
                     _responderMode = mode;
                   });
+                  _apiClient.resetSession();
                 },
                 items: const [
                   DropdownMenuItem(
@@ -314,7 +387,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.send),
-                    tooltip: 'Send to local API',
+                    tooltip: 'Send to API',
                   ),
                 ],
               ),

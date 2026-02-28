@@ -8,7 +8,10 @@ Provide a mobile-first chat assistant app that supports legal conversation flows
 
 - Flutter (Dart 3.3+)
 - Packages: `camera`, `http`
-- Local test API target: `POST /chat`
+- Local test API target:
+  - `POST /v1/chat/sessions`
+  - `POST /v1/chat/sessions/{session_id}/reply`
+  - Header `x-api-key`
 
 ## UI architecture
 
@@ -25,16 +28,18 @@ Provide a mobile-first chat assistant app that supports legal conversation flows
 
 1. User captures a document image from camera.
 2. User sends message.
-3. App sends payload to local API:
-   - `message`
-   - `mode`
-   - `documentPath`
-4. Response text is rendered into transcript.
+3. App creates/reuses backend chat session via `POST /v1/chat/sessions`.
+4. App sends user text to `POST /v1/chat/sessions/{session_id}/reply`.
+5. Response text (`content`) is rendered into transcript.
+6. If a local document is attached, its local path is appended to the outgoing message text.
 
 ## Local testing assumptions
 
 - Android emulator uses host API at `10.0.2.2`.
-- Local backend should expose `POST /chat` and return `{ "response": "..." }`.
+- Local backend should expose `/v1/chat/*` and accept `x-api-key`.
+- App runtime config is set via Dart defines:
+  - `AIJ_API_BASE_URL` (default `http://10.0.2.2:8080`)
+  - `AIJ_API_KEY` (default `aijuris`)
 
 ## Build & deploy preparation
 
