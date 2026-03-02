@@ -23,6 +23,8 @@ def _cors_allow_origins() -> list[str]:
     return [
         "http://localhost:8090",
         "http://127.0.0.1:8090",
+        "http://localhost:7357",
+        "http://127.0.0.1:7357",
     ]
 
 app = FastAPI(

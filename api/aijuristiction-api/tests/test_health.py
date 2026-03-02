@@ -46,3 +46,16 @@ def test_cors_preflight_allows_local_chat_simulator() -> None:
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:8090"
+
+
+def test_cors_preflight_allows_flutter_web_localhost() -> None:
+    response = client.options(
+        "/v1/chat/sessions",
+        headers={
+            "Origin": "http://localhost:7357",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-api-key,content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:7357"

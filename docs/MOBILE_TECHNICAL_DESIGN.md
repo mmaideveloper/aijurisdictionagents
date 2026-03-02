@@ -19,7 +19,10 @@ Provide a mobile-first chat assistant app that supports legal conversation flows
   - Chat transcript list
   - Input composer
   - Responder mode selector (`aiUserSimulator` default, `realPerson` optional)
+    - `aiUserSimulator`: starts `/stream` with `AIUserSimulatorAgent`
+    - `realPerson`: uses `/reply` for direct user-lawyer interaction
   - Document attachment banner
+  - AI Jurisdicta logo + branded SVG background
 - `CameraCapturePage`
   - Camera preview
   - Capture action returning local image path
@@ -29,9 +32,11 @@ Provide a mobile-first chat assistant app that supports legal conversation flows
 1. User captures a document image from camera.
 2. User sends message.
 3. App creates/reuses backend chat session via `POST /v1/chat/sessions`.
-4. App sends user text to `POST /v1/chat/sessions/{session_id}/reply`.
-5. Response text (`content`) is rendered into transcript.
-6. If a local document is attached, its local path is appended to the outgoing message text.
+4. `realPerson` mode: app sends user text to `POST /v1/chat/sessions/{session_id}/reply`.
+5. `aiUserSimulator` mode: app starts discussion via `POST /v1/chat/sessions/{session_id}/stream`.
+6. Streamed `message` events are rendered into transcript continuously.
+7. If a local document is attached, its local path is appended to the outgoing message text.
+8. Communication and errors are logged as JSON entries with timestamp and context.
 
 ## Local testing assumptions
 
@@ -40,6 +45,16 @@ Provide a mobile-first chat assistant app that supports legal conversation flows
 - App runtime config is set via Dart defines:
   - `AIJ_API_BASE_URL` (default `http://10.0.2.2:8080`)
   - `AIJ_API_KEY` (default `aijuris`)
+- Flutter web local run can target `http://127.0.0.1:8080` and expects API CORS to allow local origin (for example `http://localhost:7357`).
+
+## Logging design
+
+- Non-web targets:
+  - Create `logs/` under app documents directory.
+  - Create one log file per app run using timestamp in file name.
+  - Persist request/response/error entries as JSON lines.
+- Web target:
+  - Emit the same log entries to browser console because file write is unavailable.
 
 ## Build & deploy preparation
 

@@ -12,8 +12,14 @@ Flutter mobile client prepared for local testing of the AI Jurisdiction chat wor
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/chat/sessions`
   - `POST /v1/chat/sessions/{session_id}/reply`
+  - `POST /v1/chat/sessions/{session_id}/stream` (AI User Simulator mode)
   - Header: `x-api-key: aijuris`
 - Default local API base URL for Android emulator: `http://10.0.2.2:8080`.
+- Includes AI Jurisdicta branded top logo and background graphic.
+- Communication/error logging:
+  - non-web targets write JSON log entries to a timestamped file in a `logs` folder
+  - file name pattern: `mobile_YYYYMMDD_HHMMSS.log`
+  - web target logs to browser console (file system write is not available on web)
 
 ## Run locally
 
@@ -56,6 +62,14 @@ Expected reply response includes:
 ```
 
 If a camera document is attached, the app includes the local file path in the message text for context.
+
+In `AI User Simulator` mode, submitting the instruction starts discussion streaming (SSE)
+the same way as the chat simulator by using `user_simulation_mode=AIUserSimulatorAgent`.
+
+## Log output location
+
+- Android/iOS/Desktop: app documents directory + `/logs/mobile_<timestamp>.log`
+- Web: browser console (no local file write support)
 
 ## Snapshot
 
