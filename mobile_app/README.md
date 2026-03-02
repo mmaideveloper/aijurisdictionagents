@@ -5,10 +5,13 @@ Flutter mobile client prepared for local testing of the AI Jurisdiction chat wor
 ## Features
 
 - Chat-bot style conversation UI.
+- Aijurisdicta login-themed background in the chat screen.
 - Add supporting documents using the device camera.
-- Switch responder mode:
+- Switch responder mode before the input box:
   - `AI User Simulator` (default for local tests)
   - `Real Person`
+- Select country/language before chatting (default: `Slovakia (SK)`).
+- Open generated summary/document PDF links directly from the mobile app once a session exists.
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/chat/sessions`
   - `POST /v1/chat/sessions/{session_id}/reply`
@@ -35,7 +38,9 @@ The app creates a chat session:
 
 ```json
 {
-  "discussion_type": "advice"
+  "discussion_type": "advice",
+  "country": "SK",
+  "language": "SK"
 }
 ```
 
@@ -56,6 +61,11 @@ Expected reply response includes:
 ```
 
 If a camera document is attached, the app includes the local file path in the message text for context.
+
+PDF exports are opened through:
+
+- `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary`
+- `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document`
 
 ## Snapshot
 

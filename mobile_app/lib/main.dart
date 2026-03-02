@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 const String _apiBaseUrl = String.fromEnvironment(
   'AIJ_API_BASE_URL',
@@ -12,6 +13,27 @@ const String _apiKey = String.fromEnvironment(
   'AIJ_API_KEY',
   defaultValue: 'aijuris',
 );
+
+enum ResponderMode { aiUserSimulator, realPerson }
+
+class LocaleOption {
+  const LocaleOption({
+    required this.countryCode,
+    required this.languageCode,
+    required this.label,
+  });
+
+  final String countryCode;
+  final String languageCode;
+  final String label;
+}
+
+const List<LocaleOption> _localeOptions = <LocaleOption>[
+  LocaleOption(countryCode: 'SK', languageCode: 'SK', label: 'Slovakia (SK)'),
+  LocaleOption(countryCode: 'CZ', languageCode: 'CS', label: 'Czechia (CS)'),
+  LocaleOption(countryCode: 'DE', languageCode: 'DE', label: 'Germany (DE)'),
+  LocaleOption(countryCode: 'US', languageCode: 'EN', label: 'United States (EN)'),
+];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,8 +60,6 @@ class AIJurisdictionMobileApp extends StatelessWidget {
   }
 }
 
-enum ResponderMode { aiUserSimulator, realPerson }
-
 class ChatMessage {
   const ChatMessage({
     required this.sender,
@@ -61,19 +81,28 @@ class ApiClient {
   final String apiKey;
   String? _sessionId;
 
+  String? get sessionId => _sessionId;
+
   Map<String, String> get _headers => <String, String>{
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
       };
 
-  Future<String> _createSession({required ResponderMode responderMode}) async {
+  Future<String> _createSession({
+    required ResponderMode responderMode,
+    required LocaleOption locale,
+  }) async {
     final discussionType = responderMode == ResponderMode.realPerson
         ? 'court'
         : 'advice';
     final sessionResponse = await http.post(
       baseUri.resolve('/v1/chat/sessions'),
       headers: _headers,
-      body: jsonEncode(<String, String>{'discussion_type': discussionType}),
+      body: jsonEncode(<String, String>{
+        'discussion_type': discussionType,
+        'country': locale.countryCode,
+        'language': locale.languageCode,
+      }),
     );
 
     if (sessionResponse.statusCode < 200 || sessionResponse.statusCode >= 300) {
@@ -90,12 +119,18 @@ class ApiClient {
     return sessionId;
   }
 
-  Future<String> _ensureSession({required ResponderMode responderMode}) async {
+  Future<String> _ensureSession({
+    required ResponderMode responderMode,
+    required LocaleOption locale,
+  }) async {
     final existing = _sessionId;
     if (existing != null && existing.isNotEmpty) {
       return existing;
     }
-    final created = await _createSession(responderMode: responderMode);
+    final created = await _createSession(
+      responderMode: responderMode,
+      locale: locale,
+    );
     _sessionId = created;
     return created;
   }
@@ -103,9 +138,13 @@ class ApiClient {
   Future<String> sendMessage({
     required String message,
     required ResponderMode responderMode,
+    required LocaleOption locale,
     String? documentPath,
   }) async {
-    final sessionId = await _ensureSession(responderMode: responderMode);
+    final sessionId = await _ensureSession(
+      responderMode: responderMode,
+      locale: locale,
+    );
     final content = documentPath == null
         ? message
         : '$message\n\n[Attached local document path: $documentPath]';
@@ -119,7 +158,10 @@ class ApiClient {
 
     if (response.statusCode == 404) {
       _sessionId = null;
-      final retrySessionId = await _ensureSession(responderMode: responderMode);
+      final retrySessionId = await _ensureSession(
+        responderMode: responderMode,
+        locale: locale,
+      );
       final retryResponse = await http.post(
         baseUri.resolve('/v1/chat/sessions/$retrySessionId/reply'),
         headers: _headers,
@@ -129,6 +171,16 @@ class ApiClient {
     }
 
     return _parseReply(response);
+  }
+
+  Uri exportPdfUrl({required String kind}) {
+    final sessionId = _sessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      throw Exception('No active session for PDF export.');
+    }
+    return baseUri.resolve(
+      '/v1/chat/sessions/$sessionId/export?format=pdf&kind=$kind',
+    );
   }
 
   String _parseReply(http.Response response) {
@@ -165,6 +217,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   late final ApiClient _apiClient;
   ResponderMode _responderMode = ResponderMode.aiUserSimulator;
+  LocaleOption _selectedLocale = _localeOptions.first;
   String? _documentPath;
   bool _isSending = false;
 
@@ -227,6 +280,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       final reply = await _apiClient.sendMessage(
         message: text,
         responderMode: _responderMode,
+        locale: _selectedLocale,
         documentPath: _documentPath,
       );
       setState(() {
@@ -249,6 +303,18 @@ class _ChatHomePageState extends State<ChatHomePage> {
     }
   }
 
+  Future<void> _openPdf(String kind) async {
+    try {
+      final url = _apiClient.exportPdfUrl(kind: kind);
+      final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        _showSnackbar('Could not open PDF link: $url');
+      }
+    } catch (error) {
+      _showSnackbar('PDF export unavailable: $error');
+    }
+  }
+
   void _showSnackbar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -258,142 +324,233 @@ class _ChatHomePageState extends State<ChatHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('AI Jurisdiction Assistant'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<ResponderMode>(
-                value: _responderMode,
-                onChanged: (mode) {
-                  if (mode == null) {
-                    return;
-                  }
-                  setState(() {
-                    _responderMode = mode;
-                  });
-                  _apiClient.resetSession();
-                },
-                items: const [
-                  DropdownMenuItem(
-                    value: ResponderMode.aiUserSimulator,
-                    child: Text('AI User Simulator (default)'),
+      appBar: AppBar(title: const Text('AI Jurisdiction Assistant')),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: <Color>[Color(0xFFF2F5FF), Color(0xFFE6ECFF), Colors.white],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.08,
+                  child: Center(
+                    child: Text(
+                      'AIJURISDICTA LOGIN',
+                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.5,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                  DropdownMenuItem(
-                    value: ResponderMode.realPerson,
-                    child: Text('Real Person'),
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (_documentPath != null)
-            MaterialBanner(
-              content: Text('Attached document: $_documentPath'),
-              leading: const Icon(Icons.attachment),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _documentPath = null;
-                    });
-                  },
-                  child: const Text('CLEAR'),
-                ),
-              ],
-            ),
-          Expanded(
-            child: ListView.builder(
-              reverse: true,
-              padding: const EdgeInsets.all(12),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[_messages.length - 1 - index];
-                final isUser = message.sender == 'user';
-                return Align(
-                  alignment:
-                      isUser ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 320),
-                    margin: const EdgeInsets.only(bottom: 10),
+            Column(
+              children: [
+                if (_documentPath != null)
+                  MaterialBanner(
+                    content: Text('Attached document: $_documentPath'),
+                    leading: const Icon(Icons.attachment),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _documentPath = null;
+                          });
+                        },
+                        child: const Text('CLEAR'),
+                      ),
+                    ],
+                  ),
+                Expanded(
+                  child: ListView.builder(
+                    reverse: true,
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isUser
-                          ? Theme.of(context).colorScheme.primaryContainer
-                          : Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isUser ? 'You' : 'Assistant',
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(message.content),
-                        if (message.documentPath != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              'Document: ${message.documentPath}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final message = _messages[_messages.length - 1 - index];
+                      final isUser = message.sender == 'user';
+                      return Align(
+                        alignment:
+                            isUser ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          constraints: const BoxConstraints(maxWidth: 320),
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isUser
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isUser ? 'You' : 'Assistant',
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(message.content),
+                              if (message.documentPath != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    'Document: ${message.documentPath}',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<ResponderMode>(
+                                value: _responderMode,
+                                decoration: const InputDecoration(
+                                  labelText: 'Responder',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                onChanged: (mode) {
+                                  if (mode == null) {
+                                    return;
+                                  }
+                                  setState(() {
+                                    _responderMode = mode;
+                                  });
+                                  _apiClient.resetSession();
+                                },
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: ResponderMode.aiUserSimulator,
+                                    child: Text('AI User Agent'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: ResponderMode.realPerson,
+                                    child: Text('Real User'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: DropdownButtonFormField<LocaleOption>(
+                                value: _selectedLocale,
+                                decoration: const InputDecoration(
+                                  labelText: 'Country / Language',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                onChanged: (locale) {
+                                  if (locale == null) {
+                                    return;
+                                  }
+                                  setState(() {
+                                    _selectedLocale = locale;
+                                  });
+                                  _apiClient.resetSession();
+                                },
+                                items: _localeOptions
+                                    .map(
+                                      (locale) => DropdownMenuItem<LocaleOption>(
+                                        value: locale,
+                                        child: Text(locale.label),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton.tonalIcon(
+                              onPressed: _apiClient.sessionId == null
+                                  ? null
+                                  : () => _openPdf('summary'),
+                              icon: const Icon(Icons.picture_as_pdf),
+                              label: const Text('View summary PDF'),
+                            ),
+                            FilledButton.tonalIcon(
+                              onPressed: _apiClient.sessionId == null
+                                  ? null
+                                  : () => _openPdf('document'),
+                              icon: const Icon(Icons.description),
+                              label: const Text('View document PDF'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            IconButton.filledTonal(
+                              onPressed: _captureDocument,
+                              icon: const Icon(Icons.document_scanner),
+                              tooltip: 'Capture document',
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: _inputController,
+                                minLines: 1,
+                                maxLines: 4,
+                                textInputAction: TextInputAction.send,
+                                onSubmitted: (_) => _sendMessage(),
+                                decoration: const InputDecoration(
+                                  hintText: 'Ask your legal question...',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton.filled(
+                              onPressed: _isSending ? null : _sendMessage,
+                              icon: _isSending
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.send),
+                              tooltip: 'Send to API',
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
-                );
-              },
+                ),
+              ],
             ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-              child: Row(
-                children: [
-                  IconButton.filledTonal(
-                    onPressed: _captureDocument,
-                    icon: const Icon(Icons.document_scanner),
-                    tooltip: 'Capture document',
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _inputController,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _sendMessage(),
-                      decoration: const InputDecoration(
-                        hintText: 'Ask your legal question...',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _isSending ? null : _sendMessage,
-                    icon: _isSending
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
-                    tooltip: 'Send to API',
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
