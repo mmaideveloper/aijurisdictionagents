@@ -99,6 +99,14 @@ so Flutter builds no longer fail on missing `locale` parameters.
 python examples/minimal_demo.py
 ```
 
+## CI environment API base URL
+
+GitHub Actions mobile builds now read repository/environment variable `API_BASE_URL`
+and pass it to Flutter as `--dart-define=AIJ_API_BASE_URL=...` for APK/Web builds.
+
+Set `API_BASE_URL` per GitHub Environment (for example dev/stage/prod) to target
+that environment's API during build.
+
 ## Snapshot
 
 Reference UI snapshot prepared for review of the mobile chat layout.
