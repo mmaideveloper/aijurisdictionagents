@@ -783,7 +783,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   end: Alignment.bottomCenter,
                   colors: <Color>[
                     Theme.of(context).colorScheme.surface,
-                    Theme.of(context).colorScheme.surfaceContainerLowest,
+                    Theme.of(context).colorScheme.surfaceVariant,
                   ],
                 ),
               ),
@@ -884,7 +884,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                               ? Theme.of(context).colorScheme.primaryContainer
                               : Theme.of(context)
                                   .colorScheme
-                                  .surfaceContainerHighest,
+                                  .surfaceVariant,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
@@ -917,7 +917,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
                   child: Row(
                     children: [
-                      IconButton.filledTonal(
+                      IconButton(
                         onPressed: _captureDocument,
                         icon: const Icon(Icons.document_scanner),
                         tooltip: 'Capture document',
@@ -940,7 +940,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton.filled(
+                      IconButton(
                         onPressed: _isSending ? null : _sendMessage,
                         icon: _isSending
                             ? const SizedBox(

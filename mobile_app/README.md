@@ -91,6 +91,8 @@ This repository version now wires locale selection into both:
 
 so Flutter builds no longer fail on missing `locale` parameters.
 
+- replaced newer Material color roles / filled icon button constructors with broadly supported equivalents to avoid SDK-version build breaks
+
 ## Minimal runnable example
 
 ```bash
