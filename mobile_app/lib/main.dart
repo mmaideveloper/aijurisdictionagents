@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 
 import 'logging/app_logger.dart';
 
@@ -704,18 +703,6 @@ class _ChatHomePageState extends State<ChatHomePage> {
     }
   }
 
-  Future<void> _openPdf(String kind) async {
-    try {
-      final url = _apiClient.exportPdfUrl(kind: kind);
-      final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
-      if (!launched && mounted) {
-        _showSnackbar('Could not open PDF link: $url');
-      }
-    } catch (error) {
-      _showSnackbar('PDF export unavailable: $error');
-    }
-  }
-
   void _showSnackbar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -783,7 +770,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   end: Alignment.bottomCenter,
                   colors: <Color>[
                     Theme.of(context).colorScheme.surface,
-                    Theme.of(context).colorScheme.surfaceVariant,
+                    Theme.of(context).colorScheme.surfaceContainerLowest,
                   ],
                 ),
               ),
@@ -884,7 +871,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                               ? Theme.of(context).colorScheme.primaryContainer
                               : Theme.of(context)
                                   .colorScheme
-                                  .surfaceVariant,
+                                  .surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(

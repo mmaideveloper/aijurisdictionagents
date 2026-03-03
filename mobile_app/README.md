@@ -91,7 +91,9 @@ This repository version now wires locale selection into both:
 
 so Flutter builds no longer fail on missing `locale` parameters.
 
-- replaced newer Material color roles / filled icon button constructors with broadly supported equivalents to avoid SDK-version build breaks
+- aligned Material color usage with Flutter 3.24 analyzer expectations to avoid CI analysis failures
+
+- pin `flutter_svg` to a Dart 3.5-compatible range (`^2.1.0`) to match Flutter 3.24.0 in CI and prevent pub solver failures
 
 ## Minimal runnable example
 
@@ -111,6 +113,12 @@ CI pins Flutter to `3.24.0` on the `stable` channel with dependency caching,
 uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`
 (clearing `.dart_tool` and local Pub hosted/git caches between retries) to reduce
 transient dependency installation failures caused by stale/corrupted cache state.
+
+- pin `camera` to `0.10.5+9` to avoid newer transitive Android plugin requirements that can break CI APK builds on default runners.
+
+CI auto-generates missing Flutter `android/` and `web/` platform scaffolding with
+`flutter create` before build steps, so APK/web builds work even when only
+shared Flutter sources are committed.
 
 ## Snapshot
 
