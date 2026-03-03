@@ -34,11 +34,11 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
           channel: stable
+          cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --verbose
 
       - name: Analyze
         run: flutter analyze
