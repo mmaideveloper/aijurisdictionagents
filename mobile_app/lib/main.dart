@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 
 import 'logging/app_logger.dart';
 
@@ -195,13 +194,16 @@ class ApiClient {
     }
   }
 
-  Future<String> _createSession({required ResponderMode responderMode}) async {
+  Future<String> _createSession({
+    required ResponderMode responderMode,
+    required LocaleOption locale,
+  }) async {
     final discussionType =
         responderMode == ResponderMode.realPerson ? 'court' : 'advice';
     final payload = <String, Object?>{
       'discussion_type': discussionType,
-      'country': _defaultCountry,
-      'language': _defaultLanguage,
+      'country': locale.countryCode,
+      'language': locale.languageCode,
     };
     final sessionResponse = await _postJson(
       path: '/v1/chat/sessions',
@@ -233,8 +235,8 @@ class ApiClient {
       <String, Object?>{
         'session_id': sessionId,
         'discussion_type': discussionType,
-        'country': _defaultCountry,
-        'language': _defaultLanguage,
+        'country': locale.countryCode,
+        'language': locale.languageCode,
       },
     );
     return sessionId;
@@ -287,7 +289,10 @@ class ApiClient {
         <String, Object?>{'session_id': sessionId},
       );
       _sessionId = null;
-      final retrySessionId = await _ensureSession(responderMode: responderMode);
+      final retrySessionId = await _ensureSession(
+        responderMode: responderMode,
+        locale: locale,
+      );
       final retryResponse = await _postJson(
         path: '/v1/chat/sessions/$retrySessionId/reply',
         action: 'reply_retry',
@@ -332,6 +337,7 @@ class ApiClient {
 
   Stream<StreamEvent> startDiscussionStream({
     required String instruction,
+    required LocaleOption locale,
     required double questionTimeoutSeconds,
     required double maxDiscussionMinutes,
     required double communicationMinutes,
@@ -340,6 +346,7 @@ class ApiClient {
     _sessionId = null;
     final sessionId = await _ensureSession(
       responderMode: ResponderMode.aiUserSimulator,
+      locale: locale,
     );
     final payload = <String, Object?>{
       'instruction': instruction,
@@ -512,13 +519,19 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   late final ApiClient _apiClient;
   ResponderMode _responderMode = ResponderMode.aiUserSimulator;
-  LocaleOption _selectedLocale = _localeOptions.first;
+  late LocaleOption _selectedLocale;
   String? _documentPath;
   bool _isSending = false;
 
   @override
   void initState() {
     super.initState();
+    _selectedLocale = _localeOptions.firstWhere(
+      (option) =>
+          option.countryCode == _defaultCountry &&
+          option.languageCode == _defaultLanguage,
+      orElse: () => _localeOptions.first,
+    );
     _apiClient = ApiClient(
       baseUri: Uri.parse(widget.apiBaseUrl),
       apiKey: _apiKey,
@@ -610,6 +623,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
         );
         await for (final event in _apiClient.startDiscussionStream(
           instruction: text,
+          locale: _selectedLocale,
           questionTimeoutSeconds: _questionTimeoutSeconds,
           maxDiscussionMinutes: _maxDiscussionMinutes,
           communicationMinutes: _communicationMinutes,
@@ -647,6 +661,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
         final reply = await _apiClient.sendMessage(
           message: text,
           responderMode: _responderMode,
+          locale: _selectedLocale,
           documentPath: _documentPath,
         );
         await widget.logger.info(
@@ -685,18 +700,6 @@ class _ChatHomePageState extends State<ChatHomePage> {
           _isSending = false;
         });
       }
-    }
-  }
-
-  Future<void> _openPdf(String kind) async {
-    try {
-      final url = _apiClient.exportPdfUrl(kind: kind);
-      final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
-      if (!launched && mounted) {
-        _showSnackbar('Could not open PDF link: $url');
-      }
-    } catch (error) {
-      _showSnackbar('PDF export unavailable: $error');
     }
   }
 
@@ -802,6 +805,47 @@ class _ChatHomePageState extends State<ChatHomePage> {
                     ),
                   ],
                 ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: Row(
+                  children: [
+                    const Text('Locale:'),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButton<LocaleOption>(
+                        isExpanded: true,
+                        value: _selectedLocale,
+                        onChanged: (locale) {
+                          if (locale == null) {
+                            return;
+                          }
+                          setState(() {
+                            _selectedLocale = locale;
+                          });
+                          unawaited(
+                            widget.logger.info(
+                              'Locale changed',
+                              <String, Object?>{
+                                'country': locale.countryCode,
+                                'language': locale.languageCode,
+                              },
+                            ),
+                          );
+                          _apiClient.resetSession();
+                        },
+                        items: _localeOptions
+                            .map(
+                              (locale) => DropdownMenuItem<LocaleOption>(
+                                value: locale,
+                                child: Text(locale.label),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               Expanded(
                 child: ListView.builder(
                   reverse: true,
@@ -860,7 +904,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
                   child: Row(
                     children: [
-                      IconButton.filledTonal(
+                      IconButton(
                         onPressed: _captureDocument,
                         icon: const Icon(Icons.document_scanner),
                         tooltip: 'Capture document',
@@ -883,7 +927,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton.filled(
+                      IconButton(
                         onPressed: _isSending ? null : _sendMessage,
                         icon: _isSending
                             ? const SizedBox(

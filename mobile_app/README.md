@@ -80,6 +80,46 @@ the same way as the chat simulator by using `user_simulation_mode=AIUserSimulato
 - Android/iOS/Desktop: app documents directory + `/logs/mobile_<timestamp>.log`
 - Web: browser console (no local file write support)
 
+## Troubleshooting build failures
+
+If the app fails to compile with named-parameter errors around locale/session creation,
+make sure you are on a revision where locale is passed through all chat session calls.
+This repository version now wires locale selection into both:
+
+- `sendMessage(...)`
+- `startDiscussionStream(...)`
+
+so Flutter builds no longer fail on missing `locale` parameters.
+
+- aligned Material color usage with Flutter 3.24 analyzer expectations to avoid CI analysis failures
+
+- pin `flutter_svg` to a Dart 3.5-compatible range (`^2.1.0`) to match Flutter 3.24.0 in CI and prevent pub solver failures
+
+## Minimal runnable example
+
+```bash
+python examples/minimal_demo.py
+```
+
+## CI environment API base URL
+
+GitHub Actions mobile builds now read repository/environment variable `API_BASE_URL`
+and pass it to Flutter as `--dart-define=AIJ_API_BASE_URL=...` for APK/Web builds.
+
+Set `API_BASE_URL` per GitHub Environment (for example dev/stage/prod) to target
+that environment's API during build.
+
+CI pins Flutter to `3.24.0` on the `stable` channel with dependency caching,
+uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`
+(clearing `.dart_tool` and local Pub hosted/git caches between retries) to reduce
+transient dependency installation failures caused by stale/corrupted cache state.
+
+- pin `camera` to `0.10.5+9` to avoid newer transitive Android plugin requirements that can break CI APK builds on default runners.
+
+CI auto-generates missing Flutter `android/` and `web/` platform scaffolding with
+`flutter create` before build steps, so APK/web builds work even when only
+shared Flutter sources are committed.
+
 ## Snapshot
 
 Reference UI snapshot prepared for review of the mobile chat layout.
