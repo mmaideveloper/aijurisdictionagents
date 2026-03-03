@@ -107,8 +107,9 @@ and pass it to Flutter as `--dart-define=AIJ_API_BASE_URL=...` for APK/Web build
 Set `API_BASE_URL` per GitHub Environment (for example dev/stage/prod) to target
 that environment's API during build.
 
-CI uses the latest `stable` Flutter channel with dependency caching to reduce
-SDK/dependency resolution failures during `flutter pub get`.
+CI pins Flutter to `3.24.5` on the `stable` channel with dependency caching, and
+uses a 3-attempt retry loop for `flutter pub get` to reduce transient dependency
+installation failures.
 
 ## Snapshot
 

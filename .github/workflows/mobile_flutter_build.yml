@@ -34,11 +34,25 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.24.5'
           channel: stable
           cache: true
 
-      - name: Install dependencies
-        run: flutter pub get --verbose
+      - name: Install dependencies (retry)
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "flutter pub get attempt $attempt/3"
+            if flutter pub get --verbose; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Retrying dependency install in 15s..."
+              sleep 15
+            fi
+          done
+          echo "flutter pub get failed after 3 attempts" >&2
+          exit 1
 
       - name: Analyze
         run: flutter analyze
