@@ -114,6 +114,10 @@ uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`
 (clearing `.dart_tool` and local Pub hosted/git caches between retries) to reduce
 transient dependency installation failures caused by stale/corrupted cache state.
 
+CI auto-generates missing Flutter `android/` and `web/` platform scaffolding with
+`flutter create` before build steps, so APK/web builds work even when only
+shared Flutter sources are committed.
+
 ## Snapshot
 
 Reference UI snapshot prepared for review of the mobile chat layout.

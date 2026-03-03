@@ -66,6 +66,15 @@ jobs:
           echo "flutter pub get failed after 3 attempts" >&2
           exit 1
 
+
+      - name: Generate missing platform scaffolding
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d android ] || [ ! -d web ]; then
+            flutter create . --platforms=android,web --project-name ai_jurisdiction_mobile
+          fi
+
       - name: Analyze
         run: flutter analyze
 
