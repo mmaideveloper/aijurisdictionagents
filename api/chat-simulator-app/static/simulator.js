@@ -18,12 +18,32 @@ const userReplyInput = document.getElementById("userReplyInput");
 const userSimulationModeInput = document.getElementById("userSimulationMode");
 const communicationMinutesInput = document.getElementById("communicationMinutes");
 const defaultsUrl = "/static/default-inputs.json";
+const defaultLanguageCode = "SK";
+const welcomeMessagesByLanguage = {
+  SK: "Ahoj, som Jurisdicta. Pomozem vam s vasim pripadom. Popiste svoj problem a nahrajte relevantnu dokumentaciu.",
+  EN: "Hello, I am Jurisdicta. I can help you with your case. Please describe your problem and upload relevant documentation.",
+  GE: "Hallo, ich bin Jurisdicta. Ich kann Ihnen bei Ihrem Fall helfen. Bitte beschreiben Sie Ihr Problem und laden Sie relevante Unterlagen hoch.",
+};
 
 let sessionId = null;
 let pdfRequestedByUser = false;
 let thankYouDetected = false;
 let autoPdfDownloaded = false;
 let documentRequestedByUser = false;
+
+function normalizeLanguageCode(languageCode) {
+  const normalized = String(languageCode || "").trim().toUpperCase();
+  if (normalized === "DE") return "GE";
+  if (normalized === "SK" || normalized === "EN" || normalized === "GE") {
+    return normalized;
+  }
+  return defaultLanguageCode;
+}
+
+function welcomeMessageForLanguage(languageCode) {
+  const normalized = normalizeLanguageCode(languageCode);
+  return welcomeMessagesByLanguage[normalized] || welcomeMessagesByLanguage[defaultLanguageCode];
+}
 
 function clearAgentQuestionsLog() {
   if (!agentQuestionsLog) return;
@@ -77,6 +97,31 @@ function clearChatPlaceholder() {
   if (placeholder) placeholder.remove();
 }
 
+function createWelcomeMessage() {
+  const normalizedLanguage = normalizeLanguageCode(languageInput.value);
+  languageInput.value = normalizedLanguage;
+  return {
+    role: "assistant",
+    content: welcomeMessageForLanguage(normalizedLanguage),
+    agent_name: "Jurisdicta",
+    _welcome: true,
+  };
+}
+
+function isWelcomeOnlyTranscript() {
+  const chatMessages = chatTranscriptEl.querySelectorAll(".chat-message");
+  return chatMessages.length === 1 && chatMessages[0].dataset.welcome === "true";
+}
+
+function renderWelcomeMessage() {
+  pdfRequestedByUser = false;
+  thankYouDetected = false;
+  documentRequestedByUser = false;
+  chatTranscriptEl.innerHTML = "";
+  clearAgentQuestionsLog();
+  appendChatMessage(createWelcomeMessage());
+}
+
 function messageSpeaker(message) {
   if (message.role === "user") return "End user";
   if (message.agent_name) return `Core (${message.agent_name})`;
@@ -125,6 +170,9 @@ function trackUserSignals(message) {
 function buildChatMessageNode(message) {
   const article = document.createElement("article");
   article.className = `chat-message ${isUserMessage(message) ? "user" : "core"}`;
+  if (message && message._welcome === true) {
+    article.dataset.welcome = "true";
+  }
 
   const meta = document.createElement("span");
   meta.className = "chat-meta";
@@ -153,6 +201,10 @@ function renderChatMessages(messages) {
   documentRequestedByUser = false;
   chatTranscriptEl.innerHTML = "";
   clearAgentQuestionsLog();
+  if (!Array.isArray(messages) || messages.length === 0) {
+    appendChatMessage(createWelcomeMessage());
+    return;
+  }
   for (const message of messages) {
     trackUserSignals(message);
     if (message && message.role === "assistant") {
@@ -187,7 +239,7 @@ async function applyDefaultInputs() {
     const defaults = await response.json();
 
     if (typeof defaults.language === "string") {
-      languageInput.value = defaults.language;
+      languageInput.value = normalizeLanguageCode(defaults.language);
     }
     if (typeof defaults.instruction === "string") {
       instructionInput.value = defaults.instruction;
@@ -195,6 +247,10 @@ async function applyDefaultInputs() {
   } catch {
     // Keep current values if defaults file is missing or invalid.
   }
+  if (!languageInput.value.trim()) {
+    languageInput.value = defaultLanguageCode;
+  }
+  languageInput.value = normalizeLanguageCode(languageInput.value);
 }
 
 function requestHeaders(includeContentType = true) {
@@ -223,9 +279,11 @@ async function parseResponse(response) {
 }
 
 async function createSession() {
+  const normalizedLanguage = normalizeLanguageCode(languageInput.value);
+  languageInput.value = normalizedLanguage;
   const payload = {
     country: countryInput.value.trim() || "SK",
-    language: languageInput.value.trim() || null,
+    language: normalizedLanguage,
     discussion_type: discussionTypeInput.value,
   };
   const response = await fetch(`${getBaseUrl()}/v1/chat/sessions`, {
@@ -444,8 +502,7 @@ function clearSession() {
   clearAgentQuestionsLog();
   messagesEl.textContent = "[]";
   resultEl.textContent = "No result fetched yet.";
-  chatTranscriptEl.innerHTML = "";
-  ensureChatPlaceholder();
+  renderWelcomeMessage();
   userReplyInput.value = "";
 }
 
@@ -497,8 +554,17 @@ userSimulationModeInput.addEventListener("change", () => {
   userReplyInput.required = readUserMode;
   userReplyInput.disabled = !readUserMode;
 });
+languageInput.addEventListener("input", () => {
+  languageInput.value = normalizeLanguageCode(languageInput.value);
+  if (!sessionId || isWelcomeOnlyTranscript()) {
+    renderWelcomeMessage();
+  }
+});
 
-ensureChatPlaceholder();
-clearAgentQuestionsLog();
-applyDefaultInputs();
-userSimulationModeInput.dispatchEvent(new Event("change"));
+async function initializeSimulator() {
+  await applyDefaultInputs();
+  renderWelcomeMessage();
+  userSimulationModeInput.dispatchEvent(new Event("change"));
+}
+
+initializeSimulator();

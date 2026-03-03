@@ -14,6 +14,7 @@ Open `http://localhost:8090/chat-simulator` and set **API base URL** to your API
 
 The simulator now supports:
 - creating chat sessions with country/language/discussion type
+- showing an initial localized Jurisdicta welcome message in the End User Chat View (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German)
 - submitting a case instruction and uploading text documents
 - starting `POST /v1/chat/sessions/{session_id}/stream` and viewing streamed events in real time
 - showing a dedicated **AI Agent Questions** log (question-only view extracted from assistant turns)

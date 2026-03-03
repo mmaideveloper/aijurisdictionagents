@@ -8,6 +8,8 @@ Flutter mobile client prepared for local testing of the AI Jurisdiction chat wor
 - Aijurisdicta login-themed background in the chat screen.
 - Add supporting documents using the device camera.
 - Switch responder mode before the input box:
+- Initial localized Jurisdicta welcome message shown on app start.
+- Language selection in app bar (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
   - `AI User Simulator` (default for local tests)
   - `Real Person`
 - Select country/language before chatting (default: `Slovakia (SK)`).

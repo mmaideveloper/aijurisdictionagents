@@ -25,6 +25,37 @@ const String _defaultLanguage = String.fromEnvironment(
   'AIJ_DEFAULT_LANGUAGE',
   defaultValue: 'SK',
 );
+const String _fallbackLanguageCode = 'SK';
+
+const Map<String, String> _welcomeMessagesByLanguage = <String, String>{
+  'SK':
+      'Ahoj, som Jurisdicta. Pomozem vam s vasim pripadom. Popiste svoj problem a nahrajte relevantnu dokumentaciu.',
+  'EN':
+      'Hello, I am Jurisdicta. I can help you with your case. Please describe your problem and upload relevant documentation.',
+  'GE':
+      'Hallo, ich bin Jurisdicta. Ich kann Ihnen bei Ihrem Fall helfen. Bitte beschreiben Sie Ihr Problem und laden Sie relevante Unterlagen hoch.',
+};
+
+String _normalizeLanguageCode(String languageCode) {
+  final normalized = languageCode.trim().toUpperCase();
+  if (normalized == 'DE') {
+    return 'GE';
+  }
+  switch (normalized) {
+    case 'SK':
+    case 'EN':
+    case 'GE':
+      return normalized;
+    default:
+      return _fallbackLanguageCode;
+  }
+}
+
+String _welcomeMessageForLanguage(String languageCode) {
+  final normalized = _normalizeLanguageCode(languageCode);
+  return _welcomeMessagesByLanguage[normalized] ??
+      _welcomeMessagesByLanguage[_fallbackLanguageCode]!;
+}
 
 String _defaultApiBaseUrl() {
   if (_apiBaseUrlOverride.trim().isNotEmpty) {
@@ -54,7 +85,8 @@ const List<LocaleOption> _localeOptions = <LocaleOption>[
   LocaleOption(countryCode: 'SK', languageCode: 'SK', label: 'Slovakia (SK)'),
   LocaleOption(countryCode: 'CZ', languageCode: 'CS', label: 'Czechia (CS)'),
   LocaleOption(countryCode: 'DE', languageCode: 'DE', label: 'Germany (DE)'),
-  LocaleOption(countryCode: 'US', languageCode: 'EN', label: 'United States (EN)'),
+  LocaleOption(
+      countryCode: 'US', languageCode: 'EN', label: 'United States (EN)'),
 ];
 
 Future<void> main() async {
@@ -508,16 +540,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
   static const double _communicationMinutes = 3;
 
   final TextEditingController _inputController = TextEditingController();
-  final List<ChatMessage> _messages = <ChatMessage>[
-    const ChatMessage(
-      role: 'assistant',
-      content:
-          'Welcome! Upload a document photo and start your legal discussion.',
-      agentName: 'System',
-    ),
-  ];
 
   late final ApiClient _apiClient;
+  late final List<ChatMessage> _messages;
   ResponderMode _responderMode = ResponderMode.aiUserSimulator;
   late LocaleOption _selectedLocale;
   String? _documentPath;
@@ -537,14 +562,50 @@ class _ChatHomePageState extends State<ChatHomePage> {
       apiKey: _apiKey,
       logger: widget.logger,
     );
+    final welcomeLanguage =
+        _normalizeLanguageCode(_selectedLocale.languageCode);
+    _messages = <ChatMessage>[
+      ChatMessage(
+        role: 'assistant',
+        content: _welcomeMessageForLanguage(welcomeLanguage),
+        agentName: 'Jurisdicta',
+      ),
+    ];
+    unawaited(
+      widget.logger.info(
+        'Initial welcome message added',
+        <String, Object?>{'language': welcomeLanguage},
+      ),
+    );
     unawaited(
       widget.logger.info(
         'Chat home initialized',
         <String, Object?>{
           'api_base_url': widget.apiBaseUrl,
           'log_file': widget.logger.logFilePath,
+          'language': welcomeLanguage,
         },
       ),
+    );
+  }
+
+  void _updateWelcomeMessageForLocale() {
+    if (_messages.isEmpty) {
+      return;
+    }
+    final firstMessage = _messages.first;
+    final isInitialWelcome = firstMessage.role == 'assistant' &&
+        firstMessage.agentName == 'Jurisdicta' &&
+        firstMessage.createdAt == null;
+    if (!isInitialWelcome) {
+      return;
+    }
+    final welcomeLanguage =
+        _normalizeLanguageCode(_selectedLocale.languageCode);
+    _messages[0] = ChatMessage(
+      role: 'assistant',
+      content: _welcomeMessageForLanguage(welcomeLanguage),
+      agentName: 'Jurisdicta',
     );
   }
 
@@ -821,6 +882,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                           }
                           setState(() {
                             _selectedLocale = locale;
+                            _updateWelcomeMessageForLocale();
                           });
                           unawaited(
                             widget.logger.info(
