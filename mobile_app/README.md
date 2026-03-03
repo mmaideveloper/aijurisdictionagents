@@ -118,6 +118,10 @@ CI auto-generates missing Flutter `android/` and `web/` platform scaffolding wit
 `flutter create` before build steps, so APK/web builds work even when only
 shared Flutter sources are committed.
 
+CI also normalizes generated Android config for current plugin requirements
+(`compileSdk = 35`, Kotlin plugin `1.9.24`) and ensures Android SDK 35
+components are installed before APK build.
+
 ## Snapshot
 
 Reference UI snapshot prepared for review of the mobile chat layout.

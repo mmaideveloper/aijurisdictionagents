@@ -75,6 +75,30 @@ jobs:
             flutter create . --platforms=android,web --project-name ai_jurisdiction_mobile
           fi
 
+
+      - name: Normalize Android build config
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f android/settings.gradle ]; then
+            sed -i -E 's/id "org.jetbrains.kotlin.android" version "[^"]+"/id "org.jetbrains.kotlin.android" version "1.9.24"/' android/settings.gradle
+          fi
+          if [ -f android/app/build.gradle ]; then
+            if grep -q 'compileSdk = flutter.compileSdkVersion' android/app/build.gradle; then
+              sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 35/' android/app/build.gradle
+            elif grep -q 'compileSdkVersion flutter.compileSdkVersion' android/app/build.gradle; then
+              sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
+            fi
+          fi
+
+      - name: Ensure Android SDK 35 components
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
       - name: Analyze
         run: flutter analyze
 
