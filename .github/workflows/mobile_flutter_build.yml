@@ -34,9 +34,37 @@ jobs:
         with:
           flutter-version: '3.24.0'
           channel: stable
+          cache: true
 
-      - name: Install dependencies
-        run: flutter pub get
+      - name: Resolve API base URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_BASE_URL_VALUE='${{ vars.API_BASE_URL }}'
+          if [ -z "$API_BASE_URL_VALUE" ]; then
+            API_BASE_URL_VALUE='http://10.0.2.2:8080'
+          fi
+          echo "API_BASE_URL=$API_BASE_URL_VALUE" >> "$GITHUB_ENV"
+          echo "Using API_BASE_URL=$API_BASE_URL_VALUE"
+
+      - name: Install dependencies (retry)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "flutter pub get attempt $attempt/3"
+            if flutter pub get --verbose; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Clearing local resolution cache before retry..."
+              rm -rf .dart_tool
+              rm -rf "$HOME/.pub-cache/hosted" "$HOME/.pub-cache/git"
+              sleep 15
+            fi
+          done
+          echo "flutter pub get failed after 3 attempts" >&2
+          exit 1
 
       - name: Analyze
         run: flutter analyze
@@ -45,7 +73,7 @@ jobs:
         run: flutter test
 
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --dart-define=AIJ_API_BASE_URL=$API_BASE_URL
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -54,7 +82,7 @@ jobs:
           path: mobile_app/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Build Web bundle
-        run: flutter build web --release
+        run: flutter build web --release --dart-define=AIJ_API_BASE_URL=$API_BASE_URL
 
       - name: Upload Web artifact
         uses: actions/upload-artifact@v4
