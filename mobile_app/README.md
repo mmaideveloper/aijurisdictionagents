@@ -91,7 +91,7 @@ This repository version now wires locale selection into both:
 
 so Flutter builds no longer fail on missing `locale` parameters.
 
-- replaced newer Material color roles / filled icon button constructors with broadly supported equivalents to avoid SDK-version build breaks
+- aligned Material color usage with Flutter 3.24 analyzer expectations to avoid CI analysis failures
 
 - pin `flutter_svg` to a Dart 3.5-compatible range (`^2.1.0`) to match Flutter 3.24.0 in CI and prevent pub solver failures
 

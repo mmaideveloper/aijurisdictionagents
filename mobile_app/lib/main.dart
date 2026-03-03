@@ -770,7 +770,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   end: Alignment.bottomCenter,
                   colors: <Color>[
                     Theme.of(context).colorScheme.surface,
-                    Theme.of(context).colorScheme.surfaceVariant,
+                    Theme.of(context).colorScheme.surfaceContainerLowest,
                   ],
                 ),
               ),
@@ -871,7 +871,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                               ? Theme.of(context).colorScheme.primaryContainer
                               : Theme.of(context)
                                   .colorScheme
-                                  .surfaceVariant,
+                                  .surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
