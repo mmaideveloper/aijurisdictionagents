@@ -36,16 +36,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Cache pub dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            mobile_app/.dart_tool
-          key: ${{ runner.os }}-pub-${{ hashFiles('mobile_app/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
-
       - name: Resolve API base URL
         shell: bash
         run: |
@@ -67,8 +57,9 @@ jobs:
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
-              echo "Cleaning dart tool cache before retry..."
+              echo "Clearing local resolution cache before retry..."
               rm -rf .dart_tool
+              rm -rf "$HOME/.pub-cache/hosted" "$HOME/.pub-cache/git"
               sleep 15
             fi
           done

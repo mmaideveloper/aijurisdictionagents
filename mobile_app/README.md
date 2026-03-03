@@ -108,9 +108,9 @@ Set `API_BASE_URL` per GitHub Environment (for example dev/stage/prod) to target
 that environment's API during build.
 
 CI pins Flutter to `3.24.0` on the `stable` channel with dependency caching,
-adds an explicit pub cache restore step keyed by `pubspec.lock`, and uses a
-3-attempt retry loop for `flutter pub get` (clearing `.dart_tool` between retries)
-to reduce transient dependency installation failures.
+uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`
+(clearing `.dart_tool` and local Pub hosted/git caches between retries) to reduce
+transient dependency installation failures caused by stale/corrupted cache state.
 
 ## Snapshot
 
