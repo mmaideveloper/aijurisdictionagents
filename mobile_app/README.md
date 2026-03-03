@@ -114,13 +114,11 @@ uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`
 (clearing `.dart_tool` and local Pub hosted/git caches between retries) to reduce
 transient dependency installation failures caused by stale/corrupted cache state.
 
+- pin `camera` to `0.10.5+9` to avoid newer transitive Android plugin requirements that can break CI APK builds on default runners.
+
 CI auto-generates missing Flutter `android/` and `web/` platform scaffolding with
 `flutter create` before build steps, so APK/web builds work even when only
 shared Flutter sources are committed.
-
-CI also normalizes generated Android config for current plugin requirements
-(`compileSdk = 35`, Kotlin plugin `1.9.24`) and ensures Android SDK 35
-components are installed before APK build.
 
 ## Snapshot
 
