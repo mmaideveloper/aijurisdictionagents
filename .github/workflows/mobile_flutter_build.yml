@@ -1,6 +1,7 @@
 name: mobile_flutter_build
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
