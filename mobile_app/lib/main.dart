@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import 'logging/app_logger.dart';
 
@@ -35,6 +36,27 @@ String _defaultApiBaseUrl() {
   }
   return 'http://10.0.2.2:8080';
 }
+
+enum ResponderMode { aiUserSimulator, realPerson }
+
+class LocaleOption {
+  const LocaleOption({
+    required this.countryCode,
+    required this.languageCode,
+    required this.label,
+  });
+
+  final String countryCode;
+  final String languageCode;
+  final String label;
+}
+
+const List<LocaleOption> _localeOptions = <LocaleOption>[
+  LocaleOption(countryCode: 'SK', languageCode: 'SK', label: 'Slovakia (SK)'),
+  LocaleOption(countryCode: 'CZ', languageCode: 'CS', label: 'Czechia (CS)'),
+  LocaleOption(countryCode: 'DE', languageCode: 'DE', label: 'Germany (DE)'),
+  LocaleOption(countryCode: 'US', languageCode: 'EN', label: 'United States (EN)'),
+];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -84,8 +106,6 @@ class AIJurisdictionMobileApp extends StatelessWidget {
   }
 }
 
-enum ResponderMode { aiUserSimulator, realPerson }
-
 class ChatMessage {
   const ChatMessage({
     required this.role,
@@ -117,6 +137,8 @@ class ApiClient {
   final String apiKey;
   final AppLogger logger;
   String? _sessionId;
+
+  String? get sessionId => _sessionId;
 
   Map<String, String> get _headers => <String, String>{
         'Content-Type': 'application/json',
@@ -218,7 +240,10 @@ class ApiClient {
     return sessionId;
   }
 
-  Future<String> _ensureSession({required ResponderMode responderMode}) async {
+  Future<String> _ensureSession({
+    required ResponderMode responderMode,
+    required LocaleOption locale,
+  }) async {
     final existing = _sessionId;
     if (existing != null && existing.isNotEmpty) {
       await logger.info(
@@ -227,7 +252,10 @@ class ApiClient {
       );
       return existing;
     }
-    final created = await _createSession(responderMode: responderMode);
+    final created = await _createSession(
+      responderMode: responderMode,
+      locale: locale,
+    );
     _sessionId = created;
     return created;
   }
@@ -235,9 +263,13 @@ class ApiClient {
   Future<String> sendMessage({
     required String message,
     required ResponderMode responderMode,
+    required LocaleOption locale,
     String? documentPath,
   }) async {
-    final sessionId = await _ensureSession(responderMode: responderMode);
+    final sessionId = await _ensureSession(
+      responderMode: responderMode,
+      locale: locale,
+    );
     final content = documentPath == null
         ? message
         : '$message\n\n[Attached local document path: $documentPath]';
@@ -480,6 +512,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   late final ApiClient _apiClient;
   ResponderMode _responderMode = ResponderMode.aiUserSimulator;
+  LocaleOption _selectedLocale = _localeOptions.first;
   String? _documentPath;
   bool _isSending = false;
 
@@ -652,6 +685,18 @@ class _ChatHomePageState extends State<ChatHomePage> {
           _isSending = false;
         });
       }
+    }
+  }
+
+  Future<void> _openPdf(String kind) async {
+    try {
+      final url = _apiClient.exportPdfUrl(kind: kind);
+      final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        _showSnackbar('Could not open PDF link: $url');
+      }
+    } catch (error) {
+      _showSnackbar('PDF export unavailable: $error');
     }
   }
 
