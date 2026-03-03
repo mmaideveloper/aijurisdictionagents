@@ -14,8 +14,6 @@ on:
 jobs:
   build-mobile:
     runs-on: ubuntu-latest
-    env:
-      API_BASE_URL: ${{ vars.API_BASE_URL || 'http://10.0.2.2:8080' }}
 
     defaults:
       run:
@@ -34,11 +32,33 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.24.0'
           channel: stable
           cache: true
 
+      - name: Cache pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            mobile_app/.dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('mobile_app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Resolve API base URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_BASE_URL_VALUE='${{ vars.API_BASE_URL }}'
+          if [ -z "$API_BASE_URL_VALUE" ]; then
+            API_BASE_URL_VALUE='http://10.0.2.2:8080'
+          fi
+          echo "API_BASE_URL=$API_BASE_URL_VALUE" >> "$GITHUB_ENV"
+          echo "Using API_BASE_URL=$API_BASE_URL_VALUE"
+
       - name: Install dependencies (retry)
+        shell: bash
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
@@ -47,7 +67,8 @@ jobs:
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
-              echo "Retrying dependency install in 15s..."
+              echo "Cleaning dart tool cache before retry..."
+              rm -rf .dart_tool
               sleep 15
             fi
           done
@@ -59,9 +80,6 @@ jobs:
 
       - name: Run tests
         run: flutter test
-
-      - name: Print build API base URL
-        run: echo "Using API_BASE_URL=$API_BASE_URL"
 
       - name: Build APK
         run: flutter build apk --release --dart-define=AIJ_API_BASE_URL=$API_BASE_URL
