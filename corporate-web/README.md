@@ -24,6 +24,17 @@ python -m http.server 8001
 The page ships with Slovak (default), German, and English translations. Use the `SK/DE/EN` toggle in the header.
 The selection is stored in `localStorage` (`aj_lang`).
 
+## Branding assets
+
+The site now uses `assets/branding.png` as the source sheet for:
+
+- `assets/brand-lockup.png` (logo + wordmark)
+- `assets/brand-banner.png` (hero/visual banner)
+- `assets/icon-ai.png`
+- `assets/icon-scale.png`
+- `assets/icon-doc.png`
+- `assets/icon-court.png`
+
 ## Legal links
 
 Footer now includes multilingual links for:
