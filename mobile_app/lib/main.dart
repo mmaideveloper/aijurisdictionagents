@@ -126,7 +126,7 @@ class AIJurisdictionMobileApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'AI Jurisdiction Mobile',
+      title: 'AIJurisDictA - AI Juris Digital Agent',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
@@ -548,6 +548,14 @@ class _ChatHomePageState extends State<ChatHomePage> {
   String? _documentPath;
   bool _isSending = false;
 
+  bool get _showLocalResponderSwitch {
+    final host = Uri.parse(widget.apiBaseUrl).host.toLowerCase();
+    return host == 'localhost' ||
+        host == '127.0.0.1' ||
+        host == '10.0.2.2' ||
+        host == '0.0.0.0';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -773,54 +781,6 @@ class _ChatHomePageState extends State<ChatHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            SvgPicture.asset(
-              'assets/branding/ai-logo.svg',
-              width: 26,
-              height: 26,
-            ),
-            const SizedBox(width: 8),
-            const Text('AI Jurisdicta Assistant'),
-          ],
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<ResponderMode>(
-                value: _responderMode,
-                onChanged: (mode) {
-                  if (mode == null) {
-                    return;
-                  }
-                  setState(() {
-                    _responderMode = mode;
-                  });
-                  unawaited(
-                    widget.logger.info(
-                      'Responder mode changed',
-                      <String, Object?>{'responder_mode': mode.name},
-                    ),
-                  );
-                  _apiClient.resetSession();
-                },
-                items: const [
-                  DropdownMenuItem(
-                    value: ResponderMode.aiUserSimulator,
-                    child: Text('AI User Simulator (default)'),
-                  ),
-                  DropdownMenuItem(
-                    value: ResponderMode.realPerson,
-                    child: Text('Real Person'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
       body: Stack(
         children: [
           Positioned.fill(
@@ -830,8 +790,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: <Color>[
-                    Theme.of(context).colorScheme.surface,
-                    Theme.of(context).colorScheme.surfaceContainerLowest,
+                    const Color(0xFF041B59),
+                    const Color(0xFF1388E9),
+                    const Color(0xFF041B59),
                   ],
                 ),
               ),
@@ -841,13 +802,61 @@ class _ChatHomePageState extends State<ChatHomePage> {
             child: Opacity(
               opacity: 0.08,
               child: SvgPicture.asset(
-                'assets/branding/hero-graph.svg',
+                'assets/branding/hero-footer.svg',
                 fit: BoxFit.cover,
               ),
             ),
           ),
-          Column(
-            children: [
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.94),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        SvgPicture.asset(
+                          'assets/branding/ai-logo.svg',
+                          width: 48,
+                          height: 48,
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Login',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0A2F6B),
+                            ),
+                          ),
+                        ),
+                        FilledButton.tonal(
+                          onPressed: () => _showSnackbar('Login UI placeholder'),
+                          child: const Text('Sign in'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: const [
+                      _BrandIcon(path: 'assets/branding/icon-ai-head.svg'),
+                      _BrandIcon(path: 'assets/branding/icon-scale.svg'),
+                      _BrandIcon(path: 'assets/branding/icon-doc-check.svg'),
+                      _BrandIcon(path: 'assets/branding/icon-court.svg'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
               if (_documentPath != null)
                 MaterialBanner(
                   content: Text('Attached document: $_documentPath'),
@@ -866,48 +875,6 @@ class _ChatHomePageState extends State<ChatHomePage> {
                     ),
                   ],
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                child: Row(
-                  children: [
-                    const Text('Locale:'),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButton<LocaleOption>(
-                        isExpanded: true,
-                        value: _selectedLocale,
-                        onChanged: (locale) {
-                          if (locale == null) {
-                            return;
-                          }
-                          setState(() {
-                            _selectedLocale = locale;
-                            _updateWelcomeMessageForLocale();
-                          });
-                          unawaited(
-                            widget.logger.info(
-                              'Locale changed',
-                              <String, Object?>{
-                                'country': locale.countryCode,
-                                'language': locale.languageCode,
-                              },
-                            ),
-                          );
-                          _apiClient.resetSession();
-                        },
-                        items: _localeOptions
-                            .map(
-                              (locale) => DropdownMenuItem<LocaleOption>(
-                                value: locale,
-                                child: Text(locale.label),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               Expanded(
                 child: ListView.builder(
                   reverse: true,
@@ -960,16 +927,107 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   },
                 ),
               ),
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-                  child: Row(
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
                     children: [
+                      Row(
+                        children: [
+                          const Text('Language & Country:'),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButton<LocaleOption>(
+                              isExpanded: true,
+                              value: _selectedLocale,
+                              onChanged: (locale) {
+                                if (locale == null) {
+                                  return;
+                                }
+                                setState(() {
+                                  _selectedLocale = locale;
+                                  _updateWelcomeMessageForLocale();
+                                });
+                                unawaited(
+                                  widget.logger.info(
+                                    'Locale changed',
+                                    <String, Object?>{
+                                      'country': locale.countryCode,
+                                      'language': locale.languageCode,
+                                    },
+                                  ),
+                                );
+                                _apiClient.resetSession();
+                              },
+                              items: _localeOptions
+                                  .map(
+                                    (locale) => DropdownMenuItem<LocaleOption>(
+                                      value: locale,
+                                      child: Text(locale.label),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_showLocalResponderSwitch)
+                        Row(
+                          children: [
+                            const Text('Local mode:'),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: DropdownButton<ResponderMode>(
+                                isExpanded: true,
+                                value: _responderMode,
+                                onChanged: (mode) {
+                                  if (mode == null) {
+                                    return;
+                                  }
+                                  setState(() {
+                                    _responderMode = mode;
+                                  });
+                                  unawaited(
+                                    widget.logger.info(
+                                      'Responder mode changed',
+                                      <String, Object?>{
+                                        'responder_mode': mode.name,
+                                      },
+                                    ),
+                                  );
+                                  _apiClient.resetSession();
+                                },
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: ResponderMode.aiUserSimulator,
+                                    child: Text('AI User Simulator Agent'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: ResponderMode.realPerson,
+                                    child: Text('Read User'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
+                child: Row(
+                  children: [
                       IconButton(
                         onPressed: _captureDocument,
                         icon: const Icon(Icons.document_scanner),
-                        tooltip: 'Capture document',
+                        tooltip: 'Upload documents',
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -984,6 +1042,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
                                 _responderMode == ResponderMode.aiUserSimulator
                                     ? 'Describe the case to start discussion...'
                                     : 'Ask your legal question...',
+                            filled: true,
+                            fillColor: Colors.white,
                             border: const OutlineInputBorder(),
                           ),
                         ),
@@ -1007,10 +1067,31 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   ),
                 ),
               ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _BrandIcon extends StatelessWidget {
+  const _BrandIcon({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 52,
+      height: 52,
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: SvgPicture.asset(path),
     );
   }
 }
