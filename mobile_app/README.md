@@ -1,17 +1,18 @@
-# AI Jurisdiction Mobile (Flutter)
+# AIJurisDictA - AI Juris Digital Agent (Flutter)
 
-Flutter mobile client prepared for local testing of the AI Jurisdiction chat workflow.
+Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris Digital Agent) chat workflow.
 
 ## Features
 
 - Chat-bot style conversation UI.
-- Aijurisdicta login-themed background in the chat screen.
+- Rebranded mobile layout with login card at the top and blue legal-themed background from the footer artwork.
 - Add supporting documents using the device camera.
-- Switch responder mode before the input box:
+- Message area is centered between login header and selectors.
 - Initial localized Jurisdicta welcome message shown on app start.
-- Language selection in app bar (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
+- Language/country selector is shown below the message area (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
   - `AI User Simulator` (default for local tests)
-  - `Real Person`
+  - `Read User`
+- Local mode selector appears only when API base URL points to local hosts (`localhost`, `127.0.0.1`, `10.0.2.2`, `0.0.0.0`).
 - Select country/language before chatting (default: `Slovakia (SK)`).
 - Open generated summary/document PDF links directly from the mobile app once a session exists.
 - Uses the real API chat endpoints with API key auth:
@@ -20,7 +21,7 @@ Flutter mobile client prepared for local testing of the AI Jurisdiction chat wor
   - `POST /v1/chat/sessions/{session_id}/stream` (AI User Simulator mode)
   - Header: `x-api-key: aijuris`
 - Default local API base URL for Android emulator: `http://10.0.2.2:8080`.
-- Includes AI Jurisdicta branded top logo and background graphic.
+- Uses refreshed branding assets from provided logo/footer/icons set.
 - Communication/error logging:
   - non-web targets write JSON log entries to a timestamped file in a `logs` folder
   - file name pattern: `mobile_YYYYMMDD_HHMMSS.log`
@@ -126,4 +127,4 @@ shared Flutter sources are committed.
 
 Reference UI snapshot prepared for review of the mobile chat layout.
 
-![Mobile chat UI snapshot](docs/chat_ui_snapshot.svg)
+Open `docs/chat_ui_snapshot.html` in a browser for the updated rebrand layout preview.

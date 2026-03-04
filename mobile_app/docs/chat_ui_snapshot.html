@@ -3,37 +3,43 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Mobile Chat Snapshot</title>
+<title>AIJurisDictA - Mobile Chat Snapshot</title>
 <style>
-body{margin:0;background:#eef1f7;font-family:Inter,Arial,sans-serif;display:flex;justify-content:center;padding:24px}
-.phone{width:390px;height:844px;background:white;border-radius:36px;box-shadow:0 12px 40px rgba(0,0,0,.18);overflow:hidden;border:10px solid #111}
-.top{background:#e7e9ff;padding:16px;font-weight:700;display:flex;justify-content:space-between}
-.mode{font-size:12px;background:white;border-radius:16px;padding:6px 10px}
-.banner{margin:12px;background:#f2f4ff;border-radius:10px;padding:10px;font-size:12px;color:#4a4d75}
-.chat{padding:12px;height:620px;display:flex;flex-direction:column;gap:10px}
+body{margin:0;background:#e6ecf8;font-family:Inter,Arial,sans-serif;display:flex;justify-content:center;padding:24px}
+.phone{width:390px;height:844px;background:linear-gradient(180deg,#041b59,#1388e9,#041b59);border-radius:36px;box-shadow:0 12px 40px rgba(0,0,0,.22);overflow:hidden;border:10px solid #111;padding:10px;box-sizing:border-box;color:#0a2f6b}
+.card{background:rgba(255,255,255,.92);border-radius:14px;padding:10px}
+.top{display:flex;align-items:center;gap:10px}
+.logo{width:42px;height:42px;background:#1e7bd8;border-radius:10px}
+.login{margin-left:auto;background:#e0ebff;border-radius:10px;padding:8px 12px;font-weight:700}
+.icons{display:flex;gap:10px;justify-content:space-between;margin:8px 0}
+.ico{width:50px;height:50px;border-radius:12px;background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;font-size:22px}
+.chat{margin-top:8px;height:360px;display:flex;flex-direction:column;gap:10px;padding:8px}
 .msg{max-width:78%;padding:10px 12px;border-radius:14px;font-size:14px;line-height:1.35}
-.assist{align-self:flex-start;background:#eceef4}
-.user{align-self:flex-end;background:#d9e7ff}
-.input{display:flex;gap:8px;padding:12px;border-top:1px solid #e6e8f2}
+.assist{align-self:flex-start;background:#e7effd}
+.user{align-self:flex-end;background:#d2e4ff}
+.selector{margin-top:8px}
+.row{display:flex;gap:8px;align-items:center;font-size:12px;margin:6px 0}
+.select{flex:1;background:white;border-radius:8px;padding:9px;color:#5e6d85}
+.input{display:flex;gap:8px;padding:8px;margin-top:8px}
 .btn{width:38px;height:38px;border-radius:10px;background:#e8edff;display:flex;align-items:center;justify-content:center}
-.text{flex:1;border:1px solid #ccd3e0;border-radius:10px;padding:10px;color:#788293;font-size:13px}
-.send{width:38px;height:38px;border-radius:10px;background:#4c67ff;color:#fff;display:flex;align-items:center;justify-content:center}
+.text{flex:1;border:1px solid #ccd3e0;background:white;border-radius:10px;padding:10px;color:#788293;font-size:13px}
+.send{width:38px;height:38px;border-radius:10px;background:#1f75d1;color:#fff;display:flex;align-items:center;justify-content:center}
 </style>
 </head>
 <body>
 <div class="phone">
-  <div class="top">AI Jurisdiction Assistant <span class="mode">AI User Simulator</span></div>
-  <div class="banner">📎 Attached document: /storage/emulated/0/DCIM/tenant_contract.jpg</div>
-  <div class="chat">
-    <div class="msg assist">Welcome! Upload a document photo and ask your legal question.</div>
+  <div class="card top"><div class="logo"></div><strong>AIJurisDictA</strong><span class="login">Sign in</span></div>
+  <div class="icons"><div class="ico">🤖</div><div class="ico">⚖️</div><div class="ico">📄</div><div class="ico">🏛️</div></div>
+  <div class="card chat">
+    <div class="msg assist">Hello, I am Jurisdicta. Describe your case and upload documents.</div>
     <div class="msg user">Can I terminate this rental agreement early without penalty?</div>
-    <div class="msg assist">Based on the uploaded clause, termination depends on notice period and breach conditions. Share your jurisdiction for precise guidance.</div>
+    <div class="msg assist">Based on uploaded clauses, this depends on notice period and local statute.</div>
   </div>
-  <div class="input">
-    <div class="btn">📷</div>
-    <div class="text">Ask your legal question...</div>
-    <div class="send">➤</div>
+  <div class="card selector">
+    <div class="row"><strong>Language & Country:</strong><div class="select">Slovakia (SK)</div></div>
+    <div class="row"><strong>Local mode:</strong><div class="select">AI User Simulator Agent</div></div>
   </div>
+  <div class="input"><div class="btn">📎</div><div class="text">Ask your legal question...</div><div class="send">➤</div></div>
 </div>
 </body>
 </html>
