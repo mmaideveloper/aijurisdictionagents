@@ -187,6 +187,17 @@ main {
   padding: 3rem 1.5rem 4rem;
 }
 
+.product-title {
+  margin: 0 0 1rem;
+  text-align: center;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: clamp(2.4rem, 6vw, 5.4rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--navy);
+  text-transform: none;
+}
+
 .hero {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

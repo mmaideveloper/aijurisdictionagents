@@ -129,7 +129,7 @@ class AIJurisdictionMobileApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'AIJurisDictA - AI Juris Digital Agent',
+      title: 'AIJurisDikta',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
@@ -935,7 +935,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                         const SizedBox(width: 10),
                         const Expanded(
                           child: Text(
-                            'Login',
+                            'AIJurisDikta',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
