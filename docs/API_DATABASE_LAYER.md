@@ -1,0 +1,78 @@
+# API database layer (local + container + Azure-ready)
+
+## Recommended approach
+
+For your feature set, use a **hybrid model**:
+
+1. **Relational SQL database** for metadata and relationships.
+2. **Object storage** for document/audio binaries.
+
+## Environment variables (local + cloud)
+
+Use these environment variables in local `.env`, Docker, and GitHub environment secrets.
+
+- `DB_OPTION`: `local` or `azure`
+- `STORAGE_OPTION`: `local` or `azure`
+- `DB_LOCAL`: local SQLite path (example: `./data/api.sqlite3`)
+- `DB_CLOUD`: cloud database connection string (PostgreSQL in Azure)
+- `STORE_LOCAL`: local storage root path (example: `./storage`)
+- `STORE_CLOUD`: Azure Storage connection string
+
+If you set:
+- `DB_OPTION=azure`, then `DB_CLOUD` is required.
+- `STORAGE_OPTION=azure`, then `STORE_CLOUD` is required.
+
+This aligns with your GitHub environment secrets plan:
+- `DB_OPTION=azure`
+- `STORAGE_OPTION=azure`
+- `DB_CLOUD=...`
+- `STORE_CLOUD=...`
+
+## Concrete technology choice
+
+### Phase 1 (now): local + Docker + basic cloud portability
+
+- **SQLite** for metadata (`api.sqlite3`) via `ApiDatabaseStore`.
+- Filesystem blob folder for stored assets.
+
+### Phase 2 (production): scalable and resilient
+
+- **Azure Database for PostgreSQL** for metadata.
+- **Azure Blob Storage** for documents/audio/generated files.
+
+
+## Case-scoped storage layout
+
+For both local and azure modes, all case artifacts are written under a `case_id` folder/prefix:
+
+- Documents: `<case_id>/<kind>/v<version>_<filename>`
+- Communications: `<case_id>/communications/<communication_id>.<ext>`
+
+This guarantees every case has an isolated storage namespace.
+
+## Supported domain entities
+
+- `users`: sign-up and login metadata.
+- `companies`: company profile.
+- `company_users`: user/company association and role.
+- `cases`: user/company legal cases.
+- `case_documents`: source/generated document metadata + versions.
+- `case_communications`: chat/audio transcript references and summaries.
+
+## Minimal demo
+
+```bash
+PYTHONPATH=src python examples/api_database_minimal_demo.py
+```
+
+## Docker notes
+
+Mount volumes for local mode:
+- `/app/data` for `DB_LOCAL`
+- `/app/blob` for `STORE_LOCAL`
+
+## Azure Container Apps notes
+
+- Use secrets for `DB_CLOUD` and `STORE_CLOUD`.
+- Keep `DB_OPTION=azure` and `STORAGE_OPTION=azure`.
+- This commit validates env contracts; production adapters can be plugged in next.
