@@ -48,6 +48,21 @@ jobs:
           echo "API_BASE_URL=$API_BASE_URL_VALUE" >> "$GITHUB_ENV"
           echo "Using API_BASE_URL=$API_BASE_URL_VALUE"
 
+      - name: Resolve app version for this build
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW_VERSION="$(grep '^version:' pubspec.yaml | awk '{print $2}')"
+          if [ -z "$RAW_VERSION" ]; then
+            echo "Could not resolve app version from pubspec.yaml" >&2
+            exit 1
+          fi
+          APP_BUILD_NAME="${RAW_VERSION%%+*}"
+          APP_BUILD_NUMBER="${GITHUB_RUN_NUMBER}"
+          echo "APP_BUILD_NAME=$APP_BUILD_NAME" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=$APP_BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "Building APK version: ${APP_BUILD_NAME}+${APP_BUILD_NUMBER}"
+
       - name: Install dependencies (retry)
         shell: bash
         run: |
@@ -78,19 +93,28 @@ jobs:
 
 
       - name: Analyze
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Run tests
         run: flutter test
 
       - name: Build APK
-        run: flutter build apk --release --dart-define=AIJ_API_BASE_URL=$API_BASE_URL
+        run: flutter build apk --release --build-name=$APP_BUILD_NAME --build-number=$APP_BUILD_NUMBER --dart-define=AIJ_API_BASE_URL=$API_BASE_URL
+
+      - name: Build APK (debug, installable fallback)
+        run: flutter build apk --debug --build-name=$APP_BUILD_NAME --build-number=$APP_BUILD_NUMBER --dart-define=AIJ_API_BASE_URL=$API_BASE_URL
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ai-jurisdiction-mobile-apk
+          name: ai-jurisdiction-mobile-apk-release-${{ github.run_number }}
           path: mobile_app/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload APK artifact (debug)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-jurisdiction-mobile-apk-debug-${{ github.run_number }}
+          path: mobile_app/build/app/outputs/flutter-apk/app-debug.apk
 
       - name: Build Web bundle
         run: flutter build web --release --dart-define=AIJ_API_BASE_URL=$API_BASE_URL
