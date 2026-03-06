@@ -923,10 +923,14 @@ class _ChatHomePageState extends State<ChatHomePage> {
                     ),
                     child: Row(
                       children: [
-                        SvgPicture.asset(
-                          'assets/branding/ai-logo.svg',
+                        SizedBox(
                           width: 48,
                           height: 48,
+                          child: Image.asset(
+                            'assets/branding/login-shield.png',
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                          ),
                         ),
                         const SizedBox(width: 10),
                         const Expanded(
@@ -1185,7 +1189,6 @@ class _ChatHomePageState extends State<ChatHomePage> {
                     ],
                   ),
                 ),
-              ),
               ],
             ),
           ),

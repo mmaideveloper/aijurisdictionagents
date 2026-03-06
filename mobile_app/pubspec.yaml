@@ -24,6 +24,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/ai-logo.svg
+    - assets/branding/login-shield.png
     - assets/branding/hero-footer.svg
     - assets/branding/icon-ai-head.svg
     - assets/branding/icon-scale.svg
