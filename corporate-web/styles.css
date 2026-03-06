@@ -103,8 +103,9 @@ a {
 }
 
 .brand img {
-  width: 44px;
   height: 44px;
+  width: auto;
+  display: block;
   filter: drop-shadow(0 6px 12px rgba(6, 57, 122, 0.25));
 }
 
@@ -635,6 +636,15 @@ main {
   flex-direction: column;
   gap: 0.4rem;
   opacity: 0.75;
+}
+
+.footer-version {
+  line-height: 1.35;
+}
+
+.footer-version strong {
+  color: var(--deep);
+  font-weight: 700;
 }
 
 @media (max-width: 960px) {

@@ -34,6 +34,7 @@ The site now uses `assets/branding.png` as the source sheet for:
 - `assets/icon-scale.png`
 - `assets/icon-doc.png`
 - `assets/icon-court.png`
+- `assets/login-shield.png` (transparent login/header icon)
 
 ## Legal links
 
@@ -42,6 +43,11 @@ Footer now includes multilingual links for:
 - Privacy Policy
 - Disclaimer
 - Terms of Service
+
+Footer meta also shows:
+
+- API version (`aijuristiction-api`)
+- System core version (`aijurisdictionagents`)
 
 The page also includes a legal section with a structured disclaimer and `Last Updated` timestamp.
 
