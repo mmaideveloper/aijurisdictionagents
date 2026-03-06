@@ -2,11 +2,14 @@ param location string = resourceGroup().location
 param environmentName string
 param containerAppName string
 param acrName string
+param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
+param storageContainerName string = 'case-documents'
 param logAnalyticsWorkspaceName string
 param managedIdentityName string
 param createLogAnalyticsWorkspace bool = true
 param createManagedEnvironment bool = true
 param createAcr bool = true
+param createStorageAccount bool = true
 param createManagedIdentity bool = true
 param createContainerApp bool = true
 param tags object = {}
@@ -72,6 +75,55 @@ resource acrExisting 'Microsoft.ContainerRegistry/registries@2023-07-01' existin
 var acrId = createAcr ? acr.id : acrExisting.id
 var acrLoginServer = createAcr ? acr.properties.loginServer : acrExisting.properties.loginServer
 
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (createStorageAccount) {
+  name: storageAccountName
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard_LRS'
+  }
+  kind: 'StorageV2'
+  properties: {
+    accessTier: 'Hot'
+    allowBlobPublicAccess: false
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+  }
+}
+
+resource storageAccountExisting 'Microsoft.Storage/storageAccounts@2023-05-01' existing = if (!createStorageAccount) {
+  name: storageAccountName
+}
+
+var storageAccountId = createStorageAccount ? storageAccount.id : storageAccountExisting.id
+var storageBlobEndpoint = createStorageAccount
+  ? storageAccount.properties.primaryEndpoints.blob
+  : storageAccountExisting.properties.primaryEndpoints.blob
+
+resource storageBlobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = if (createStorageAccount) {
+  name: '${storageAccount.name}/default'
+}
+
+resource storageBlobServiceExisting 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' existing = if (!createStorageAccount) {
+  name: '${storageAccountName}/default'
+}
+
+resource storageContainerOnNewStorage 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (createStorageAccount) {
+  name: storageContainerName
+  parent: storageBlobService
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+resource storageContainerOnExistingStorage 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (!createStorageAccount) {
+  name: storageContainerName
+  parent: storageBlobServiceExisting
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (createManagedIdentity) {
   name: managedIdentityName
   location: location
@@ -87,6 +139,7 @@ var managedIdentityPrincipalId = createManagedIdentity
   ? managedIdentity.properties.principalId
   : managedIdentityExisting.properties.principalId
 var createAcrPullRoleAssignment = createContainerApp || createAcr || createManagedIdentity
+var createStorageBlobDataRoleAssignment = createContainerApp || createStorageAccount || createManagedIdentity
 
 resource acrPullRoleAssignmentOnNewAcr 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createAcrPullRoleAssignment && createAcr) {
   name: guid(acrId, managedIdentityId, 'AcrPull')
@@ -109,6 +162,32 @@ resource acrPullRoleAssignmentOnExistingAcr 'Microsoft.Authorization/roleAssignm
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
       '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+    )
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource storageBlobDataRoleAssignmentOnNewStorage 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createStorageBlobDataRoleAssignment && createStorageAccount) {
+  name: guid(storageAccountId, managedIdentityId, 'StorageBlobDataContributor')
+  scope: storageAccount
+  properties: {
+    principalId: managedIdentityPrincipalId
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+    )
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource storageBlobDataRoleAssignmentOnExistingStorage 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createStorageBlobDataRoleAssignment && !createStorageAccount) {
+  name: guid(storageAccountId, managedIdentityId, 'StorageBlobDataContributor')
+  scope: storageAccountExisting
+  properties: {
+    principalId: managedIdentityPrincipalId
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
     )
     principalType: 'ServicePrincipal'
   }
@@ -160,6 +239,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = if (createConta
   dependsOn: [
     acrPullRoleAssignmentOnNewAcr
     acrPullRoleAssignmentOnExistingAcr
+    storageBlobDataRoleAssignmentOnNewStorage
+    storageBlobDataRoleAssignmentOnExistingStorage
   ]
 }
 
@@ -168,6 +249,9 @@ resource containerAppExisting 'Microsoft.App/containerApps@2024-03-01' existing 
 }
 
 output acrLoginServer string = acrLoginServer
+output storageAccountName string = createStorageAccount ? storageAccount.name : storageAccountExisting.name
+output storageContainerName string = storageContainerName
+output storageBlobEndpoint string = storageBlobEndpoint
 output containerAppName string = createContainerApp ? containerApp.name : containerAppExisting.name
 output containerAppFqdn string = createContainerApp
   ? containerApp.properties.configuration.ingress.fqdn

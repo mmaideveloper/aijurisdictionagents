@@ -129,7 +129,7 @@ class AIJurisdictionMobileApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'AIJurisDikta',
+      title: 'AIJurisDigta',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
@@ -935,7 +935,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                         const SizedBox(width: 10),
                         const Expanded(
                           child: Text(
-                            'AIJurisDikta',
+                            'AIJurisDigta',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,

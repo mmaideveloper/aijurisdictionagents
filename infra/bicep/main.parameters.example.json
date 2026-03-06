@@ -14,6 +14,12 @@
     "acrName": {
       "value": "aijurdevacr12345"
     },
+    "storageAccountName": {
+      "value": "staijurdev12345"
+    },
+    "storageContainerName": {
+      "value": "case-documents"
+    },
     "logAnalyticsWorkspaceName": {
       "value": "log-aijurisdiction-dev"
     },

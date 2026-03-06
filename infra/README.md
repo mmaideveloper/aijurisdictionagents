@@ -17,7 +17,10 @@ This keeps deployment simple while matching the existing API container workflow.
 - Log Analytics Workspace
 - Azure Container Apps Environment
 - Azure Container Registry (ACR)
+- Azure Storage Account (Blob Storage)
+- Private blob container (`case-documents` by default)
 - User-assigned Managed Identity with `AcrPull` on ACR
+- User-assigned Managed Identity with `Storage Blob Data Contributor` on Storage Account
 - Azure Container App (public ingress on port `8080`)
 
 ## Prerequisites
@@ -202,6 +205,8 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_CONTAINERAPPS_ENVIRONMENT` = `<CONTAINERAPPS_ENV_NAME>`
 - `AZURE_CONTAINER_APP_NAME` = `<CONTAINER_APP_NAME>`
 - `AZURE_CONTAINER_REGISTRY` = `<ACR_NAME>`
+- `AZURE_STORAGE_ACCOUNT_NAME` = `<STORAGE_ACCOUNT_NAME>` (optional; auto-derived if omitted)
+- `AZURE_STORAGE_CONTAINER_NAME` = `<STORAGE_CONTAINER_NAME>` (optional; defaults to `case-documents`)
 
 5. Run the workflow:
 

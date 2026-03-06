@@ -6,6 +6,8 @@ param(
     [string]$EnvironmentName,
     [string]$ContainerAppName,
     [string]$AcrName,
+    [string]$StorageAccountName,
+    [string]$StorageContainerName,
     [string]$LogAnalyticsWorkspaceName,
     [string]$ManagedIdentityName,
     [string]$ImageTag,
@@ -66,6 +68,74 @@ function Normalize-AcrName {
 
     if ($sanitized.Length -gt 50) {
         $sanitized = $sanitized.Substring(0, 50)
+    }
+
+    return $sanitized
+}
+
+function Get-DefaultStorageAccountName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Seed
+    )
+
+    $normalizedSeed = $Seed.Trim().ToLower()
+    $prefix = ($normalizedSeed -replace "[^a-z0-9]", "")
+    if ([string]::IsNullOrWhiteSpace($prefix)) {
+        $prefix = "aijur"
+    }
+    if ($prefix.Length -gt 10) {
+        $prefix = $prefix.Substring(0, 10)
+    }
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalizedSeed)
+        $hash = [System.BitConverter]::ToString($sha.ComputeHash($bytes)).Replace("-", "").ToLower()
+    }
+    finally {
+        $sha.Dispose()
+    }
+
+    $suffix = $hash.Substring(0, 10)
+    return "st${prefix}${suffix}"
+}
+
+function Normalize-StorageAccountName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InputName
+    )
+
+    $sanitized = ($InputName.Trim().ToLower() -replace "[^a-z0-9]", "")
+    if ([string]::IsNullOrWhiteSpace($sanitized)) {
+        throw "Storage account name '$InputName' is invalid after sanitization. Use 3-24 lowercase alphanumeric characters."
+    }
+
+    if ($sanitized.Length -lt 3) {
+        $sanitized = ($sanitized + "stg").Substring(0, 3)
+    }
+
+    if ($sanitized.Length -gt 24) {
+        $sanitized = $sanitized.Substring(0, 24)
+    }
+
+    return $sanitized
+}
+
+function Normalize-StorageContainerName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InputName
+    )
+
+    $sanitized = $InputName.Trim().ToLower()
+    if ($sanitized -notmatch '^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$') {
+        throw "Storage container name '$InputName' is invalid. Use 3-63 chars: lowercase letters, digits, and hyphens."
+    }
+
+    if ($sanitized.Contains("--")) {
+        throw "Storage container name '$InputName' is invalid. Consecutive hyphens are not allowed."
     }
 
     return $sanitized
@@ -411,6 +481,8 @@ $resourceGroupFromEnvFile = ""
 $environmentNameFromEnvFile = ""
 $containerAppNameFromEnvFile = ""
 $acrNameFromEnvFile = ""
+$storageAccountNameFromEnvFile = ""
+$storageContainerNameFromEnvFile = ""
 $logAnalyticsWorkspaceFromEnvFile = ""
 $managedIdentityNameFromEnvFile = ""
 $imageTagFromEnvFile = ""
@@ -423,6 +495,8 @@ if (-not $SkipEnvFile -and (Test-Path -Path $resolvedEnvFilePath)) {
     $environmentNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_CONTAINERAPPS_ENVIRONMENT"
     $containerAppNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_CONTAINER_APP_NAME"
     $acrNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_CONTAINER_REGISTRY"
+    $storageAccountNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_STORAGE_ACCOUNT_NAME"
+    $storageContainerNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_STORAGE_CONTAINER_NAME"
     $logAnalyticsWorkspaceFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
     $managedIdentityNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_MANAGED_IDENTITY_NAME"
     $imageTagFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_API_IMAGE_TAG"
@@ -435,6 +509,8 @@ $ResourceGroupName = Resolve-InputValue -ExplicitValue $ResourceGroupName -EnvFi
 $EnvironmentName = Resolve-InputValue -ExplicitValue $EnvironmentName -EnvFileValue $environmentNameFromEnvFile -EnvironmentValue $env:AZURE_CONTAINERAPPS_ENVIRONMENT
 $ContainerAppName = Resolve-InputValue -ExplicitValue $ContainerAppName -EnvFileValue $containerAppNameFromEnvFile -EnvironmentValue $env:AZURE_CONTAINER_APP_NAME
 $AcrName = Resolve-InputValue -ExplicitValue $AcrName -EnvFileValue $acrNameFromEnvFile -EnvironmentValue $env:AZURE_CONTAINER_REGISTRY
+$StorageAccountName = Resolve-InputValue -ExplicitValue $StorageAccountName -EnvFileValue $storageAccountNameFromEnvFile -EnvironmentValue $env:AZURE_STORAGE_ACCOUNT_NAME
+$StorageContainerName = Resolve-InputValue -ExplicitValue $StorageContainerName -EnvFileValue $storageContainerNameFromEnvFile -EnvironmentValue $env:AZURE_STORAGE_CONTAINER_NAME
 $LogAnalyticsWorkspaceName = Resolve-InputValue -ExplicitValue $LogAnalyticsWorkspaceName -EnvFileValue $logAnalyticsWorkspaceFromEnvFile -EnvironmentValue $env:AZURE_LOG_ANALYTICS_WORKSPACE_NAME
 $ManagedIdentityName = Resolve-InputValue -ExplicitValue $ManagedIdentityName -EnvFileValue $managedIdentityNameFromEnvFile -EnvironmentValue $env:AZURE_MANAGED_IDENTITY_NAME
 $ImageTag = Resolve-InputValue -ExplicitValue $ImageTag -EnvFileValue $imageTagFromEnvFile -EnvironmentValue $env:AZURE_API_IMAGE_TAG
@@ -470,13 +546,29 @@ Require-Value -Name "SubscriptionId" -Value $SubscriptionId
 if ([string]::IsNullOrWhiteSpace($AcrName)) {
     $AcrName = Get-DefaultAcrName -Seed $ResourceGroupName
 }
+if ([string]::IsNullOrWhiteSpace($StorageAccountName)) {
+    $StorageAccountName = Get-DefaultStorageAccountName -Seed $ResourceGroupName
+}
+if ([string]::IsNullOrWhiteSpace($StorageContainerName)) {
+    $StorageContainerName = "case-documents"
+}
 $originalAcrName = $AcrName
 $AcrName = Normalize-AcrName -InputName $AcrName
 if ($AcrName -ne $originalAcrName) {
     Write-Host "Normalized ACR name from '$originalAcrName' to '$AcrName' to satisfy Azure naming rules."
 }
 
+$originalStorageAccountName = $StorageAccountName
+$StorageAccountName = Normalize-StorageAccountName -InputName $StorageAccountName
+if ($StorageAccountName -ne $originalStorageAccountName) {
+    Write-Host "Normalized storage account name from '$originalStorageAccountName' to '$StorageAccountName' to satisfy Azure naming rules."
+}
+
+$StorageContainerName = Normalize-StorageContainerName -InputName $StorageContainerName
+
 Write-Host "Using ACR name: $AcrName"
+Write-Host "Using storage account: $StorageAccountName"
+Write-Host "Using storage container: $StorageContainerName"
 Write-Host "Using image: ${ImageRepository}:${ImageTag}"
 Write-Host "Repository root: $repoRoot"
 
@@ -515,6 +607,10 @@ $acrLocation = Get-ResourceLocationInGroup `
     -ResourceGroupName $ResourceGroupName `
     -ResourceName $AcrName `
     -ResourceType "Microsoft.ContainerRegistry/registries"
+$storageAccountLocation = Get-ResourceLocationInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $StorageAccountName `
+    -ResourceType "Microsoft.Storage/storageAccounts"
 $managedIdentityLocation = Get-ResourceLocationInGroup `
     -ResourceGroupName $ResourceGroupName `
     -ResourceName $ManagedIdentityName `
@@ -527,6 +623,7 @@ $containerAppLocation = Get-ResourceLocationInGroup `
 $createLogAnalyticsWorkspace = [string]::IsNullOrWhiteSpace($logAnalyticsWorkspaceLocation)
 $createManagedEnvironment = [string]::IsNullOrWhiteSpace($managedEnvironmentLocation)
 $createAcr = [string]::IsNullOrWhiteSpace($acrLocation)
+$createStorageAccount = [string]::IsNullOrWhiteSpace($storageAccountLocation)
 $createManagedIdentity = [string]::IsNullOrWhiteSpace($managedIdentityLocation)
 $createContainerApp = [string]::IsNullOrWhiteSpace($containerAppLocation)
 
@@ -534,6 +631,7 @@ $existingLocations = @(
     $logAnalyticsWorkspaceLocation,
     $managedEnvironmentLocation,
     $acrLocation,
+    $storageAccountLocation,
     $managedIdentityLocation,
     $containerAppLocation
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique
@@ -552,6 +650,7 @@ Write-Host "Create plan:"
 Write-Host " - Log Analytics Workspace: $createLogAnalyticsWorkspace"
 Write-Host " - Container Apps Environment: $createManagedEnvironment"
 Write-Host " - Container Registry: $createAcr"
+Write-Host " - Storage Account: $createStorageAccount"
 Write-Host " - Managed Identity: $createManagedIdentity"
 Write-Host " - Container App: $createContainerApp"
 
@@ -565,11 +664,14 @@ $outputsRaw = az deployment group create `
       environmentName=$EnvironmentName `
       containerAppName=$ContainerAppName `
       acrName=$AcrName `
+      storageAccountName=$StorageAccountName `
+      storageContainerName=$StorageContainerName `
       logAnalyticsWorkspaceName=$LogAnalyticsWorkspaceName `
       managedIdentityName=$ManagedIdentityName `
       createLogAnalyticsWorkspace=$($createLogAnalyticsWorkspace.ToString().ToLower()) `
       createManagedEnvironment=$($createManagedEnvironment.ToString().ToLower()) `
       createAcr=$($createAcr.ToString().ToLower()) `
+      createStorageAccount=$($createStorageAccount.ToString().ToLower()) `
       createManagedIdentity=$($createManagedIdentity.ToString().ToLower()) `
       createContainerApp=$($createContainerApp.ToString().ToLower()) `
     --query properties.outputs `
@@ -612,6 +714,25 @@ $acrLoginServer = [string]$outputs.acrLoginServer.value
 
 if ([string]::IsNullOrWhiteSpace($acrLoginServer)) {
     throw "Deployment output 'acrLoginServer' is empty. Raw outputs:`n$outputsText"
+}
+
+$storageAccountNameOutput = if ($outputs.PSObject.Properties.Name -contains "storageAccountName") {
+    [string]$outputs.storageAccountName.value
+}
+else {
+    $StorageAccountName
+}
+$storageContainerNameOutput = if ($outputs.PSObject.Properties.Name -contains "storageContainerName") {
+    [string]$outputs.storageContainerName.value
+}
+else {
+    $StorageContainerName
+}
+$storageBlobEndpointOutput = if ($outputs.PSObject.Properties.Name -contains "storageBlobEndpoint") {
+    [string]$outputs.storageBlobEndpoint.value
+}
+else {
+    ""
 }
 
 Write-Host "Building image in ACR: ${acrLoginServer}/${ImageRepository}:${ImageTag}"
@@ -665,3 +786,8 @@ Write-Host ""
 Write-Host "Deployment complete."
 Write-Host "Container App URL: https://$fqdn"
 Write-Host "Health check:       https://$fqdn/health"
+Write-Host "Storage account:    $storageAccountNameOutput"
+Write-Host "Storage container:  $storageContainerNameOutput"
+if (-not [string]::IsNullOrWhiteSpace($storageBlobEndpointOutput)) {
+    Write-Host "Storage blob endpoint: $storageBlobEndpointOutput"
+}

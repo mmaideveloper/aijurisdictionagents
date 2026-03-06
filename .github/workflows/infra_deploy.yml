@@ -38,6 +38,8 @@ jobs:
       AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
       AZURE_CONTAINER_APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
       AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
       AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
       AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
     steps:
@@ -86,6 +88,34 @@ jobs:
             az group create --name "$AZURE_RESOURCE_GROUP" --location "$AZURE_LOCATION" --only-show-errors --output none
           fi
 
+      - name: Resolve storage settings
+        id: storage
+        run: |
+          storage_account="$AZURE_STORAGE_ACCOUNT_NAME"
+          storage_container="$AZURE_STORAGE_CONTAINER_NAME"
+
+          if [ -z "$storage_account" ]; then
+            seed="$(echo -n "$AZURE_RESOURCE_GROUP" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
+            [ -z "$seed" ] && seed="aijur"
+            prefix="$(echo -n "$seed" | cut -c1-10)"
+            hash_suffix="$(echo -n "$AZURE_RESOURCE_GROUP" | sha256sum | cut -c1-10)"
+            storage_account="st${prefix}${hash_suffix}"
+          fi
+
+          storage_account="$(echo -n "$storage_account" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-24)"
+          if [ "${#storage_account}" -lt 3 ]; then
+            storage_account="${storage_account}stg"
+            storage_account="$(echo -n "$storage_account" | cut -c1-3)"
+          fi
+
+          if [ -z "$storage_container" ]; then
+            storage_container="case-documents"
+          fi
+          storage_container="$(echo -n "$storage_container" | tr '[:upper:]' '[:lower:]')"
+
+          echo "storage_account_name=$storage_account" >> "$GITHUB_OUTPUT"
+          echo "storage_container_name=$storage_container" >> "$GITHUB_OUTPUT"
+
       - name: Detect existing resources and resolve deployment mode
         id: existing
         run: |
@@ -101,24 +131,27 @@ jobs:
           log_location="$(get_location "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" "Microsoft.OperationalInsights/workspaces")"
           env_location="$(get_location "$AZURE_CONTAINERAPPS_ENVIRONMENT" "Microsoft.App/managedEnvironments")"
           acr_location="$(get_location "${{ steps.acr.outputs.acr_name }}" "Microsoft.ContainerRegistry/registries")"
+          storage_location="$(get_location "${{ steps.storage.outputs.storage_account_name }}" "Microsoft.Storage/storageAccounts")"
           identity_location="$(get_location "$AZURE_MANAGED_IDENTITY_NAME" "Microsoft.ManagedIdentity/userAssignedIdentities")"
           app_location="$(get_location "$AZURE_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
 
           create_log_analytics_workspace=true
           create_managed_environment=true
           create_acr=true
+          create_storage_account=true
           create_managed_identity=true
           create_container_app=true
 
           [ -n "$log_location" ] && create_log_analytics_workspace=false
           [ -n "$env_location" ] && create_managed_environment=false
           [ -n "$acr_location" ] && create_acr=false
+          [ -n "$storage_location" ] && create_storage_account=false
           [ -n "$identity_location" ] && create_managed_identity=false
           [ -n "$app_location" ] && create_container_app=false
 
           resolved_location="$AZURE_LOCATION"
           first_existing_location=""
-          for current in "$log_location" "$env_location" "$acr_location" "$identity_location" "$app_location"; do
+          for current in "$log_location" "$env_location" "$acr_location" "$storage_location" "$identity_location" "$app_location"; do
             if [ -z "$current" ]; then
               continue
             fi
@@ -140,6 +173,7 @@ jobs:
           echo "create_log_analytics_workspace=$create_log_analytics_workspace" >> "$GITHUB_OUTPUT"
           echo "create_managed_environment=$create_managed_environment" >> "$GITHUB_OUTPUT"
           echo "create_acr=$create_acr" >> "$GITHUB_OUTPUT"
+          echo "create_storage_account=$create_storage_account" >> "$GITHUB_OUTPUT"
           echo "create_managed_identity=$create_managed_identity" >> "$GITHUB_OUTPUT"
           echo "create_container_app=$create_container_app" >> "$GITHUB_OUTPUT"
 
@@ -154,10 +188,13 @@ jobs:
               environmentName="$AZURE_CONTAINERAPPS_ENVIRONMENT" \
               containerAppName="$AZURE_CONTAINER_APP_NAME" \
               acrName="${{ steps.acr.outputs.acr_name }}" \
+              storageAccountName="${{ steps.storage.outputs.storage_account_name }}" \
+              storageContainerName="${{ steps.storage.outputs.storage_container_name }}" \
               logAnalyticsWorkspaceName="$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
               managedIdentityName="$AZURE_MANAGED_IDENTITY_NAME" \
               createLogAnalyticsWorkspace="${{ steps.existing.outputs.create_log_analytics_workspace }}" \
               createManagedEnvironment="${{ steps.existing.outputs.create_managed_environment }}" \
               createAcr="${{ steps.existing.outputs.create_acr }}" \
+              createStorageAccount="${{ steps.existing.outputs.create_storage_account }}" \
               createManagedIdentity="${{ steps.existing.outputs.create_managed_identity }}" \
               createContainerApp="${{ steps.existing.outputs.create_container_app }}"
