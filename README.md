@@ -369,3 +369,7 @@ flutter run
 ```
 
 Technical design details: `docs/MOBILE_TECHNICAL_DESIGN.md`.
+
+## Examples
+
+- API database minimal demo: `python examples/api_database_minimal_demo.py`
