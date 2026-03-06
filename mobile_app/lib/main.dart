@@ -6,6 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
+import 'package:speech_to_text/speech_recognition_error.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import 'logging/app_logger.dart';
 
@@ -540,6 +543,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
   static const double _communicationMinutes = 3;
 
   final TextEditingController _inputController = TextEditingController();
+  final SpeechToText _speechToText = SpeechToText();
 
   late final ApiClient _apiClient;
   late final List<ChatMessage> _messages;
@@ -547,6 +551,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
   late LocaleOption _selectedLocale;
   String? _documentPath;
   bool _isSending = false;
+  bool _speechEnabled = false;
+  bool _isListening = false;
 
   bool get _showLocalResponderSwitch {
     final host = Uri.parse(widget.apiBaseUrl).host.toLowerCase();
@@ -595,6 +601,102 @@ class _ChatHomePageState extends State<ChatHomePage> {
         },
       ),
     );
+    unawaited(_initializeSpeechRecognition());
+  }
+
+  String _localeIdForSpeech(LocaleOption locale) {
+    switch (locale.languageCode.toUpperCase()) {
+      case 'SK':
+        return 'sk_SK';
+      case 'CS':
+        return 'cs_CZ';
+      case 'DE':
+      case 'GE':
+        return 'de_DE';
+      case 'EN':
+      default:
+        return 'en_US';
+    }
+  }
+
+  Future<void> _initializeSpeechRecognition() async {
+    final enabled = await _speechToText.initialize(
+      onError: _onSpeechError,
+      onStatus: _onSpeechStatus,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _speechEnabled = enabled;
+    });
+    await widget.logger.info(
+      'Speech recognition initialized',
+      <String, Object?>{'enabled': enabled},
+    );
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _inputController.text = result.recognizedWords;
+      _inputController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _inputController.text.length),
+      );
+    });
+  }
+
+  void _onSpeechStatus(String status) {
+    if (!mounted) {
+      return;
+    }
+    final isListening = status == 'listening';
+    setState(() {
+      _isListening = isListening;
+    });
+    unawaited(
+      widget.logger.info(
+        'Speech status changed',
+        <String, Object?>{'status': status},
+      ),
+    );
+  }
+
+  void _onSpeechError(SpeechRecognitionError error) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isListening = false;
+    });
+    _showSnackbar('Speech recognition error: ${error.errorMsg}');
+    unawaited(
+      widget.logger.error(
+        'Speech recognition error',
+        Exception(error.errorMsg),
+        StackTrace.current,
+        <String, Object?>{'permanent': error.permanent},
+      ),
+    );
+  }
+
+  Future<void> _toggleSpeechInput() async {
+    if (!_speechEnabled) {
+      _showSnackbar('Speech recognition is unavailable on this device.');
+      return;
+    }
+    if (_isListening) {
+      await _speechToText.stop();
+      return;
+    }
+    await _speechToText.listen(
+      onResult: _onSpeechResult,
+      partialResults: true,
+      localeId: _localeIdForSpeech(_selectedLocale),
+      listenMode: ListenMode.dictation,
+    );
   }
 
   void _updateWelcomeMessageForLocale() {
@@ -619,6 +721,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   @override
   void dispose() {
+    _speechToText.stop();
     _inputController.dispose();
     super.dispose();
   }
@@ -953,6 +1056,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
                                   _selectedLocale = locale;
                                   _updateWelcomeMessageForLocale();
                                 });
+                                if (_isListening) {
+                                  unawaited(_speechToText.stop());
+                                }
                                 unawaited(
                                   widget.logger.info(
                                     'Locale changed',
@@ -1047,6 +1153,19 @@ class _ChatHomePageState extends State<ChatHomePage> {
                             border: const OutlineInputBorder(),
                           ),
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: _toggleSpeechInput,
+                        icon: Icon(
+                          _isListening ? Icons.mic : Icons.mic_none,
+                          color: _isListening
+                              ? Theme.of(context).colorScheme.primary
+                              : null,
+                        ),
+                        tooltip: _isListening
+                            ? 'Stop speech input'
+                            : 'Add question/answer by speech',
                       ),
                       const SizedBox(width: 8),
                       IconButton(

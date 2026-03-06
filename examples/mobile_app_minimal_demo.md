@@ -6,6 +6,8 @@ flutter pub get
 flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris
 ```
 
+After launch, use the microphone icon in the chat input row to dictate a question or answer and then press send.
+
 Optional local API smoke request:
 
 ```bash
