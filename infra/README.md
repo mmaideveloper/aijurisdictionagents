@@ -43,7 +43,7 @@ Create a deployment resource group (one-time):
 ```powershell
 az login
 az account set --subscription "<SUBSCRIPTION_ID>"
-az group create -n "rg-aijurisdiction-dev" -l "eastus"
+az group create -n "rg-aijurisdiction-dev" -l "austriaeast"
 ```
 
 Create a service principal scoped to that resource group:

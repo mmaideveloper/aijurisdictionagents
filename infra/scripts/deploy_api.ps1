@@ -517,7 +517,7 @@ $ImageTag = Resolve-InputValue -ExplicitValue $ImageTag -EnvFileValue $imageTagF
 $ExpectedServicePrincipalClientId = Resolve-InputValue -ExplicitValue "" -EnvFileValue $clientIdFromEnvFile -EnvironmentValue $env:AZURE_CLIENT_ID
 
 if ([string]::IsNullOrWhiteSpace($Location)) {
-    $Location = "eastus"
+    $Location = "austriaeast"
 }
 if ([string]::IsNullOrWhiteSpace($ResourceGroupName)) {
     $ResourceGroupName = "rg-aijurisdiction-dev"
