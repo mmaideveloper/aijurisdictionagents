@@ -321,6 +321,19 @@ def test_normalize_simulator_reply_avoids_exact_repeat() -> None:
     assert reply != "I have a written contract copy."
 
 
+def test_normalize_simulator_reply_rejects_question_form() -> None:
+    from app.chat.api import _normalize_simulator_reply
+
+    reply = _normalize_simulator_reply(
+        "Potrebujem od vas potvrdit, ci treba plnu moc?",
+        language="sk",
+        turn_index=0,
+        previous_reply="",
+    )
+    assert "?" not in reply
+    assert "Prosim pokracujte" in reply
+
+
 def test_repeated_question_reply_mentions_repeat_count() -> None:
     from app.chat.api import _repeated_question_reply
 

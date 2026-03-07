@@ -15,7 +15,8 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - `Read User`
 - Local mode selector appears only when API base URL points to local hosts (`localhost`, `127.0.0.1`, `10.0.2.2`, `0.0.0.0`).
 - Select country/language before chatting (default: `Slovakia (SK)`).
-- Open generated summary/document PDF links directly from the mobile app once a session exists.
+- Download generated summary/document PDF files directly from the mobile app once a session exists.
+- App version is shown in the bottom-left corner of the screen.
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/chat/sessions`
   - `POST /v1/chat/sessions/{session_id}/reply`
@@ -77,10 +78,12 @@ Expected reply response includes:
 
 If a camera document is attached, the app includes the local file path in the message text for context.
 
-PDF exports are opened through:
+PDF exports are downloaded through:
 
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary`
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document`
+Use the `Summary PDF` and `Document PDF` buttons above the message composer.
+Buttons are enabled after AI stream emits `result`/`done` (PDF must be generated first).
 In `AI User Simulator` mode, submitting the instruction starts discussion streaming (SSE)
 the same way as the chat simulator by using `user_simulation_mode=AIUserSimulatorAgent`.
 

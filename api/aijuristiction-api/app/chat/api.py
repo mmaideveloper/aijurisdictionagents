@@ -424,11 +424,32 @@ def _normalize_simulator_reply(
     cleaned = reply.strip()
     if not cleaned:
         return _continue_discussion_reply(language, turn_index)
+    if _looks_like_non_answer(cleaned):
+        return _continue_discussion_reply(language, turn_index)
     if cleaned.lower() in _FINISH_RESPONSES:
         return _continue_discussion_reply(language, turn_index)
     if previous_reply and cleaned.lower() == previous_reply.strip().lower():
         return _continue_discussion_reply(language, turn_index + 1)
     return cleaned
+
+
+def _looks_like_non_answer(reply: str) -> bool:
+    lowered = reply.lower()
+    if "?" in reply:
+        return True
+    non_answer_markers = (
+        "need more context",
+        "need more details",
+        "please provide",
+        "can you clarify",
+        "could you clarify",
+        "potrebujem viac",
+        "prosim doplnte",
+        "mohli by ste doplnit",
+        "bitte teilen sie",
+        "koennen sie",
+    )
+    return any(marker in lowered for marker in non_answer_markers)
 
 
 def _normalize_question_key(question: str) -> str:

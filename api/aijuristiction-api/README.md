@@ -26,6 +26,16 @@ uvicorn app.main:app --reload --port 8080
 
 If the `.conda` environment already exists, skip `conda env create`.
 
+### Console logging
+
+- API now writes request logs to console by default (method, path, status, duration, request id).
+- On startup, API prints `API Starting` with API/core version and active log level.
+- Set log level with `API_LOG_LEVEL` (fallback: `LOG_LEVEL`), for example:
+
+```bash
+API_LOG_LEVEL=DEBUG uvicorn app.main:app --reload --port 8080
+```
+
 ## Run with Docker
 
 ```bash
@@ -222,6 +232,7 @@ For simulator-style streaming automation, the stream payload also supports:
   - send thank-you
   - send `finish` to close discussion
 - AI user simulation now uses full conversation context and avoids exact repeated replies across turns.
+- AI user simulation normalizes non-answer outputs (questions/clarification requests) into factual continuation replies.
 
 PDF export options:
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary` -> discussion summary PDF

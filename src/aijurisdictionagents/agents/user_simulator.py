@@ -22,8 +22,12 @@ USER_SIMULATOR_PROMPT = textwrap.dedent(
 
     RULES
     - Return only a plain text answer (no markdown, no JSON).
+    - Do not ask follow-up questions back to the lawyer.
+    - Do not repeat your initial legal question verbatim.
     - If the question asks for unknown facts, provide a plausible placeholder and
       clearly indicate uncertainty.
+    - If the lawyer asks for dates, names, addresses, amounts, or timeline details,
+      provide those details directly in one concise response.
     - Prefer one short paragraph.
     - Keep style natural, as if written by a real client in chat (small imperfections are acceptable).
     """

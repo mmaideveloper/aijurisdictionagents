@@ -6,11 +6,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import 'logging/app_logger.dart';
+import 'platform/file_saver.dart';
 
 const String _apiBaseUrlOverride = String.fromEnvironment(
   'AIJ_API_BASE_URL',
@@ -163,6 +165,18 @@ class StreamEvent {
   final Object? data;
 }
 
+class ExportFilePayload {
+  const ExportFilePayload({
+    required this.bytes,
+    required this.filename,
+    required this.contentType,
+  });
+
+  final Uint8List bytes;
+  final String filename;
+  final String contentType;
+}
+
 class ApiClient {
   ApiClient(
       {required this.baseUri, required this.apiKey, required this.logger});
@@ -212,6 +226,46 @@ class ApiClient {
           'action': action,
           'status_code': response.statusCode,
           'body': response.body,
+        },
+      );
+      return response;
+    } catch (error, stackTrace) {
+      await logger.error(
+        'API request failed',
+        error,
+        stackTrace,
+        <String, Object?>{
+          'action': action,
+          'url': uri.toString(),
+        },
+      );
+      rethrow;
+    }
+  }
+
+  Future<http.Response> _get({
+    required String path,
+    required String action,
+  }) async {
+    final uri = baseUri.resolve(path);
+    await logger.info(
+      'API request',
+      <String, Object?>{
+        'action': action,
+        'method': 'GET',
+        'url': uri.toString(),
+        'headers': _headersForLog,
+      },
+    );
+    try {
+      final response = await http.get(uri, headers: _headers);
+      await logger.info(
+        'API response',
+        <String, Object?>{
+          'action': action,
+          'status_code': response.statusCode,
+          'content_type': response.headers['content-type'],
+          'bytes': response.bodyBytes.length,
         },
       );
       return response;
@@ -510,6 +564,65 @@ class ApiClient {
     return body['content'] as String? ?? 'No response message.';
   }
 
+  String _fallbackExportFilename({
+    required String kind,
+    required String sessionId,
+  }) {
+    final now = DateTime.now();
+    final stamp =
+        '${now.year.toString().padLeft(4, '0')}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+    final docName =
+        kind == 'document' ? 'final-document' : 'discussion-summary';
+    return '$sessionId-$stamp-$docName.pdf';
+  }
+
+  String? _filenameFromContentDisposition(String? headerValue) {
+    if (headerValue == null || headerValue.trim().isEmpty) {
+      return null;
+    }
+    final match = RegExp(r'filename="([^"]+)"', caseSensitive: false)
+        .firstMatch(headerValue);
+    if (match == null) {
+      return null;
+    }
+    final value = match.group(1)?.trim();
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value;
+  }
+
+  Future<ExportFilePayload> downloadExportPdf({
+    required String kind,
+  }) async {
+    if (kind != 'summary' && kind != 'document') {
+      throw Exception('Unsupported PDF export kind: $kind');
+    }
+    final sessionId = _sessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      throw Exception('No active session. Start a discussion first.');
+    }
+    final response = await _get(
+      path: '/v1/chat/sessions/$sessionId/export?format=pdf&kind=$kind',
+      action: 'export_pdf_$kind',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'PDF export failed with status ${response.statusCode}: ${response.body}',
+      );
+    }
+    final filename = _filenameFromContentDisposition(
+          response.headers['content-disposition'],
+        ) ??
+        _fallbackExportFilename(kind: kind, sessionId: sessionId);
+    final contentType = response.headers['content-type'] ?? 'application/pdf';
+    return ExportFilePayload(
+      bytes: response.bodyBytes,
+      filename: filename,
+      contentType: contentType,
+    );
+  }
+
   void resetSession() {
     unawaited(
       logger.info(
@@ -544,13 +657,18 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   final TextEditingController _inputController = TextEditingController();
   final SpeechToText _speechToText = SpeechToText();
+  final ScrollController _messagesScrollController = ScrollController();
 
   late final ApiClient _apiClient;
+  late final FileSaver _fileSaver;
   late final List<ChatMessage> _messages;
   ResponderMode _responderMode = ResponderMode.aiUserSimulator;
   late LocaleOption _selectedLocale;
   String? _documentPath;
   bool _isSending = false;
+  bool _isDownloading = false;
+  bool _hasExportReady = false;
+  String _appVersionLabel = 'v0.1.0+1';
   bool _speechEnabled = false;
   bool _isListening = false;
 
@@ -576,6 +694,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       apiKey: _apiKey,
       logger: widget.logger,
     );
+    _fileSaver = createFileSaver();
     final welcomeLanguage =
         _normalizeLanguageCode(_selectedLocale.languageCode);
     _messages = <ChatMessage>[
@@ -602,6 +721,25 @@ class _ChatHomePageState extends State<ChatHomePage> {
       ),
     );
     unawaited(_initializeSpeechRecognition());
+    unawaited(_loadAppVersion());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToLatest(animated: false);
+    });
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) {
+        return;
+      }
+      final version = info.version.trim();
+      final build = info.buildNumber.trim();
+      final label = build.isEmpty ? 'v$version' : 'v$version+$build';
+      setState(() {
+        _appVersionLabel = label;
+      });
+    } catch (_) {}
   }
 
   String _localeIdForSpeech(LocaleOption locale) {
@@ -723,7 +861,26 @@ class _ChatHomePageState extends State<ChatHomePage> {
   void dispose() {
     _speechToText.stop();
     _inputController.dispose();
+    _messagesScrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollToLatest({bool animated = true}) {
+    if (!_messagesScrollController.hasClients) {
+      return;
+    }
+    final offset = _messagesScrollController.position.maxScrollExtent;
+    if (animated) {
+      unawaited(
+        _messagesScrollController.animateTo(
+          offset,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        ),
+      );
+      return;
+    }
+    _messagesScrollController.jumpTo(offset);
   }
 
   Future<void> _captureDocument() async {
@@ -771,6 +928,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
     setState(() {
       _isSending = true;
+      _hasExportReady = false;
       _messages.add(
         ChatMessage(
           role: 'user',
@@ -782,6 +940,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
     });
 
     _inputController.clear();
+    _scrollToLatest();
 
     try {
       if (_responderMode == ResponderMode.aiUserSimulator) {
@@ -824,6 +983,14 @@ class _ChatHomePageState extends State<ChatHomePage> {
                 ),
               );
             });
+            _scrollToLatest();
+          }
+          if (event.event == 'result' || event.event == 'done') {
+            if (mounted) {
+              setState(() {
+                _hasExportReady = true;
+              });
+            }
           }
           if (event.event == 'error') {
             throw Exception('Discussion stream reported error: ${event.data}');
@@ -852,7 +1019,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
                 createdAt: DateTime.now(),
               ),
             );
+            _hasExportReady = false;
           });
+          _scrollToLatest();
         }
       }
     } catch (error, stackTrace) {
@@ -870,6 +1039,61 @@ class _ChatHomePageState extends State<ChatHomePage> {
       if (mounted) {
         setState(() {
           _isSending = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _downloadPdf(String kind) async {
+    if (_isDownloading) {
+      return;
+    }
+    if (!_hasExportReady) {
+      _showSnackbar(
+        'PDF is not ready yet. Complete the AI discussion first.',
+      );
+      return;
+    }
+    setState(() {
+      _isDownloading = true;
+    });
+    try {
+      await widget.logger.info(
+        'PDF export download requested',
+        <String, Object?>{'kind': kind, 'session_id': _apiClient.sessionId},
+      );
+      final payload = await _apiClient.downloadExportPdf(kind: kind);
+      final savedPath = await _fileSaver.save(
+        bytes: payload.bytes,
+        fileName: payload.filename,
+        contentType: payload.contentType,
+      );
+      await widget.logger.info(
+        'PDF export download completed',
+        <String, Object?>{
+          'kind': kind,
+          'filename': payload.filename,
+          'saved_path': savedPath,
+          'bytes': payload.bytes.length,
+        },
+      );
+      if (savedPath != null && savedPath.isNotEmpty) {
+        _showSnackbar('PDF saved to $savedPath');
+      } else {
+        _showSnackbar('PDF download started: ${payload.filename}');
+      }
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'PDF export download failed',
+        error,
+        stackTrace,
+        <String, Object?>{'kind': kind, 'session_id': _apiClient.sessionId},
+      );
+      _showSnackbar('Failed to download PDF: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
         });
       }
     }
@@ -944,7 +1168,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
                           ),
                         ),
                         FilledButton.tonal(
-                          onPressed: () => _showSnackbar('Login UI placeholder'),
+                          onPressed: () =>
+                              _showSnackbar('Login UI placeholder'),
                           child: const Text('Sign in'),
                         ),
                       ],
@@ -964,176 +1189,222 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-              if (_documentPath != null)
-                MaterialBanner(
-                  content: Text('Attached document: $_documentPath'),
-                  leading: const Icon(Icons.attachment),
-                  actions: [
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _documentPath = null;
-                        });
-                        unawaited(
-                          widget.logger.info('Attached document path cleared'),
-                        );
-                      },
-                      child: const Text('CLEAR'),
-                    ),
-                  ],
-                ),
-              Expanded(
-                child: ListView.builder(
-                  reverse: true,
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final message = _messages[_messages.length - 1 - index];
-                    final isUser = message.role == 'user';
-                    final speaker = isUser
-                        ? 'You'
-                        : (message.agentName?.trim().isNotEmpty ?? false)
-                            ? message.agentName!
-                            : 'Assistant';
-                    return Align(
-                      alignment:
-                          isUser ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 320),
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isUser
-                              ? Theme.of(context).colorScheme.primaryContainer
-                              : Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              speaker,
-                              style: Theme.of(context).textTheme.labelMedium,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(message.content),
-                            if (message.documentPath != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Text(
-                                  'Document: ${message.documentPath}',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ),
-                          ],
-                        ),
+                if (_documentPath != null)
+                  MaterialBanner(
+                    content: Text('Attached document: $_documentPath'),
+                    leading: const Icon(Icons.attachment),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _documentPath = null;
+                          });
+                          unawaited(
+                            widget.logger
+                                .info('Attached document path cleared'),
+                          );
+                        },
+                        child: const Text('CLEAR'),
                       ),
-                    );
-                  },
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(12),
+                    ],
                   ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          const Text('Language & Country:'),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: DropdownButton<LocaleOption>(
-                              isExpanded: true,
-                              value: _selectedLocale,
-                              onChanged: (locale) {
-                                if (locale == null) {
-                                  return;
-                                }
-                                setState(() {
-                                  _selectedLocale = locale;
-                                  _updateWelcomeMessageForLocale();
-                                });
-                                if (_isListening) {
-                                  unawaited(_speechToText.stop());
-                                }
-                                unawaited(
-                                  widget.logger.info(
-                                    'Locale changed',
-                                    <String, Object?>{
-                                      'country': locale.countryCode,
-                                      'language': locale.languageCode,
-                                    },
-                                  ),
-                                );
-                                _apiClient.resetSession();
-                              },
-                              items: _localeOptions
-                                  .map(
-                                    (locale) => DropdownMenuItem<LocaleOption>(
-                                      value: locale,
-                                      child: Text(locale.label),
+                Expanded(
+                  child: Scrollbar(
+                    controller: _messagesScrollController,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    interactive: true,
+                    child: ListView.builder(
+                      controller: _messagesScrollController,
+                      padding: const EdgeInsets.all(12),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        final message = _messages[index];
+                        final isUser = message.role == 'user';
+                        final speaker = isUser
+                            ? 'You'
+                            : (message.agentName?.trim().isNotEmpty ?? false)
+                                ? message.agentName!
+                                : 'Assistant';
+                        return Align(
+                          alignment: isUser
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 320),
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isUser
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  speaker,
+                                  style:
+                                      Theme.of(context).textTheme.labelMedium,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(message.content),
+                                if (message.documentPath != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      'Document: ${message.documentPath}',
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
                                     ),
-                                  )
-                                  .toList(),
+                                  ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                      if (_showLocalResponderSwitch)
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
                         Row(
                           children: [
-                            const Text('Local mode:'),
+                            const Text('Language & Country:'),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: DropdownButton<ResponderMode>(
+                              child: DropdownButton<LocaleOption>(
                                 isExpanded: true,
-                                value: _responderMode,
-                                onChanged: (mode) {
-                                  if (mode == null) {
+                                value: _selectedLocale,
+                                onChanged: (locale) {
+                                  if (locale == null) {
                                     return;
                                   }
                                   setState(() {
-                                    _responderMode = mode;
+                                    _selectedLocale = locale;
+                                    _updateWelcomeMessageForLocale();
+                                    _hasExportReady = false;
                                   });
+                                  if (_isListening) {
+                                    unawaited(_speechToText.stop());
+                                  }
                                   unawaited(
                                     widget.logger.info(
-                                      'Responder mode changed',
+                                      'Locale changed',
                                       <String, Object?>{
-                                        'responder_mode': mode.name,
+                                        'country': locale.countryCode,
+                                        'language': locale.languageCode,
                                       },
                                     ),
                                   );
                                   _apiClient.resetSession();
                                 },
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: ResponderMode.aiUserSimulator,
-                                    child: Text('AI User Simulator Agent'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: ResponderMode.realPerson,
-                                    child: Text('Read User'),
-                                  ),
-                                ],
+                                items: _localeOptions
+                                    .map(
+                                      (locale) =>
+                                          DropdownMenuItem<LocaleOption>(
+                                        value: locale,
+                                        child: Text(locale.label),
+                                      ),
+                                    )
+                                    .toList(),
                               ),
                             ),
                           ],
                         ),
+                        if (_showLocalResponderSwitch)
+                          Row(
+                            children: [
+                              const Text('Local mode:'),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: DropdownButton<ResponderMode>(
+                                  isExpanded: true,
+                                  value: _responderMode,
+                                  onChanged: (mode) {
+                                    if (mode == null) {
+                                      return;
+                                    }
+                                    setState(() {
+                                      _responderMode = mode;
+                                      _hasExportReady = false;
+                                    });
+                                    unawaited(
+                                      widget.logger.info(
+                                        'Responder mode changed',
+                                        <String, Object?>{
+                                          'responder_mode': mode.name,
+                                        },
+                                      ),
+                                    );
+                                    _apiClient.resetSession();
+                                  },
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: ResponderMode.aiUserSimulator,
+                                      child: Text('AI User Simulator Agent'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: ResponderMode.realPerson,
+                                      child: Text('Read User'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
+                  child: Row(
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed:
+                            (_isDownloading || _isSending || !_hasExportReady)
+                                ? null
+                                : () => _downloadPdf('summary'),
+                        icon: _isDownloading
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.picture_as_pdf),
+                        label: const Text('Summary PDF'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.tonalIcon(
+                        onPressed:
+                            (_isDownloading || _isSending || !_hasExportReady)
+                                ? null
+                                : () => _downloadPdf('document'),
+                        icon: const Icon(Icons.description),
+                        label: const Text('Document PDF'),
+                      ),
                     ],
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
-                child: Row(
-                  children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
+                  child: Row(
+                    children: [
                       IconButton(
                         onPressed: _captureDocument,
                         icon: const Icon(Icons.document_scanner),
@@ -1190,6 +1461,27 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   ),
                 ),
               ],
+            ),
+          ),
+          Positioned(
+            left: 10,
+            bottom: 8,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.28),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _appVersionLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ),
           ),
         ],
