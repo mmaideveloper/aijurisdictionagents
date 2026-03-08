@@ -17,6 +17,9 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Select country/language before chatting (default: `Slovakia (SK)`).
 - Download generated summary/document PDF files directly from the mobile app once a session exists.
 - App version is shown in the bottom-left corner of the screen.
+- On startup, app checks latest GitHub release and prompts for update when a newer version is available.
+  - default source: `mmaideveloper/aijurisdictionagents` -> `releases/latest`
+  - override with `--dart-define=AIJ_GITHUB_OWNER=... --dart-define=AIJ_GITHUB_REPO=...`
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/chat/sessions`
   - `POST /v1/chat/sessions/{session_id}/reply`

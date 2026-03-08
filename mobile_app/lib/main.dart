@@ -10,6 +10,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'logging/app_logger.dart';
 import 'platform/file_saver.dart';
@@ -31,6 +32,14 @@ const String _defaultLanguage = String.fromEnvironment(
   defaultValue: 'SK',
 );
 const String _fallbackLanguageCode = 'SK';
+const String _githubOwner = String.fromEnvironment(
+  'AIJ_GITHUB_OWNER',
+  defaultValue: 'mmaideveloper',
+);
+const String _githubRepo = String.fromEnvironment(
+  'AIJ_GITHUB_REPO',
+  defaultValue: 'aijurisdictionagents',
+);
 
 const Map<String, String> _welcomeMessagesByLanguage = <String, String>{
   'SK':
@@ -175,6 +184,58 @@ class ExportFilePayload {
   final Uint8List bytes;
   final String filename;
   final String contentType;
+}
+
+class _SemanticVersion implements Comparable<_SemanticVersion> {
+  const _SemanticVersion({
+    required this.major,
+    required this.minor,
+    required this.patch,
+    required this.build,
+  });
+
+  final int major;
+  final int minor;
+  final int patch;
+  final int build;
+
+  static _SemanticVersion? tryParse(String input) {
+    final match = RegExp(r'(\d+)\.(\d+)\.(\d+)(?:\+(\d+))?').firstMatch(input);
+    if (match == null) {
+      return null;
+    }
+    return _SemanticVersion(
+      major: int.tryParse(match.group(1) ?? '') ?? 0,
+      minor: int.tryParse(match.group(2) ?? '') ?? 0,
+      patch: int.tryParse(match.group(3) ?? '') ?? 0,
+      build: int.tryParse(match.group(4) ?? '') ?? 0,
+    );
+  }
+
+  @override
+  int compareTo(_SemanticVersion other) {
+    final majorDiff = major.compareTo(other.major);
+    if (majorDiff != 0) {
+      return majorDiff;
+    }
+    final minorDiff = minor.compareTo(other.minor);
+    if (minorDiff != 0) {
+      return minorDiff;
+    }
+    final patchDiff = patch.compareTo(other.patch);
+    if (patchDiff != 0) {
+      return patchDiff;
+    }
+    return build.compareTo(other.build);
+  }
+
+  @override
+  String toString() {
+    if (build > 0) {
+      return '$major.$minor.$patch+$build';
+    }
+    return '$major.$minor.$patch';
+  }
 }
 
 class ApiClient {
@@ -669,6 +730,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
   bool _isDownloading = false;
   bool _hasExportReady = false;
   String _appVersionLabel = 'v0.1.0+1';
+  bool _updateDialogShown = false;
   bool _speechEnabled = false;
   bool _isListening = false;
 
@@ -736,10 +798,144 @@ class _ChatHomePageState extends State<ChatHomePage> {
       final version = info.version.trim();
       final build = info.buildNumber.trim();
       final label = build.isEmpty ? 'v$version' : 'v$version+$build';
+      final parsed = _SemanticVersion.tryParse(label);
       setState(() {
         _appVersionLabel = label;
       });
+      if (parsed != null) {
+        unawaited(_checkForGithubUpdate(parsed));
+      }
     } catch (_) {}
+  }
+
+  Uri _githubLatestReleaseUri() {
+    return Uri.parse(
+        'https://api.github.com/repos/$_githubOwner/$_githubRepo/releases/latest');
+  }
+
+  Future<void> _checkForGithubUpdate(_SemanticVersion installed) async {
+    try {
+      final response = await http.get(
+        _githubLatestReleaseUri(),
+        headers: <String, String>{
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'AIJurisDigta-Mobile',
+        },
+      );
+      if (response.statusCode == 404) {
+        await widget.logger.info(
+          'No GitHub release found for update check',
+          <String, Object?>{
+            'owner': _githubOwner,
+            'repo': _githubRepo,
+          },
+        );
+        return;
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        await widget.logger.info(
+          'GitHub update check failed',
+          <String, Object?>{
+            'status_code': response.statusCode,
+            'body': response.body,
+          },
+        );
+        return;
+      }
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      if ((payload['draft'] as bool? ?? false) ||
+          (payload['prerelease'] as bool? ?? false)) {
+        return;
+      }
+      final tagName = payload['tag_name'] as String? ?? '';
+      final releaseUrl = payload['html_url'] as String? ?? '';
+      final latestVersion = _SemanticVersion.tryParse(tagName);
+      if (latestVersion == null) {
+        await widget.logger.info(
+          'GitHub release tag is not parseable for app update',
+          <String, Object?>{'tag_name': tagName},
+        );
+        return;
+      }
+      if (latestVersion.compareTo(installed) <= 0) {
+        await widget.logger.info(
+          'App is already up to date',
+          <String, Object?>{
+            'installed': installed.toString(),
+            'latest': latestVersion.toString(),
+          },
+        );
+        return;
+      }
+      if (!mounted || _updateDialogShown) {
+        return;
+      }
+      _updateDialogShown = true;
+      await widget.logger.info(
+        'New app version available on GitHub',
+        <String, Object?>{
+          'installed': installed.toString(),
+          'latest': latestVersion.toString(),
+          'release_url': releaseUrl,
+        },
+      );
+      await _showUpdateDialog(
+        installedVersion: installed.toString(),
+        latestVersion: latestVersion.toString(),
+        releaseUrl: releaseUrl,
+      );
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'GitHub update check failed',
+        error,
+        stackTrace,
+      );
+    }
+  }
+
+  Future<void> _showUpdateDialog({
+    required String installedVersion,
+    required String latestVersion,
+    required String releaseUrl,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Update available'),
+          content: Text(
+            'A newer version is available on GitHub.\n\nCurrent: $installedVersion\nLatest: $latestVersion',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Later'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                final uri = Uri.tryParse(releaseUrl);
+                if (uri == null) {
+                  _showSnackbar('Release URL is invalid.');
+                  return;
+                }
+                final opened = await launchUrl(
+                  uri,
+                  mode: LaunchMode.platformDefault,
+                );
+                if (!opened) {
+                  _showSnackbar('Could not open update page.');
+                }
+              },
+              child: const Text('Update'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   String _localeIdForSpeech(LocaleOption locale) {
