@@ -30,10 +30,23 @@ If the `.conda` environment already exists, skip `conda env create`.
 
 - API now writes request logs to console by default (method, path, status, duration, request id).
 - On startup, API prints `API Starting` with API/core version and active log level.
+- API defaults `LLM_PROVIDER` to `azurefoundry` when not explicitly set.
 - Set log level with `API_LOG_LEVEL` (fallback: `LOG_LEVEL`), for example:
 
 ```bash
 API_LOG_LEVEL=DEBUG uvicorn app.main:app --reload --port 8080
+```
+
+Required env vars for default Azure Foundry provider:
+
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_DEPLOYMENT`
+- one of: `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`
+
+Optional explicit override:
+
+```bash
+LLM_PROVIDER=mock uvicorn app.main:app --reload --port 8080
 ```
 
 ## Run with Docker

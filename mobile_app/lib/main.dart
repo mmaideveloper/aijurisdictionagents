@@ -12,6 +12,7 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'auth/local_auth_store.dart';
 import 'logging/app_logger.dart';
 import 'platform/file_saver.dart';
 
@@ -50,6 +51,15 @@ const Map<String, String> _welcomeMessagesByLanguage = <String, String>{
       'Hallo, ich bin Jurisdicta. Ich kann Ihnen bei Ihrem Fall helfen. Bitte beschreiben Sie Ihr Problem und laden Sie relevante Unterlagen hoch.',
 };
 
+const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
+  'SK':
+      'Relacia vyprsala. Vytvorili sme novu relaciu. Prosim, odoslite poslednu spravu znova.',
+  'EN':
+      'Your session expired. A new session was created. Please send your last message again.',
+  'GE':
+      'Ihre Sitzung ist abgelaufen. Eine neue Sitzung wurde erstellt. Bitte senden Sie Ihre letzte Nachricht erneut.',
+};
+
 String _normalizeLanguageCode(String languageCode) {
   final normalized = languageCode.trim().toUpperCase();
   if (normalized == 'DE') {
@@ -69,6 +79,12 @@ String _welcomeMessageForLanguage(String languageCode) {
   final normalized = _normalizeLanguageCode(languageCode);
   return _welcomeMessagesByLanguage[normalized] ??
       _welcomeMessagesByLanguage[_fallbackLanguageCode]!;
+}
+
+String _sessionExpiredMessageForLanguage(String languageCode) {
+  final normalized = _normalizeLanguageCode(languageCode);
+  return _sessionExpiredMessagesByLanguage[normalized] ??
+      _sessionExpiredMessagesByLanguage[_fallbackLanguageCode]!;
 }
 
 String _defaultApiBaseUrl() {
@@ -145,8 +161,11 @@ class AIJurisdictionMobileApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
-      home: ChatHomePage(
-          cameras: cameras, logger: logger, apiBaseUrl: apiBaseUrl),
+      home: AuthGatePage(
+        cameras: cameras,
+        logger: logger,
+        apiBaseUrl: apiBaseUrl,
+      ),
     );
   }
 }
@@ -184,6 +203,13 @@ class ExportFilePayload {
   final Uint8List bytes;
   final String filename;
   final String contentType;
+}
+
+class SessionExpiredException implements Exception {
+  const SessionExpiredException();
+
+  @override
+  String toString() => 'Session expired and was recreated.';
 }
 
 class _SemanticVersion implements Comparable<_SemanticVersion> {
@@ -412,6 +438,70 @@ class ApiClient {
     return created;
   }
 
+  String _extractErrorDetailFromBody(String body) {
+    final normalizedBody = body.trim();
+    if (normalizedBody.isEmpty) {
+      return body;
+    }
+    try {
+      final decoded = jsonDecode(normalizedBody);
+      if (decoded is Map<String, dynamic>) {
+        final detail = decoded['detail'] as Object?;
+        if (detail is String && detail.trim().isNotEmpty) {
+          return detail.trim();
+        }
+      }
+    } catch (_) {
+      // Fall back to raw response body when JSON decoding fails.
+    }
+    return body;
+  }
+
+  String _extractErrorDetail(http.Response response) {
+    return _extractErrorDetailFromBody(response.body);
+  }
+
+  bool _isMissingSessionDetail(String detail) {
+    final normalized = detail.toLowerCase();
+    return normalized.contains('session') && normalized.contains('not found');
+  }
+
+  bool _isMissingSessionResponse(http.Response response) {
+    if (response.statusCode != 404) {
+      return false;
+    }
+    final detail = _extractErrorDetail(response);
+    return _isMissingSessionDetail(detail);
+  }
+
+  Future<String> _recreateSessionAfterMissing({
+    required String operation,
+    required String missingSessionId,
+    required ResponderMode responderMode,
+    required LocaleOption locale,
+  }) async {
+    await logger.info(
+      'Missing session detected, recreating session',
+      <String, Object?>{
+        'operation': operation,
+        'missing_session_id': missingSessionId,
+      },
+    );
+    _sessionId = null;
+    final recreated = await _ensureSession(
+      responderMode: responderMode,
+      locale: locale,
+    );
+    await logger.info(
+      'Session recreated',
+      <String, Object?>{
+        'operation': operation,
+        'recreated_session_id': recreated,
+      },
+    );
+    return recreated;
+  }
+
   Future<String> sendMessage({
     required String message,
     required ResponderMode responderMode,
@@ -433,13 +523,10 @@ class ApiClient {
       payload: payload,
     );
 
-    if (response.statusCode == 404) {
-      await logger.info(
-        'Reply endpoint returned 404, resetting session and retrying once',
-        <String, Object?>{'session_id': sessionId},
-      );
-      _sessionId = null;
-      final retrySessionId = await _ensureSession(
+    if (_isMissingSessionResponse(response)) {
+      final retrySessionId = await _recreateSessionAfterMissing(
+        operation: 'reply',
+        missingSessionId: sessionId,
         responderMode: responderMode,
         locale: locale,
       );
@@ -448,6 +535,15 @@ class ApiClient {
         action: 'reply_retry',
         payload: payload,
       );
+      if (_isMissingSessionResponse(retryResponse)) {
+        await _recreateSessionAfterMissing(
+          operation: 'reply_retry',
+          missingSessionId: retrySessionId,
+          responderMode: responderMode,
+          locale: locale,
+        );
+        throw const SessionExpiredException();
+      }
       return _parseReply(retryResponse, action: 'reply_retry');
     }
 
@@ -494,10 +590,6 @@ class ApiClient {
     String? documentPath,
   }) async* {
     _sessionId = null;
-    final sessionId = await _ensureSession(
-      responderMode: ResponderMode.aiUserSimulator,
-      locale: locale,
-    );
     final payload = <String, Object?>{
       'instruction': instruction,
       'documents': <Object?>[],
@@ -513,48 +605,82 @@ class ApiClient {
       );
     }
 
-    final path = '/v1/chat/sessions/$sessionId/stream';
-    final uri = baseUri.resolve(path);
-    final request = http.Request('POST', uri)
-      ..headers.addAll(_headers)
-      ..body = jsonEncode(payload);
-    await logger.info(
-      'API stream request',
-      <String, Object?>{
-        'action': 'start_discussion_stream',
-        'method': 'POST',
-        'url': uri.toString(),
-        'headers': _headersForLog,
-        'payload': payload,
-      },
-    );
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final sessionId = await _ensureSession(
+        responderMode: ResponderMode.aiUserSimulator,
+        locale: locale,
+      );
+      final path = '/v1/chat/sessions/$sessionId/stream';
+      final uri = baseUri.resolve(path);
+      final request = http.Request('POST', uri)
+        ..headers.addAll(_headers)
+        ..body = jsonEncode(payload);
+      await logger.info(
+        'API stream request',
+        <String, Object?>{
+          'action': 'start_discussion_stream',
+          'attempt': attempt + 1,
+          'method': 'POST',
+          'url': uri.toString(),
+          'headers': _headersForLog,
+          'payload': payload,
+        },
+      );
 
-    final client = http.Client();
-    try {
-      final response = await client.send(request);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final body = await response.stream.bytesToString();
-        await logger.info(
-          'API stream response non-success',
-          <String, Object?>{
-            'status_code': response.statusCode,
-            'body': body,
-          },
-        );
-        throw Exception(
-          'Discussion stream failed with status ${response.statusCode}: $body',
-        );
-      }
-      var buffer = '';
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        buffer += chunk;
-        final blocks = buffer.split('\n\n');
-        buffer = blocks.removeLast();
-        for (final block in blocks) {
-          final events = _parseSseBlock(block);
-          for (final event in events) {
+      final client = http.Client();
+      try {
+        final response = await client.send(request);
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          final body = await response.stream.bytesToString();
+          final detail = _extractErrorDetailFromBody(body);
+          await logger.info(
+            'API stream response non-success',
+            <String, Object?>{
+              'attempt': attempt + 1,
+              'status_code': response.statusCode,
+              'detail': detail,
+            },
+          );
+          if (response.statusCode == 404 && _isMissingSessionDetail(detail)) {
+            await _recreateSessionAfterMissing(
+              operation: 'start_discussion_stream',
+              missingSessionId: sessionId,
+              responderMode: ResponderMode.aiUserSimulator,
+              locale: locale,
+            );
+            if (attempt == 0) {
+              continue;
+            }
+            throw const SessionExpiredException();
+          }
+          throw Exception(
+            'Discussion stream failed with status ${response.statusCode}: $detail',
+          );
+        }
+        var buffer = '';
+        await for (final chunk in response.stream.transform(utf8.decoder)) {
+          buffer += chunk;
+          final blocks = buffer.split('\n\n');
+          buffer = blocks.removeLast();
+          for (final block in blocks) {
+            final events = _parseSseBlock(block);
+            for (final event in events) {
+              await logger.info(
+                'API stream event',
+                <String, Object?>{
+                  'event': event.event,
+                  'data': event.data,
+                },
+              );
+              yield event;
+            }
+          }
+        }
+        if (buffer.trim().isNotEmpty) {
+          final trailingEvents = _parseSseBlock(buffer);
+          for (final event in trailingEvents) {
             await logger.info(
-              'API stream event',
+              'API stream trailing event',
               <String, Object?>{
                 'event': event.event,
                 'data': event.data,
@@ -563,33 +689,22 @@ class ApiClient {
             yield event;
           }
         }
+        return;
+      } catch (error, stackTrace) {
+        await logger.error(
+          'API stream request failed',
+          error,
+          stackTrace,
+          <String, Object?>{
+            'action': 'start_discussion_stream',
+            'attempt': attempt + 1,
+            'url': uri.toString(),
+          },
+        );
+        rethrow;
+      } finally {
+        client.close();
       }
-      if (buffer.trim().isNotEmpty) {
-        final trailingEvents = _parseSseBlock(buffer);
-        for (final event in trailingEvents) {
-          await logger.info(
-            'API stream trailing event',
-            <String, Object?>{
-              'event': event.event,
-              'data': event.data,
-            },
-          );
-          yield event;
-        }
-      }
-    } catch (error, stackTrace) {
-      await logger.error(
-        'API stream request failed',
-        error,
-        stackTrace,
-        <String, Object?>{
-          'action': 'start_discussion_stream',
-          'url': uri.toString(),
-        },
-      );
-      rethrow;
-    } finally {
-      client.close();
     }
   }
 
@@ -618,7 +733,13 @@ class ApiClient {
 
   String _parseReply(http.Response response, {required String action}) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('API call failed with status ${response.statusCode}.');
+      final detail = _extractErrorDetail(response);
+      if (_isMissingSessionDetail(detail)) {
+        throw const SessionExpiredException();
+      }
+      throw Exception(
+        'API call failed with status ${response.statusCode}: $detail',
+      );
     }
 
     final body = _decodeResponseBody(response, action: action);
@@ -655,6 +776,8 @@ class ApiClient {
 
   Future<ExportFilePayload> downloadExportPdf({
     required String kind,
+    required ResponderMode responderMode,
+    required LocaleOption locale,
   }) async {
     if (kind != 'summary' && kind != 'document') {
       throw Exception('Unsupported PDF export kind: $kind');
@@ -668,8 +791,18 @@ class ApiClient {
       action: 'export_pdf_$kind',
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = _extractErrorDetail(response);
+      if (_isMissingSessionDetail(detail)) {
+        await _recreateSessionAfterMissing(
+          operation: 'export_pdf_$kind',
+          missingSessionId: sessionId,
+          responderMode: responderMode,
+          locale: locale,
+        );
+        throw const SessionExpiredException();
+      }
       throw Exception(
-        'PDF export failed with status ${response.statusCode}: ${response.body}',
+        'PDF export failed with status ${response.statusCode}: $detail',
       );
     }
     final filename = _filenameFromContentDisposition(
@@ -695,8 +828,8 @@ class ApiClient {
   }
 }
 
-class ChatHomePage extends StatefulWidget {
-  const ChatHomePage({
+class AuthGatePage extends StatefulWidget {
+  const AuthGatePage({
     super.key,
     required this.cameras,
     required this.logger,
@@ -706,6 +839,605 @@ class ChatHomePage extends StatefulWidget {
   final List<CameraDescription> cameras;
   final AppLogger logger;
   final String apiBaseUrl;
+
+  @override
+  State<AuthGatePage> createState() => _AuthGatePageState();
+}
+
+class _AuthGatePageState extends State<AuthGatePage> {
+  final LocalAuthStore _authStore = LocalAuthStore();
+  LocalAuthUser? _currentUser;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadSession());
+  }
+
+  Future<void> _loadSession() async {
+    final user = await _authStore.getCurrentUser();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _currentUser = user;
+      _loading = false;
+    });
+  }
+
+  Future<void> _handleSignedIn(LocalAuthUser user) async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _currentUser = user;
+    });
+  }
+
+  Future<void> _handleSignedOut() async {
+    await _authStore.signOut();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _currentUser = null;
+    });
+  }
+
+  void _handleProfileUpdated(LocalAuthUser user) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _currentUser = user;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final user = _currentUser;
+    if (user == null) {
+      return AuthEntryPage(
+        authStore: _authStore,
+        logger: widget.logger,
+        onSignedIn: _handleSignedIn,
+      );
+    }
+    return ChatHomePage(
+      cameras: widget.cameras,
+      logger: widget.logger,
+      apiBaseUrl: widget.apiBaseUrl,
+      signedInUser: user,
+      authStore: _authStore,
+      onSignedOut: _handleSignedOut,
+      onProfileUpdated: _handleProfileUpdated,
+    );
+  }
+}
+
+class AuthEntryPage extends StatefulWidget {
+  const AuthEntryPage({
+    super.key,
+    required this.authStore,
+    required this.logger,
+    required this.onSignedIn,
+  });
+
+  final LocalAuthStore authStore;
+  final AppLogger logger;
+  final ValueChanged<LocalAuthUser> onSignedIn;
+
+  @override
+  State<AuthEntryPage> createState() => _AuthEntryPageState();
+}
+
+class _AuthEntryPageState extends State<AuthEntryPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  final TextEditingController _signInPhoneController = TextEditingController();
+  final TextEditingController _signInEmailController = TextEditingController();
+  final TextEditingController _signInPasswordController =
+      TextEditingController();
+  final TextEditingController _signUpPhoneController = TextEditingController();
+  final TextEditingController _signUpEmailController = TextEditingController();
+  final TextEditingController _signUpPasswordController =
+      TextEditingController();
+  final TextEditingController _signUpFirstNameController =
+      TextEditingController();
+  final TextEditingController _signUpLastNameController =
+      TextEditingController();
+  bool _showEmailPasswordFallback = false;
+  bool _isBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _signInPhoneController.dispose();
+    _signInEmailController.dispose();
+    _signInPasswordController.dispose();
+    _signUpPhoneController.dispose();
+    _signUpEmailController.dispose();
+    _signUpPasswordController.dispose();
+    _signUpFirstNameController.dispose();
+    _signUpLastNameController.dispose();
+    super.dispose();
+  }
+
+  void _showSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _signInByPhone() async {
+    if (_isBusy) {
+      return;
+    }
+    setState(() {
+      _isBusy = true;
+    });
+    try {
+      final user = await widget.authStore.signInByPhone(
+        _signInPhoneController.text,
+      );
+      if (user != null) {
+        await widget.logger.info(
+          'User signed in automatically by phone',
+          <String, Object?>{'phone': user.phoneNumber},
+        );
+        widget.onSignedIn(user);
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _showEmailPasswordFallback = true;
+      });
+      _showSnackbar(
+        'Phone number not found. Sign in using email and password.',
+      );
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Sign-in by phone failed',
+        error,
+        stackTrace,
+      );
+      _showSnackbar('Sign in failed: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signInByEmailPassword() async {
+    if (_isBusy) {
+      return;
+    }
+    setState(() {
+      _isBusy = true;
+    });
+    try {
+      final user = await widget.authStore.signInByEmailPassword(
+        email: _signInEmailController.text,
+        password: _signInPasswordController.text,
+      );
+      if (user == null) {
+        _showSnackbar('Invalid email or password.');
+        return;
+      }
+      await widget.logger.info(
+        'User signed in by email/password',
+        <String, Object?>{'phone': user.phoneNumber, 'email': user.email},
+      );
+      widget.onSignedIn(user);
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Sign-in by email/password failed',
+        error,
+        stackTrace,
+      );
+      _showSnackbar('Sign in failed: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signUp() async {
+    if (_isBusy) {
+      return;
+    }
+    setState(() {
+      _isBusy = true;
+    });
+    try {
+      final user = await widget.authStore.signUp(
+        SignUpInput(
+          phoneNumber: _signUpPhoneController.text,
+          email: _signUpEmailController.text,
+          password: _signUpPasswordController.text,
+          firstName: _signUpFirstNameController.text,
+          lastName: _signUpLastNameController.text,
+        ),
+      );
+      await widget.logger.info(
+        'User signed up',
+        <String, Object?>{'phone': user.phoneNumber, 'email': user.email},
+      );
+      widget.onSignedIn(user);
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Sign-up failed',
+        error,
+        stackTrace,
+      );
+      _showSnackbar('Sign up failed: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[
+                    const Color(0xFF041B59),
+                    const Color(0xFF1388E9),
+                    const Color(0xFF041B59),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Card(
+                  margin: const EdgeInsets.all(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: 64,
+                          height: 64,
+                          child: Image.asset(
+                            'assets/branding/login-shield.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'AIJurisDigta',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0A2F6B),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TabBar(
+                          controller: _tabController,
+                          tabs: const [
+                            Tab(text: 'Sign in'),
+                            Tab(text: 'Sign up'),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 420,
+                          child: TabBarView(
+                            controller: _tabController,
+                            children: [
+                              SingleChildScrollView(
+                                child: Column(
+                                  children: [
+                                    TextField(
+                                      controller: _signInPhoneController,
+                                      keyboardType: TextInputType.phone,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Phone number',
+                                        hintText: '+421900000000',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: FilledButton(
+                                        onPressed:
+                                            _isBusy ? null : _signInByPhone,
+                                        child: Text(
+                                          _isBusy
+                                              ? 'Signing in...'
+                                              : 'Sign in by phone',
+                                        ),
+                                      ),
+                                    ),
+                                    if (_showEmailPasswordFallback) ...[
+                                      const SizedBox(height: 16),
+                                      const Divider(),
+                                      const SizedBox(height: 8),
+                                      TextField(
+                                        controller: _signInEmailController,
+                                        keyboardType:
+                                            TextInputType.emailAddress,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Email',
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: _signInPasswordController,
+                                        obscureText: true,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Password',
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: OutlinedButton(
+                                          onPressed: _isBusy
+                                              ? null
+                                              : _signInByEmailPassword,
+                                          child: const Text(
+                                            'Sign in by email/password',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              SingleChildScrollView(
+                                child: Column(
+                                  children: [
+                                    TextField(
+                                      controller: _signUpPhoneController,
+                                      keyboardType: TextInputType.phone,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Phone number *',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      controller: _signUpEmailController,
+                                      keyboardType: TextInputType.emailAddress,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Email *',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      controller: _signUpPasswordController,
+                                      obscureText: true,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Password *',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      controller: _signUpFirstNameController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'First name (optional)',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      controller: _signUpLastNameController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Last name (optional)',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: FilledButton(
+                                        onPressed: _isBusy ? null : _signUp,
+                                        child: Text(
+                                          _isBusy
+                                              ? 'Signing up...'
+                                              : 'Create account',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AccountSettingsPage extends StatefulWidget {
+  const AccountSettingsPage({
+    super.key,
+    required this.user,
+    required this.authStore,
+  });
+
+  final LocalAuthUser user;
+  final LocalAuthStore authStore;
+
+  @override
+  State<AccountSettingsPage> createState() => _AccountSettingsPageState();
+}
+
+class _AccountSettingsPageState extends State<AccountSettingsPage> {
+  late final TextEditingController _phoneController;
+  late final TextEditingController _passwordController;
+  late final TextEditingController _firstNameController;
+  late final TextEditingController _lastNameController;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _phoneController = TextEditingController(text: widget.user.phoneNumber);
+    _passwordController = TextEditingController(text: widget.user.password);
+    _firstNameController =
+        TextEditingController(text: widget.user.firstName ?? '');
+    _lastNameController =
+        TextEditingController(text: widget.user.lastName ?? '');
+  }
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _passwordController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) {
+      return;
+    }
+    setState(() {
+      _isSaving = true;
+    });
+    try {
+      final updated = await widget.authStore.updateUser(
+        originalPhoneNumber: widget.user.phoneNumber,
+        input: UpdateProfileInput(
+          phoneNumber: _phoneController.text,
+          password: _passwordController.text,
+          firstName: _firstNameController.text,
+          lastName: _lastNameController.text,
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pop(updated);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Profile update failed: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Update sign in profile')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(
+            controller: _phoneController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Phone number *',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passwordController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Password *',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _firstNameController,
+            decoration: const InputDecoration(
+              labelText: 'First name',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _lastNameController,
+            decoration: const InputDecoration(
+              labelText: 'Last name',
+            ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _isSaving ? null : _save,
+            child: Text(_isSaving ? 'Saving...' : 'Save changes'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ChatHomePage extends StatefulWidget {
+  const ChatHomePage({
+    super.key,
+    required this.cameras,
+    required this.logger,
+    required this.apiBaseUrl,
+    required this.signedInUser,
+    required this.authStore,
+    required this.onSignedOut,
+    required this.onProfileUpdated,
+  });
+
+  final List<CameraDescription> cameras;
+  final AppLogger logger;
+  final String apiBaseUrl;
+  final LocalAuthUser signedInUser;
+  final LocalAuthStore authStore;
+  final VoidCallback onSignedOut;
+  final ValueChanged<LocalAuthUser> onProfileUpdated;
 
   @override
   State<ChatHomePage> createState() => _ChatHomePageState();
@@ -733,6 +1465,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
   bool _updateDialogShown = false;
   bool _speechEnabled = false;
   bool _isListening = false;
+  late LocalAuthUser _signedInUser;
 
   bool get _showLocalResponderSwitch {
     final host = Uri.parse(widget.apiBaseUrl).host.toLowerCase();
@@ -745,6 +1478,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
   @override
   void initState() {
     super.initState();
+    _signedInUser = widget.signedInUser;
     _selectedLocale = _localeOptions.firstWhere(
       (option) =>
           option.countryCode == _defaultCountry &&
@@ -787,6 +1521,17 @@ class _ChatHomePageState extends State<ChatHomePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToLatest(animated: false);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatHomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.signedInUser.phoneNumber != widget.signedInUser.phoneNumber ||
+        oldWidget.signedInUser.email != widget.signedInUser.email ||
+        oldWidget.signedInUser.firstName != widget.signedInUser.firstName ||
+        oldWidget.signedInUser.lastName != widget.signedInUser.lastName) {
+      _signedInUser = widget.signedInUser;
+    }
   }
 
   Future<void> _loadAppVersion() async {
@@ -1220,6 +1965,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
           _scrollToLatest();
         }
       }
+    } on SessionExpiredException {
+      _showSnackbar(
+        _sessionExpiredMessageForLanguage(_selectedLocale.languageCode),
+      );
     } catch (error, stackTrace) {
       await widget.logger.error(
         'Failed to send message to API',
@@ -1258,7 +2007,11 @@ class _ChatHomePageState extends State<ChatHomePage> {
         'PDF export download requested',
         <String, Object?>{'kind': kind, 'session_id': _apiClient.sessionId},
       );
-      final payload = await _apiClient.downloadExportPdf(kind: kind);
+      final payload = await _apiClient.downloadExportPdf(
+        kind: kind,
+        responderMode: _responderMode,
+        locale: _selectedLocale,
+      );
       final savedPath = await _fileSaver.save(
         bytes: payload.bytes,
         fileName: payload.filename,
@@ -1278,6 +2031,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
       } else {
         _showSnackbar('PDF download started: ${payload.filename}');
       }
+    } on SessionExpiredException {
+      _showSnackbar(
+        _sessionExpiredMessageForLanguage(_selectedLocale.languageCode),
+      );
     } catch (error, stackTrace) {
       await widget.logger.error(
         'PDF export download failed',
@@ -1293,6 +2050,43 @@ class _ChatHomePageState extends State<ChatHomePage> {
         });
       }
     }
+  }
+
+  Future<void> _openAccountSettings() async {
+    final updated = await Navigator.of(context).push<LocalAuthUser>(
+      MaterialPageRoute<LocalAuthUser>(
+        builder: (_) => AccountSettingsPage(
+          user: _signedInUser,
+          authStore: widget.authStore,
+        ),
+      ),
+    );
+    if (!mounted || updated == null) {
+      return;
+    }
+    setState(() {
+      _signedInUser = updated;
+    });
+    widget.onProfileUpdated(updated);
+    await widget.logger.info(
+      'Signed-in profile updated',
+      <String, Object?>{
+        'phone': updated.phoneNumber,
+        'email': updated.email,
+      },
+    );
+  }
+
+  Future<void> _signOut() async {
+    _apiClient.resetSession();
+    await widget.logger.info(
+      'Signed-in user requested sign out',
+      <String, Object?>{
+        'phone': _signedInUser.phoneNumber,
+        'email': _signedInUser.email,
+      },
+    );
+    widget.onSignedOut();
   }
 
   void _showSnackbar(String message) {
@@ -1353,20 +2147,45 @@ class _ChatHomePageState extends State<ChatHomePage> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            'AIJurisDigta',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF0A2F6B),
-                            ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'AIJurisDigta',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF0A2F6B),
+                                ),
+                              ),
+                              Text(
+                                _signedInUser.displayName,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelMedium
+                                    ?.copyWith(color: const Color(0xFF234D86)),
+                              ),
+                              Text(
+                                _appVersionLabel,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: const Color(0xFF4A628A)),
+                              ),
+                            ],
                           ),
                         ),
-                        FilledButton.tonal(
-                          onPressed: () =>
-                              _showSnackbar('Login UI placeholder'),
-                          child: const Text('Sign in'),
+                        FilledButton.tonalIcon(
+                          onPressed: _openAccountSettings,
+                          icon: const Icon(Icons.manage_accounts),
+                          label: const Text('Account'),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          onPressed: _signOut,
+                          icon: const Icon(Icons.logout),
+                          label: const Text('Sign out'),
                         ),
                       ],
                     ),
@@ -1657,27 +2476,6 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   ),
                 ),
               ],
-            ),
-          ),
-          Positioned(
-            left: 10,
-            bottom: 8,
-            child: IgnorePointer(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.28),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _appVersionLabel,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
             ),
           ),
         ],

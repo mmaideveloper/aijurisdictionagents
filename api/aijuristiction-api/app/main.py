@@ -17,6 +17,9 @@ from app.telemetry import configure_telemetry
 from app.versioning import get_api_version, get_core_version
 
 API_VERSION = get_api_version()
+DEFAULT_API_LLM_PROVIDER = "azurefoundry"
+os.environ.setdefault("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER)
+EFFECTIVE_LLM_PROVIDER = os.getenv("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER).strip().lower()
 LOG_LEVEL = configure_logging()
 logger = logging.getLogger("aijuristiction-api.http")
 
@@ -55,10 +58,11 @@ configure_telemetry(app, service_name="aijuristiction-api", service_version=app.
 @app.on_event("startup")
 async def startup_log() -> None:
     logger.info(
-        "API Starting | api_version=%s | core_version=%s | log_level=%s",
+        "API Starting | api_version=%s | core_version=%s | log_level=%s | llm_provider=%s",
         app.version,
         get_core_version(),
         logging.getLevelName(LOG_LEVEL),
+        EFFECTIVE_LLM_PROVIDER,
     )
 
 

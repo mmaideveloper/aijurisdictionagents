@@ -9,6 +9,11 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Add supporting documents using the device camera.
 - Add questions/answers by speech using the microphone button next to the chat input.
 - Message area is centered between login header and selectors.
+- Built-in authentication UI:
+  - `Sign up`: phone number + email/password (required), first/last name (optional)
+  - `Sign in`: phone number first; if phone exists, user is signed in automatically
+  - if phone is not found, sign in fallback is shown for email/password
+  - after sign-in, `Account` page allows updating phone number, password, first name, last name
 - Initial localized Jurisdicta welcome message shown on app start.
 - Language/country selector is shown below the message area (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
   - `AI User Simulator` (default for local tests)
