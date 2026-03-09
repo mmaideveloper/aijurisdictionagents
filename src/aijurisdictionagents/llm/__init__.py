@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - only triggers when OpenAI deps are mis
 
 
 def get_llm_client() -> LLMClient:
-    provider = os.getenv("LLM_PROVIDER", "mock").lower()
+    provider = os.getenv("LLM_PROVIDER", "azurefoundry").lower()
     if provider == "mock":
         return MockLLMClient()
     if provider == "openai":

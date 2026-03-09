@@ -33,3 +33,9 @@ If the user asks to close a task:
 - Add a comment to the issue with the review/merge outcome.
 - Delete the feature branch and comment that deletion on the issue.
 - Move the task to Done (closed).
+
+Custom project skills:
+
+- `start-api` at `skills/start-api/SKILL.md`
+  - Purpose: start and health-check local `aijuristiction-api`.
+  - Script: `.\skills\start-api\scripts\start_api.ps1`

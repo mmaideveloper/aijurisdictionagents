@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start API"
+  short_description: "Start and health-check local API service"
+  default_prompt: "Start the local aijuristiction API on port 8080 and verify /health."

@@ -3,6 +3,10 @@
 Run API first:
     uvicorn app.main:app --reload --port 8080 --app-dir api/aijuristiction-api
 
+By default, API uses LLM_PROVIDER=azurefoundry.
+For local smoke testing without Azure credentials:
+    LLM_PROVIDER=mock uvicorn app.main:app --reload --port 8080 --app-dir api/aijuristiction-api
+
 Then:
     python examples/minimal_demo.py
 """
