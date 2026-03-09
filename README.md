@@ -238,7 +238,7 @@ Trace artifacts are written to `runs/YYYYMMDD_HHMMSS/`:
 - `run.log`
 - `trace.jsonl`
 
-`run.log` includes the active LLM provider (mock/OpenAI) at startup.
+`run.log` includes the active LLM provider (azurefoundry/openai/mock) at startup.
 When using Azure Foundry, `run.log` also records the auth method, endpoint, deployment, API version, and temperature,
 and temperature at INFO level.
 `run.log` also includes masked token details at DEBUG level (never the full key).
@@ -300,6 +300,18 @@ Local API docs (when API runs on port `8080`):
 - Swagger UI: `http://localhost:8080/docs`
 - OpenAPI JSON: `http://localhost:8080/openapi.json`
 
+Project skill for local API startup:
+
+```powershell
+.\skills\start-api\scripts\start_api.ps1
+```
+
+Background mode:
+
+```powershell
+.\skills\start-api\scripts\start_api.ps1 -Background
+```
+
 For full details, see `infra/README.md`.
 
 ## Corporate website
@@ -336,7 +348,8 @@ Live URL: `https://www.aiagenticsolutions.eu/`
 
 ## Assumptions
 
-- The default LLM provider is a deterministic mock (`LLM_PROVIDER=mock`).
+- The default LLM provider is Azure Foundry (`LLM_PROVIDER=azurefoundry`).
+- For local deterministic smoke testing without cloud credentials, set `LLM_PROVIDER=mock`.
 - PDF ingestion is optional and requires installing `pypdf`.
 - The initial version keeps all conversation state in memory.
 

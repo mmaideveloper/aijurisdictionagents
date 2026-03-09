@@ -214,7 +214,7 @@ def main() -> int:
         args.language or "user_input_language",
     )
 
-    provider = os.getenv("LLM_PROVIDER", "mock").lower()
+    provider = os.getenv("LLM_PROVIDER", "azurefoundry").lower()
     logger.info("LLM provider requested: %s", provider)
     _log_token_info(logger, provider)
     llm = get_llm_client()
