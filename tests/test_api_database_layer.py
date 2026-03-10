@@ -9,13 +9,20 @@ def test_api_database_layer_end_to_end(tmp_path: Path) -> None:
     store.initialize()
 
     user = store.create_user(
+        phone_number="+421900111222",
         email="founder@example.com",
-        full_name="Founder User",
         password="secret-pass",
+        first_name="Founder",
+        last_name="User",
     )
     authenticated = store.authenticate_user(email="founder@example.com", password="secret-pass")
     assert authenticated is not None
     assert authenticated.user_id == user.user_id
+    assert authenticated.phone_number == "+421900111222"
+
+    phone_authenticated = store.find_user_by_phone(phone_number="+421900111222")
+    assert phone_authenticated is not None
+    assert phone_authenticated.user_id == user.user_id
 
     company = store.create_company(legal_name="Acme Legal s.r.o.")
     store.add_user_to_company(user_id=user.user_id, company_id=company.company_id, role="owner")
@@ -89,7 +96,13 @@ def test_azure_storage_uri_keeps_case_folder_prefix(tmp_path: Path) -> None:
     )
     store.initialize()
 
-    user = store.create_user(email="azure@example.com", full_name="Azure User", password="secret")
+    user = store.create_user(
+        phone_number="+421900555444",
+        email="azure@example.com",
+        password="secret",
+        first_name="Azure",
+        last_name="User",
+    )
     case = store.create_case(user_id=user.user_id, company_id=None, title="Cloud case")
 
     store.add_case_document(

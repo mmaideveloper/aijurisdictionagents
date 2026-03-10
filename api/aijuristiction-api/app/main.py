@@ -3,9 +3,11 @@ from __future__ import annotations
 import logging
 import os
 import time
+from pathlib import Path
 from uuid import uuid4
 
 from collections.abc import Awaitable, Callable
+import dotenv
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +16,12 @@ from fastapi.responses import JSONResponse
 from app.chat.api import router as chat_router
 from app.logging_config import configure_logging
 from app.telemetry import configure_telemetry
+from app.users.api import router as users_router
 from app.versioning import get_api_version, get_core_version
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ENV_PATH = _REPO_ROOT / ".env"
+dotenv.load_dotenv(_REPO_ENV_PATH, override=False)
 
 API_VERSION = get_api_version()
 DEFAULT_API_LLM_PROVIDER = "azurefoundry"
@@ -52,6 +59,7 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "x-request-id"],
 )
 app.include_router(chat_router)
+app.include_router(users_router)
 configure_telemetry(app, service_name="aijuristiction-api", service_version=app.version)
 
 

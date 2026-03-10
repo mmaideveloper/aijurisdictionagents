@@ -43,6 +43,10 @@ Required env vars for default Azure Foundry provider:
 - `AZURE_OPENAI_DEPLOYMENT`
 - one of: `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`
 
+Local API startup loads the repository root `.env` automatically. If you override variables in the shell before starting `uvicorn`, those explicit shell values still win because `.env` is loaded with `override=False`.
+
+When using API key auth, leave `AZURE_OPENAI_AD_TOKEN` unset instead of setting it to an empty string. Likewise, leave `AZURE_OPENAI_API_KEY` unset when using Entra ID auth. The shared Azure Foundry loader strips blank auth values, but direct SDK smoke scripts can fail with an invalid `Authorization: Bearer ` header when an empty token variable is present.
+
 Optional explicit override:
 
 ```bash
@@ -60,6 +64,10 @@ docker compose up --build
 
 - `GET /health`
 - `GET /version`
+- `POST /v1/users/sign-up`
+- `POST /v1/users/sign-in`
+- `POST /v1/users/sign-in/phone`
+- `PATCH /v1/users/{user_id}`
 
 `GET /version` response includes:
 - `api_version`: API package version (`api/aijuristiction-api/pyproject.toml`).
@@ -75,6 +83,29 @@ Example:
   "core_version": "0.1.0"
 }
 ```
+
+## User profile endpoints
+
+The local API now supports simple profile management for the mobile app using the
+same `x-api-key` guard as the chat endpoints.
+
+- `POST /v1/users/sign-up`
+  - request: `phone_number`, `email`, `password`, optional `first_name`, `last_name`
+- `POST /v1/users/sign-in`
+  - request: `email`, `password`
+- `POST /v1/users/sign-in/phone`
+  - request: `phone_number`
+- `PATCH /v1/users/{user_id}`
+  - request: `phone_number`, optional `password`, optional `first_name`, optional `last_name`
+
+These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
+and use the local SQLite metadata database by default (`DB_LOCAL`, default `./data/api.sqlite3`).
+
+## PDF export
+
+- `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary` returns the session summary.
+- `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` now builds a document that matches the detected case topic instead of always returning a lease template.
+- For Slovak and other Central European locales, the exporter uses a Unicode TrueType font when available so characters such as `á`, `č`, `ľ`, `ô`, and `ž` render correctly in the generated PDF.
 
 ## Version bump workflow
 
@@ -123,6 +154,8 @@ CORS_ALLOW_ORIGINS=http://localhost:8090,http://127.0.0.1:8090,http://localhost:
 The chat simulator has been moved to a separate application: `api/chat-simulator-app`.
 
 Run it independently to test chat flows before frontend deployment.
+
+For Slovak simulated discussions, the AI user now ends the conversation with `To je vsetko` instead of the internal sentinel word `finish`.
 
 ## OpenTelemetry
 

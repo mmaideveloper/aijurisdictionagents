@@ -10,6 +10,8 @@ dependencies = [
   "opentelemetry-exporter-otlp>=1.27.0",
   "opentelemetry-instrumentation-fastapi>=0.48b0",
   "opentelemetry-sdk>=1.27.0",
+  "python-dotenv>=1.0",
+  "reportlab>=4.0",
   "uvicorn[standard]>=0.35.0",
 ]
 
@@ -17,6 +19,7 @@ dependencies = [
 dev = [
   "pytest>=8.4.2",
   "httpx>=0.28.1",
+  "pypdf>=6.0",
   "ruff>=0.12.8",
   "mypy>=1.17.1",
 ]

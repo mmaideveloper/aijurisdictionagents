@@ -1,7 +1,10 @@
 import json
+from io import BytesIO
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from pypdf import PdfReader
 
 from app.main import app
 
@@ -143,7 +146,7 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     assert any("navrh najomnej zmluvy" in content.lower() for content in assistant_messages)
     assert any("pdf" in content for content in user_messages)
     assert any("dakujem" in content or "thank you" in content for content in user_messages)
-    assert "finish" in user_messages
+    assert "to je vsetko" in user_messages
 
     summary_pdf = client.get(
         f"/v1/chat/sessions/{session_id}/export?format=pdf&kind=summary",
@@ -159,8 +162,8 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     assert document_pdf.status_code == 200
     assert document_pdf.content.startswith(b"%PDF")
 
-    summary_text = summary_pdf.content.decode("latin-1", errors="ignore").lower()
-    document_text = document_pdf.content.decode("latin-1", errors="ignore").lower()
+    summary_text = _pdf_text(summary_pdf.content).lower()
+    document_text = _pdf_text(document_pdf.content).lower()
     assert "ai jurisdiction" in summary_text
     assert "ai jurisdicta solution" in document_text
     assert "generated:" in document_text
@@ -173,13 +176,64 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     assert "jazyk:" not in document_text
     assert "session id" in summary_text
     assert "zhrnutie" in summary_text or "summary" in summary_text
-    assert "najomna zmluva" in document_text
-    assert "cl. i - zmluvne strany" in document_text
-    assert "cl. vi - skoncenie najmu" in document_text
-    assert "podpis prenajimatela" in document_text
-    assert "doba najmu" in document_text
+    assert "nájomná zmluva" in document_text
+    assert "čl. i - zmluvné strany" in document_text
+    assert "čl. vi - skončenie nájmu" in document_text
+    assert "podpis prenajímateľa" in document_text
+    assert "doba nájmu" in document_text
     assert "vypovedna lehota" in document_text
     assert "platba vopred" in document_text
+
+
+def test_document_export_for_easement_case_is_not_lease_template() -> None:
+    from app.chat.api import _build_document_export_content, _build_simple_pdf
+    from app.chat.models import Message, MessageRole
+
+    session_id = uuid4()
+    assistant_message = Message(
+        session_id=session_id,
+        role=MessageRole.ASSISTANT,
+        agent_name="LawyerSlovakia",
+        content=(
+            "Zhrnutie prípadu.\n\n"
+            "CASE_UPDATE_JSON:\n"
+            "{"
+            '"case":{"case_id":null,"status":"intake_open","jurisdiction":{"country":"SK","language":"sk-SK"},'
+            '"parties":{"client":{"name":"Klient"},"opponent":{"name":"pán Novák"}},'
+            '"matter":{"category":"civil","topic":"vecne_bremeno","amount_eur":null,'
+            '"key_dates":{},"facts_summary":"Spor so susedom ohľadom brány na mieste vecného bremena a prístupu k plynovej prípojke.",'
+            '"client_goal":"Zabezpečiť bránku alebo iný vstup na výkon vecného bremena."},'
+            '"documents":[],"open_questions":[],"next_discussion":{"scheduled_for":null,"agenda":["Pripraviť predžalobnú výzvu."]},'
+            '"discussions_append":[]}'
+            "}"
+        ),
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=[assistant_message],
+        country="SK",
+        language="SK",
+    )
+
+    assert "nájomná zmluva" not in " ".join(lines).lower()
+    assert any("vecného bremena" in line.lower() for line in lines)
+
+    pdf_bytes = _build_simple_pdf(
+        title=title,
+        lines=lines,
+        country="SK",
+        language="SK",
+        header_line="AI Jurisdicta Solution | Generated: 2026-03-10 16:00:00 UTC",
+        footer_line="AIJ | API 0.1.0 | Core 0.1.0",
+        draw_logo_mark=True,
+        include_title_block=True,
+    )
+    extracted = _pdf_text(pdf_bytes)
+    lowered = extracted.lower()
+    assert "vecného bremena" in lowered
+    assert "plynovej prípojke" in lowered
+    assert "nájomná zmluva" not in lowered
 
 
 def test_create_message_returns_404_for_unknown_session() -> None:
@@ -305,7 +359,7 @@ def test_ai_user_simulator_finishes_after_pdf_request_and_thanks(monkeypatch) ->
     assert user_messages[1] != "finish"
     assert any("pdf" in content for content in user_messages)
     assert any("dakujem" in content or "thank you" in content for content in user_messages)
-    assert "finish" in user_messages
+    assert "to je vsetko" in user_messages
     assert len(messages) > 2
 
 
@@ -356,3 +410,8 @@ def test_is_pdf_format_question_detects_pdf_prompt() -> None:
 
     assert _is_pdf_format_question("Do you want the final result in PDF format?")
     assert not _is_pdf_format_question("Please provide your contract date.")
+
+
+def _pdf_text(payload: bytes) -> str:
+    reader = PdfReader(BytesIO(payload))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)

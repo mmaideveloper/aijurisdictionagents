@@ -195,6 +195,26 @@ class ChatMessage {
   final DateTime? createdAt;
 }
 
+String _displayContentForMessage(ChatMessage message) {
+  if (message.role != 'assistant') {
+    return message.content;
+  }
+  return _stripCaseUpdateJson(message.content);
+}
+
+String _stripCaseUpdateJson(String content) {
+  final marker = RegExp(
+    r'\*{0,2}\s*CASE_UPDATE_JSON\s*:?\s*\*{0,2}',
+    caseSensitive: false,
+  );
+  final match = marker.firstMatch(content);
+  if (match == null) {
+    return content.trimRight();
+  }
+  final visible = content.substring(0, match.start).trimRight();
+  return visible.isEmpty ? content.trimRight() : visible;
+}
+
 class StreamEvent {
   const StreamEvent({required this.event, required this.data});
 
@@ -854,13 +874,17 @@ class AuthGatePage extends StatefulWidget {
 }
 
 class _AuthGatePageState extends State<AuthGatePage> {
-  final LocalAuthStore _authStore = LocalAuthStore();
+  late final LocalAuthStore _authStore;
   LocalAuthUser? _currentUser;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    _authStore = LocalAuthStore(
+      baseUri: Uri.parse(widget.apiBaseUrl),
+      apiKey: _apiKey,
+    );
     unawaited(_loadSession());
   }
 
@@ -968,6 +992,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    unawaited(_loadRememberedPhoneNumber());
   }
 
   @override
@@ -988,6 +1013,14 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _loadRememberedPhoneNumber() async {
+    final lastPhoneNumber = await widget.authStore.getLastPhoneNumber();
+    if (!mounted || lastPhoneNumber == null || lastPhoneNumber.isEmpty) {
+      return;
+    }
+    _signInPhoneController.text = lastPhoneNumber;
   }
 
   Future<void> _signInByPhone() async {
@@ -1178,6 +1211,10 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                     TextField(
                                       controller: _signInPhoneController,
                                       keyboardType: TextInputType.phone,
+                                      autofillHints: const <String>[
+                                        AutofillHints.telephoneNumber,
+                                        AutofillHints.username,
+                                      ],
                                       decoration: const InputDecoration(
                                         labelText: 'Phone number',
                                         hintText: '+421900000000',
@@ -1204,6 +1241,10 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                         controller: _signInEmailController,
                                         keyboardType:
                                             TextInputType.emailAddress,
+                                        autofillHints: const <String>[
+                                          AutofillHints.email,
+                                          AutofillHints.username,
+                                        ],
                                         decoration: const InputDecoration(
                                           labelText: 'Email',
                                         ),
@@ -1212,6 +1253,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                       TextField(
                                         controller: _signInPasswordController,
                                         obscureText: true,
+                                        autofillHints: const <String>[
+                                          AutofillHints.password,
+                                        ],
                                         decoration: const InputDecoration(
                                           labelText: 'Password',
                                         ),
@@ -1238,6 +1282,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                     TextField(
                                       controller: _signUpPhoneController,
                                       keyboardType: TextInputType.phone,
+                                      autofillHints: const <String>[
+                                        AutofillHints.telephoneNumber,
+                                      ],
                                       decoration: const InputDecoration(
                                         labelText: 'Phone number *',
                                       ),
@@ -1246,6 +1293,10 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                     TextField(
                                       controller: _signUpEmailController,
                                       keyboardType: TextInputType.emailAddress,
+                                      autofillHints: const <String>[
+                                        AutofillHints.email,
+                                        AutofillHints.newUsername,
+                                      ],
                                       decoration: const InputDecoration(
                                         labelText: 'Email *',
                                       ),
@@ -1254,6 +1305,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                     TextField(
                                       controller: _signUpPasswordController,
                                       obscureText: true,
+                                      autofillHints: const <String>[
+                                        AutofillHints.newPassword,
+                                      ],
                                       decoration: const InputDecoration(
                                         labelText: 'Password *',
                                       ),
@@ -1353,7 +1407,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     });
     try {
       final updated = await widget.authStore.updateUser(
-        originalPhoneNumber: widget.user.phoneNumber,
         input: UpdateProfileInput(
           phoneNumber: _phoneController.text,
           password: _passwordController.text,
@@ -1453,9 +1506,9 @@ class ChatHomePage extends StatefulWidget {
 }
 
 class _ChatHomePageState extends State<ChatHomePage> {
-  static const double _questionTimeoutSeconds = 300;
-  static const double _maxDiscussionMinutes = 15;
-  static const double _communicationMinutes = 3;
+  static const double _questionTimeoutSeconds = 3600;
+  static const double _maxDiscussionMinutes = 60;
+  static const double _communicationMinutes = 60;
 
   final TextEditingController _inputController = TextEditingController();
   final SpeechToText _speechToText = SpeechToText();
@@ -2247,6 +2300,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
                       itemCount: _messages.length,
                       itemBuilder: (context, index) {
                         final message = _messages[index];
+                        final displayContent = _displayContentForMessage(
+                          message,
+                        );
                         final isUser = message.role == 'user';
                         final speaker = isUser
                             ? 'You'
@@ -2280,7 +2336,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                                       Theme.of(context).textTheme.labelMedium,
                                 ),
                                 const SizedBox(height: 4),
-                                Text(message.content),
+                                Text(displayContent),
                                 if (message.documentPath != null)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 8),

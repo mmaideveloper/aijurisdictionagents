@@ -657,8 +657,21 @@ def _judge_review_prompt(language: str | None) -> str:
 
 
 def _is_finish_response(content: str) -> bool:
-    cleaned = content.strip().lower()
-    return cleaned in {"finish", "no", "nope", "done", "exit", "quit", "stop"}
+    cleaned = re.sub(r"[.!]+$", "", content.strip().lower())
+    return cleaned in {
+        "finish",
+        "no",
+        "nope",
+        "done",
+        "exit",
+        "quit",
+        "stop",
+        "to je vsetko",
+        "to je všetko",
+        "that's all",
+        "thats all",
+        "das ist alles",
+    }
 
 
 def _wants_judge_review(content: str) -> bool:

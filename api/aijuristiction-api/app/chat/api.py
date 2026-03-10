@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 import json
 import re
 import time
@@ -10,12 +11,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from queue import Queue
 from threading import Thread
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 
 from app.chat.core_runtime import core_message_role, run_orchestration
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
@@ -34,6 +39,8 @@ _CORE_VERSION = get_core_version()
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
+_WINDOWS_FONT_DIR = Path("C:/Windows/Fonts")
+_REGISTERED_PDF_FONT_FAMILIES: set[str] = set()
 
 
 class CreateSessionRequest(BaseModel):
@@ -212,8 +219,9 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                     reply = _thank_you_reply(session.language)
                     last_simulator_reply = reply
                     return reply
-                last_simulator_reply = "finish"
-                return "finish"
+                reply = _finish_discussion_reply(session.language)
+                last_simulator_reply = reply
+                return reply
 
             if _is_followup_termination_prompt(_question):
                 followup_prompts_seen += 1
@@ -237,8 +245,9 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                     answered_agent_questions=answered_agent_questions,
                     followup_prompts_seen=followup_prompts_seen,
                 ):
-                    last_simulator_reply = "finish"
-                    return "finish"
+                    reply = _finish_discussion_reply(session.language)
+                    last_simulator_reply = reply
+                    return reply
                 reply = _continue_discussion_reply(session.language, simulation_turn)
                 last_simulator_reply = reply
                 return reply
@@ -373,6 +382,15 @@ def _thank_you_reply(language: str | None) -> str:
     if lang.startswith("de"):
         return "Danke."
     return "Thank you."
+
+
+def _finish_discussion_reply(language: str | None) -> str:
+    lang = (language or "").strip().lower()
+    if lang.startswith("sk"):
+        return "To je vsetko"
+    if lang.startswith("de"):
+        return "Das ist alles."
+    return "That's all."
 
 
 def _should_finish_followup(
@@ -534,6 +552,8 @@ def export_session_result(
     pdf_content = _build_simple_pdf(
         title=title,
         lines=lines,
+        country=session.country,
+        language=session.language,
         header_line=(f"AI Jurisdicta Solution | Generated: {generated_at}" if kind == "document" else None),
         footer_line=(footer_line if kind == "document" else None),
         draw_logo_mark=(kind == "document"),
@@ -550,86 +570,70 @@ def _build_simple_pdf(
     title: str,
     lines: List[str],
     *,
+    country: str,
+    language: str | None,
     header_line: str | None = None,
     footer_line: str | None = None,
     draw_logo_mark: bool = False,
     include_title_block: bool = True,
 ) -> bytes:
+    regular_font, bold_font = _resolve_pdf_fonts(country=country, language=language)
+    page_width, page_height = A4
+    margin_left = 50.0
+    margin_top = 52.0
+    margin_bottom = 42.0
+    body_font_size = 11.0
+    body_line_height = 14.0
+    title_font_size = 14.0
+    footer_font_size = 9.0
+
     header_lines: list[str] = []
     if header_line:
         header_lines.append(header_line)
-    if header_lines:
         header_lines.append("")
 
     title_block: list[str] = [title, "----------------"] if include_title_block else []
     prepared_lines = header_lines + title_block + _wrap_pdf_lines(lines)
-    lines_per_page = 48
-    pages: list[list[str]] = []
-    for index in range(0, len(prepared_lines), lines_per_page):
-        pages.append(prepared_lines[index : index + lines_per_page])
-    if not pages:
-        pages = [[title, "----------------"]]
+    if not prepared_lines:
+        prepared_lines = [title]
 
-    page_count = len(pages)
-    font_id = 3
-    first_page_id = 4
-    page_ids = [first_page_id + i * 2 for i in range(page_count)]
-    content_ids = [page_id + 1 for page_id in page_ids]
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4, pageCompression=0)
 
-    kids_refs = " ".join(f"{page_id} 0 R" for page_id in page_ids)
-    objects: list[bytes] = [
-        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
-        f"2 0 obj << /Type /Pages /Kids [{kids_refs}] /Count {page_count} >> endobj\n".encode("latin-1"),
-        b"3 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
-    ]
-
-    for page_id, content_id, page_lines in zip(page_ids, content_ids, pages):
-        objects.append(
-            f"{page_id} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
-            f"/Contents {content_id} 0 R /Resources << /Font << /F1 {font_id} 0 R >> >> >> endobj\n".encode(
-                "latin-1"
-            )
-        )
-        escaped_lines = [_escape_pdf_line(line) for line in page_lines]
-        text_ops = ["BT", "/F1 11 Tf", "14 TL", "50 790 Td"]
-        for line in escaped_lines:
-            text_ops.append(f"({line}) Tj")
-            text_ops.append("T*")
-        text_ops.append("ET")
+    def start_page() -> float:
         if draw_logo_mark:
-            text_ops.extend(_ai_jurisdicta_logo_ops(x=500.0, y=718.0, size=66.0))
-        if footer_line:
-            escaped_footer = _escape_pdf_line(footer_line)
-            text_ops.extend(
-                [
-                    "BT",
-                    "/F1 9 Tf",
-                    "50 30 Td",
-                    f"({escaped_footer}) Tj",
-                    "ET",
-                ]
-            )
-        stream_bytes = " ".join(text_ops).encode("latin-1", errors="replace")
-        objects.append(
-            f"{content_id} 0 obj << /Length {len(stream_bytes)} >> stream\n".encode("latin-1")
-            + stream_bytes
-            + b"\nendstream endobj\n"
-        )
+            pdf.setFont(bold_font, 10)
+            pdf.drawRightString(page_width - margin_left, page_height - 28, "AI Jurisdicta")
+        return page_height - margin_top
 
-    output = bytearray(b"%PDF-1.4\n")
-    offsets: list[int] = [0]
-    for obj in objects:
-        offsets.append(len(output))
-        output.extend(obj)
-    xref_pos = len(output)
-    output.extend(f"xref\n0 {len(objects)+1}\n".encode("latin-1"))
-    output.extend(b"0000000000 65535 f \n")
-    for off in offsets[1:]:
-        output.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
-    output.extend(
-        f"trailer << /Root 1 0 R /Size {len(objects)+1} >>\nstartxref\n{xref_pos}\n%%EOF".encode("latin-1")
-    )
-    return bytes(output)
+    def draw_footer() -> None:
+        if footer_line:
+            pdf.setFont(regular_font, footer_font_size)
+            pdf.drawString(margin_left, margin_bottom - 8, footer_line)
+
+    y = start_page()
+    for index, line in enumerate(prepared_lines):
+        if index == 0 and include_title_block:
+            pdf.setFont(bold_font, title_font_size)
+            pdf.drawString(margin_left, y, line)
+            y -= body_line_height
+            continue
+        if include_title_block and index == 1 and line == "----------------":
+            pdf.setFont(regular_font, body_font_size)
+            pdf.drawString(margin_left, y, line)
+            y -= body_line_height
+            continue
+        if y <= margin_bottom + 20:
+            draw_footer()
+            pdf.showPage()
+            y = start_page()
+        pdf.setFont(regular_font, body_font_size)
+        pdf.drawString(margin_left, y, line)
+        y -= body_line_height
+
+    draw_footer()
+    pdf.save()
+    return buffer.getvalue()
 
 
 def _wrap_pdf_lines(lines: List[str], width: int = 90) -> List[str]:
@@ -725,16 +729,24 @@ def _build_document_export_content(
     source_lines = _normalize_document_lines(source)
     if not source_lines:
         source_lines = ["No lawyer-generated document content found in this session."]
-    facts = _extract_document_facts(source_lines)
+    case_update = _extract_case_update(source)
+    document_kind = _detect_document_kind(source_lines, case_update)
+    facts = _extract_document_facts(source_lines, case_update)
 
     if (language or "").strip().lower().startswith("sk"):
-        title = f"Generovany Dokument {session_id}"
-        lines = _build_standard_slovak_agreement_lines(facts)
-        return title, lines
+        title = f"Generovaný Dokument {session_id}"
+        if document_kind == "rental_agreement":
+            return title, _build_standard_slovak_agreement_lines(facts)
+        if document_kind == "easement_demand":
+            return title, _build_slovak_easement_demand_lines(facts)
+        return title, _build_generic_slovak_case_document_lines(facts)
 
     title = f"Generated Document {session_id}"
-    lines = _build_standard_english_agreement_lines(facts)
-    return title, lines
+    if document_kind == "rental_agreement":
+        return title, _build_standard_english_agreement_lines(facts)
+    if document_kind == "easement_demand":
+        return title, _build_english_easement_demand_lines(facts)
+    return title, _build_generic_english_case_document_lines(facts)
 
 
 def _pick_document_message(candidates: List[str]) -> str:
@@ -766,14 +778,34 @@ def _normalize_document_lines(content: str) -> List[str]:
     return filtered
 
 
-def _extract_document_facts(source_lines: List[str]) -> dict[str, str]:
+def _extract_document_facts(
+    source_lines: List[str],
+    case_update: dict[str, Any] | None = None,
+) -> dict[str, str]:
     text = " ".join(source_lines)
+    case = case_update.get("case", {}) if isinstance(case_update, dict) else {}
+    matter = case.get("matter", {}) if isinstance(case, dict) else {}
+    parties = case.get("parties", {}) if isinstance(case, dict) else {}
+    client = parties.get("client", {}) if isinstance(parties, dict) else {}
+    opponent = parties.get("opponent", {}) if isinstance(parties, dict) else {}
+    next_discussion = case.get("next_discussion", {}) if isinstance(case, dict) else {}
 
     def _capture(pattern: str, default: str, flags: int = re.IGNORECASE) -> str:
         match = re.search(pattern, text, flags)
         if not match:
             return default
         return " ".join(match.group(1).strip().split())
+
+    def _case_text(path: tuple[str, ...], default: str) -> str:
+        node: Any = case_update
+        for part in path:
+            if not isinstance(node, dict):
+                return default
+            node = node.get(part)
+        if node is None:
+            return default
+        value = str(node).strip()
+        return value or default
 
     parties_line = _capture(r"zmluvne strany:\s*(.+?)(?:\s+\d+\)|$)", "")
     prenajimatel = _capture(r"prenajimatel\s*([^,.;]+)", "Prenajimatel [doplnit udaje]")
@@ -787,6 +819,15 @@ def _extract_document_facts(source_lines: List[str]) -> dict[str, str]:
     deposit = _capture(r"kaucia:\s*(.+?)(?:\s+\d+\)|$)", "1 mesacne najomne")
     notice = _capture(r"(vypovedna lehota[^.]+)", "Vypovedna lehota 1 mesiac, dorucenie pisomne aj emailom")
 
+    client_name = _case_text(("case", "parties", "client", "name"), "Klient")
+    opponent_name = _case_text(("case", "parties", "opponent", "name"), "Protistrana")
+    topic = _case_text(("case", "matter", "topic"), "pravny_problem")
+    facts_summary = _case_text(("case", "matter", "facts_summary"), "Právny problém podľa diskusie.")
+    client_goal = _case_text(("case", "matter", "client_goal"), "Dosiahnuť primerané právne riešenie.")
+    scheduled_for = _case_text(("case", "next_discussion", "scheduled_for"), "")
+    agenda_items = next_discussion.get("agenda", []) if isinstance(next_discussion, dict) else []
+    agenda = ", ".join(str(item).strip() for item in agenda_items if str(item).strip())
+
     return {
         "prenajimatel": prenajimatel,
         "najomca": najomca,
@@ -796,44 +837,51 @@ def _extract_document_facts(source_lines: List[str]) -> dict[str, str]:
         "advance": advance,
         "deposit": deposit,
         "notice": notice,
+        "client_name": client_name,
+        "opponent_name": opponent_name,
+        "topic": topic,
+        "facts_summary": facts_summary,
+        "client_goal": client_goal,
+        "scheduled_for": scheduled_for,
+        "agenda": agenda or "Doplniť ďalší postup podľa vývoja komunikácie.",
     }
 
 
 def _build_standard_slovak_agreement_lines(facts: dict[str, str]) -> List[str]:
     return [
-        "NAJOMNA ZMLUVA",
-        "uzatvorena podla paragrafu 663 a nasl. Obcianskeho zakonnika",
+        "Nájomná zmluva",
+        "uzatvorená podľa paragrafu 663 a nasl. Občianskeho zákonníka",
         "",
-        "Cl. I - Zmluvne strany",
-        f"Prenajimatel: {facts['prenajimatel']}",
-        f"Najomca: {facts['najomca']}",
+        "Čl. I - Zmluvné strany",
+        f"Prenajímateľ: {facts['prenajimatel']}",
+        f"Nájomca: {facts['najomca']}",
         "",
-        "Cl. II - Predmet najmu",
+        "Čl. II - Predmet nájmu",
         _with_period(facts["predmet"]),
         "",
-        "Cl. III - Doba najmu",
+        "Čl. III - Doba nájmu",
         _with_period(facts["doba"]),
         "",
-        "Cl. IV - Najomne a platobne podmienky",
-        f"Najomne: {_with_period(facts['najomne'])}",
+        "Čl. IV - Nájomné a platobné podmienky",
+        f"Nájomné: {_with_period(facts['najomne'])}",
         f"Platba vopred: {_with_period(facts['advance'])}",
         f"Kaucia: {_with_period(facts['deposit'])}",
         "",
-        "Cl. V - Prava a povinnosti zmluvnych stran",
-        "Najomca je povinny uzivat predmet najmu riadne, setrne a v sulade so zmluvou.",
-        "Prenajimatel je povinny odovzdat predmet najmu sposobily na dohodnute uzivanie.",
+        "Čl. V - Práva a povinnosti zmluvných strán",
+        "Nájomca je povinný užívať predmet nájmu riadne, šetrne a v súlade so zmluvou.",
+        "Prenajímateľ je povinný odovzdať predmet nájmu spôsobilý na dohodnuté užívanie.",
         "",
-        "Cl. VI - Skoncenie najmu",
+        "Čl. VI - Skončenie nájmu",
         _with_period(facts["notice"]),
         "",
-        "Cl. VII - Zaverecne ustanovenia",
-        "Zmluva nadobuda platnost dnom podpisu oboma zmluvnymi stranami.",
-        "Zmeny zmluvy je mozne vykonat len pisomnym dodatkom.",
+        "Čl. VII - Záverečné ustanovenia",
+        "Zmluva nadobúda platnosť dňom podpisu oboma zmluvnými stranami.",
+        "Zmeny zmluvy je možné vykonať len písomným dodatkom.",
         "",
         "V [mesto], dna [datum]",
         "",
-        "Podpis prenajimatela: ____________________________",
-        "Podpis najomcu: _________________________________",
+        "Podpis prenajímateľa: ____________________________",
+        "Podpis nájomcu: _________________________________",
     ]
 
 
@@ -870,11 +918,254 @@ def _build_standard_english_agreement_lines(facts: dict[str, str]) -> List[str]:
     ]
 
 
+def _build_slovak_easement_demand_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Predžalobná výzva na umožnenie výkonu vecného bremena",
+        "",
+        f"Adresát: {facts['opponent_name']}",
+        f"Odosielateľ: {facts['client_name']}",
+        "",
+        "Vec:",
+        "Výzva na zdržanie sa zásahu do výkonu vecného bremena a na vytvorenie prístupu",
+        "",
+        "Skutkový základ:",
+        _with_period(facts["facts_summary"]),
+        "",
+        "Právny záujem klienta:",
+        _with_period(facts["client_goal"]),
+        "",
+        "Požiadavka:",
+        "Žiadam, aby ste sa zdržali akýchkoľvek stavebných zásahov, ktoré by znemožnili alebo podstatne sťažili výkon vecného bremena.",
+        "Zároveň žiadam, aby ste na mieste výkonu vecného bremena zabezpečili primeraný vstup, najmä bránku alebo iné technické riešenie umožňujúce prístup k plynovej prípojke.",
+        "",
+        "Lehota na plnenie:",
+        "Žiadam o písomné stanovisko bez zbytočného odkladu, najneskôr do 7 dní od doručenia tejto výzvy.",
+        "",
+        "Upozornenie:",
+        "Ak nedôjde k náprave, klient zváži ďalšie právne kroky vrátane návrhu na neodkladné opatrenie a uplatnenia súdnej ochrany.",
+        "",
+        "Navrhované podklady k prílohe:",
+        "1. Zmluva alebo rozhodnutie o vecnom bremene.",
+        "2. Písomná komunikácia so susedom.",
+        "3. Fotodokumentácia miesta prípojky a plánovaného plotu.",
+        "",
+        "Poznámka k ďalšiemu postupu:",
+        _with_period(facts["agenda"]),
+        "",
+        "Podpis klienta / zástupcu: ____________________________",
+    ]
+
+
+def _build_english_easement_demand_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Formal demand regarding easement access",
+        "",
+        f"Recipient: {facts['opponent_name']}",
+        f"Sender: {facts['client_name']}",
+        "",
+        "Subject:",
+        "Demand to refrain from interfering with easement access and to preserve an entry point",
+        "",
+        "Factual background:",
+        _with_period(facts["facts_summary"]),
+        "",
+        "Client objective:",
+        _with_period(facts["client_goal"]),
+        "",
+        "Demand:",
+        "You are requested to refrain from any construction that would prevent or materially hinder the exercise of the easement.",
+        "You are further requested to provide a gate or another technically suitable access point at the easement location so that the gas connection remains reachable.",
+        "",
+        "Response deadline:",
+        "Please provide a written response within 7 days of delivery of this notice.",
+        "",
+        "Notice:",
+        "If the matter is not resolved, the client may pursue further legal remedies, including interim relief and court protection.",
+        "",
+        "Recommended attachments:",
+        "1. Easement agreement or decision.",
+        "2. Written communication with the neighbor.",
+        "3. Photos of the gas connection and the planned wall.",
+        "",
+        "Next-step note:",
+        _with_period(facts["agenda"]),
+        "",
+        "Client / counsel signature: ____________________________",
+    ]
+
+
+def _build_generic_slovak_case_document_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Právne zhrnutie a návrh ďalšieho postupu",
+        "",
+        f"Klient: {facts['client_name']}",
+        f"Protistrana: {facts['opponent_name']}",
+        f"Téma: {facts['topic']}",
+        "",
+        "Skutkový stav:",
+        _with_period(facts["facts_summary"]),
+        "",
+        "Cieľ klienta:",
+        _with_period(facts["client_goal"]),
+        "",
+        "Odporúčaný postup:",
+        "1. Zabezpečiť a usporiadať všetky relevantné listiny a komunikáciu.",
+        "2. Písomne vyzvať protistranu na dobrovoľné riešenie.",
+        "3. Vyhodnotiť potrebu predžalobnej výzvy alebo návrhu na súdnu ochranu.",
+        "",
+        "Ďalšia konzultácia:",
+        _with_period(facts["agenda"]),
+        "",
+        "Podpis klienta / zástupcu: ____________________________",
+    ]
+
+
+def _build_generic_english_case_document_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Legal summary and next-step memorandum",
+        "",
+        f"Client: {facts['client_name']}",
+        f"Counterparty: {facts['opponent_name']}",
+        f"Topic: {facts['topic']}",
+        "",
+        "Facts:",
+        _with_period(facts["facts_summary"]),
+        "",
+        "Client objective:",
+        _with_period(facts["client_goal"]),
+        "",
+        "Recommended next steps:",
+        "1. Organize the relevant documents and communications.",
+        "2. Send a written request for voluntary resolution.",
+        "3. Assess whether a formal demand or court filing is required.",
+        "",
+        "Next consultation:",
+        _with_period(facts["agenda"]),
+        "",
+        "Client / counsel signature: ____________________________",
+    ]
+
+
+def _extract_case_update(content: str) -> dict[str, Any] | None:
+    marker = content.lower().find("case_update_json")
+    if marker < 0:
+        return None
+    json_start = content.find("{", marker)
+    if json_start < 0:
+        return None
+    payload = _extract_json_object(content, json_start)
+    if not payload:
+        return None
+    try:
+        decoded = json.loads(payload)
+    except json.JSONDecodeError:
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+def _extract_json_object(content: str, start_index: int) -> str | None:
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(start_index, len(content)):
+        char = content[index]
+        if escape:
+            escape = False
+            continue
+        if char == "\\":
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return content[start_index : index + 1]
+    return None
+
+
+def _detect_document_kind(
+    source_lines: List[str],
+    case_update: dict[str, Any] | None,
+) -> Literal["rental_agreement", "easement_demand", "generic_case_document"]:
+    combined = " ".join(source_lines).lower()
+    case = case_update.get("case", {}) if isinstance(case_update, dict) else {}
+    matter = case.get("matter", {}) if isinstance(case, dict) else {}
+    topic = str(matter.get("topic", "")).lower()
+    facts_summary = str(matter.get("facts_summary", "")).lower()
+    client_goal = str(matter.get("client_goal", "")).lower()
+    haystack = " ".join(part for part in (combined, topic, facts_summary, client_goal) if part)
+
+    rental_tokens = (
+        "prenaj",
+        "nájom",
+        "najom",
+        "lease",
+        "landlord",
+        "tenant",
+        "byt",
+    )
+    easement_tokens = (
+        "vecné bremeno",
+        "vecne bremeno",
+        "easement",
+        "plynov",
+        "prípoj",
+        "pripoj",
+        "sused",
+        "plot",
+        "brán",
+        "bránk",
+        "brank",
+    )
+    if any(token in haystack for token in rental_tokens):
+        return "rental_agreement"
+    if any(token in haystack for token in easement_tokens):
+        return "easement_demand"
+    return "generic_case_document"
+
+
 def _with_period(value: str) -> str:
     cleaned = value.strip()
     while cleaned.endswith("."):
         cleaned = cleaned[:-1].rstrip()
     return f"{cleaned}."
+
+
+def _resolve_pdf_fonts(*, country: str, language: str | None) -> tuple[str, str]:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country in {"SK", "CZ", "DE", "AT"} or normalized_language.startswith(
+        ("sk", "cs", "de")
+    ):
+        family = _register_ttf_font_family(
+            family_name="AIJArial",
+            regular_path=_WINDOWS_FONT_DIR / "arial.ttf",
+            bold_path=_WINDOWS_FONT_DIR / "arialbd.ttf",
+        )
+        if family is not None:
+            return family
+    return ("Helvetica", "Helvetica-Bold")
+
+
+def _register_ttf_font_family(
+    *,
+    family_name: str,
+    regular_path: Path,
+    bold_path: Path,
+) -> tuple[str, str] | None:
+    if not regular_path.exists() or not bold_path.exists():
+        return None
+    if family_name not in _REGISTERED_PDF_FONT_FAMILIES:
+        pdfmetrics.registerFont(TTFont(family_name, str(regular_path)))
+        pdfmetrics.registerFont(TTFont(f"{family_name}-Bold", str(bold_path)))
+        _REGISTERED_PDF_FONT_FAMILIES.add(family_name)
+    return (family_name, f"{family_name}-Bold")
 
 
 def _ai_jurisdicta_logo_ops(*, x: float, y: float, size: float) -> List[str]:

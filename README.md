@@ -398,3 +398,19 @@ Technical design details: `docs/MOBILE_TECHNICAL_DESIGN.md`.
 ## Examples
 
 - API database minimal demo: `python examples/api_database_minimal_demo.py`
+- Slovak law corpus solution note: `docs/SLOVAK_LAW_DATA_PLATFORM.md`
+- Slovak law corpus mockup preview: `powershell -ExecutionPolicy Bypass -File examples/preview_slovak_law_mockup.ps1`
+- Laws collector minimal demo: `python examples/laws_collector_minimal_demo.py`
+
+## Laws collector
+
+The Slovak laws collector service lives in `src/services/laws_collector`.
+
+Quick start:
+
+```powershell
+conda activate .\.conda
+python examples/laws_collector_minimal_demo.py
+```
+
+For database, scheduling, and Azure migration guidance, see `docs/LAWS_COLLECTOR.md`.
