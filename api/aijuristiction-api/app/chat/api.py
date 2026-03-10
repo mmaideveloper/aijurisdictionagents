@@ -784,10 +784,6 @@ def _extract_document_facts(
 ) -> dict[str, str]:
     text = " ".join(source_lines)
     case = case_update.get("case", {}) if isinstance(case_update, dict) else {}
-    matter = case.get("matter", {}) if isinstance(case, dict) else {}
-    parties = case.get("parties", {}) if isinstance(case, dict) else {}
-    client = parties.get("client", {}) if isinstance(parties, dict) else {}
-    opponent = parties.get("opponent", {}) if isinstance(parties, dict) else {}
     next_discussion = case.get("next_discussion", {}) if isinstance(case, dict) else {}
 
     def _capture(pattern: str, default: str, flags: int = re.IGNORECASE) -> str:
