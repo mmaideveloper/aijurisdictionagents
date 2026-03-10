@@ -11,16 +11,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from queue import Queue
 from threading import Thread
-from typing import Any, List, Literal, Optional
+from typing import Any, List, Literal, Optional, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4  # type: ignore[import-untyped]
+from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
+from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
+from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 
 from app.chat.core_runtime import core_message_role, run_orchestration
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
@@ -578,7 +578,7 @@ def _build_simple_pdf(
     include_title_block: bool = True,
 ) -> bytes:
     regular_font, bold_font = _resolve_pdf_fonts(country=country, language=language)
-    page_width, page_height = A4
+    page_width, page_height = cast(tuple[float, float], A4)
     margin_left = 50.0
     margin_top = 52.0
     margin_bottom = 42.0
