@@ -40,6 +40,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
 _WINDOWS_FONT_DIR = Path("C:/Windows/Fonts")
+_LINUX_FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
 _REGISTERED_PDF_FONT_FAMILIES: set[str] = set()
 
 
@@ -1139,13 +1140,26 @@ def _resolve_pdf_fonts(*, country: str, language: str | None) -> tuple[str, str]
     if normalized_country in {"SK", "CZ", "DE", "AT"} or normalized_language.startswith(
         ("sk", "cs", "de")
     ):
-        family = _register_ttf_font_family(
-            family_name="AIJArial",
-            regular_path=_WINDOWS_FONT_DIR / "arial.ttf",
-            bold_path=_WINDOWS_FONT_DIR / "arialbd.ttf",
+        font_candidates = (
+            (
+                "AIJArial",
+                _WINDOWS_FONT_DIR / "arial.ttf",
+                _WINDOWS_FONT_DIR / "arialbd.ttf",
+            ),
+            (
+                "AIJDejaVuSans",
+                _LINUX_FONT_DIR / "DejaVuSans.ttf",
+                _LINUX_FONT_DIR / "DejaVuSans-Bold.ttf",
+            ),
         )
-        if family is not None:
-            return family
+        for family_name, regular_path, bold_path in font_candidates:
+            family = _register_ttf_font_family(
+                family_name=family_name,
+                regular_path=regular_path,
+                bold_path=bold_path,
+            )
+            if family is not None:
+                return family
     return ("Helvetica", "Helvetica-Bold")
 
 
