@@ -341,6 +341,18 @@ npm run dev
 
 Then open `http://localhost:5173` in a browser. For details, see `docs/FRONTEND_DEMO.md`.
 
+## Mobile app
+
+Project skill for local mobile app startup:
+
+```powershell
+.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background
+```
+
+This launcher now asks for `localApi` or `publicDevApi`.
+If you choose `localApi`, it starts the API in a visible console window so live API logs are shown there.
+Use `-ConsoleWindow` if you also want live Flutter logs in a separate terminal window.
+
 ### Deployment
 
 The corporate site is deployed via GitHub Actions (`corporate_web` workflow) using FTP per environment.

@@ -39,3 +39,6 @@ Custom project skills:
 - `start-api` at `skills/start-api/SKILL.md`
   - Purpose: start and health-check local `aijuristiction-api`.
   - Script: `.\skills\start-api\scripts\start_api.ps1`
+- `start-mobile-app` at `skills/start-mobile-app/SKILL.md`
+  - Purpose: start and verify the local Flutter mobile app.
+  - Script: `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`
