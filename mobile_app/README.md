@@ -10,10 +10,12 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Add questions/answers by speech using the microphone button next to the chat input.
 - Message area is centered between login header and selectors.
 - Built-in authentication UI:
-  - `Sign up`: phone number + email/password (required), first/last name (optional)
-  - `Sign in`: phone number first; if phone exists, user is signed in automatically
+  - `Sign up`: phone number + email/password (required), first/last name (optional), persisted through the API
+  - `Sign in`: phone number first; if phone exists, user is signed in automatically through the API
   - if phone is not found, sign in fallback is shown for email/password
   - after sign-in, `Account` page allows updating phone number, password, first name, last name
+  - browser/local web remembers the last signed-in phone number and pre-fills the sign-in form
+  - device builds expose OS autofill hints for phone/email/password on sign-in and sign-up fields
 - Initial localized Jurisdicta welcome message shown on app start.
 - Language/country selector is shown below the message area (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
   - `AI User Simulator` (default for local tests)
@@ -26,12 +28,18 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - default source: `mmaideveloper/aijurisdictionagents` -> `releases/latest`
   - override with `--dart-define=AIJ_GITHUB_OWNER=... --dart-define=AIJ_GITHUB_REPO=...`
 - Uses the real API chat endpoints with API key auth:
+  - `POST /v1/users/sign-up`
+  - `POST /v1/users/sign-in`
+  - `POST /v1/users/sign-in/phone`
+  - `PATCH /v1/users/{user_id}`
   - `POST /v1/chat/sessions`
   - `POST /v1/chat/sessions/{session_id}/reply`
   - `POST /v1/chat/sessions/{session_id}/stream` (AI User Simulator mode)
   - Header: `x-api-key: aijuris`
 - Default local API base URL for Android emulator: `http://10.0.2.2:8080`.
 - Uses refreshed branding assets from provided logo/footer/icons set.
+- Assistant machine payloads such as `CASE_UPDATE_JSON` are hidden from the chat UI; the app shows only the user-facing text.
+- Local AI User Simulator defaults now allow up to 60 minutes for question timeout, discussion duration, and communication window.
 - Communication/error logging:
   - non-web targets write JSON log entries to a timestamped file in a `logs` folder
   - file name pattern: `mobile_YYYYMMDD_HHMMSS.log`

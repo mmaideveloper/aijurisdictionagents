@@ -1,9 +1,11 @@
 import 'dart:convert';
 
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LocalAuthUser {
   const LocalAuthUser({
+    required this.userId,
     required this.phoneNumber,
     required this.email,
     required this.password,
@@ -11,6 +13,7 @@ class LocalAuthUser {
     this.lastName,
   });
 
+  final String userId;
   final String phoneNumber;
   final String email;
   final String password;
@@ -28,6 +31,7 @@ class LocalAuthUser {
   }
 
   LocalAuthUser copyWith({
+    String? userId,
     String? phoneNumber,
     String? email,
     String? password,
@@ -35,6 +39,7 @@ class LocalAuthUser {
     String? lastName,
   }) {
     return LocalAuthUser(
+      userId: userId ?? this.userId,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       email: email ?? this.email,
       password: password ?? this.password,
@@ -45,6 +50,7 @@ class LocalAuthUser {
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
+      'user_id': userId,
       'phone_number': phoneNumber,
       'email': email,
       'password': password,
@@ -55,6 +61,7 @@ class LocalAuthUser {
 
   static LocalAuthUser fromJson(Map<String, dynamic> json) {
     return LocalAuthUser(
+      userId: json['user_id'] as String? ?? '',
       phoneNumber: json['phone_number'] as String? ?? '',
       email: json['email'] as String? ?? '',
       password: json['password'] as String? ?? '',
@@ -95,8 +102,16 @@ class UpdateProfileInput {
 }
 
 class LocalAuthStore {
-  static const String _usersKey = 'mobile_auth_users_v1';
-  static const String _currentPhoneKey = 'mobile_auth_current_phone_v1';
+  static const String _currentUserKey = 'mobile_auth_current_user_v2';
+  static const String _lastPhoneKey = 'mobile_auth_last_phone_v2';
+
+  const LocalAuthStore({
+    required this.baseUri,
+    required this.apiKey,
+  });
+
+  final Uri baseUri;
+  final String apiKey;
 
   String _normalizePhone(String value) {
     final trimmed = value.trim();
@@ -118,60 +133,39 @@ class LocalAuthStore {
     return trimmed;
   }
 
-  Future<List<LocalAuthUser>> _readUsers(SharedPreferences prefs) async {
-    final raw = prefs.getString(_usersKey);
-    if (raw == null || raw.trim().isEmpty) {
-      return <LocalAuthUser>[];
-    }
-    try {
-      final decoded = jsonDecode(raw) as List<dynamic>;
-      return decoded
-          .whereType<Map>()
-          .map(
-              (item) => LocalAuthUser.fromJson(Map<String, dynamic>.from(item)))
-          .toList();
-    } catch (_) {
-      return <LocalAuthUser>[];
-    }
-  }
-
-  Future<void> _writeUsers(
-    SharedPreferences prefs,
-    List<LocalAuthUser> users,
-  ) async {
-    final serialized = jsonEncode(users.map((user) => user.toJson()).toList());
-    await prefs.setString(_usersKey, serialized);
-  }
-
-  Future<void> _setCurrentPhone(
-    SharedPreferences prefs,
-    String? phoneNumber,
-  ) async {
-    if (phoneNumber == null || phoneNumber.isEmpty) {
-      await prefs.remove(_currentPhoneKey);
-      return;
-    }
-    await prefs.setString(_currentPhoneKey, phoneNumber);
-  }
+  Map<String, String> get _headers => <String, String>{
+        'x-api-key': apiKey,
+        'Content-Type': 'application/json',
+      };
 
   Future<LocalAuthUser?> getCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
-    final currentPhone = prefs.getString(_currentPhoneKey);
-    if (currentPhone == null || currentPhone.isEmpty) {
+    final raw = prefs.getString(_currentUserKey);
+    if (raw == null || raw.trim().isEmpty) {
       return null;
     }
-    final users = await _readUsers(prefs);
-    for (final user in users) {
-      if (_normalizePhone(user.phoneNumber) == _normalizePhone(currentPhone)) {
-        return user;
-      }
+    try {
+      return LocalAuthUser.fromJson(
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
+    } catch (_) {
+      await prefs.remove(_currentUserKey);
+      return null;
     }
-    return null;
+  }
+
+  Future<String?> getLastPhoneNumber() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_lastPhoneKey);
+    if (raw == null || raw.trim().isEmpty) {
+      return null;
+    }
+    return raw;
   }
 
   Future<void> signOut() async {
     final prefs = await SharedPreferences.getInstance();
-    await _setCurrentPhone(prefs, null);
+    await prefs.remove(_currentUserKey);
   }
 
   Future<LocalAuthUser> signUp(SignUpInput input) async {
@@ -187,27 +181,24 @@ class LocalAuthStore {
     if (password.isEmpty) {
       throw Exception('Password is required.');
     }
-    final prefs = await SharedPreferences.getInstance();
-    final users = await _readUsers(prefs);
-    for (final user in users) {
-      if (_normalizePhone(user.phoneNumber) == phone) {
-        throw Exception('Phone number is already registered.');
-      }
-      if (_normalizeEmail(user.email) == email) {
-        throw Exception('Email is already registered.');
-      }
-    }
-    final created = LocalAuthUser(
-      phoneNumber: phone,
-      email: email,
-      password: password,
-      firstName: _normalizeOptionalText(input.firstName),
-      lastName: _normalizeOptionalText(input.lastName),
+
+    final response = await _postJson(
+      path: '/v1/users/sign-up',
+      payload: <String, Object?>{
+        'phone_number': phone,
+        'email': email,
+        'password': password,
+        'first_name': _normalizeOptionalText(input.firstName),
+        'last_name': _normalizeOptionalText(input.lastName),
+      },
     );
-    users.add(created);
-    await _writeUsers(prefs, users);
-    await _setCurrentPhone(prefs, created.phoneNumber);
-    return created;
+    if (response.statusCode != 201) {
+      throw Exception(_extractErrorDetail(response));
+    }
+
+    final user = _userFromApiResponse(response, password: password);
+    await _cacheSignedInUser(user);
+    return user;
   }
 
   Future<LocalAuthUser?> signInByPhone(String phoneNumber) async {
@@ -215,15 +206,25 @@ class LocalAuthStore {
     if (phone.isEmpty) {
       return null;
     }
-    final prefs = await SharedPreferences.getInstance();
-    final users = await _readUsers(prefs);
-    for (final user in users) {
-      if (_normalizePhone(user.phoneNumber) == phone) {
-        await _setCurrentPhone(prefs, user.phoneNumber);
-        return user;
-      }
+    final response = await _postJson(
+      path: '/v1/users/sign-in/phone',
+      payload: <String, Object?>{'phone_number': phone},
+    );
+    if (response.statusCode == 404) {
+      await _rememberLastPhone(phone);
+      return null;
     }
-    return null;
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorDetail(response));
+    }
+
+    final current = await getCurrentUser();
+    final cachedPassword = current != null && current.phoneNumber == phone
+        ? current.password
+        : '';
+    final user = _userFromApiResponse(response, password: cachedPassword);
+    await _cacheSignedInUser(user);
+    return user;
   }
 
   Future<LocalAuthUser?> signInByEmailPassword({
@@ -235,23 +236,33 @@ class LocalAuthStore {
     if (normalizedEmail.isEmpty || normalizedPassword.isEmpty) {
       return null;
     }
-    final prefs = await SharedPreferences.getInstance();
-    final users = await _readUsers(prefs);
-    for (final user in users) {
-      if (_normalizeEmail(user.email) == normalizedEmail &&
-          user.password == normalizedPassword) {
-        await _setCurrentPhone(prefs, user.phoneNumber);
-        return user;
-      }
+    final response = await _postJson(
+      path: '/v1/users/sign-in',
+      payload: <String, Object?>{
+        'email': normalizedEmail,
+        'password': normalizedPassword,
+      },
+    );
+    if (response.statusCode == 401) {
+      return null;
     }
-    return null;
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorDetail(response));
+    }
+
+    final user = _userFromApiResponse(response, password: normalizedPassword);
+    await _cacheSignedInUser(user);
+    return user;
   }
 
   Future<LocalAuthUser> updateUser({
-    required String originalPhoneNumber,
     required UpdateProfileInput input,
   }) async {
-    final originalPhone = _normalizePhone(originalPhoneNumber);
+    final current = await getCurrentUser();
+    if (current == null || current.userId.isEmpty) {
+      throw Exception('User account not found.');
+    }
+
     final phone = _normalizePhone(input.phoneNumber);
     final password = input.password.trim();
     if (phone.isEmpty) {
@@ -260,29 +271,93 @@ class LocalAuthStore {
     if (password.isEmpty) {
       throw Exception('Password is required.');
     }
-    final prefs = await SharedPreferences.getInstance();
-    final users = await _readUsers(prefs);
-    var index = -1;
-    for (var i = 0; i < users.length; i += 1) {
-      if (_normalizePhone(users[i].phoneNumber) == originalPhone) {
-        index = i;
-      } else if (_normalizePhone(users[i].phoneNumber) == phone) {
-        throw Exception('Phone number is already used by another account.');
-      }
-    }
-    if (index < 0) {
-      throw Exception('User account not found.');
-    }
-    final existing = users[index];
-    final updated = existing.copyWith(
-      phoneNumber: phone,
-      password: password,
-      firstName: _normalizeOptionalText(input.firstName),
-      lastName: _normalizeOptionalText(input.lastName),
+
+    final response = await _patchJson(
+      path: '/v1/users/${current.userId}',
+      payload: <String, Object?>{
+        'phone_number': phone,
+        'password': password,
+        'first_name': _normalizeOptionalText(input.firstName),
+        'last_name': _normalizeOptionalText(input.lastName),
+      },
     );
-    users[index] = updated;
-    await _writeUsers(prefs, users);
-    await _setCurrentPhone(prefs, updated.phoneNumber);
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorDetail(response));
+    }
+
+    final updated = _userFromApiResponse(response, password: password);
+    await _cacheSignedInUser(updated);
     return updated;
+  }
+
+  Future<void> _cacheSignedInUser(LocalAuthUser user) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_currentUserKey, jsonEncode(user.toJson()));
+    await _rememberLastPhone(user.phoneNumber);
+  }
+
+  Future<void> _rememberLastPhone(String? phoneNumber) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (phoneNumber == null || phoneNumber.isEmpty) {
+      await prefs.remove(_lastPhoneKey);
+      return;
+    }
+    await prefs.setString(_lastPhoneKey, phoneNumber);
+  }
+
+  Future<http.Response> _postJson({
+    required String path,
+    required Map<String, Object?> payload,
+  }) {
+    return http.post(
+      baseUri.resolve(path),
+      headers: _headers,
+      body: jsonEncode(payload),
+    );
+  }
+
+  Future<http.Response> _patchJson({
+    required String path,
+    required Map<String, Object?> payload,
+  }) {
+    return http.patch(
+      baseUri.resolve(path),
+      headers: _headers,
+      body: jsonEncode(payload),
+    );
+  }
+
+  String _extractErrorDetail(http.Response response) {
+    final body = response.body.trim();
+    if (body.isEmpty) {
+      return 'Request failed with status ${response.statusCode}.';
+    }
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        final detail = decoded['detail'] as Object?;
+        if (detail is String && detail.trim().isNotEmpty) {
+          return detail.trim();
+        }
+      }
+    } catch (_) {
+      // Fall through to raw body.
+    }
+    return body;
+  }
+
+  LocalAuthUser _userFromApiResponse(
+    http.Response response, {
+    required String password,
+  }) {
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    return LocalAuthUser(
+      userId: decoded['user_id'] as String? ?? '',
+      phoneNumber: decoded['phone_number'] as String? ?? '',
+      email: decoded['email'] as String? ?? '',
+      password: password,
+      firstName: decoded['first_name'] as String?,
+      lastName: decoded['last_name'] as String?,
+    );
   }
 }

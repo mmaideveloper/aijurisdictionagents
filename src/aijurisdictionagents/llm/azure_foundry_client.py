@@ -25,6 +25,7 @@ class AzureFoundryConfig:
 class AzureFoundryClient:
     def __init__(self, config: AzureFoundryConfig) -> None:
         self._config = config
+        _clear_blank_azure_openai_auth_env()
         if config.azure_ad_token:
             self._client = AzureOpenAI(
                 azure_endpoint=config.endpoint,
@@ -75,7 +76,7 @@ def load_azure_foundry_config_from_env() -> AzureFoundryConfig:
         or "2023-09-01-preview"
     )
     temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
-    api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip() or None
+    api_key = _optional_env("AZURE_OPENAI_API_KEY")
     azure_ad_token = _optional_env("AZURE_OPENAI_AD_TOKEN")
 
     if not endpoint:
@@ -118,6 +119,11 @@ def _optional_env(name: str) -> str | None:
         os.environ.pop(name, None)
         return None
     return normalized
+
+
+def _clear_blank_azure_openai_auth_env() -> None:
+    _optional_env("AZURE_OPENAI_API_KEY")
+    _optional_env("AZURE_OPENAI_AD_TOKEN")
 
 
 def _render_documents(documents: Iterable[Document], max_chars: int = 4000) -> str:

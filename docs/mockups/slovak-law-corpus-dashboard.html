@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Slovak Law Corpus Dashboard Mockup</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: rgba(255, 250, 243, 0.82);
+      --panel-strong: #fff8ee;
+      --ink: #1f2a2c;
+      --muted: #617173;
+      --line: rgba(31, 42, 44, 0.12);
+      --accent: #b64c25;
+      --accent-soft: rgba(182, 76, 37, 0.12);
+      --teal: #0d6e6e;
+      --gold: #d6a645;
+      --ok: #1d7a52;
+      --warn: #b36a07;
+      --bad: #9d3025;
+      --shadow: 0 24px 60px rgba(35, 34, 31, 0.12);
+      --radius: 24px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Trebuchet MS", "Segoe UI Variable Text", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(214, 166, 69, 0.25), transparent 28%),
+        radial-gradient(circle at 80% 10%, rgba(13, 110, 110, 0.18), transparent 24%),
+        linear-gradient(180deg, #fbf7ef 0%, var(--bg) 100%);
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    p {
+      margin: 0;
+      line-height: 1.55;
+    }
+
+    .shell {
+      width: min(1440px, calc(100% - 40px));
+      margin: 28px auto 40px;
+      padding: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      border-radius: 32px;
+      background: rgba(255, 250, 244, 0.78);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .seal {
+      width: 52px;
+      height: 52px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 1.15rem;
+      background: linear-gradient(135deg, var(--accent), #6a1f0c);
+      box-shadow: 0 14px 30px rgba(182, 76, 37, 0.28);
+    }
+
+    .eyebrow {
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .button,
+    .pill {
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.7);
+      padding: 10px 16px;
+      font-size: 0.92rem;
+      color: var(--ink);
+    }
+
+    .button.primary {
+      color: #fff;
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--accent), #8f2e11);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr 0.9fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    }
+
+    .hero-main {
+      padding: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-main::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -100px auto;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(214, 166, 69, 0.34), transparent 68%);
+    }
+
+    .hero-main h1 {
+      max-width: 10ch;
+      font-size: clamp(2.3rem, 5vw, 4.6rem);
+      line-height: 0.95;
+      margin: 12px 0 16px;
+    }
+
+    .hero-copy {
+      max-width: 56ch;
+      color: var(--muted);
+      margin-bottom: 22px;
+    }
+
+    .hero-tags,
+    .stat-grid,
+    .queue-list,
+    .source-grid,
+    .pipeline,
+    .content-grid,
+    .table-head,
+    .table-row,
+    .insight-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .hero-tags {
+      grid-template-columns: repeat(3, max-content);
+    }
+
+    .stat-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 20px;
+    }
+
+    .stat {
+      padding: 16px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.6);
+      border: 1px solid rgba(31, 42, 44, 0.08);
+      animation: rise 0.6s ease both;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.7rem;
+      margin-bottom: 6px;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    .hero-side {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background:
+        linear-gradient(180deg, rgba(13, 110, 110, 0.08), transparent 28%),
+        var(--panel);
+    }
+
+    .queue-list .item,
+    .source-card,
+    .pipeline .stage,
+    .table-row,
+    .insight-card {
+      padding: 16px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.56);
+      animation: rise 0.7s ease both;
+    }
+
+    .item-head,
+    .row-main,
+    .table-head,
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .status {
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+
+    .status.ok {
+      color: var(--ok);
+      background: rgba(29, 122, 82, 0.12);
+    }
+
+    .status.warn {
+      color: var(--warn);
+      background: rgba(179, 106, 7, 0.14);
+    }
+
+    .status.bad {
+      color: var(--bad);
+      background: rgba(157, 48, 37, 0.12);
+    }
+
+    .meta {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .content-grid {
+      grid-template-columns: 1.15fr 0.85fr;
+      margin-top: 20px;
+    }
+
+    .left-column,
+    .right-column {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .section {
+      padding: 22px;
+    }
+
+    .section-copy {
+      margin-top: 8px;
+      color: var(--muted);
+    }
+
+    .source-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 18px;
+    }
+
+    .source-card {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .source-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(90deg, var(--teal), var(--gold));
+    }
+
+    .source-card h3 {
+      font-size: 1.22rem;
+      margin-bottom: 8px;
+    }
+
+    .pipeline {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      margin-top: 18px;
+    }
+
+    .stage strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .stage h4 {
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+    }
+
+    .table {
+      margin-top: 18px;
+    }
+
+    .table-head {
+      grid-template-columns: 2fr 1.1fr 1.2fr 1.2fr;
+      padding: 0 16px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .table-row {
+      grid-template-columns: 2fr 1.1fr 1.2fr 1.2fr;
+      align-items: center;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .insight-list {
+      margin-top: 18px;
+    }
+
+    .insight-card h3 {
+      margin-bottom: 8px;
+      font-size: 1.14rem;
+    }
+
+    .diff {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(31, 42, 44, 0.04);
+      border: 1px dashed rgba(31, 42, 44, 0.14);
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 1120px) {
+      .hero,
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .source-grid,
+      .pipeline,
+      .table-head,
+      .table-row {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-tags,
+      .stat-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        width: min(100% - 18px, 100%);
+        margin: 10px auto 20px;
+        padding: 14px;
+        border-radius: 22px;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .hero-main,
+      .hero-side,
+      .section {
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="seal">SK</div>
+        <div>
+          <div class="eyebrow">AI Jurisdiction Agents</div>
+          <h2>Slovak Law Corpus Console</h2>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="pill">Jurisdiction: Slovakia</span>
+        <span class="pill">Mode: production mockup</span>
+        <button class="button">Review queue</button>
+        <button class="button primary">Run incremental sync</button>
+      </div>
+    </header>
+
+    <section class="hero">
+      <article class="panel hero-main">
+        <div class="eyebrow">Operator dashboard</div>
+        <h1>Whole law, versioned, traceable.</h1>
+        <p class="hero-copy">
+          A control room for ingesting the Slovak Collection of Laws, preserving historical
+          versions, validating amendments, and publishing grounded retrieval for legal agents.
+        </p>
+        <div class="hero-tags">
+          <span class="tag">Canonical source: Slov-Lex</span>
+          <span class="tag">Draft watch: NR SR</span>
+          <span class="tag">Effective-date retrieval</span>
+        </div>
+        <div class="stat-grid">
+          <div class="stat">
+            <strong>126,842</strong>
+            <p>Normalized provisions indexed for citation-aware retrieval.</p>
+          </div>
+          <div class="stat">
+            <strong>98.7%</strong>
+            <p>Automatic parse success across current and historical versions.</p>
+          </div>
+          <div class="stat">
+            <strong>14</strong>
+            <p>Change events waiting for human review before publication.</p>
+          </div>
+        </div>
+      </article>
+
+      <aside class="panel hero-side">
+        <div class="card-head">
+          <h3>Today's update queue</h3>
+          <span class="status warn">2 warnings</span>
+        </div>
+        <div class="queue-list">
+          <div class="item">
+            <div class="item-head">
+              <strong>New act discovered</strong>
+              <span class="status ok">Published</span>
+            </div>
+            <p class="meta">421/2025 Z. z. detected on Slov-Lex year feed and queued for full parse.</p>
+          </div>
+          <div class="item">
+            <div class="item-head">
+              <strong>Amendment propagated</strong>
+              <span class="status ok">Versioned</span>
+            </div>
+            <p class="meta">315/2025 Z. z. created a new effective-time version for an already tracked act.</p>
+          </div>
+          <div class="item">
+            <div class="item-head">
+              <strong>Parser ambiguity</strong>
+              <span class="status warn">Review needed</span>
+            </div>
+            <p class="meta">Annex numbering changed after PDF/HTML mismatch. Operator review blocks publish.</p>
+          </div>
+          <div class="item">
+            <div class="item-head">
+              <strong>Draft detected at NR SR</strong>
+              <span class="status bad">Not yet published</span>
+            </div>
+            <p class="meta">Proposal is tracked, but it is not part of the enforceable corpus until published in Slov-Lex.</p>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="content-grid">
+      <div class="left-column">
+        <section class="panel section">
+          <div class="eyebrow">Source health</div>
+          <h2>Official feed coverage</h2>
+          <p class="section-copy">
+            The collector keeps source trust explicit. Informative HTML is parsed for structure;
+            the PDF artifact remains the legal source of record.
+          </p>
+          <div class="source-grid">
+            <article class="source-card">
+              <div class="item-head">
+                <h3>Slov-Lex collection</h3>
+                <span class="status ok">Healthy</span>
+              </div>
+              <p>Primary source for acts, version history, publication metadata, and effective dates.</p>
+              <p class="meta">Last sync: 10 Mar 2026, 13:15 CET</p>
+            </article>
+            <article class="source-card">
+              <div class="item-head">
+                <h3>Static PDF artifacts</h3>
+                <span class="status ok">Archived</span>
+              </div>
+              <p>Legally binding copies stored alongside hashes for provenance and later validation.</p>
+              <p class="meta">Checksum drift: 0 cases</p>
+            </article>
+            <article class="source-card">
+              <div class="item-head">
+                <h3>NR SR legislative watch</h3>
+                <span class="status warn">Monitor only</span>
+              </div>
+              <p>Tracks proposals, reports, and ZIP bundles without promoting them into enforceable law.</p>
+              <p class="meta">7 active draft bills linked to tracked areas</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="eyebrow">Pipeline</div>
+          <h2>Incremental update flow</h2>
+          <p class="section-copy">
+            The pipeline treats legal change as a versioning problem, not a document overwrite problem.
+          </p>
+          <div class="pipeline">
+            <article class="stage">
+              <strong>01 discover</strong>
+              <h4>Find newly published acts</h4>
+              <p>Poll yearly Collection-of-Laws pages and track act numbers, dates, and source hashes.</p>
+            </article>
+            <article class="stage">
+              <strong>02 capture</strong>
+              <h4>Store source artifacts</h4>
+              <p>Persist HTML, PDF, and any draft ZIP bundles in immutable storage.</p>
+            </article>
+            <article class="stage">
+              <strong>03 normalize</strong>
+              <h4>Parse provisions</h4>
+              <p>Turn acts into paragraphs, points, letters, and annex segments with stable anchors.</p>
+            </article>
+            <article class="stage">
+              <strong>04 compare</strong>
+              <h4>Generate structural diffs</h4>
+              <p>Separate true text edits from numbering-only changes and future-effective versions.</p>
+            </article>
+            <article class="stage">
+              <strong>05 publish</strong>
+              <h4>Expose grounded retrieval</h4>
+              <p>Release a searchable version only after validation and provenance checks pass.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="eyebrow">Corpus inventory</div>
+          <h2>Tracked legal acts</h2>
+          <p class="section-copy">
+            The corpus table stores the legal act separately from its published and effective-time versions.
+          </p>
+          <div class="table">
+            <div class="table-head">
+              <div>Act</div>
+              <div>Current status</div>
+              <div>Last effective version</div>
+              <div>Next action</div>
+            </div>
+            <div class="table-row">
+              <div>
+                <div class="row-main">
+                  <strong>25/2025 Z. z. Stavebný zákon</strong>
+                </div>
+                <p class="meta">Document id: SK-ZZ-2025-25</p>
+              </div>
+              <div><span class="status ok">Indexed</span></div>
+              <div>2025-04-17</div>
+              <div>Wait for amendment feed</div>
+            </div>
+            <div class="table-row">
+              <div>
+                <div class="row-main">
+                  <strong>315/2025 Z. z. Novela</strong>
+                </div>
+                <p class="meta">Touches driver fitness rules and created a future-effective version.</p>
+              </div>
+              <div><span class="status warn">Future effective</span></div>
+              <div>2026-01-01</div>
+              <div>Re-run on effectivity date</div>
+            </div>
+            <div class="table-row">
+              <div>
+                <div class="row-main">
+                  <strong>133/2025 Z. z. Oznámenie</strong>
+                </div>
+                <p class="meta">Stored with informative HTML plus binding PDF source.</p>
+              </div>
+              <div><span class="status ok">Published</span></div>
+              <div>2025-06-05</div>
+              <div>No action</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="right-column">
+        <section class="panel section">
+          <div class="eyebrow">Version detail</div>
+          <h2>Amendment review</h2>
+          <p class="section-copy">
+            Reviewers see the act, the version lineage, the exact changed provisions, and the source artifact pair.
+          </p>
+          <div class="insight-list">
+            <article class="insight-card">
+              <div class="item-head">
+                <h3>Act lineage</h3>
+                <span class="status ok">3 versions</span>
+              </div>
+              <p>Base act, one published amendment, one future-effective consolidated version.</p>
+            </article>
+            <article class="insight-card">
+              <div class="item-head">
+                <h3>Source integrity</h3>
+                <span class="status ok">Hash match</span>
+              </div>
+              <p>HTML parse succeeded and the stored PDF checksum matches the fetched artifact.</p>
+            </article>
+            <article class="insight-card">
+              <div class="item-head">
+                <h3>Provision diff</h3>
+                <span class="status warn">Human verify</span>
+              </div>
+              <p>One renumbered annex and one substantive paragraph edit were detected.</p>
+              <div class="diff">- § 14 ods. 2: "lehota 30 dní"
++ § 14 ods. 2: "lehota 45 dní"
+
+~ Príloha č. 2 was renumbered without text change.
+
+Source pair:
+- source.html
+- source.pdf</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="eyebrow">Agent contract</div>
+          <h2>Retrieval payload</h2>
+          <p class="section-copy">
+            The agent layer should not receive only text. It should receive enforceability context.
+          </p>
+          <div class="insight-list">
+            <article class="insight-card">
+              <h3>Returned fields</h3>
+              <p>Act number, act title, effective date, paragraph anchor, source URL, artifact checksum, and short summary.</p>
+            </article>
+            <article class="insight-card">
+              <h3>Query example</h3>
+              <p><strong>Input:</strong> "What is the current filing deadline under the amended act?"</p>
+              <p class="meta"><strong>Resolver:</strong> effective_on=today, jurisdiction=SK, enforceable_only=true</p>
+            </article>
+            <article class="insight-card">
+              <h3>Guardrail</h3>
+              <p>Draft proposals from NR SR appear as legislative watch items, never as enforceable provisions.</p>
+            </article>
+          </div>
+          <p class="footer-note">
+            This mockup is intentionally operational. It is designed for the team that curates source truth,
+            not only for end users who query legal answers.
+          </p>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

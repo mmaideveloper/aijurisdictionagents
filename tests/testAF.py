@@ -1,40 +1,30 @@
-import os
-from openai import AzureOpenAI
+from pathlib import Path
 
-print("Testing Azure OpenAI Client")
+from dotenv import load_dotenv
 
-endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip()
-deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip()
-api_version = os.getenv("AZURE_OPENAI_API_VERSION", "").strip() or "2024-12-01-preview"
-subscription_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip()
-
-if not endpoint or not deployment or not subscription_key:
-    raise ValueError(
-        "Missing Azure OpenAI configuration. "
-        "Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_KEY."
-    )
-
-client = AzureOpenAI(
-    api_version=api_version,
-    azure_endpoint=endpoint,
-    api_key=subscription_key,
+from aijurisdictionagents.llm.azure_foundry_client import (
+    AzureFoundryClient,
+    load_azure_foundry_config_from_env,
 )
+from aijurisdictionagents.schemas import Message
 
-response = client.chat.completions.create(
-    messages=[
-        {
-            "role": "system",
-            "content": "You are a helpful assistant.",
-        },
-        {
-            "role": "user",
-            "content": "I am going to Paris, what should I see?",
-        }
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+
+print("Testing Azure Foundry client")
+
+config = load_azure_foundry_config_from_env()
+client = AzureFoundryClient(config)
+response = client.complete(
+    agent_name="smoke-test",
+    system_prompt="You are a helpful assistant.",
+    conversation=[
+        Message(
+            role="user",
+            agent_name="user",
+            content="I am going to Paris, what should I see?",
+        )
     ],
-    max_tokens=4096,
-    temperature=1.0,
-    top_p=1.0,
-    model=deployment
+    documents=[],
 )
 
-print(response.choices[0].message.content)
+print(response)

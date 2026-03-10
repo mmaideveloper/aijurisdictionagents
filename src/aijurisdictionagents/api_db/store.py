@@ -15,7 +15,10 @@ from .config import ApiDataConfig
 @dataclass(frozen=True)
 class User:
     user_id: str
+    phone_number: str | None
     email: str
+    first_name: str | None
+    last_name: str | None
     full_name: str
 
 
@@ -74,7 +77,10 @@ class ApiDatabaseStore:
 
                 CREATE TABLE IF NOT EXISTS users (
                     user_id TEXT PRIMARY KEY,
+                    phone_number TEXT UNIQUE,
                     email TEXT UNIQUE NOT NULL,
+                    first_name TEXT,
+                    last_name TEXT,
                     full_name TEXT NOT NULL,
                     password_hash TEXT NOT NULL,
                     created_at TEXT NOT NULL
@@ -133,33 +139,168 @@ class ApiDatabaseStore:
                 );
                 """
             )
+            self._ensure_user_schema(conn)
 
-    def create_user(self, *, email: str, full_name: str, password: str) -> User:
+    def create_user(
+        self,
+        *,
+        email: str,
+        password: str,
+        phone_number: str | None = None,
+        full_name: str | None = None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+    ) -> User:
         user_id = str(uuid.uuid4())
         now = _now_iso()
         password_hash = _hash_password(password)
+        normalized_email = email.strip().lower()
+        normalized_phone = _normalize_phone(phone_number)
+        normalized_first = _normalize_optional_text(first_name)
+        normalized_last = _normalize_optional_text(last_name)
+        resolved_full_name = _resolve_full_name(
+            full_name=full_name,
+            first_name=normalized_first,
+            last_name=normalized_last,
+            phone_number=normalized_phone,
+            email=normalized_email,
+        )
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO users(user_id, email, full_name, password_hash, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO users(
+                    user_id, phone_number, email, first_name, last_name, full_name, password_hash, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (user_id, email.lower(), full_name, password_hash, now),
+                (
+                    user_id,
+                    normalized_phone,
+                    normalized_email,
+                    normalized_first,
+                    normalized_last,
+                    resolved_full_name,
+                    password_hash,
+                    now,
+                ),
             )
-        return User(user_id=user_id, email=email.lower(), full_name=full_name)
+        return User(
+            user_id=user_id,
+            phone_number=normalized_phone,
+            email=normalized_email,
+            first_name=normalized_first,
+            last_name=normalized_last,
+            full_name=resolved_full_name,
+        )
 
     def authenticate_user(self, *, email: str, password: str) -> User | None:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT user_id, email, full_name, password_hash FROM users WHERE email = ?",
-                (email.lower(),),
+                """
+                SELECT user_id, phone_number, email, first_name, last_name, full_name, password_hash
+                FROM users
+                WHERE email = ?
+                """,
+                (email.strip().lower(),),
             ).fetchone()
 
         if row is None:
             return None
-        if not _verify_password(password, row[3]):
+        if not _verify_password(password, row[6]):
             return None
-        return User(user_id=row[0], email=row[1], full_name=row[2])
+        return _row_to_user(row)
+
+    def find_user_by_phone(self, *, phone_number: str) -> User | None:
+        normalized_phone = _normalize_phone(phone_number)
+        if normalized_phone is None:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT user_id, phone_number, email, first_name, last_name, full_name
+                FROM users
+                WHERE phone_number = ?
+                """,
+                (normalized_phone,),
+            ).fetchone()
+        if row is None:
+            return None
+        return _row_to_user(row)
+
+    def update_user(
+        self,
+        *,
+        user_id: str,
+        phone_number: str | None,
+        first_name: str | None,
+        last_name: str | None,
+        password: str | None = None,
+    ) -> User:
+        normalized_phone = _normalize_phone(phone_number)
+        normalized_first = _normalize_optional_text(first_name)
+        normalized_last = _normalize_optional_text(last_name)
+        normalized_password = _normalize_optional_text(password)
+
+        with self._connect() as conn:
+            current = conn.execute(
+                """
+                SELECT user_id, phone_number, email, first_name, last_name, full_name
+                FROM users
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            if current is None:
+                raise KeyError(f"User {user_id} not found")
+
+            current_user = _row_to_user(current)
+            resolved_full_name = _resolve_full_name(
+                full_name=current_user.full_name,
+                first_name=normalized_first,
+                last_name=normalized_last,
+                phone_number=normalized_phone,
+                email=current_user.email,
+            )
+            if normalized_password:
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET phone_number = ?, first_name = ?, last_name = ?, full_name = ?, password_hash = ?
+                    WHERE user_id = ?
+                    """,
+                    (
+                        normalized_phone,
+                        normalized_first,
+                        normalized_last,
+                        resolved_full_name,
+                        _hash_password(normalized_password),
+                        user_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET phone_number = ?, first_name = ?, last_name = ?, full_name = ?
+                    WHERE user_id = ?
+                    """,
+                    (
+                        normalized_phone,
+                        normalized_first,
+                        normalized_last,
+                        resolved_full_name,
+                        user_id,
+                    ),
+                )
+
+        return User(
+            user_id=user_id,
+            phone_number=normalized_phone,
+            email=current_user.email,
+            first_name=normalized_first,
+            last_name=normalized_last,
+            full_name=resolved_full_name,
+        )
 
     def create_company(self, *, legal_name: str, profile_json: str = "{}") -> Company:
         company_id = str(uuid.uuid4())
@@ -291,9 +432,79 @@ class ApiDatabaseStore:
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
+    def _ensure_user_schema(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "phone_number" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN phone_number TEXT")
+        if "first_name" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN first_name TEXT")
+        if "last_name" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN last_name TEXT")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_number
+            ON users(phone_number)
+            WHERE phone_number IS NOT NULL
+            """
+        )
+        conn.execute(
+            """
+            UPDATE users
+            SET full_name = COALESCE(NULLIF(TRIM(full_name), ''), email)
+            WHERE full_name IS NULL OR TRIM(full_name) = ''
+            """
+        )
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_phone(phone_number: str | None) -> str | None:
+    if phone_number is None:
+        return None
+    normalized = "".join(phone_number.strip().split())
+    return normalized or None
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _resolve_full_name(
+    *,
+    full_name: str | None,
+    first_name: str | None,
+    last_name: str | None,
+    phone_number: str | None,
+    email: str,
+) -> str:
+    joined = " ".join(part for part in (first_name, last_name) if part)
+    if joined:
+        return joined
+    normalized_full_name = _normalize_optional_text(full_name)
+    if normalized_full_name:
+        return normalized_full_name
+    if phone_number:
+        return phone_number
+    return email
+
+
+def _row_to_user(row: sqlite3.Row | tuple[object, ...]) -> User:
+    values = list(row)
+    return User(
+        user_id=str(values[0]),
+        phone_number=str(values[1]) if values[1] is not None else None,
+        email=str(values[2]),
+        first_name=str(values[3]) if values[3] is not None else None,
+        last_name=str(values[4]) if values[4] is not None else None,
+        full_name=str(values[5]),
+    )
 
 
 def _hash_password(password: str) -> str:

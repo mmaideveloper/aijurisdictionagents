@@ -23,6 +23,7 @@ dev = [
 
 [project.scripts]
 legal-discussion = "aijurisdictionagents.cli:main"
+laws-collector = "services.laws_collector.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
