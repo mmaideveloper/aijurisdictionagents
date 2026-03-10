@@ -4,6 +4,7 @@ param(
     [string]$BindHost = "127.0.0.1",
     [int]$Port = 8080,
     [switch]$Background,
+    [switch]$ConsoleWindow,
     [switch]$Reload,
     [switch]$Install
 )
@@ -47,6 +48,7 @@ function Test-ApiHealth {
 $skillScriptsDir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $skillScriptsDir "..\\..\\..")
 $apiDir = Join-Path $repoRoot "api\\aijuristiction-api"
+$pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
 
 if (-not (Test-Path $apiDir)) {
     throw "API project folder not found: $apiDir"
@@ -67,6 +69,31 @@ if ($Install) {
 $uvicornArgs = @("-m", "uvicorn", "app.main:app", "--host", $BindHost, "--port", "$Port")
 if ($Reload) {
     $uvicornArgs += "--reload"
+}
+
+if ($ConsoleWindow) {
+    if (-not $pwsh) {
+        throw "PowerShell 7 (pwsh) was not found on PATH."
+    }
+
+    $scriptPath = Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1"
+    $consoleArgs = @(
+        "-NoExit",
+        "-Command",
+        "& '$scriptPath' -LlmProvider $LlmProvider -BindHost $BindHost -Port $Port"
+    )
+    if ($Reload) {
+        $consoleArgs[-1] += " -Reload"
+    }
+    if ($Install) {
+        $consoleArgs[-1] += " -Install"
+    }
+
+    Start-Process -FilePath $pwsh -ArgumentList $consoleArgs -WorkingDirectory $repoRoot | Out-Null
+    Write-Output "API console window started."
+    Write-Output "Health: http://$BindHost`:$Port/health"
+    Write-Output "Docs: http://$BindHost`:$Port/docs"
+    exit 0
 }
 
 if ($Background) {

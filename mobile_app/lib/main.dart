@@ -131,11 +131,20 @@ Future<void> main() async {
       'log_file': logger.logFilePath,
     },
   );
-  final cameras = await availableCameras();
-  await logger.info(
-    'Camera discovery completed',
-    <String, Object?>{'camera_count': cameras.length},
-  );
+  List<CameraDescription> cameras = <CameraDescription>[];
+  try {
+    cameras = await availableCameras();
+    await logger.info(
+      'Camera discovery completed',
+      <String, Object?>{'camera_count': cameras.length},
+    );
+  } catch (error, stackTrace) {
+    await logger.error(
+      'Camera discovery failed',
+      error,
+      stackTrace,
+    );
+  }
   runApp(AIJurisdictionMobileApp(
       cameras: cameras, logger: logger, apiBaseUrl: apiBaseUrl));
 }
@@ -1834,7 +1843,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
     final path = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
-        builder: (_) => CameraCapturePage(camera: widget.cameras.first),
+        builder: (_) => CameraCapturePage(
+          camera: widget.cameras.first,
+          logger: widget.logger,
+        ),
       ),
     );
     if (!mounted) {
@@ -2505,9 +2517,14 @@ class _BrandIcon extends StatelessWidget {
 }
 
 class CameraCapturePage extends StatefulWidget {
-  const CameraCapturePage({super.key, required this.camera});
+  const CameraCapturePage({
+    super.key,
+    required this.camera,
+    required this.logger,
+  });
 
   final CameraDescription camera;
+  final AppLogger logger;
 
   @override
   State<CameraCapturePage> createState() => _CameraCapturePageState();
@@ -2516,12 +2533,61 @@ class CameraCapturePage extends StatefulWidget {
 class _CameraCapturePageState extends State<CameraCapturePage> {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
+  String? _cameraErrorMessage;
 
   @override
   void initState() {
     super.initState();
     _controller = CameraController(widget.camera, ResolutionPreset.medium);
-    _initializeControllerFuture = _controller!.initialize();
+    _initializeControllerFuture = _initializeCamera();
+  }
+
+  Future<void> _initializeCamera() async {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+
+    try {
+      await controller.initialize();
+    } on CameraException catch (error, stackTrace) {
+      await widget.logger.error(
+        'Camera initialization failed',
+        error,
+        stackTrace,
+        <String, Object?>{'camera_error_code': error.code},
+      );
+      final message = _cameraErrorMessageFor(error);
+      if (mounted) {
+        setState(() {
+          _cameraErrorMessage = message;
+        });
+      }
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Unexpected camera initialization failure',
+        error,
+        stackTrace,
+      );
+      if (mounted) {
+        setState(() {
+          _cameraErrorMessage =
+              'Could not initialize camera. Try again or use another device.';
+        });
+      }
+    }
+  }
+
+  String _cameraErrorMessageFor(CameraException error) {
+    switch (error.code) {
+      case 'cameraNotReadable':
+        return 'Camera is busy or unavailable. Close other apps using the camera and try again.';
+      case 'CameraAccessDenied':
+      case 'cameraAccessDenied':
+        return 'Camera access was denied. Allow camera permission in the browser and try again.';
+      default:
+        return 'Could not initialize camera. ${error.description ?? error.code}';
+    }
   }
 
   @override
@@ -2536,10 +2602,42 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
       return;
     }
 
-    await _initializeControllerFuture;
-    final image = await controller.takePicture();
-    if (mounted) {
-      Navigator.of(context).pop(image.path);
+    try {
+      await _initializeControllerFuture;
+      if (_cameraErrorMessage != null) {
+        return;
+      }
+      final image = await controller.takePicture();
+      if (mounted) {
+        Navigator.of(context).pop(image.path);
+      }
+    } on CameraException catch (error, stackTrace) {
+      await widget.logger.error(
+        'Camera capture failed',
+        error,
+        stackTrace,
+        <String, Object?>{'camera_error_code': error.code},
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_cameraErrorMessageFor(error))),
+        );
+      }
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Unexpected camera capture failure',
+        error,
+        stackTrace,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not capture the image. Try again or use another device.',
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -2550,6 +2648,18 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
+          if (_cameraErrorMessage != null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  _cameraErrorMessage!,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
           if (snapshot.connectionState == ConnectionState.done &&
               _controller != null) {
             return Stack(
@@ -2573,7 +2683,13 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
 
           if (snapshot.hasError) {
             return Center(
-              child: Text('Could not initialize camera: ${snapshot.error}'),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Could not initialize camera. ${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
             );
           }
 

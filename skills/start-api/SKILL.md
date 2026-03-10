@@ -20,6 +20,8 @@ description: Start and verify the local `aijuristiction-api` service in this mon
   `.\skills\start-api\scripts\start_api.ps1`
 - Background start:
   `.\skills\start-api\scripts\start_api.ps1 -Background`
+- Visible console window with live logs:
+  `.\skills\start-api\scripts\start_api.ps1 -ConsoleWindow`
 - Background start with mock provider:
   `.\skills\start-api\scripts\start_api.ps1 -Background -LlmProvider mock`
 - Custom port:

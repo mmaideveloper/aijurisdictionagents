@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start Mobile App"
+  short_description: "Start local Flutter mobile app target"
+  default_prompt: "Start the local Flutter mobile app against the local API and verify the app URL."
