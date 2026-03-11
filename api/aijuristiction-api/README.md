@@ -99,7 +99,7 @@ same `x-api-key` guard as the chat endpoints.
   - request: `phone_number`, optional `password`, optional `first_name`, optional `last_name`
 
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
-and use the local SQLite metadata database by default (`DB_LOCAL`, default `./data/api.sqlite3`).
+and use the local SQLite metadata database by default (`DB_LOCAL`, default `./databases/api.sqlite3`, resolved from the repository root).
 
 ## PDF export
 

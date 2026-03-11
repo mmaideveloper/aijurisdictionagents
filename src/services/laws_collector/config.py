@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 @dataclass(frozen=True)
 class LawsCollectorConfig:
@@ -20,7 +22,7 @@ class LawsCollectorConfig:
         return cls(
             country_code=os.getenv("LAWS_COUNTRY", "SK").strip().upper(),
             db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
-            db_local=os.getenv("LAWS_DB_LOCAL", "./data/laws/sk_laws.sqlite3").strip(),
+            db_local=os.getenv("LAWS_DB_LOCAL", "./databases/laws-collector/sk_laws.sqlite3").strip(),
             db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
             storage_local=os.getenv("LAWS_STORAGE_LOCAL", "./storage/laws/sk").strip(),
             storage_cloud=os.getenv("LAWS_STORAGE_CLOUD", "").strip(),
@@ -37,8 +39,15 @@ class LawsCollectorConfig:
 
     @property
     def db_path(self) -> Path:
-        return Path(self.db_local)
+        return _resolve_repo_path(self.db_local)
 
     @property
     def storage_root(self) -> Path:
         return Path(self.storage_local)
+
+
+def _resolve_repo_path(value: str) -> Path:
+    candidate = Path(value)
+    if candidate.is_absolute():
+        return candidate
+    return _REPO_ROOT / candidate

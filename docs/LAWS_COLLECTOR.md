@@ -203,7 +203,7 @@ Add these to `.env` when you start wiring the service into real runs:
 
 - `LAWS_COUNTRY=SK`
 - `LAWS_DB_BACKEND=sqlite`
-- `LAWS_DB_LOCAL=./data/laws/sk_laws.sqlite3`
+- `LAWS_DB_LOCAL=./databases/laws-collector/sk_laws.sqlite3`
 - `LAWS_STORAGE_LOCAL=./storage/laws/sk`
 - `LAWS_DELTA_POLL_HOURS=3`
 
