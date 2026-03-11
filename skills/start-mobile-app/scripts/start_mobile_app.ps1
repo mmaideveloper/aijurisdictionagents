@@ -7,6 +7,13 @@ param(
     [string]$ApiBaseUrl = "",
     [string]$PublicDevApiBaseUrl = "",
     [string]$ApiKey = "aijuris",
+    [string]$DatabaseOption = "",
+    [ValidateSet("local", "azure")]
+    [string]$StorageOption = "",
+    [string]$DbLocal = "",
+    [string]$DbCloud = "",
+    [string]$StoreLocal = "",
+    [string]$StoreCloud = "",
     [switch]$Background,
     [switch]$ConsoleWindow,
     [switch]$PubGet,
@@ -82,6 +89,82 @@ function Resolve-ApiMode {
     }
 }
 
+function Normalize-DatabaseOption {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return ""
+    }
+
+    $normalized = $Value.Trim().ToLowerInvariant()
+    if ($normalized -eq "postgress") {
+        return "postgres"
+    }
+    if ($normalized -in @("local", "postgres", "azure")) {
+        return $normalized
+    }
+
+    throw "DatabaseOption must be one of: local, postgres, azure."
+}
+
+function Resolve-DatabaseOption {
+    param([string]$RequestedOption)
+
+    $normalized = Normalize-DatabaseOption -Value $RequestedOption
+    if ($normalized) {
+        return $normalized
+    }
+
+    while ($true) {
+        $answer = Normalize-DatabaseOption -Value (Read-Host "Choose database [local/postgres/azure]")
+        if ($answer) {
+            return $answer
+        }
+        Write-Warning "Please answer with 'local', 'postgres', or 'azure'."
+    }
+}
+
+function Resolve-StorageOption {
+    param([string]$RequestedOption)
+
+    if ($RequestedOption) {
+        return $RequestedOption
+    }
+
+    while ($true) {
+        $answer = (Read-Host "Choose storage [local/azure]").Trim().ToLowerInvariant()
+        if ($answer -in @("local", "azure")) {
+            return $answer
+        }
+        Write-Warning "Please answer with 'local' or 'azure'."
+    }
+}
+
+function Resolve-RequiredConfigValue {
+    param(
+        [string]$ProvidedValue,
+        [string]$EnvironmentVariable,
+        [string]$Prompt
+    )
+
+    if ($ProvidedValue) {
+        return $ProvidedValue
+    }
+
+    $existing = [Environment]::GetEnvironmentVariable($EnvironmentVariable)
+    if ($existing) {
+        return $existing
+    }
+
+    while ($true) {
+        $answer = (Read-Host $Prompt).Trim()
+        if ($answer) {
+            return $answer
+        }
+        Write-Warning "$EnvironmentVariable cannot be empty."
+    }
+}
+
 function Resolve-ApiBaseUrl {
     param(
         [string]$Mode,
@@ -132,8 +215,32 @@ $ApiMode = Resolve-ApiMode -RequestedMode $ApiMode
 $ApiBaseUrl = Resolve-ApiBaseUrl -Mode $ApiMode -RequestedApiBaseUrl $ApiBaseUrl -RequestedPublicDevApiBaseUrl $PublicDevApiBaseUrl
 
 if ($ApiMode -eq "localApi") {
+    $DatabaseOption = Resolve-DatabaseOption -RequestedOption $DatabaseOption
+    $StorageOption = Resolve-StorageOption -RequestedOption $StorageOption
+    if ($DatabaseOption -in @("postgres", "azure")) {
+        $DbCloud = Resolve-RequiredConfigValue -ProvidedValue $DbCloud -EnvironmentVariable "DB_CLOUD" -Prompt "Enter DB_CLOUD connection string"
+    }
+    if ($StorageOption -eq "azure") {
+        $StoreCloud = Resolve-RequiredConfigValue -ProvidedValue $StoreCloud -EnvironmentVariable "STORE_CLOUD" -Prompt "Enter STORE_CLOUD connection string"
+    }
+}
+
+if ($ApiMode -eq "localApi") {
     if (-not (Test-ApiReady -Url $ApiBaseUrl)) {
-        & (Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1") -ConsoleWindow | Out-Null
+        $apiStartArgs = @("-ConsoleWindow", "-DatabaseOption", $DatabaseOption, "-StorageOption", $StorageOption)
+        if ($DbLocal) {
+            $apiStartArgs += @("-DbLocal", $DbLocal)
+        }
+        if ($DbCloud) {
+            $apiStartArgs += @("-DbCloud", $DbCloud)
+        }
+        if ($StoreLocal) {
+            $apiStartArgs += @("-StoreLocal", $StoreLocal)
+        }
+        if ($StoreCloud) {
+            $apiStartArgs += @("-StoreCloud", $StoreCloud)
+        }
+        & (Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1") @apiStartArgs | Out-Null
         Start-Sleep -Seconds 4
     }
 } elseif (-not (Test-ApiReady -Url $ApiBaseUrl)) {
@@ -146,23 +253,45 @@ if ($ConsoleWindow) {
     }
 
     $scriptPath = Join-Path $repoRoot "skills\start-mobile-app\scripts\start_mobile_app.ps1"
-    $command = "& '$scriptPath' -Device $Device -BindHost $BindHost -Port $Port -ApiMode $ApiMode -ApiBaseUrl $ApiBaseUrl -ApiKey $ApiKey"
+    $commandArgs = @("-NoExit", "-File", $scriptPath, "-Device", $Device, "-BindHost", $BindHost, "-Port", "$Port", "-ApiMode", $ApiMode, "-ApiBaseUrl", $ApiBaseUrl, "-ApiKey", $ApiKey)
     if ($PublicDevApiBaseUrl) {
-        $command += " -PublicDevApiBaseUrl $PublicDevApiBaseUrl"
+        $commandArgs += @("-PublicDevApiBaseUrl", $PublicDevApiBaseUrl)
+    }
+    if ($DatabaseOption) {
+        $commandArgs += @("-DatabaseOption", $DatabaseOption)
+    }
+    if ($StorageOption) {
+        $commandArgs += @("-StorageOption", $StorageOption)
+    }
+    if ($DbLocal) {
+        $commandArgs += @("-DbLocal", $DbLocal)
+    }
+    if ($DbCloud) {
+        $commandArgs += @("-DbCloud", $DbCloud)
+    }
+    if ($StoreLocal) {
+        $commandArgs += @("-StoreLocal", $StoreLocal)
+    }
+    if ($StoreCloud) {
+        $commandArgs += @("-StoreCloud", $StoreCloud)
     }
     if ($PubGet) {
-        $command += " -PubGet"
+        $commandArgs += "-PubGet"
     }
     if ($NoOpen) {
-        $command += " -NoOpen"
+        $commandArgs += "-NoOpen"
     }
 
-    Start-Process -FilePath $pwsh -ArgumentList @("-NoExit", "-Command", $command) -WorkingDirectory $repoRoot | Out-Null
+    Start-Process -FilePath $pwsh -ArgumentList $commandArgs -WorkingDirectory $repoRoot | Out-Null
     Write-Output "Mobile app console window started."
     if ($Device -eq "chrome" -or $Device -eq "edge") {
         Write-Output "App URL: http://$BindHost`:$Port"
     }
     Write-Output "API URL: $ApiBaseUrl"
+    if ($ApiMode -eq "localApi") {
+        Write-Output "Database: $DatabaseOption"
+        Write-Output "Storage: $StorageOption"
+    }
     exit 0
 }
 
@@ -218,6 +347,10 @@ try {
                 Write-Output "Mobile app started in background. PID: $($process.Id)"
                 Write-Output "App URL: http://$BindHost`:$Port"
                 Write-Output "API URL: $ApiBaseUrl"
+                if ($ApiMode -eq "localApi") {
+                    Write-Output "Database: $DatabaseOption"
+                    Write-Output "Storage: $StorageOption"
+                }
                 Write-Output "Logs: $stdoutLog"
                 Write-Output "Errors: $stderrLog"
                 Write-Output "Stop: Stop-Process -Id (Get-Content `"$pidFile`") -Force"
@@ -231,6 +364,10 @@ try {
             Write-Output "Mobile app started in background. PID: $($process.Id)"
             Write-Output "Device: $Device"
             Write-Output "API URL: $ApiBaseUrl"
+            if ($ApiMode -eq "localApi") {
+                Write-Output "Database: $DatabaseOption"
+                Write-Output "Storage: $StorageOption"
+            }
             Write-Output "Stop: Stop-Process -Id (Get-Content `"$pidFile`") -Force"
         }
         exit 0
@@ -239,6 +376,10 @@ try {
     Write-Output "Starting mobile app on device '$Device' (API=$ApiBaseUrl)"
     if ($Device -eq "chrome" -or $Device -eq "edge") {
         Write-Output "App URL: http://$BindHost`:$Port"
+    }
+    if ($ApiMode -eq "localApi") {
+        Write-Output "Database: $DatabaseOption"
+        Write-Output "Storage: $StorageOption"
     }
     & $flutter @flutterArgs
 } finally {

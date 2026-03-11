@@ -10,8 +10,9 @@ description: Start and verify the local `aijuristiction-api` service in this mon
 1. Run the bundled startup script from repository root:
    `.\skills\start-api\scripts\start_api.ps1`
 2. Keep default provider (`azurefoundry`) unless deterministic offline testing is needed.
-3. Verify `GET /health` is reachable at `http://127.0.0.1:8080/health`.
-4. Run the minimal example:
+3. Choose database mode (`local`, `postgres`, `azure`) and storage mode (`local`, `azure`) when the API should not use the default local SQLite + local storage setup.
+4. Verify `GET /health` is reachable at `http://127.0.0.1:8080/health`.
+5. Run the minimal example:
    `python examples/minimal_demo.py`
 
 ## Commands
@@ -24,6 +25,10 @@ description: Start and verify the local `aijuristiction-api` service in this mon
   `.\skills\start-api\scripts\start_api.ps1 -ConsoleWindow`
 - Background start with mock provider:
   `.\skills\start-api\scripts\start_api.ps1 -Background -LlmProvider mock`
+- Background start with PostgreSQL metadata:
+  `.\skills\start-api\scripts\start_api.ps1 -Background -DatabaseOption postgres -DbCloud "postgresql://postgres:postgres@localhost:5432/aijurisdiction"`
+- Background start with Azure database and Azure storage:
+  `.\skills\start-api\scripts\start_api.ps1 -Background -DatabaseOption azure -DbCloud "<postgres-connection-string>" -StorageOption azure -StoreCloud "<azure-storage-connection-string>"`
 - Custom port:
   `.\skills\start-api\scripts\start_api.ps1 -Port 8081`
 
@@ -36,6 +41,11 @@ If started with `-Background`, stop via:
 ## Environment Notes
 
 - Default provider is `azurefoundry`.
+- Default database mode is `local`.
+- Default storage mode is `local`.
+- `-DatabaseOption postgress` is accepted and normalized to `postgres`.
 - For Azure Foundry requests, set:
   `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, and either `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`.
+- For `DatabaseOption=postgres|azure`, set `DB_CLOUD` or pass `-DbCloud`.
+- For `StorageOption=azure`, set `STORE_CLOUD` or pass `-StoreCloud`.
 - Use `-LlmProvider mock` for local smoke checks without cloud credentials.

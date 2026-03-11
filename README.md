@@ -33,6 +33,31 @@ Requirements:
 - `gh` authenticated to the correct account
 - Scopes: `read:project` (list items) and `project` (edit status)
 
+## Portable Codex Skills
+
+Project Codex skills are versioned under `skills/` so the same workflows can be used on another computer after cloning the repository.
+
+Available repo-local skills:
+- `api`
+- `chatsimulatr`
+- `start-api`
+- `start-mobile`
+- `start-mobile-app`
+
+Preview the skills that would be synced into your local Codex profile:
+
+```bash
+python examples/project_skills_demo.py
+```
+
+Install or refresh the repo skills into `~/.codex/skills` on the current machine:
+
+```bash
+python scripts/sync_codex_skills.py --force
+```
+
+For details, see `docs/PROJECT_SKILLS.md`.
+
 Project polling automation (local scripts):
 
 ```bash
@@ -81,6 +106,7 @@ For more details, see `docs/WORKSPACE.md`.
 Conda notes:
 
 - The local `.conda/` environment is intentionally gitignored.
+- `environment.yml` provisions both editable Python packages in this monorepo: the root `aijurisdictionagents` package and `api/aijuristiction-api`.
 - To update the environment later, run: `conda env update -f environment.yml --prune`
 - Conda manages the interpreter and system packages; `pyproject.toml` defines the Python project metadata,
   dependencies, and tooling (needed for `pip install -e .`).
@@ -350,8 +376,24 @@ Project skill for local mobile app startup:
 ```
 
 This launcher now asks for `localApi` or `publicDevApi`.
-If you choose `localApi`, it starts the API in a visible console window so live API logs are shown there.
+If you choose `localApi`, it also asks for database mode (`local`, `postgres`, `azure`) and storage mode (`local`, `azure`), then starts the API in a visible console window so live API logs are shown there.
 Use `-ConsoleWindow` if you also want live Flutter logs in a separate terminal window.
+
+Examples:
+
+```powershell
+.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -ApiMode localApi -DatabaseOption postgres -DbCloud "postgresql://postgres:postgres@localhost:5432/aijurisdiction"
+```
+
+```powershell
+.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -ApiMode localApi -DatabaseOption azure -DbCloud "<postgres-connection-string>" -StorageOption azure -StoreCloud "<azure-storage-connection-string>"
+```
+
+Project skill for the local chat simulator:
+
+```powershell
+.\skills\chatsimulatr\scripts\start_chat_simulator.ps1 -Background
+```
 
 ### Deployment
 
@@ -401,6 +443,7 @@ Technical design details: `docs/MOBILE_TECHNICAL_DESIGN.md`.
 - Slovak law corpus solution note: `docs/SLOVAK_LAW_DATA_PLATFORM.md`
 - Slovak law corpus mockup preview: `powershell -ExecutionPolicy Bypass -File examples/preview_slovak_law_mockup.ps1`
 - Laws collector minimal demo: `python examples/laws_collector_minimal_demo.py`
+- Project skills demo: `python examples/project_skills_demo.py`
 
 ## Laws collector
 

@@ -3,6 +3,13 @@ param(
     [string]$LlmProvider = "azurefoundry",
     [string]$BindHost = "127.0.0.1",
     [int]$Port = 8080,
+    [string]$DatabaseOption = "",
+    [ValidateSet("local", "azure")]
+    [string]$StorageOption = "",
+    [string]$DbLocal = "",
+    [string]$DbCloud = "",
+    [string]$StoreLocal = "",
+    [string]$StoreCloud = "",
     [switch]$Background,
     [switch]$ConsoleWindow,
     [switch]$Reload,
@@ -14,9 +21,11 @@ $ErrorActionPreference = "Stop"
 function Resolve-PythonPath {
     param([string]$RepoRoot)
 
-    $condaPython = Join-Path $RepoRoot ".conda\\python.exe"
-    if (Test-Path $condaPython) {
-        return $condaPython
+    foreach ($candidate in @(".conda\\python.exe", "conda\\python.exe")) {
+        $pythonPath = Join-Path $RepoRoot $candidate
+        if (Test-Path $pythonPath) {
+            return $pythonPath
+        }
     }
 
     $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
@@ -45,6 +54,49 @@ function Test-ApiHealth {
     return $false
 }
 
+function Normalize-DatabaseOption {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return ""
+    }
+
+    $normalized = $Value.Trim().ToLowerInvariant()
+    if ($normalized -eq "postgress") {
+        return "postgres"
+    }
+    if ($normalized -in @("local", "postgres", "azure")) {
+        return $normalized
+    }
+
+    throw "DatabaseOption must be one of: local, postgres, azure."
+}
+
+function Resolve-RequiredSetting {
+    param(
+        [string]$Value,
+        [string]$EnvironmentVariable,
+        [string]$Prompt
+    )
+
+    if ($Value) {
+        return $Value
+    }
+
+    $existing = [Environment]::GetEnvironmentVariable($EnvironmentVariable)
+    if ($existing) {
+        return $existing
+    }
+
+    while ($true) {
+        $answer = (Read-Host $Prompt).Trim()
+        if ($answer) {
+            return $answer
+        }
+        Write-Warning "$EnvironmentVariable cannot be empty."
+    }
+}
+
 $skillScriptsDir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $skillScriptsDir "..\\..\\..")
 $apiDir = Join-Path $repoRoot "api\\aijuristiction-api"
@@ -56,6 +108,45 @@ if (-not (Test-Path $apiDir)) {
 
 $python = Resolve-PythonPath -RepoRoot $repoRoot
 $env:LLM_PROVIDER = $LlmProvider
+
+$DatabaseOption = Normalize-DatabaseOption -Value $DatabaseOption
+if ($DatabaseOption) {
+    $env:DB_OPTION = $DatabaseOption
+}
+if ($StorageOption) {
+    $env:STORAGE_OPTION = $StorageOption
+}
+if ($env:DB_OPTION) {
+    $env:DB_OPTION = Normalize-DatabaseOption -Value $env:DB_OPTION
+} else {
+    $env:DB_OPTION = "local"
+}
+if ($env:STORAGE_OPTION) {
+    $env:STORAGE_OPTION = $env:STORAGE_OPTION.Trim().ToLowerInvariant()
+    if ($env:STORAGE_OPTION -notin @("local", "azure")) {
+        throw "STORAGE_OPTION must be one of: local, azure."
+    }
+} else {
+    $env:STORAGE_OPTION = "local"
+}
+if ($DbLocal) {
+    $env:DB_LOCAL = $DbLocal
+}
+if ($StoreLocal) {
+    $env:STORE_LOCAL = $StoreLocal
+}
+if (($env:DB_OPTION -in @("postgres", "azure")) -and -not $DbCloud) {
+    $DbCloud = Resolve-RequiredSetting -Value $DbCloud -EnvironmentVariable "DB_CLOUD" -Prompt "Enter DB_CLOUD connection string"
+}
+if ($DbCloud) {
+    $env:DB_CLOUD = $DbCloud
+}
+if ($env:STORAGE_OPTION -eq "azure" -and -not $StoreCloud) {
+    $StoreCloud = Resolve-RequiredSetting -Value $StoreCloud -EnvironmentVariable "STORE_CLOUD" -Prompt "Enter STORE_CLOUD connection string"
+}
+if ($StoreCloud) {
+    $env:STORE_CLOUD = $StoreCloud
+}
 
 if ($Install) {
     Push-Location $apiDir
@@ -77,22 +168,38 @@ if ($ConsoleWindow) {
     }
 
     $scriptPath = Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1"
-    $consoleArgs = @(
-        "-NoExit",
-        "-Command",
-        "& '$scriptPath' -LlmProvider $LlmProvider -BindHost $BindHost -Port $Port"
-    )
+    $consoleArgs = @("-NoExit", "-File", $scriptPath, "-LlmProvider", $LlmProvider, "-BindHost", $BindHost, "-Port", "$Port")
+    if ($DatabaseOption) {
+        $consoleArgs += @("-DatabaseOption", $DatabaseOption)
+    }
+    if ($StorageOption) {
+        $consoleArgs += @("-StorageOption", $StorageOption)
+    }
+    if ($DbLocal) {
+        $consoleArgs += @("-DbLocal", $DbLocal)
+    }
+    if ($DbCloud) {
+        $consoleArgs += @("-DbCloud", $DbCloud)
+    }
+    if ($StoreLocal) {
+        $consoleArgs += @("-StoreLocal", $StoreLocal)
+    }
+    if ($StoreCloud) {
+        $consoleArgs += @("-StoreCloud", $StoreCloud)
+    }
     if ($Reload) {
-        $consoleArgs[-1] += " -Reload"
+        $consoleArgs += "-Reload"
     }
     if ($Install) {
-        $consoleArgs[-1] += " -Install"
+        $consoleArgs += "-Install"
     }
 
     Start-Process -FilePath $pwsh -ArgumentList $consoleArgs -WorkingDirectory $repoRoot | Out-Null
     Write-Output "API console window started."
     Write-Output "Health: http://$BindHost`:$Port/health"
     Write-Output "Docs: http://$BindHost`:$Port/docs"
+    Write-Output "Database: $($env:DB_OPTION)"
+    Write-Output "Storage: $($env:STORAGE_OPTION)"
     exit 0
 }
 
@@ -130,6 +237,8 @@ if ($Background) {
         Write-Output "API started in background. PID: $($process.Id)"
         Write-Output "Health: http://$BindHost`:$Port/health"
         Write-Output "Docs: http://$BindHost`:$Port/docs"
+        Write-Output "Database: $($env:DB_OPTION)"
+        Write-Output "Storage: $($env:STORAGE_OPTION)"
         Write-Output "Stop: Stop-Process -Id (Get-Content `"$pidFile`") -Force"
     } else {
         Write-Warning "API started (PID $($process.Id)) but health endpoint is not ready yet."
@@ -140,7 +249,7 @@ if ($Background) {
     exit 0
 }
 
-Write-Output "Starting API in foreground on http://$BindHost`:$Port (LLM_PROVIDER=$LlmProvider)"
+Write-Output "Starting API in foreground on http://$BindHost`:$Port (LLM_PROVIDER=$LlmProvider, DB_OPTION=$($env:DB_OPTION), STORAGE_OPTION=$($env:STORAGE_OPTION))"
 Push-Location $apiDir
 try {
     & $python @uvicornArgs
