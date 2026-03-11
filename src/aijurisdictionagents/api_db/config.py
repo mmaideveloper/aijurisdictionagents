@@ -18,8 +18,12 @@ class ApiDataConfig:
 
     @classmethod
     def from_env(cls) -> "ApiDataConfig":
+        raw_db_option = os.getenv("DB_OPTION", "local").strip().lower()
+        normalized_db_option = (
+            "postgres" if raw_db_option == "postgress" else raw_db_option
+        )
         return cls(
-            db_option=os.getenv("DB_OPTION", "local").strip().lower(),
+            db_option=normalized_db_option,
             storage_option=os.getenv("STORAGE_OPTION", "local").strip().lower(),
             db_local=os.getenv("DB_LOCAL", "./databases/api.sqlite3").strip(),
             db_cloud=os.getenv("DB_CLOUD", "").strip(),
@@ -28,12 +32,12 @@ class ApiDataConfig:
         )
 
     def validate(self) -> None:
-        if self.db_option not in {"local", "azure"}:
-            raise ValueError("DB_OPTION must be one of: local, azure")
+        if self.db_option not in {"local", "postgres", "azure"}:
+            raise ValueError("DB_OPTION must be one of: local, postgres, azure")
         if self.storage_option not in {"local", "azure"}:
             raise ValueError("STORAGE_OPTION must be one of: local, azure")
-        if self.db_option == "azure" and not self.db_cloud:
-            raise ValueError("DB_CLOUD must be set when DB_OPTION=azure")
+        if self.db_option in {"postgres", "azure"} and not self.db_cloud:
+            raise ValueError("DB_CLOUD must be set when DB_OPTION=postgres|azure")
         if self.storage_option == "azure" and not self.store_cloud:
             raise ValueError("STORE_CLOUD must be set when STORAGE_OPTION=azure")
 
@@ -41,9 +45,14 @@ class ApiDataConfig:
     def db_path(self) -> Path:
         if self.db_option == "local":
             return _resolve_repo_path(self.db_local)
-        # Cloud DB configured via connection string (for PostgreSQL adapter in prod).
-        # During local development/tests this still needs a local metadata path.
+        # PostgreSQL/Azure mode keeps a local fallback path for diagnostics and migration scripts.
         return _resolve_repo_path(self.db_local)
+
+    @property
+    def db_connection_uri(self) -> str:
+        if self.db_option == "local":
+            return ""
+        return self.db_cloud
 
     @property
     def blob_root(self) -> Path:

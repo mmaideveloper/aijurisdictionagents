@@ -16,7 +16,9 @@ def main() -> None:
             password="change-me",
         )
         company = store.create_company(legal_name="Demo Company Ltd")
-        store.add_user_to_company(user_id=user.user_id, company_id=company.company_id, role="admin")
+        store.add_user_to_company(
+            user_id=user.user_id, company_id=company.company_id, role="admin"
+        )
 
         case = store.create_case(
             user_id=user.user_id,
@@ -44,7 +46,9 @@ def main() -> None:
         print(f"Created case: {case.case_id}")
         print(f"SQLite file: {store.db_path}")
         print(f"Blob root: {store.blob_root}")
-        print("Tip: configure DB_OPTION/STORAGE_OPTION + DB_CLOUD/STORE_CLOUD for Azure mode.")
+        print(
+            "Tip: set DB_OPTION=local|postgres|azure (postgress alias supported), and for postgres/azure provide DB_CLOUD. STORAGE_OPTION remains local|azure."
+        )
 
 
 if __name__ == "__main__":
