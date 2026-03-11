@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start API"
+  short_description: "Start local API service quickly"
+  default_prompt: "Use $api to start the local API on port 8080."

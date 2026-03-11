@@ -6,4 +6,5 @@ dependencies:
   - pip
   - pip:
       - -e .[dev]
+      - -e ./api/aijuristiction-api[dev]
       - python-dotenv>=1.0

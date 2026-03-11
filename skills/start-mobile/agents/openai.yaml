@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start Mobile App"
+  short_description: "Start app as Android/iPhone14"
+  default_prompt: "Use $start-mobile to install Flutter if needed and run the mobile app in Android mode or iPhone 14 viewport mode."

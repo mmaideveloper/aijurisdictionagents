@@ -8,10 +8,11 @@ description: Start and verify the local Flutter mobile app in this monorepo. Use
 ## Workflow
 
 1. Ask which API mode to use: `localApi` or `publicDevApi`.
-2. Run the bundled launcher from repository root:
+2. If `localApi` is selected, choose database mode: `local`, `postgres`, or `azure`, and storage mode: `local` or `azure`.
+3. Run the bundled launcher from repository root:
    `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`
-3. If `localApi` is selected and the API is not already up, start the local API in a visible console window so live logs stay on screen.
-4. Verify the Flutter web target responds at `http://127.0.0.1:7357`.
+4. If `localApi` is selected and the API is not already up, start the local API in a visible console window so live logs stay on screen.
+5. Verify the Flutter web target responds at `http://127.0.0.1:7357`.
 
 ## Commands
 
@@ -25,6 +26,10 @@ description: Start and verify the local Flutter mobile app in this monorepo. Use
   `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -NoOpen`
 - Explicit local API mode:
   `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -ApiMode localApi`
+- Explicit local API mode with PostgreSQL metadata:
+  `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -ApiMode localApi -DatabaseOption postgres -DbCloud "postgresql://postgres:postgres@localhost:5432/aijurisdiction"`
+- Explicit local API mode with Azure database and Azure storage:
+  `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -ApiMode localApi -DatabaseOption azure -DbCloud "<postgres-connection-string>" -StorageOption azure -StoreCloud "<azure-storage-connection-string>"`
 - Explicit public dev API mode:
   `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -ApiMode publicDevApi -PublicDevApiBaseUrl https://your-dev-api.example.com`
 - Use a different Flutter device:
@@ -45,6 +50,10 @@ If started with `-Background`, stop via:
 - By default, the launcher opens the app URL in the browser after the web target becomes ready.
 - Use `-ConsoleWindow` when you want live Flutter logs in a separate terminal window instead of background log files.
 - For `localApi`, default API URL is `http://127.0.0.1:8080`.
+- For `localApi`, the launcher now also asks for database mode (`local`, `postgres`, `azure`) and storage mode (`local`, `azure`) unless they are passed as parameters.
+- `-DatabaseOption postgress` is accepted and normalized to `postgres`.
+- If `DatabaseOption` is `postgres` or `azure`, the launcher requires `DB_CLOUD` or `-DbCloud`.
+- If `StorageOption` is `azure`, the launcher requires `STORE_CLOUD` or `-StoreCloud`.
 - For `publicDevApi`, the launcher uses `-PublicDevApiBaseUrl`, `PUBLIC_DEV_API_BASE_URL`, or `AIJ_PUBLIC_DEV_API_URL`. If none are set, it prompts for the URL.
 - The local API path uses `start-api -ConsoleWindow`, so request logs stay visible in the API console window.
 - Default API key is `aijuris`.

@@ -36,9 +36,18 @@ If the user asks to close a task:
 
 Custom project skills:
 
+- `api` at `skills/api/SKILL.md`
+  - Purpose: start and health-check local `aijuristiction-api` using the same skill name available on this machine.
+  - Script: `.\skills\start-api\scripts\start_api.ps1`
+- `chatsimulatr` at `skills/chatsimulatr/SKILL.md`
+  - Purpose: start and verify the local chat simulator UI.
+  - Script: `.\skills\chatsimulatr\scripts\start_chat_simulator.ps1`
 - `start-api` at `skills/start-api/SKILL.md`
   - Purpose: start and health-check local `aijuristiction-api`.
   - Script: `.\skills\start-api\scripts\start_api.ps1`
+- `start-mobile` at `skills/start-mobile/SKILL.md`
+  - Purpose: start and verify the local Flutter mobile app using the same skill name available on this machine.
+  - Script: `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`
 - `start-mobile-app` at `skills/start-mobile-app/SKILL.md`
   - Purpose: start and verify the local Flutter mobile app.
   - Script: `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`
