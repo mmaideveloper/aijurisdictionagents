@@ -99,7 +99,7 @@ same `x-api-key` guard as the chat endpoints.
   - request: `phone_number`, optional `password`, optional `first_name`, optional `last_name`
 
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
-and use the local SQLite metadata database by default (`DB_LOCAL`, default `./databases/api.sqlite3`, resolved from the repository root).
+and use the local SQLite metadata database by default (`DB_OPTION=local`, `DB_LOCAL`, default `./databases/api.sqlite3`, resolved from the repository root). You can switch to PostgreSQL with `DB_OPTION=postgres` + `DB_CLOUD=postgresql://...` (including via `docker compose`). Azure keeps the same PostgreSQL contract via `DB_OPTION=azure`.
 
 ## PDF export
 

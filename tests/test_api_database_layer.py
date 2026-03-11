@@ -5,7 +5,9 @@ from aijurisdictionagents.api_db import ApiDataConfig, ApiDatabaseStore
 
 
 def test_api_database_layer_end_to_end(tmp_path: Path) -> None:
-    store = ApiDatabaseStore(db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "blob")
+    store = ApiDatabaseStore(
+        db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "blob"
+    )
     store.initialize()
 
     user = store.create_user(
@@ -15,7 +17,9 @@ def test_api_database_layer_end_to_end(tmp_path: Path) -> None:
         first_name="Founder",
         last_name="User",
     )
-    authenticated = store.authenticate_user(email="founder@example.com", password="secret-pass")
+    authenticated = store.authenticate_user(
+        email="founder@example.com", password="secret-pass"
+    )
     assert authenticated is not None
     assert authenticated.user_id == user.user_id
     assert authenticated.phone_number == "+421900111222"
@@ -25,7 +29,9 @@ def test_api_database_layer_end_to_end(tmp_path: Path) -> None:
     assert phone_authenticated.user_id == user.user_id
 
     company = store.create_company(legal_name="Acme Legal s.r.o.")
-    store.add_user_to_company(user_id=user.user_id, company_id=company.company_id, role="owner")
+    store.add_user_to_company(
+        user_id=user.user_id, company_id=company.company_id, role="owner"
+    )
 
     case = store.create_case(
         user_id=user.user_id,
@@ -96,7 +102,9 @@ def test_api_database_config_requires_cloud_values(monkeypatch) -> None:
     except ValueError as exc:
         assert "DB_CLOUD" in str(exc)
     else:
-        raise AssertionError("Expected ValueError when cloud options are set without secrets")
+        raise AssertionError(
+            "Expected ValueError when cloud options are set without secrets"
+        )
 
 
 def test_azure_storage_uri_keeps_case_folder_prefix(tmp_path: Path) -> None:
@@ -134,3 +142,17 @@ def test_azure_storage_uri_keeps_case_folder_prefix(tmp_path: Path) -> None:
     assert uri.startswith("https://example.blob.core.windows.net/cases/")
     assert f"/{case.case_id}/generated/" in uri
     assert (tmp_path / "blob" / case.case_id / "generated" / "v2_memo.docx").exists()
+
+
+def test_api_database_config_accepts_postgres_and_postgress_alias(monkeypatch) -> None:
+    monkeypatch.setenv("DB_OPTION", "postgress")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv(
+        "DB_CLOUD", "postgresql://postgres:postgres@localhost:5432/aijurisdiction"
+    )
+
+    config = ApiDataConfig.from_env()
+    config.validate()
+
+    assert config.db_option == "postgres"
+    assert config.db_connection_uri.startswith("postgresql://")

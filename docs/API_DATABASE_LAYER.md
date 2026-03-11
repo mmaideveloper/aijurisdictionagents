@@ -1,4 +1,4 @@
-# API database layer (local + container + Azure-ready)
+# API database layer (local + PostgreSQL Docker + Azure-ready)
 
 ## Recommended approach
 
@@ -11,7 +11,7 @@ For your feature set, use a **hybrid model**:
 
 Use these environment variables in local `.env`, Docker, and GitHub environment secrets.
 
-- `DB_OPTION`: `local` or `azure`
+- `DB_OPTION`: `local`, `postgres`, or `azure`
 - `STORAGE_OPTION`: `local` or `azure`
 - `DB_LOCAL`: local SQLite path relative to the repo root (example: `./databases/api.sqlite3`)
 - `DB_CLOUD`: cloud database connection string (PostgreSQL in Azure)
@@ -19,6 +19,7 @@ Use these environment variables in local `.env`, Docker, and GitHub environment 
 - `STORE_CLOUD`: Azure Storage connection string
 
 If you set:
+- `DB_OPTION=postgres`, then `DB_CLOUD` is required.
 - `DB_OPTION=azure`, then `DB_CLOUD` is required.
 - `STORAGE_OPTION=azure`, then `STORE_CLOUD` is required.
 
@@ -32,7 +33,8 @@ This aligns with your GitHub environment secrets plan:
 
 ### Phase 1 (now): local + Docker + basic cloud portability
 
-- **SQLite** for metadata (`databases/api.sqlite3`) via `ApiDatabaseStore`.
+- **SQLite** for metadata (`databases/api.sqlite3`) when `DB_OPTION=local`.
+- **PostgreSQL** for metadata when `DB_OPTION=postgres` (recommended via Docker locally).
 - Filesystem blob folder for stored assets.
 
 ### Phase 2 (production): scalable and resilient
@@ -67,8 +69,14 @@ PYTHONPATH=src python examples/api_database_minimal_demo.py
 
 ## Docker notes
 
+Run local PostgreSQL stack:
+```bash
+cd api/aijuristiction-api
+docker compose up -d
+```
+
 Mount volumes for local mode:
-- `/app/data` for `DB_LOCAL`
+- `/app/data` for SQLite fallback (`DB_LOCAL`)
 - `/app/blob` for `STORE_LOCAL`
 
 ## Azure Container Apps notes

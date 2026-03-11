@@ -7,7 +7,15 @@ import hmac
 import os
 from pathlib import Path
 import sqlite3
+from typing import Any
 import uuid
+
+try:
+    import psycopg
+    from psycopg import Connection as PostgresConnection
+except ImportError:  # pragma: no cover - optional dependency
+    psycopg = None
+    PostgresConnection = Any  # type: ignore[assignment]
 
 from .config import ApiDataConfig
 
@@ -48,15 +56,23 @@ class ApiDatabaseStore:
         *,
         db_path: Path,
         blob_root: Path,
+        db_option: str = "local",
+        db_cloud: str = "",
         storage_option: str = "local",
         store_cloud: str = "",
     ) -> None:
         self.db_path = db_path
         self.blob_root = blob_root
+        self.db_option = db_option
+        self.db_cloud = db_cloud
         self.storage_option = storage_option
         self.store_cloud = store_cloud
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.blob_root.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def uses_postgres(self) -> bool:
+        return self.db_option in {"postgres", "azure"}
 
     @classmethod
     def from_env(cls) -> "ApiDatabaseStore":
@@ -65,16 +81,17 @@ class ApiDatabaseStore:
         return cls(
             db_path=config.db_path,
             blob_root=config.blob_root,
+            db_option=config.db_option,
+            db_cloud=config.db_connection_uri,
             storage_option=config.storage_option,
             store_cloud=config.store_cloud,
         )
 
     def initialize(self) -> None:
         with self._connect() as conn:
-            conn.executescript(
+            self._execute_script(
+                conn,
                 """
-                PRAGMA foreign_keys = ON;
-
                 CREATE TABLE IF NOT EXISTS users (
                     user_id TEXT PRIMARY KEY,
                     phone_number TEXT UNIQUE,
@@ -137,7 +154,7 @@ class ApiDatabaseStore:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
                 );
-                """
+                """,
             )
             self._ensure_user_schema(conn)
 
@@ -166,7 +183,8 @@ class ApiDatabaseStore:
             email=normalized_email,
         )
         with self._connect() as conn:
-            conn.execute(
+            self._execute(
+                conn,
                 """
                 INSERT INTO users(
                     user_id, phone_number, email, first_name, last_name, full_name, password_hash, created_at
@@ -195,15 +213,15 @@ class ApiDatabaseStore:
 
     def authenticate_user(self, *, email: str, password: str) -> User | None:
         with self._connect() as conn:
-            row = conn.execute(
+            row = self._fetchone(
+                conn,
                 """
                 SELECT user_id, phone_number, email, first_name, last_name, full_name, password_hash
                 FROM users
                 WHERE email = ?
                 """,
                 (email.strip().lower(),),
-            ).fetchone()
-
+            )
         if row is None:
             return None
         if not _verify_password(password, row[6]):
@@ -215,14 +233,15 @@ class ApiDatabaseStore:
         if normalized_phone is None:
             return None
         with self._connect() as conn:
-            row = conn.execute(
+            row = self._fetchone(
+                conn,
                 """
                 SELECT user_id, phone_number, email, first_name, last_name, full_name
                 FROM users
                 WHERE phone_number = ?
                 """,
                 (normalized_phone,),
-            ).fetchone()
+            )
         if row is None:
             return None
         return _row_to_user(row)
@@ -240,19 +259,18 @@ class ApiDatabaseStore:
         normalized_first = _normalize_optional_text(first_name)
         normalized_last = _normalize_optional_text(last_name)
         normalized_password = _normalize_optional_text(password)
-
         with self._connect() as conn:
-            current = conn.execute(
+            current = self._fetchone(
+                conn,
                 """
                 SELECT user_id, phone_number, email, first_name, last_name, full_name
                 FROM users
                 WHERE user_id = ?
                 """,
                 (user_id,),
-            ).fetchone()
+            )
             if current is None:
                 raise KeyError(f"User {user_id} not found")
-
             current_user = _row_to_user(current)
             resolved_full_name = _resolve_full_name(
                 full_name=current_user.full_name,
@@ -262,7 +280,8 @@ class ApiDatabaseStore:
                 email=current_user.email,
             )
             if normalized_password:
-                conn.execute(
+                self._execute(
+                    conn,
                     """
                     UPDATE users
                     SET phone_number = ?, first_name = ?, last_name = ?, full_name = ?, password_hash = ?
@@ -278,7 +297,8 @@ class ApiDatabaseStore:
                     ),
                 )
             else:
-                conn.execute(
+                self._execute(
+                    conn,
                     """
                     UPDATE users
                     SET phone_number = ?, first_name = ?, last_name = ?, full_name = ?
@@ -292,7 +312,6 @@ class ApiDatabaseStore:
                         user_id,
                     ),
                 )
-
         return User(
             user_id=user_id,
             phone_number=normalized_phone,
@@ -305,7 +324,8 @@ class ApiDatabaseStore:
     def create_company(self, *, legal_name: str, profile_json: str = "{}") -> Company:
         company_id = str(uuid.uuid4())
         with self._connect() as conn:
-            conn.execute(
+            self._execute(
+                conn,
                 """
                 INSERT INTO companies(company_id, legal_name, profile_json, created_at)
                 VALUES (?, ?, ?, ?)
@@ -316,10 +336,13 @@ class ApiDatabaseStore:
 
     def add_user_to_company(self, *, user_id: str, company_id: str, role: str) -> None:
         with self._connect() as conn:
-            conn.execute(
+            self._execute(
+                conn,
                 """
-                INSERT OR REPLACE INTO company_users(company_id, user_id, role, created_at)
+                INSERT INTO company_users(company_id, user_id, role, created_at)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(company_id, user_id)
+                DO UPDATE SET role = excluded.role, created_at = excluded.created_at
                 """,
                 (company_id, user_id, role, _now_iso()),
             )
@@ -329,14 +352,17 @@ class ApiDatabaseStore:
         now = _now_iso()
         self._ensure_case_root(case_id)
         with self._connect() as conn:
-            conn.execute(
+            self._execute(
+                conn,
                 """
                 INSERT INTO cases(case_id, user_id, company_id, title, status, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 'open', ?, ?)
                 """,
                 (case_id, user_id, company_id, title, now, now),
             )
-        return Case(case_id=case_id, user_id=user_id, company_id=company_id, title=title)
+        return Case(
+            case_id=case_id, user_id=user_id, company_id=company_id, title=title
+        )
 
     def add_case_document(
         self,
@@ -351,9 +377,9 @@ class ApiDatabaseStore:
         doc_id = str(uuid.uuid4())
         relative_uri = Path(case_id) / kind / f"v{version}_{original_filename}"
         storage_uri = self._store_payload(relative_uri=relative_uri, payload=payload)
-
         with self._connect() as conn:
-            conn.execute(
+            self._execute(
+                conn,
                 """
                 INSERT INTO case_documents(
                     doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id, created_at
@@ -371,7 +397,8 @@ class ApiDatabaseStore:
                     _now_iso(),
                 ),
             )
-            conn.execute(
+            self._execute(
+                conn,
                 "UPDATE cases SET updated_at = ? WHERE case_id = ?",
                 (_now_iso(), case_id),
             )
@@ -389,20 +416,32 @@ class ApiDatabaseStore:
         communication_id = str(uuid.uuid4())
         transcript_uri: str | None = None
         if transcript_payload is not None:
-            relative_uri = Path(case_id) / "communications" / f"{communication_id}.{extension}"
-            transcript_uri = self._store_payload(relative_uri=relative_uri, payload=transcript_payload)
-
+            relative_uri = (
+                Path(case_id) / "communications" / f"{communication_id}.{extension}"
+            )
+            transcript_uri = self._store_payload(
+                relative_uri=relative_uri, payload=transcript_payload
+            )
         with self._connect() as conn:
-            conn.execute(
+            self._execute(
+                conn,
                 """
                 INSERT INTO case_communications(
                     communication_id, case_id, channel, transcript_uri, summary, created_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (communication_id, case_id, channel, transcript_uri, summary, _now_iso()),
+                (
+                    communication_id,
+                    case_id,
+                    channel,
+                    transcript_uri,
+                    summary,
+                    _now_iso(),
+                ),
             )
-            conn.execute(
+            self._execute(
+                conn,
                 "UPDATE cases SET updated_at = ? WHERE case_id = ?",
                 (_now_iso(), case_id),
             )
@@ -414,47 +453,95 @@ class ApiDatabaseStore:
     def _store_payload(self, *, relative_uri: Path, payload: bytes) -> str:
         case_id = relative_uri.parts[0]
         self._ensure_case_root(case_id)
-
         local_destination = self.blob_root / relative_uri
         local_destination.parent.mkdir(parents=True, exist_ok=True)
         local_destination.write_bytes(payload)
-
         if self.storage_option == "azure":
             if not self.store_cloud:
                 raise ValueError("STORE_CLOUD is required when storage_option=azure")
             prefix = self.store_cloud.rstrip("/")
             return f"{prefix}/{relative_uri.as_posix()}"
-
         return relative_uri.as_posix()
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self) -> sqlite3.Connection | PostgresConnection[Any]:
+        if self.uses_postgres:
+            if psycopg is None:
+                raise RuntimeError("psycopg is required for DB_OPTION=postgres|azure")
+            return psycopg.connect(self.db_cloud)
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
-    def _ensure_user_schema(self, conn: sqlite3.Connection) -> None:
-        columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()
-        }
+    def _execute_script(
+        self, conn: sqlite3.Connection | PostgresConnection[Any], script: str
+    ) -> None:
+        statements = [stmt.strip() for stmt in script.split(";") if stmt.strip()]
+        for statement in statements:
+            self._execute(conn, statement)
+
+    def _execute(
+        self,
+        conn: sqlite3.Connection | PostgresConnection[Any],
+        query: str,
+        params: tuple[Any, ...] = (),
+    ) -> Any:
+        return conn.execute(self._query(query), params)
+
+    def _fetchone(
+        self,
+        conn: sqlite3.Connection | PostgresConnection[Any],
+        query: str,
+        params: tuple[Any, ...],
+    ) -> tuple[Any, ...] | None:
+        return self._execute(conn, query, params).fetchone()
+
+    def _query(self, query: str) -> str:
+        if self.uses_postgres:
+            return query.replace("?", "%s")
+        return query
+
+    def _ensure_user_schema(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'users'
+                    """,
+                ).fetchall()
+            }
+        else:
+            columns = {
+                row[1]
+                for row in self._execute(conn, "PRAGMA table_info(users)").fetchall()
+            }
+
         if "phone_number" not in columns:
-            conn.execute("ALTER TABLE users ADD COLUMN phone_number TEXT")
+            self._execute(conn, "ALTER TABLE users ADD COLUMN phone_number TEXT")
         if "first_name" not in columns:
-            conn.execute("ALTER TABLE users ADD COLUMN first_name TEXT")
+            self._execute(conn, "ALTER TABLE users ADD COLUMN first_name TEXT")
         if "last_name" not in columns:
-            conn.execute("ALTER TABLE users ADD COLUMN last_name TEXT")
-        conn.execute(
+            self._execute(conn, "ALTER TABLE users ADD COLUMN last_name TEXT")
+        self._execute(
+            conn,
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_number
             ON users(phone_number)
             WHERE phone_number IS NOT NULL
-            """
+            """,
         )
-        conn.execute(
+        self._execute(
+            conn,
             """
             UPDATE users
             SET full_name = COALESCE(NULLIF(TRIM(full_name), ''), email)
             WHERE full_name IS NULL OR TRIM(full_name) = ''
-            """
+            """,
         )
 
 
@@ -495,7 +582,7 @@ def _resolve_full_name(
     return email
 
 
-def _row_to_user(row: sqlite3.Row | tuple[object, ...]) -> User:
+def _row_to_user(row: tuple[object, ...]) -> User:
     values = list(row)
     return User(
         user_id=str(values[0]),
