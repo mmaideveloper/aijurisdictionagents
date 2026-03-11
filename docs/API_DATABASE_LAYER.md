@@ -79,6 +79,34 @@ Mount volumes for local mode:
 - `/app/data` for SQLite fallback (`DB_LOCAL`)
 - `/app/blob` for `STORE_LOCAL`
 
+
+## Schema update workflow
+
+`ApiDatabaseStore.initialize()` is idempotent and now serves as the schema bootstrap/migration step for SQLite and PostgreSQL.
+
+Run migrations explicitly before testing/deploying:
+
+```bash
+PYTHONPATH=src python scripts/apply_api_db_schema.py --dry-run
+PYTHONPATH=src python scripts/apply_api_db_schema.py
+```
+
+### Local PostgreSQL + Docker
+
+```bash
+cd api/aijuristiction-api
+docker compose up -d
+cd ../..
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python scripts/apply_api_db_schema.py
+```
+
+### Cloud rollout checklist (Azure)
+
+1. Deploy code/image to Container Apps.
+2. Ensure Container App secrets/env include `DB_OPTION=azure`, `DB_CLOUD`, and storage settings.
+3. Restart/revision rollout the Container App; startup now runs schema initialization automatically.
+4. Verify with health endpoint and logs (`db_option=azure` at startup).
+
 ## Azure Container Apps notes
 
 - Use secrets for `DB_CLOUD` and `STORE_CLOUD`.

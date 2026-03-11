@@ -19,6 +19,8 @@ from app.telemetry import configure_telemetry
 from app.users.api import router as users_router
 from app.versioning import get_api_version, get_core_version
 
+from aijurisdictionagents.api_db import ApiDatabaseStore
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REPO_ENV_PATH = _REPO_ROOT / ".env"
 dotenv.load_dotenv(_REPO_ENV_PATH, override=False)
@@ -65,12 +67,15 @@ configure_telemetry(app, service_name="aijuristiction-api", service_version=app.
 
 @app.on_event("startup")
 async def startup_log() -> None:
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
     logger.info(
-        "API Starting | api_version=%s | core_version=%s | log_level=%s | llm_provider=%s",
+        "API Starting | api_version=%s | core_version=%s | log_level=%s | llm_provider=%s | db_option=%s",
         app.version,
         get_core_version(),
         logging.getLevelName(LOG_LEVEL),
         EFFECTIVE_LLM_PROVIDER,
+        store.db_option,
     )
 
 

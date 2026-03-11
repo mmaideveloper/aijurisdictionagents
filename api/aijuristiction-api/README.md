@@ -164,6 +164,32 @@ For Slovak simulated discussions, the AI user now ends the conversation with `To
 - If not set, traces are written via console exporter.
 - Console trace export uses a synchronous processor in local default mode to avoid shutdown-time exporter thread errors during tests.
 
+
+## Database schema updates (local + cloud)
+
+The API now applies schema bootstrap/migrations during app startup (`ApiDatabaseStore.initialize()`), so every new deployment revision updates schema before serving traffic.
+
+For pre-deploy validation, run from repository root:
+
+```bash
+PYTHONPATH=src python scripts/apply_api_db_schema.py --dry-run
+PYTHONPATH=src python scripts/apply_api_db_schema.py
+```
+
+Local PostgreSQL example:
+
+```bash
+cd api/aijuristiction-api
+docker compose up -d
+cd ../..
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python scripts/apply_api_db_schema.py
+```
+
+Cloud rollout:
+1. Build/push/deploy API image.
+2. Confirm Container App env vars: `DB_OPTION=azure`, `DB_CLOUD`, `STORAGE_OPTION`, `STORE_CLOUD`.
+3. Roll out a new revision (or restart) and verify startup logs include selected `db_option`.
+
 ## Build + deployment workflow
 
 GitHub workflow: `.github/workflows/api_build_deploy.yml`
