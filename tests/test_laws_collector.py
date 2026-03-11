@@ -61,3 +61,14 @@ def test_laws_collector_delta_sync_adds_new_act_and_new_version(tmp_path: Path) 
     overview = store.list_document_overview()
     assert overview[0].download_attempt_count == 2
     assert overview[0].last_download_status == "stored"
+
+
+def test_laws_collector_config_resolves_relative_db_from_repo_root(monkeypatch) -> None:
+    monkeypatch.setenv("LAWS_DB_LOCAL", "./databases/laws-collector/sk_laws.sqlite3")
+
+    config = LawsCollectorConfig.from_env()
+
+    assert config.db_path.name == "sk_laws.sqlite3"
+    assert config.db_path.parent.name == "laws-collector"
+    assert config.db_path.parent.parent.name == "databases"
+    assert config.db_path.parent.parent.parent == Path(__file__).resolve().parents[1]

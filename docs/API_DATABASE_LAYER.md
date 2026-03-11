@@ -13,7 +13,7 @@ Use these environment variables in local `.env`, Docker, and GitHub environment 
 
 - `DB_OPTION`: `local` or `azure`
 - `STORAGE_OPTION`: `local` or `azure`
-- `DB_LOCAL`: local SQLite path (example: `./data/api.sqlite3`)
+- `DB_LOCAL`: local SQLite path relative to the repo root (example: `./databases/api.sqlite3`)
 - `DB_CLOUD`: cloud database connection string (PostgreSQL in Azure)
 - `STORE_LOCAL`: local storage root path (example: `./storage`)
 - `STORE_CLOUD`: Azure Storage connection string
@@ -32,7 +32,7 @@ This aligns with your GitHub environment secrets plan:
 
 ### Phase 1 (now): local + Docker + basic cloud portability
 
-- **SQLite** for metadata (`api.sqlite3`) via `ApiDatabaseStore`.
+- **SQLite** for metadata (`databases/api.sqlite3`) via `ApiDatabaseStore`.
 - Filesystem blob folder for stored assets.
 
 ### Phase 2 (production): scalable and resilient
