@@ -16,6 +16,8 @@ This keeps deployment simple while matching the existing API container workflow.
 - Resource Group (created by script)
 - Log Analytics Workspace
 - Azure Container Apps Environment
+- Azure Database for PostgreSQL Flexible Server
+- PostgreSQL database (`aijurisdiction` by default)
 - Azure Container Registry (ACR)
 - Azure Storage Account (Blob Storage)
 - Private blob container (`case-documents` by default)
@@ -117,7 +119,8 @@ The script will:
 
 1. Provision/update Azure infrastructure via `infra/bicep/main.bicep`
 2. Build the API image in ACR using `az acr build`
-3. Update the Container App to the new image
+3. Update the Container App to the new image and database env vars
+4. Apply API schema migrations to Azure PostgreSQL
 
 Existing-resource behavior:
 
@@ -204,6 +207,10 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_RESOURCE_GROUP` = `<RESOURCE_GROUP_NAME>`
 - `AZURE_CONTAINERAPPS_ENVIRONMENT` = `<CONTAINERAPPS_ENV_NAME>`
 - `AZURE_CONTAINER_APP_NAME` = `<CONTAINER_APP_NAME>`
+- `AZURE_POSTGRES_SERVER_NAME` = `db-juris-dev`
+- `AZURE_POSTGRES_DATABASE_NAME` = `aijurisdiction`
+- `AZURE_POSTGRES_ADMIN_USERNAME` = `<POSTGRES_ADMIN_USERNAME>`
+- GitHub secret `AZURE_POSTGRES_ADMIN_PASSWORD` = `<POSTGRES_ADMIN_PASSWORD>`
 - `AZURE_CONTAINER_REGISTRY` = `<ACR_NAME>`
 - `AZURE_STORAGE_ACCOUNT_NAME` = `<STORAGE_ACCOUNT_NAME>` (optional; auto-derived if omitted)
 - `AZURE_STORAGE_CONTAINER_NAME` = `<STORAGE_CONTAINER_NAME>` (optional; defaults to `case-documents`)

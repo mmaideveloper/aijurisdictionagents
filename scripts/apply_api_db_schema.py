@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.db_migrations import apply_sql_migrations
 
 
 def main() -> None:
@@ -23,8 +24,36 @@ def main() -> None:
     print(f"Schema target: {target}")
 
     if args.dry_run:
-        print("Dry run only: no schema changes were applied.")
+        if store.uses_postgres:
+            pending = apply_sql_migrations(
+                project="api",
+                db_option=store.db_option,
+                target=target,
+                dry_run=True,
+            )
+            if pending:
+                print("Pending migrations:")
+                for item in pending:
+                    print(f" - {item}")
+            else:
+                print("No pending migrations.")
+        else:
+            print("Dry run only: local SQLite schema is code-driven.")
         return
+
+    if store.uses_postgres:
+        pending = apply_sql_migrations(
+            project="api",
+            db_option=store.db_option,
+            target=target,
+            dry_run=False,
+        )
+        if pending:
+            print("Applied SQL migrations:")
+            for item in pending:
+                print(f" - {item}")
+        else:
+            print("No SQL migrations needed.")
 
     store.initialize()
     print("Schema update completed successfully.")

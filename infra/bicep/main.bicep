@@ -6,12 +6,23 @@ param storageAccountName string = toLower('staijur${uniqueString(subscription().
 param storageContainerName string = 'case-documents'
 param logAnalyticsWorkspaceName string
 param managedIdentityName string
+param postgresServerName string
+param postgresDatabaseName string = 'aijurisdiction'
+param postgresAdminUsername string
+@secure()
+param postgresAdminPassword string = ''
+param postgresSkuName string = 'Standard_B1ms'
+param postgresSkuTier string = 'Burstable'
+param postgresVersion string = '16'
+param postgresStorageSizeGb int = 32
+param postgresClientIp string = ''
 param createLogAnalyticsWorkspace bool = true
 param createManagedEnvironment bool = true
 param createAcr bool = true
 param createStorageAccount bool = true
 param createManagedIdentity bool = true
 param createContainerApp bool = true
+param createPostgresServer bool = true
 param tags object = {}
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (createLogAnalyticsWorkspace) {
@@ -132,6 +143,111 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 
 resource managedIdentityExisting 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = if (!createManagedIdentity) {
   name: managedIdentityName
+}
+
+resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' = if (createPostgresServer) {
+  name: postgresServerName
+  location: location
+  tags: tags
+  sku: {
+    name: postgresSkuName
+    tier: postgresSkuTier
+  }
+  properties: {
+    administratorLogin: postgresAdminUsername
+    administratorLoginPassword: postgresAdminPassword
+    version: postgresVersion
+    storage: {
+      storageSizeGB: postgresStorageSizeGb
+    }
+    authConfig: {
+      activeDirectoryAuth: 'Disabled'
+      passwordAuth: 'Enabled'
+    }
+    backup: {
+      backupRetentionDays: 7
+      geoRedundantBackup: 'Disabled'
+    }
+    highAvailability: {
+      mode: 'Disabled'
+    }
+  }
+}
+
+resource postgresServerExisting 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' existing = if (!createPostgresServer) {
+  name: postgresServerName
+}
+
+resource postgresExtensionsConfigOnNewServer 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2022-12-01' = if (createPostgresServer) {
+  name: 'azure.extensions'
+  parent: postgresServer
+  properties: {
+    value: 'vector'
+    source: 'user-override'
+  }
+}
+
+resource postgresExtensionsConfigOnExistingServer 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2022-12-01' = if (!createPostgresServer) {
+  name: 'azure.extensions'
+  parent: postgresServerExisting
+  properties: {
+    value: 'vector'
+    source: 'user-override'
+  }
+}
+
+resource postgresAllowAzureOnNewServer 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2022-12-01' = if (createPostgresServer) {
+  name: 'AllowAzureServices'
+  parent: postgresServer
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
+  }
+}
+
+resource postgresAllowAzureOnExistingServer 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2022-12-01' = if (!createPostgresServer) {
+  name: 'AllowAzureServices'
+  parent: postgresServerExisting
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
+  }
+}
+
+resource postgresClientIpRuleOnNewServer 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2022-12-01' = if (createPostgresServer && !empty(postgresClientIp)) {
+  name: 'AllowCurrentClientIp'
+  parent: postgresServer
+  properties: {
+    startIpAddress: postgresClientIp
+    endIpAddress: postgresClientIp
+  }
+}
+
+resource postgresClientIpRuleOnExistingServer 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2022-12-01' = if (!createPostgresServer && !empty(postgresClientIp)) {
+  name: 'AllowCurrentClientIp'
+  parent: postgresServerExisting
+  properties: {
+    startIpAddress: postgresClientIp
+    endIpAddress: postgresClientIp
+  }
+}
+
+resource postgresDatabaseOnNewServer 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-12-01' = if (createPostgresServer) {
+  name: postgresDatabaseName
+  parent: postgresServer
+  properties: {
+    charset: 'UTF8'
+    collation: 'en_US.utf8'
+  }
+}
+
+resource postgresDatabaseOnExistingServer 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-12-01' = if (!createPostgresServer) {
+  name: postgresDatabaseName
+  parent: postgresServerExisting
+  properties: {
+    charset: 'UTF8'
+    collation: 'en_US.utf8'
+  }
 }
 
 var managedIdentityId = createManagedIdentity ? managedIdentity.id : managedIdentityExisting.id
@@ -262,3 +378,8 @@ output containerAppUrl string = createContainerApp
 output containerAppsEnvironmentName string = createManagedEnvironment
   ? managedEnvironment.name
   : managedEnvironmentExisting.name
+output postgresServerName string = createPostgresServer ? postgresServer.name : postgresServerExisting.name
+output postgresDatabaseName string = postgresDatabaseName
+output postgresHost string = createPostgresServer
+  ? postgresServer.properties.fullyQualifiedDomainName
+  : postgresServerExisting.properties.fullyQualifiedDomainName

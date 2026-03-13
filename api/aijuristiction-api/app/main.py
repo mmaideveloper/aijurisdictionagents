@@ -21,6 +21,7 @@ from app.users.api import router as users_router
 from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.db_migrations import apply_sql_migrations
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REPO_ENV_PATH = _REPO_ROOT / ".env"
@@ -70,6 +71,13 @@ configure_telemetry(app, service_name="aijuristiction-api", service_version=app.
 @app.on_event("startup")
 async def startup_log() -> None:
     store = ApiDatabaseStore.from_env()
+    if store.uses_postgres:
+        apply_sql_migrations(
+            project="api",
+            db_option=store.db_option,
+            target=store.db_cloud,
+            dry_run=False,
+        )
     store.initialize()
     logger.info(
         "API Starting | api_version=%s | core_version=%s | log_level=%s | llm_provider=%s | db_option=%s",
