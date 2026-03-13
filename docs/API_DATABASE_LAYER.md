@@ -112,3 +112,21 @@ DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijuri
 - Use secrets for `DB_CLOUD` and `STORE_CLOUD`.
 - Keep `DB_OPTION=azure` and `STORAGE_OPTION=azure`.
 - This commit validates env contracts; production adapters can be plugged in next.
+
+## Subscription model (Task #86)
+
+The API database now seeds four subscription plans and tracks user subscription lifecycle:
+
+- `free` (`none`): assigned on sign-up, max 5 cases, 1 day case TTL.
+- `case` (`perCase`): €10, max 1 case, unlimited case time, assigned to user/case usage.
+- `basic` (`monthly`): €30/month, max 10 cases.
+- `premium` (`monthly`): €100/month, max 100 cases.
+
+Status model: `pending`, `paying`, `paid`, `canceled`, `expired`.
+For monthly plans, `starts_at` and `ends_at` are set when status switches to `paid`.
+
+Minimal runnable example:
+
+```bash
+python examples/subscription_minimal_demo.py
+```

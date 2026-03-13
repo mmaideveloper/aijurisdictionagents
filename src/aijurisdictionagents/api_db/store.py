@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import os
@@ -28,6 +28,29 @@ class User:
     first_name: str | None
     last_name: str | None
     full_name: str
+
+
+@dataclass(frozen=True)
+class SubscriptionPlan:
+    plan_code: str
+    display_name: str
+    subscription_type: str
+    price_eur: int
+    max_cases: int
+    case_ttl_days: int | None
+
+
+@dataclass(frozen=True)
+class UserSubscription:
+    subscription_id: str
+    user_id: str
+    plan_code: str
+    status: str
+    starts_at: str | None
+    ends_at: str | None
+    case_ids_json: str
+    created_at: str
+    updated_at: str
 
 
 @dataclass(frozen=True)
@@ -179,9 +202,35 @@ class ApiDatabaseStore:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS subscription_plans (
+                    plan_code TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    subscription_type TEXT NOT NULL,
+                    price_eur INTEGER NOT NULL,
+                    max_cases INTEGER NOT NULL,
+                    case_ttl_days INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS user_subscriptions (
+                    subscription_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    plan_code TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    starts_at TEXT,
+                    ends_at TEXT,
+                    case_ids_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                    FOREIGN KEY(plan_code) REFERENCES subscription_plans(plan_code)
+                );
                 """,
             )
             self._ensure_user_schema(conn)
+            self._seed_subscription_plans(conn)
 
     def create_user(
         self,
@@ -227,6 +276,16 @@ class ApiDatabaseStore:
                     now,
                 ),
             )
+            self._execute(
+                conn,
+                """
+                INSERT INTO user_subscriptions(
+                    subscription_id, user_id, plan_code, status, starts_at, ends_at, case_ids_json, created_at, updated_at
+                )
+                VALUES (?, ?, 'free', 'paid', ?, NULL, '[]', ?, ?)
+                """,
+                (str(uuid.uuid4()), user_id, now, now, now),
+            )
         return User(
             user_id=user_id,
             phone_number=normalized_phone,
@@ -235,6 +294,112 @@ class ApiDatabaseStore:
             last_name=normalized_last,
             full_name=resolved_full_name,
         )
+
+    def list_subscription_plans(self) -> list[SubscriptionPlan]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT plan_code, display_name, subscription_type, price_eur, max_cases, case_ttl_days
+                FROM subscription_plans
+                ORDER BY price_eur ASC
+                """,
+            ).fetchall()
+        return [_row_to_subscription_plan(row) for row in rows]
+
+    def list_user_subscriptions(self, *, user_id: str) -> list[UserSubscription]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT subscription_id, user_id, plan_code, status, starts_at, ends_at, case_ids_json, created_at, updated_at
+                FROM user_subscriptions
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [_row_to_user_subscription(row) for row in rows]
+
+    def request_subscription_change(self, *, user_id: str, plan_code: str) -> UserSubscription:
+        now = _now_iso()
+        subscription_id = str(uuid.uuid4())
+        normalized_plan = plan_code.strip().lower()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO user_subscriptions(
+                    subscription_id, user_id, plan_code, status, starts_at, ends_at, case_ids_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, 'pending', NULL, NULL, '[]', ?, ?)
+                """,
+                (subscription_id, user_id, normalized_plan, now, now),
+            )
+            row = self._fetchone(
+                conn,
+                """
+                SELECT subscription_id, user_id, plan_code, status, starts_at, ends_at, case_ids_json, created_at, updated_at
+                FROM user_subscriptions
+                WHERE subscription_id = ?
+                """,
+                (subscription_id,),
+            )
+        if row is None:
+            raise KeyError(f"Subscription {subscription_id} not found")
+        return _row_to_user_subscription(row)
+
+    def update_subscription_status(self, *, subscription_id: str, status: str) -> UserSubscription:
+        normalized_status = status.strip().lower()
+        if normalized_status not in {"pending", "paying", "paid", "canceled", "expired"}:
+            raise ValueError("Unsupported subscription status")
+
+        with self._connect() as conn:
+            current = self._fetchone(
+                conn,
+                """
+                SELECT subscription_id, user_id, plan_code, status, starts_at, ends_at, case_ids_json, created_at, updated_at
+                FROM user_subscriptions
+                WHERE subscription_id = ?
+                """,
+                (subscription_id,),
+            )
+            if current is None:
+                raise KeyError(f"Subscription {subscription_id} not found")
+            current_subscription = _row_to_user_subscription(current)
+
+            starts_at = current_subscription.starts_at
+            ends_at = current_subscription.ends_at
+            if normalized_status == "paid":
+                starts_at = _now_iso()
+                ends_at = self._resolve_subscription_end(
+                    conn,
+                    plan_code=current_subscription.plan_code,
+                    starts_at=starts_at,
+                )
+
+            now = _now_iso()
+            self._execute(
+                conn,
+                """
+                UPDATE user_subscriptions
+                SET status = ?, starts_at = ?, ends_at = ?, updated_at = ?
+                WHERE subscription_id = ?
+                """,
+                (normalized_status, starts_at, ends_at, now, subscription_id),
+            )
+            updated = self._fetchone(
+                conn,
+                """
+                SELECT subscription_id, user_id, plan_code, status, starts_at, ends_at, case_ids_json, created_at, updated_at
+                FROM user_subscriptions
+                WHERE subscription_id = ?
+                """,
+                (subscription_id,),
+            )
+        if updated is None:
+            raise KeyError(f"Subscription {subscription_id} not found")
+        return _row_to_user_subscription(updated)
 
     def authenticate_user(self, *, email: str, password: str) -> User | None:
         with self._connect() as conn:
@@ -767,6 +932,79 @@ class ApiDatabaseStore:
             WHERE full_name IS NULL OR TRIM(full_name) = ''
             """,
         )
+
+    def _seed_subscription_plans(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
+        now = _now_iso()
+        plans = [
+            ("free", "Free", "none", 0, 5, 1),
+            ("case", "Case", "perCase", 10, 1, None),
+            ("basic", "Basic", "monthly", 30, 10, None),
+            ("premium", "Premium", "monthly", 100, 100, None),
+        ]
+        for plan in plans:
+            self._execute(
+                conn,
+                """
+                INSERT INTO subscription_plans(
+                    plan_code, display_name, subscription_type, price_eur, max_cases, case_ttl_days, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(plan_code) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    subscription_type = excluded.subscription_type,
+                    price_eur = excluded.price_eur,
+                    max_cases = excluded.max_cases,
+                    case_ttl_days = excluded.case_ttl_days,
+                    updated_at = excluded.updated_at
+                """,
+                (*plan, now, now),
+            )
+
+    def _resolve_subscription_end(
+        self,
+        conn: sqlite3.Connection | PostgresConnection[Any],
+        *,
+        plan_code: str,
+        starts_at: str,
+    ) -> str | None:
+        row = self._fetchone(
+            conn,
+            "SELECT subscription_type FROM subscription_plans WHERE plan_code = ?",
+            (plan_code,),
+        )
+        if row is None:
+            return None
+        plan_type = str(row[0]).lower()
+        if plan_type != "monthly":
+            return None
+        start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+        return (start_dt + timedelta(days=30)).isoformat().replace("+00:00", "Z")
+
+
+def _row_to_subscription_plan(row: tuple[object, ...]) -> SubscriptionPlan:
+    values = list(row)
+    return SubscriptionPlan(
+        plan_code=str(values[0]),
+        display_name=str(values[1]),
+        subscription_type=str(values[2]),
+        price_eur=int(values[3]),
+        max_cases=int(values[4]),
+        case_ttl_days=int(values[5]) if values[5] is not None else None,
+    )
+
+
+def _row_to_user_subscription(row: tuple[object, ...]) -> UserSubscription:
+    values = list(row)
+    return UserSubscription(
+        subscription_id=str(values[0]),
+        user_id=str(values[1]),
+        plan_code=str(values[2]),
+        status=str(values[3]),
+        starts_at=str(values[4]) if values[4] is not None else None,
+        ends_at=str(values[5]) if values[5] is not None else None,
+        case_ids_json=str(values[6]),
+        created_at=str(values[7]),
+        updated_at=str(values[8]),
+    )
 
 
 def _now_iso() -> str:

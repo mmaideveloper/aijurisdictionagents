@@ -152,3 +152,60 @@ def test_sign_up_rejects_duplicate_phone_and_email(monkeypatch, tmp_path: Path) 
     )
     assert duplicate_email.status_code == 409
     assert "email" in duplicate_email.json()["detail"].lower()
+
+
+def test_subscription_lifecycle(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121212",
+            "email": "plans@example.com",
+            "password": "secret-pass",
+            "first_name": "Plan",
+            "last_name": "User",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+
+    plans_response = client.get("/v1/users/subscriptions/plans", headers=AUTH_HEADERS)
+    assert plans_response.status_code == 200
+    plans = plans_response.json()
+    assert {item["plan_code"] for item in plans} == {"free", "case", "basic", "premium"}
+
+    subscriptions_response = client.get(f"/v1/users/{user_id}/subscriptions", headers=AUTH_HEADERS)
+    assert subscriptions_response.status_code == 200
+    existing = subscriptions_response.json()
+    assert existing[0]["plan_code"] == "free"
+    assert existing[0]["status"] == "paid"
+
+    request_response = client.post(
+        f"/v1/users/{user_id}/subscriptions",
+        headers=AUTH_HEADERS,
+        json={"plan_code": "basic"},
+    )
+    assert request_response.status_code == 201
+    requested = request_response.json()
+    assert requested["status"] == "pending"
+
+    paying_response = client.patch(
+        f"/v1/users/subscriptions/{requested['subscription_id']}",
+        headers=AUTH_HEADERS,
+        json={"status": "paying"},
+    )
+    assert paying_response.status_code == 200
+    assert paying_response.json()["status"] == "paying"
+
+    paid_response = client.patch(
+        f"/v1/users/subscriptions/{requested['subscription_id']}",
+        headers=AUTH_HEADERS,
+        json={"status": "paid"},
+    )
+    assert paid_response.status_code == 200
+    paid = paid_response.json()
+    assert paid["status"] == "paid"
+    assert paid["starts_at"] is not None
+    assert paid["ends_at"] is not None
