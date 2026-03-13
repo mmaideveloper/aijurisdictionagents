@@ -215,6 +215,26 @@ String _stripCaseUpdateJson(String content) {
   return visible.isEmpty ? content.trimRight() : visible;
 }
 
+class CaseSummary {
+  const CaseSummary({
+    required this.caseId,
+    required this.title,
+    required this.status,
+  });
+
+  final String caseId;
+  final String title;
+  final String status;
+
+  static CaseSummary fromJson(Map<String, dynamic> json) {
+    return CaseSummary(
+      caseId: json['case_id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      status: json['status'] as String? ?? 'open',
+    );
+  }
+}
+
 class StreamEvent {
   const StreamEvent({required this.event, required this.data});
 
@@ -301,8 +321,20 @@ class ApiClient {
   final String apiKey;
   final AppLogger logger;
   String? _sessionId;
+  String? _caseId;
+  String? _userId;
 
   String? get sessionId => _sessionId;
+  String? get caseId => _caseId;
+
+  void setSignedInUser(String userId) {
+    _userId = userId;
+  }
+
+  void setActiveCase(String? caseId) {
+    _caseId = caseId;
+    _sessionId = null;
+  }
 
   Map<String, String> get _headers => <String, String>{
         'Content-Type': 'application/json',
@@ -399,6 +431,61 @@ class ApiClient {
     }
   }
 
+  Future<List<CaseSummary>> listCases({required String userId}) async {
+    final response = await _get(
+      path: '/v1/cases?user_id=$userId',
+      action: 'list_cases',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Case list failed with status ${response.statusCode}.');
+    }
+    final decoded = jsonDecode(response.body) as List<dynamic>;
+    return decoded
+        .whereType<Map>()
+        .map((value) => CaseSummary.fromJson(Map<String, dynamic>.from(value)))
+        .toList();
+  }
+
+  Future<CaseSummary> createCase({required String userId, required String title}) async {
+    final response = await _postJson(
+      path: '/v1/cases',
+      action: 'create_case',
+      payload: <String, Object?>{'user_id': userId, 'title': title},
+    );
+    if (response.statusCode == 409) {
+      throw Exception('Maximum number of cases reached (5).');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Case creation failed with status ${response.statusCode}.');
+    }
+    return CaseSummary.fromJson(_decodeResponseBody(response, action: 'create_case'));
+  }
+
+  Future<CaseSummary> renameCase({required String caseId, required String userId, required String title}) async {
+    final uri = baseUri.resolve('/v1/cases/$caseId');
+    final response = await http.patch(
+      uri,
+      headers: _headers,
+      body: jsonEncode(<String, Object?>{'user_id': userId, 'title': title}),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Case rename failed with status ${response.statusCode}.');
+    }
+    return CaseSummary.fromJson(_decodeResponseBody(response, action: 'rename_case'));
+  }
+
+  Future<void> deleteCase({required String caseId, required String userId}) async {
+    final uri = baseUri.resolve('/v1/cases/$caseId?user_id=$userId');
+    final response = await http.delete(uri, headers: <String, String>{'x-api-key': apiKey});
+    if (response.statusCode != 204) {
+      throw Exception('Case delete failed with status ${response.statusCode}.');
+    }
+    if (_caseId == caseId) {
+      _caseId = null;
+      _sessionId = null;
+    }
+  }
+
   Future<String> _createSession({
     required ResponderMode responderMode,
     required LocaleOption locale,
@@ -409,6 +496,8 @@ class ApiClient {
       'discussion_type': discussionType,
       'country': locale.countryCode,
       'language': locale.languageCode,
+      'user_id': _userId,
+      'case_id': _caseId,
     };
     final sessionResponse = await _postJson(
       path: '/v1/chat/sessions',
@@ -1528,6 +1617,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
   bool _speechEnabled = false;
   bool _isListening = false;
   late LocalAuthUser _signedInUser;
+  List<CaseSummary> _cases = <CaseSummary>[];
+  CaseSummary? _selectedCase;
+  bool _isLoadingCases = false;
 
   bool get _showLocalResponderSwitch {
     final host = Uri.parse(widget.apiBaseUrl).host.toLowerCase();
@@ -1553,6 +1645,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       logger: widget.logger,
     );
     _fileSaver = createFileSaver();
+    _apiClient.setSignedInUser(_signedInUser.userId);
     final welcomeLanguage =
         _normalizeLanguageCode(_selectedLocale.languageCode);
     _messages = <ChatMessage>[
@@ -1579,6 +1672,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       ),
     );
     unawaited(_initializeSpeechRecognition());
+    unawaited(_loadCases());
     unawaited(_loadAppVersion());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToLatest(animated: false);
@@ -1923,6 +2017,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
     if (text.isEmpty || _isSending) {
       return;
     }
+    if (_selectedCase == null) {
+      _showSnackbar('Create or select a case before sending messages.');
+      return;
+    }
     await widget.logger.info(
       'User message submission',
       <String, Object?>{
@@ -2142,6 +2240,108 @@ class _ChatHomePageState extends State<ChatHomePage> {
     );
   }
 
+  Future<void> _loadCases() async {
+    setState(() {
+      _isLoadingCases = true;
+    });
+    try {
+      final cases = await _apiClient.listCases(userId: _signedInUser.userId);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _cases = cases;
+        _selectedCase = cases.isNotEmpty ? cases.first : null;
+        _apiClient.setActiveCase(_selectedCase?.caseId);
+      });
+    } catch (error) {
+      _showSnackbar('Failed to load cases: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingCases = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _createCase() async {
+    if (_cases.length >= 5) {
+      _showSnackbar('Maximum 5 cases allowed. Delete an existing case first.');
+      return;
+    }
+    final controller = TextEditingController();
+    final title = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create case'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Case name'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Create')),
+        ],
+      ),
+    );
+    if (title == null || title.trim().isEmpty) return;
+    try {
+      final created = await _apiClient.createCase(userId: _signedInUser.userId, title: title.trim());
+      setState(() {
+        _cases = <CaseSummary>[created, ..._cases];
+        _selectedCase = created;
+        _apiClient.setActiveCase(created.caseId);
+      });
+      _showSnackbar('Case created.');
+    } catch (error) {
+      _showSnackbar('$error');
+    }
+  }
+
+  Future<void> _renameSelectedCase() async {
+    final selected = _selectedCase;
+    if (selected == null) return;
+    final controller = TextEditingController(text: selected.title);
+    final title = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename case'),
+        content: TextField(controller: controller),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (title == null || title.trim().isEmpty) return;
+    try {
+      final updated = await _apiClient.renameCase(caseId: selected.caseId, userId: _signedInUser.userId, title: title.trim());
+      setState(() {
+        _cases = _cases.map((c) => c.caseId == updated.caseId ? updated : c).toList();
+        _selectedCase = updated;
+      });
+    } catch (error) {
+      _showSnackbar('Failed to rename case: $error');
+    }
+  }
+
+  Future<void> _deleteSelectedCase() async {
+    final selected = _selectedCase;
+    if (selected == null) return;
+    try {
+      await _apiClient.deleteCase(caseId: selected.caseId, userId: _signedInUser.userId);
+      setState(() {
+        _cases = _cases.where((c) => c.caseId != selected.caseId).toList();
+        _selectedCase = _cases.isNotEmpty ? _cases.first : null;
+        _apiClient.setActiveCase(_selectedCase?.caseId);
+      });
+      _showSnackbar('Case deleted.');
+    } catch (error) {
+      _showSnackbar('Failed to delete case: $error');
+    }
+  }
+
   Future<void> _signOut() async {
     _apiClient.resetSession();
     await widget.logger.info(
@@ -2269,6 +2469,44 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.94),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _isLoadingCases
+                              ? const LinearProgressIndicator()
+                              : DropdownButton<CaseSummary>(
+                                  isExpanded: true,
+                                  value: _selectedCase,
+                                  hint: const Text('Select case'),
+                                  items: _cases
+                                      .map((item) => DropdownMenuItem<CaseSummary>(
+                                            value: item,
+                                            child: Text(item.title),
+                                          ))
+                                      .toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedCase = value;
+                                      _apiClient.setActiveCase(value?.caseId);
+                                    });
+                                  },
+                                ),
+                        ),
+                        IconButton(onPressed: _createCase, icon: const Icon(Icons.add), tooltip: 'Create case'),
+                        IconButton(onPressed: _selectedCase == null ? null : _renameSelectedCase, icon: const Icon(Icons.edit), tooltip: 'Rename case'),
+                        IconButton(onPressed: _selectedCase == null ? null : _deleteSelectedCase, icon: const Icon(Icons.delete_outline), tooltip: 'Delete case'),
+                      ],
+                    ),
+                  ),
+                ),
                 if (_documentPath != null)
                   MaterialBanner(
                     content: Text('Attached document: $_documentPath'),

@@ -42,6 +42,9 @@ class Case:
     user_id: str
     company_id: str | None
     title: str
+    status: str
+    created_at: str
+    updated_at: str
 
 
 class ApiDatabaseStore:
@@ -360,8 +363,126 @@ class ApiDatabaseStore:
                 """,
                 (case_id, user_id, company_id, title, now, now),
             )
-        return Case(
-            case_id=case_id, user_id=user_id, company_id=company_id, title=title
+        return self.get_case(case_id=case_id)
+
+    def get_case(self, *, case_id: str) -> Case:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT case_id, user_id, company_id, title, status, created_at, updated_at
+                FROM cases
+                WHERE case_id = ?
+                """,
+                (case_id,),
+            )
+        if row is None:
+            raise KeyError(f"Case {case_id} not found")
+        return _row_to_case(row)
+
+    def list_cases(self, *, user_id: str, include_deleted: bool = False) -> list[Case]:
+        query = """
+            SELECT case_id, user_id, company_id, title, status, created_at, updated_at
+            FROM cases
+            WHERE user_id = ?
+        """
+        if not include_deleted:
+            query += " AND status <> 'deleted'"
+        query += " ORDER BY updated_at DESC"
+        with self._connect() as conn:
+            rows = self._execute(conn, query, (user_id,)).fetchall()
+        return [_row_to_case(row) for row in rows]
+
+    def count_active_cases(self, *, user_id: str) -> int:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT COUNT(*)
+                FROM cases
+                WHERE user_id = ? AND status <> 'deleted'
+                """,
+                (user_id,),
+            )
+        return int(row[0]) if row else 0
+
+    def update_case_title(self, *, case_id: str, user_id: str, title: str) -> Case:
+        now = _now_iso()
+        with self._connect() as conn:
+            result = self._execute(
+                conn,
+                """
+                UPDATE cases
+                SET title = ?, updated_at = ?
+                WHERE case_id = ? AND user_id = ? AND status <> 'deleted'
+                """,
+                (title, now, case_id, user_id),
+            )
+            if result.rowcount == 0:
+                raise KeyError(f"Case {case_id} not found")
+        return self.get_case(case_id=case_id)
+
+    def soft_delete_case(self, *, case_id: str, user_id: str) -> None:
+        with self._connect() as conn:
+            result = self._execute(
+                conn,
+                """
+                UPDATE cases
+                SET status = 'deleted', updated_at = ?
+                WHERE case_id = ? AND user_id = ? AND status <> 'deleted'
+                """,
+                (_now_iso(), case_id, user_id),
+            )
+            if result.rowcount == 0:
+                raise KeyError(f"Case {case_id} not found")
+
+    def add_case_message(
+        self,
+        *,
+        case_id: str,
+        role: str,
+        content: str,
+        agent_name: str | None = None,
+    ) -> str:
+        summary = f"{role.upper()}: {content.strip()}"
+        if agent_name:
+            summary = f"{summary} (agent={agent_name})"
+        payload = summary.encode("utf-8")
+        return self.add_case_communication(
+            case_id=case_id,
+            channel="chat",
+            summary=summary[:1000],
+            transcript_payload=payload,
+            extension="txt",
+        )
+
+    def add_case_text_document(
+        self,
+        *,
+        case_id: str,
+        original_filename: str,
+        content: str,
+        uploaded_by_user_id: str | None = None,
+    ) -> str:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT COALESCE(MAX(version), 0)
+                FROM case_documents
+                WHERE case_id = ? AND kind = 'chat_attachment'
+                """,
+                (case_id,),
+            )
+        next_version = int(row[0]) + 1 if row else 1
+        filename = Path(original_filename).name or "attachment.txt"
+        return self.add_case_document(
+            case_id=case_id,
+            kind="chat_attachment",
+            version=next_version,
+            original_filename=filename,
+            payload=content.encode("utf-8"),
+            uploaded_by_user_id=uploaded_by_user_id,
         )
 
     def add_case_document(
@@ -591,6 +712,19 @@ def _row_to_user(row: tuple[object, ...]) -> User:
         first_name=str(values[3]) if values[3] is not None else None,
         last_name=str(values[4]) if values[4] is not None else None,
         full_name=str(values[5]),
+    )
+
+
+def _row_to_case(row: tuple[object, ...]) -> Case:
+    values = list(row)
+    return Case(
+        case_id=str(values[0]),
+        user_id=str(values[1]),
+        company_id=str(values[2]) if values[2] is not None else None,
+        title=str(values[3]),
+        status=str(values[4]),
+        created_at=str(values[5]),
+        updated_at=str(values[6]),
     )
 
 

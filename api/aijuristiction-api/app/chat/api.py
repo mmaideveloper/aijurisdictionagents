@@ -28,6 +28,7 @@ from app.chat.repository import InMemoryChatRepository
 from app.security import require_api_key
 from app.versioning import get_api_version, get_core_version
 
+from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
 
@@ -46,6 +47,7 @@ _REGISTERED_PDF_FONT_FAMILIES: set[str] = set()
 
 class CreateSessionRequest(BaseModel):
     user_id: Optional[UUID] = None
+    case_id: str | None = None
     country: str = "SK"
     language: str | None = None
     discussion_type: Literal["advice", "court"] = "advice"
@@ -67,6 +69,41 @@ class InputDocument(BaseModel):
     content: str
 
 
+
+
+def _get_store() -> ApiDatabaseStore:
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    return store
+
+
+def _persist_case_message_if_needed(*, session: Session, role: str, content: str, agent_name: str | None = None) -> None:
+    case_id = session.case_id
+    if case_id is None or not case_id.strip():
+        return
+    store = _get_store()
+    store.add_case_message(case_id=case_id, role=role, content=content, agent_name=agent_name)
+
+
+def _persist_case_document_marker_if_needed(*, session: Session, content: str) -> None:
+    case_id = session.case_id
+    if case_id is None or not case_id.strip():
+        return
+    match = re.search(r"\[Attached local document path:\s*([^\]]+)\]", content, flags=re.IGNORECASE)
+    if not match:
+        return
+    path_value = match.group(1).strip()
+    if not path_value:
+        return
+    store = _get_store()
+    store.add_case_text_document(
+        case_id=case_id,
+        original_filename=Path(path_value).name or "attachment.txt",
+        content=f"Local path reference: {path_value}",
+        uploaded_by_user_id=str(session.user_id) if session.user_id else None,
+    )
+
+
 class StartSessionStreamRequest(BaseModel):
     instruction: str
     documents: List[InputDocument] = Field(default_factory=list)
@@ -81,6 +118,7 @@ class StartSessionStreamRequest(BaseModel):
 def create_session(payload: CreateSessionRequest) -> Session:
     session = Session(
         user_id=payload.user_id,
+        case_id=payload.case_id,
         country=payload.country,
         language=payload.language,
         discussion_type=payload.discussion_type,
@@ -116,6 +154,8 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
             agent_name="User",
         )
     )
+    _persist_case_message_if_needed(session=session, role="user", content=content, agent_name="User")
+    _persist_case_document_marker_if_needed(session=session, content=content)
 
     from aijurisdictionagents.agents import create_lawyer_agent
     from aijurisdictionagents.llm import get_llm_client
@@ -150,6 +190,12 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
             content=lawyer_message.content,
             agent_name=lawyer_message.agent_name,
         )
+    )
+    _persist_case_message_if_needed(
+        session=session,
+        role="assistant",
+        content=lawyer_message.content,
+        agent_name=lawyer_message.agent_name,
     )
 
     return persisted_lawyer
@@ -290,6 +336,12 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 content=core_message.content,
                 agent_name=core_message.agent_name,
             )
+        )
+        _persist_case_message_if_needed(
+            session=session,
+            role=core_message_role(core_message.role),
+            content=core_message.content,
+            agent_name=core_message.agent_name,
         )
         event_queue.put(
             (

@@ -51,6 +51,7 @@ class GenerationJob(BaseModel):
 class Session(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     user_id: Optional[UUID] = None
+    case_id: str | None = None
     country: str = ""
     language: str | None = None
     discussion_type: str = "advice"
