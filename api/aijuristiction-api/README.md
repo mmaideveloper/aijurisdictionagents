@@ -101,10 +101,18 @@ same `x-api-key` guard as the chat endpoints.
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
 and use the local SQLite metadata database by default (`DB_OPTION=local`, `DB_LOCAL`, default `./databases/api.sqlite3`, resolved from the repository root). You can switch to PostgreSQL with `DB_OPTION=postgres` + `DB_CLOUD=postgresql://...` (including via `docker compose`). Azure keeps the same PostgreSQL contract via `DB_OPTION=azure`.
 
+## Case history + documents
+
+- `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
+- `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
+- The mobile app uses these endpoints to show the latest 5 saved case messages after case selection and to expose case-document download buttons.
+
 ## PDF export
 
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary` returns the session summary.
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` now builds a document that matches the detected case topic instead of always returning a lease template.
+- Direct `POST /v1/chat/sessions/{session_id}/reply` sessions also persist a session result now, so the mobile `Real Agent` flow can download PDFs without going through the simulator stream.
+- In `Real Agent` mode, the lawyer can first ask whether a formal document should be prepared as PDF; once the user confirms, the next direct reply marks `metadata.document_ready=true` in `GET /v1/chat/sessions/{session_id}/result`.
 - For Slovak and other Central European locales, the exporter uses a Unicode TrueType font when available so characters such as `á`, `č`, `ľ`, `ô`, and `ž` render correctly in the generated PDF.
 
 ## Version bump workflow

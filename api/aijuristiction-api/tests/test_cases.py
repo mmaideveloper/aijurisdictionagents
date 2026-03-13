@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.main import app
+from aijurisdictionagents.api_db import ApiDatabaseStore
 
 
 def _headers() -> dict[str, str]:
@@ -66,3 +67,66 @@ def test_case_lifecycle_and_limit(monkeypatch, tmp_path) -> None:
     listing = client.get(f"/v1/cases?user_id={user_id}", headers=_headers())
     assert listing.status_code == 200
     assert len(listing.json()) == 4
+
+
+def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=2)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "History case"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    for index in range(7):
+        role = "user" if index % 2 == 0 else "assistant"
+        store.add_case_message(
+            case_id=case_id,
+            role=role,
+            content=f"Message {index}",
+            agent_name="LawyerSlovakia" if role == "assistant" else "User",
+        )
+    doc_id = store.add_case_text_document(
+        case_id=case_id,
+        original_filename="evidence.txt",
+        content="Case evidence payload",
+        uploaded_by_user_id=user_id,
+    )
+
+    first_page = client.get(
+        f"/v1/cases/{case_id}/history?user_id={user_id}&offset=0&limit=5",
+        headers=_headers(),
+    )
+    assert first_page.status_code == 200
+    payload = first_page.json()
+    assert payload["has_more"] is True
+    assert len(payload["messages"]) == 5
+    assert payload["messages"][0]["content"] == "Message 2"
+    assert payload["messages"][-1]["content"] == "Message 6"
+    assert payload["documents"][0]["doc_id"] == doc_id
+
+    second_page = client.get(
+        f"/v1/cases/{case_id}/history?user_id={user_id}&offset=5&limit=5",
+        headers=_headers(),
+    )
+    assert second_page.status_code == 200
+    second_payload = second_page.json()
+    assert second_payload["has_more"] is False
+    assert [item["content"] for item in second_payload["messages"]] == ["Message 0", "Message 1"]
+
+    document = client.get(
+        f"/v1/cases/{case_id}/documents/{doc_id}?user_id={user_id}",
+        headers=_headers(),
+    )
+    assert document.status_code == 200
+    assert document.content == b"Case evidence payload"
+    assert document.headers["content-disposition"].endswith('filename="evidence.txt"')

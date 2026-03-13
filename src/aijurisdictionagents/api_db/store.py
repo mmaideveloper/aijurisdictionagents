@@ -47,6 +47,28 @@ class Case:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class CaseDocument:
+    doc_id: str
+    case_id: str
+    kind: str
+    version: int
+    storage_uri: str
+    original_filename: str
+    uploaded_by_user_id: str | None
+    created_at: str
+
+
+@dataclass(frozen=True)
+class CaseCommunication:
+    communication_id: str
+    case_id: str
+    channel: str
+    transcript_uri: str | None
+    summary: str
+    created_at: str
+
+
 class ApiDatabaseStore:
     """Local-first API metadata store using SQLite + external blob storage references.
 
@@ -436,6 +458,76 @@ class ApiDatabaseStore:
             if result.rowcount == 0:
                 raise KeyError(f"Case {case_id} not found")
 
+    def list_case_documents(self, *, case_id: str) -> list[CaseDocument]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id, created_at
+                FROM case_documents
+                WHERE case_id = ?
+                ORDER BY created_at DESC, version DESC
+                """,
+                (case_id,),
+            ).fetchall()
+        return [_row_to_case_document(row) for row in rows]
+
+    def get_case_document(self, *, case_id: str, doc_id: str) -> CaseDocument:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id, created_at
+                FROM case_documents
+                WHERE case_id = ? AND doc_id = ?
+                """,
+                (case_id, doc_id),
+            )
+        if row is None:
+            raise KeyError(f"Document {doc_id} not found for case {case_id}")
+        return _row_to_case_document(row)
+
+    def list_case_communications(
+        self, *, case_id: str, limit: int | None = None, offset: int = 0
+    ) -> list[CaseCommunication]:
+        query = """
+            SELECT communication_id, case_id, channel, transcript_uri, summary, created_at
+            FROM case_communications
+            WHERE case_id = ?
+            ORDER BY created_at DESC
+        """
+        params: tuple[Any, ...]
+        if limit is None:
+            params = (case_id,)
+        else:
+            query += " LIMIT ? OFFSET ?"
+            params = (case_id, limit, offset)
+        with self._connect() as conn:
+            rows = self._execute(conn, query, params).fetchall()
+        return [_row_to_case_communication(row) for row in rows]
+
+    def get_case_communication(self, *, case_id: str, communication_id: str) -> CaseCommunication:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT communication_id, case_id, channel, transcript_uri, summary, created_at
+                FROM case_communications
+                WHERE case_id = ? AND communication_id = ?
+                """,
+                (case_id, communication_id),
+            )
+        if row is None:
+            raise KeyError(f"Communication {communication_id} not found for case {case_id}")
+        return _row_to_case_communication(row)
+
+    def read_storage_bytes(self, *, storage_uri: str) -> bytes:
+        path = self._resolve_storage_path(storage_uri)
+        return path.read_bytes()
+
+    def read_storage_text(self, *, storage_uri: str) -> str:
+        return self.read_storage_bytes(storage_uri=storage_uri).decode("utf-8", errors="replace")
+
     def add_case_message(
         self,
         *,
@@ -584,6 +676,17 @@ class ApiDatabaseStore:
             return f"{prefix}/{relative_uri.as_posix()}"
         return relative_uri.as_posix()
 
+    def _resolve_storage_path(self, storage_uri: str) -> Path:
+        normalized = storage_uri.strip()
+        if normalized.startswith("http://") or normalized.startswith("https://"):
+            prefix = self.store_cloud.rstrip("/")
+            if not prefix or not normalized.startswith(f"{prefix}/"):
+                raise ValueError(f"Unsupported remote storage uri: {storage_uri}")
+            normalized = normalized[len(prefix) + 1 :]
+        path = (self.blob_root / Path(normalized)).resolve()
+        path.relative_to(self.blob_root.resolve())
+        return path
+
     def _connect(self) -> sqlite3.Connection | PostgresConnection[Any]:
         if self.uses_postgres:
             if psycopg is None:
@@ -682,6 +785,30 @@ def _normalize_optional_text(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _row_to_case_document(row: tuple[Any, ...]) -> CaseDocument:
+    return CaseDocument(
+        doc_id=str(row[0]),
+        case_id=str(row[1]),
+        kind=str(row[2]),
+        version=int(row[3]),
+        storage_uri=str(row[4]),
+        original_filename=str(row[5]),
+        uploaded_by_user_id=str(row[6]) if row[6] is not None else None,
+        created_at=str(row[7]),
+    )
+
+
+def _row_to_case_communication(row: tuple[Any, ...]) -> CaseCommunication:
+    return CaseCommunication(
+        communication_id=str(row[0]),
+        case_id=str(row[1]),
+        channel=str(row[2]),
+        transcript_uri=str(row[3]) if row[3] is not None else None,
+        summary=str(row[4]),
+        created_at=str(row[5]),
+    )
 
 
 def _resolve_full_name(

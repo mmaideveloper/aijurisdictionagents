@@ -308,6 +308,126 @@ def test_reply_endpoint_respects_session_language_sk() -> None:
     assert "pravne posudenie" in lawyer_message or "aby som mohol pripravit presny navrh" in lawyer_message
 
 
+def test_reply_endpoint_requires_confirmation_before_document_pdf_ready() -> None:
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "court", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    first_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={
+            "content": (
+                "Priprav vzor najomnej zmluvy. "
+                "Prenajimatel je Jana Novotna, najomca Tomas Hlavaty, "
+                "byt je na adrese Dunajska 12, Bratislava, "
+                "najomne je 850 EUR a zaciatok najmu je 01.04.2026."
+            )
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert first_reply.status_code == 200
+    first_content = first_reply.json()["content"].lower()
+    assert "pdf" in first_content
+    assert "?" in first_reply.json()["content"]
+
+    first_result = client.get(
+        f"/v1/chat/sessions/{session_id}/result",
+        headers=AUTH_HEADERS,
+    )
+    assert first_result.status_code == 200
+    first_metadata = first_result.json()["metadata"]
+    assert first_metadata["document_requested"] is True
+    assert first_metadata["document_confirmed"] is False
+    assert first_metadata["document_ready"] is False
+
+    second_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Ano, prosim priprav to aj vo formate PDF."},
+        headers=AUTH_HEADERS,
+    )
+    assert second_reply.status_code == 200
+    second_content = second_reply.json()["content"].lower()
+    assert "pripravil som" in second_content or "export do pdf" in second_content
+
+    second_result = client.get(
+        f"/v1/chat/sessions/{session_id}/result",
+        headers=AUTH_HEADERS,
+    )
+    assert second_result.status_code == 200
+    second_metadata = second_result.json()["metadata"]
+    assert second_metadata["document_requested"] is True
+    assert second_metadata["document_confirmed"] is True
+    assert second_metadata["document_ready"] is True
+
+    export_doc_pdf = client.get(
+        f"/v1/chat/sessions/{session_id}/export?format=pdf&kind=document",
+        headers=AUTH_HEADERS,
+    )
+    assert export_doc_pdf.status_code == 200
+    assert export_doc_pdf.content.startswith(b"%PDF")
+
+
+def test_document_export_ready_after_confirmation_with_prior_case_update() -> None:
+    from app.chat.api import _build_direct_reply_result
+    from app.chat.models import Message, MessageRole, Session
+
+    session_id = uuid4()
+    session = Session(id=session_id, country="SK", language="SK", discussion_type="court")
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Zhrnutie prípadu.\n\n"
+                "CASE_UPDATE_JSON:\n"
+                '{"case":{"case_id":null,"status":"intake_open","jurisdiction":{"country":"SK","language":"sk-SK"},'
+                '"parties":{"client":{"name":"Jozef Novák"},"opponent":{"name":"Peter Kováč"}},'
+                '"matter":{"category":"civil","topic":"vecne_bremeno","amount_eur":null,'
+                '"key_dates":{},"facts_summary":"Spor o prístup k plynovej prípojke.",'
+                '"client_goal":"Zabezpečiť vstup cez bránku."},'
+                '"documents":[],"open_questions":[],"next_discussion":{"scheduled_for":null,"agenda":[]},'
+                '"discussions_append":[]}}'
+            ),
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="Chcete, aby som vám pripravil výsledok v PDF formáte?",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Áno, priprav to prosím aj v PDF.",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Ďakujem. Po nahratí e-mailov a aktualizácii záznamu vo formáte JSON "
+                "pripravím aj výsledok vo formáte PDF."
+            ),
+        ),
+    ]
+
+    result = _build_direct_reply_result(
+        session_id=session_id,
+        session=session,
+        messages=messages,
+        lawyer_message=messages[-1].content,
+    )
+
+    assert result.metadata["document_requested"] is True
+    assert result.metadata["document_confirmed"] is True
+    assert result.metadata["document_ready"] is True
+
+
 def test_chat_endpoints_require_api_key() -> None:
     response = client.post("/v1/chat/sessions", json={})
     assert response.status_code == 401

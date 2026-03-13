@@ -164,6 +164,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     lawyer = create_lawyer_agent(llm, session.country)
 
     history = _repository.list_messages(session_id)
+    prior_messages = history[:-1]
     conversation = [
         CoreMessage(
             role=msg.role.value,
@@ -176,6 +177,15 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     prompt_override = lawyer.system_prompt
     if session.language and session.language.strip():
         prompt_override = f"{lawyer.system_prompt}\nRespond in {session.language.strip()}."
+    if _user_requested_document_generation(content=content, previous_messages=prior_messages):
+        prompt_override = (
+            f"{prompt_override}\n\n"
+            "DOCUMENT GENERATION MODE:\n"
+            "- The user confirmed that they want the downloadable document prepared now.\n"
+            "- Do not ask for PDF confirmation again.\n"
+            "- Produce the finalized draft-oriented response for PDF export in this turn.\n"
+            "- Include CASE_UPDATE_JSON after the user-facing content."
+        )
 
     lawyer_message = lawyer.respond(
         conversation=conversation,
@@ -196,6 +206,15 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         role="assistant",
         content=lawyer_message.content,
         agent_name=lawyer_message.agent_name,
+    )
+    _repository.set_result(
+        session_id,
+        _build_direct_reply_result(
+            session_id=session_id,
+            session=session,
+            messages=_repository.list_messages(session_id),
+            lawyer_message=lawyer_message.content,
+        ),
     )
 
     return persisted_lawyer
@@ -408,6 +427,187 @@ def _is_followup_termination_prompt(prompt: str) -> bool:
 def _is_pdf_format_question(prompt: str) -> bool:
     lowered = prompt.lower()
     return "pdf" in lowered and "?" in prompt
+
+
+def _user_requested_document_generation(*, content: str, previous_messages: list[Message]) -> bool:
+    normalized = " ".join(content.lower().split())
+    if _is_explicit_document_request(normalized):
+        return True
+    if not _is_affirmative_reply(normalized):
+        return False
+    for message in reversed(previous_messages):
+        if message.role != MessageRole.ASSISTANT:
+            continue
+        if _assistant_requests_document_confirmation(message.content):
+            return True
+        if message.role == MessageRole.ASSISTANT:
+            break
+    return False
+
+
+def _is_explicit_document_request(normalized: str) -> bool:
+    document_markers = (
+        "pdf",
+        "document",
+        "draft",
+        "template",
+        "zmluv",
+        "predzalob",
+        "predžalob",
+        "vzor",
+        "dokument",
+    )
+    request_markers = (
+        "prepare",
+        "generate",
+        "create",
+        "draft",
+        "prosim",
+        "please",
+        "chcem",
+        "priprav",
+        "vytvor",
+        "vygeneruj",
+    )
+    return any(marker in normalized for marker in document_markers) and any(
+        marker in normalized for marker in request_markers
+    )
+
+
+def _is_affirmative_reply(normalized: str) -> bool:
+    affirmatives = (
+        "ano",
+        "áno",
+        "yes",
+        "sure",
+        "ok",
+        "okay",
+        "prosim",
+        "please",
+        "chcem",
+        "potvrdzujem",
+    )
+    return any(token in normalized for token in affirmatives)
+
+
+def _assistant_requests_document_confirmation(content: str) -> bool:
+    lowered = content.lower()
+    document_markers = ("pdf", "document", "draft", "template", "zmluv", "dokument")
+    confirmation_markers = (
+        "do you want",
+        "would you like",
+        "chcete",
+        "mám pripraviť",
+        "mam pripravit",
+        "pripraviť",
+        "pripravit",
+    )
+    return (
+        any(marker in lowered for marker in document_markers)
+        and "?" in content
+        and any(marker in lowered for marker in confirmation_markers)
+    )
+
+
+def _build_direct_reply_result(
+    *,
+    session_id: UUID,
+    session: Session,
+    messages: list[Message],
+    lawyer_message: str,
+) -> SessionResult:
+    visible_text = _user_visible_text(lawyer_message)
+    document_requested = _document_generation_requested(messages)
+    document_confirmed = _document_generation_confirmed(messages)
+    document_ready = _document_export_ready(messages)
+    rationale = (
+        "Direct lawyer reply prepared for session export."
+        if visible_text
+        else "Direct lawyer reply stored for session export."
+    )
+    return SessionResult(
+        final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
+        judge_rationale=rationale,
+        citations=[],
+        metadata={
+            "message_count": len(messages),
+            "mode": "direct_reply",
+            "country": session.country,
+            "language": session.language or "",
+            "document_requested": document_requested,
+            "document_confirmed": document_confirmed,
+            "document_ready": document_ready,
+        },
+    )
+
+
+def _document_generation_requested(messages: list[Message]) -> bool:
+    for index, message in enumerate(messages):
+        if message.role != MessageRole.USER:
+            continue
+        if _user_requested_document_generation(content=message.content, previous_messages=messages[:index]):
+            return True
+    return any(
+        _assistant_requests_document_confirmation(message.content)
+        for message in messages
+        if message.role == MessageRole.ASSISTANT
+    )
+
+
+def _document_generation_confirmed(messages: list[Message]) -> bool:
+    for index, message in enumerate(messages):
+        if message.role != MessageRole.USER:
+            continue
+        previous_messages = messages[:index]
+        if not any(
+            prior.role == MessageRole.ASSISTANT and _assistant_requests_document_confirmation(prior.content)
+            for prior in previous_messages
+        ):
+            continue
+        normalized = " ".join(message.content.lower().split())
+        if _is_affirmative_reply(normalized) or _is_explicit_document_request(normalized):
+            return True
+    return False
+
+
+def _document_export_ready(messages: list[Message]) -> bool:
+    if not _document_generation_confirmed(messages):
+        return False
+    assistant_messages = [m for m in messages if m.role == MessageRole.ASSISTANT]
+    if not assistant_messages:
+        return False
+    last_assistant = assistant_messages[-1]
+    if _assistant_requests_document_confirmation(last_assistant.content):
+        return False
+    if any(_contains_case_update_json(message.content) for message in assistant_messages):
+        return True
+    visible_text = _user_visible_text(last_assistant.content).lower()
+    ready_markers = (
+        "pripravil som",
+        "pripravila som",
+        "prepared the final",
+        "prepared the draft",
+        "draft is ready",
+        "navrh zmluvy",
+        "predzalobna vyzva",
+        "predžalobná výzva",
+        "legal summary",
+        "pravne zhrnutie",
+    )
+    if any(marker in visible_text for marker in ready_markers):
+        return True
+    return "?" not in last_assistant.content and bool(visible_text.strip())
+
+
+def _contains_case_update_json(content: str) -> bool:
+    return "case_update_json" in content.lower()
+
+
+def _user_visible_text(content: str) -> str:
+    marker = re.search(r"\*{0,2}\s*CASE_UPDATE_JSON\s*:?\s*\*{0,2}", content, flags=re.IGNORECASE)
+    if marker is None:
+        return content.strip()
+    return content[: marker.start()].strip()
 
 
 def _request_pdf_reply(language: str | None) -> str:

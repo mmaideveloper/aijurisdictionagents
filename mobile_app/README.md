@@ -8,21 +8,30 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Rebranded mobile layout with login card at the top and blue legal-themed background from the footer artwork.
 - Add supporting documents using the device camera.
 - Add questions/answers by speech using the microphone button next to the chat input.
+- The chat input is multiline by default with at least 3 visible lines; pressing `Enter` inserts a new line and messages are sent only with the send button.
 - Message area is centered between login header and selectors.
+- The top header now uses a single compact line with `AIJurisDigta`, the app version, and the current auth action (`Login` or `Sign up` on the auth screen, `Sign out` after login).
 - Built-in authentication UI:
   - `Sign up`: phone number + email/password (required), first/last name (optional), persisted through the API
   - `Sign in`: phone number first; if phone exists, user is signed in automatically through the API
   - if phone is not found, sign in fallback is shown for email/password
   - after sign-in, `Account` page allows updating phone number, password, first name, last name
   - browser/local web remembers the last signed-in phone number and pre-fills the sign-in form
+  - local runs also prefill `+421944400166` when no phone was remembered yet
   - device builds expose OS autofill hints for phone/email/password on sign-in and sign-up fields
 - Initial localized Jurisdicta welcome message shown on app start.
-- Language/country selector is shown below the message area (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
-  - `AI User Simulator` (default for local tests)
-  - `Read User`
+- Selected app language now localizes chat labels, dialogs, action text, and tooltips for `SK`, `EN`, and `GE` (`DE` is accepted as a German alias).
+- Language/country selector is shown in the top control area below the login header (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
+  - `Real Agent` is now the default for local tests
+  - `AI User Simulator Agent` remains available as the alternate local mode
 - Local mode selector appears only when API base URL points to local hosts (`localhost`, `127.0.0.1`, `10.0.2.2`, `0.0.0.0`).
 - Select country/language before chatting (default: `Slovakia (SK)`).
+- Decorative top-row feature icons were removed to make room for the language/country and local-mode controls.
+- Mobile chat bubbles hide machine-oriented payloads such as raw JSON blocks and show only user-facing question/answer text.
+- The `Account` action now sits next to the PDF download buttons instead of the top header.
 - Download generated summary/document PDF files directly from the mobile app once a session exists.
+- Selecting a case now loads the latest 5 persisted case messages, with a paging button to load 5 more older messages while keeping chronological order in the chat area.
+- If the selected case already has stored attachments, the mobile app shows download buttons for those case documents above the PDF/export controls.
 - App version is shown in the bottom-left corner of the screen.
 - On startup, app checks latest GitHub release and prompts for update when a newer version is available.
   - default source: `mmaideveloper/aijurisdictionagents` -> `releases/latest`
@@ -98,8 +107,11 @@ PDF exports are downloaded through:
 
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary`
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document`
+- `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5`
+- `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...`
 Use the `Summary PDF` and `Document PDF` buttons above the message composer.
 Buttons are enabled after AI stream emits `result`/`done` (PDF must be generated first).
+In `Real Agent` mode, when the lawyer decides a formal document is needed, the agent first asks for confirmation and the PDF buttons stay disabled until the follow-up reply actually prepares the document.
 In `AI User Simulator` mode, submitting the instruction starts discussion streaming (SSE)
 the same way as the chat simulator by using `user_simulation_mode=AIUserSimulatorAgent`.
 

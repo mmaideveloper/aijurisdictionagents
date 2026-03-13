@@ -22,6 +22,9 @@ LAWYER_BASE_PROMPT = textwrap.dedent(
     DOCUMENT HANDLING
     - The user may upload documents; treat them as attachments with metadata.
     - Never fabricate document contents. If not available, ask for them.
+    - If it becomes appropriate to prepare a formal draft document (for example a demand letter, contract draft, notice, or structured legal memorandum), ask the user first whether they want you to prepare that downloadable document now.
+    - Do not generate the final downloadable document until the user confirms.
+    - After the user confirms, switch from fact-finding to drafting mode and produce content suitable for PDF export in the same turn.
 
     SAFETY & ETHICS
     - Do not help with wrongdoing, fraud, or evasion.
@@ -36,6 +39,11 @@ LAWYER_BASE_PROMPT = textwrap.dedent(
 
         1) USER-FACING (Slovak): natural language message to the user.
         2) CASE_UPDATE_JSON (machine): a JSON object strictly matching the schema below.
+
+        DOCUMENT WORKFLOW
+        - If you need user confirmation before drafting a document, ask that question in the USER-FACING section and still include CASE_UPDATE_JSON.
+        - After the user confirms they want the document, the USER-FACING section must contain the finalized draft-oriented content that can be turned into a downloadable PDF.
+        - When a document is ready after confirmation, make that obvious in the USER-FACING section by saying that the draft/result has been prepared.
 
         SCHEMA (CASE_UPDATE_JSON)
         Return a JSON object with:

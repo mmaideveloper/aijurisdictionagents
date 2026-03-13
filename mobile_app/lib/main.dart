@@ -33,6 +33,7 @@ const String _defaultLanguage = String.fromEnvironment(
   defaultValue: 'SK',
 );
 const String _fallbackLanguageCode = 'SK';
+const String _localAutofillPhoneNumber = '+421944400166';
 const String _githubOwner = String.fromEnvironment(
   'AIJ_GITHUB_OWNER',
   defaultValue: 'mmaideveloper',
@@ -97,6 +98,14 @@ String _defaultApiBaseUrl() {
   return 'http://10.0.2.2:8080';
 }
 
+bool _isLocalApiBaseUrl(String apiBaseUrl) {
+  final host = Uri.parse(apiBaseUrl).host.toLowerCase();
+  return host == 'localhost' ||
+      host == '127.0.0.1' ||
+      host == '10.0.2.2' ||
+      host == '0.0.0.0';
+}
+
 enum ResponderMode { aiUserSimulator, realPerson }
 
 class LocaleOption {
@@ -118,6 +127,364 @@ const List<LocaleOption> _localeOptions = <LocaleOption>[
   LocaleOption(
       countryCode: 'US', languageCode: 'EN', label: 'United States (EN)'),
 ];
+
+class AppStrings {
+  AppStrings(String languageCode)
+      : languageCode = _normalizeLanguageCode(languageCode);
+
+  final String languageCode;
+
+  static const Map<String, Map<String, String>> _localized =
+      <String, Map<String, String>>{
+    'SK': <String, String>{
+      'auth_sign_in_tab': 'Prihlasenie',
+      'auth_sign_up_tab': 'Registracia',
+      'phone_number': 'Telefonne cislo',
+      'phone_number_required': 'Telefonne cislo *',
+      'phone_number_hint': _localAutofillPhoneNumber,
+      'email': 'E-mail',
+      'email_required': 'E-mail *',
+      'password': 'Heslo',
+      'password_required': 'Heslo *',
+      'first_name': 'Meno',
+      'first_name_optional': 'Meno (volitelne)',
+      'last_name': 'Priezvisko',
+      'last_name_optional': 'Priezvisko (volitelne)',
+      'signing_in': 'Prihlasujem...',
+      'login': 'Prihlasenie',
+      'sign_in_by_phone': 'Prihlasit cez telefon',
+      'sign_in_by_email_password': 'Prihlasit cez e-mail a heslo',
+      'sign_in_failed': 'Prihlasenie zlyhalo: {{error}}',
+      'phone_not_found':
+          'Telefonne cislo sa nenaslo. Prihlaste sa e-mailom a heslom.',
+      'invalid_email_password': 'Neplatny e-mail alebo heslo.',
+      'signing_up': 'Registrujem...',
+      'go_to_sign_up': 'Registracia',
+      'create_account': 'Vytvorit ucet',
+      'sign_up_failed': 'Registracia zlyhala: {{error}}',
+      'account': 'Ucet',
+      'sign_out': 'Odhlasit sa',
+      'save_changes': 'Ulozit zmeny',
+      'saving': 'Ukladam...',
+      'update_sign_in_profile': 'Upravit prihlasovaci profil',
+      'profile_update_failed': 'Aktualizacia profilu zlyhala: {{error}}',
+      'update_available': 'Dostupna aktualizacia',
+      'update_body':
+          'Na GitHube je nova verzia.\n\nAktualna: {{current}}\nNajnovsia: {{latest}}',
+      'later': 'Neskor',
+      'update': 'Aktualizovat',
+      'invalid_release_url': 'Adresa aktualizacie je neplatna.',
+      'could_not_open_update_page':
+          'Stranku s aktualizaciou sa nepodarilo otvorit.',
+      'speech_recognition_error': 'Chyba rozpoznavania reci: {{error}}',
+      'speech_unavailable':
+          'Rozpoznavanie reci na tomto zariadeni nie je dostupne.',
+      'no_camera_available': 'Na tomto zariadeni nie je dostupna kamera.',
+      'document_added': 'Dokument bol pridany z kamery.',
+      'create_or_select_case':
+          'Pred odoslanim spravy vytvorte alebo vyberte pripad.',
+      'failed_to_reach_api':
+          'Nepodarilo sa spojit s API na adrese {{url}}: {{error}}',
+      'pdf_not_ready':
+          'PDF este nie je pripravene. Najprv dokoncite AI diskusiu.',
+      'pdf_saved_to': 'PDF ulozene do {{path}}',
+      'pdf_download_started': 'Stahovanie PDF spustene: {{filename}}',
+      'pdf_download_failed': 'Stahovanie PDF zlyhalo: {{error}}',
+      'failed_to_load_cases': 'Nepodarilo sa nacitat pripady: {{error}}',
+      'failed_to_load_case_history':
+          'Nepodarilo sa nacitat historiu pripadu: {{error}}',
+      'maximum_cases':
+          'Maximum je 5 pripadov. Najprv odstran existujuci pripad.',
+      'create_case': 'Vytvorit pripad',
+      'delete_case': 'Odstranit pripad',
+      'case_name': 'Nazov pripadu',
+      'cancel': 'Zrusit',
+      'create': 'Vytvorit',
+      'case_created': 'Pripad bol vytvoreny.',
+      'rename_case': 'Premenovat pripad',
+      'save': 'Ulozit',
+      'rename_case_failed': 'Premenovanie pripadu zlyhalo: {{error}}',
+      'case_deleted': 'Pripad bol odstraneny.',
+      'delete_case_failed': 'Odstranenie pripadu zlyhalo: {{error}}',
+      'select_case': 'Vyberte pripad',
+      'case_history': 'Historia pripadu',
+      'case_documents': 'Dokumenty pripadu',
+      'show_next_5_messages': 'Zobrazit dalsich 5 sprav',
+      'download_case_document': 'Stiahnut {{filename}}',
+      'case_document_download_failed':
+          'Stahovanie dokumentu zlyhalo: {{error}}',
+      'attached_document': 'Prilozeny dokument: {{path}}',
+      'clear': 'VYMAZAT',
+      'you': 'Vy',
+      'assistant': 'Asistent',
+      'document_label': 'Dokument: {{path}}',
+      'language_country': 'Jazyk a krajina',
+      'local_mode': 'Lokalny rezim',
+      'real_agent': 'Realny agent',
+      'ai_user_simulator_agent': 'AI simulator pouzivatela',
+      'summary_pdf': 'PDF zhrnutie',
+      'document_pdf': 'PDF dokument',
+      'upload_documents': 'Nahrat dokumenty',
+      'case_input_discussion': 'Popiste pripad pre spustenie diskusie...',
+      'case_input_question': 'Polozte pravnu otazku...',
+      'stop_speech_input': 'Zastavit hlasovy vstup',
+      'speech_input': 'Pridat otazku alebo odpoved hlasom',
+      'start_ai_discussion': 'Spustit AI diskusiu',
+      'send_to_api': 'Odoslat do API',
+      'capture_document': 'Zachytit dokument',
+      'use_photo': 'Pouzit fotku',
+      'camera_unavailable':
+          'Kameru sa nepodarilo inicializovat. Skuste znova alebo pouzite ine zariadenie.',
+      'camera_busy':
+          'Kamera je obsadena alebo nedostupna. Zatvorte ine aplikacie a skuste znova.',
+      'camera_access_denied':
+          'Pristup ku kamere bol zamietnuty. Povolte kameru v prehliadaci a skuste znova.',
+      'camera_error_with_reason':
+          'Kameru sa nepodarilo inicializovat. {{reason}}',
+      'camera_capture_failed':
+          'Obrazok sa nepodarilo zachytit. Skuste znova alebo pouzite ine zariadenie.',
+      'locale_SK': 'Slovensko (SK)',
+      'locale_CZ': 'Cesko (CS)',
+      'locale_DE': 'Nemecko (DE)',
+      'locale_US': 'Spojene staty (EN)',
+    },
+    'EN': <String, String>{
+      'auth_sign_in_tab': 'Sign in',
+      'auth_sign_up_tab': 'Sign up',
+      'phone_number': 'Phone number',
+      'phone_number_required': 'Phone number *',
+      'phone_number_hint': _localAutofillPhoneNumber,
+      'email': 'Email',
+      'email_required': 'Email *',
+      'password': 'Password',
+      'password_required': 'Password *',
+      'first_name': 'First name',
+      'first_name_optional': 'First name (optional)',
+      'last_name': 'Last name',
+      'last_name_optional': 'Last name (optional)',
+      'signing_in': 'Signing in...',
+      'login': 'Login',
+      'sign_in_by_phone': 'Sign in by phone',
+      'sign_in_by_email_password': 'Sign in by email/password',
+      'sign_in_failed': 'Sign in failed: {{error}}',
+      'phone_not_found':
+          'Phone number not found. Sign in using email and password.',
+      'invalid_email_password': 'Invalid email or password.',
+      'signing_up': 'Signing up...',
+      'go_to_sign_up': 'Sign up',
+      'create_account': 'Create account',
+      'sign_up_failed': 'Sign up failed: {{error}}',
+      'account': 'Account',
+      'sign_out': 'Sign out',
+      'save_changes': 'Save changes',
+      'saving': 'Saving...',
+      'update_sign_in_profile': 'Update sign in profile',
+      'profile_update_failed': 'Profile update failed: {{error}}',
+      'update_available': 'Update available',
+      'update_body':
+          'A newer version is available on GitHub.\n\nCurrent: {{current}}\nLatest: {{latest}}',
+      'later': 'Later',
+      'update': 'Update',
+      'invalid_release_url': 'Release URL is invalid.',
+      'could_not_open_update_page': 'Could not open update page.',
+      'speech_recognition_error': 'Speech recognition error: {{error}}',
+      'speech_unavailable': 'Speech recognition is unavailable on this device.',
+      'no_camera_available': 'No camera available on this device.',
+      'document_added': 'Document added from camera.',
+      'create_or_select_case':
+          'Create or select a case before sending messages.',
+      'failed_to_reach_api': 'Failed to reach API at {{url}}: {{error}}',
+      'pdf_not_ready':
+          'PDF is not ready yet. Complete the AI discussion first.',
+      'pdf_saved_to': 'PDF saved to {{path}}',
+      'pdf_download_started': 'PDF download started: {{filename}}',
+      'pdf_download_failed': 'Failed to download PDF: {{error}}',
+      'failed_to_load_cases': 'Failed to load cases: {{error}}',
+      'failed_to_load_case_history': 'Failed to load case history: {{error}}',
+      'maximum_cases':
+          'Maximum 5 cases allowed. Delete an existing case first.',
+      'create_case': 'Create case',
+      'delete_case': 'Delete case',
+      'case_name': 'Case name',
+      'cancel': 'Cancel',
+      'create': 'Create',
+      'case_created': 'Case created.',
+      'rename_case': 'Rename case',
+      'save': 'Save',
+      'rename_case_failed': 'Failed to rename case: {{error}}',
+      'case_deleted': 'Case deleted.',
+      'delete_case_failed': 'Failed to delete case: {{error}}',
+      'select_case': 'Select case',
+      'case_history': 'Case history',
+      'case_documents': 'Case documents',
+      'show_next_5_messages': 'Show next 5 messages',
+      'download_case_document': 'Download {{filename}}',
+      'case_document_download_failed':
+          'Failed to download case document: {{error}}',
+      'attached_document': 'Attached document: {{path}}',
+      'clear': 'CLEAR',
+      'you': 'You',
+      'assistant': 'Assistant',
+      'document_label': 'Document: {{path}}',
+      'language_country': 'Language & Country',
+      'local_mode': 'Local mode',
+      'real_agent': 'Real Agent',
+      'ai_user_simulator_agent': 'AI User Simulator Agent',
+      'summary_pdf': 'Summary PDF',
+      'document_pdf': 'Document PDF',
+      'upload_documents': 'Upload documents',
+      'case_input_discussion': 'Describe the case to start discussion...',
+      'case_input_question': 'Ask your legal question...',
+      'stop_speech_input': 'Stop speech input',
+      'speech_input': 'Add question/answer by speech',
+      'start_ai_discussion': 'Start AI discussion',
+      'send_to_api': 'Send to API',
+      'capture_document': 'Capture document',
+      'use_photo': 'Use photo',
+      'camera_unavailable':
+          'Could not initialize camera. Try again or use another device.',
+      'camera_busy':
+          'Camera is busy or unavailable. Close other apps using the camera and try again.',
+      'camera_access_denied':
+          'Camera access was denied. Allow camera permission in the browser and try again.',
+      'camera_error_with_reason': 'Could not initialize camera. {{reason}}',
+      'camera_capture_failed':
+          'Could not capture the image. Try again or use another device.',
+      'locale_SK': 'Slovakia (SK)',
+      'locale_CZ': 'Czechia (CS)',
+      'locale_DE': 'Germany (DE)',
+      'locale_US': 'United States (EN)',
+    },
+    'GE': <String, String>{
+      'auth_sign_in_tab': 'Anmelden',
+      'auth_sign_up_tab': 'Registrieren',
+      'phone_number': 'Telefonnummer',
+      'phone_number_required': 'Telefonnummer *',
+      'phone_number_hint': _localAutofillPhoneNumber,
+      'email': 'E-Mail',
+      'email_required': 'E-Mail *',
+      'password': 'Passwort',
+      'password_required': 'Passwort *',
+      'first_name': 'Vorname',
+      'first_name_optional': 'Vorname (optional)',
+      'last_name': 'Nachname',
+      'last_name_optional': 'Nachname (optional)',
+      'signing_in': 'Anmeldung laeuft...',
+      'login': 'Login',
+      'sign_in_by_phone': 'Mit Telefonnummer anmelden',
+      'sign_in_by_email_password': 'Mit E-Mail und Passwort anmelden',
+      'sign_in_failed': 'Anmeldung fehlgeschlagen: {{error}}',
+      'phone_not_found':
+          'Telefonnummer nicht gefunden. Bitte mit E-Mail und Passwort anmelden.',
+      'invalid_email_password': 'Ungueltige E-Mail oder falsches Passwort.',
+      'signing_up': 'Registrierung laeuft...',
+      'go_to_sign_up': 'Registrieren',
+      'create_account': 'Konto erstellen',
+      'sign_up_failed': 'Registrierung fehlgeschlagen: {{error}}',
+      'account': 'Konto',
+      'sign_out': 'Abmelden',
+      'save_changes': 'Aenderungen speichern',
+      'saving': 'Speichere...',
+      'update_sign_in_profile': 'Anmeldeprofil aktualisieren',
+      'profile_update_failed': 'Profilaktualisierung fehlgeschlagen: {{error}}',
+      'update_available': 'Update verfuegbar',
+      'update_body':
+          'Auf GitHub ist eine neuere Version verfuegbar.\n\nAktuell: {{current}}\nNeueste: {{latest}}',
+      'later': 'Spaeter',
+      'update': 'Aktualisieren',
+      'invalid_release_url': 'Release-URL ist ungueltig.',
+      'could_not_open_update_page':
+          'Update-Seite konnte nicht geoeffnet werden.',
+      'speech_recognition_error': 'Fehler bei der Spracherkennung: {{error}}',
+      'speech_unavailable':
+          'Spracherkennung ist auf diesem Geraet nicht verfuegbar.',
+      'no_camera_available': 'Auf diesem Geraet ist keine Kamera verfuegbar.',
+      'document_added': 'Dokument wurde von der Kamera hinzugefuegt.',
+      'create_or_select_case':
+          'Erstellen oder waehlen Sie zuerst einen Fall aus.',
+      'failed_to_reach_api':
+          'API unter {{url}} konnte nicht erreicht werden: {{error}}',
+      'pdf_not_ready':
+          'PDF ist noch nicht bereit. Schliessen Sie zuerst die AI-Diskussion ab.',
+      'pdf_saved_to': 'PDF gespeichert unter {{path}}',
+      'pdf_download_started': 'PDF-Download gestartet: {{filename}}',
+      'pdf_download_failed': 'PDF-Download fehlgeschlagen: {{error}}',
+      'failed_to_load_cases': 'Faelle konnten nicht geladen werden: {{error}}',
+      'failed_to_load_case_history':
+          'Fallhistorie konnte nicht geladen werden: {{error}}',
+      'maximum_cases':
+          'Maximal 5 Faelle erlaubt. Loeschen Sie zuerst einen bestehenden Fall.',
+      'create_case': 'Fall erstellen',
+      'delete_case': 'Fall loeschen',
+      'case_name': 'Fallname',
+      'cancel': 'Abbrechen',
+      'create': 'Erstellen',
+      'case_created': 'Fall wurde erstellt.',
+      'rename_case': 'Fall umbenennen',
+      'save': 'Speichern',
+      'rename_case_failed': 'Umbenennen des Falls fehlgeschlagen: {{error}}',
+      'case_deleted': 'Fall wurde geloescht.',
+      'delete_case_failed': 'Loeschen des Falls fehlgeschlagen: {{error}}',
+      'select_case': 'Fall auswaehlen',
+      'case_history': 'Fallhistorie',
+      'case_documents': 'Falldokumente',
+      'show_next_5_messages': 'Weitere 5 Nachrichten zeigen',
+      'download_case_document': '{{filename}} herunterladen',
+      'case_document_download_failed':
+          'Download des Dokuments fehlgeschlagen: {{error}}',
+      'attached_document': 'Angehaengtes Dokument: {{path}}',
+      'clear': 'LOESCHEN',
+      'you': 'Sie',
+      'assistant': 'Assistent',
+      'document_label': 'Dokument: {{path}}',
+      'language_country': 'Sprache und Land',
+      'local_mode': 'Lokaler Modus',
+      'real_agent': 'Echter Agent',
+      'ai_user_simulator_agent': 'AI-Benutzer-Simulator',
+      'summary_pdf': 'PDF Zusammenfassung',
+      'document_pdf': 'PDF Dokument',
+      'upload_documents': 'Dokumente hochladen',
+      'case_input_discussion':
+          'Beschreiben Sie den Fall, um die Diskussion zu starten...',
+      'case_input_question': 'Stellen Sie Ihre Rechtsfrage...',
+      'stop_speech_input': 'Spracheingabe stoppen',
+      'speech_input': 'Frage oder Antwort per Sprache hinzufuegen',
+      'start_ai_discussion': 'AI-Diskussion starten',
+      'send_to_api': 'An API senden',
+      'capture_document': 'Dokument erfassen',
+      'use_photo': 'Foto verwenden',
+      'camera_unavailable':
+          'Kamera konnte nicht initialisiert werden. Bitte erneut versuchen oder anderes Geraet verwenden.',
+      'camera_busy':
+          'Kamera ist belegt oder nicht verfuegbar. Schliessen Sie andere Apps und versuchen Sie es erneut.',
+      'camera_access_denied':
+          'Kamerazugriff wurde verweigert. Erlauben Sie den Zugriff im Browser und versuchen Sie es erneut.',
+      'camera_error_with_reason':
+          'Kamera konnte nicht initialisiert werden. {{reason}}',
+      'camera_capture_failed':
+          'Bild konnte nicht aufgenommen werden. Bitte erneut versuchen oder anderes Geraet verwenden.',
+      'locale_SK': 'Slowakei (SK)',
+      'locale_CZ': 'Tschechien (CS)',
+      'locale_DE': 'Deutschland (DE)',
+      'locale_US': 'Vereinigte Staaten (EN)',
+    },
+  };
+
+  String t(String key,
+      [Map<String, String> params = const <String, String>{}]) {
+    final bundle =
+        _localized[languageCode] ?? _localized[_fallbackLanguageCode]!;
+    var value = bundle[key] ?? _localized[_fallbackLanguageCode]![key] ?? key;
+    for (final entry in params.entries) {
+      value = value.replaceAll('{{${entry.key}}}', entry.value);
+    }
+    return value;
+  }
+
+  String localeLabel(LocaleOption option) {
+    return t('locale_${option.countryCode}');
+  }
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -147,6 +514,13 @@ Future<void> main() async {
   }
   runApp(AIJurisdictionMobileApp(
       cameras: cameras, logger: logger, apiBaseUrl: apiBaseUrl));
+}
+
+Future<String> _readAppVersionLabel() async {
+  final info = await PackageInfo.fromPlatform();
+  final version = info.version.trim();
+  final build = info.buildNumber.trim();
+  return build.isEmpty ? 'v$version' : 'v$version+$build';
 }
 
 class AIJurisdictionMobileApp extends StatelessWidget {
@@ -196,10 +570,30 @@ class ChatMessage {
 }
 
 String _displayContentForMessage(ChatMessage message) {
-  if (message.role != 'assistant') {
-    return message.content;
+  return _sanitizeVisibleMessageContent(message.content);
+}
+
+String _sanitizeVisibleMessageContent(String content) {
+  var visible = _stripCaseUpdateJson(content).trim();
+  if (visible.isEmpty) {
+    return '';
   }
-  return _stripCaseUpdateJson(message.content);
+
+  visible = _stripTrailingJsonPayload(visible).trim();
+  if (visible.isEmpty) {
+    return '';
+  }
+
+  visible = _stripJsonFenceBlocks(visible);
+  if (visible.isEmpty) {
+    return '';
+  }
+
+  final filteredLines = visible
+      .split('\n')
+      .where((line) => !_looksLikeTechnicalJsonLine(line))
+      .toList();
+  return filteredLines.join('\n').trim();
 }
 
 String _stripCaseUpdateJson(String content) {
@@ -213,6 +607,95 @@ String _stripCaseUpdateJson(String content) {
   }
   final visible = content.substring(0, match.start).trimRight();
   return visible.isEmpty ? content.trimRight() : visible;
+}
+
+String _stripTrailingJsonPayload(String content) {
+  final trimmed = content.trimRight();
+  final candidateIndexes = <int>[];
+
+  for (var index = 0; index < trimmed.length; index++) {
+    final char = trimmed[index];
+    if (char != '{' && char != '[') {
+      continue;
+    }
+    if (index == 0) {
+      candidateIndexes.add(index);
+      continue;
+    }
+    final previous = trimmed[index - 1];
+    if (previous == '\n' || previous == '\r') {
+      candidateIndexes.add(index);
+    }
+  }
+
+  for (final index in candidateIndexes) {
+    final suffix = trimmed.substring(index).trim();
+    if (!_isJsonPayload(suffix)) {
+      continue;
+    }
+    final prefix = trimmed.substring(0, index).trimRight();
+    return prefix;
+  }
+
+  return trimmed;
+}
+
+String _stripJsonFenceBlocks(String content) {
+  final lines = content.split('\n');
+  final kept = <String>[];
+  var inJsonFence = false;
+
+  for (final line in lines) {
+    final trimmed = line.trim().toLowerCase();
+    if (trimmed.startsWith('```json')) {
+      inJsonFence = true;
+      continue;
+    }
+    if (inJsonFence && trimmed == '```') {
+      inJsonFence = false;
+      continue;
+    }
+    if (!inJsonFence) {
+      kept.add(line);
+    }
+  }
+
+  return kept.join('\n').trim();
+}
+
+bool _looksLikeTechnicalJsonLine(String line) {
+  final trimmed = line.trim();
+  if (trimmed.isEmpty) {
+    return false;
+  }
+  if (trimmed.toLowerCase().contains('case_update_json')) {
+    return true;
+  }
+  if (trimmed == '{' ||
+      trimmed == '}' ||
+      trimmed == '[' ||
+      trimmed == ']' ||
+      trimmed == '},' ||
+      trimmed == '],') {
+    return true;
+  }
+  if (trimmed.startsWith('"') && trimmed.contains('":')) {
+    return true;
+  }
+  if ((trimmed.startsWith('{') || trimmed.startsWith('[')) &&
+      _isJsonPayload(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
+bool _isJsonPayload(String value) {
+  try {
+    final decoded = jsonDecode(value);
+    return decoded is Map<String, dynamic> || decoded is List<dynamic>;
+  } catch (_) {
+    return false;
+  }
 }
 
 class CaseSummary {
@@ -231,6 +714,98 @@ class CaseSummary {
       caseId: json['case_id'] as String? ?? '',
       title: json['title'] as String? ?? '',
       status: json['status'] as String? ?? 'open',
+    );
+  }
+}
+
+class CaseHistoryMessage {
+  const CaseHistoryMessage({
+    required this.communicationId,
+    required this.role,
+    required this.content,
+    required this.createdAt,
+    this.agentName,
+  });
+
+  final String communicationId;
+  final String role;
+  final String content;
+  final String createdAt;
+  final String? agentName;
+
+  static CaseHistoryMessage fromJson(Map<String, dynamic> json) {
+    return CaseHistoryMessage(
+      communicationId: json['communication_id'] as String? ?? '',
+      role: json['role'] as String? ?? 'assistant',
+      content: json['content'] as String? ?? '',
+      createdAt: json['created_at'] as String? ?? '',
+      agentName: json['agent_name'] as String?,
+    );
+  }
+
+  ChatMessage toChatMessage() {
+    return ChatMessage(
+      role: role,
+      content: content,
+      agentName: agentName,
+      createdAt: DateTime.tryParse(createdAt),
+    );
+  }
+}
+
+class CaseDocumentItem {
+  const CaseDocumentItem({
+    required this.docId,
+    required this.kind,
+    required this.version,
+    required this.originalFilename,
+    required this.createdAt,
+  });
+
+  final String docId;
+  final String kind;
+  final int version;
+  final String originalFilename;
+  final String createdAt;
+
+  static CaseDocumentItem fromJson(Map<String, dynamic> json) {
+    return CaseDocumentItem(
+      docId: json['doc_id'] as String? ?? '',
+      kind: json['kind'] as String? ?? '',
+      version: json['version'] as int? ?? 0,
+      originalFilename: json['original_filename'] as String? ?? 'document',
+      createdAt: json['created_at'] as String? ?? '',
+    );
+  }
+}
+
+class CaseHistoryPage {
+  const CaseHistoryPage({
+    required this.messages,
+    required this.documents,
+    required this.hasMore,
+  });
+
+  final List<CaseHistoryMessage> messages;
+  final List<CaseDocumentItem> documents;
+  final bool hasMore;
+
+  static CaseHistoryPage fromJson(Map<String, dynamic> json) {
+    final rawMessages = json['messages'] as List<dynamic>? ?? const <dynamic>[];
+    final rawDocuments =
+        json['documents'] as List<dynamic>? ?? const <dynamic>[];
+    return CaseHistoryPage(
+      messages: rawMessages
+          .whereType<Map>()
+          .map((value) =>
+              CaseHistoryMessage.fromJson(Map<String, dynamic>.from(value)))
+          .toList(),
+      documents: rawDocuments
+          .whereType<Map>()
+          .map((value) =>
+              CaseDocumentItem.fromJson(Map<String, dynamic>.from(value)))
+          .toList(),
+      hasMore: json['has_more'] == true,
     );
   }
 }
@@ -446,7 +1021,29 @@ class ApiClient {
         .toList();
   }
 
-  Future<CaseSummary> createCase({required String userId, required String title}) async {
+  Future<CaseHistoryPage> loadCaseHistory({
+    required String caseId,
+    required String userId,
+    int offset = 0,
+    int limit = 5,
+  }) async {
+    final response = await _get(
+      path:
+          '/v1/cases/$caseId/history?user_id=$userId&offset=$offset&limit=$limit',
+      action: 'case_history',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Case history failed with status ${response.statusCode}.',
+      );
+    }
+    return CaseHistoryPage.fromJson(
+      _decodeResponseBody(response, action: 'case_history'),
+    );
+  }
+
+  Future<CaseSummary> createCase(
+      {required String userId, required String title}) async {
     final response = await _postJson(
       path: '/v1/cases',
       action: 'create_case',
@@ -456,12 +1053,17 @@ class ApiClient {
       throw Exception('Maximum number of cases reached (5).');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Case creation failed with status ${response.statusCode}.');
+      throw Exception(
+          'Case creation failed with status ${response.statusCode}.');
     }
-    return CaseSummary.fromJson(_decodeResponseBody(response, action: 'create_case'));
+    return CaseSummary.fromJson(
+        _decodeResponseBody(response, action: 'create_case'));
   }
 
-  Future<CaseSummary> renameCase({required String caseId, required String userId, required String title}) async {
+  Future<CaseSummary> renameCase(
+      {required String caseId,
+      required String userId,
+      required String title}) async {
     final uri = baseUri.resolve('/v1/cases/$caseId');
     final response = await http.patch(
       uri,
@@ -471,12 +1073,15 @@ class ApiClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Case rename failed with status ${response.statusCode}.');
     }
-    return CaseSummary.fromJson(_decodeResponseBody(response, action: 'rename_case'));
+    return CaseSummary.fromJson(
+        _decodeResponseBody(response, action: 'rename_case'));
   }
 
-  Future<void> deleteCase({required String caseId, required String userId}) async {
+  Future<void> deleteCase(
+      {required String caseId, required String userId}) async {
     final uri = baseUri.resolve('/v1/cases/$caseId?user_id=$userId');
-    final response = await http.delete(uri, headers: <String, String>{'x-api-key': apiKey});
+    final response =
+        await http.delete(uri, headers: <String, String>{'x-api-key': apiKey});
     if (response.statusCode != 204) {
       throw Exception('Case delete failed with status ${response.statusCode}.');
     }
@@ -935,6 +1540,59 @@ class ApiClient {
     );
   }
 
+  Future<ExportFilePayload> downloadCaseDocument({
+    required String caseId,
+    required String userId,
+    required String docId,
+  }) async {
+    final response = await _get(
+      path: '/v1/cases/$caseId/documents/$docId?user_id=$userId',
+      action: 'case_document_download',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = _extractErrorDetail(response);
+      throw Exception(
+        'Case document download failed with status ${response.statusCode}: $detail',
+      );
+    }
+    final filename = _filenameFromContentDisposition(
+          response.headers['content-disposition'],
+        ) ??
+        'case-document';
+    return ExportFilePayload(
+      bytes: response.bodyBytes,
+      filename: filename,
+      contentType:
+          response.headers['content-type'] ?? 'application/octet-stream',
+    );
+  }
+
+  Future<bool> isDocumentExportReady() async {
+    final sessionId = _sessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return false;
+    }
+    final response = await _get(
+      path: '/v1/chat/sessions/$sessionId/result',
+      action: 'session_result',
+    );
+    if (response.statusCode == 404) {
+      return false;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = _extractErrorDetail(response);
+      throw Exception(
+        'Session result lookup failed with status ${response.statusCode}: $detail',
+      );
+    }
+    final body = _decodeResponseBody(response, action: 'session_result');
+    final metadata = body['metadata'];
+    if (metadata is! Map) {
+      return false;
+    }
+    return metadata['document_ready'] == true;
+  }
+
   void resetSession() {
     unawaited(
       logger.info(
@@ -1028,6 +1686,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
       return AuthEntryPage(
         authStore: _authStore,
         logger: widget.logger,
+        apiBaseUrl: widget.apiBaseUrl,
         onSignedIn: _handleSignedIn,
       );
     }
@@ -1048,11 +1707,13 @@ class AuthEntryPage extends StatefulWidget {
     super.key,
     required this.authStore,
     required this.logger,
+    required this.apiBaseUrl,
     required this.onSignedIn,
   });
 
   final LocalAuthStore authStore;
   final AppLogger logger;
+  final String apiBaseUrl;
   final ValueChanged<LocalAuthUser> onSignedIn;
 
   @override
@@ -1076,16 +1737,23 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       TextEditingController();
   bool _showEmailPasswordFallback = false;
   bool _isBusy = false;
+  String _appVersionLabel = 'v0.1.0+1';
+
+  AppStrings get _strings => AppStrings(_defaultLanguage);
+  bool get _isLocalExecution => _isLocalApiBaseUrl(widget.apiBaseUrl);
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_handleTabChanged);
     unawaited(_loadRememberedPhoneNumber());
+    unawaited(_loadAppVersion());
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     _signInPhoneController.dispose();
     _signInEmailController.dispose();
@@ -1098,6 +1766,12 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     super.dispose();
   }
 
+  void _handleTabChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   void _showSnackbar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -1106,10 +1780,28 @@ class _AuthEntryPageState extends State<AuthEntryPage>
 
   Future<void> _loadRememberedPhoneNumber() async {
     final lastPhoneNumber = await widget.authStore.getLastPhoneNumber();
-    if (!mounted || lastPhoneNumber == null || lastPhoneNumber.isEmpty) {
+    if (!mounted) {
       return;
     }
-    _signInPhoneController.text = lastPhoneNumber;
+    if (lastPhoneNumber != null && lastPhoneNumber.isNotEmpty) {
+      _signInPhoneController.text = lastPhoneNumber;
+      return;
+    }
+    if (_isLocalExecution) {
+      _signInPhoneController.text = _localAutofillPhoneNumber;
+    }
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final label = await _readAppVersionLabel();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _appVersionLabel = label;
+      });
+    } catch (_) {}
   }
 
   Future<void> _signInByPhone() async {
@@ -1137,16 +1829,16 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       setState(() {
         _showEmailPasswordFallback = true;
       });
-      _showSnackbar(
-        'Phone number not found. Sign in using email and password.',
-      );
+      _showSnackbar(_strings.t('phone_not_found'));
     } catch (error, stackTrace) {
       await widget.logger.error(
         'Sign-in by phone failed',
         error,
         stackTrace,
       );
-      _showSnackbar('Sign in failed: $error');
+      _showSnackbar(_strings.t('sign_in_failed', <String, String>{
+        'error': '$error',
+      }));
     } finally {
       if (mounted) {
         setState(() {
@@ -1169,7 +1861,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
         password: _signInPasswordController.text,
       );
       if (user == null) {
-        _showSnackbar('Invalid email or password.');
+        _showSnackbar(_strings.t('invalid_email_password'));
         return;
       }
       await widget.logger.info(
@@ -1183,7 +1875,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
         error,
         stackTrace,
       );
-      _showSnackbar('Sign in failed: $error');
+      _showSnackbar(_strings.t('sign_in_failed', <String, String>{
+        'error': '$error',
+      }));
     } finally {
       if (mounted) {
         setState(() {
@@ -1221,7 +1915,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
         error,
         stackTrace,
       );
-      _showSnackbar('Sign up failed: $error');
+      _showSnackbar(_strings.t('sign_up_failed', <String, String>{
+        'error': '$error',
+      }));
     } finally {
       if (mounted) {
         setState(() {
@@ -1233,6 +1929,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
 
   @override
   Widget build(BuildContext context) {
+    final strings = _strings;
     return Scaffold(
       body: Stack(
         children: [
@@ -1262,30 +1959,46 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: 64,
-                          height: 64,
-                          child: Image.asset(
-                            'assets/branding/login-shield.png',
-                            fit: BoxFit.contain,
-                          ),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'AIJurisDigta',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF0A2F6B),
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _appVersionLabel,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: const Color(0xFF4A628A)),
+                            ),
+                            const SizedBox(width: 12),
+                            FilledButton.tonal(
+                              onPressed: () {
+                                final nextIndex =
+                                    _tabController.index == 0 ? 1 : 0;
+                                _tabController.animateTo(nextIndex);
+                              },
+                              child: Text(
+                                _tabController.index == 0
+                                    ? strings.t('go_to_sign_up')
+                                    : strings.t('login'),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'AIJurisDigta',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF0A2F6B),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         TabBar(
                           controller: _tabController,
-                          tabs: const [
-                            Tab(text: 'Sign in'),
-                            Tab(text: 'Sign up'),
+                          tabs: [
+                            Tab(text: strings.t('auth_sign_in_tab')),
+                            Tab(text: strings.t('auth_sign_up_tab')),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -1304,9 +2017,12 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                         AutofillHints.telephoneNumber,
                                         AutofillHints.username,
                                       ],
-                                      decoration: const InputDecoration(
-                                        labelText: 'Phone number',
-                                        hintText: '+421900000000',
+                                      decoration:
+                                          const InputDecoration().copyWith(
+                                        labelText: strings.t('phone_number'),
+                                        hintText: _isLocalExecution
+                                            ? strings.t('phone_number_hint')
+                                            : null,
                                       ),
                                     ),
                                     const SizedBox(height: 12),
@@ -1317,8 +2033,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                             _isBusy ? null : _signInByPhone,
                                         child: Text(
                                           _isBusy
-                                              ? 'Signing in...'
-                                              : 'Sign in by phone',
+                                              ? strings.t('signing_in')
+                                              : strings.t('sign_in_by_phone'),
                                         ),
                                       ),
                                     ),
@@ -1334,8 +2050,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                           AutofillHints.email,
                                           AutofillHints.username,
                                         ],
-                                        decoration: const InputDecoration(
-                                          labelText: 'Email',
+                                        decoration: InputDecoration(
+                                          labelText: strings.t('email'),
                                         ),
                                       ),
                                       const SizedBox(height: 12),
@@ -1345,8 +2061,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                         autofillHints: const <String>[
                                           AutofillHints.password,
                                         ],
-                                        decoration: const InputDecoration(
-                                          labelText: 'Password',
+                                        decoration: InputDecoration(
+                                          labelText: strings.t('password'),
                                         ),
                                       ),
                                       const SizedBox(height: 12),
@@ -1356,8 +2072,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                           onPressed: _isBusy
                                               ? null
                                               : _signInByEmailPassword,
-                                          child: const Text(
-                                            'Sign in by email/password',
+                                          child: Text(
+                                            strings
+                                                .t('sign_in_by_email_password'),
                                           ),
                                         ),
                                       ),
@@ -1374,8 +2091,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                       autofillHints: const <String>[
                                         AutofillHints.telephoneNumber,
                                       ],
-                                      decoration: const InputDecoration(
-                                        labelText: 'Phone number *',
+                                      decoration: InputDecoration(
+                                        labelText:
+                                            strings.t('phone_number_required'),
                                       ),
                                     ),
                                     const SizedBox(height: 12),
@@ -1386,8 +2104,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                         AutofillHints.email,
                                         AutofillHints.newUsername,
                                       ],
-                                      decoration: const InputDecoration(
-                                        labelText: 'Email *',
+                                      decoration: InputDecoration(
+                                        labelText: strings.t('email_required'),
                                       ),
                                     ),
                                     const SizedBox(height: 12),
@@ -1397,22 +2115,25 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                       autofillHints: const <String>[
                                         AutofillHints.newPassword,
                                       ],
-                                      decoration: const InputDecoration(
-                                        labelText: 'Password *',
+                                      decoration: InputDecoration(
+                                        labelText:
+                                            strings.t('password_required'),
                                       ),
                                     ),
                                     const SizedBox(height: 12),
                                     TextField(
                                       controller: _signUpFirstNameController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'First name (optional)',
+                                      decoration: InputDecoration(
+                                        labelText:
+                                            strings.t('first_name_optional'),
                                       ),
                                     ),
                                     const SizedBox(height: 12),
                                     TextField(
                                       controller: _signUpLastNameController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Last name (optional)',
+                                      decoration: InputDecoration(
+                                        labelText:
+                                            strings.t('last_name_optional'),
                                       ),
                                     ),
                                     const SizedBox(height: 16),
@@ -1422,8 +2143,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                         onPressed: _isBusy ? null : _signUp,
                                         child: Text(
                                           _isBusy
-                                              ? 'Signing up...'
-                                              : 'Create account',
+                                              ? strings.t('signing_up')
+                                              : strings.t('create_account'),
                                         ),
                                       ),
                                     ),
@@ -1451,10 +2172,12 @@ class AccountSettingsPage extends StatefulWidget {
     super.key,
     required this.user,
     required this.authStore,
+    required this.languageCode,
   });
 
   final LocalAuthUser user;
   final LocalAuthStore authStore;
+  final String languageCode;
 
   @override
   State<AccountSettingsPage> createState() => _AccountSettingsPageState();
@@ -1466,6 +2189,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   late final TextEditingController _firstNameController;
   late final TextEditingController _lastNameController;
   bool _isSaving = false;
+
+  AppStrings get _strings => AppStrings(widget.languageCode);
 
   @override
   void initState() {
@@ -1512,7 +2237,13 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Profile update failed: $error')),
+        SnackBar(
+          content: Text(
+            _strings.t('profile_update_failed', <String, String>{
+              'error': '$error',
+            }),
+          ),
+        ),
       );
     } finally {
       if (mounted) {
@@ -1525,44 +2256,47 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = _strings;
     return Scaffold(
-      appBar: AppBar(title: const Text('Update sign in profile')),
+      appBar: AppBar(title: Text(strings.t('update_sign_in_profile'))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           TextField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Phone number *',
+            decoration: InputDecoration(
+              labelText: strings.t('phone_number_required'),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _passwordController,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Password *',
+            decoration: InputDecoration(
+              labelText: strings.t('password_required'),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _firstNameController,
-            decoration: const InputDecoration(
-              labelText: 'First name',
+            decoration: InputDecoration(
+              labelText: strings.t('first_name'),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _lastNameController,
-            decoration: const InputDecoration(
-              labelText: 'Last name',
+            decoration: InputDecoration(
+              labelText: strings.t('last_name'),
             ),
           ),
           const SizedBox(height: 20),
           FilledButton(
             onPressed: _isSaving ? null : _save,
-            child: Text(_isSaving ? 'Saving...' : 'Save changes'),
+            child: Text(
+              _isSaving ? strings.t('saving') : strings.t('save_changes'),
+            ),
           ),
         ],
       ),
@@ -1606,7 +2340,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
   late final ApiClient _apiClient;
   late final FileSaver _fileSaver;
   late final List<ChatMessage> _messages;
-  ResponderMode _responderMode = ResponderMode.aiUserSimulator;
+  late ResponderMode _responderMode;
   late LocaleOption _selectedLocale;
   String? _documentPath;
   bool _isSending = false;
@@ -1620,14 +2354,17 @@ class _ChatHomePageState extends State<ChatHomePage> {
   List<CaseSummary> _cases = <CaseSummary>[];
   CaseSummary? _selectedCase;
   bool _isLoadingCases = false;
+  bool _isLoadingCaseHistory = false;
+  bool _caseHistoryHasMore = false;
+  int _caseHistoryOffset = 0;
+  List<CaseDocumentItem> _caseDocuments = <CaseDocumentItem>[];
+  final Set<String> _downloadingCaseDocumentIds = <String>{};
 
   bool get _showLocalResponderSwitch {
-    final host = Uri.parse(widget.apiBaseUrl).host.toLowerCase();
-    return host == 'localhost' ||
-        host == '127.0.0.1' ||
-        host == '10.0.2.2' ||
-        host == '0.0.0.0';
+    return _isLocalApiBaseUrl(widget.apiBaseUrl);
   }
+
+  AppStrings get _strings => AppStrings(_selectedLocale.languageCode);
 
   @override
   void initState() {
@@ -1639,6 +2376,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
           option.languageCode == _defaultLanguage,
       orElse: () => _localeOptions.first,
     );
+    _responderMode = _showLocalResponderSwitch
+        ? ResponderMode.realPerson
+        : ResponderMode.aiUserSimulator;
     _apiClient = ApiClient(
       baseUri: Uri.parse(widget.apiBaseUrl),
       apiKey: _apiKey,
@@ -1679,6 +2419,18 @@ class _ChatHomePageState extends State<ChatHomePage> {
     });
   }
 
+  void _resetMessagesForCurrentCase() {
+    _messages
+      ..clear()
+      ..add(
+        ChatMessage(
+          role: 'assistant',
+          content: _welcomeMessageForLanguage(_selectedLocale.languageCode),
+          agentName: 'Jurisdicta',
+        ),
+      );
+  }
+
   @override
   void didUpdateWidget(covariant ChatHomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -1692,13 +2444,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   Future<void> _loadAppVersion() async {
     try {
-      final info = await PackageInfo.fromPlatform();
+      final label = await _readAppVersionLabel();
       if (!mounted) {
         return;
       }
-      final version = info.version.trim();
-      final build = info.buildNumber.trim();
-      final label = build.isEmpty ? 'v$version' : 'v$version+$build';
       final parsed = _SemanticVersion.tryParse(label);
       setState(() {
         _appVersionLabel = label;
@@ -1707,6 +2456,117 @@ class _ChatHomePageState extends State<ChatHomePage> {
         unawaited(_checkForGithubUpdate(parsed));
       }
     } catch (_) {}
+  }
+
+  Future<void> _selectCase(CaseSummary? selected) async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedCase = selected;
+      _hasExportReady = false;
+      _caseHistoryOffset = 0;
+      _caseHistoryHasMore = false;
+      _caseDocuments = <CaseDocumentItem>[];
+      _apiClient.setActiveCase(selected?.caseId);
+      _resetMessagesForCurrentCase();
+    });
+    if (selected == null) {
+      return;
+    }
+    await _loadCaseHistory(reset: true);
+  }
+
+  Future<void> _loadCaseHistory({required bool reset}) async {
+    final selected = _selectedCase;
+    if (selected == null) {
+      return;
+    }
+    final offset = reset ? 0 : _caseHistoryOffset;
+    setState(() {
+      _isLoadingCaseHistory = true;
+    });
+    try {
+      final page = await _apiClient.loadCaseHistory(
+        caseId: selected.caseId,
+        userId: _signedInUser.userId,
+        offset: offset,
+        limit: 5,
+      );
+      if (!mounted || _selectedCase?.caseId != selected.caseId) {
+        return;
+      }
+      final loadedMessages = page.messages.map((item) => item.toChatMessage());
+      setState(() {
+        _caseDocuments = page.documents;
+        _caseHistoryHasMore = page.hasMore;
+        _caseHistoryOffset = offset + loadedMessages.length;
+        if (reset) {
+          _messages.clear();
+          if (loadedMessages.isEmpty) {
+            _resetMessagesForCurrentCase();
+          } else {
+            _messages.addAll(loadedMessages);
+          }
+        } else if (loadedMessages.isNotEmpty) {
+          _messages.insertAll(0, loadedMessages);
+        }
+      });
+      _scrollToLatest(animated: false);
+    } catch (error) {
+      _showSnackbar(_strings.t('failed_to_load_case_history', <String, String>{
+        'error': '$error',
+      }));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingCaseHistory = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _downloadCaseDocument(CaseDocumentItem document) async {
+    final selected = _selectedCase;
+    if (selected == null) {
+      return;
+    }
+    setState(() {
+      _downloadingCaseDocumentIds.add(document.docId);
+    });
+    try {
+      final payload = await _apiClient.downloadCaseDocument(
+        caseId: selected.caseId,
+        userId: _signedInUser.userId,
+        docId: document.docId,
+      );
+      final savedPath = await _fileSaver.save(
+        bytes: payload.bytes,
+        fileName: payload.filename,
+        contentType: payload.contentType,
+      );
+      if (savedPath != null && savedPath.isNotEmpty) {
+        _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
+          'path': savedPath,
+        }));
+      } else {
+        _showSnackbar(_strings.t('pdf_download_started', <String, String>{
+          'filename': payload.filename,
+        }));
+      }
+    } catch (error) {
+      _showSnackbar(
+        _strings.t('case_document_download_failed', <String, String>{
+          'error': '$error',
+        }),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloadingCaseDocumentIds.remove(document.docId);
+        });
+      }
+    }
   }
 
   Uri _githubLatestReleaseUri() {
@@ -1806,21 +2666,24 @@ class _ChatHomePageState extends State<ChatHomePage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Update available'),
+          title: Text(_strings.t('update_available')),
           content: Text(
-            'A newer version is available on GitHub.\n\nCurrent: $installedVersion\nLatest: $latestVersion',
+            _strings.t('update_body', <String, String>{
+              'current': installedVersion,
+              'latest': latestVersion,
+            }),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Later'),
+              child: Text(_strings.t('later')),
             ),
             FilledButton(
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
                 final uri = Uri.tryParse(releaseUrl);
                 if (uri == null) {
-                  _showSnackbar('Release URL is invalid.');
+                  _showSnackbar(_strings.t('invalid_release_url'));
                   return;
                 }
                 final opened = await launchUrl(
@@ -1828,10 +2691,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   mode: LaunchMode.platformDefault,
                 );
                 if (!opened) {
-                  _showSnackbar('Could not open update page.');
+                  _showSnackbar(_strings.t('could_not_open_update_page'));
                 }
               },
-              child: const Text('Update'),
+              child: Text(_strings.t('update')),
             ),
           ],
         );
@@ -1906,7 +2769,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
     setState(() {
       _isListening = false;
     });
-    _showSnackbar('Speech recognition error: ${error.errorMsg}');
+    _showSnackbar(_strings.t('speech_recognition_error', <String, String>{
+      'error': error.errorMsg,
+    }));
     unawaited(
       widget.logger.error(
         'Speech recognition error',
@@ -1919,7 +2784,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   Future<void> _toggleSpeechInput() async {
     if (!_speechEnabled) {
-      _showSnackbar('Speech recognition is unavailable on this device.');
+      _showSnackbar(_strings.t('speech_unavailable'));
       return;
     }
     if (_isListening) {
@@ -1984,7 +2849,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
     if (widget.cameras.isEmpty) {
       await widget.logger
           .info('Document capture requested with no available camera');
-      _showSnackbar('No camera available on this device.');
+      _showSnackbar(_strings.t('no_camera_available'));
       return;
     }
 
@@ -1993,6 +2858,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
         builder: (_) => CameraCapturePage(
           camera: widget.cameras.first,
           logger: widget.logger,
+          languageCode: _selectedLocale.languageCode,
         ),
       ),
     );
@@ -2008,7 +2874,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
         'Document captured',
         <String, Object?>{'document_path': path},
       );
-      _showSnackbar('Document added from camera.');
+      _showSnackbar(_strings.t('document_added'));
     }
   }
 
@@ -2018,7 +2884,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       return;
     }
     if (_selectedCase == null) {
-      _showSnackbar('Create or select a case before sending messages.');
+      _showSnackbar(_strings.t('create_or_select_case'));
       return;
     }
     await widget.logger.info(
@@ -2033,6 +2899,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
     setState(() {
       _isSending = true;
       _hasExportReady = false;
+      if (_selectedCase != null) {
+        _caseHistoryOffset += 1;
+      }
       _messages.add(
         ChatMessage(
           role: 'user',
@@ -2070,18 +2939,22 @@ class _ChatHomePageState extends State<ChatHomePage> {
                 .toLowerCase()
                 .trim();
             final content = payload['content'] as String? ?? '';
+            final visibleContent = _sanitizeVisibleMessageContent(content);
             final agentName = payload['agent_name'] as String?;
-            if (content.isEmpty) {
+            if (visibleContent.isEmpty) {
               continue;
             }
             if (!mounted) {
               continue;
             }
             setState(() {
+              if (_selectedCase != null) {
+                _caseHistoryOffset += 1;
+              }
               _messages.add(
                 ChatMessage(
                   role: role,
-                  content: content,
+                  content: visibleContent,
                   agentName: agentName,
                   createdAt: DateTime.now(),
                 ),
@@ -2107,23 +2980,32 @@ class _ChatHomePageState extends State<ChatHomePage> {
           locale: _selectedLocale,
           documentPath: _documentPath,
         );
+        final exportReady = await _apiClient.isDocumentExportReady();
+        final visibleReply = _sanitizeVisibleMessageContent(reply);
+        if (_selectedCase != null) {
+          _caseHistoryOffset += 1;
+        }
         await widget.logger.info(
           'Assistant reply received',
           <String, Object?>{
-            'reply_length': reply.length,
+            'reply_length': visibleReply.length,
             'responder_mode': _responderMode.name,
+            'document_export_ready': exportReady,
           },
         );
+        if (visibleReply.isEmpty) {
+          return;
+        }
         if (mounted) {
           setState(() {
             _messages.add(
               ChatMessage(
                 role: 'assistant',
-                content: reply,
+                content: visibleReply,
                 createdAt: DateTime.now(),
               ),
             );
-            _hasExportReady = false;
+            _hasExportReady = exportReady;
           });
           _scrollToLatest();
         }
@@ -2142,7 +3024,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
           'responder_mode': _responderMode.name,
         },
       );
-      _showSnackbar('Failed to reach API at ${widget.apiBaseUrl}: $error');
+      _showSnackbar(_strings.t('failed_to_reach_api', <String, String>{
+        'url': widget.apiBaseUrl,
+        'error': '$error',
+      }));
     } finally {
       if (mounted) {
         setState(() {
@@ -2157,9 +3042,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       return;
     }
     if (!_hasExportReady) {
-      _showSnackbar(
-        'PDF is not ready yet. Complete the AI discussion first.',
-      );
+      _showSnackbar(_strings.t('pdf_not_ready'));
       return;
     }
     setState(() {
@@ -2190,9 +3073,13 @@ class _ChatHomePageState extends State<ChatHomePage> {
         },
       );
       if (savedPath != null && savedPath.isNotEmpty) {
-        _showSnackbar('PDF saved to $savedPath');
+        _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
+          'path': savedPath,
+        }));
       } else {
-        _showSnackbar('PDF download started: ${payload.filename}');
+        _showSnackbar(_strings.t('pdf_download_started', <String, String>{
+          'filename': payload.filename,
+        }));
       }
     } on SessionExpiredException {
       _showSnackbar(
@@ -2205,7 +3092,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
         stackTrace,
         <String, Object?>{'kind': kind, 'session_id': _apiClient.sessionId},
       );
-      _showSnackbar('Failed to download PDF: $error');
+      _showSnackbar(_strings.t('pdf_download_failed', <String, String>{
+        'error': '$error',
+      }));
     } finally {
       if (mounted) {
         setState(() {
@@ -2221,6 +3110,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
         builder: (_) => AccountSettingsPage(
           user: _signedInUser,
           authStore: widget.authStore,
+          languageCode: _selectedLocale.languageCode,
         ),
       ),
     );
@@ -2249,13 +3139,15 @@ class _ChatHomePageState extends State<ChatHomePage> {
       if (!mounted) {
         return;
       }
+      final selected = cases.isNotEmpty ? cases.first : null;
       setState(() {
         _cases = cases;
-        _selectedCase = cases.isNotEmpty ? cases.first : null;
-        _apiClient.setActiveCase(_selectedCase?.caseId);
       });
+      await _selectCase(selected);
     } catch (error) {
-      _showSnackbar('Failed to load cases: $error');
+      _showSnackbar(_strings.t('failed_to_load_cases', <String, String>{
+        'error': '$error',
+      }));
     } finally {
       if (mounted) {
         setState(() {
@@ -2267,33 +3159,40 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   Future<void> _createCase() async {
     if (_cases.length >= 5) {
-      _showSnackbar('Maximum 5 cases allowed. Delete an existing case first.');
+      _showSnackbar(_strings.t('maximum_cases'));
       return;
     }
     final controller = TextEditingController();
+    final strings = _strings;
     final title = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Create case'),
+        title: Text(strings.t('create_case')),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: 'Case name'),
+          decoration: InputDecoration(labelText: strings.t('case_name')),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Create')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(strings.t('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: Text(strings.t('create')),
+          ),
         ],
       ),
     );
     if (title == null || title.trim().isEmpty) return;
     try {
-      final created = await _apiClient.createCase(userId: _signedInUser.userId, title: title.trim());
+      final created = await _apiClient.createCase(
+          userId: _signedInUser.userId, title: title.trim());
       setState(() {
         _cases = <CaseSummary>[created, ..._cases];
-        _selectedCase = created;
-        _apiClient.setActiveCase(created.caseId);
       });
-      _showSnackbar('Case created.');
+      await _selectCase(created);
+      _showSnackbar(_strings.t('case_created'));
     } catch (error) {
       _showSnackbar('$error');
     }
@@ -2303,26 +3202,40 @@ class _ChatHomePageState extends State<ChatHomePage> {
     final selected = _selectedCase;
     if (selected == null) return;
     final controller = TextEditingController(text: selected.title);
+    final strings = _strings;
     final title = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rename case'),
+        title: Text(strings.t('rename_case')),
         content: TextField(controller: controller),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(strings.t('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: Text(strings.t('save')),
+          ),
         ],
       ),
     );
     if (title == null || title.trim().isEmpty) return;
     try {
-      final updated = await _apiClient.renameCase(caseId: selected.caseId, userId: _signedInUser.userId, title: title.trim());
+      final updated = await _apiClient.renameCase(
+          caseId: selected.caseId,
+          userId: _signedInUser.userId,
+          title: title.trim());
       setState(() {
-        _cases = _cases.map((c) => c.caseId == updated.caseId ? updated : c).toList();
+        _cases = _cases
+            .map((c) => c.caseId == updated.caseId ? updated : c)
+            .toList();
         _selectedCase = updated;
       });
     } catch (error) {
-      _showSnackbar('Failed to rename case: $error');
+      _showSnackbar(_strings.t('rename_case_failed', <String, String>{
+        'error': '$error',
+      }));
     }
   }
 
@@ -2330,15 +3243,21 @@ class _ChatHomePageState extends State<ChatHomePage> {
     final selected = _selectedCase;
     if (selected == null) return;
     try {
-      await _apiClient.deleteCase(caseId: selected.caseId, userId: _signedInUser.userId);
+      await _apiClient.deleteCase(
+          caseId: selected.caseId, userId: _signedInUser.userId);
+      final remainingCases =
+          _cases.where((c) => c.caseId != selected.caseId).toList();
+      final nextSelected =
+          remainingCases.isNotEmpty ? remainingCases.first : null;
       setState(() {
-        _cases = _cases.where((c) => c.caseId != selected.caseId).toList();
-        _selectedCase = _cases.isNotEmpty ? _cases.first : null;
-        _apiClient.setActiveCase(_selectedCase?.caseId);
+        _cases = remainingCases;
       });
-      _showSnackbar('Case deleted.');
+      await _selectCase(nextSelected);
+      _showSnackbar(_strings.t('case_deleted'));
     } catch (error) {
-      _showSnackbar('Failed to delete case: $error');
+      _showSnackbar(_strings.t('delete_case_failed', <String, String>{
+        'error': '$error',
+      }));
     }
   }
 
@@ -2362,6 +3281,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = _strings;
     return Scaffold(
       body: Stack(
         children: [
@@ -2397,214 +3317,51 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.94),
+                      color: Colors.white.withValues(alpha: 0.94),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Row(
                       children: [
-                        SizedBox(
-                          width: 48,
-                          height: 48,
-                          child: Image.asset(
-                            'assets/branding/login-shield.png',
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.high,
+                        const Expanded(
+                          child: Text(
+                            'AIJurisDigta',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0A2F6B),
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'AIJurisDigta',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF0A2F6B),
-                                ),
-                              ),
-                              Text(
-                                _signedInUser.displayName,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelMedium
-                                    ?.copyWith(color: const Color(0xFF234D86)),
-                              ),
-                              Text(
-                                _appVersionLabel,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: const Color(0xFF4A628A)),
-                              ),
-                            ],
-                          ),
-                        ),
-                        FilledButton.tonalIcon(
-                          onPressed: _openAccountSettings,
-                          icon: const Icon(Icons.manage_accounts),
-                          label: const Text('Account'),
+                        Text(
+                          _appVersionLabel,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: const Color(0xFF4A628A)),
                         ),
                         const SizedBox(width: 8),
                         TextButton.icon(
                           onPressed: _signOut,
                           icon: const Icon(Icons.logout),
-                          label: const Text('Sign out'),
+                          label: Text(strings.t('sign_out')),
                         ),
                       ],
                     ),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: const [
-                      _BrandIcon(path: 'assets/branding/icon-ai-head.svg'),
-                      _BrandIcon(path: 'assets/branding/icon-scale.svg'),
-                      _BrandIcon(path: 'assets/branding/icon-doc-check.svg'),
-                      _BrandIcon(path: 'assets/branding/icon-court.svg'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   child: Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.94),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _isLoadingCases
-                              ? const LinearProgressIndicator()
-                              : DropdownButton<CaseSummary>(
-                                  isExpanded: true,
-                                  value: _selectedCase,
-                                  hint: const Text('Select case'),
-                                  items: _cases
-                                      .map((item) => DropdownMenuItem<CaseSummary>(
-                                            value: item,
-                                            child: Text(item.title),
-                                          ))
-                                      .toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _selectedCase = value;
-                                      _apiClient.setActiveCase(value?.caseId);
-                                    });
-                                  },
-                                ),
-                        ),
-                        IconButton(onPressed: _createCase, icon: const Icon(Icons.add), tooltip: 'Create case'),
-                        IconButton(onPressed: _selectedCase == null ? null : _renameSelectedCase, icon: const Icon(Icons.edit), tooltip: 'Rename case'),
-                        IconButton(onPressed: _selectedCase == null ? null : _deleteSelectedCase, icon: const Icon(Icons.delete_outline), tooltip: 'Delete case'),
-                      ],
-                    ),
-                  ),
-                ),
-                if (_documentPath != null)
-                  MaterialBanner(
-                    content: Text('Attached document: $_documentPath'),
-                    leading: const Icon(Icons.attachment),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _documentPath = null;
-                          });
-                          unawaited(
-                            widget.logger
-                                .info('Attached document path cleared'),
-                          );
-                        },
-                        child: const Text('CLEAR'),
-                      ),
-                    ],
-                  ),
-                Expanded(
-                  child: Scrollbar(
-                    controller: _messagesScrollController,
-                    thumbVisibility: true,
-                    trackVisibility: true,
-                    interactive: true,
-                    child: ListView.builder(
-                      controller: _messagesScrollController,
-                      padding: const EdgeInsets.all(12),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final message = _messages[index];
-                        final displayContent = _displayContentForMessage(
-                          message,
-                        );
-                        final isUser = message.role == 'user';
-                        final speaker = isUser
-                            ? 'You'
-                            : (message.agentName?.trim().isNotEmpty ?? false)
-                                ? message.agentName!
-                                : 'Assistant';
-                        return Align(
-                          alignment: isUser
-                              ? Alignment.centerRight
-                              : Alignment.centerLeft,
-                          child: Container(
-                            constraints: const BoxConstraints(maxWidth: 320),
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: isUser
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .primaryContainer
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  speaker,
-                                  style:
-                                      Theme.of(context).textTheme.labelMedium,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(displayContent),
-                                if (message.documentPath != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 8),
-                                    child: Text(
-                                      'Document: ${message.documentPath}',
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.white.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: Column(
                       children: [
                         Row(
                           children: [
-                            const Text('Language & Country:'),
+                            Text(strings.t('language_country')),
                             const SizedBox(width: 8),
                             Expanded(
                               child: DropdownButton<LocaleOption>(
@@ -2638,7 +3395,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
                                       (locale) =>
                                           DropdownMenuItem<LocaleOption>(
                                         value: locale,
-                                        child: Text(locale.label),
+                                        child:
+                                            Text(strings.localeLabel(locale)),
                                       ),
                                     )
                                     .toList(),
@@ -2646,10 +3404,11 @@ class _ChatHomePageState extends State<ChatHomePage> {
                             ),
                           ],
                         ),
-                        if (_showLocalResponderSwitch)
+                        if (_showLocalResponderSwitch) ...[
+                          const SizedBox(height: 10),
                           Row(
                             children: [
-                              const Text('Local mode:'),
+                              Text(strings.t('local_mode')),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: DropdownButton<ResponderMode>(
@@ -2673,28 +3432,239 @@ class _ChatHomePageState extends State<ChatHomePage> {
                                     );
                                     _apiClient.resetSession();
                                   },
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: ResponderMode.aiUserSimulator,
-                                      child: Text('AI User Simulator Agent'),
-                                    ),
+                                  items: [
                                     DropdownMenuItem(
                                       value: ResponderMode.realPerson,
-                                      child: Text('Read User'),
+                                      child: Text(strings.t('real_agent')),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: ResponderMode.aiUserSimulator,
+                                      child: Text(
+                                        strings.t('ai_user_simulator_agent'),
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
                             ],
                           ),
+                        ],
                       ],
                     ),
                   ),
                 ),
                 Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _isLoadingCases
+                              ? const LinearProgressIndicator()
+                              : DropdownButton<CaseSummary>(
+                                  isExpanded: true,
+                                  value: _selectedCase,
+                                  hint: Text(strings.t('select_case')),
+                                  items: _cases
+                                      .map((item) =>
+                                          DropdownMenuItem<CaseSummary>(
+                                            value: item,
+                                            child: Text(item.title),
+                                          ))
+                                      .toList(),
+                                  onChanged: (value) =>
+                                      unawaited(_selectCase(value)),
+                                ),
+                        ),
+                        IconButton(
+                          onPressed: _createCase,
+                          icon: const Icon(Icons.add),
+                          tooltip: strings.t('create_case'),
+                        ),
+                        IconButton(
+                          onPressed: _selectedCase == null
+                              ? null
+                              : _renameSelectedCase,
+                          icon: const Icon(Icons.edit),
+                          tooltip: strings.t('rename_case'),
+                        ),
+                        IconButton(
+                          onPressed: _selectedCase == null
+                              ? null
+                              : _deleteSelectedCase,
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: strings.t('delete_case'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (_documentPath != null)
+                  MaterialBanner(
+                    content: Text(
+                      strings.t('attached_document', <String, String>{
+                        'path': _documentPath!,
+                      }),
+                    ),
+                    leading: const Icon(Icons.attachment),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _documentPath = null;
+                          });
+                          unawaited(
+                            widget.logger
+                                .info('Attached document path cleared'),
+                          );
+                        },
+                        child: Text(strings.t('clear')),
+                      ),
+                    ],
+                  ),
+                Expanded(
+                  child: Scrollbar(
+                    controller: _messagesScrollController,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    interactive: true,
+                    child: ListView.builder(
+                      controller: _messagesScrollController,
+                      padding: const EdgeInsets.all(12),
+                      itemCount:
+                          _messages.length + (_caseHistoryHasMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == _messages.length) {
+                          return Align(
+                            alignment: Alignment.center,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: FilledButton.tonalIcon(
+                                onPressed: _isLoadingCaseHistory
+                                    ? null
+                                    : () => unawaited(
+                                          _loadCaseHistory(reset: false),
+                                        ),
+                                icon: _isLoadingCaseHistory
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.arrow_downward),
+                                label: Text(strings.t('show_next_5_messages')),
+                              ),
+                            ),
+                          );
+                        }
+                        final message = _messages[index];
+                        final displayContent = _displayContentForMessage(
+                          message,
+                        );
+                        final isUser = message.role == 'user';
+                        final speaker = isUser
+                            ? strings.t('you')
+                            : (message.agentName?.trim().isNotEmpty ?? false)
+                                ? message.agentName!
+                                : strings.t('assistant');
+                        return Align(
+                          alignment: isUser
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 320),
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isUser
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  speaker,
+                                  style:
+                                      Theme.of(context).textTheme.labelMedium,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(displayContent),
+                                if (message.documentPath != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      strings
+                                          .t('document_label', <String, String>{
+                                        'path': message.documentPath!,
+                                      }),
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                if (_caseDocuments.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _caseDocuments
+                            .map(
+                              (document) => FilledButton.tonalIcon(
+                                onPressed: _downloadingCaseDocumentIds
+                                        .contains(document.docId)
+                                    ? null
+                                    : () => _downloadCaseDocument(document),
+                                icon: _downloadingCaseDocumentIds
+                                        .contains(document.docId)
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.download_outlined),
+                                label: Text(document.originalFilename),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
-                  child: Row(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
+                      FilledButton.tonalIcon(
+                        onPressed: _openAccountSettings,
+                        icon: const Icon(Icons.manage_accounts),
+                        label: Text(strings.t('account')),
+                      ),
                       FilledButton.tonalIcon(
                         onPressed:
                             (_isDownloading || _isSending || !_hasExportReady)
@@ -2708,7 +3678,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.picture_as_pdf),
-                        label: const Text('Summary PDF'),
+                        label: Text(strings.t('summary_pdf')),
                       ),
                       const SizedBox(width: 8),
                       FilledButton.tonalIcon(
@@ -2717,7 +3687,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
                                 ? null
                                 : () => _downloadPdf('document'),
                         icon: const Icon(Icons.description),
-                        label: const Text('Document PDF'),
+                        label: Text(strings.t('document_pdf')),
                       ),
                     ],
                   ),
@@ -2729,21 +3699,21 @@ class _ChatHomePageState extends State<ChatHomePage> {
                       IconButton(
                         onPressed: _captureDocument,
                         icon: const Icon(Icons.document_scanner),
-                        tooltip: 'Upload documents',
+                        tooltip: strings.t('upload_documents'),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextField(
                           controller: _inputController,
-                          minLines: 1,
+                          minLines: 3,
                           maxLines: 4,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _sendMessage(),
+                          keyboardType: TextInputType.multiline,
+                          textInputAction: TextInputAction.newline,
                           decoration: InputDecoration(
                             hintText:
                                 _responderMode == ResponderMode.aiUserSimulator
-                                    ? 'Describe the case to start discussion...'
-                                    : 'Ask your legal question...',
+                                    ? strings.t('case_input_discussion')
+                                    : strings.t('case_input_question'),
                             filled: true,
                             fillColor: Colors.white,
                             border: const OutlineInputBorder(),
@@ -2760,8 +3730,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
                               : null,
                         ),
                         tooltip: _isListening
-                            ? 'Stop speech input'
-                            : 'Add question/answer by speech',
+                            ? strings.t('stop_speech_input')
+                            : strings.t('speech_input'),
                       ),
                       const SizedBox(width: 8),
                       IconButton(
@@ -2775,8 +3745,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
                               )
                             : const Icon(Icons.send),
                         tooltip: _responderMode == ResponderMode.aiUserSimulator
-                            ? 'Start AI discussion'
-                            : 'Send to API',
+                            ? strings.t('start_ai_discussion')
+                            : strings.t('send_to_api'),
                       ),
                     ],
                   ),
@@ -2790,35 +3760,17 @@ class _ChatHomePageState extends State<ChatHomePage> {
   }
 }
 
-class _BrandIcon extends StatelessWidget {
-  const _BrandIcon({required this.path});
-
-  final String path;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 52,
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: SvgPicture.asset(path),
-    );
-  }
-}
-
 class CameraCapturePage extends StatefulWidget {
   const CameraCapturePage({
     super.key,
     required this.camera,
     required this.logger,
+    required this.languageCode,
   });
 
   final CameraDescription camera;
   final AppLogger logger;
+  final String languageCode;
 
   @override
   State<CameraCapturePage> createState() => _CameraCapturePageState();
@@ -2828,6 +3780,8 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   String? _cameraErrorMessage;
+
+  AppStrings get _strings => AppStrings(widget.languageCode);
 
   @override
   void initState() {
@@ -2865,8 +3819,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
       );
       if (mounted) {
         setState(() {
-          _cameraErrorMessage =
-              'Could not initialize camera. Try again or use another device.';
+          _cameraErrorMessage = _strings.t('camera_unavailable');
         });
       }
     }
@@ -2875,12 +3828,14 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   String _cameraErrorMessageFor(CameraException error) {
     switch (error.code) {
       case 'cameraNotReadable':
-        return 'Camera is busy or unavailable. Close other apps using the camera and try again.';
+        return _strings.t('camera_busy');
       case 'CameraAccessDenied':
       case 'cameraAccessDenied':
-        return 'Camera access was denied. Allow camera permission in the browser and try again.';
+        return _strings.t('camera_access_denied');
       default:
-        return 'Could not initialize camera. ${error.description ?? error.code}';
+        return _strings.t('camera_error_with_reason', <String, String>{
+          'reason': error.description ?? error.code,
+        });
     }
   }
 
@@ -2925,11 +3880,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Could not capture the image. Try again or use another device.',
-            ),
-          ),
+          SnackBar(content: Text(_strings.t('camera_capture_failed'))),
         );
       }
     }
@@ -2937,8 +3888,9 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = _strings;
     return Scaffold(
-      appBar: AppBar(title: const Text('Capture document')),
+      appBar: AppBar(title: Text(strings.t('capture_document'))),
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
@@ -2967,7 +3919,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
                     child: FloatingActionButton.extended(
                       onPressed: _takePicture,
                       icon: const Icon(Icons.camera),
-                      label: const Text('Use photo'),
+                      label: Text(strings.t('use_photo')),
                     ),
                   ),
                 ),
@@ -2980,7 +3932,9 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Could not initialize camera. ${snapshot.error}',
+                  strings.t('camera_error_with_reason', <String, String>{
+                    'reason': '${snapshot.error}',
+                  }),
                   textAlign: TextAlign.center,
                 ),
               ),
