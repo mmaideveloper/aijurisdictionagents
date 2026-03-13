@@ -3,6 +3,64 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+class SubscriptionPlanInfo {
+  const SubscriptionPlanInfo({
+    required this.planCode,
+    required this.displayName,
+    required this.subscriptionType,
+    required this.priceEur,
+    required this.maxCases,
+    this.caseTtlDays,
+  });
+
+  final String planCode;
+  final String displayName;
+  final String subscriptionType;
+  final int priceEur;
+  final int maxCases;
+  final int? caseTtlDays;
+
+  static SubscriptionPlanInfo fromJson(Map<String, dynamic> json) {
+    return SubscriptionPlanInfo(
+      planCode: json['plan_code'] as String? ?? '',
+      displayName: json['display_name'] as String? ?? '',
+      subscriptionType: json['subscription_type'] as String? ?? '',
+      priceEur: json['price_eur'] as int? ?? 0,
+      maxCases: json['max_cases'] as int? ?? 0,
+      caseTtlDays: json['case_ttl_days'] as int?,
+    );
+  }
+}
+
+class UserSubscriptionInfo {
+  const UserSubscriptionInfo({
+    required this.subscriptionId,
+    required this.userId,
+    required this.planCode,
+    required this.status,
+    this.startsAt,
+    this.endsAt,
+  });
+
+  final String subscriptionId;
+  final String userId;
+  final String planCode;
+  final String status;
+  final String? startsAt;
+  final String? endsAt;
+
+  static UserSubscriptionInfo fromJson(Map<String, dynamic> json) {
+    return UserSubscriptionInfo(
+      subscriptionId: json['subscription_id'] as String? ?? '',
+      userId: json['user_id'] as String? ?? '',
+      planCode: json['plan_code'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      startsAt: json['starts_at'] as String?,
+      endsAt: json['ends_at'] as String?,
+    );
+  }
+}
+
 class LocalAuthUser {
   const LocalAuthUser({
     required this.userId,
@@ -288,6 +346,41 @@ class LocalAuthStore {
     final updated = _userFromApiResponse(response, password: password);
     await _cacheSignedInUser(updated);
     return updated;
+  }
+
+  Future<List<SubscriptionPlanInfo>> listSubscriptionPlans() async {
+    final response = await http.get(baseUri.resolve('/v1/users/subscriptions/plans'), headers: _headers);
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorDetail(response));
+    }
+    final decoded = jsonDecode(response.body) as List<dynamic>;
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(SubscriptionPlanInfo.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<List<UserSubscriptionInfo>> listUserSubscriptions({required String userId}) async {
+    final response = await http.get(baseUri.resolve('/v1/users/$userId/subscriptions'), headers: _headers);
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorDetail(response));
+    }
+    final decoded = jsonDecode(response.body) as List<dynamic>;
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(UserSubscriptionInfo.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<UserSubscriptionInfo> requestSubscriptionChange({required String userId, required String planCode}) async {
+    final response = await _postJson(
+      path: '/v1/users/$userId/subscriptions',
+      payload: <String, Object?>{'plan_code': planCode},
+    );
+    if (response.statusCode != 201) {
+      throw Exception(_extractErrorDetail(response));
+    }
+    return UserSubscriptionInfo.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   Future<void> _cacheSignedInUser(LocalAuthUser user) async {

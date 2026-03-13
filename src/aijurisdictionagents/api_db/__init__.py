@@ -1,5 +1,14 @@
 from .config import ApiDataConfig
-from .store import ApiDatabaseStore, Case, CaseCommunication, CaseDocument, Company, User
+from .store import (
+    ApiDatabaseStore,
+    Case,
+    CaseCommunication,
+    CaseDocument,
+    Company,
+    SubscriptionPlan,
+    User,
+    UserSubscription,
+)
 
 __all__ = [
     "ApiDataConfig",
@@ -8,5 +17,7 @@ __all__ = [
     "CaseCommunication",
     "CaseDocument",
     "Company",
+    "SubscriptionPlan",
     "User",
+    "UserSubscription",
 ]

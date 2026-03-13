@@ -97,6 +97,15 @@ same `x-api-key` guard as the chat endpoints.
   - request: `phone_number`
 - `PATCH /v1/users/{user_id}`
   - request: `phone_number`, optional `password`, optional `first_name`, optional `last_name`
+- `GET /v1/users/subscriptions/plans`
+  - returns seeded plans: free, case, basic, premium
+- `GET /v1/users/{user_id}/subscriptions`
+  - returns subscription history for a user
+- `POST /v1/users/{user_id}/subscriptions`
+  - request: `plan_code`; creates a pending subscription change while old paid plan remains active
+- `PATCH /v1/users/subscriptions/{subscription_id}`
+  - request: `status` in (`pending`, `paying`, `paid`, `canceled`, `expired`)
+  - monthly plans start a 30-day window when status changes to `paid`
 
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
 and use the local SQLite metadata database by default (`DB_OPTION=local`, `DB_LOCAL`, default `./databases/api.sqlite3`, resolved from the repository root). You can switch to PostgreSQL with `DB_OPTION=postgres` + `DB_CLOUD=postgresql://...` (including via `docker compose`). Azure keeps the same PostgreSQL contract via `DB_OPTION=azure`.

@@ -168,6 +168,10 @@ class AppStrings {
       'saving': 'Ukladam...',
       'update_sign_in_profile': 'Upravit prihlasovaci profil',
       'profile_update_failed': 'Aktualizacia profilu zlyhala: {{error}}',
+      'subscription': 'Predplatne',
+      'subscription_change_requested': 'Zmena predplatneho bola odoslana (pending).',
+      'subscription_change_failed': 'Zmena predplatneho zlyhala: {{error}}',
+      'subscription_status': 'Stav: {{status}}',
       'update_available': 'Dostupna aktualizacia',
       'update_body':
           'Na GitHube je nova verzia.\n\nAktualna: {{current}}\nNajnovsia: {{latest}}',
@@ -280,6 +284,10 @@ class AppStrings {
       'saving': 'Saving...',
       'update_sign_in_profile': 'Update sign in profile',
       'profile_update_failed': 'Profile update failed: {{error}}',
+      'subscription': 'Subscription',
+      'subscription_change_requested': 'Subscription change requested (pending).',
+      'subscription_change_failed': 'Failed to change subscription: {{error}}',
+      'subscription_status': 'Status: {{status}}',
       'update_available': 'Update available',
       'update_body':
           'A newer version is available on GitHub.\n\nCurrent: {{current}}\nLatest: {{latest}}',
@@ -387,6 +395,10 @@ class AppStrings {
       'saving': 'Speichere...',
       'update_sign_in_profile': 'Anmeldeprofil aktualisieren',
       'profile_update_failed': 'Profilaktualisierung fehlgeschlagen: {{error}}',
+      'subscription': 'Abonnement',
+      'subscription_change_requested': 'Abo-Aenderung gesendet (pending).',
+      'subscription_change_failed': 'Abo-Aenderung fehlgeschlagen: {{error}}',
+      'subscription_status': 'Status: {{status}}',
       'update_available': 'Update verfuegbar',
       'update_body':
           'Auf GitHub ist eine neuere Version verfuegbar.\n\nAktuell: {{current}}\nNeueste: {{latest}}',
@@ -2189,8 +2201,20 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   late final TextEditingController _firstNameController;
   late final TextEditingController _lastNameController;
   bool _isSaving = false;
+  bool _isLoadingSubscriptions = false;
+  bool _isUpdatingSubscription = false;
+  List<SubscriptionPlanInfo> _plans = <SubscriptionPlanInfo>[];
+  List<UserSubscriptionInfo> _subscriptions = <UserSubscriptionInfo>[];
+  String? _selectedPlanCode;
 
   AppStrings get _strings => AppStrings(widget.languageCode);
+
+  UserSubscriptionInfo? get _latestSubscription {
+    if (_subscriptions.isEmpty) {
+      return null;
+    }
+    return _subscriptions.first;
+  }
 
   @override
   void initState() {
@@ -2201,6 +2225,80 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         TextEditingController(text: widget.user.firstName ?? '');
     _lastNameController =
         TextEditingController(text: widget.user.lastName ?? '');
+    _loadSubscriptions();
+  }
+
+  Future<void> _loadSubscriptions() async {
+    setState(() {
+      _isLoadingSubscriptions = true;
+    });
+    try {
+      final plans = await widget.authStore.listSubscriptionPlans();
+      final subscriptions = await widget.authStore
+          .listUserSubscriptions(userId: widget.user.userId);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _plans = plans;
+        _subscriptions = subscriptions;
+        _selectedPlanCode = subscriptions.isNotEmpty
+            ? subscriptions.first.planCode
+            : (plans.isNotEmpty ? plans.first.planCode : null);
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _plans = <SubscriptionPlanInfo>[];
+        _subscriptions = <UserSubscriptionInfo>[];
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingSubscriptions = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _requestSubscriptionChange() async {
+    final selectedPlanCode = _selectedPlanCode;
+    if (_isUpdatingSubscription || selectedPlanCode == null || selectedPlanCode.isEmpty) {
+      return;
+    }
+    setState(() {
+      _isUpdatingSubscription = true;
+    });
+    try {
+      await widget.authStore.requestSubscriptionChange(
+        userId: widget.user.userId,
+        planCode: selectedPlanCode,
+      );
+      await _loadSubscriptions();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_strings.t('subscription_change_requested'))),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_strings.t('subscription_change_failed', <String, String>{'error': '$error'})),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingSubscription = false;
+        });
+      }
+    }
   }
 
   @override
@@ -2291,6 +2389,41 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
               labelText: strings.t('last_name'),
             ),
           ),
+          const SizedBox(height: 20),
+          Text(
+            strings.t('subscription'),
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          if (_isLoadingSubscriptions)
+            const LinearProgressIndicator()
+          else ...[
+            DropdownButtonFormField<String>(
+              value: _selectedPlanCode,
+              items: _plans
+                  .map((plan) => DropdownMenuItem<String>(
+                        value: plan.planCode,
+                        child: Text('${plan.displayName} (€${plan.priceEur})'),
+                      ))
+                  .toList(growable: false),
+              onChanged: (value) {
+                setState(() {
+                  _selectedPlanCode = value;
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            Text(
+              strings.t('subscription_status', <String, String>{
+                'status': _latestSubscription?.status ?? 'unknown',
+              }),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _isUpdatingSubscription ? null : _requestSubscriptionChange,
+              child: Text(strings.t('subscription')),
+            ),
+          ],
           const SizedBox(height: 20),
           FilledButton(
             onPressed: _isSaving ? null : _save,
