@@ -1,0 +1,107 @@
+name: Database Schema Upgrade
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_environment:
+        description: "GitHub Environment that contains Azure variables"
+        required: true
+        default: "dev"
+      dry_run:
+        description: "Run migration discovery only"
+        required: true
+        default: "false"
+
+jobs:
+  upgrade_schema:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
+      AZURE_POSTGRES_DATABASE_NAME: ${{ vars.AZURE_POSTGRES_DATABASE_NAME }}
+      AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
+      AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required environment variables
+        shell: bash
+        run: |
+          missing=0
+          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_POSTGRES_SERVER_NAME AZURE_POSTGRES_DATABASE_NAME AZURE_POSTGRES_ADMIN_USERNAME AZURE_POSTGRES_ADMIN_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              echo "Missing GitHub Environment value: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Allow GitHub runner IP on PostgreSQL firewall
+        shell: bash
+        run: |
+          runner_ip="$(curl -fsSL https://api.ipify.org)"
+          echo "RUNNER_IP=$runner_ip" >> "$GITHUB_ENV"
+          az postgres flexible-server firewall-rule create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_POSTGRES_SERVER_NAME" \
+            --rule-name "github-runner-${GITHUB_RUN_ID}" \
+            --start-ip-address "$runner_ip" \
+            --end-ip-address "$runner_ip" \
+            --only-show-errors \
+            --output none
+
+      - name: Install migration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Upgrade Azure PostgreSQL schema
+        shell: bash
+        run: |
+          export DB_OPTION=azure
+          export DB_CLOUD="$(python - <<'PY'
+          import os
+          from urllib.parse import quote
+          user = quote(os.environ["AZURE_POSTGRES_ADMIN_USERNAME"], safe="")
+          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
+          server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
+          database = os.environ["AZURE_POSTGRES_DATABASE_NAME"]
+          print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
+          PY
+          )"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python databases/scripts/apply_api_db_schema.py --dry-run
+          else
+            python databases/scripts/apply_api_db_schema.py
+          fi
+
+      - name: Remove GitHub runner firewall rule
+        if: always()
+        shell: bash
+        run: |
+          az postgres flexible-server firewall-rule delete \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_POSTGRES_SERVER_NAME" \
+            --rule-name "github-runner-${GITHUB_RUN_ID}" \
+            --yes \
+            --only-show-errors \
+            --output none || true

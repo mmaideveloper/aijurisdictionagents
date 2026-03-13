@@ -122,6 +122,13 @@ The script will:
 3. Update the Container App to the new image and database env vars
 4. Apply API schema migrations to Azure PostgreSQL
 
+The Bicep deployment provisions or reuses:
+
+- Azure Database for PostgreSQL Flexible Server (`AZURE_POSTGRES_SERVER_NAME`, default `db-juris-dev`)
+- PostgreSQL database (`AZURE_POSTGRES_DATABASE_NAME`, default `aijurisdiction`)
+- firewall rule for Azure services
+- `azure.extensions=vector`
+
 Existing-resource behavior:
 
 - If a named resource already exists in the target resource group, deployment reuses it instead of creating it again.
@@ -219,6 +226,22 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 
 - Workflow: `API Build and Deploy`
 - Inputs: `deploy=true`, `github_environment=<environment>`
+
+## GitHub workflow for database schema upgrades only
+
+If the Azure PostgreSQL server already exists and you only need to apply schema changes, run:
+
+- Workflow: `Database Schema Upgrade`
+- Inputs:
+  - `github_environment=<environment>`
+  - `dry_run=true|false`
+
+This workflow:
+
+1. Logs into Azure with OIDC
+2. Opens a temporary firewall rule for the GitHub runner IP
+3. Runs `python databases/scripts/apply_api_db_schema.py` against the existing Azure PostgreSQL server
+4. Removes the temporary firewall rule
 
 ## Files
 

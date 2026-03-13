@@ -11,8 +11,9 @@ description: Start and verify the local `aijuristiction-api` service in this mon
    `.\skills\start-api\scripts\start_api.ps1`
 2. Keep default provider (`azurefoundry`) unless deterministic offline testing is needed.
 3. Choose database mode (`local`, `postgres`, `azure`) and storage mode (`local`, `azure`) when the API should not use the default local SQLite + local storage setup.
-4. Verify `GET /health` is reachable at `http://127.0.0.1:8080/health`.
-5. Run the minimal example:
+4. When `DatabaseOption=postgres`, the launcher reuses or starts the local Docker PostgreSQL instance through `start-postgress` and upgrades the database schema before starting the API.
+5. Verify `GET /health` is reachable at `http://127.0.0.1:8080/health`.
+6. Run the minimal example:
    `python examples/minimal_demo.py`
 
 ## Commands
@@ -47,5 +48,6 @@ If started with `-Background`, stop via:
 - For Azure Foundry requests, set:
   `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, and either `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`.
 - For `DatabaseOption=postgres|azure`, set `DB_CLOUD` or pass `-DbCloud`.
+- For `DatabaseOption=postgres`, the launcher prefers the local Docker PostgreSQL skill and resolves `DB_CLOUD` from that running instance automatically.
 - For `StorageOption=azure`, set `STORE_CLOUD` or pass `-StoreCloud`.
 - Use `-LlmProvider mock` for local smoke checks without cloud credentials.

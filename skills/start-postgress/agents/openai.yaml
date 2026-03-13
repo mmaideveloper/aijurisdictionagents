@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start Postgress"
+  short_description: "Start or reuse the local PostgreSQL Docker instance and apply schema updates"
+  default_prompt: "Start the local aijurisdictionagents PostgreSQL Docker instance, verify it is healthy, and apply schema updates."

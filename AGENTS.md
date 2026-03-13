@@ -45,6 +45,9 @@ Custom project skills:
 - `start-api` at `skills/start-api/SKILL.md`
   - Purpose: start and health-check local `aijuristiction-api`.
   - Script: `.\skills\start-api\scripts\start_api.ps1`
+- `start-postgress` at `skills/start-postgress/SKILL.md`
+  - Purpose: start or reuse the local PostgreSQL Docker instance and apply schema updates.
+  - Script: `.\skills\start-postgress\scripts\start_postgress.ps1`
 - `start-mobile` at `skills/start-mobile/SKILL.md`
   - Purpose: start and verify the local Flutter mobile app using the same skill name available on this machine.
   - Script: `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`

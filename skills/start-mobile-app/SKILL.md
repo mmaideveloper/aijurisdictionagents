@@ -12,7 +12,8 @@ description: Start and verify the local Flutter mobile app in this monorepo. Use
 3. Run the bundled launcher from repository root:
    `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`
 4. If `localApi` is selected and the API is not already up, start the local API in a visible console window so live logs stay on screen.
-5. Verify the Flutter web target responds at `http://127.0.0.1:7357`.
+5. When local API mode uses `DatabaseOption=postgres`, the API startup path reuses or starts the local Docker PostgreSQL instance and upgrades schema automatically.
+6. Verify the Flutter web target responds at `http://127.0.0.1:7357`.
 
 ## Commands
 
@@ -56,5 +57,6 @@ If started with `-Background`, stop via:
 - If `StorageOption` is `azure`, the launcher requires `STORE_CLOUD` or `-StoreCloud`.
 - For `publicDevApi`, the launcher uses `-PublicDevApiBaseUrl`, `PUBLIC_DEV_API_BASE_URL`, or `AIJ_PUBLIC_DEV_API_URL`. If none are set, it prompts for the URL.
 - The local API path uses `start-api -ConsoleWindow`, so request logs stay visible in the API console window.
+- The local API path inherits PostgreSQL schema upgrades from `start-api` when `DatabaseOption=postgres`.
 - Default API key is `aijuris`.
 - The launcher prefers Flutter from `%USERPROFILE%\develop\flutter\bin\flutter.bat`, then falls back to `flutter` on `PATH`.

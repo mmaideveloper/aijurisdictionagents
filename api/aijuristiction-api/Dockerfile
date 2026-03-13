@@ -3,17 +3,23 @@ FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-WORKDIR /app
+WORKDIR /workspace
 
 RUN addgroup --system app && adduser --system --ingroup app app
 
 COPY pyproject.toml README.md ./
-COPY app ./app
+COPY src ./src
+COPY scripts ./scripts
+COPY databases ./databases
+COPY api/aijuristiction-api ./api/aijuristiction-api
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir -e . && \
+    pip install --no-cache-dir -e ./api/aijuristiction-api
 
 USER app
+
+WORKDIR /workspace/api/aijuristiction-api
 
 EXPOSE 8080
 

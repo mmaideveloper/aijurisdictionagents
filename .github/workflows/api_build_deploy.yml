@@ -24,9 +24,6 @@ on:
 jobs:
   test_and_build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: api/aijuristiction-api
     steps:
       - uses: actions/checkout@v4
 
@@ -35,21 +32,25 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
+        working-directory: api/aijuristiction-api
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
       - name: Lint
+        working-directory: api/aijuristiction-api
         run: ruff check app tests
 
       - name: Type check
+        working-directory: api/aijuristiction-api
         run: mypy app
 
       - name: Unit tests
+        working-directory: api/aijuristiction-api
         run: pytest
 
       - name: Build Docker image
-        run: docker build -t aijuristiction-api:${{ github.sha }} .
+        run: docker build -f api/aijuristiction-api/Dockerfile -t aijuristiction-api:${{ github.sha }} .
 
   deploy_to_azure:
     runs-on: ubuntu-latest
@@ -122,7 +123,7 @@ jobs:
       - name: Build and push image to ACR
         run: |
           az acr login --name ${{ steps.acr.outputs.acr_name }}
-          docker build -t ${{ steps.acr.outputs.acr_login_server }}/aijuristiction-api:${{ github.sha }} api/aijuristiction-api
+          docker build -f api/aijuristiction-api/Dockerfile -t ${{ steps.acr.outputs.acr_login_server }}/aijuristiction-api:${{ github.sha }} .
           docker push ${{ steps.acr.outputs.acr_login_server }}/aijuristiction-api:${{ github.sha }}
 
       - name: Deploy to Azure Container Apps
@@ -201,7 +202,7 @@ jobs:
           print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
           PY
           )"
-          python scripts/apply_api_db_schema.py
+          python databases/scripts/apply_api_db_schema.py
 
       - name: Remove GitHub runner firewall rule
         if: always()

@@ -60,6 +60,28 @@ cd api/aijuristiction-api
 docker compose up --build
 ```
 
+This local Docker stack now runs:
+
+- PostgreSQL 16 with `pgvector`
+- API container built from the repository root so it includes `src/aijurisdictionagents`, migrations, and scripts
+
+Useful overrides:
+
+```bash
+API_PORT=8081 LLM_PROVIDER=mock docker compose up --build
+```
+
+The compose file stores database files under the shared repository `databases/` folder and points the API at:
+
+- `DB_OPTION=postgres`
+- `DB_CLOUD=postgresql://postgres:postgres@postgres:5432/aijurisdiction`
+- `STORAGE_OPTION=local`
+
+Do not run this stack at the same time as `cd databases && docker compose up -d` because both use the same PostgreSQL data directory.
+That shared database directory is now `databases/postgress/data`.
+
+If you want only the database container, use the dedicated project in `databases/README.md`.
+
 ## Endpoints scaffolded
 
 - `GET /health`
@@ -195,10 +217,10 @@ The API now applies SQL migrations during app startup for PostgreSQL/Azure, then
 For pre-deploy validation, run from repository root:
 
 ```bash
-PYTHONPATH=src python scripts/apply_db_migrations.py --project api --dry-run
-PYTHONPATH=src python scripts/apply_api_db_schema.py --dry-run
-PYTHONPATH=src python scripts/apply_db_migrations.py --project api
-PYTHONPATH=src python scripts/apply_api_db_schema.py
+PYTHONPATH=src python databases/scripts/apply_db_migrations.py --project api --dry-run
+PYTHONPATH=src python databases/scripts/apply_api_db_schema.py --dry-run
+PYTHONPATH=src python databases/scripts/apply_db_migrations.py --project api
+PYTHONPATH=src python databases/scripts/apply_api_db_schema.py
 ```
 
 Local PostgreSQL example:
@@ -207,7 +229,7 @@ Local PostgreSQL example:
 cd databases
 docker compose up -d
 cd ..
-DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python scripts/apply_api_db_schema.py
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python databases/scripts/apply_api_db_schema.py
 ```
 
 Cloud rollout:
@@ -215,6 +237,12 @@ Cloud rollout:
 2. Provision or update Azure PostgreSQL Flexible Server (`db-juris-dev` by default) through infra deployment.
 3. Confirm Container App env vars: `DB_OPTION=azure`, `DB_CLOUD`, `STORAGE_OPTION`, `STORE_CLOUD`.
 4. Roll out a new revision (or restart) and verify startup logs include selected `db_option`.
+
+GitHub workflows:
+
+- `.github/workflows/infra_deploy.yml`: provisions or updates Azure infrastructure, including PostgreSQL Flexible Server
+- `.github/workflows/api_build_deploy.yml`: builds and deploys the API image, then applies schema updates to Azure PostgreSQL
+- `.github/workflows/database_schema_upgrade.yml`: upgrades schema on an existing Azure PostgreSQL server without rebuilding or redeploying the API
 
 ## Build + deployment workflow
 

@@ -97,6 +97,89 @@ function Resolve-RequiredSetting {
     }
 }
 
+function Get-LocalPostgresSettingsFromConnectionString {
+    param([string]$ConnectionString)
+
+    if (-not $ConnectionString) {
+        return $null
+    }
+
+    try {
+        $uri = [System.Uri]$ConnectionString
+    }
+    catch {
+        return $null
+    }
+
+    if ($uri.Scheme -ne "postgresql") {
+        return $null
+    }
+    if ($uri.Host -notin @("127.0.0.1", "localhost")) {
+        return $null
+    }
+
+    $userInfo = [System.Uri]::UnescapeDataString($uri.UserInfo)
+    $user = "postgres"
+    $password = "postgres"
+    if ($userInfo) {
+        $parts = $userInfo.Split(":", 2)
+        if ($parts[0]) {
+            $user = $parts[0]
+        }
+        if ($parts.Count -gt 1 -and $parts[1]) {
+            $password = $parts[1]
+        }
+    }
+
+    $databaseName = $uri.AbsolutePath.Trim("/")
+    if (-not $databaseName) {
+        $databaseName = "aijurisdiction"
+    }
+
+    return @{
+        DatabaseName = $databaseName
+        DatabaseUser = $user
+        DatabasePassword = $password
+        DatabasePort = $(if ($uri.Port -gt 0) { $uri.Port } else { 5432 })
+    }
+}
+
+function Ensure-LocalPostgresReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [string]$ExistingDbCloud
+    )
+
+    $skillScript = Join-Path $RepoRoot "skills\start-postgress\scripts\start_postgress.ps1"
+    if (-not (Test-Path $skillScript)) {
+        throw "PostgreSQL start skill not found: $skillScript"
+    }
+
+    $postgresArgs = @()
+    $parsed = Get-LocalPostgresSettingsFromConnectionString -ConnectionString $ExistingDbCloud
+    if ($parsed) {
+        $postgresArgs += @(
+            "-DatabaseName", $parsed.DatabaseName,
+            "-DatabaseUser", $parsed.DatabaseUser,
+            "-DatabasePassword", $parsed.DatabasePassword,
+            "-DatabasePort", "$($parsed.DatabasePort)"
+        )
+    }
+
+    $output = & $skillScript @postgresArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Local PostgreSQL startup failed."
+    }
+
+    $connectionLine = $output | Where-Object { $_ -like "Connection string:*" } | Select-Object -Last 1
+    if (-not $connectionLine) {
+        throw "Local PostgreSQL startup did not return a connection string."
+    }
+
+    return $connectionLine.Substring("Connection string:".Length).Trim()
+}
+
 $skillScriptsDir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $skillScriptsDir "..\\..\\..")
 $apiDir = Join-Path $repoRoot "api\\aijuristiction-api"
@@ -135,7 +218,10 @@ if ($DbLocal) {
 if ($StoreLocal) {
     $env:STORE_LOCAL = $StoreLocal
 }
-if (($env:DB_OPTION -in @("postgres", "azure")) -and -not $DbCloud) {
+if ($env:DB_OPTION -eq "postgres") {
+    $DbCloud = Ensure-LocalPostgresReady -RepoRoot $repoRoot -ExistingDbCloud $DbCloud
+}
+elseif (($env:DB_OPTION -eq "azure") -and -not $DbCloud) {
     $DbCloud = Resolve-RequiredSetting -Value $DbCloud -EnvironmentVariable "DB_CLOUD" -Prompt "Enter DB_CLOUD connection string"
 }
 if ($DbCloud) {
