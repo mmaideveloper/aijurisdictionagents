@@ -99,7 +99,13 @@ same `x-api-key` guard as the chat endpoints.
   - request: `phone_number`, optional `password`, optional `first_name`, optional `last_name`
 
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
-and use the local SQLite metadata database by default (`DB_OPTION=local`, `DB_LOCAL`, default `./databases/api.sqlite3`, resolved from the repository root). You can switch to PostgreSQL with `DB_OPTION=postgres` + `DB_CLOUD=postgresql://...` (including via `docker compose`). Azure keeps the same PostgreSQL contract via `DB_OPTION=azure`.
+and support three database modes:
+
+- `DB_OPTION=local`: local SQLite metadata (`DB_LOCAL`, default `./databases/api.sqlite3`)
+- `DB_OPTION=postgres`: local PostgreSQL for Docker-based development (`DB_CLOUD=postgresql://...`)
+- `DB_OPTION=azure`: Azure Database for PostgreSQL Flexible Server (`DB_CLOUD=postgresql://...sslmode=require`)
+
+The dedicated local PostgreSQL project now lives under `databases/README.md`.
 
 ## Case history + documents
 
@@ -175,28 +181,31 @@ For Slovak simulated discussions, the AI user now ends the conversation with `To
 
 ## Database schema updates (local + cloud)
 
-The API now applies schema bootstrap/migrations during app startup (`ApiDatabaseStore.initialize()`), so every new deployment revision updates schema before serving traffic.
+The API now applies SQL migrations during app startup for PostgreSQL/Azure, then runs the in-code bootstrap/compatibility checks. SQLite remains code-driven.
 
 For pre-deploy validation, run from repository root:
 
 ```bash
+PYTHONPATH=src python scripts/apply_db_migrations.py --project api --dry-run
 PYTHONPATH=src python scripts/apply_api_db_schema.py --dry-run
+PYTHONPATH=src python scripts/apply_db_migrations.py --project api
 PYTHONPATH=src python scripts/apply_api_db_schema.py
 ```
 
 Local PostgreSQL example:
 
 ```bash
-cd api/aijuristiction-api
+cd databases
 docker compose up -d
-cd ../..
+cd ..
 DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python scripts/apply_api_db_schema.py
 ```
 
 Cloud rollout:
 1. Build/push/deploy API image.
-2. Confirm Container App env vars: `DB_OPTION=azure`, `DB_CLOUD`, `STORAGE_OPTION`, `STORE_CLOUD`.
-3. Roll out a new revision (or restart) and verify startup logs include selected `db_option`.
+2. Provision or update Azure PostgreSQL Flexible Server (`db-juris-dev` by default) through infra deployment.
+3. Confirm Container App env vars: `DB_OPTION=azure`, `DB_CLOUD`, `STORAGE_OPTION`, `STORE_CLOUD`.
+4. Roll out a new revision (or restart) and verify startup logs include selected `db_option`.
 
 ## Build + deployment workflow
 

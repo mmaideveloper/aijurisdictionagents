@@ -33,5 +33,7 @@ api/aijuristiction-api/data/
 databases/**/*.db
 databases/**/*.sqlite
 databases/**/*.sqlite3
+databases/postgres/data/**
+!databases/postgres/data/.gitkeep
 .codex/runlogs/**
 api/aijuristiction-api/storage/**

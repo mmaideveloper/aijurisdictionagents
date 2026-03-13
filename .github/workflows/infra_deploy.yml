@@ -38,6 +38,14 @@ jobs:
       AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
       AZURE_CONTAINER_APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
       AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
+      AZURE_POSTGRES_DATABASE_NAME: ${{ vars.AZURE_POSTGRES_DATABASE_NAME }}
+      AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
+      AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
+      AZURE_POSTGRES_SKU_NAME: ${{ vars.AZURE_POSTGRES_SKU_NAME }}
+      AZURE_POSTGRES_SKU_TIER: ${{ vars.AZURE_POSTGRES_SKU_TIER }}
+      AZURE_POSTGRES_VERSION: ${{ vars.AZURE_POSTGRES_VERSION }}
+      AZURE_POSTGRES_STORAGE_SIZE_GB: ${{ vars.AZURE_POSTGRES_STORAGE_SIZE_GB }}
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
       AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
@@ -48,7 +56,7 @@ jobs:
       - name: Validate required environment variables
         run: |
           missing=0
-          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_LOCATION AZURE_CONTAINERAPPS_ENVIRONMENT AZURE_CONTAINER_APP_NAME AZURE_CONTAINER_REGISTRY AZURE_LOG_ANALYTICS_WORKSPACE_NAME AZURE_MANAGED_IDENTITY_NAME; do
+          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_LOCATION AZURE_CONTAINERAPPS_ENVIRONMENT AZURE_CONTAINER_APP_NAME AZURE_CONTAINER_REGISTRY AZURE_LOG_ANALYTICS_WORKSPACE_NAME AZURE_MANAGED_IDENTITY_NAME AZURE_POSTGRES_SERVER_NAME AZURE_POSTGRES_DATABASE_NAME AZURE_POSTGRES_ADMIN_USERNAME AZURE_POSTGRES_ADMIN_PASSWORD; do
             if [ -z "${!key}" ]; then
               echo "Missing GitHub Environment variable: $key"
               missing=1
@@ -133,6 +141,7 @@ jobs:
           acr_location="$(get_location "${{ steps.acr.outputs.acr_name }}" "Microsoft.ContainerRegistry/registries")"
           storage_location="$(get_location "${{ steps.storage.outputs.storage_account_name }}" "Microsoft.Storage/storageAccounts")"
           identity_location="$(get_location "$AZURE_MANAGED_IDENTITY_NAME" "Microsoft.ManagedIdentity/userAssignedIdentities")"
+          postgres_location="$(get_location "$AZURE_POSTGRES_SERVER_NAME" "Microsoft.DBforPostgreSQL/flexibleServers")"
           app_location="$(get_location "$AZURE_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
 
           create_log_analytics_workspace=true
@@ -140,6 +149,7 @@ jobs:
           create_acr=true
           create_storage_account=true
           create_managed_identity=true
+          create_postgres_server=true
           create_container_app=true
 
           [ -n "$log_location" ] && create_log_analytics_workspace=false
@@ -147,11 +157,12 @@ jobs:
           [ -n "$acr_location" ] && create_acr=false
           [ -n "$storage_location" ] && create_storage_account=false
           [ -n "$identity_location" ] && create_managed_identity=false
+          [ -n "$postgres_location" ] && create_postgres_server=false
           [ -n "$app_location" ] && create_container_app=false
 
           resolved_location="$AZURE_LOCATION"
           first_existing_location=""
-          for current in "$log_location" "$env_location" "$acr_location" "$storage_location" "$identity_location" "$app_location"; do
+          for current in "$log_location" "$env_location" "$acr_location" "$storage_location" "$identity_location" "$postgres_location" "$app_location"; do
             if [ -z "$current" ]; then
               continue
             fi
@@ -175,6 +186,7 @@ jobs:
           echo "create_acr=$create_acr" >> "$GITHUB_OUTPUT"
           echo "create_storage_account=$create_storage_account" >> "$GITHUB_OUTPUT"
           echo "create_managed_identity=$create_managed_identity" >> "$GITHUB_OUTPUT"
+          echo "create_postgres_server=$create_postgres_server" >> "$GITHUB_OUTPUT"
           echo "create_container_app=$create_container_app" >> "$GITHUB_OUTPUT"
 
       - name: Deploy infrastructure from Bicep
@@ -187,6 +199,14 @@ jobs:
               location="${{ steps.existing.outputs.resolved_location }}" \
               environmentName="$AZURE_CONTAINERAPPS_ENVIRONMENT" \
               containerAppName="$AZURE_CONTAINER_APP_NAME" \
+              postgresServerName="$AZURE_POSTGRES_SERVER_NAME" \
+              postgresDatabaseName="$AZURE_POSTGRES_DATABASE_NAME" \
+              postgresAdminUsername="$AZURE_POSTGRES_ADMIN_USERNAME" \
+              postgresAdminPassword="$AZURE_POSTGRES_ADMIN_PASSWORD" \
+              postgresSkuName="${AZURE_POSTGRES_SKU_NAME:-Standard_B1ms}" \
+              postgresSkuTier="${AZURE_POSTGRES_SKU_TIER:-Burstable}" \
+              postgresVersion="${AZURE_POSTGRES_VERSION:-16}" \
+              postgresStorageSizeGb="${AZURE_POSTGRES_STORAGE_SIZE_GB:-32}" \
               acrName="${{ steps.acr.outputs.acr_name }}" \
               storageAccountName="${{ steps.storage.outputs.storage_account_name }}" \
               storageContainerName="${{ steps.storage.outputs.storage_container_name }}" \
@@ -197,4 +217,5 @@ jobs:
               createAcr="${{ steps.existing.outputs.create_acr }}" \
               createStorageAccount="${{ steps.existing.outputs.create_storage_account }}" \
               createManagedIdentity="${{ steps.existing.outputs.create_managed_identity }}" \
+              createPostgresServer="${{ steps.existing.outputs.create_postgres_server }}" \
               createContainerApp="${{ steps.existing.outputs.create_container_app }}"

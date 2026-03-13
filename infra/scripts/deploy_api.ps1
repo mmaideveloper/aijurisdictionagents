@@ -5,6 +5,14 @@ param(
     [string]$ResourceGroupName,
     [string]$EnvironmentName,
     [string]$ContainerAppName,
+    [string]$PostgresServerName,
+    [string]$PostgresDatabaseName,
+    [string]$PostgresAdminUsername,
+    [string]$PostgresAdminPassword,
+    [string]$PostgresSkuName,
+    [string]$PostgresSkuTier,
+    [string]$PostgresVersion,
+    [string]$PostgresStorageSizeGb,
     [string]$AcrName,
     [string]$StorageAccountName,
     [string]$StorageContainerName,
@@ -243,6 +251,47 @@ function Require-Value {
     }
 }
 
+function Restore-EnvVar {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [string]$PreviousValue
+    )
+
+    if ($null -eq $PreviousValue) {
+        Remove-Item -Path "Env:$Name" -ErrorAction SilentlyContinue
+        return
+    }
+
+    Set-Item -Path "Env:$Name" -Value $PreviousValue
+}
+
+function Get-PublicIpAddress {
+    try {
+        return [string](Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 10)
+    }
+    catch {
+        return ""
+    }
+}
+
+function Convert-ToPostgresConnectionString {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServerName,
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+        [Parameter(Mandatory = $true)]
+        [string]$AdminUsername,
+        [Parameter(Mandatory = $true)]
+        [string]$AdminPassword
+    )
+
+    $encodedUser = [System.Uri]::EscapeDataString($AdminUsername)
+    $encodedPassword = [System.Uri]::EscapeDataString($AdminPassword)
+    return "postgresql://${encodedUser}:${encodedPassword}@${ServerName}.postgres.database.azure.com:5432/${DatabaseName}?sslmode=require"
+}
+
 function Get-ResourceLocationInGroup {
     param(
         [Parameter(Mandatory = $true)]
@@ -338,7 +387,11 @@ function Convert-EnvFileToPairs {
         "AZURE_OPENAI_API_KEY",
         "AZURE_OPENAI_AD_TOKEN",
         "AZURE_OPENAI_API_VERSION",
-        "OPENAI_API_VERSION"
+        "OPENAI_API_VERSION",
+        "DB_OPTION",
+        "DB_CLOUD",
+        "STORAGE_OPTION",
+        "STORE_CLOUD"
     )
 
     $pairs = New-Object System.Collections.Generic.List[string]
@@ -480,6 +533,14 @@ $locationFromEnvFile = ""
 $resourceGroupFromEnvFile = ""
 $environmentNameFromEnvFile = ""
 $containerAppNameFromEnvFile = ""
+$postgresServerNameFromEnvFile = ""
+$postgresDatabaseNameFromEnvFile = ""
+$postgresAdminUsernameFromEnvFile = ""
+$postgresAdminPasswordFromEnvFile = ""
+$postgresSkuNameFromEnvFile = ""
+$postgresSkuTierFromEnvFile = ""
+$postgresVersionFromEnvFile = ""
+$postgresStorageSizeGbFromEnvFile = ""
 $acrNameFromEnvFile = ""
 $storageAccountNameFromEnvFile = ""
 $storageContainerNameFromEnvFile = ""
@@ -494,6 +555,14 @@ if (-not $SkipEnvFile -and (Test-Path -Path $resolvedEnvFilePath)) {
     $resourceGroupFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_RESOURCE_GROUP"
     $environmentNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_CONTAINERAPPS_ENVIRONMENT"
     $containerAppNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_CONTAINER_APP_NAME"
+    $postgresServerNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_SERVER_NAME"
+    $postgresDatabaseNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_DATABASE_NAME"
+    $postgresAdminUsernameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_ADMIN_USERNAME"
+    $postgresAdminPasswordFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_ADMIN_PASSWORD"
+    $postgresSkuNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_SKU_NAME"
+    $postgresSkuTierFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_SKU_TIER"
+    $postgresVersionFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_VERSION"
+    $postgresStorageSizeGbFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_STORAGE_SIZE_GB"
     $acrNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_CONTAINER_REGISTRY"
     $storageAccountNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_STORAGE_ACCOUNT_NAME"
     $storageContainerNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_STORAGE_CONTAINER_NAME"
@@ -508,6 +577,14 @@ $Location = Resolve-InputValue -ExplicitValue $Location -EnvFileValue $locationF
 $ResourceGroupName = Resolve-InputValue -ExplicitValue $ResourceGroupName -EnvFileValue $resourceGroupFromEnvFile -EnvironmentValue $env:AZURE_RESOURCE_GROUP
 $EnvironmentName = Resolve-InputValue -ExplicitValue $EnvironmentName -EnvFileValue $environmentNameFromEnvFile -EnvironmentValue $env:AZURE_CONTAINERAPPS_ENVIRONMENT
 $ContainerAppName = Resolve-InputValue -ExplicitValue $ContainerAppName -EnvFileValue $containerAppNameFromEnvFile -EnvironmentValue $env:AZURE_CONTAINER_APP_NAME
+$PostgresServerName = Resolve-InputValue -ExplicitValue $PostgresServerName -EnvFileValue $postgresServerNameFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_SERVER_NAME
+$PostgresDatabaseName = Resolve-InputValue -ExplicitValue $PostgresDatabaseName -EnvFileValue $postgresDatabaseNameFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_DATABASE_NAME
+$PostgresAdminUsername = Resolve-InputValue -ExplicitValue $PostgresAdminUsername -EnvFileValue $postgresAdminUsernameFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_USERNAME
+$PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPassword -EnvFileValue $postgresAdminPasswordFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_PASSWORD
+$PostgresSkuName = Resolve-InputValue -ExplicitValue $PostgresSkuName -EnvFileValue $postgresSkuNameFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_SKU_NAME
+$PostgresSkuTier = Resolve-InputValue -ExplicitValue $PostgresSkuTier -EnvFileValue $postgresSkuTierFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_SKU_TIER
+$PostgresVersion = Resolve-InputValue -ExplicitValue $PostgresVersion -EnvFileValue $postgresVersionFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_VERSION
+$PostgresStorageSizeGb = Resolve-InputValue -ExplicitValue $PostgresStorageSizeGb -EnvFileValue $postgresStorageSizeGbFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_STORAGE_SIZE_GB
 $AcrName = Resolve-InputValue -ExplicitValue $AcrName -EnvFileValue $acrNameFromEnvFile -EnvironmentValue $env:AZURE_CONTAINER_REGISTRY
 $StorageAccountName = Resolve-InputValue -ExplicitValue $StorageAccountName -EnvFileValue $storageAccountNameFromEnvFile -EnvironmentValue $env:AZURE_STORAGE_ACCOUNT_NAME
 $StorageContainerName = Resolve-InputValue -ExplicitValue $StorageContainerName -EnvFileValue $storageContainerNameFromEnvFile -EnvironmentValue $env:AZURE_STORAGE_CONTAINER_NAME
@@ -528,6 +605,27 @@ if ([string]::IsNullOrWhiteSpace($EnvironmentName)) {
 if ([string]::IsNullOrWhiteSpace($ContainerAppName)) {
     $ContainerAppName = "ca-aijuristiction-api-dev"
 }
+if ([string]::IsNullOrWhiteSpace($PostgresServerName)) {
+    $PostgresServerName = "db-juris-dev"
+}
+if ([string]::IsNullOrWhiteSpace($PostgresDatabaseName)) {
+    $PostgresDatabaseName = "aijurisdiction"
+}
+if ([string]::IsNullOrWhiteSpace($PostgresAdminUsername)) {
+    $PostgresAdminUsername = "jurisadmin"
+}
+if ([string]::IsNullOrWhiteSpace($PostgresSkuName)) {
+    $PostgresSkuName = "Standard_B1ms"
+}
+if ([string]::IsNullOrWhiteSpace($PostgresSkuTier)) {
+    $PostgresSkuTier = "Burstable"
+}
+if ([string]::IsNullOrWhiteSpace($PostgresVersion)) {
+    $PostgresVersion = "16"
+}
+if ([string]::IsNullOrWhiteSpace($PostgresStorageSizeGb)) {
+    $PostgresStorageSizeGb = "32"
+}
 if ([string]::IsNullOrWhiteSpace($LogAnalyticsWorkspaceName)) {
     $LogAnalyticsWorkspaceName = "log-aijurisdiction-dev"
 }
@@ -542,6 +640,7 @@ $ImageRepository = [string]$imageSpec.Repository
 $ImageTag = [string]$imageSpec.Tag
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId
+Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
 
 if ([string]::IsNullOrWhiteSpace($AcrName)) {
     $AcrName = Get-DefaultAcrName -Seed $ResourceGroupName
@@ -567,6 +666,8 @@ if ($StorageAccountName -ne $originalStorageAccountName) {
 $StorageContainerName = Normalize-StorageContainerName -InputName $StorageContainerName
 
 Write-Host "Using ACR name: $AcrName"
+Write-Host "Using PostgreSQL server: $PostgresServerName"
+Write-Host "Using PostgreSQL database: $PostgresDatabaseName"
 Write-Host "Using storage account: $StorageAccountName"
 Write-Host "Using storage container: $StorageContainerName"
 Write-Host "Using image: ${ImageRepository}:${ImageTag}"
@@ -615,6 +716,10 @@ $managedIdentityLocation = Get-ResourceLocationInGroup `
     -ResourceGroupName $ResourceGroupName `
     -ResourceName $ManagedIdentityName `
     -ResourceType "Microsoft.ManagedIdentity/userAssignedIdentities"
+$postgresServerLocation = Get-ResourceLocationInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $PostgresServerName `
+    -ResourceType "Microsoft.DBforPostgreSQL/flexibleServers"
 $containerAppLocation = Get-ResourceLocationInGroup `
     -ResourceGroupName $ResourceGroupName `
     -ResourceName $ContainerAppName `
@@ -625,6 +730,7 @@ $createManagedEnvironment = [string]::IsNullOrWhiteSpace($managedEnvironmentLoca
 $createAcr = [string]::IsNullOrWhiteSpace($acrLocation)
 $createStorageAccount = [string]::IsNullOrWhiteSpace($storageAccountLocation)
 $createManagedIdentity = [string]::IsNullOrWhiteSpace($managedIdentityLocation)
+$createPostgresServer = [string]::IsNullOrWhiteSpace($postgresServerLocation)
 $createContainerApp = [string]::IsNullOrWhiteSpace($containerAppLocation)
 
 $existingLocations = @(
@@ -633,6 +739,7 @@ $existingLocations = @(
     $acrLocation,
     $storageAccountLocation,
     $managedIdentityLocation,
+    $postgresServerLocation,
     $containerAppLocation
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique
 
@@ -652,7 +759,13 @@ Write-Host " - Container Apps Environment: $createManagedEnvironment"
 Write-Host " - Container Registry: $createAcr"
 Write-Host " - Storage Account: $createStorageAccount"
 Write-Host " - Managed Identity: $createManagedIdentity"
+Write-Host " - PostgreSQL Flexible Server: $createPostgresServer"
 Write-Host " - Container App: $createContainerApp"
+
+$currentClientIp = Get-PublicIpAddress
+if (-not [string]::IsNullOrWhiteSpace($currentClientIp)) {
+    Write-Host "Detected current public IP for PostgreSQL firewall rule: $currentClientIp"
+}
 
 Write-Host "Deploying Azure infrastructure with Bicep..."
 $outputsRaw = az deployment group create `
@@ -663,6 +776,15 @@ $outputsRaw = az deployment group create `
       location=$Location `
       environmentName=$EnvironmentName `
       containerAppName=$ContainerAppName `
+      postgresServerName=$PostgresServerName `
+      postgresDatabaseName=$PostgresDatabaseName `
+      postgresAdminUsername=$PostgresAdminUsername `
+      postgresAdminPassword=$PostgresAdminPassword `
+      postgresSkuName=$PostgresSkuName `
+      postgresSkuTier=$PostgresSkuTier `
+      postgresVersion=$PostgresVersion `
+      postgresStorageSizeGb=$PostgresStorageSizeGb `
+      postgresClientIp=$currentClientIp `
       acrName=$AcrName `
       storageAccountName=$StorageAccountName `
       storageContainerName=$StorageContainerName `
@@ -673,6 +795,7 @@ $outputsRaw = az deployment group create `
       createAcr=$($createAcr.ToString().ToLower()) `
       createStorageAccount=$($createStorageAccount.ToString().ToLower()) `
       createManagedIdentity=$($createManagedIdentity.ToString().ToLower()) `
+      createPostgresServer=$($createPostgresServer.ToString().ToLower()) `
       createContainerApp=$($createContainerApp.ToString().ToLower()) `
     --query properties.outputs `
     --output json 2>&1
@@ -734,6 +857,29 @@ $storageBlobEndpointOutput = if ($outputs.PSObject.Properties.Name -contains "st
 else {
     ""
 }
+$postgresHostOutput = if ($outputs.PSObject.Properties.Name -contains "postgresHost") {
+    [string]$outputs.postgresHost.value
+}
+else {
+    "${PostgresServerName}.postgres.database.azure.com"
+}
+$postgresDatabaseNameOutput = if ($outputs.PSObject.Properties.Name -contains "postgresDatabaseName") {
+    [string]$outputs.postgresDatabaseName.value
+}
+else {
+    $PostgresDatabaseName
+}
+$dbCloud = Convert-ToPostgresConnectionString `
+    -ServerName $PostgresServerName `
+    -DatabaseName $postgresDatabaseNameOutput `
+    -AdminUsername $PostgresAdminUsername `
+    -AdminPassword $PostgresAdminPassword
+$storeCloud = if (-not [string]::IsNullOrWhiteSpace($storageBlobEndpointOutput)) {
+    $storageBlobEndpointOutput.TrimEnd("/") + "/$storageContainerNameOutput"
+}
+else {
+    ""
+}
 
 Write-Host "Building image in ACR: ${acrLoginServer}/${ImageRepository}:${ImageTag}"
 $apiBuildContextPath = "api/aijuristiction-api"
@@ -757,6 +903,17 @@ if (-not $imageReady) {
 Write-Host "Updating Container App image: $imageRef"
 
 $envPairs = Convert-EnvFileToPairs -Path $resolvedEnvFilePath
+$envPairsList = New-Object System.Collections.Generic.List[string]
+foreach ($item in $envPairs) {
+    $envPairsList.Add($item)
+}
+$envPairsList.Add("DB_OPTION=azure")
+$envPairsList.Add("DB_CLOUD=$dbCloud")
+$envPairsList.Add("STORAGE_OPTION=azure")
+if (-not [string]::IsNullOrWhiteSpace($storeCloud)) {
+    $envPairsList.Add("STORE_CLOUD=$storeCloud")
+}
+$envPairs = $envPairsList.ToArray()
 
 if ($envPairs.Count -gt 0) {
     az containerapp update `
@@ -782,10 +939,28 @@ $fqdn = az containerapp show `
     --query "properties.configuration.ingress.fqdn" `
     --output tsv
 
+Write-Host "Applying API schema migrations to Azure PostgreSQL..."
+$previousDbOption = $env:DB_OPTION
+$previousDbCloud = $env:DB_CLOUD
+try {
+    $env:DB_OPTION = "azure"
+    $env:DB_CLOUD = $dbCloud
+    python (Join-Path $repoRoot "scripts/apply_api_db_schema.py")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Schema migration command failed."
+    }
+}
+finally {
+    Restore-EnvVar -Name "DB_OPTION" -PreviousValue $previousDbOption
+    Restore-EnvVar -Name "DB_CLOUD" -PreviousValue $previousDbCloud
+}
+
 Write-Host ""
 Write-Host "Deployment complete."
 Write-Host "Container App URL: https://$fqdn"
 Write-Host "Health check:       https://$fqdn/health"
+Write-Host "PostgreSQL host:    $postgresHostOutput"
+Write-Host "PostgreSQL database:$postgresDatabaseNameOutput"
 Write-Host "Storage account:    $storageAccountNameOutput"
 Write-Host "Storage container:  $storageContainerNameOutput"
 if (-not [string]::IsNullOrWhiteSpace($storageBlobEndpointOutput)) {

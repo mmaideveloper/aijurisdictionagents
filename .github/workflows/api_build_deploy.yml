@@ -67,13 +67,19 @@ jobs:
       AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
       AZURE_CONTAINER_APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
       AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
+      AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
+      AZURE_POSTGRES_DATABASE_NAME: ${{ vars.AZURE_POSTGRES_DATABASE_NAME }}
+      AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
+      AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Validate required environment variables
         run: |
           missing=0
-          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_CONTAINERAPPS_ENVIRONMENT AZURE_CONTAINER_APP_NAME AZURE_CONTAINER_REGISTRY; do
+          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_CONTAINERAPPS_ENVIRONMENT AZURE_CONTAINER_APP_NAME AZURE_CONTAINER_REGISTRY AZURE_POSTGRES_SERVER_NAME AZURE_POSTGRES_DATABASE_NAME AZURE_POSTGRES_ADMIN_USERNAME AZURE_POSTGRES_ADMIN_PASSWORD; do
             if [ -z "${!key}" ]; then
               echo "Missing GitHub Environment variable: $key"
               missing=1
@@ -109,6 +115,10 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Build and push image to ACR
         run: |
           az acr login --name ${{ steps.acr.outputs.acr_name }}
@@ -123,3 +133,84 @@ jobs:
           resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
           containerAppEnvironment: ${{ env.AZURE_CONTAINERAPPS_ENVIRONMENT }}
           imageToDeploy: ${{ steps.acr.outputs.acr_login_server }}/aijuristiction-api:${{ github.sha }}
+
+      - name: Configure API database environment
+        shell: bash
+        run: |
+          db_cloud="$(python - <<'PY'
+          import os
+          from urllib.parse import quote
+          user = quote(os.environ["AZURE_POSTGRES_ADMIN_USERNAME"], safe="")
+          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
+          server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
+          database = os.environ["AZURE_POSTGRES_DATABASE_NAME"]
+          print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
+          PY
+          )"
+          store_cloud=""
+          if [ -n "${AZURE_STORAGE_ACCOUNT_NAME:-}" ] && [ -n "${AZURE_STORAGE_CONTAINER_NAME:-}" ]; then
+            store_cloud="https://${AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${AZURE_STORAGE_CONTAINER_NAME}"
+          fi
+          if [ -n "$store_cloud" ]; then
+            az containerapp update \
+              --name "$AZURE_CONTAINER_APP_NAME" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --set-env-vars DB_OPTION=azure DB_CLOUD="$db_cloud" STORAGE_OPTION=azure STORE_CLOUD="$store_cloud" \
+              --only-show-errors \
+              --output none
+          else
+            az containerapp update \
+              --name "$AZURE_CONTAINER_APP_NAME" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --set-env-vars DB_OPTION=azure DB_CLOUD="$db_cloud" \
+              --only-show-errors \
+              --output none
+          fi
+
+      - name: Allow GitHub runner IP on PostgreSQL firewall
+        id: runner_ip
+        shell: bash
+        run: |
+          runner_ip="$(curl -fsSL https://api.ipify.org)"
+          echo "runner_ip=$runner_ip" >> "$GITHUB_OUTPUT"
+          az postgres flexible-server firewall-rule create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_POSTGRES_SERVER_NAME" \
+            --rule-name "github-runner-${GITHUB_RUN_ID}" \
+            --start-ip-address "$runner_ip" \
+            --end-ip-address "$runner_ip" \
+            --only-show-errors \
+            --output none
+
+      - name: Install migration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Apply API schema migrations on Azure PostgreSQL
+        shell: bash
+        run: |
+          export DB_OPTION=azure
+          export DB_CLOUD="$(python - <<'PY'
+          import os
+          from urllib.parse import quote
+          user = quote(os.environ["AZURE_POSTGRES_ADMIN_USERNAME"], safe="")
+          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
+          server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
+          database = os.environ["AZURE_POSTGRES_DATABASE_NAME"]
+          print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
+          PY
+          )"
+          python scripts/apply_api_db_schema.py
+
+      - name: Remove GitHub runner firewall rule
+        if: always()
+        shell: bash
+        run: |
+          az postgres flexible-server firewall-rule delete \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_POSTGRES_SERVER_NAME" \
+            --rule-name "github-runner-${GITHUB_RUN_ID}" \
+            --yes \
+            --only-show-errors \
+            --output none || true
