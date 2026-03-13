@@ -68,3 +68,17 @@ This provides quick distribution for testers and a deployable web preview while 
 ## Review snapshot
 
 A visual snapshot of the proposed chat interface is maintained at `mobile_app/docs/chat_ui_snapshot.svg` and the source layout at `mobile_app/docs/chat_ui_snapshot.html`.
+
+## Case memory and mobile case management (latest)
+
+- Added case lifecycle over API for mobile: list, create, rename, soft delete.
+- Enforced max 5 active cases per user (`/v1/cases` create returns `409` after limit).
+- Chat session creation now carries `user_id` and `case_id` so replies/stream messages can be persisted in DB case communications.
+- Mobile app now requires selecting/creating a case before sending messages and shows case selector + create/rename/delete actions.
+- Existing and future chat messages are persisted for case-linked sessions; document path attachments are persisted as text document records.
+
+Minimal runnable example:
+
+```bash
+python examples/minimal_demo.py
+```

@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.cases_api import router as cases_router
 from app.chat.api import router as chat_router
 from app.logging_config import configure_logging
 from app.telemetry import configure_telemetry
@@ -62,6 +63,7 @@ app.add_middleware(
 )
 app.include_router(chat_router)
 app.include_router(users_router)
+app.include_router(cases_router)
 configure_telemetry(app, service_name="aijuristiction-api", service_version=app.version)
 
 
