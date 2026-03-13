@@ -34,3 +34,4 @@ databases/**/*.db
 databases/**/*.sqlite
 databases/**/*.sqlite3
 .codex/runlogs/**
+api/aijuristiction-api/storage/**
