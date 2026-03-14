@@ -212,3 +212,69 @@ Future cloud settings:
 - `LAWS_DB_BACKEND=postgres`
 - `LAWS_DB_CLOUD=postgresql://...`
 - `LAWS_STORAGE_CLOUD=...`
+
+## 2026 upgrade: full collection + monitoring + per-country PostgreSQL
+
+Implemented upgrades include:
+
+- monitor logic (`plan_updates`) that compares known snapshots vs latest snapshots and flags updates by:
+  - missing document/version,
+  - changed HTTP headers (`etag` or `last-modified`),
+  - changed normalized content checksum.
+- richer law metadata stored with each document:
+  - `applicable_to`,
+  - `superseded_by_url` (link to newer law),
+  - existing lifecycle timestamps and status fields.
+- deterministic vector generation per law version (`embedding_vector`) for semantic retrieval bootstrap.
+- PostgreSQL store support (`LAWS_DB_BACKEND=postgres`) plus migration project `databases/migrations/laws`.
+- per-country database provisioning helper:
+  - `python databases/scripts/provision_country_laws_db.py --admin-uri <postgres-admin-uri> --country SK`
+  - database name format: `laws_<country_code_lower>`.
+
+### PostgreSQL migration flow
+
+1) Provision country DB:
+
+```bash
+python databases/scripts/provision_country_laws_db.py \
+  --admin-uri postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+  --country SK
+```
+
+2) Apply laws schema migration:
+
+```bash
+DB_OPTION=postgres \
+DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/laws_sk \
+PYTHONPATH=src python databases/scripts/apply_db_migrations.py --project laws
+```
+
+3) Run collector against PostgreSQL:
+
+```bash
+LAWS_COUNTRY=SK \
+LAWS_DB_BACKEND=postgres \
+LAWS_DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/laws_sk \
+PYTHONPATH=src python -m services.laws_collector --fixture baseline
+```
+
+## Local worker skill
+
+Start the local worker loop with the new project skill:
+
+```powershell
+./skills/laws-collector/scripts/start_laws_collector.ps1 -Fixture baseline -MaxCycles 1
+```
+
+This runs the collector worker (`services.laws_collector.worker`) with local SQLite defaults and is useful for repeatable smoke tests.
+
+## Azure Container App deployment (laws-collector)
+
+Deployment assets for a dedicated Azure Container App named `laws-collector` are now included:
+
+- `infra/bicep/laws_collector.containerapp.bicep`
+- `infra/scripts/deploy_laws_collector.ps1`
+- `infra/bicep/laws_collector.containerapp.parameters.example.json`
+- container image definition: `src/services/laws_collector/Dockerfile`
+
+The deploy script builds the image in ACR and deploys it to Azure Container Apps with PostgreSQL env configuration.

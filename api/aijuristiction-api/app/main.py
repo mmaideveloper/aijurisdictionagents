@@ -146,3 +146,4 @@ def version() -> JSONResponse:
 
 
 logger.info("API logging configured at level %s", logging.getLevelName(LOG_LEVEL))
+

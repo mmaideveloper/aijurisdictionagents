@@ -293,3 +293,31 @@ New frontend deployment assets:
 Required GitHub Environment variable for frontend deployment:
 
 - `AZURE_FRONTEND_CONTAINER_APP_NAME`
+
+## Deploy laws collector Container App
+
+A dedicated deployment script and Bicep template are available for the laws collector worker:
+
+- Script: `infra/scripts/deploy_laws_collector.ps1`
+- Template: `infra/bicep/laws_collector.containerapp.bicep`
+
+The deployment creates/updates a private Container App named `laws-collector` (by default), assigns ACR pull identity, and configures runtime environment variables for PostgreSQL-backed ingestion.
+
+Run from repository root:
+
+```powershell
+./infra/scripts/deploy_laws_collector.ps1 \
+  -SubscriptionId "<subscription-id>" \
+  -ResourceGroupName "<resource-group>" \
+  -Location "austriaeast" \
+  -ContainerAppEnvironmentName "<container-app-env-name>" \
+  -AcrName "<acr-name>" \
+  -ManagedIdentityName "<managed-identity-name>" \
+  -PostgresServerName "<postgres-server-name>" \
+  -PostgresDatabaseName "laws_sk" \
+  -PostgresAdminUsername "<postgres-admin-user>" \
+  -PostgresAdminPassword "<postgres-admin-password>" \
+  -ImageTag "latest"
+```
+
+The script builds the laws collector image in ACR using `src/services/laws_collector/Dockerfile` and deploys the Container App with the image tag you provide.
