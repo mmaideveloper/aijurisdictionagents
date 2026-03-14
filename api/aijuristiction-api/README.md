@@ -314,6 +314,7 @@ Current E2E specs:
 - `tests/version.spec.ts`
 - `tests/chat.spec.ts`
 - `tests/chat-simulator.spec.ts`
+- `tests/mobile-auth-subscription.spec.ts` (covers mobile login + subscription request flow against user endpoints)
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
 Run only the chat simulation test:
@@ -338,6 +339,14 @@ cd api/aijuristiction-api/e2e-playwright
 RUN_NEGATIVE_AUTH_TESTS=1 npx playwright test tests/chat.spec.ts
 ```
 
+
+
+Run the mobile authentication + subscription lifecycle check used by the Flutter app:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+API_KEY=aijuris npx playwright test tests/mobile-auth-subscription.spec.ts
+```
 
 Run the chat simulator streaming test with fixture input and uploaded txt document:
 
