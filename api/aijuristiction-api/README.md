@@ -113,6 +113,7 @@ same `x-api-key` guard as the chat endpoints.
 
 - `POST /v1/users/sign-up`
   - request: `phone_number`, `email`, `password`, optional `first_name`, `last_name`
+  - sends a registration email notification to the new user email
 - `POST /v1/users/sign-in`
   - request: `email`, `password`
 - `POST /v1/users/sign-in/phone`
@@ -125,9 +126,54 @@ same `x-api-key` guard as the chat endpoints.
   - returns subscription history for a user
 - `POST /v1/users/{user_id}/subscriptions`
   - request: `plan_code`; creates a pending subscription change while old paid plan remains active
+  - queues a subscription-change email notification in the email outbox database
 - `PATCH /v1/users/subscriptions/{subscription_id}`
-  - request: `status` in (`pending`, `paying`, `paid`, `canceled`, `expired`)
+  - request: `status` in (`pending`, `paying`, `paid`, `failed`, `canceled`, `expired`)
   - monthly plans start a 30-day window when status changes to `paid`
+  - queues an email for every subscription status change (including payment failure)
+
+### Email notification service
+
+### Email outbox + scheduler
+
+Emails are first persisted into a dedicated email database (`email_outbox`) and then delivered by a scheduler.
+
+- Scheduler cadence: every 60 seconds by default (`EMAIL_SCHEDULER_INTERVAL_SECONDS`)
+- Retry policy: max 2 attempts. After the second failed attempt, status changes to `failed` and scheduler skips it.
+- Queue claiming uses DB-level processing state so multiple scheduler replicas do not pick the same email at once.
+
+Email DB configuration (separate from API metadata DB):
+
+- `EMAIL_DB_OPTION` (`local`/`postgres`/`azure`, default inherits `DB_OPTION`)
+- `EMAIL_DB_LOCAL` (default `./databases/email.sqlite3`)
+- `EMAIL_DB_CLOUD` (required for postgres/azure, default inherits `DB_CLOUD`)
+- `EMAIL_SCHEDULER_ENABLED` (default `true`)
+
+Postgres/Azure email schema migrations are stored under `databases/migrations/email`.
+
+Run scheduler as a separate process (recommended for ACA split deployment):
+
+```bash
+python -m app.email_scheduler_main
+```
+
+For API-only replicas set `EMAIL_SCHEDULER_ENABLED=false`; run exactly one scheduler replica/process with it enabled.
+
+User and subscription endpoints support email notifications with configurable transport:
+
+- `EMAIL_TRANSPORT=log` (default): logs notifications to API logs (safe for local dev/tests)
+- `EMAIL_TRANSPORT=smtp`: sends real emails via SMTP
+
+SMTP configuration (used when `EMAIL_TRANSPORT=smtp`):
+
+- `EMAIL_SENDER` (default: `noreply@aijurisdiction.local`)
+- `EMAIL_SMTP_HOST` (default: `localhost`)
+- `EMAIL_SMTP_PORT` (default: `1025`)
+- `EMAIL_SMTP_USE_TLS` (default: `false`)
+- `EMAIL_SMTP_USERNAME` (optional)
+- `EMAIL_SMTP_PASSWORD` (optional)
+
+Email enqueue message composition for these endpoints is centralized in `app/users/notifications.py` to keep endpoint handlers small and reduce merge conflicts with payment/subscription feature work.
 - `POST /v1/users/{user_id}/subscriptions/checkout`
   - request: `plan_code`, `payment_provider` (`paypal` or `google_pay`)
   - creates a pending subscription change, sets subscription status to `paying`, and returns a fake checkout URL

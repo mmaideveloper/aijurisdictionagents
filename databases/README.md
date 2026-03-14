@@ -43,9 +43,10 @@ Migration files live under:
 databases/migrations/<project>/*.sql
 ```
 
-Current project:
+Current projects:
 
 - `api`: API metadata schema
+- `laws`: laws ingestion schema (documents, versions, provisions, artifacts, events, vectors)
 
 Apply API migrations against the current environment:
 
@@ -80,4 +81,19 @@ Then run:
 
 ```powershell
 python .\databases\scripts\apply_api_db_schema.py
+```
+
+
+Provision a per-country laws database:
+
+```powershell
+python .\databases\scripts\provision_country_laws_db.py --admin-uri "postgresql://postgres:postgres@127.0.0.1:5432/postgres" --country SK
+```
+
+Apply laws migrations:
+
+```powershell
+$env:DB_OPTION="postgres"
+$env:DB_CLOUD="postgresql://postgres:postgres@127.0.0.1:5432/laws_sk"
+python .\databases\scripts\apply_db_migrations.py --project laws
 ```

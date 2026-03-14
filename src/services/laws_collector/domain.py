@@ -30,6 +30,8 @@ class SlovLexLawSnapshot:
     pdf_content: bytes
     provisions: tuple[ProvisionRecord, ...]
     status: str = "published"
+    applicable_to: str | None = None
+    superseded_by_url: str = ""
     http_etag: str = ""
     http_last_modified: str = ""
 
@@ -48,6 +50,8 @@ class SlovLexLawSnapshot:
             "effective_from": self.effective_from,
             "version_token": self.version_token,
             "status": self.status,
+            "applicable_to": self.applicable_to,
+            "superseded_by_url": self.superseded_by_url,
             "source_url": self.source_url,
             "provisions": [
                 {
@@ -86,3 +90,22 @@ class SyncSummary:
             metadata_updates=self.metadata_updates + other.metadata_updates,
             skipped=self.skipped + other.skipped,
         )
+
+
+@dataclass(frozen=True)
+class UpdateCheckItem:
+    document_key: str
+    country_code: str
+    collection_code: str
+    year: int
+    number: int
+    version_token: str
+    has_update: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class UpdateCheckPlan:
+    checked_items: int
+    items_with_updates: int
+    items: tuple[UpdateCheckItem, ...]

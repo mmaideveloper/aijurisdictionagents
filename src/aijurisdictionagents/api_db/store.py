@@ -351,7 +351,7 @@ class ApiDatabaseStore:
 
     def update_subscription_status(self, *, subscription_id: str, status: str) -> UserSubscription:
         normalized_status = status.strip().lower()
-        if normalized_status not in {"pending", "paying", "paid", "canceled", "expired"}:
+        if normalized_status not in {"pending", "paying", "paid", "failed", "canceled", "expired"}:
             raise ValueError("Unsupported subscription status")
 
         with self._connect() as conn:

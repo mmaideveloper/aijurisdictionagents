@@ -7,6 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.security import require_api_key
+from app.services.email_scheduler import EmailScheduler
+from app.users.notifications import (
+    queue_registration_email,
+    queue_subscription_change_email,
+    queue_subscription_status_email,
+)
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, SubscriptionPlan, User, UserSubscription
 
@@ -104,8 +110,16 @@ def get_user_store() -> ApiDatabaseStore:
     return store
 
 
+def get_email_scheduler() -> EmailScheduler:
+    return EmailScheduler.from_env()
+
+
 @router.post("/sign-up", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)
-def sign_up(payload: SignUpRequest, store: ApiDatabaseStore = Depends(get_user_store)) -> UserProfileResponse:
+def sign_up(
+    payload: SignUpRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> UserProfileResponse:
     try:
         user = store.create_user(
             phone_number=payload.phone_number,
@@ -116,6 +130,7 @@ def sign_up(payload: SignUpRequest, store: ApiDatabaseStore = Depends(get_user_s
         )
     except sqlite3.IntegrityError as exc:
         raise _conflict_from_integrity_error(exc) from exc
+    queue_registration_email(scheduler=scheduler, user=user)
     return _to_user_profile_response(user)
 
 
@@ -182,11 +197,16 @@ def request_subscription_change(
     user_id: str,
     payload: SubscriptionChangeRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> UserSubscriptionResponse:
     try:
         item = store.request_subscription_change(user_id=user_id, plan_code=payload.plan_code)
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan code") from exc
+
+    user = store.find_user_by_id(user_id=user_id)
+    if user is not None:
+        queue_subscription_change_email(scheduler=scheduler, user=user, item=item)
     return _to_subscription_response(item)
 
 
@@ -195,6 +215,7 @@ def update_subscription_status(
     subscription_id: str,
     payload: SubscriptionStatusUpdateRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> UserSubscriptionResponse:
     try:
         item = store.update_subscription_status(subscription_id=subscription_id, status=payload.status)
@@ -202,6 +223,12 @@ def update_subscription_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    user = store.find_user_by_id(user_id=item.user_id)
+    if user is None:
+        return _to_subscription_response(item)
+
+    queue_subscription_status_email(scheduler=scheduler, user=user, item=item)
     return _to_subscription_response(item)
 
 
