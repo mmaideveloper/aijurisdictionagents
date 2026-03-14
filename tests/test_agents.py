@@ -23,3 +23,13 @@ def test_ai_user_simulator_agent_generates_answer() -> None:
     )
 
     assert answer
+
+
+def test_lawyer_prompt_requires_old_document_review() -> None:
+    llm = MockLLMClient()
+    lawyer = create_lawyer_agent(llm, "US")
+
+    prompt_lower = lawyer.system_prompt.lower()
+    assert "older version" in prompt_lower
+    assert "upload" in prompt_lower
+    assert "out of date" in prompt_lower
