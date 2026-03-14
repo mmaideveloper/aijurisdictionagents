@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -98,6 +100,31 @@ String _defaultApiBaseUrl() {
   return 'http://10.0.2.2:8080';
 }
 
+final Random _correlationIdRandom = Random();
+int _correlationIdCounter = 0;
+
+String _generateRequestId() {
+  final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch
+      .toRadixString(16)
+      .padLeft(12, '0');
+  final randomChunk = _correlationIdRandom.nextInt(0x7fffffff)
+      .toRadixString(16)
+      .padLeft(8, '0');
+  _correlationIdCounter = (_correlationIdCounter + 1) % 0xffff;
+  final counterChunk = _correlationIdCounter.toRadixString(16).padLeft(4, '0');
+  return 'mbl-req-$timestamp-$randomChunk-$counterChunk';
+}
+
+String _generateFlowCorrelationId() {
+  final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch
+      .toRadixString(16)
+      .padLeft(12, '0');
+  final randomChunk = _correlationIdRandom.nextInt(0x7fffffff)
+      .toRadixString(16)
+      .padLeft(8, '0');
+  return 'mbl-flow-$timestamp-$randomChunk';
+}
+
 bool _isLocalApiBaseUrl(String apiBaseUrl) {
   final host = Uri.parse(apiBaseUrl).host.toLowerCase();
   return host == 'localhost' ||
@@ -189,6 +216,12 @@ class AppStrings {
           'Pred odoslanim spravy vytvorte alebo vyberte pripad.',
       'failed_to_reach_api':
           'Nepodarilo sa spojit s API na adrese {{url}}: {{error}}',
+      'failed_to_reach_api_with_correlation':
+          'Nepodarilo sa spojit s API na adrese {{url}}: {{error}} (ID: {{id}})',
+      'request_id_label': 'Correlation ID: {{id}}',
+      'show_request_id': 'ID',
+      'copy_request_id': 'Kopirovat correlation ID',
+      'request_id_copied': 'Correlation ID bolo skopirovane: {{id}}',
       'pdf_not_ready':
           'PDF este nie je pripravene. Najprv dokoncite AI diskusiu.',
       'pdf_saved_to': 'PDF ulozene do {{path}}',
@@ -302,6 +335,12 @@ class AppStrings {
       'create_or_select_case':
           'Create or select a case before sending messages.',
       'failed_to_reach_api': 'Failed to reach API at {{url}}: {{error}}',
+      'failed_to_reach_api_with_correlation':
+          'Failed to reach API at {{url}}: {{error}} (ID: {{id}})',
+      'request_id_label': 'Correlation ID: {{id}}',
+      'show_request_id': 'ID',
+      'copy_request_id': 'Copy ID',
+      'request_id_copied': 'Correlation ID copied: {{id}}',
       'pdf_not_ready':
           'PDF is not ready yet. Complete the AI discussion first.',
       'pdf_saved_to': 'PDF saved to {{path}}',
@@ -416,6 +455,12 @@ class AppStrings {
           'Erstellen oder waehlen Sie zuerst einen Fall aus.',
       'failed_to_reach_api':
           'API unter {{url}} konnte nicht erreicht werden: {{error}}',
+      'failed_to_reach_api_with_correlation':
+          'API unter {{url}} konnte nicht erreicht werden: {{error}} (ID: {{id}})',
+      'request_id_label': 'Correlation-ID: {{id}}',
+      'show_request_id': 'ID',
+      'copy_request_id': 'ID kopieren',
+      'request_id_copied': 'Correlation-ID kopiert: {{id}}',
       'pdf_not_ready':
           'PDF ist noch nicht bereit. Schliessen Sie zuerst die AI-Diskussion ab.',
       'pdf_saved_to': 'PDF gespeichert unter {{path}}',
@@ -910,6 +955,11 @@ class ApiClient {
   String? _sessionId;
   String? _caseId;
   String? _userId;
+  final String _flowCorrelationId = _generateFlowCorrelationId();
+  String? _lastCorrelationId;
+
+  String get flowCorrelationId => _flowCorrelationId;
+  String? get lastCorrelationId => _lastCorrelationId;
 
   String? get sessionId => _sessionId;
   String? get caseId => _caseId;
@@ -921,17 +971,27 @@ class ApiClient {
   void setActiveCase(String? caseId) {
     _caseId = caseId;
     _sessionId = null;
+    _lastCorrelationId = null;
   }
 
-  Map<String, String> get _headers => <String, String>{
+  Map<String, String> _headersForRequest(String requestId) =>
+      <String, String>{
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
+        'x-correlation-id': _flowCorrelationId,
+        'x-request-id': requestId,
       };
 
-  Map<String, String> get _headersForLog => <String, String>{
+  Map<String, String> _headersForLog(String requestId) => <String, String>{
         'Content-Type': 'application/json',
         'x-api-key': '***',
+        'x-correlation-id': _flowCorrelationId,
+        'x-request-id': requestId,
       };
+
+  void _recordCorrelationId(http.BaseResponse response) {
+    _lastCorrelationId = response.headers['x-correlation-id'] ?? _flowCorrelationId;
+  }
 
   Future<http.Response> _postJson({
     required String path,
@@ -939,28 +999,32 @@ class ApiClient {
     required String action,
   }) async {
     final uri = baseUri.resolve(path);
+    final requestId = _generateRequestId();
+    final headers = _headersForRequest(requestId);
     await logger.info(
       'API request',
       <String, Object?>{
         'action': action,
         'method': 'POST',
         'url': uri.toString(),
-        'headers': _headersForLog,
+        'headers': _headersForLog(requestId),
         'payload': payload,
       },
     );
     try {
       final response = await http.post(
         uri,
-        headers: _headers,
+        headers: headers,
         body: jsonEncode(payload),
       );
+      _recordCorrelationId(response);
       await logger.info(
         'API response',
         <String, Object?>{
           'action': action,
           'status_code': response.statusCode,
           'body': response.body,
+          'correlation_id': _lastCorrelationId,
         },
       );
       return response;
@@ -972,6 +1036,8 @@ class ApiClient {
         <String, Object?>{
           'action': action,
           'url': uri.toString(),
+          'correlation_id': _flowCorrelationId,
+          'request_id': requestId,
         },
       );
       rethrow;
@@ -983,17 +1049,20 @@ class ApiClient {
     required String action,
   }) async {
     final uri = baseUri.resolve(path);
+    final requestId = _generateRequestId();
+    final headers = _headersForRequest(requestId);
     await logger.info(
       'API request',
       <String, Object?>{
         'action': action,
         'method': 'GET',
         'url': uri.toString(),
-        'headers': _headersForLog,
+        'headers': _headersForLog(requestId),
       },
     );
     try {
-      final response = await http.get(uri, headers: _headers);
+      final response = await http.get(uri, headers: headers);
+      _recordCorrelationId(response);
       await logger.info(
         'API response',
         <String, Object?>{
@@ -1001,6 +1070,7 @@ class ApiClient {
           'status_code': response.statusCode,
           'content_type': response.headers['content-type'],
           'bytes': response.bodyBytes.length,
+          'correlation_id': _lastCorrelationId,
         },
       );
       return response;
@@ -1012,6 +1082,8 @@ class ApiClient {
         <String, Object?>{
           'action': action,
           'url': uri.toString(),
+          'correlation_id': _flowCorrelationId,
+          'request_id': requestId,
         },
       );
       rethrow;
@@ -1077,11 +1149,13 @@ class ApiClient {
       required String userId,
       required String title}) async {
     final uri = baseUri.resolve('/v1/cases/$caseId');
+    final requestId = _generateRequestId();
     final response = await http.patch(
       uri,
-      headers: _headers,
+      headers: _headersForRequest(requestId),
       body: jsonEncode(<String, Object?>{'user_id': userId, 'title': title}),
     );
+    _recordCorrelationId(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Case rename failed with status ${response.statusCode}.');
     }
@@ -1092,8 +1166,16 @@ class ApiClient {
   Future<void> deleteCase(
       {required String caseId, required String userId}) async {
     final uri = baseUri.resolve('/v1/cases/$caseId?user_id=$userId');
-    final response =
-        await http.delete(uri, headers: <String, String>{'x-api-key': apiKey});
+    final requestId = _generateRequestId();
+    final response = await http.delete(
+      uri,
+      headers: <String, String>{
+        'x-api-key': apiKey,
+        'x-correlation-id': _flowCorrelationId,
+        'x-request-id': requestId,
+      },
+    );
+    _recordCorrelationId(response);
     if (response.statusCode != 204) {
       throw Exception('Case delete failed with status ${response.statusCode}.');
     }
@@ -1347,8 +1429,9 @@ class ApiClient {
       );
       final path = '/v1/chat/sessions/$sessionId/stream';
       final uri = baseUri.resolve(path);
+      final requestId = _generateRequestId();
       final request = http.Request('POST', uri)
-        ..headers.addAll(_headers)
+        ..headers.addAll(_headersForRequest(requestId))
         ..body = jsonEncode(payload);
       await logger.info(
         'API stream request',
@@ -1357,7 +1440,7 @@ class ApiClient {
           'attempt': attempt + 1,
           'method': 'POST',
           'url': uri.toString(),
-          'headers': _headersForLog,
+          'headers': _headersForLog(requestId),
           'payload': payload,
         },
       );
@@ -1365,6 +1448,7 @@ class ApiClient {
       final client = http.Client();
       try {
         final response = await client.send(request);
+        _recordCorrelationId(response);
         if (response.statusCode < 200 || response.statusCode >= 300) {
           final body = await response.stream.bytesToString();
           final detail = _extractErrorDetailFromBody(body);
@@ -1613,6 +1697,7 @@ class ApiClient {
       ),
     );
     _sessionId = null;
+    _lastCorrelationId = null;
   }
 }
 
@@ -2492,6 +2577,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
   int _caseHistoryOffset = 0;
   List<CaseDocumentItem> _caseDocuments = <CaseDocumentItem>[];
   final Set<String> _downloadingCaseDocumentIds = <String>{};
+  String? _lastErrorCorrelationId;
 
   bool get _showLocalResponderSwitch {
     return _isLocalApiBaseUrl(widget.apiBaseUrl);
@@ -3157,10 +3243,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
           'responder_mode': _responderMode.name,
         },
       );
-      _showSnackbar(_strings.t('failed_to_reach_api', <String, String>{
-        'url': widget.apiBaseUrl,
-        'error': '$error',
-      }));
+      _showApiError(error, apiBaseUrl: widget.apiBaseUrl);
     } finally {
       if (mounted) {
         setState(() {
@@ -3412,6 +3495,44 @@ class _ChatHomePageState extends State<ChatHomePage> {
     );
   }
 
+  Future<void> _copyLastErrorCorrelationId() async {
+    final id = _lastErrorCorrelationId;
+    if (id == null || id.isEmpty) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: id));
+    if (!mounted) {
+      return;
+    }
+    _showSnackbar(_strings.t('request_id_copied', <String, String>{'id': id}));
+  }
+
+  void _showApiError(Object error, {required String apiBaseUrl}) {
+    final String correlationId =
+        _apiClient.lastCorrelationId ?? _apiClient.flowCorrelationId;
+    if (mounted) {
+      setState(() {
+        _lastErrorCorrelationId = correlationId;
+      });
+    } else {
+      _lastErrorCorrelationId = correlationId;
+    }
+    if (correlationId.isNotEmpty) {
+      _showSnackbar(
+        _strings.t('failed_to_reach_api_with_correlation', <String, String>{
+          'url': apiBaseUrl,
+          'error': '$error',
+          'id': correlationId,
+        }),
+      );
+      return;
+    }
+    _showSnackbar(_strings.t('failed_to_reach_api', <String, String>{
+      'url': apiBaseUrl,
+      'error': '$error',
+    }));
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = _strings;
@@ -3473,6 +3594,18 @@ class _ChatHomePageState extends State<ChatHomePage> {
                               ?.copyWith(color: const Color(0xFF4A628A)),
                         ),
                         const SizedBox(width: 8),
+                        if (_lastErrorCorrelationId != null &&
+                            _lastErrorCorrelationId!.isNotEmpty)
+                          Tooltip(
+                            message: strings.t('request_id_label', <String, String>{
+                              'id': _lastErrorCorrelationId!,
+                            }),
+                            child: TextButton.icon(
+                              onPressed: _copyLastErrorCorrelationId,
+                              icon: const Icon(Icons.tag),
+                              label: Text(strings.t('show_request_id')),
+                            ),
+                          ),
                         TextButton.icon(
                           onPressed: _signOut,
                           icon: const Icon(Icons.logout),

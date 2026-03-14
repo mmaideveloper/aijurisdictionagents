@@ -53,6 +53,9 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - non-web targets write JSON log entries to a timestamped file in a `logs` folder
   - file name pattern: `mobile_YYYYMMDD_HHMMSS.log`
   - web target logs to browser console (file system write is not available on web)
+- Mobile app now creates one flow correlation ID and sends it in `x-correlation-id` on every API request, so backend logs can be filtered to reconstruct full user flow.
+- Each request also carries a unique `x-request-id` for per-call diagnostics while keeping the same flow correlation context.
+- If an API error occurs, the correlation ID is included in the error message and a top-header `ID` button appears so the user can copy the ID for support communication.
 
 ## Run locally
 

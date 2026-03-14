@@ -349,7 +349,7 @@ inside the `TYPE_CHECKING` block so both `ruff` and `mypy --strict` stay green.
 Telemetry processor selection (OTLP vs console) is covered by unit tests in `tests/test_telemetry.py`.
 
 The API `pyproject.toml` also sets `mypy_path = ["../../src"]` so strict type checks can resolve the monorepo core package during CI and local runs.
-The `pytest` command is configured with `pythonpath = ["."]` in `pyproject.toml`, so direct invocation works consistently in local runs and GitHub Actions.
+The `pytest` command is configured with `pythonpath = [".", "../../src"]` in `pyproject.toml`, so tests can import the monorepo core package during direct local runs and GitHub Actions.
 - Deploy path: on manual dispatch with `deploy=true`, push image to Azure Container Registry and deploy/update Azure Container App.
 
 Required GitHub Environment variables:
