@@ -128,6 +128,41 @@ same `x-api-key` guard as the chat endpoints.
 - `PATCH /v1/users/subscriptions/{subscription_id}`
   - request: `status` in (`pending`, `paying`, `paid`, `canceled`, `expired`)
   - monthly plans start a 30-day window when status changes to `paid`
+- `POST /v1/users/{user_id}/subscriptions/checkout`
+  - request: `plan_code`, `payment_provider` (`paypal` or `google_pay`)
+  - creates a pending subscription change, sets subscription status to `paying`, and returns a fake checkout URL
+- `POST /v1/users/subscriptions/{subscription_id}/confirm-payment`
+  - request: `payment_id` returned from checkout
+  - payment simulation rule: only user phone `+421944400166` is allowed to complete payment successfully
+  - all other phone numbers receive simulated payment failure and the requested subscription is canceled (no upgrade)
+
+### Subscription payment flow (PayPal / Google Pay simulation)
+
+### Mobile-app simulation behavior
+
+- The checkout/confirm API path is the same path used by the mobile app integration.
+- To test a successful payment upgrade in local/dev, create/sign in a user with phone `+421944400166`.
+- To test unsuccessful payment handling, use any other phone number; confirmation returns HTTP `402` and subscription remains not upgraded.
+
+Minimal runnable example:
+
+```bash
+python examples/minimal_demo.py
+```
+
+```bash
+# 1) Start checkout for new subscription
+curl -X POST "http://localhost:8080/v1/users/<USER_ID>/subscriptions/checkout" \
+  -H "x-api-key: aijuris" \
+  -H "Content-Type: application/json" \
+  -d '{"plan_code":"premium","payment_provider":"paypal"}'
+
+# 2) Confirm returned payment_id (simulated webhook/callback)
+curl -X POST "http://localhost:8080/v1/users/subscriptions/<SUBSCRIPTION_ID>/confirm-payment" \
+  -H "x-api-key: aijuris" \
+  -H "Content-Type: application/json" \
+  -d '{"payment_id":"PAY-..."}'
+```
 
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
 and support three database modes:
