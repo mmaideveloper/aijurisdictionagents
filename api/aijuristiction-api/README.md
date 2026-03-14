@@ -173,6 +173,8 @@ SMTP configuration (used when `EMAIL_TRANSPORT=smtp`):
 - `EMAIL_SMTP_USERNAME` (optional)
 - `EMAIL_SMTP_PASSWORD` (optional)
 
+Email enqueue message composition for these endpoints is centralized in `app/users/notifications.py` to keep endpoint handlers small and reduce merge conflicts with payment/subscription feature work.
+
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
 and support three database modes:
 

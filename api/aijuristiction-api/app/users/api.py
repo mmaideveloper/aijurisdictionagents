@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,11 +7,15 @@ from pydantic import BaseModel, Field
 
 from app.security import require_api_key
 from app.services.email_scheduler import EmailScheduler
+from app.users.notifications import (
+    queue_registration_email,
+    queue_subscription_change_email,
+    queue_subscription_status_email,
+)
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, SubscriptionPlan, User, UserSubscription
 
 router = APIRouter(prefix="/v1/users", tags=["users"], dependencies=[Depends(require_api_key)])
-logger = logging.getLogger("aijuristiction-api.users")
 
 
 class UserProfileResponse(BaseModel):
@@ -103,18 +106,7 @@ def sign_up(
         )
     except sqlite3.IntegrityError as exc:
         raise _conflict_from_integrity_error(exc) from exc
-    _queue_email_safely(
-        scheduler=scheduler,
-        recipient=user.email,
-        subject="Welcome to AI Jurisdiction",
-        body=(
-            f"Hello {user.full_name},\n\n"
-            "your account was created successfully. "
-            "You can now sign in and start working with your legal assistant.\n"
-        ),
-        context="registration",
-        metadata={"event": "registration", "user_id": user.user_id},
-    )
+    queue_registration_email(scheduler=scheduler, user=user)
     return _to_user_profile_response(user)
 
 
@@ -190,17 +182,7 @@ def request_subscription_change(
 
     user = store.find_user_by_id(user_id=user_id)
     if user is not None:
-        _queue_email_safely(
-            scheduler=scheduler,
-            recipient=user.email,
-            subject="Subscription change requested",
-            body=(
-                f"Hello {user.full_name},\n\n"
-                f"your subscription change request to plan '{item.plan_code}' was recorded and is now pending.\n"
-            ),
-            context="subscription_change",
-            metadata={"event": "subscription_change", "subscription_id": item.subscription_id},
-        )
+        queue_subscription_change_email(scheduler=scheduler, user=user, item=item)
     return _to_subscription_response(item)
 
 
@@ -222,58 +204,8 @@ def update_subscription_status(
     if user is None:
         return _to_subscription_response(item)
 
-    if item.status == "paid":
-        _queue_email_safely(
-            scheduler=scheduler,
-            recipient=user.email,
-            subject="Payment confirmed",
-            body=(
-                f"Hello {user.full_name},\n\n"
-                f"payment for your '{item.plan_code}' subscription was confirmed and your plan is active.\n"
-            ),
-            context="subscription_payment",
-            metadata={"event": "subscription_payment", "subscription_id": item.subscription_id},
-        )
-    elif item.status == "failed":
-        _queue_email_safely(
-            scheduler=scheduler,
-            recipient=user.email,
-            subject="Payment failed",
-            body=(
-                f"Hello {user.full_name},\n\n"
-                f"payment for your '{item.plan_code}' subscription failed. Please retry your payment method.\n"
-            ),
-            context="subscription_payment_failed",
-            metadata={"event": "subscription_payment_failed", "subscription_id": item.subscription_id},
-        )
-    else:
-        _queue_email_safely(
-            scheduler=scheduler,
-            recipient=user.email,
-            subject="Subscription status changed",
-            body=(
-                f"Hello {user.full_name},\n\n"
-                f"your subscription '{item.plan_code}' status changed to '{item.status}'.\n"
-            ),
-            context="subscription_status",
-            metadata={"event": "subscription_status", "subscription_id": item.subscription_id, "status": item.status},
-        )
+    queue_subscription_status_email(scheduler=scheduler, user=user, item=item)
     return _to_subscription_response(item)
-
-
-def _queue_email_safely(
-    *,
-    scheduler: EmailScheduler,
-    recipient: str,
-    subject: str,
-    body: str,
-    metadata: dict[str, str],
-    context: str,
-) -> None:
-    try:
-        scheduler.enqueue(recipient=recipient, subject=subject, body=body, metadata=metadata)
-    except Exception:  # pragma: no cover
-        logger.exception("Unable to enqueue email notification (%s)", context)
 
 
 def _to_user_profile_response(user: User) -> UserProfileResponse:
