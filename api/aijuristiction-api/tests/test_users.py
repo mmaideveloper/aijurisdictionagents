@@ -225,11 +225,6 @@ def test_claim_pending_prevents_double_pick(monkeypatch, tmp_path: Path) -> None
     assert len(first_batch) == 1
     assert first_batch[0].email_id == "email-1"
     assert second_batch == []
-    assert paid_response.status_code == 200
-    paid = paid_response.json()
-    assert paid["status"] == "paid"
-    assert paid["starts_at"] is not None
-    assert paid["ends_at"] is not None
 
 
 def test_subscription_checkout_payment_failure_does_not_upgrade_for_non_whitelisted_phone(
