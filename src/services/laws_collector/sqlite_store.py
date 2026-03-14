@@ -27,6 +27,8 @@ class LawDocumentOverview:
     lawyer_title: str
     publication_date: str
     first_effective_date: str
+    applicable_to: str | None
+    superseded_by_url: str
     last_stored_at: str
     last_checked_at: str
     last_download_status: str
@@ -65,6 +67,8 @@ class SqliteLawStore:
                     publication_date TEXT NOT NULL,
                     current_status TEXT NOT NULL,
                     first_effective_date TEXT NOT NULL,
+                    applicable_to TEXT,
+                    superseded_by_url TEXT NOT NULL,
                     first_stored_at TEXT NOT NULL,
                     last_stored_at TEXT NOT NULL,
                     last_checked_at TEXT NOT NULL,
@@ -88,6 +92,7 @@ class SqliteLawStore:
                     html_bytes INTEGER NOT NULL,
                     pdf_bytes INTEGER NOT NULL,
                     normalized_json TEXT NOT NULL,
+                    embedding_vector TEXT NOT NULL,
                     stored_at TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -166,10 +171,10 @@ class SqliteLawStore:
                     INSERT INTO law_documents(
                         document_id, country_code, collection_code, law_year, law_number, official_name,
                         lawyer_title, source_url, publication_date, current_status, first_effective_date,
-                        first_stored_at, last_stored_at, last_checked_at, last_download_status,
-                        last_download_error, download_attempt_count, created_at, updated_at
+                        applicable_to, superseded_by_url, first_stored_at, last_stored_at, last_checked_at,
+                        last_download_status, last_download_error, download_attempt_count, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         document_id,
@@ -183,6 +188,8 @@ class SqliteLawStore:
                         snapshot.publication_date,
                         snapshot.status,
                         snapshot.effective_from,
+                        snapshot.applicable_to,
+                        snapshot.superseded_by_url,
                         now,
                         now,
                         now,
@@ -200,7 +207,8 @@ class SqliteLawStore:
                 """
                 UPDATE law_documents
                 SET official_name = ?, lawyer_title = ?, source_url = ?, publication_date = ?,
-                    current_status = ?, last_stored_at = ?, last_checked_at = ?,
+                    current_status = ?, applicable_to = ?, superseded_by_url = ?,
+                    last_stored_at = ?, last_checked_at = ?,
                     last_download_status = ?, last_download_error = '',
                     download_attempt_count = download_attempt_count + 1, updated_at = ?
                 WHERE document_id = ?
@@ -211,6 +219,8 @@ class SqliteLawStore:
                     snapshot.source_url,
                     snapshot.publication_date,
                     snapshot.status,
+                    snapshot.applicable_to,
+                    snapshot.superseded_by_url,
                     now,
                     now,
                     "stored",
@@ -231,13 +241,14 @@ class SqliteLawStore:
         html_bytes: int,
         pdf_bytes: int,
         normalized_json: str,
+        embedding_vector: str,
     ) -> StoredVersion:
         now = _now_iso()
         with self._connect() as conn:
             row = conn.execute(
                 """
                 SELECT version_id, version_checksum, effective_from, html_checksum, pdf_checksum,
-                       html_bytes, pdf_bytes, normalized_json, status
+                       html_bytes, pdf_bytes, normalized_json, embedding_vector, status
                 FROM law_versions
                 WHERE document_id = ? AND version_token = ?
                 """,
@@ -251,9 +262,9 @@ class SqliteLawStore:
                     INSERT INTO law_versions(
                         version_id, document_id, version_token, effective_from, version_checksum,
                         status, html_checksum, pdf_checksum, html_bytes, pdf_bytes, normalized_json,
-                        stored_at, created_at, updated_at
+                        embedding_vector, stored_at, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         version_id,
@@ -267,6 +278,7 @@ class SqliteLawStore:
                         html_bytes,
                         pdf_bytes,
                         normalized_json,
+                        embedding_vector,
                         now,
                         now,
                         now,
@@ -284,6 +296,7 @@ class SqliteLawStore:
                     row["html_bytes"] != html_bytes,
                     row["pdf_bytes"] != pdf_bytes,
                     row["normalized_json"] != normalized_json,
+                    row["embedding_vector"] != embedding_vector,
                     row["status"] != snapshot.status,
                 )
             )
@@ -293,7 +306,7 @@ class SqliteLawStore:
                     UPDATE law_versions
                     SET effective_from = ?, version_checksum = ?, status = ?, html_checksum = ?,
                         pdf_checksum = ?, html_bytes = ?, pdf_bytes = ?, normalized_json = ?,
-                        stored_at = ?, updated_at = ?
+                        embedding_vector = ?, stored_at = ?, updated_at = ?
                     WHERE version_id = ?
                     """,
                     (
@@ -305,6 +318,7 @@ class SqliteLawStore:
                         html_bytes,
                         pdf_bytes,
                         normalized_json,
+                        embedding_vector,
                         now,
                         now,
                         version_id,
@@ -455,8 +469,8 @@ class SqliteLawStore:
             rows = conn.execute(
                 """
                 SELECT law_year, law_number, official_name, lawyer_title, publication_date,
-                       first_effective_date, last_stored_at, last_checked_at,
-                       last_download_status, download_attempt_count
+                       first_effective_date, applicable_to, superseded_by_url,
+                       last_stored_at, last_checked_at, last_download_status, download_attempt_count
                 FROM law_documents
                 ORDER BY law_year, law_number
                 """
@@ -470,6 +484,8 @@ class SqliteLawStore:
                 lawyer_title=str(row["lawyer_title"]),
                 publication_date=str(row["publication_date"]),
                 first_effective_date=str(row["first_effective_date"]),
+                applicable_to=(str(row["applicable_to"]) if row["applicable_to"] else None),
+                superseded_by_url=str(row["superseded_by_url"]),
                 last_stored_at=str(row["last_stored_at"]),
                 last_checked_at=str(row["last_checked_at"]),
                 last_download_status=str(row["last_download_status"]),
