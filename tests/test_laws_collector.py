@@ -40,6 +40,8 @@ def test_laws_collector_baseline_sync_creates_documents_and_versions(tmp_path: P
     assert overview[0].official_name == "Stavebny zakon"
     assert overview[0].lawyer_title == "Stavebny zakon"
     assert overview[0].download_attempt_count == 1
+    assert overview[0].applicable_to == "all construction permits"
+    assert overview[0].superseded_by_url == ""
 
 
 def test_laws_collector_delta_sync_adds_new_act_and_new_version(tmp_path: Path) -> None:
@@ -61,6 +63,7 @@ def test_laws_collector_delta_sync_adds_new_act_and_new_version(tmp_path: Path) 
     overview = store.list_document_overview()
     assert overview[0].download_attempt_count == 2
     assert overview[0].last_download_status == "stored"
+    assert overview[0].superseded_by_url == "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/11/"
 
 
 def test_laws_collector_config_resolves_relative_db_from_repo_root(monkeypatch) -> None:
@@ -72,3 +75,14 @@ def test_laws_collector_config_resolves_relative_db_from_repo_root(monkeypatch) 
     assert config.db_path.parent.name == "laws-collector"
     assert config.db_path.parent.parent.name == "databases"
     assert config.db_path.parent.parent.parent == Path(__file__).resolve().parents[1]
+
+
+
+def test_laws_collector_update_plan_detects_changes(tmp_path: Path) -> None:
+    store, service = _build_service(tmp_path)
+
+    plan = service.plan_updates(known_snapshots=baseline_snapshots(), latest_snapshots=delta_snapshots())
+
+    assert plan.checked_items == 2
+    assert plan.items_with_updates == 2
+    assert any(item.reason == "new_document_or_version" for item in plan.items)
