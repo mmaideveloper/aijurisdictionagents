@@ -112,6 +112,22 @@ Conda notes:
   dependencies, and tooling (needed for `pip install -e .`).
 
 
+## Local Fake Payment Service
+
+A fake PayPal-compatible payment simulator is available in `service/` for local integrations and demos.
+
+```bash
+node service/fake_paypal_service.js
+```
+
+Minimal runnable demo:
+
+```bash
+./service/examples/paypal_payment_demo.sh
+```
+
+For full endpoint details, see `service/README.md`.
+
 ## Features
 
 - Document ingestion from `data/` (txt/md, PDF optional)
@@ -199,6 +215,7 @@ Country and language parameters:
 Discussion type:
 - `--discussion-type advice` (default): Lawyer gives advice without judge review.
 - `--discussion-type court`: Judge must approve or reject the lawyer's response; on rejection the lawyer retries. In court mode, the lawyer asks whether to draft filings when a court action is recommended, and the judge challenges weaknesses and requests missing documents.
+- Document drafting workflow: when a user asks for any contract/legal document, the lawyer agent first asks whether the user already has an older version, requests upload for review, and updates it only if incorrect or out of date with current law; otherwise it proposes minimal edits or confirms no rewrite is needed.
 
 Case storage (Slovak advice mode):
 - For `--discussion-type advice` with `--country SK` (or Slovakia), a case folder is created under `cases/`.

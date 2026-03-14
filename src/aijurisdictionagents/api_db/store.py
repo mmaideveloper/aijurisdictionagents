@@ -437,6 +437,7 @@ class ApiDatabaseStore:
         return _row_to_user(row)
 
     def find_user_by_id(self, *, user_id: str) -> User | None:
+    def get_user(self, *, user_id: str) -> User:
         with self._connect() as conn:
             row = self._fetchone(
                 conn,
@@ -449,6 +450,7 @@ class ApiDatabaseStore:
             )
         if row is None:
             return None
+            raise KeyError(f"User {user_id} not found")
         return _row_to_user(row)
 
     def update_user(
