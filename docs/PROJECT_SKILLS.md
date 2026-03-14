@@ -9,6 +9,7 @@ This repository vendors the Codex skills needed for local development so they ar
 - `start-api`: project-native API launcher
 - `start-mobile`: alias for the mobile launcher with the same skill name used in the local Codex profile
 - `start-mobile-app`: project-native Flutter mobile launcher
+- `laws-collector`: starts and verifies the local laws collector worker loop
 
 ## Skill files
 

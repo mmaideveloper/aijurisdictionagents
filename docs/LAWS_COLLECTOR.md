@@ -257,3 +257,24 @@ LAWS_DB_BACKEND=postgres \
 LAWS_DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/laws_sk \
 PYTHONPATH=src python -m services.laws_collector --fixture baseline
 ```
+
+## Local worker skill
+
+Start the local worker loop with the new project skill:
+
+```powershell
+./skills/laws-collector/scripts/start_laws_collector.ps1 -Fixture baseline -MaxCycles 1
+```
+
+This runs the collector worker (`services.laws_collector.worker`) with local SQLite defaults and is useful for repeatable smoke tests.
+
+## Azure Container App deployment (laws-collector)
+
+Deployment assets for a dedicated Azure Container App named `laws-collector` are now included:
+
+- `infra/bicep/laws_collector.containerapp.bicep`
+- `infra/scripts/deploy_laws_collector.ps1`
+- `infra/bicep/laws_collector.containerapp.parameters.example.json`
+- container image definition: `src/services/laws_collector/Dockerfile`
+
+The deploy script builds the image in ACR and deploys it to Azure Container Apps with PostgreSQL env configuration.
