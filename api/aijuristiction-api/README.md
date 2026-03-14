@@ -174,6 +174,41 @@ SMTP configuration (used when `EMAIL_TRANSPORT=smtp`):
 - `EMAIL_SMTP_PASSWORD` (optional)
 
 Email enqueue message composition for these endpoints is centralized in `app/users/notifications.py` to keep endpoint handlers small and reduce merge conflicts with payment/subscription feature work.
+- `POST /v1/users/{user_id}/subscriptions/checkout`
+  - request: `plan_code`, `payment_provider` (`paypal` or `google_pay`)
+  - creates a pending subscription change, sets subscription status to `paying`, and returns a fake checkout URL
+- `POST /v1/users/subscriptions/{subscription_id}/confirm-payment`
+  - request: `payment_id` returned from checkout
+  - payment simulation rule: only user phone `+421944400166` is allowed to complete payment successfully
+  - all other phone numbers receive simulated payment failure and the requested subscription is canceled (no upgrade)
+
+### Subscription payment flow (PayPal / Google Pay simulation)
+
+### Mobile-app simulation behavior
+
+- The checkout/confirm API path is the same path used by the mobile app integration.
+- To test a successful payment upgrade in local/dev, create/sign in a user with phone `+421944400166`.
+- To test unsuccessful payment handling, use any other phone number; confirmation returns HTTP `402` and subscription remains not upgraded.
+
+Minimal runnable example:
+
+```bash
+python examples/minimal_demo.py
+```
+
+```bash
+# 1) Start checkout for new subscription
+curl -X POST "http://localhost:8080/v1/users/<USER_ID>/subscriptions/checkout" \
+  -H "x-api-key: aijuris" \
+  -H "Content-Type: application/json" \
+  -d '{"plan_code":"premium","payment_provider":"paypal"}'
+
+# 2) Confirm returned payment_id (simulated webhook/callback)
+curl -X POST "http://localhost:8080/v1/users/subscriptions/<SUBSCRIPTION_ID>/confirm-payment" \
+  -H "x-api-key: aijuris" \
+  -H "Content-Type: application/json" \
+  -d '{"payment_id":"PAY-..."}'
+```
 
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
 and support three database modes:
@@ -360,6 +395,7 @@ Current E2E specs:
 - `tests/version.spec.ts`
 - `tests/chat.spec.ts`
 - `tests/chat-simulator.spec.ts`
+- `tests/mobile-auth-subscription.spec.ts` (covers mobile login + subscription request flow against user endpoints)
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
 Run only the chat simulation test:
@@ -384,6 +420,14 @@ cd api/aijuristiction-api/e2e-playwright
 RUN_NEGATIVE_AUTH_TESTS=1 npx playwright test tests/chat.spec.ts
 ```
 
+
+
+Run the mobile authentication + subscription lifecycle check used by the Flutter app:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+API_KEY=aijuris npx playwright test tests/mobile-auth-subscription.spec.ts
+```
 
 Run the chat simulator streaming test with fixture input and uploaded txt document:
 

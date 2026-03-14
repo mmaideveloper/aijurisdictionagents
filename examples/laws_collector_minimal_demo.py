@@ -25,11 +25,13 @@ def main() -> None:
 
         baseline = service.sync(baseline_snapshots())
         delta = service.sync(delta_snapshots())
+        plan = service.plan_updates(known_snapshots=baseline_snapshots(), latest_snapshots=delta_snapshots())
         counts = store.get_counts()
         overview = store.list_document_overview()
 
         print("Baseline sync:", baseline)
         print("Delta sync:", delta)
+        print("Planned updates:", plan.items_with_updates)
         print("Documents in DB:", counts.documents)
         print("Versions in DB:", counts.versions)
         print("Provisions in DB:", counts.provisions)
