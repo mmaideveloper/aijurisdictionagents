@@ -16,9 +16,6 @@ except ModuleNotFoundError:  # pragma: no cover
     _psycopg = None
 
 psycopg: Any = _psycopg
-    import psycopg
-except ImportError:  # pragma: no cover
-    psycopg = None
 
 
 @dataclass(frozen=True)
