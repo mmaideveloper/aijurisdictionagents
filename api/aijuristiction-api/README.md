@@ -150,6 +150,14 @@ Email DB configuration (separate from API metadata DB):
 
 Postgres/Azure email schema migrations are stored under `databases/migrations/email`.
 
+Run scheduler as a separate process (recommended for ACA split deployment):
+
+```bash
+python -m app.email_scheduler_main
+```
+
+For API-only replicas set `EMAIL_SCHEDULER_ENABLED=false`; run exactly one scheduler replica/process with it enabled.
+
 User and subscription endpoints support email notifications with configurable transport:
 
 - `EMAIL_TRANSPORT=log` (default): logs notifications to API logs (safe for local dev/tests)

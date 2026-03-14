@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import time
@@ -18,7 +17,6 @@ from app.cases_api import router as cases_router
 from app.chat.api import router as chat_router
 from app.logging_config import configure_logging
 from app.telemetry import configure_telemetry
-from app.services.email_scheduler import EmailScheduler, scheduler_enabled, scheduler_interval_seconds
 from app.users.api import router as users_router
 from app.versioning import get_api_version, get_core_version
 
@@ -35,19 +33,6 @@ os.environ.setdefault("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER)
 EFFECTIVE_LLM_PROVIDER = os.getenv("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER).strip().lower()
 LOG_LEVEL = configure_logging()
 logger = logging.getLogger("aijuristiction-api.http")
-
-_email_scheduler_task: asyncio.Task[None] | None = None
-
-
-async def _email_scheduler_loop() -> None:
-    scheduler = EmailScheduler.from_env()
-    interval = scheduler_interval_seconds()
-    while True:
-        processed = scheduler.run_once(limit=50)
-        if processed:
-            logger.info("Email scheduler processed %s queued messages", processed)
-        await asyncio.sleep(interval)
-
 
 
 def _cors_allow_origins() -> list[str]:
@@ -85,7 +70,6 @@ configure_telemetry(app, service_name="aijuristiction-api", service_version=app.
 
 @app.on_event("startup")
 async def startup_log() -> None:
-    global _email_scheduler_task
     store = ApiDatabaseStore.from_env()
     if store.uses_postgres:
         apply_sql_migrations(
@@ -95,9 +79,6 @@ async def startup_log() -> None:
             dry_run=False,
         )
     store.initialize()
-    if scheduler_enabled() and _email_scheduler_task is None:
-        _email_scheduler_task = asyncio.create_task(_email_scheduler_loop(), name="email-scheduler")
-
     logger.info(
         "API Starting | api_version=%s | core_version=%s | log_level=%s | llm_provider=%s | db_option=%s",
         app.version,
@@ -166,15 +147,3 @@ def version() -> JSONResponse:
 
 logger.info("API logging configured at level %s", logging.getLevelName(LOG_LEVEL))
 
-
-@app.on_event("shutdown")
-async def shutdown_email_scheduler() -> None:
-    global _email_scheduler_task
-    if _email_scheduler_task is None:
-        return
-    _email_scheduler_task.cancel()
-    try:
-        await _email_scheduler_task
-    except asyncio.CancelledError:
-        pass
-    _email_scheduler_task = None
