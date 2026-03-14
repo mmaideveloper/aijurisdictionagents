@@ -112,6 +112,22 @@ Conda notes:
   dependencies, and tooling (needed for `pip install -e .`).
 
 
+## Local Fake Payment Service
+
+A fake PayPal-compatible payment simulator is available in `service/` for local integrations and demos.
+
+```bash
+node service/fake_paypal_service.js
+```
+
+Minimal runnable demo:
+
+```bash
+./service/examples/paypal_payment_demo.sh
+```
+
+For full endpoint details, see `service/README.md`.
+
 ## Features
 
 - Document ingestion from `data/` (txt/md, PDF optional)
