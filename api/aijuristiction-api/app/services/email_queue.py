@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import importlib
 import json
 import os
 import sqlite3
@@ -10,9 +11,11 @@ from typing import Any
 from aijurisdictionagents.db_migrations import apply_sql_migrations
 
 try:
-    import psycopg
-except ImportError:  # pragma: no cover
-    psycopg = None
+    _psycopg: Any = importlib.import_module("psycopg")
+except ModuleNotFoundError:  # pragma: no cover
+    _psycopg = None
+
+psycopg: Any = _psycopg
 
 
 @dataclass(frozen=True)
