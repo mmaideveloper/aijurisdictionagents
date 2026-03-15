@@ -395,6 +395,7 @@ Project skill for local mobile app startup:
 This launcher now asks for `localApi` or `publicDevApi`.
 If you choose `localApi`, it also asks for database mode (`local`, `postgres`, `azure`) and storage mode (`local`, `azure`), then starts the API in a visible console window so live API logs are shown there.
 Use `-ConsoleWindow` if you also want live Flutter logs in a separate terminal window.
+If the local API is already running in the background, `-ConsoleWindow` also opens a separate PowerShell window that tails the API log files so request logs stay visible locally.
 
 Examples:
 

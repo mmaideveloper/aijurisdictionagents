@@ -14,7 +14,9 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'audio/jurisdicta_speaker.dart';
 import 'auth/local_auth_store.dart';
+import 'chat/speech_flow.dart';
 import 'logging/app_logger.dart';
 import 'platform/file_saver.dart';
 
@@ -45,15 +47,6 @@ const String _githubRepo = String.fromEnvironment(
   defaultValue: 'aijurisdictionagents',
 );
 
-const Map<String, String> _welcomeMessagesByLanguage = <String, String>{
-  'SK':
-      'Ahoj, som Jurisdicta. Pomozem vam s vasim pripadom. Popiste svoj problem a nahrajte relevantnu dokumentaciu.',
-  'EN':
-      'Hello, I am Jurisdicta. I can help you with your case. Please describe your problem and upload relevant documentation.',
-  'GE':
-      'Hallo, ich bin Jurisdicta. Ich kann Ihnen bei Ihrem Fall helfen. Bitte beschreiben Sie Ihr Problem und laden Sie relevante Unterlagen hoch.',
-};
-
 const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
   'SK':
       'Relacia vyprsala. Vytvorili sme novu relaciu. Prosim, odoslite poslednu spravu znova.',
@@ -78,12 +71,6 @@ String _normalizeLanguageCode(String languageCode) {
   }
 }
 
-String _welcomeMessageForLanguage(String languageCode) {
-  final normalized = _normalizeLanguageCode(languageCode);
-  return _welcomeMessagesByLanguage[normalized] ??
-      _welcomeMessagesByLanguage[_fallbackLanguageCode]!;
-}
-
 String _sessionExpiredMessageForLanguage(String languageCode) {
   final normalized = _normalizeLanguageCode(languageCode);
   return _sessionExpiredMessagesByLanguage[normalized] ??
@@ -104,10 +91,13 @@ final Random _correlationIdRandom = Random();
 int _correlationIdCounter = 0;
 
 String _generateRequestId() {
-  final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch
+  final timestamp = DateTime.now()
+      .toUtc()
+      .millisecondsSinceEpoch
       .toRadixString(16)
       .padLeft(12, '0');
-  final randomChunk = _correlationIdRandom.nextInt(0x7fffffff)
+  final randomChunk = _correlationIdRandom
+      .nextInt(0x7fffffff)
       .toRadixString(16)
       .padLeft(8, '0');
   _correlationIdCounter = (_correlationIdCounter + 1) % 0xffff;
@@ -116,10 +106,13 @@ String _generateRequestId() {
 }
 
 String _generateFlowCorrelationId() {
-  final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch
+  final timestamp = DateTime.now()
+      .toUtc()
+      .millisecondsSinceEpoch
       .toRadixString(16)
       .padLeft(12, '0');
-  final randomChunk = _correlationIdRandom.nextInt(0x7fffffff)
+  final randomChunk = _correlationIdRandom
+      .nextInt(0x7fffffff)
       .toRadixString(16)
       .padLeft(8, '0');
   return 'mbl-flow-$timestamp-$randomChunk';
@@ -196,7 +189,8 @@ class AppStrings {
       'update_sign_in_profile': 'Upravit prihlasovaci profil',
       'profile_update_failed': 'Aktualizacia profilu zlyhala: {{error}}',
       'subscription': 'Predplatne',
-      'subscription_change_requested': 'Zmena predplatneho bola odoslana (pending).',
+      'subscription_change_requested':
+          'Zmena predplatneho bola odoslana (pending).',
       'subscription_change_failed': 'Zmena predplatneho zlyhala: {{error}}',
       'subscription_status': 'Stav: {{status}}',
       'update_available': 'Dostupna aktualizacia',
@@ -318,7 +312,8 @@ class AppStrings {
       'update_sign_in_profile': 'Update sign in profile',
       'profile_update_failed': 'Profile update failed: {{error}}',
       'subscription': 'Subscription',
-      'subscription_change_requested': 'Subscription change requested (pending).',
+      'subscription_change_requested':
+          'Subscription change requested (pending).',
       'subscription_change_failed': 'Failed to change subscription: {{error}}',
       'subscription_status': 'Status: {{status}}',
       'update_available': 'Update available',
@@ -974,8 +969,7 @@ class ApiClient {
     _lastCorrelationId = null;
   }
 
-  Map<String, String> _headersForRequest(String requestId) =>
-      <String, String>{
+  Map<String, String> _headersForRequest(String requestId) => <String, String>{
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
         'x-correlation-id': _flowCorrelationId,
@@ -990,7 +984,8 @@ class ApiClient {
       };
 
   void _recordCorrelationId(http.BaseResponse response) {
-    _lastCorrelationId = response.headers['x-correlation-id'] ?? _flowCorrelationId;
+    _lastCorrelationId =
+        response.headers['x-correlation-id'] ?? _flowCorrelationId;
   }
 
   Future<http.Response> _postJson({
@@ -2350,7 +2345,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
 
   Future<void> _requestSubscriptionChange() async {
     final selectedPlanCode = _selectedPlanCode;
-    if (_isUpdatingSubscription || selectedPlanCode == null || selectedPlanCode.isEmpty) {
+    if (_isUpdatingSubscription ||
+        selectedPlanCode == null ||
+        selectedPlanCode.isEmpty) {
       return;
     }
     setState(() {
@@ -2374,7 +2371,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_strings.t('subscription_change_failed', <String, String>{'error': '$error'})),
+          content: Text(_strings.t('subscription_change_failed',
+              <String, String>{'error': '$error'})),
         ),
       );
     } finally {
@@ -2505,7 +2503,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             ),
             const SizedBox(height: 8),
             OutlinedButton(
-              onPressed: _isUpdatingSubscription ? null : _requestSubscriptionChange,
+              onPressed:
+                  _isUpdatingSubscription ? null : _requestSubscriptionChange,
               child: Text(strings.t('subscription')),
             ),
           ],
@@ -2557,6 +2556,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   late final ApiClient _apiClient;
   late final FileSaver _fileSaver;
+  late final JurisdictaSpeaker _speaker;
   late final List<ChatMessage> _messages;
   late ResponderMode _responderMode;
   late LocaleOption _selectedLocale;
@@ -2568,6 +2568,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
   bool _updateDialogShown = false;
   bool _speechEnabled = false;
   bool _isListening = false;
+  bool _awaitingSpokenName = false;
+  bool _isSavingSpokenName = false;
   late LocalAuthUser _signedInUser;
   List<CaseSummary> _cases = <CaseSummary>[];
   CaseSummary? _selectedCase;
@@ -2604,15 +2606,12 @@ class _ChatHomePageState extends State<ChatHomePage> {
       logger: widget.logger,
     );
     _fileSaver = createFileSaver();
+    _speaker = createJurisdictaSpeaker();
     _apiClient.setSignedInUser(_signedInUser.userId);
     final welcomeLanguage =
         _normalizeLanguageCode(_selectedLocale.languageCode);
     _messages = <ChatMessage>[
-      ChatMessage(
-        role: 'assistant',
-        content: _welcomeMessageForLanguage(welcomeLanguage),
-        agentName: 'Jurisdicta',
-      ),
+      _buildWelcomeMessage(languageCode: welcomeLanguage),
     ];
     unawaited(
       widget.logger.info(
@@ -2631,6 +2630,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       ),
     );
     unawaited(_initializeSpeechRecognition());
+    unawaited(_initializeAssistantSpeech());
     unawaited(_loadCases());
     unawaited(_loadAppVersion());
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2639,15 +2639,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
   }
 
   void _resetMessagesForCurrentCase() {
+    _awaitingSpokenName = false;
     _messages
       ..clear()
-      ..add(
-        ChatMessage(
-          role: 'assistant',
-          content: _welcomeMessageForLanguage(_selectedLocale.languageCode),
-          agentName: 'Jurisdicta',
-        ),
-      );
+      ..add(_buildWelcomeMessage());
   }
 
   @override
@@ -2657,7 +2652,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
         oldWidget.signedInUser.email != widget.signedInUser.email ||
         oldWidget.signedInUser.firstName != widget.signedInUser.firstName ||
         oldWidget.signedInUser.lastName != widget.signedInUser.lastName) {
-      _signedInUser = widget.signedInUser;
+      setState(() {
+        _signedInUser = widget.signedInUser;
+        _updateWelcomeMessageForLocale();
+      });
     }
   }
 
@@ -2936,6 +2934,46 @@ class _ChatHomePageState extends State<ChatHomePage> {
     }
   }
 
+  String? get _profileName => resolveStoredProfileName(
+        firstName: _signedInUser.firstName,
+        lastName: _signedInUser.lastName,
+      );
+
+  ChatMessage _buildWelcomeMessage({String? languageCode}) {
+    return ChatMessage(
+      role: 'assistant',
+      content: speechWelcomeMessage(
+        languageCode ?? _selectedLocale.languageCode,
+        userName: _profileName,
+      ),
+      agentName: 'Jurisdicta',
+    );
+  }
+
+  bool _isInitialWelcomeMessage(ChatMessage message) {
+    return message.role == 'assistant' &&
+        message.agentName == 'Jurisdicta' &&
+        message.createdAt == null;
+  }
+
+  void _appendAssistantMessage(String content) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _messages.add(
+        ChatMessage(
+          role: 'assistant',
+          content: content,
+          agentName: 'Jurisdicta',
+          createdAt: DateTime.now(),
+        ),
+      );
+    });
+    _scrollToLatest();
+    unawaited(_speakAssistantMessage(content));
+  }
+
   Future<void> _initializeSpeechRecognition() async {
     final enabled = await _speechToText.initialize(
       onError: _onSpeechError,
@@ -2953,6 +2991,33 @@ class _ChatHomePageState extends State<ChatHomePage> {
     );
   }
 
+  Future<void> _initializeAssistantSpeech() async {
+    final enabled = await _speaker.initialize();
+    if (!enabled) {
+      await widget.logger.info('Assistant speech output unavailable');
+      return;
+    }
+    await widget.logger.info('Assistant speech output initialized');
+    await _speakAssistantMessage(_messages.first.content);
+  }
+
+  Future<void> _speakAssistantMessage(String content) async {
+    final visibleContent = _sanitizeVisibleMessageContent(content);
+    if (visibleContent.isEmpty) {
+      return;
+    }
+    final spoke = await _speaker.speak(
+      text: visibleContent,
+      languageCode: _selectedLocale.languageCode,
+    );
+    if (!spoke) {
+      await widget.logger.info(
+        'Assistant speech output skipped',
+        <String, Object?>{'message_length': visibleContent.length},
+      );
+    }
+  }
+
   void _onSpeechResult(SpeechRecognitionResult result) {
     if (!mounted) {
       return;
@@ -2963,6 +3028,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
         TextPosition(offset: _inputController.text.length),
       );
     });
+    if (_awaitingSpokenName && result.finalResult) {
+      unawaited(_storeSpokenName(result.recognizedWords));
+    }
   }
 
   void _onSpeechStatus(String status) {
@@ -3001,6 +3069,77 @@ class _ChatHomePageState extends State<ChatHomePage> {
     );
   }
 
+  Future<void> _storeSpokenName(String spokenText) async {
+    if (_isSavingSpokenName) {
+      return;
+    }
+    final parsed = parseSpokenProfileName(spokenText);
+    if (parsed == null) {
+      final retryMessage = speechNameRetryMessage(_selectedLocale.languageCode);
+      _showSnackbar(retryMessage);
+      _appendAssistantMessage(retryMessage);
+      return;
+    }
+
+    setState(() {
+      _isSavingSpokenName = true;
+    });
+    try {
+      final updated = await widget.authStore.updateUser(
+        input: UpdateProfileInput(
+          phoneNumber: _signedInUser.phoneNumber,
+          password: _signedInUser.password,
+          firstName: parsed.firstName,
+          lastName: parsed.lastName,
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      final savedName = resolveStoredProfileName(
+            firstName: updated.firstName,
+            lastName: updated.lastName,
+          ) ??
+          parsed.displayName;
+      setState(() {
+        _signedInUser = updated;
+        _awaitingSpokenName = false;
+        _inputController.clear();
+        _updateWelcomeMessageForLocale();
+      });
+      widget.onProfileUpdated(updated);
+      _appendAssistantMessage(
+        speechNameSavedMessage(
+          _selectedLocale.languageCode,
+          userName: savedName,
+        ),
+      );
+      await widget.logger.info(
+        'Speech profile name stored',
+        <String, Object?>{
+          'user_id': updated.userId,
+          'first_name': updated.firstName,
+          'last_name': updated.lastName,
+        },
+      );
+    } catch (error, stackTrace) {
+      _showSnackbar(_strings.t('profile_update_failed', <String, String>{
+        'error': '$error',
+      }));
+      await widget.logger.error(
+        'Speech profile name update failed',
+        error,
+        stackTrace,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingSpokenName = false;
+        });
+      }
+    }
+  }
+
   Future<void> _toggleSpeechInput() async {
     if (!_speechEnabled) {
       _showSnackbar(_strings.t('speech_unavailable'));
@@ -3009,6 +3148,18 @@ class _ChatHomePageState extends State<ChatHomePage> {
     if (_isListening) {
       await _speechToText.stop();
       return;
+    }
+    await _speaker.stop();
+    if (_awaitingSpokenName) {
+      _inputController.clear();
+    } else if (_profileName == null) {
+      setState(() {
+        _awaitingSpokenName = true;
+      });
+      _appendAssistantMessage(
+        speechNamePromptMessage(_selectedLocale.languageCode),
+      );
+      _inputController.clear();
     }
     await _speechToText.listen(
       onResult: _onSpeechResult,
@@ -3023,23 +3174,17 @@ class _ChatHomePageState extends State<ChatHomePage> {
       return;
     }
     final firstMessage = _messages.first;
-    final isInitialWelcome = firstMessage.role == 'assistant' &&
-        firstMessage.agentName == 'Jurisdicta' &&
-        firstMessage.createdAt == null;
-    if (!isInitialWelcome) {
+    if (!_isInitialWelcomeMessage(firstMessage)) {
       return;
     }
     final welcomeLanguage =
         _normalizeLanguageCode(_selectedLocale.languageCode);
-    _messages[0] = ChatMessage(
-      role: 'assistant',
-      content: _welcomeMessageForLanguage(welcomeLanguage),
-      agentName: 'Jurisdicta',
-    );
+    _messages[0] = _buildWelcomeMessage(languageCode: welcomeLanguage);
   }
 
   @override
   void dispose() {
+    unawaited(_speaker.stop());
     _speechToText.stop();
     _inputController.dispose();
     _messagesScrollController.dispose();
@@ -3100,6 +3245,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
     if (text.isEmpty || _isSending) {
+      return;
+    }
+    if (_awaitingSpokenName) {
+      await _storeSpokenName(text);
       return;
     }
     if (_selectedCase == null) {
@@ -3180,6 +3329,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
               );
             });
             _scrollToLatest();
+            if (role == 'assistant') {
+              unawaited(_speakAssistantMessage(visibleContent));
+            }
           }
           if (event.event == 'result' || event.event == 'done') {
             if (mounted) {
@@ -3227,6 +3379,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
             _hasExportReady = exportReady;
           });
           _scrollToLatest();
+          unawaited(_speakAssistantMessage(visibleReply));
         }
       }
     } on SessionExpiredException {
@@ -3597,7 +3750,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
                         if (_lastErrorCorrelationId != null &&
                             _lastErrorCorrelationId!.isNotEmpty)
                           Tooltip(
-                            message: strings.t('request_id_label', <String, String>{
+                            message:
+                                strings.t('request_id_label', <String, String>{
                               'id': _lastErrorCorrelationId!,
                             }),
                             child: TextButton.icon(

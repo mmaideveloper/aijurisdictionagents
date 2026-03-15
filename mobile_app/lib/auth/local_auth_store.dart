@@ -277,9 +277,8 @@ class LocalAuthStore {
     }
 
     final current = await getCurrentUser();
-    final cachedPassword = current != null && current.phoneNumber == phone
-        ? current.password
-        : '';
+    final cachedPassword =
+        current != null && current.phoneNumber == phone ? current.password : '';
     final user = _userFromApiResponse(response, password: cachedPassword);
     await _cacheSignedInUser(user);
     return user;
@@ -323,18 +322,16 @@ class LocalAuthStore {
 
     final phone = _normalizePhone(input.phoneNumber);
     final password = input.password.trim();
+    final resolvedPassword = password.isEmpty ? current.password : password;
     if (phone.isEmpty) {
       throw Exception('Phone number is required.');
-    }
-    if (password.isEmpty) {
-      throw Exception('Password is required.');
     }
 
     final response = await _patchJson(
       path: '/v1/users/${current.userId}',
       payload: <String, Object?>{
         'phone_number': phone,
-        'password': password,
+        'password': password.isEmpty ? null : password,
         'first_name': _normalizeOptionalText(input.firstName),
         'last_name': _normalizeOptionalText(input.lastName),
       },
@@ -343,13 +340,15 @@ class LocalAuthStore {
       throw Exception(_extractErrorDetail(response));
     }
 
-    final updated = _userFromApiResponse(response, password: password);
+    final updated = _userFromApiResponse(response, password: resolvedPassword);
     await _cacheSignedInUser(updated);
     return updated;
   }
 
   Future<List<SubscriptionPlanInfo>> listSubscriptionPlans() async {
-    final response = await http.get(baseUri.resolve('/v1/users/subscriptions/plans'), headers: _headers);
+    final response = await http.get(
+        baseUri.resolve('/v1/users/subscriptions/plans'),
+        headers: _headers);
     if (response.statusCode != 200) {
       throw Exception(_extractErrorDetail(response));
     }
@@ -360,8 +359,11 @@ class LocalAuthStore {
         .toList(growable: false);
   }
 
-  Future<List<UserSubscriptionInfo>> listUserSubscriptions({required String userId}) async {
-    final response = await http.get(baseUri.resolve('/v1/users/$userId/subscriptions'), headers: _headers);
+  Future<List<UserSubscriptionInfo>> listUserSubscriptions(
+      {required String userId}) async {
+    final response = await http.get(
+        baseUri.resolve('/v1/users/$userId/subscriptions'),
+        headers: _headers);
     if (response.statusCode != 200) {
       throw Exception(_extractErrorDetail(response));
     }
@@ -372,7 +374,8 @@ class LocalAuthStore {
         .toList(growable: false);
   }
 
-  Future<UserSubscriptionInfo> requestSubscriptionChange({required String userId, required String planCode}) async {
+  Future<UserSubscriptionInfo> requestSubscriptionChange(
+      {required String userId, required String planCode}) async {
     final response = await _postJson(
       path: '/v1/users/$userId/subscriptions',
       payload: <String, Object?>{'plan_code': planCode},
@@ -380,7 +383,8 @@ class LocalAuthStore {
     if (response.statusCode != 201) {
       throw Exception(_extractErrorDetail(response));
     }
-    return UserSubscriptionInfo.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    return UserSubscriptionInfo.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   Future<void> _cacheSignedInUser(LocalAuthUser user) async {
