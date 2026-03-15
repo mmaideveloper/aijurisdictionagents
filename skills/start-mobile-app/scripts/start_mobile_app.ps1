@@ -36,6 +36,20 @@ function Resolve-FlutterPath {
     throw "Flutter SDK not found. Install Flutter or add flutter to PATH."
 }
 
+function Resolve-ShellPath {
+    $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($pwshCmd) {
+        return $pwshCmd.Source
+    }
+
+    $powershellCmd = Get-Command powershell -ErrorAction SilentlyContinue
+    if ($powershellCmd) {
+        return $powershellCmd.Source
+    }
+
+    throw "PowerShell executable not found."
+}
+
 function Test-WebReady {
     param(
         [string]$TargetHost,
@@ -165,6 +179,48 @@ function Resolve-RequiredConfigValue {
     }
 }
 
+function Open-LogTailWindow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ShellPath,
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Paths,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowTitle
+    )
+
+    $existing = @($Paths | Where-Object { Test-Path $_ })
+    if (-not $existing) {
+        return $false
+    }
+
+    $quotedPaths = $existing | ForEach-Object { "'$_'" }
+    $tailCommand = @(
+        '$Host.UI.RawUI.WindowTitle = ''' + $WindowTitle.Replace("'", "''") + '''',
+        '$paths = @(' + ($quotedPaths -join ", ") + ')',
+        'Write-Host "Tailing logs:"',
+        '$paths | ForEach-Object { Write-Host "  $_" }',
+        'Get-Content -Path $paths -Wait -Tail 20'
+    ) -join '; '
+
+    Start-Process -FilePath $ShellPath -ArgumentList @("-NoExit", "-Command", $tailCommand) -WorkingDirectory $RepoRoot | Out-Null
+    return $true
+}
+
+function Test-IsLoopbackApiUrl {
+    param([string]$Url)
+
+    try {
+        $uri = [System.Uri]$Url
+    } catch {
+        return $false
+    }
+
+    return $uri.Host -in @("127.0.0.1", "localhost")
+}
+
 function Resolve-ApiBaseUrl {
     param(
         [string]$Mode,
@@ -204,7 +260,7 @@ $skillScriptsDir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $skillScriptsDir "..\..\..")
 $appDir = Join-Path $repoRoot "mobile_app"
 $runsDir = Join-Path $repoRoot "runs"
-$pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+$shellPath = Resolve-ShellPath
 
 if (-not (Test-Path $appDir)) {
     throw "Mobile app folder not found: $appDir"
@@ -242,16 +298,24 @@ if ($ApiMode -eq "localApi") {
         }
         & (Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1") @apiStartArgs | Out-Null
         Start-Sleep -Seconds 4
+    } elseif ($ConsoleWindow -and (Test-IsLoopbackApiUrl -Url $ApiBaseUrl)) {
+        $openedApiLogs = Open-LogTailWindow `
+            -ShellPath $shellPath `
+            -RepoRoot $repoRoot `
+            -Paths @(
+                (Join-Path $runsDir "api-local.log"),
+                (Join-Path $runsDir "api-local.err.log")
+            ) `
+            -WindowTitle "AI Jurisdiction API Logs"
+        if ($openedApiLogs) {
+            Write-Output "API log tail window started."
+        }
     }
 } elseif (-not (Test-ApiReady -Url $ApiBaseUrl)) {
     Write-Warning "Public dev API is not reachable at $ApiBaseUrl."
 }
 
 if ($ConsoleWindow) {
-    if (-not $pwsh) {
-        throw "PowerShell 7 (pwsh) was not found on PATH."
-    }
-
     $scriptPath = Join-Path $repoRoot "skills\start-mobile-app\scripts\start_mobile_app.ps1"
     $commandArgs = @("-NoExit", "-File", $scriptPath, "-Device", $Device, "-BindHost", $BindHost, "-Port", "$Port", "-ApiMode", $ApiMode, "-ApiBaseUrl", $ApiBaseUrl, "-ApiKey", $ApiKey)
     if ($PublicDevApiBaseUrl) {
@@ -282,7 +346,7 @@ if ($ConsoleWindow) {
         $commandArgs += "-NoOpen"
     }
 
-    Start-Process -FilePath $pwsh -ArgumentList $commandArgs -WorkingDirectory $repoRoot | Out-Null
+    Start-Process -FilePath $shellPath -ArgumentList $commandArgs -WorkingDirectory $repoRoot | Out-Null
     Write-Output "Mobile app console window started."
     if ($Device -eq "chrome" -or $Device -eq "edge") {
         Write-Output "App URL: http://$BindHost`:$Port"

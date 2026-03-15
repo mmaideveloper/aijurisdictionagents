@@ -39,12 +39,14 @@ def _cors_allow_origins() -> list[str]:
     value = os.getenv("CORS_ALLOW_ORIGINS")
     if value:
         return [origin.strip() for origin in value.split(",") if origin.strip()]
-    return [
-        "http://localhost:8090",
-        "http://127.0.0.1:8090",
-        "http://localhost:7357",
-        "http://127.0.0.1:7357",
-    ]
+    return []
+
+
+def _cors_allow_origin_regex() -> str | None:
+    if os.getenv("CORS_ALLOW_ORIGINS"):
+        return None
+    # Allow local web/mobile dev servers on localhost or loopback regardless of chosen port.
+    return r"^https?://(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?$"
 
 app = FastAPI(
     title="AI Juristiction API",
@@ -57,6 +59,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_allow_origins(),
+    allow_origin_regex=_cors_allow_origin_regex(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -8,6 +8,8 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Rebranded mobile layout with login card at the top and blue legal-themed background from the footer artwork.
 - Add supporting documents using the device camera.
 - Add questions/answers by speech using the microphone button next to the chat input.
+- Jurisdicta now speaks assistant messages aloud through text-to-speech, including the welcome message, speech prompts, and backend replies.
+- The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.
 - The chat input is multiline by default with at least 3 visible lines; pressing `Enter` inserts a new line and messages are sent only with the send button.
 - Message area is centered between login header and selectors.
 - The top header now uses a single compact line with `AIJurisDigta`, the app version, and the current auth action (`Login` or `Sign up` on the auth screen, `Sign out` after login).
@@ -75,6 +77,10 @@ flutter run --dart-define=AIJ_API_BASE_URL=http://127.0.0.1:8080 --dart-define=A
 ### Speech input
 
 Use the microphone icon in the chat composer to dictate a message. Tap again to stop recording, then send the recognized text as a normal chat message.
+
+If the signed-in profile already has a name, Jurisdicta uses it in the welcome message.
+If the profile has no name yet, the first speech interaction asks for the name, stores it in the profile, and then the user can continue dictating the actual question.
+Assistant responses are also spoken aloud. When the microphone starts listening, the app stops playback first so Jurisdicta's voice is not fed back into speech recognition.
 
 ## Local API contract
 

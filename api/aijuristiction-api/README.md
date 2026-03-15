@@ -265,10 +265,9 @@ curl -X POST "http://localhost:8080/v1/chat/sessions" \
 ## CORS for local simulator
 
 - API enables CORS for local development origins by default:
-  - `http://localhost:8090`
-  - `http://127.0.0.1:8090`
-  - `http://localhost:7357`
-  - `http://127.0.0.1:7357`
+  - `http://localhost:<any-port>`
+  - `http://127.x.x.x:<any-port>` for loopback IPv4 addresses
+  - `http://[::1]:<any-port>` for IPv6 loopback
 - Override allowed origins with `CORS_ALLOW_ORIGINS` (comma-separated), for example:
 
 ```bash
