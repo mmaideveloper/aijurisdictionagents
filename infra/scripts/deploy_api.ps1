@@ -316,6 +316,15 @@ function Get-ResourceLocationInGroup {
     return [string]$location
 }
 
+function Normalize-LocationName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Location
+    )
+
+    return (($Location -replace "\s+", "").Trim().ToLowerInvariant())
+}
+
 function Ensure-ServicePrincipalLogin {
     param(
         [string]$ExpectedClientId,
@@ -594,7 +603,7 @@ $ImageTag = Resolve-InputValue -ExplicitValue $ImageTag -EnvFileValue $imageTagF
 $ExpectedServicePrincipalClientId = Resolve-InputValue -ExplicitValue "" -EnvFileValue $clientIdFromEnvFile -EnvironmentValue $env:AZURE_CLIENT_ID
 
 if ([string]::IsNullOrWhiteSpace($Location)) {
-    $Location = "austriaeast"
+    $Location = "westeurope"
 }
 if ([string]::IsNullOrWhiteSpace($ResourceGroupName)) {
     $ResourceGroupName = "rg-aijurisdiction-dev"
@@ -733,24 +742,27 @@ $createManagedIdentity = [string]::IsNullOrWhiteSpace($managedIdentityLocation)
 $createPostgresServer = [string]::IsNullOrWhiteSpace($postgresServerLocation)
 $createContainerApp = [string]::IsNullOrWhiteSpace($containerAppLocation)
 
-$existingLocations = @(
-    $logAnalyticsWorkspaceLocation,
-    $managedEnvironmentLocation,
-    $acrLocation,
-    $storageAccountLocation,
-    $managedIdentityLocation,
-    $postgresServerLocation,
-    $containerAppLocation
-) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique
+$normalizedLocation = Normalize-LocationName -Location $Location
+$locationChecks = @(
+    @{ Label = "Log Analytics Workspace"; Location = $logAnalyticsWorkspaceLocation },
+    @{ Label = "Container Apps Environment"; Location = $managedEnvironmentLocation },
+    @{ Label = "Container Registry"; Location = $acrLocation },
+    @{ Label = "Storage Account"; Location = $storageAccountLocation },
+    @{ Label = "Managed Identity"; Location = $managedIdentityLocation },
+    @{ Label = "PostgreSQL Flexible Server"; Location = $postgresServerLocation },
+    @{ Label = "Container App"; Location = $containerAppLocation }
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Location) }
 
-if ($existingLocations.Count -gt 0) {
-    if ($existingLocations.Count -gt 1) {
-        Write-Warning "Existing resources were found in multiple locations: $($existingLocations -join ', '). Using '$($existingLocations[0])' for newly created resources."
+$mismatchedLocations = @(
+    $locationChecks | Where-Object {
+        (Normalize-LocationName -Location $_.Location) -ne $normalizedLocation
+    } | ForEach-Object {
+        "$($_.Label)='$($_.Location)'"
     }
-    if ($Location -ne $existingLocations[0]) {
-        Write-Host "Overriding deployment location from '$Location' to '$($existingLocations[0])' to match existing resources."
-        $Location = [string]$existingLocations[0]
-    }
+)
+
+if ($mismatchedLocations.Count -gt 0) {
+    throw "Existing Azure resources do not match requested location '$Location': $($mismatchedLocations -join ', '). Update the target names or recreate those resources in the desired region."
 }
 
 Write-Host "Create plan:"

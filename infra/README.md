@@ -32,6 +32,17 @@ This keeps deployment simple while matching the existing API container workflow.
 - Azure CLI Container Apps extension
 - PowerShell 7+ (recommended)
 
+Register the PostgreSQL resource provider on the target subscription before running `infra_deploy`:
+
+```powershell
+az login
+az account set --subscription "<SUBSCRIPTION_ID>"
+az provider register --namespace Microsoft.DBforPostgreSQL --wait
+az provider show --namespace Microsoft.DBforPostgreSQL --query registrationState -o tsv
+```
+
+The final command should return `Registered`.
+
 Login once (interactive):
 
 ```powershell
@@ -45,7 +56,7 @@ Create a deployment resource group (one-time):
 ```powershell
 az login
 az account set --subscription "<SUBSCRIPTION_ID>"
-az group create -n "rg-aijurisdiction-dev" -l "austriaeast"
+az group create -n "rg-aijurisdiction-dev" -l "westeurope"
 ```
 
 Create a service principal scoped to that resource group:
@@ -132,7 +143,7 @@ The Bicep deployment provisions or reuses:
 Existing-resource behavior:
 
 - If a named resource already exists in the target resource group, deployment reuses it instead of creating it again.
-- The deploy script detects existing resource locations and aligns new resources to avoid location conflicts.
+- The deploy script requires existing named resources to already be in the requested location. If a resource with the same name exists in a different region, deployment fails with a location mismatch instead of silently switching regions.
 
 Parameter resolution priority in `deploy_api.ps1`:
 
@@ -309,7 +320,7 @@ Run from repository root:
 ./infra/scripts/deploy_laws_collector.ps1 \
   -SubscriptionId "<subscription-id>" \
   -ResourceGroupName "<resource-group>" \
-  -Location "austriaeast" \
+  -Location "westeurope" \
   -ContainerAppEnvironmentName "<container-app-env-name>" \
   -AcrName "<acr-name>" \
   -ManagedIdentityName "<managed-identity-name>" \
