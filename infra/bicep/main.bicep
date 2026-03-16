@@ -13,7 +13,7 @@ param postgresAdminUsername string
 param postgresAdminPassword string = ''
 param postgresSkuName string = 'Standard_B1ms'
 param postgresSkuTier string = 'Burstable'
-param postgresVersion string = '16'
+param postgresVersion string = '17'
 param postgresStorageSizeGb int = 32
 param postgresClientIp string = ''
 param createLogAnalyticsWorkspace bool = true

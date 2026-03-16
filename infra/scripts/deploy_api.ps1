@@ -266,6 +266,46 @@ function Restore-EnvVar {
     Set-Item -Path "Env:$Name" -Value $PreviousValue
 }
 
+function Get-JsonPayloadFromCliOutput {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RawText
+    )
+
+    $trimmed = $RawText.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) {
+        throw "CLI output was empty."
+    }
+
+    $firstObjectStart = $trimmed.IndexOf("{")
+    $firstArrayStart = $trimmed.IndexOf("[")
+
+    $startIndex = -1
+    if ($firstObjectStart -ge 0 -and $firstArrayStart -ge 0) {
+        $startIndex = [Math]::Min($firstObjectStart, $firstArrayStart)
+    }
+    elseif ($firstObjectStart -ge 0) {
+        $startIndex = $firstObjectStart
+    }
+    else {
+        $startIndex = $firstArrayStart
+    }
+
+    if ($startIndex -lt 0) {
+        throw "CLI output did not contain JSON."
+    }
+
+    $jsonCandidate = $trimmed.Substring($startIndex).Trim()
+    $lastObjectEnd = $jsonCandidate.LastIndexOf("}")
+    $lastArrayEnd = $jsonCandidate.LastIndexOf("]")
+    $endIndex = [Math]::Max($lastObjectEnd, $lastArrayEnd)
+    if ($endIndex -lt 0) {
+        throw "CLI output contained an incomplete JSON payload."
+    }
+
+    return $jsonCandidate.Substring(0, $endIndex + 1)
+}
+
 function Get-PublicIpAddress {
     try {
         return [string](Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 10)
@@ -278,7 +318,7 @@ function Get-PublicIpAddress {
 function Convert-ToPostgresConnectionString {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$ServerName,
+        [string]$HostName,
         [Parameter(Mandatory = $true)]
         [string]$DatabaseName,
         [Parameter(Mandatory = $true)]
@@ -287,9 +327,20 @@ function Convert-ToPostgresConnectionString {
         [string]$AdminPassword
     )
 
-    $encodedUser = [System.Uri]::EscapeDataString($AdminUsername)
+    $normalizedHostName = $HostName.Trim().ToLower()
+    if (-not $normalizedHostName.EndsWith(".postgres.database.azure.com")) {
+        $normalizedHostName = "${normalizedHostName}.postgres.database.azure.com"
+    }
+
+    $normalizedAdminUsername = $AdminUsername.Trim()
+    if (-not $normalizedAdminUsername.Contains("@")) {
+        $serverName = $normalizedHostName.Split(".", 2)[0]
+        $normalizedAdminUsername = "${normalizedAdminUsername}@${serverName}"
+    }
+
+    $encodedUser = [System.Uri]::EscapeDataString($normalizedAdminUsername)
     $encodedPassword = [System.Uri]::EscapeDataString($AdminPassword)
-    return "postgresql://${encodedUser}:${encodedPassword}@${ServerName}.postgres.database.azure.com:5432/${DatabaseName}?sslmode=require"
+    return "postgresql://${encodedUser}:${encodedPassword}@${normalizedHostName}:5432/${DatabaseName}?sslmode=require"
 }
 
 function Get-ResourceLocationInGroup {
@@ -784,6 +835,7 @@ $outputsRaw = az deployment group create `
     --resource-group $ResourceGroupName `
     --name "api-infra-$([DateTime]::UtcNow.ToString('yyyyMMddHHmmss'))" `
     --template-file (Join-Path $infraRoot "bicep/main.bicep") `
+    --only-show-errors `
     --parameters `
       location=$Location `
       environmentName=$EnvironmentName `
@@ -835,7 +887,8 @@ $deploymentErrorText
 
 $outputsText = if ($outputsRaw -is [System.Array]) { $outputsRaw -join "`n" } else { [string]$outputsRaw }
 try {
-    $outputs = $outputsText | ConvertFrom-Json
+    $outputsJson = Get-JsonPayloadFromCliOutput -RawText $outputsText
+    $outputs = $outputsJson | ConvertFrom-Json
 }
 catch {
     throw "Failed to parse deployment outputs as JSON.`nRaw output:`n$outputsText"
@@ -882,7 +935,7 @@ else {
     $PostgresDatabaseName
 }
 $dbCloud = Convert-ToPostgresConnectionString `
-    -ServerName $PostgresServerName `
+    -HostName $postgresHostOutput `
     -DatabaseName $postgresDatabaseNameOutput `
     -AdminUsername $PostgresAdminUsername `
     -AdminPassword $PostgresAdminPassword
@@ -894,7 +947,7 @@ else {
 }
 
 Write-Host "Building image in ACR: ${acrLoginServer}/${ImageRepository}:${ImageTag}"
-$apiBuildContextPath = "api/aijuristiction-api"
+$apiBuildContextPath = "."
 $apiDockerfilePath = "api/aijuristiction-api/Dockerfile"
 Build-AndPushImage `
     -RegistryName $AcrName `
@@ -917,15 +970,29 @@ Write-Host "Updating Container App image: $imageRef"
 $envPairs = Convert-EnvFileToPairs -Path $resolvedEnvFilePath
 $envPairsList = New-Object System.Collections.Generic.List[string]
 foreach ($item in $envPairs) {
+    $key = $item.Split("=", 2)[0]
+    if ($key -in @("DB_OPTION", "DB_CLOUD", "DB_LOCAL", "STORAGE_OPTION", "STORE_CLOUD", "STORE_LOCAL")) {
+        continue
+    }
     $envPairsList.Add($item)
 }
 $envPairsList.Add("DB_OPTION=azure")
-$envPairsList.Add("DB_CLOUD=$dbCloud")
+$envPairsList.Add("DB_CLOUD=secretref:db-cloud")
+$envPairsList.Add("DB_LOCAL=/tmp/api.sqlite3")
 $envPairsList.Add("STORAGE_OPTION=azure")
+$envPairsList.Add("STORE_LOCAL=/tmp/storage")
 if (-not [string]::IsNullOrWhiteSpace($storeCloud)) {
     $envPairsList.Add("STORE_CLOUD=$storeCloud")
 }
 $envPairs = $envPairsList.ToArray()
+
+Write-Host "Updating Container App secret for Azure PostgreSQL connection..."
+az containerapp secret set `
+    --name $ContainerAppName `
+    --resource-group $ResourceGroupName `
+    --secrets "db-cloud=$dbCloud" `
+    --only-show-errors `
+    --output none
 
 if ($envPairs.Count -gt 0) {
     az containerapp update `

@@ -75,7 +75,16 @@ python .\databases\scripts\apply_db_migrations.py --project api --dry-run
 For Azure deployments, use:
 
 - `DB_OPTION=azure`
-- `DB_CLOUD=postgresql://<user>:<password>@<server>.postgres.database.azure.com:5432/<database>?sslmode=require`
+- `DB_CLOUD=postgresql://<admin>%40<server>:<password>@<server>.postgres.database.azure.com:5432/<database>?sslmode=require`
+
+Azure Database for PostgreSQL Flexible Server requires the login username in the
+connection string to include the server name suffix.
+
+Example:
+
+```text
+postgresql://jurisadmin%40db-juris-dev:<password>@db-juris-dev.postgres.database.azure.com:5432/aijurisdiction?sslmode=require
+```
 
 Then run:
 

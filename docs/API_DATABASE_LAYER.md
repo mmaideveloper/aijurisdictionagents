@@ -16,7 +16,7 @@ Use these environment variables in local `.env`, Docker, and GitHub environment 
 - `DB_LOCAL`: local SQLite path relative to the repo root (example: `./databases/api.sqlite3`)
 - `DB_CLOUD`: cloud database connection string (PostgreSQL in Azure)
 - `STORE_LOCAL`: local storage root path (example: `./storage`)
-- `STORE_CLOUD`: Azure Storage connection string
+- `STORE_CLOUD`: Azure Blob URL prefix for case artifacts (example: `https://<storage-account>.blob.core.windows.net/<container-name>`)
 
 If you set:
 - `DB_OPTION=postgres`, then `DB_CLOUD` is required.
@@ -28,6 +28,14 @@ This aligns with your GitHub environment secrets plan:
 - `STORAGE_OPTION=azure`
 - `DB_CLOUD=...`
 - `STORE_CLOUD=...`
+
+Azure Database for PostgreSQL Flexible Server uses the login format
+`<admin>@<server>` in the connection string username. In the URI, that `@`
+must be percent-encoded as `%40`. Example:
+
+```text
+postgresql://jurisadmin%40db-juris-dev:<password>@db-juris-dev.postgres.database.azure.com:5432/aijurisdiction?sslmode=require
+```
 
 ## Concrete technology choice
 
@@ -65,6 +73,12 @@ This guarantees every case has an isolated storage namespace.
 
 ```bash
 PYTHONPATH=src python examples/api_database_minimal_demo.py
+```
+
+Azure config-only demo:
+
+```bash
+PYTHONPATH=src python examples/azure_api_postgres_config_demo.py
 ```
 
 ## Docker notes
@@ -120,14 +134,20 @@ DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijuri
 ### Cloud rollout checklist (Azure)
 
 1. Deploy code/image to Container Apps.
-2. Ensure Container App secrets/env include `DB_OPTION=azure`, `DB_CLOUD`, and storage settings.
+2. Ensure Container App configuration includes:
+   - `DB_OPTION=azure`
+   - `DB_CLOUD` sourced from a Container Apps secret
+   - `STORAGE_OPTION=azure`
+   - `STORE_CLOUD` set to the Azure Blob URL prefix
 3. Restart/revision rollout the Container App; startup now runs schema initialization automatically.
 4. Verify with health endpoint and logs (`db_option=azure` at startup).
 
 ## Azure Container Apps notes
 
-- Use secrets for `DB_CLOUD` and `STORE_CLOUD`.
+- Use a secret for `DB_CLOUD`.
+- `STORE_CLOUD` is a blob URL prefix, not a storage account key/connection string.
 - Keep `DB_OPTION=azure` and `STORAGE_OPTION=azure`.
+- `infra/scripts/deploy_api.ps1` now generates the Azure PostgreSQL connection string, stores it as a Container Apps secret, and points `DB_CLOUD` at that secret reference automatically.
 - This commit validates env contracts; production adapters can be plugged in next.
 
 ## Subscription model (Task #86)
