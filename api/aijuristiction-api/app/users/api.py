@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import sqlite3
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.security import require_api_key
+from app.services.email_scheduler import EmailScheduler
+from app.users.notifications import (
+    queue_registration_email,
+    queue_subscription_change_email,
+    queue_subscription_status_email,
+)
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, SubscriptionPlan, User, UserSubscription
 
@@ -74,14 +81,45 @@ class SubscriptionStatusUpdateRequest(BaseModel):
     status: str = Field(min_length=1)
 
 
+class SubscriptionCheckoutRequest(BaseModel):
+    plan_code: str = Field(min_length=1)
+    payment_provider: str = Field(min_length=1, description="paypal or google_pay")
+
+
+class SubscriptionCheckoutResponse(BaseModel):
+    subscription_id: str
+    plan_code: str
+    payment_provider: str
+    payment_id: str
+    payment_status: str
+    amount_eur: int
+    checkout_url: str
+
+
+class SubscriptionPaymentConfirmationRequest(BaseModel):
+    payment_id: str = Field(min_length=1)
+
+
+_payment_sessions: dict[str, dict[str, str | int]] = {}
+_ALLOWED_SUCCESS_PHONE = "+421944400166"
+
+
 def get_user_store() -> ApiDatabaseStore:
     store = ApiDatabaseStore.from_env()
     store.initialize()
     return store
 
 
+def get_email_scheduler() -> EmailScheduler:
+    return EmailScheduler.from_env()
+
+
 @router.post("/sign-up", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)
-def sign_up(payload: SignUpRequest, store: ApiDatabaseStore = Depends(get_user_store)) -> UserProfileResponse:
+def sign_up(
+    payload: SignUpRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> UserProfileResponse:
     try:
         user = store.create_user(
             phone_number=payload.phone_number,
@@ -92,6 +130,7 @@ def sign_up(payload: SignUpRequest, store: ApiDatabaseStore = Depends(get_user_s
         )
     except sqlite3.IntegrityError as exc:
         raise _conflict_from_integrity_error(exc) from exc
+    queue_registration_email(scheduler=scheduler, user=user)
     return _to_user_profile_response(user)
 
 
@@ -158,11 +197,16 @@ def request_subscription_change(
     user_id: str,
     payload: SubscriptionChangeRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> UserSubscriptionResponse:
     try:
         item = store.request_subscription_change(user_id=user_id, plan_code=payload.plan_code)
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan code") from exc
+
+    user = store.find_user_by_id(user_id=user_id)
+    if user is not None:
+        queue_subscription_change_email(scheduler=scheduler, user=user, item=item)
     return _to_subscription_response(item)
 
 
@@ -171,6 +215,7 @@ def update_subscription_status(
     subscription_id: str,
     payload: SubscriptionStatusUpdateRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> UserSubscriptionResponse:
     try:
         item = store.update_subscription_status(subscription_id=subscription_id, status=payload.status)
@@ -178,6 +223,101 @@ def update_subscription_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    user = store.find_user_by_id(user_id=item.user_id)
+    if user is None:
+        return _to_subscription_response(item)
+
+    queue_subscription_status_email(scheduler=scheduler, user=user, item=item)
+    return _to_subscription_response(item)
+
+
+@router.post(
+    "/{user_id}/subscriptions/checkout",
+    response_model=SubscriptionCheckoutResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def checkout_subscription_change(
+    user_id: str,
+    payload: SubscriptionCheckoutRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> SubscriptionCheckoutResponse:
+    provider = payload.payment_provider.strip().lower()
+    if provider not in {"paypal", "google_pay"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported payment provider. Use paypal or google_pay",
+        )
+
+    plans = {plan.plan_code: plan for plan in store.list_subscription_plans()}
+    plan_code = payload.plan_code.strip().lower()
+    if plan_code not in plans:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan code")
+
+    try:
+        subscription = store.request_subscription_change(user_id=user_id, plan_code=plan_code)
+        subscription = store.update_subscription_status(subscription_id=subscription.subscription_id, status="paying")
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan code") from exc
+
+    payment_id = f"PAY-{uuid4()}"
+    checkout_token = str(uuid4())
+    checkout_base = "https://www.sandbox.paypal.com/checkoutnow"
+    if provider == "google_pay":
+        checkout_base = "https://pay.google.com/gp/p/ui/pay"
+    checkout_url = f"{checkout_base}?token={checkout_token}&paymentId={payment_id}"
+
+    _payment_sessions[payment_id] = {
+        "subscription_id": subscription.subscription_id,
+        "user_id": user_id,
+        "payment_provider": provider,
+        "plan_code": plan_code,
+        "payment_status": "pending",
+        "amount_eur": plans[plan_code].price_eur,
+    }
+
+    return SubscriptionCheckoutResponse(
+        subscription_id=subscription.subscription_id,
+        plan_code=plan_code,
+        payment_provider=provider,
+        payment_id=payment_id,
+        payment_status="pending",
+        amount_eur=plans[plan_code].price_eur,
+        checkout_url=checkout_url,
+    )
+
+
+@router.post("/subscriptions/{subscription_id}/confirm-payment", response_model=UserSubscriptionResponse)
+def confirm_subscription_payment(
+    subscription_id: str,
+    payload: SubscriptionPaymentConfirmationRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> UserSubscriptionResponse:
+    payment = _payment_sessions.get(payload.payment_id)
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    if payment["subscription_id"] != subscription_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment does not match subscription")
+
+    user_id = str(payment["user_id"])
+    try:
+        user = store.get_user(user_id=user_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    if user.phone_number != _ALLOWED_SUCCESS_PHONE:
+        payment["payment_status"] = "failed"
+        item = store.update_subscription_status(subscription_id=subscription_id, status="canceled")
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "message": "Payment failed (simulated). Subscription was not upgraded.",
+                "subscription": _to_subscription_response(item).model_dump(),
+            },
+        )
+
+    payment["payment_status"] = "paid"
+    item = store.update_subscription_status(subscription_id=subscription_id, status="paid")
     return _to_subscription_response(item)
 
 

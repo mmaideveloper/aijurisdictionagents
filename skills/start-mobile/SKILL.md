@@ -29,3 +29,5 @@ description: Start the local Flutter mobile application from this repository, wi
   `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -ApiMode localApi -DatabaseOption azure -DbCloud "<postgres-connection-string>" -StorageOption azure -StoreCloud "<azure-storage-connection-string>"`
 - Explicit public dev API:
   `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -ApiMode publicDevApi -PublicDevApiBaseUrl https://your-dev-api.example.com`
+
+When using `localApi`, `-ConsoleWindow` opens a visible Flutter console and also tails API logs in a separate console window when the API is already running in the background.

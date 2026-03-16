@@ -30,10 +30,12 @@ class LawsCollectorConfig:
         )
 
     def validate(self) -> None:
-        if self.country_code != "SK":
-            raise ValueError("laws_collector currently supports only country_code=SK")
+        if len(self.country_code) != 2 or not self.country_code.isalpha():
+            raise ValueError("LAWS_COUNTRY must be a 2-letter ISO code")
         if self.db_backend not in {"sqlite", "postgres"}:
             raise ValueError("LAWS_DB_BACKEND must be one of: sqlite, postgres")
+        if self.db_backend == "postgres" and not self.db_cloud:
+            raise ValueError("LAWS_DB_CLOUD must be set for postgres backend")
         if self.delta_poll_hours < 1:
             raise ValueError("LAWS_DELTA_POLL_HOURS must be >= 1")
 
@@ -44,6 +46,10 @@ class LawsCollectorConfig:
     @property
     def storage_root(self) -> Path:
         return Path(self.storage_local)
+
+    @property
+    def country_db_name(self) -> str:
+        return f"laws_{self.country_code.lower()}"
 
 
 def _resolve_repo_path(value: str) -> Path:

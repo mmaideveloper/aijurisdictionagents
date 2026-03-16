@@ -59,3 +59,42 @@ def test_cors_preflight_allows_flutter_web_localhost() -> None:
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:7357"
+
+
+def test_cors_preflight_allows_flutter_web_loopback_on_custom_port() -> None:
+    response = client.options(
+        "/v1/users/sign-in/phone",
+        headers={
+            "Origin": "http://127.0.0.1:7358",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:7358"
+
+
+def test_cors_preflight_allows_loopback_ipv4_alias_on_custom_port() -> None:
+    response = client.options(
+        "/v1/users/sign-in/phone",
+        headers={
+            "Origin": "http://127.0.0.2:9001",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.2:9001"
+
+
+def test_cors_preflight_allows_ipv6_loopback_on_custom_port() -> None:
+    response = client.options(
+        "/v1/users/sign-in/phone",
+        headers={
+            "Origin": "http://[::1]:7358",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://[::1]:7358"

@@ -351,7 +351,7 @@ class ApiDatabaseStore:
 
     def update_subscription_status(self, *, subscription_id: str, status: str) -> UserSubscription:
         normalized_status = status.strip().lower()
-        if normalized_status not in {"pending", "paying", "paid", "canceled", "expired"}:
+        if normalized_status not in {"pending", "paying", "paid", "failed", "canceled", "expired"}:
             raise ValueError("Unsupported subscription status")
 
         with self._connect() as conn:
@@ -434,6 +434,36 @@ class ApiDatabaseStore:
             )
         if row is None:
             return None
+        return _row_to_user(row)
+
+    def find_user_by_id(self, *, user_id: str) -> User | None:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT user_id, phone_number, email, first_name, last_name, full_name
+                FROM users
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+        if row is None:
+            return None
+        return _row_to_user(row)
+
+    def get_user(self, *, user_id: str) -> User:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT user_id, phone_number, email, first_name, last_name, full_name
+                FROM users
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+        if row is None:
+            raise KeyError(f"User {user_id} not found")
         return _row_to_user(row)
 
     def update_user(

@@ -113,6 +113,7 @@ same `x-api-key` guard as the chat endpoints.
 
 - `POST /v1/users/sign-up`
   - request: `phone_number`, `email`, `password`, optional `first_name`, `last_name`
+  - sends a registration email notification to the new user email
 - `POST /v1/users/sign-in`
   - request: `email`, `password`
 - `POST /v1/users/sign-in/phone`
@@ -125,9 +126,89 @@ same `x-api-key` guard as the chat endpoints.
   - returns subscription history for a user
 - `POST /v1/users/{user_id}/subscriptions`
   - request: `plan_code`; creates a pending subscription change while old paid plan remains active
+  - queues a subscription-change email notification in the email outbox database
 - `PATCH /v1/users/subscriptions/{subscription_id}`
-  - request: `status` in (`pending`, `paying`, `paid`, `canceled`, `expired`)
+  - request: `status` in (`pending`, `paying`, `paid`, `failed`, `canceled`, `expired`)
   - monthly plans start a 30-day window when status changes to `paid`
+  - queues an email for every subscription status change (including payment failure)
+
+### Email notification service
+
+### Email outbox + scheduler
+
+Emails are first persisted into a dedicated email database (`email_outbox`) and then delivered by a scheduler.
+
+- Scheduler cadence: every 60 seconds by default (`EMAIL_SCHEDULER_INTERVAL_SECONDS`)
+- Retry policy: max 2 attempts. After the second failed attempt, status changes to `failed` and scheduler skips it.
+- Queue claiming uses DB-level processing state so multiple scheduler replicas do not pick the same email at once.
+
+Email DB configuration (separate from API metadata DB):
+
+- `EMAIL_DB_OPTION` (`local`/`postgres`/`azure`, default inherits `DB_OPTION`)
+- `EMAIL_DB_LOCAL` (default `./databases/email.sqlite3`)
+- `EMAIL_DB_CLOUD` (required for postgres/azure, default inherits `DB_CLOUD`)
+- `EMAIL_SCHEDULER_ENABLED` (default `true`)
+
+Postgres/Azure email schema migrations are stored under `databases/migrations/email`.
+
+Run scheduler as a separate process (recommended for ACA split deployment):
+
+```bash
+python -m app.email_scheduler_main
+```
+
+For API-only replicas set `EMAIL_SCHEDULER_ENABLED=false`; run exactly one scheduler replica/process with it enabled.
+
+User and subscription endpoints support email notifications with configurable transport:
+
+- `EMAIL_TRANSPORT=log` (default): logs notifications to API logs (safe for local dev/tests)
+- `EMAIL_TRANSPORT=smtp`: sends real emails via SMTP
+
+SMTP configuration (used when `EMAIL_TRANSPORT=smtp`):
+
+- `EMAIL_SENDER` (default: `noreply@aijurisdiction.local`)
+- `EMAIL_SMTP_HOST` (default: `localhost`)
+- `EMAIL_SMTP_PORT` (default: `1025`)
+- `EMAIL_SMTP_USE_TLS` (default: `false`)
+- `EMAIL_SMTP_USERNAME` (optional)
+- `EMAIL_SMTP_PASSWORD` (optional)
+
+Email enqueue message composition for these endpoints is centralized in `app/users/notifications.py` to keep endpoint handlers small and reduce merge conflicts with payment/subscription feature work.
+- `POST /v1/users/{user_id}/subscriptions/checkout`
+  - request: `plan_code`, `payment_provider` (`paypal` or `google_pay`)
+  - creates a pending subscription change, sets subscription status to `paying`, and returns a fake checkout URL
+- `POST /v1/users/subscriptions/{subscription_id}/confirm-payment`
+  - request: `payment_id` returned from checkout
+  - payment simulation rule: only user phone `+421944400166` is allowed to complete payment successfully
+  - all other phone numbers receive simulated payment failure and the requested subscription is canceled (no upgrade)
+
+### Subscription payment flow (PayPal / Google Pay simulation)
+
+### Mobile-app simulation behavior
+
+- The checkout/confirm API path is the same path used by the mobile app integration.
+- To test a successful payment upgrade in local/dev, create/sign in a user with phone `+421944400166`.
+- To test unsuccessful payment handling, use any other phone number; confirmation returns HTTP `402` and subscription remains not upgraded.
+
+Minimal runnable example:
+
+```bash
+python examples/minimal_demo.py
+```
+
+```bash
+# 1) Start checkout for new subscription
+curl -X POST "http://localhost:8080/v1/users/<USER_ID>/subscriptions/checkout" \
+  -H "x-api-key: aijuris" \
+  -H "Content-Type: application/json" \
+  -d '{"plan_code":"premium","payment_provider":"paypal"}'
+
+# 2) Confirm returned payment_id (simulated webhook/callback)
+curl -X POST "http://localhost:8080/v1/users/subscriptions/<SUBSCRIPTION_ID>/confirm-payment" \
+  -H "x-api-key: aijuris" \
+  -H "Content-Type: application/json" \
+  -d '{"payment_id":"PAY-..."}'
+```
 
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
 and support three database modes:
@@ -184,10 +265,9 @@ curl -X POST "http://localhost:8080/v1/chat/sessions" \
 ## CORS for local simulator
 
 - API enables CORS for local development origins by default:
-  - `http://localhost:8090`
-  - `http://127.0.0.1:8090`
-  - `http://localhost:7357`
-  - `http://127.0.0.1:7357`
+  - `http://localhost:<any-port>`
+  - `http://127.x.x.x:<any-port>` for loopback IPv4 addresses
+  - `http://[::1]:<any-port>` for IPv6 loopback
 - Override allowed origins with `CORS_ALLOW_ORIGINS` (comma-separated), for example:
 
 ```bash
@@ -268,7 +348,7 @@ inside the `TYPE_CHECKING` block so both `ruff` and `mypy --strict` stay green.
 Telemetry processor selection (OTLP vs console) is covered by unit tests in `tests/test_telemetry.py`.
 
 The API `pyproject.toml` also sets `mypy_path = ["../../src"]` so strict type checks can resolve the monorepo core package during CI and local runs.
-The `pytest` command is configured with `pythonpath = ["."]` in `pyproject.toml`, so direct invocation works consistently in local runs and GitHub Actions.
+The `pytest` command is configured with `pythonpath = [".", "../../src"]` in `pyproject.toml`, so tests can import the monorepo core package during direct local runs and GitHub Actions.
 - Deploy path: on manual dispatch with `deploy=true`, push image to Azure Container Registry and deploy/update Azure Container App.
 
 Required GitHub Environment variables:
@@ -314,6 +394,7 @@ Current E2E specs:
 - `tests/version.spec.ts`
 - `tests/chat.spec.ts`
 - `tests/chat-simulator.spec.ts`
+- `tests/mobile-auth-subscription.spec.ts` (covers mobile login + subscription request flow against user endpoints)
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
 Run only the chat simulation test:
@@ -338,6 +419,14 @@ cd api/aijuristiction-api/e2e-playwright
 RUN_NEGATIVE_AUTH_TESTS=1 npx playwright test tests/chat.spec.ts
 ```
 
+
+
+Run the mobile authentication + subscription lifecycle check used by the Flutter app:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+API_KEY=aijuris npx playwright test tests/mobile-auth-subscription.spec.ts
+```
 
 Run the chat simulator streaming test with fixture input and uploaded txt document:
 

@@ -50,6 +50,7 @@ If started with `-Background`, stop via:
 - Default web URL is `http://127.0.0.1:7357`.
 - By default, the launcher opens the app URL in the browser after the web target becomes ready.
 - Use `-ConsoleWindow` when you want live Flutter logs in a separate terminal window instead of background log files.
+- With `localApi`, `-ConsoleWindow` now also opens a visible API log tail window when the local API is already running in the background.
 - For `localApi`, default API URL is `http://127.0.0.1:8080`.
 - For `localApi`, the launcher now also asks for database mode (`local`, `postgres`, `azure`) and storage mode (`local`, `azure`) unless they are passed as parameters.
 - `-DatabaseOption postgress` is accepted and normalized to `postgres`.
