@@ -119,7 +119,7 @@ The script will:
 
 1. Provision/update Azure infrastructure via `infra/bicep/main.bicep`
 2. Build the API image in ACR using `az acr build`
-3. Update the Container App to the new image and database env vars
+3. Store the Azure PostgreSQL connection string as a Container Apps secret and update the Container App image/env configuration
 4. Apply API schema migrations to Azure PostgreSQL
 
 The Bicep deployment provisions or reuses:
@@ -144,6 +144,10 @@ Parameter resolution priority in `deploy_api.ps1`:
 ## Environment variables for the API
 
 By default, the script reads selected keys from repo `.env` and sets them on the Container App.
+For Azure PostgreSQL deployments, the script expands the database username to the Flexible Server login format
+`<admin>@<server>` when building `DB_CLOUD`, percent-encodes it for the URI, stores that value in a Container Apps secret, and sets
+`DB_CLOUD=secretref:db-cloud` on the API container.
+`STORE_CLOUD` is set as a blob URL prefix, not as a secret.
 
 If your `.env` is at the repo root, no extra flag is needed. To use a different file:
 
@@ -217,6 +221,7 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_POSTGRES_SERVER_NAME` = `db-juris-dev`
 - `AZURE_POSTGRES_DATABASE_NAME` = `aijurisdiction`
 - `AZURE_POSTGRES_ADMIN_USERNAME` = `<POSTGRES_ADMIN_USERNAME>`
+  - Use the base admin name only, for example `jurisadmin`. The deploy script expands it to `<admin>@<server>` for the Azure PostgreSQL connection string.
 - GitHub secret `AZURE_POSTGRES_ADMIN_PASSWORD` = `<POSTGRES_ADMIN_PASSWORD>`
 - `AZURE_CONTAINER_REGISTRY` = `<ACR_NAME>`
 - `AZURE_STORAGE_ACCOUNT_NAME` = `<STORAGE_ACCOUNT_NAME>` (optional; auto-derived if omitted)

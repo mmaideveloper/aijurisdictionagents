@@ -216,6 +216,7 @@ and support three database modes:
 - `DB_OPTION=local`: local SQLite metadata (`DB_LOCAL`, default `./databases/api.sqlite3`)
 - `DB_OPTION=postgres`: local PostgreSQL for Docker-based development (`DB_CLOUD=postgresql://...`)
 - `DB_OPTION=azure`: Azure Database for PostgreSQL Flexible Server (`DB_CLOUD=postgresql://...sslmode=require`)
+  - Azure Flexible Server username format is `<admin>@<server>`.
 
 The dedicated local PostgreSQL project now lives under `databases/README.md`.
 
@@ -315,7 +316,11 @@ DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijuri
 Cloud rollout:
 1. Build/push/deploy API image.
 2. Provision or update Azure PostgreSQL Flexible Server (`db-juris-dev` by default) through infra deployment.
-3. Confirm Container App env vars: `DB_OPTION=azure`, `DB_CLOUD`, `STORAGE_OPTION`, `STORE_CLOUD`.
+3. Confirm Container App configuration:
+   - `DB_OPTION=azure`
+   - `DB_CLOUD=secretref:db-cloud`
+   - `STORAGE_OPTION=azure`
+   - `STORE_CLOUD=https://<storage-account>.blob.core.windows.net/<container-name>`
 4. Roll out a new revision (or restart) and verify startup logs include selected `db_option`.
 
 GitHub workflows:

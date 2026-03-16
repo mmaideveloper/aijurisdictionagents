@@ -278,7 +278,7 @@ function Get-PublicIpAddress {
 function Convert-ToPostgresConnectionString {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$ServerName,
+        [string]$HostName,
         [Parameter(Mandatory = $true)]
         [string]$DatabaseName,
         [Parameter(Mandatory = $true)]
@@ -287,9 +287,20 @@ function Convert-ToPostgresConnectionString {
         [string]$AdminPassword
     )
 
-    $encodedUser = [System.Uri]::EscapeDataString($AdminUsername)
+    $normalizedHostName = $HostName.Trim().ToLower()
+    if (-not $normalizedHostName.EndsWith(".postgres.database.azure.com")) {
+        $normalizedHostName = "${normalizedHostName}.postgres.database.azure.com"
+    }
+
+    $normalizedAdminUsername = $AdminUsername.Trim()
+    if (-not $normalizedAdminUsername.Contains("@")) {
+        $serverName = $normalizedHostName.Split(".", 2)[0]
+        $normalizedAdminUsername = "${normalizedAdminUsername}@${serverName}"
+    }
+
+    $encodedUser = [System.Uri]::EscapeDataString($normalizedAdminUsername)
     $encodedPassword = [System.Uri]::EscapeDataString($AdminPassword)
-    return "postgresql://${encodedUser}:${encodedPassword}@${ServerName}.postgres.database.azure.com:5432/${DatabaseName}?sslmode=require"
+    return "postgresql://${encodedUser}:${encodedPassword}@${normalizedHostName}:5432/${DatabaseName}?sslmode=require"
 }
 
 function Get-ResourceLocationInGroup {
@@ -870,7 +881,7 @@ else {
     $PostgresDatabaseName
 }
 $dbCloud = Convert-ToPostgresConnectionString `
-    -ServerName $PostgresServerName `
+    -HostName $postgresHostOutput `
     -DatabaseName $postgresDatabaseNameOutput `
     -AdminUsername $PostgresAdminUsername `
     -AdminPassword $PostgresAdminPassword
@@ -905,15 +916,27 @@ Write-Host "Updating Container App image: $imageRef"
 $envPairs = Convert-EnvFileToPairs -Path $resolvedEnvFilePath
 $envPairsList = New-Object System.Collections.Generic.List[string]
 foreach ($item in $envPairs) {
+    $key = $item.Split("=", 2)[0]
+    if ($key -in @("DB_OPTION", "DB_CLOUD", "STORAGE_OPTION", "STORE_CLOUD")) {
+        continue
+    }
     $envPairsList.Add($item)
 }
 $envPairsList.Add("DB_OPTION=azure")
-$envPairsList.Add("DB_CLOUD=$dbCloud")
+$envPairsList.Add("DB_CLOUD=secretref:db-cloud")
 $envPairsList.Add("STORAGE_OPTION=azure")
 if (-not [string]::IsNullOrWhiteSpace($storeCloud)) {
     $envPairsList.Add("STORE_CLOUD=$storeCloud")
 }
 $envPairs = $envPairsList.ToArray()
+
+Write-Host "Updating Container App secret for Azure PostgreSQL connection..."
+az containerapp secret set `
+    --name $ContainerAppName `
+    --resource-group $ResourceGroupName `
+    --secrets "db-cloud=$dbCloud" `
+    --only-show-errors `
+    --output none
 
 if ($envPairs.Count -gt 0) {
     az containerapp update `
