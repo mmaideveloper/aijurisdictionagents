@@ -935,7 +935,7 @@ else {
 }
 
 Write-Host "Building image in ACR: ${acrLoginServer}/${ImageRepository}:${ImageTag}"
-$apiBuildContextPath = "api/aijuristiction-api"
+$apiBuildContextPath = "."
 $apiDockerfilePath = "api/aijuristiction-api/Dockerfile"
 Build-AndPushImage `
     -RegistryName $AcrName `
