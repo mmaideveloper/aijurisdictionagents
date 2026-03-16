@@ -152,11 +152,15 @@ python examples/minimal_demo.py
 
 ## CI environment API base URL
 
-GitHub Actions mobile builds now read repository/environment variable `API_BASE_URL`
+GitHub Actions mobile builds now read GitHub Environment variable `API_BASE_URL`
 and pass it to Flutter as `--dart-define=AIJ_API_BASE_URL=...` for APK/Web builds.
 
 Set `API_BASE_URL` per GitHub Environment (for example dev/stage/prod) to target
 that environment's API during build.
+
+The workflow binds to GitHub Environment `dev` by default for push/pull_request builds,
+and `workflow_dispatch` allows overriding the environment with the `github_environment`
+input. If `API_BASE_URL` is missing, the workflow fails instead of falling back to a hardcoded URL.
 
 CI pins Flutter to `3.24.0` on the `stable` channel with dependency caching,
 uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`

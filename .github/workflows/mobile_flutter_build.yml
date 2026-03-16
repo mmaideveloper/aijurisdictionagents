@@ -2,6 +2,11 @@ name: mobile_flutter_build
 
 on:
   workflow_dispatch:
+    inputs:
+      github_environment:
+        description: "GitHub Environment that contains mobile API variables"
+        required: true
+        default: "dev"
   push:
     branches: [main]
     paths:
@@ -15,6 +20,7 @@ on:
 jobs:
   build-mobile:
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.github_environment || 'dev' }}
 
     defaults:
       run:
@@ -43,7 +49,8 @@ jobs:
           set -euo pipefail
           API_BASE_URL_VALUE='${{ vars.API_BASE_URL }}'
           if [ -z "$API_BASE_URL_VALUE" ]; then
-            API_BASE_URL_VALUE='http://10.0.2.2:8080'
+            echo "Missing GitHub Environment variable: API_BASE_URL" >&2
+            exit 1
           fi
           echo "API_BASE_URL=$API_BASE_URL_VALUE" >> "$GITHUB_ENV"
           echo "Using API_BASE_URL=$API_BASE_URL_VALUE"
