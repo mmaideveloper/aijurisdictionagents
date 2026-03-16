@@ -236,6 +236,31 @@ def test_document_export_for_easement_case_is_not_lease_template() -> None:
     assert "nájomná zmluva" not in lowered
 
 
+def test_build_simple_pdf_preserves_slovak_and_german_characters() -> None:
+    from app.chat.api import _build_simple_pdf
+
+    pdf_bytes = _build_simple_pdf(
+        title="Nájomná zmluva / Kündigung",
+        lines=[
+            "Čl. I - Zmluvné strany",
+            "Ľubomír Žáček býva v Košiciach.",
+            "Deutsch: Kündigung, Straße, Größe und äußerst wichtige Frist.",
+        ],
+        country="SK",
+        language="sk-SK",
+        header_line="AI Jurisdicta Solution | Generated: 2026-03-16 20:00:00 UTC",
+        footer_line="AIJ | API 0.1.0 | Core 0.1.0",
+        draw_logo_mark=True,
+        include_title_block=True,
+    )
+
+    extracted = _pdf_text(pdf_bytes)
+    assert "Nájomná zmluva / Kündigung" in extracted
+    assert "Čl. I - Zmluvné strany" in extracted
+    assert "Ľubomír Žáček býva v Košiciach." in extracted
+    assert "Deutsch: Kündigung, Straße, Größe und äußerst wichtige Frist." in extracted
+
+
 def test_create_message_returns_404_for_unknown_session() -> None:
     response = client.post(
         "/v1/chat/messages",

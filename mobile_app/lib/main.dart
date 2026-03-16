@@ -204,6 +204,16 @@ class AppStrings {
       'speech_recognition_error': 'Chyba rozpoznavania reci: {{error}}',
       'speech_unavailable':
           'Rozpoznavanie reci na tomto zariadeni nie je dostupne.',
+      'speech_input_toggle_label': 'Vstup hlasom',
+      'speech_input_enabled': 'Vstup hlasom zapnuty',
+      'speech_input_disabled': 'Vstup hlasom vypnuty',
+      'speech_input_disabled_message':
+          'Vstup hlasom je vypnuty. Zapnite ho tlacidlom Vstup hlasom.',
+      'speaker_voice_label': 'Hlas asistenta',
+      'speaker_voice_unavailable': 'Pre zvoleny jazyk nie je dostupny hlas.',
+      'test_speaker_voice': 'Vyskusat hlas',
+      'speaker_test_sample':
+          'Dobry den, som Jurisdicta a toto je ukazka hlasu.',
       'no_camera_available': 'Na tomto zariadeni nie je dostupna kamera.',
       'document_added': 'Dokument bol pridany z kamery.',
       'create_or_select_case':
@@ -325,6 +335,17 @@ class AppStrings {
       'could_not_open_update_page': 'Could not open update page.',
       'speech_recognition_error': 'Speech recognition error: {{error}}',
       'speech_unavailable': 'Speech recognition is unavailable on this device.',
+      'speech_input_toggle_label': 'Speech input',
+      'speech_input_enabled': 'Speech input on',
+      'speech_input_disabled': 'Speech input off',
+      'speech_input_disabled_message':
+          'Speech input is turned off. Use the Speech input button to enable it.',
+      'speaker_voice_label': 'Assistant voice',
+      'speaker_voice_unavailable':
+          'No matching speaker voice is available for the selected language.',
+      'test_speaker_voice': 'Test voice',
+      'speaker_test_sample':
+          'Hello, I am Jurisdicta and this is a sample of the selected voice.',
       'no_camera_available': 'No camera available on this device.',
       'document_added': 'Document added from camera.',
       'create_or_select_case':
@@ -444,6 +465,17 @@ class AppStrings {
       'speech_recognition_error': 'Fehler bei der Spracherkennung: {{error}}',
       'speech_unavailable':
           'Spracherkennung ist auf diesem Geraet nicht verfuegbar.',
+      'speech_input_toggle_label': 'Spracheingabe',
+      'speech_input_enabled': 'Spracheingabe an',
+      'speech_input_disabled': 'Spracheingabe aus',
+      'speech_input_disabled_message':
+          'Spracheingabe ist ausgeschaltet. Aktivieren Sie sie mit der Schaltflaeche Spracheingabe.',
+      'speaker_voice_label': 'Assistentenstimme',
+      'speaker_voice_unavailable':
+          'Fuer die gewaehlte Sprache ist keine passende Stimme verfuegbar.',
+      'test_speaker_voice': 'Stimme testen',
+      'speaker_test_sample':
+          'Guten Tag, ich bin Jurisdicta und dies ist eine Sprachprobe.',
       'no_camera_available': 'Auf diesem Geraet ist keine Kamera verfuegbar.',
       'document_added': 'Dokument wurde von der Kamera hinzugefuegt.',
       'create_or_select_case':
@@ -641,11 +673,31 @@ String _sanitizeVisibleMessageContent(String content) {
     return '';
   }
 
+  visible = _stripAssistantAgentPrefixes(visible);
+  if (visible.isEmpty) {
+    return '';
+  }
+
   final filteredLines = visible
       .split('\n')
       .where((line) => !_looksLikeTechnicalJsonLine(line))
       .toList();
   return filteredLines.join('\n').trim();
+}
+
+String _stripAssistantAgentPrefixes(String content) {
+  var visible = content.trimLeft();
+  final prefixPattern = RegExp(
+    r'^(?:Lawyer[A-Za-z]+|Judge[A-Za-z]+|Jurisdicta)\s*:\s*',
+  );
+  while (true) {
+    final match = prefixPattern.firstMatch(visible);
+    if (match == null) {
+      break;
+    }
+    visible = visible.substring(match.end).trimLeft();
+  }
+  return visible.trimRight();
 }
 
 String _stripCaseUpdateJson(String content) {
@@ -2567,7 +2619,11 @@ class _ChatHomePageState extends State<ChatHomePage> {
   String _appVersionLabel = 'v0.1.0+1';
   bool _updateDialogShown = false;
   bool _speechEnabled = false;
+  bool _speechInputEnabled = true;
   bool _isListening = false;
+  bool _isLoadingSpeakerVoices = false;
+  List<JurisdictaSpeakerVoice> _speakerVoices = <JurisdictaSpeakerVoice>[];
+  String? _selectedSpeakerVoiceId;
   bool _awaitingSpokenName = false;
   bool _isSavingSpokenName = false;
   late LocalAuthUser _signedInUser;
@@ -2597,9 +2653,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
           option.languageCode == _defaultLanguage,
       orElse: () => _localeOptions.first,
     );
-    _responderMode = _showLocalResponderSwitch
-        ? ResponderMode.realPerson
-        : ResponderMode.aiUserSimulator;
+    _responderMode = ResponderMode.realPerson;
     _apiClient = ApiClient(
       baseUri: Uri.parse(widget.apiBaseUrl),
       apiKey: _apiKey,
@@ -2631,6 +2685,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
     );
     unawaited(_initializeSpeechRecognition());
     unawaited(_initializeAssistantSpeech());
+    unawaited(_loadSpeakerVoices());
     unawaited(_loadCases());
     unawaited(_loadAppVersion());
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -3001,6 +3056,45 @@ class _ChatHomePageState extends State<ChatHomePage> {
     await _speakAssistantMessage(_messages.first.content);
   }
 
+  Future<void> _loadSpeakerVoices() async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isLoadingSpeakerVoices = true;
+    });
+
+    try {
+      final voices = await _speaker.listVoices(
+        languageCode: _selectedLocale.languageCode,
+      );
+      final selectedVoiceId = _speaker.selectedVoiceIdFor(
+        languageCode: _selectedLocale.languageCode,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _speakerVoices = voices;
+        _selectedSpeakerVoiceId = selectedVoiceId;
+      });
+      await widget.logger.info(
+        'Speaker voices loaded',
+        <String, Object?>{
+          'language': _selectedLocale.languageCode,
+          'voice_count': voices.length,
+          'selected_voice_id': selectedVoiceId,
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingSpeakerVoices = false;
+        });
+      }
+    }
+  }
+
   Future<void> _speakAssistantMessage(String content) async {
     final visibleContent = _sanitizeVisibleMessageContent(content);
     if (visibleContent.isEmpty) {
@@ -3145,6 +3239,10 @@ class _ChatHomePageState extends State<ChatHomePage> {
       _showSnackbar(_strings.t('speech_unavailable'));
       return;
     }
+    if (!_speechInputEnabled) {
+      _showSnackbar(_strings.t('speech_input_disabled_message'));
+      return;
+    }
     if (_isListening) {
       await _speechToText.stop();
       return;
@@ -3166,6 +3264,68 @@ class _ChatHomePageState extends State<ChatHomePage> {
       partialResults: true,
       localeId: _localeIdForSpeech(_selectedLocale),
       listenMode: ListenMode.dictation,
+    );
+  }
+
+  Future<void> _toggleSpeechInputEnabled() async {
+    if (!_speechEnabled) {
+      _showSnackbar(_strings.t('speech_unavailable'));
+      return;
+    }
+
+    final nextValue = !_speechInputEnabled;
+    if (!nextValue && _isListening) {
+      await _speechToText.stop();
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _speechInputEnabled = nextValue;
+      if (!nextValue) {
+        _awaitingSpokenName = false;
+      }
+    });
+
+    await widget.logger.info(
+      'Speech input toggle changed',
+      <String, Object?>{'enabled': nextValue},
+    );
+  }
+
+  Future<void> _selectSpeakerVoice(String? voiceId) async {
+    await _speaker.selectVoice(
+      languageCode: _selectedLocale.languageCode,
+      voiceId: voiceId,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedSpeakerVoiceId = _speaker.selectedVoiceIdFor(
+        languageCode: _selectedLocale.languageCode,
+      );
+    });
+    await widget.logger.info(
+      'Speaker voice changed',
+      <String, Object?>{
+        'language': _selectedLocale.languageCode,
+        'voice_id': _selectedSpeakerVoiceId,
+      },
+    );
+  }
+
+  Future<void> _testSpeakerVoice() async {
+    if (_speakerVoices.isEmpty) {
+      _showSnackbar(_strings.t('speaker_voice_unavailable'));
+      return;
+    }
+    await _speaker.stop();
+    await _speaker.speak(
+      text: _strings.t('speaker_test_sample'),
+      languageCode: _selectedLocale.languageCode,
     );
   }
 
@@ -3795,10 +3955,13 @@ class _ChatHomePageState extends State<ChatHomePage> {
                                     _selectedLocale = locale;
                                     _updateWelcomeMessageForLocale();
                                     _hasExportReady = false;
+                                    _speakerVoices = <JurisdictaSpeakerVoice>[];
+                                    _selectedSpeakerVoiceId = null;
                                   });
                                   if (_isListening) {
                                     unawaited(_speechToText.stop());
                                   }
+                                  unawaited(_loadSpeakerVoices());
                                   unawaited(
                                     widget.logger.info(
                                       'Locale changed',
@@ -3821,6 +3984,69 @@ class _ChatHomePageState extends State<ChatHomePage> {
                                     )
                                     .toList(),
                               ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Tooltip(
+                            message: strings.t('speech_input_toggle_label'),
+                            child: FilledButton.tonalIcon(
+                              onPressed: _speechEnabled
+                                  ? () => unawaited(
+                                        _toggleSpeechInputEnabled(),
+                                      )
+                                  : null,
+                              icon: Icon(
+                                _speechInputEnabled ? Icons.mic : Icons.mic_off,
+                              ),
+                              label: Text(
+                                _speechInputEnabled
+                                    ? strings.t('speech_input_enabled')
+                                    : strings.t('speech_input_disabled'),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Text(strings.t('speaker_voice_label')),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _isLoadingSpeakerVoices
+                                  ? const LinearProgressIndicator()
+                                  : DropdownButton<String>(
+                                      isExpanded: true,
+                                      value: _selectedSpeakerVoiceId,
+                                      hint: Text(
+                                        strings.t('speaker_voice_unavailable'),
+                                      ),
+                                      items: _speakerVoices
+                                          .map(
+                                            (voice) => DropdownMenuItem<String>(
+                                              value: voice.id,
+                                              child: Text(
+                                                '${voice.name} (${voice.locale})',
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
+                                      onChanged: _speakerVoices.isEmpty
+                                          ? null
+                                          : (value) => unawaited(
+                                                _selectSpeakerVoice(value),
+                                              ),
+                                    ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              onPressed: _speakerVoices.isEmpty
+                                  ? null
+                                  : () => unawaited(_testSpeakerVoice()),
+                              icon: const Icon(Icons.play_arrow),
+                              tooltip: strings.t('test_speaker_voice'),
                             ),
                           ],
                         ),
@@ -3989,11 +4215,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
                           message,
                         );
                         final isUser = message.role == 'user';
-                        final speaker = isUser
-                            ? strings.t('you')
-                            : (message.agentName?.trim().isNotEmpty ?? false)
-                                ? message.agentName!
-                                : strings.t('assistant');
+                        final speaker =
+                            isUser ? strings.t('you') : strings.t('assistant');
                         return Align(
                           alignment: isUser
                               ? Alignment.centerRight
@@ -4142,7 +4365,9 @@ class _ChatHomePageState extends State<ChatHomePage> {
                       ),
                       const SizedBox(width: 8),
                       IconButton(
-                        onPressed: _toggleSpeechInput,
+                        onPressed: _speechEnabled && _speechInputEnabled
+                            ? _toggleSpeechInput
+                            : null,
                         icon: Icon(
                           _isListening ? Icons.mic : Icons.mic_none,
                           color: _isListening

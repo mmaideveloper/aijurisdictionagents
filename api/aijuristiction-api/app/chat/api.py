@@ -41,7 +41,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
 _WINDOWS_FONT_DIR = Path("C:/Windows/Fonts")
-_LINUX_FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
+_LINUX_DEJAVU_FONT_DIRS = (
+    Path("/usr/share/fonts/truetype/dejavu"),
+    Path("/usr/share/fonts/dejavu"),
+)
 _REGISTERED_PDF_FONT_FAMILIES: set[str] = set()
 
 
@@ -1392,17 +1395,35 @@ def _resolve_pdf_fonts(*, country: str, language: str | None) -> tuple[str, str]
     if normalized_country in {"SK", "CZ", "DE", "AT"} or normalized_language.startswith(
         ("sk", "cs", "de")
     ):
-        font_candidates = (
-            (
-                "AIJArial",
-                _WINDOWS_FONT_DIR / "arial.ttf",
-                _WINDOWS_FONT_DIR / "arialbd.ttf",
-            ),
-            (
-                "AIJDejaVuSans",
-                _LINUX_FONT_DIR / "DejaVuSans.ttf",
-                _LINUX_FONT_DIR / "DejaVuSans-Bold.ttf",
-            ),
+        font_candidates: list[tuple[str, Path, Path]] = []
+        for font_dir in _LINUX_DEJAVU_FONT_DIRS:
+            font_candidates.extend(
+                [
+                    (
+                        "AIJDejaVuSerif",
+                        font_dir / "DejaVuSerif.ttf",
+                        font_dir / "DejaVuSerif-Bold.ttf",
+                    ),
+                    (
+                        "AIJDejaVuSans",
+                        font_dir / "DejaVuSans.ttf",
+                        font_dir / "DejaVuSans-Bold.ttf",
+                    ),
+                ]
+            )
+        font_candidates.extend(
+            [
+                (
+                    "AIJTimesNewRoman",
+                    _WINDOWS_FONT_DIR / "times.ttf",
+                    _WINDOWS_FONT_DIR / "timesbd.ttf",
+                ),
+                (
+                    "AIJArial",
+                    _WINDOWS_FONT_DIR / "arial.ttf",
+                    _WINDOWS_FONT_DIR / "arialbd.ttf",
+                ),
+            ]
         )
         for family_name, regular_path, bold_path in font_candidates:
             family = _register_ttf_font_family(
@@ -1424,8 +1445,11 @@ def _register_ttf_font_family(
     if not regular_path.exists() or not bold_path.exists():
         return None
     if family_name not in _REGISTERED_PDF_FONT_FAMILIES:
-        pdfmetrics.registerFont(TTFont(family_name, str(regular_path)))
-        pdfmetrics.registerFont(TTFont(f"{family_name}-Bold", str(bold_path)))
+        try:
+            pdfmetrics.registerFont(TTFont(family_name, str(regular_path)))
+            pdfmetrics.registerFont(TTFont(f"{family_name}-Bold", str(bold_path)))
+        except Exception:  # noqa: BLE001
+            return None
         _REGISTERED_PDF_FONT_FAMILIES.add(family_name)
     return (family_name, f"{family_name}-Bold")
 

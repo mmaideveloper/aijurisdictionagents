@@ -8,7 +8,11 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Rebranded mobile layout with login card at the top and blue legal-themed background from the footer artwork.
 - Add supporting documents using the device camera.
 - Add questions/answers by speech using the microphone button next to the chat input.
+- A dedicated `Speech input` toggle button lets the user enable or disable speech-to-text without removing the microphone action from the composer.
 - Jurisdicta now speaks assistant messages aloud through text-to-speech, including the welcome message, speech prompts, and backend replies.
+- When speech output is used, Jurisdicta selects an installed TTS voice that matches the current user language/country setup (`SK`, `CS`, `DE`, `EN`) instead of using one fixed speaker voice.
+- German voice selection now explicitly prefers `de-DE` voices first, then `de-AT`, then `de-CH`, so the default German speaker is less likely to drift to the wrong dialect when multiple German voices are installed.
+- The top control area now also shows an assistant voice picker for the current language and a play button so different speaker persons can be tested directly in the app.
 - The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.
 - The chat input is multiline by default with at least 3 visible lines; pressing `Enter` inserts a new line and messages are sent only with the send button.
 - Message area is centered between login header and selectors.
@@ -26,10 +30,12 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Language/country selector is shown in the top control area below the login header (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
   - `Real Agent` is now the default for local tests
   - `AI User Simulator Agent` remains available as the alternate local mode
+- Public/Azure API runs also start in `Real Agent` mode by default; the local responder switch is still shown only for local API hosts.
 - Local mode selector appears only when API base URL points to local hosts (`localhost`, `127.0.0.1`, `10.0.2.2`, `0.0.0.0`).
 - Select country/language before chatting (default: `Slovakia (SK)`).
 - Decorative top-row feature icons were removed to make room for the language/country and local-mode controls.
 - Mobile chat bubbles hide machine-oriented payloads such as raw JSON blocks and show only user-facing question/answer text.
+- Assistant chat bubbles no longer show backend agent labels such as `LawyerSlovakia`; the UI shows the localized assistant label and strips any leading agent prefix from the message text.
 - The `Account` action now sits next to the PDF download buttons instead of the top header.
 - Download generated summary/document PDF files directly from the mobile app once a session exists.
 - Selecting a case now loads the latest 5 persisted case messages, with a paging button to load 5 more older messages while keeping chronological order in the chat area.
@@ -76,7 +82,11 @@ flutter run --dart-define=AIJ_API_BASE_URL=http://127.0.0.1:8080 --dart-define=A
 
 ### Speech input
 
-Use the microphone icon in the chat composer to dictate a message. Tap again to stop recording, then send the recognized text as a normal chat message.
+Use the `Speech input` button in the top control area to enable speech-to-text. When it is on, use the microphone icon in the chat composer to dictate a message. Tap the microphone again to stop recording, then send the recognized text as a normal chat message.
+
+When `Speech input` is turned off, the microphone action in the composer is disabled until you turn speech back on.
+
+Use the assistant voice dropdown to switch between installed speaker persons for the selected user language. Use the play button next to the dropdown to test the current speaker before continuing the conversation.
 
 If the signed-in profile already has a name, Jurisdicta uses it in the welcome message.
 If the profile has no name yet, the first speech interaction asks for the name, stores it in the profile, and then the user can continue dictating the actual question.

@@ -234,6 +234,10 @@ The dedicated local PostgreSQL project now lives under `databases/README.md`.
 - In `Real Agent` mode, the lawyer can first ask whether a formal document should be prepared as PDF; once the user confirms, the next direct reply marks `metadata.document_ready=true` in `GET /v1/chat/sessions/{session_id}/result`.
 - For Slovak and other Central European locales, the exporter uses a Unicode TrueType font when available so characters such as `á`, `č`, `ľ`, `ô`, and `ž` render correctly in the generated PDF.
 
+Additional PDF font notes:
+- The API container installs `fonts-dejavu-core` and the exporter prefers `DejaVu Serif` on Linux, so Azure deployments do not fall back to Helvetica for Slovak or German PDFs.
+- On Windows, the exporter prefers `Times New Roman` and then `Arial` for Central European PDF exports.
+
 ## Version bump workflow
 
 When API code changes:
@@ -463,6 +467,7 @@ PDF export options:
   - one-line footer: `AIJ | API <api_version> | Core <core_version>`
   - right-top logo mark (`AI Jurisdicta [AIJ]`)
 - Document PDF uses a formal legal-agreement structure (articles/clauses and signature fields) when generating final contract output.
+- To smoke-test Slovak and German glyph rendering locally, run `python examples/minimal_pdf_export.py` and open `runs/minimal-pdf-export.pdf`.
 - PDF filenames:
   - document/final: `{case_id}-{yyyyMMddHHmmss}-final-document.pdf`
   - summary: `{case_id}-{yyyyMMddHHmmss}-discussion-summary.pdf`
