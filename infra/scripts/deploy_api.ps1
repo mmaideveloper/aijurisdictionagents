@@ -266,6 +266,46 @@ function Restore-EnvVar {
     Set-Item -Path "Env:$Name" -Value $PreviousValue
 }
 
+function Get-JsonPayloadFromCliOutput {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RawText
+    )
+
+    $trimmed = $RawText.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) {
+        throw "CLI output was empty."
+    }
+
+    $firstObjectStart = $trimmed.IndexOf("{")
+    $firstArrayStart = $trimmed.IndexOf("[")
+
+    $startIndex = -1
+    if ($firstObjectStart -ge 0 -and $firstArrayStart -ge 0) {
+        $startIndex = [Math]::Min($firstObjectStart, $firstArrayStart)
+    }
+    elseif ($firstObjectStart -ge 0) {
+        $startIndex = $firstObjectStart
+    }
+    else {
+        $startIndex = $firstArrayStart
+    }
+
+    if ($startIndex -lt 0) {
+        throw "CLI output did not contain JSON."
+    }
+
+    $jsonCandidate = $trimmed.Substring($startIndex).Trim()
+    $lastObjectEnd = $jsonCandidate.LastIndexOf("}")
+    $lastArrayEnd = $jsonCandidate.LastIndexOf("]")
+    $endIndex = [Math]::Max($lastObjectEnd, $lastArrayEnd)
+    if ($endIndex -lt 0) {
+        throw "CLI output contained an incomplete JSON payload."
+    }
+
+    return $jsonCandidate.Substring(0, $endIndex + 1)
+}
+
 function Get-PublicIpAddress {
     try {
         return [string](Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 10)
@@ -783,6 +823,7 @@ $outputsRaw = az deployment group create `
     --resource-group $ResourceGroupName `
     --name "api-infra-$([DateTime]::UtcNow.ToString('yyyyMMddHHmmss'))" `
     --template-file (Join-Path $infraRoot "bicep/main.bicep") `
+    --only-show-errors `
     --parameters `
       location=$Location `
       environmentName=$EnvironmentName `
@@ -834,7 +875,8 @@ $deploymentErrorText
 
 $outputsText = if ($outputsRaw -is [System.Array]) { $outputsRaw -join "`n" } else { [string]$outputsRaw }
 try {
-    $outputs = $outputsText | ConvertFrom-Json
+    $outputsJson = Get-JsonPayloadFromCliOutput -RawText $outputsText
+    $outputs = $outputsJson | ConvertFrom-Json
 }
 catch {
     throw "Failed to parse deployment outputs as JSON.`nRaw output:`n$outputsText"
