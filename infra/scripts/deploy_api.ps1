@@ -959,14 +959,16 @@ $envPairs = Convert-EnvFileToPairs -Path $resolvedEnvFilePath
 $envPairsList = New-Object System.Collections.Generic.List[string]
 foreach ($item in $envPairs) {
     $key = $item.Split("=", 2)[0]
-    if ($key -in @("DB_OPTION", "DB_CLOUD", "STORAGE_OPTION", "STORE_CLOUD")) {
+    if ($key -in @("DB_OPTION", "DB_CLOUD", "DB_LOCAL", "STORAGE_OPTION", "STORE_CLOUD", "STORE_LOCAL")) {
         continue
     }
     $envPairsList.Add($item)
 }
 $envPairsList.Add("DB_OPTION=azure")
 $envPairsList.Add("DB_CLOUD=secretref:db-cloud")
+$envPairsList.Add("DB_LOCAL=/tmp/api.sqlite3")
 $envPairsList.Add("STORAGE_OPTION=azure")
+$envPairsList.Add("STORE_LOCAL=/tmp/storage")
 if (-not [string]::IsNullOrWhiteSpace($storeCloud)) {
     $envPairsList.Add("STORE_CLOUD=$storeCloud")
 }
