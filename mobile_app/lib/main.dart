@@ -19,7 +19,9 @@ import 'audio/jurisdicta_speaker.dart';
 import 'auth/local_auth_store.dart';
 import 'chat/speech_flow.dart';
 import 'logging/app_logger.dart';
+import 'platform/app_updater.dart';
 import 'platform/file_saver.dart';
+import 'update/github_release.dart';
 
 const String _apiBaseUrlOverride = String.fromEnvironment(
   'AIJ_API_BASE_URL',
@@ -203,12 +205,22 @@ class AppStrings {
       'subscription_status': 'Stav: {{status}}',
       'update_available': 'Dostupna aktualizacia',
       'update_body':
-          'Na GitHube je nova verzia.\n\nAktualna: {{current}}\nNajnovsia: {{latest}}',
+          'K dispozicii je nova verzia.\n\n{{current}} -> {{latest}}',
       'later': 'Neskor',
       'update': 'Aktualizovat',
       'invalid_release_url': 'Adresa aktualizacie je neplatna.',
       'could_not_open_update_page':
           'Stranku s aktualizaciou sa nepodarilo otvorit.',
+      'update_apk_missing':
+          'Release neobsahuje Android APK subor. Otvaram stranku release.',
+      'update_download_started': 'Stahujem aktualizaciu {{latest}}...',
+      'update_install_started':
+          'Android instalator bol otvoreny. Potvrdte aktualizaciu.',
+      'update_download_failed': 'Stahovanie aktualizacie zlyhalo: {{error}}',
+      'update_install_failed':
+          'Spustenie aktualizacie zlyhalo: {{error}}',
+      'allow_install_unknown_apps':
+          'V nastaveniach Androidu povolte instalacie z tejto aplikacie a vratte sa spat.',
       'speech_recognition_error': 'Chyba rozpoznavania reci: {{error}}',
       'speech_unavailable':
           'Rozpoznavanie reci na tomto zariadeni nie je dostupne.',
@@ -343,11 +355,20 @@ class AppStrings {
       'subscription_status': 'Status: {{status}}',
       'update_available': 'Update available',
       'update_body':
-          'A newer version is available on GitHub.\n\nCurrent: {{current}}\nLatest: {{latest}}',
+          'A newer version is available.\n\n{{current}} -> {{latest}}',
       'later': 'Later',
       'update': 'Update',
       'invalid_release_url': 'Release URL is invalid.',
       'could_not_open_update_page': 'Could not open update page.',
+      'update_apk_missing':
+          'This release does not include an Android APK. Opening the release page.',
+      'update_download_started': 'Downloading update {{latest}}...',
+      'update_install_started':
+          'Android installer opened. Confirm the upgrade to continue.',
+      'update_download_failed': 'Failed to download update: {{error}}',
+      'update_install_failed': 'Failed to start update: {{error}}',
+      'allow_install_unknown_apps':
+          'Allow installs from this app in Android settings, then return to continue the update.',
       'speech_recognition_error': 'Speech recognition error: {{error}}',
       'speech_unavailable': 'Speech recognition is unavailable on this device.',
       'speech_input_toggle_label': 'Speech input',
@@ -478,12 +499,23 @@ class AppStrings {
       'subscription_status': 'Status: {{status}}',
       'update_available': 'Update verfuegbar',
       'update_body':
-          'Auf GitHub ist eine neuere Version verfuegbar.\n\nAktuell: {{current}}\nNeueste: {{latest}}',
+          'Eine neuere Version ist verfuegbar.\n\n{{current}} -> {{latest}}',
       'later': 'Spaeter',
       'update': 'Aktualisieren',
       'invalid_release_url': 'Release-URL ist ungueltig.',
       'could_not_open_update_page':
           'Update-Seite konnte nicht geoeffnet werden.',
+      'update_apk_missing':
+          'Dieses Release enthaelt keine Android-APK. Die Release-Seite wird geoeffnet.',
+      'update_download_started': 'Update {{latest}} wird heruntergeladen...',
+      'update_install_started':
+          'Android-Installer wurde geoeffnet. Bestaetigen Sie das Update.',
+      'update_download_failed':
+          'Das Update konnte nicht heruntergeladen werden: {{error}}',
+      'update_install_failed':
+          'Das Update konnte nicht gestartet werden: {{error}}',
+      'allow_install_unknown_apps':
+          'Erlauben Sie Installationen aus dieser App in den Android-Einstellungen und kehren Sie dann zur App zurueck.',
       'speech_recognition_error': 'Fehler bei der Spracherkennung: {{error}}',
       'speech_unavailable':
           'Spracherkennung ist auf diesem Geraet nicht verfuegbar.',
@@ -960,58 +992,6 @@ class SessionExpiredException implements Exception {
 
   @override
   String toString() => 'Session expired and was recreated.';
-}
-
-class _SemanticVersion implements Comparable<_SemanticVersion> {
-  const _SemanticVersion({
-    required this.major,
-    required this.minor,
-    required this.patch,
-    required this.build,
-  });
-
-  final int major;
-  final int minor;
-  final int patch;
-  final int build;
-
-  static _SemanticVersion? tryParse(String input) {
-    final match = RegExp(r'(\d+)\.(\d+)\.(\d+)(?:\+(\d+))?').firstMatch(input);
-    if (match == null) {
-      return null;
-    }
-    return _SemanticVersion(
-      major: int.tryParse(match.group(1) ?? '') ?? 0,
-      minor: int.tryParse(match.group(2) ?? '') ?? 0,
-      patch: int.tryParse(match.group(3) ?? '') ?? 0,
-      build: int.tryParse(match.group(4) ?? '') ?? 0,
-    );
-  }
-
-  @override
-  int compareTo(_SemanticVersion other) {
-    final majorDiff = major.compareTo(other.major);
-    if (majorDiff != 0) {
-      return majorDiff;
-    }
-    final minorDiff = minor.compareTo(other.minor);
-    if (minorDiff != 0) {
-      return minorDiff;
-    }
-    final patchDiff = patch.compareTo(other.patch);
-    if (patchDiff != 0) {
-      return patchDiff;
-    }
-    return build.compareTo(other.build);
-  }
-
-  @override
-  String toString() {
-    if (build > 0) {
-      return '$major.$minor.$patch+$build';
-    }
-    return '$major.$minor.$patch';
-  }
 }
 
 class ApiClient {
@@ -2707,7 +2687,8 @@ class ChatHomePage extends StatefulWidget {
   State<ChatHomePage> createState() => _ChatHomePageState();
 }
 
-class _ChatHomePageState extends State<ChatHomePage> {
+class _ChatHomePageState extends State<ChatHomePage>
+    with WidgetsBindingObserver {
   static const double _questionTimeoutSeconds = 3600;
   static const double _maxDiscussionMinutes = 60;
   static const double _communicationMinutes = 60;
@@ -2718,6 +2699,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   late final ApiClient _apiClient;
   late final FileSaver _fileSaver;
+  late final AppUpdater _appUpdater;
   late final JurisdictaSpeaker _speaker;
   late final List<ChatMessage> _messages;
   late ResponderMode _responderMode;
@@ -2728,6 +2710,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
   bool _hasExportReady = false;
   String _appVersionLabel = 'v0.1.0+1';
   bool _updateDialogShown = false;
+  bool _isInstallingUpdate = false;
   bool _speechEnabled = false;
   bool _speechInputEnabled = true;
   bool _isListening = false;
@@ -2746,6 +2729,8 @@ class _ChatHomePageState extends State<ChatHomePage> {
   List<CaseDocumentItem> _caseDocuments = <CaseDocumentItem>[];
   final Set<String> _downloadingCaseDocumentIds = <String>{};
   String? _lastErrorCorrelationId;
+  String? _pendingUpdateInstallPath;
+  String? _pendingUpdateVersion;
 
   bool get _showLocalResponderSwitch {
     return _isLocalApiBaseUrl(widget.apiBaseUrl);
@@ -2756,6 +2741,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _signedInUser = widget.signedInUser;
     _selectedLocale = _localeOptions.firstWhere(
       (option) =>
@@ -2770,6 +2756,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       logger: widget.logger,
     );
     _fileSaver = createFileSaver();
+    _appUpdater = createAppUpdater();
     _speaker = createJurisdictaSpeaker();
     _apiClient.setSignedInUser(_signedInUser.userId);
     final welcomeLanguage =
@@ -2830,7 +2817,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       if (!mounted) {
         return;
       }
-      final parsed = _SemanticVersion.tryParse(label);
+      final parsed = SemanticVersion.tryParse(label);
       setState(() {
         _appVersionLabel = label;
       });
@@ -2956,7 +2943,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
         'https://api.github.com/repos/$_githubOwner/$_githubRepo/releases/latest');
   }
 
-  Future<void> _checkForGithubUpdate(_SemanticVersion installed) async {
+  Future<void> _checkForGithubUpdate(SemanticVersion installed) async {
     try {
       final response = await http.get(
         _githubLatestReleaseUri(),
@@ -2990,16 +2977,15 @@ class _ChatHomePageState extends State<ChatHomePage> {
           (payload['prerelease'] as bool? ?? false)) {
         return;
       }
-      final tagName = payload['tag_name'] as String? ?? '';
-      final releaseUrl = payload['html_url'] as String? ?? '';
-      final latestVersion = _SemanticVersion.tryParse(tagName);
-      if (latestVersion == null) {
+      final releaseInfo = parseGithubReleaseInfo(payload);
+      if (releaseInfo == null) {
         await widget.logger.info(
           'GitHub release tag is not parseable for app update',
-          <String, Object?>{'tag_name': tagName},
+          <String, Object?>{'tag_name': payload['tag_name']},
         );
         return;
       }
+      final latestVersion = releaseInfo.version;
       if (latestVersion.compareTo(installed) <= 0) {
         await widget.logger.info(
           'App is already up to date',
@@ -3019,13 +3005,15 @@ class _ChatHomePageState extends State<ChatHomePage> {
         <String, Object?>{
           'installed': installed.toString(),
           'latest': latestVersion.toString(),
-          'release_url': releaseUrl,
+          'release_url': releaseInfo.releaseUrl,
+          'apk_download_url': releaseInfo.apkDownloadUrl,
         },
       );
       await _showUpdateDialog(
         installedVersion: installed.toString(),
         latestVersion: latestVersion.toString(),
-        releaseUrl: releaseUrl,
+        releaseUrl: releaseInfo.releaseUrl,
+        apkDownloadUrl: releaseInfo.apkDownloadUrl,
       );
     } catch (error, stackTrace) {
       await widget.logger.error(
@@ -3040,6 +3028,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
     required String installedVersion,
     required String latestVersion,
     required String releaseUrl,
+    required String? apkDownloadUrl,
   }) async {
     if (!mounted) {
       return;
@@ -3063,18 +3052,11 @@ class _ChatHomePageState extends State<ChatHomePage> {
             FilledButton(
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
-                final uri = Uri.tryParse(releaseUrl);
-                if (uri == null) {
-                  _showSnackbar(_strings.t('invalid_release_url'));
-                  return;
-                }
-                final opened = await launchUrl(
-                  uri,
-                  mode: LaunchMode.platformDefault,
+                await _startAppUpgrade(
+                  latestVersion: latestVersion,
+                  releaseUrl: releaseUrl,
+                  apkDownloadUrl: apkDownloadUrl,
                 );
-                if (!opened) {
-                  _showSnackbar(_strings.t('could_not_open_update_page'));
-                }
               },
               child: Text(_strings.t('update')),
             ),
@@ -3082,6 +3064,155 @@ class _ChatHomePageState extends State<ChatHomePage> {
         );
       },
     );
+  }
+
+  Future<void> _startAppUpgrade({
+    required String latestVersion,
+    required String releaseUrl,
+    required String? apkDownloadUrl,
+  }) async {
+    if (_isInstallingUpdate) {
+      return;
+    }
+
+    if (!_appUpdater.supportsInAppUpdate) {
+      await _openReleasePage(releaseUrl);
+      return;
+    }
+
+    if (apkDownloadUrl == null || apkDownloadUrl.trim().isEmpty) {
+      _showSnackbar(_strings.t('update_apk_missing'));
+      await _openReleasePage(releaseUrl);
+      return;
+    }
+
+    final downloadUri = Uri.tryParse(apkDownloadUrl);
+    if (downloadUri == null) {
+      _showSnackbar(_strings.t('invalid_release_url'));
+      await _openReleasePage(releaseUrl);
+      return;
+    }
+
+    setState(() {
+      _isInstallingUpdate = true;
+    });
+    try {
+      _showSnackbar(
+        _strings.t('update_download_started', <String, String>{
+          'latest': latestVersion,
+        }),
+      );
+      await widget.logger.info(
+        'Starting in-app Android update download',
+        <String, Object?>{
+          'latest': latestVersion,
+          'download_url': apkDownloadUrl,
+        },
+      );
+      final filePath = await _appUpdater.downloadReleaseAsset(
+        downloadUri: downloadUri,
+        fileName: 'app-release-$latestVersion.apk',
+      );
+      _pendingUpdateInstallPath = filePath;
+      _pendingUpdateVersion = latestVersion;
+      await _attemptPendingUpdateInstall();
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'In-app Android update failed',
+        error,
+        stackTrace,
+      );
+      _showSnackbar(
+        _strings.t('update_download_failed', <String, String>{
+          'error': '$error',
+        }),
+      );
+      await _openReleasePage(releaseUrl);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isInstallingUpdate = false;
+        });
+      } else {
+        _isInstallingUpdate = false;
+      }
+    }
+  }
+
+  Future<void> _resumePendingUpdateInstall() async {
+    try {
+      final canInstall = await _appUpdater.canInstallPackages();
+      if (canInstall) {
+        await _attemptPendingUpdateInstall();
+      }
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Failed to resume pending Android update install',
+        error,
+        stackTrace,
+      );
+    }
+  }
+
+  Future<void> _attemptPendingUpdateInstall() async {
+    final filePath = _pendingUpdateInstallPath;
+    if (filePath == null || filePath.isEmpty) {
+      return;
+    }
+
+    try {
+      final canInstall = await _appUpdater.canInstallPackages();
+      if (!canInstall) {
+        await widget.logger.info(
+          'Install unknown apps permission required for Android update',
+          <String, Object?>{
+            'file_path': filePath,
+            'latest': _pendingUpdateVersion,
+          },
+        );
+        await _appUpdater.openInstallPermissionSettings();
+        _showSnackbar(_strings.t('allow_install_unknown_apps'));
+        return;
+      }
+
+      await _appUpdater.startInstall(filePath);
+      await widget.logger.info(
+        'Android installer opened for app upgrade',
+        <String, Object?>{
+          'file_path': filePath,
+          'latest': _pendingUpdateVersion,
+        },
+      );
+      _pendingUpdateInstallPath = null;
+      _pendingUpdateVersion = null;
+      _showSnackbar(_strings.t('update_install_started'));
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Failed to start Android update installer',
+        error,
+        stackTrace,
+      );
+      _showSnackbar(
+        _strings.t('update_install_failed', <String, String>{
+          'error': '$error',
+        }),
+      );
+    }
+  }
+
+  Future<void> _openReleasePage(String releaseUrl) async {
+    final uri = Uri.tryParse(releaseUrl);
+    if (uri == null) {
+      _showSnackbar(_strings.t('invalid_release_url'));
+      return;
+    }
+    final opened = await launchUrl(
+      uri,
+      mode: LaunchMode.platformDefault,
+    );
+    if (!opened) {
+      _showSnackbar(_strings.t('could_not_open_update_page'));
+    }
   }
 
   String _localeIdForSpeech(LocaleOption locale) {
@@ -3454,11 +3585,21 @@ class _ChatHomePageState extends State<ChatHomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_speaker.stop());
     _speechToText.stop();
     _inputController.dispose();
     _messagesScrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _pendingUpdateInstallPath != null &&
+        !_isInstallingUpdate) {
+      unawaited(_resumePendingUpdateInstall());
+    }
   }
 
   void _scrollToLatest({bool animated = true}) {
