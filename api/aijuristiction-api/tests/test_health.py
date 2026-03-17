@@ -35,6 +35,31 @@ def test_openapi_contains_api_key_security_scheme() -> None:
     assert "APIKeyHeader" in security_schemes
 
 
+def test_request_and_correlation_ids_are_echoed() -> None:
+    response = client.get(
+        "/health",
+        headers={
+            "x-request-id": "req-123",
+            "x-correlation-id": "corr-456",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["x-request-id"] == "req-123"
+    assert response.headers["x-correlation-id"] == "corr-456"
+
+
+def test_request_id_is_used_as_correlation_id_fallback() -> None:
+    response = client.get(
+        "/health",
+        headers={
+            "x-request-id": "req-fallback-1",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["x-request-id"] == "req-fallback-1"
+    assert response.headers["x-correlation-id"] == "req-fallback-1"
+
+
 def test_cors_preflight_allows_local_chat_simulator() -> None:
     response = client.options(
         "/v1/chat/sessions",
