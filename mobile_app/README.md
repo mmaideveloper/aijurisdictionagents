@@ -200,6 +200,9 @@ so the in-app GitHub update check and the downloadable APK stay aligned.
 
 For Android automatic upgrade, the GitHub Release must include an `.apk` asset.
 The workflow uses `app-release.apk`, which the app prefers automatically during the update flow.
+If Android shows "App not installed" due to package/signature conflict, it means
+the installed build was signed differently (for example debug vs release). The app
+now warns about this case; uninstall the existing app and then install the new APK.
 
 CI pins Flutter to `3.41.2` on the `stable` channel with dependency caching,
 uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`
