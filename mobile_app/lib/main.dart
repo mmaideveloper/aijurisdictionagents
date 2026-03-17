@@ -673,6 +673,31 @@ Future<String> _readAppVersionLabel() async {
   return build.isEmpty ? 'v$version' : 'v$version+$build';
 }
 
+Future<void> _openSavedFile(
+  BuildContext context,
+  AppStrings strings,
+  String savedPath,
+) async {
+  final fileUri = Uri.file(savedPath);
+  try {
+    final opened = await launchUrl(
+      fileUri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.t('open_saved_file_failed'))),
+      );
+    }
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.t('open_saved_file_failed'))),
+      );
+    }
+  }
+}
+
 class AIJurisdictionMobileApp extends StatelessWidget {
   const AIJurisdictionMobileApp({
     super.key,
@@ -1936,21 +1961,6 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     );
   }
 
-  Future<void> _openSavedFile(String savedPath) async {
-    final fileUri = Uri.file(savedPath);
-    try {
-      final opened = await launchUrl(
-        fileUri,
-        mode: LaunchMode.externalApplication,
-      );
-      if (!opened) {
-        _showSnackbar(_strings.t('open_saved_file_failed'));
-      }
-    } catch (_) {
-      _showSnackbar(_strings.t('open_saved_file_failed'));
-    }
-  }
-
   Future<void> _loadRememberedPhoneNumber() async {
     final lastPhoneNumber = await widget.authStore.getLastPhoneNumber();
     if (!mounted) {
@@ -3085,7 +3095,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
           'path': savedPath,
         }));
-        await _openSavedFile(savedPath);
+        await _openSavedFile(context, _strings, savedPath);
       } else {
         _showSnackbar(_strings.t('pdf_download_started', <String, String>{
           'filename': payload.filename,
@@ -3995,7 +4005,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
           'path': savedPath,
         }));
-        await _openSavedFile(savedPath);
+        await _openSavedFile(context, _strings, savedPath);
       } else {
         _showSnackbar(_strings.t('pdf_download_started', <String, String>{
           'filename': payload.filename,
