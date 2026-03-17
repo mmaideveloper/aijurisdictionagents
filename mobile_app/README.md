@@ -79,6 +79,11 @@ For iOS simulator/local device, override `AIJ_API_BASE_URL` with your host IP, f
 flutter run --dart-define=AIJ_API_BASE_URL=http://127.0.0.1:8080 --dart-define=AIJ_API_KEY=aijuris
 ```
 
+Android note:
+
+- Release builds also need `android.permission.INTERNET` in `android/app/src/main/AndroidManifest.xml`.
+- Without that permission, Android can surface host lookup failures such as `No address associated with host name` even when the API URL itself is valid.
+
 
 ### Speech input
 
