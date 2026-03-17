@@ -7,6 +7,11 @@ on:
         description: "GitHub Environment that contains mobile API variables"
         required: true
         default: "dev"
+      release:
+        description: "Create GitHub Release and upload release APK asset"
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -16,6 +21,9 @@ on:
     paths:
       - 'mobile_app/**'
       - '.github/workflows/mobile_flutter_build.yml'
+
+permissions:
+  contents: write
 
 jobs:
   build-mobile:
@@ -64,11 +72,20 @@ jobs:
             echo "Could not resolve app version from pubspec.yaml" >&2
             exit 1
           fi
+          APP_VERSION="$RAW_VERSION"
           APP_BUILD_NAME="${RAW_VERSION%%+*}"
-          APP_BUILD_NUMBER="${GITHUB_RUN_NUMBER}"
+          if [ "$RAW_VERSION" = "$APP_BUILD_NAME" ]; then
+            APP_BUILD_NUMBER="${GITHUB_RUN_NUMBER}"
+          else
+            APP_BUILD_NUMBER="${RAW_VERSION##*+}"
+          fi
+          RELEASE_ENABLED='${{ github.event_name == 'workflow_dispatch' && inputs.release || false }}'
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
           echo "APP_BUILD_NAME=$APP_BUILD_NAME" >> "$GITHUB_ENV"
           echo "APP_BUILD_NUMBER=$APP_BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "RELEASE_ENABLED=$RELEASE_ENABLED" >> "$GITHUB_ENV"
           echo "Building APK version: ${APP_BUILD_NAME}+${APP_BUILD_NUMBER}"
+          echo "GitHub release publish enabled: $RELEASE_ENABLED"
 
       - name: Install dependencies (retry)
         shell: bash
@@ -122,6 +139,19 @@ jobs:
         with:
           name: ai-jurisdiction-mobile-apk-debug-${{ github.run_number }}
           path: mobile_app/build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Publish GitHub Release with APK
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.APP_VERSION }}
+          name: MobileApp ${{ env.APP_VERSION }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: false
+          make_latest: true
+          overwrite_files: true
+          files: |
+            mobile_app/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Build Web bundle
         run: flutter build web --release --dart-define=AIJ_API_BASE_URL=$API_BASE_URL

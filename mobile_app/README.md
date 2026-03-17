@@ -177,7 +177,15 @@ The workflow binds to GitHub Environment `dev` by default for push/pull_request 
 and `workflow_dispatch` allows overriding the environment with the `github_environment`
 input. If `API_BASE_URL` is missing, the workflow fails instead of falling back to a hardcoded URL.
 
-CI pins Flutter to `3.24.0` on the `stable` channel with dependency caching,
+Manual mobile workflow runs now also expose a `release` switch:
+
+- `release=false` (default): build APK/web artifacts only
+- `release=true`: after the release APK is built, the workflow publishes or updates a GitHub Release tagged with the mobile app version from `pubspec.yaml` and uploads `app-release.apk` as a release asset
+
+The GitHub Release tag is the exact mobile app version, for example `0.1.1+2`,
+so the in-app GitHub update check and the downloadable APK stay aligned.
+
+CI pins Flutter to `3.41.2` on the `stable` channel with dependency caching,
 uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`
 (clearing `.dart_tool` and local Pub hosted/git caches between retries) to reduce
 transient dependency installation failures caused by stale/corrupted cache state.
