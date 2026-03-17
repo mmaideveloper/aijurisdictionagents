@@ -11,6 +11,11 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - A dedicated `Speech input` toggle button lets the user enable or disable speech-to-text without removing the microphone action from the composer.
 - Jurisdicta now speaks assistant messages aloud through text-to-speech, including the welcome message, speech prompts, and backend replies.
 - When speech output is used, Jurisdicta selects an installed TTS voice that matches the current user language/country setup (`SK`, `CS`, `DE`, `EN`) instead of using one fixed speaker voice.
+- For `SK`, `CS`, and `GE`/`DE`, the speaker now retries voice discovery on startup and falls back across close Central European voices instead of caching an empty voice list immediately.
+- Current fallback order:
+  - `SK`: `sk-SK` -> Slovak-labeled voices -> `cs-CZ`/Czech -> English
+  - `CS`: `cs-CZ` -> Czech-labeled voices -> `sk-SK`/Slovak -> English
+  - `GE`/`DE`: `de-DE` -> `de-AT` -> `de-CH` -> German-labeled voices -> English
 - German voice selection now explicitly prefers `de-DE` voices first, then `de-AT`, then `de-CH`, so the default German speaker is less likely to drift to the wrong dialect when multiple German voices are installed.
 - The `Account` page now also contains the language/country selector and an assistant voice picker with a play button, so the user can choose from voices available for the selected language.
 - The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.

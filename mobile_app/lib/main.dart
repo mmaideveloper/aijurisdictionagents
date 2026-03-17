@@ -192,7 +192,8 @@ class AppStrings {
       'update_sign_in_profile': 'Upravit prihlasovaci profil',
       'profile_update_failed': 'Aktualizacia profilu zlyhala: {{error}}',
       'debug_mode': 'Debug rezim',
-      'debug_mode_description': 'V debug rezime sa vsetky logy ukladaju do suboru na Android zariadeni.',
+      'debug_mode_description':
+          'V debug rezime sa vsetky logy ukladaju do suboru na Android zariadeni.',
       'debug_mode_enabled': 'Debug rezim zapnuty.',
       'debug_mode_disabled': 'Debug rezim vypnuty.',
       'share_logs': 'Zdielat logy',
@@ -217,8 +218,7 @@ class AppStrings {
       'update_install_started':
           'Android instalator bol otvoreny. Potvrdte aktualizaciu.',
       'update_download_failed': 'Stahovanie aktualizacie zlyhalo: {{error}}',
-      'update_install_failed':
-          'Spustenie aktualizacie zlyhalo: {{error}}',
+      'update_install_failed': 'Spustenie aktualizacie zlyhalo: {{error}}',
       'update_install_signature_mismatch':
           'Nainstalovana aplikacia ma iny podpis ako aktualizacia. Odinstalujte aktualnu aplikaciu a potom nainstalujte novu verziu.',
       'allow_install_unknown_apps':
@@ -346,7 +346,8 @@ class AppStrings {
       'update_sign_in_profile': 'Update sign in profile',
       'profile_update_failed': 'Profile update failed: {{error}}',
       'debug_mode': 'Debug mode',
-      'debug_mode_description': 'In debug mode, all logs are written to a file on Android.',
+      'debug_mode_description':
+          'In debug mode, all logs are written to a file on Android.',
       'debug_mode_enabled': 'Debug mode enabled.',
       'debug_mode_disabled': 'Debug mode disabled.',
       'share_logs': 'Share logs',
@@ -495,7 +496,8 @@ class AppStrings {
       'update_sign_in_profile': 'Anmeldeprofil aktualisieren',
       'profile_update_failed': 'Profilaktualisierung fehlgeschlagen: {{error}}',
       'debug_mode': 'Debug-Modus',
-      'debug_mode_description': 'Im Debug-Modus werden alle Logs in eine Datei auf Android geschrieben.',
+      'debug_mode_description':
+          'Im Debug-Modus werden alle Logs in eine Datei auf Android geschrieben.',
       'debug_mode_enabled': 'Debug-Modus aktiviert.',
       'debug_mode_disabled': 'Debug-Modus deaktiviert.',
       'share_logs': 'Logs teilen',
@@ -557,7 +559,8 @@ class AppStrings {
       'pdf_saved_to': 'PDF gespeichert unter {{path}}',
       'pdf_download_started': 'PDF-Download gestartet: {{filename}}',
       'pdf_download_failed': 'PDF-Download fehlgeschlagen: {{error}}',
-      'open_saved_file_failed': 'Gespeicherte Datei konnte nicht geoeffnet werden.',
+      'open_saved_file_failed':
+          'Gespeicherte Datei konnte nicht geoeffnet werden.',
       'failed_to_load_cases': 'Faelle konnten nicht geladen werden: {{error}}',
       'failed_to_load_case_history':
           'Fallhistorie konnte nicht geladen werden: {{error}}',
@@ -2160,201 +2163,238 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'AIJurisDigta',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF0A2F6B),
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'AIJurisDigta',
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF0A2F6B),
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      _appVersionLabel,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: const Color(0xFF4A628A),
+                                          ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    FilledButton.tonal(
+                                      onPressed: () {
+                                        final nextIndex =
+                                            _tabController.index == 0 ? 1 : 0;
+                                        _tabController.animateTo(nextIndex);
+                                      },
+                                      child: Text(
+                                        _tabController.index == 0
+                                            ? strings.t('go_to_sign_up')
+                                            : strings.t('login'),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ),
-                            Text(
-                              _appVersionLabel,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: const Color(0xFF4A628A)),
-                            ),
-                            const SizedBox(width: 12),
-                            FilledButton.tonal(
-                              onPressed: () {
-                                final nextIndex =
-                                    _tabController.index == 0 ? 1 : 0;
-                                _tabController.animateTo(nextIndex);
-                              },
-                              child: Text(
-                                _tabController.index == 0
-                                    ? strings.t('go_to_sign_up')
-                                    : strings.t('login'),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        TabBar(
-                          controller: _tabController,
-                          tabs: [
-                            Tab(text: strings.t('auth_sign_in_tab')),
-                            Tab(text: strings.t('auth_sign_up_tab')),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
+                                const SizedBox(height: 12),
+                                TabBar(
+                                  controller: _tabController,
+                                  tabs: [
+                                    Tab(text: strings.t('auth_sign_in_tab')),
+                                    Tab(text: strings.t('auth_sign_up_tab')),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
                                 SizedBox(
                                   height: authPanelHeight,
                                   child: AutofillGroup(
                                     child: TabBarView(
-                            controller: _tabController,
-                            children: [
-                              SingleChildScrollView(
-                                child: Column(
-                                  children: [
-                                    TextField(
-                                      controller: _signInPhoneController,
-                                      keyboardType: TextInputType.phone,
-                                      autofillHints: const <String>[
-                                        AutofillHints.telephoneNumber,
-                                        AutofillHints.telephoneNumberDevice,
-                                        AutofillHints.username,
-                                      ],
-                                      decoration:
-                                          const InputDecoration().copyWith(
-                                        labelText: strings.t('phone_number'),
-                                        hintText: _isLocalExecution
-                                            ? strings.t('phone_number_hint')
-                                            : null,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: FilledButton(
-                                        onPressed:
-                                            _isBusy ? null : _signInByPhone,
-                                        child: Text(
-                                          _isBusy
-                                              ? strings.t('signing_in')
-                                              : strings.t('sign_in_by_phone'),
-                                        ),
-                                      ),
-                                    ),
-                                    if (_showEmailPasswordFallback) ...[
-                                      const SizedBox(height: 16),
-                                      const Divider(),
-                                      const SizedBox(height: 8),
-                                      TextField(
-                                        controller: _signInEmailController,
-                                        keyboardType:
-                                            TextInputType.emailAddress,
-                                        autofillHints: const <String>[
-                                          AutofillHints.email,
-                                          AutofillHints.username,
-                                        ],
-                                        decoration: InputDecoration(
-                                          labelText: strings.t('email'),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      TextField(
-                                        controller: _signInPasswordController,
-                                        obscureText: true,
-                                        autofillHints: const <String>[
-                                          AutofillHints.password,
-                                        ],
-                                        decoration: InputDecoration(
-                                          labelText: strings.t('password'),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: OutlinedButton(
-                                          onPressed: _isBusy
-                                              ? null
-                                              : _signInByEmailPassword,
-                                          child: Text(
-                                            strings
-                                                .t('sign_in_by_email_password'),
+                                      controller: _tabController,
+                                      children: [
+                                        SingleChildScrollView(
+                                          child: Column(
+                                            children: [
+                                              TextField(
+                                                controller:
+                                                    _signInPhoneController,
+                                                keyboardType:
+                                                    TextInputType.phone,
+                                                autofillHints: const <String>[
+                                                  AutofillHints.telephoneNumber,
+                                                  AutofillHints
+                                                      .telephoneNumberDevice,
+                                                  AutofillHints.username,
+                                                ],
+                                                decoration:
+                                                    const InputDecoration()
+                                                        .copyWith(
+                                                  labelText:
+                                                      strings.t('phone_number'),
+                                                  hintText: _isLocalExecution
+                                                      ? strings.t(
+                                                          'phone_number_hint',
+                                                        )
+                                                      : null,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: FilledButton(
+                                                  onPressed: _isBusy
+                                                      ? null
+                                                      : _signInByPhone,
+                                                  child: Text(
+                                                    _isBusy
+                                                        ? strings
+                                                            .t('signing_in')
+                                                        : strings.t(
+                                                            'sign_in_by_phone',
+                                                          ),
+                                                  ),
+                                                ),
+                                              ),
+                                              if (_showEmailPasswordFallback) ...[
+                                                const SizedBox(height: 16),
+                                                const Divider(),
+                                                const SizedBox(height: 8),
+                                                TextField(
+                                                  controller:
+                                                      _signInEmailController,
+                                                  keyboardType: TextInputType
+                                                      .emailAddress,
+                                                  autofillHints: const <String>[
+                                                    AutofillHints.email,
+                                                    AutofillHints.username,
+                                                  ],
+                                                  decoration: InputDecoration(
+                                                    labelText:
+                                                        strings.t('email'),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                TextField(
+                                                  controller:
+                                                      _signInPasswordController,
+                                                  obscureText: true,
+                                                  autofillHints: const <String>[
+                                                    AutofillHints.password,
+                                                  ],
+                                                  decoration: InputDecoration(
+                                                    labelText:
+                                                        strings.t('password'),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                SizedBox(
+                                                  width: double.infinity,
+                                                  child: OutlinedButton(
+                                                    onPressed: _isBusy
+                                                        ? null
+                                                        : _signInByEmailPassword,
+                                                    child: Text(
+                                                      strings.t(
+                                                        'sign_in_by_email_password',
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              SingleChildScrollView(
-                                child: Column(
-                                  children: [
-                                    TextField(
-                                      controller: _signUpPhoneController,
-                                      keyboardType: TextInputType.phone,
-                                      autofillHints: const <String>[
-                                        AutofillHints.telephoneNumber,
-                                        AutofillHints.telephoneNumberDevice,
-                                      ],
-                                      decoration: InputDecoration(
-                                        labelText:
-                                            strings.t('phone_number_required'),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _signUpEmailController,
-                                      keyboardType: TextInputType.emailAddress,
-                                      autofillHints: const <String>[
-                                        AutofillHints.email,
-                                        AutofillHints.newUsername,
-                                      ],
-                                      decoration: InputDecoration(
-                                        labelText: strings.t('email_required'),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _signUpPasswordController,
-                                      obscureText: true,
-                                      autofillHints: const <String>[
-                                        AutofillHints.newPassword,
-                                      ],
-                                      decoration: InputDecoration(
-                                        labelText:
-                                            strings.t('password_required'),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _signUpFirstNameController,
-                                      decoration: InputDecoration(
-                                        labelText:
-                                            strings.t('first_name_optional'),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _signUpLastNameController,
-                                      decoration: InputDecoration(
-                                        labelText:
-                                            strings.t('last_name_optional'),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: FilledButton(
-                                        onPressed: _isBusy ? null : _signUp,
-                                        child: Text(
-                                          _isBusy
-                                              ? strings.t('signing_up')
-                                              : strings.t('create_account'),
+                                        SingleChildScrollView(
+                                          child: Column(
+                                            children: [
+                                              TextField(
+                                                controller:
+                                                    _signUpPhoneController,
+                                                keyboardType:
+                                                    TextInputType.phone,
+                                                autofillHints: const <String>[
+                                                  AutofillHints.telephoneNumber,
+                                                  AutofillHints
+                                                      .telephoneNumberDevice,
+                                                ],
+                                                decoration: InputDecoration(
+                                                  labelText: strings.t(
+                                                    'phone_number_required',
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              TextField(
+                                                controller:
+                                                    _signUpEmailController,
+                                                keyboardType:
+                                                    TextInputType.emailAddress,
+                                                autofillHints: const <String>[
+                                                  AutofillHints.email,
+                                                  AutofillHints.newUsername,
+                                                ],
+                                                decoration: InputDecoration(
+                                                  labelText: strings.t(
+                                                    'email_required',
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              TextField(
+                                                controller:
+                                                    _signUpPasswordController,
+                                                obscureText: true,
+                                                autofillHints: const <String>[
+                                                  AutofillHints.newPassword,
+                                                ],
+                                                decoration: InputDecoration(
+                                                  labelText: strings.t(
+                                                    'password_required',
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              TextField(
+                                                controller:
+                                                    _signUpFirstNameController,
+                                                decoration: InputDecoration(
+                                                  labelText: strings.t(
+                                                    'first_name_optional',
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              TextField(
+                                                controller:
+                                                    _signUpLastNameController,
+                                                decoration: InputDecoration(
+                                                  labelText: strings.t(
+                                                    'last_name_optional',
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 16),
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: FilledButton(
+                                                  onPressed:
+                                                      _isBusy ? null : _signUp,
+                                                  child: Text(
+                                                    _isBusy
+                                                        ? strings
+                                                            .t('signing_up')
+                                                        : strings.t(
+                                                            'create_account',
+                                                          ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -2516,7 +2556,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       }
     }
   }
-
 
   Future<void> _setDebugModeEnabled(bool enabled) async {
     setState(() {
@@ -2793,8 +2832,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  onPressed:
-                      _speakerVoices.isEmpty ? null : () => unawaited(_testSpeakerVoice()),
+                  onPressed: _speakerVoices.isEmpty
+                      ? null
+                      : () => unawaited(_testSpeakerVoice()),
                   icon: const Icon(Icons.play_arrow),
                   tooltip: strings.t('test_speaker_voice'),
                 ),
@@ -2845,7 +2885,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           ),
           const SizedBox(height: 8),
           FilledButton.tonalIcon(
-            onPressed: (_isSharingLogs || !_debugModeEnabled) ? null : _shareLogs,
+            onPressed:
+                (_isSharingLogs || !_debugModeEnabled) ? null : _shareLogs,
             icon: _isSharingLogs
                 ? const SizedBox(
                     width: 14,

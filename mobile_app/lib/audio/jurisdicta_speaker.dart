@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_tts/flutter_tts.dart';
 
 class JurisdictaSpeakerVoice {
@@ -39,6 +41,7 @@ JurisdictaSpeaker createJurisdictaSpeaker() {
 
 class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
   final FlutterTts _tts = FlutterTts();
+  static const int _voiceRetryAttempts = 6;
   bool _initialized = false;
   bool _available = true;
   final Map<String, List<JurisdictaSpeakerVoice>> _voicesByLocale =
@@ -75,17 +78,20 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
 
     final locale = _ttsLocale(languageCode);
     final cached = _voicesByLocale[locale];
-    if (cached != null) {
+    if (cached != null && cached.isNotEmpty) {
       return cached;
     }
 
     try {
-      final voices = await _tts.getVoices;
+      final voices = await _loadVoicesWithRetry(locale);
       final resolved = _pickVoices(voices, locale);
-      _voicesByLocale[locale] = resolved;
+      if (resolved.isNotEmpty || cached == null) {
+        _voicesByLocale[locale] = resolved;
+      }
       if (!_selectedVoiceIdByLocale.containsKey(locale)) {
-        _selectedVoiceIdByLocale[locale] =
-            resolved.isNotEmpty ? _preferDefaultVoice(resolved, locale).id : null;
+        _selectedVoiceIdByLocale[locale] = resolved.isNotEmpty
+            ? _preferDefaultVoice(resolved, locale).id
+            : null;
       }
       return resolved;
     } catch (_) {
@@ -136,16 +142,14 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
       final locale = _ttsLocale(languageCode);
       final voices = await listVoices(languageCode: languageCode);
       final selectedVoiceId = _selectedVoiceIdByLocale[locale];
-      final voice = voices
-          .cast<JurisdictaSpeakerVoice?>()
-          .firstWhere(
+      final selectedVoice = voices.cast<JurisdictaSpeakerVoice?>().firstWhere(
             (item) => item?.id == selectedVoiceId,
             orElse: () =>
                 voices.isNotEmpty ? _preferDefaultVoice(voices, locale) : null,
-          )
-          ?.config;
+          );
       await _tts.stop();
-      await _tts.setLanguage(locale);
+      await _tts.setLanguage(selectedVoice?.locale ?? locale);
+      final voice = selectedVoice?.config;
       if (voice != null && voice.isNotEmpty) {
         await _tts.setVoice(voice);
       }
@@ -165,6 +169,22 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
     try {
       await _tts.stop();
     } catch (_) {}
+  }
+
+  Future<dynamic> _loadVoicesWithRetry(String locale) async {
+    dynamic lastVoices = const <Object>[];
+    for (var attempt = 0; attempt < _voiceRetryAttempts; attempt++) {
+      lastVoices = await _tts.getVoices;
+      if (_pickVoices(lastVoices, locale).isNotEmpty) {
+        return lastVoices;
+      }
+      if (attempt < _voiceRetryAttempts - 1) {
+        await Future<void>.delayed(
+          Duration(milliseconds: 200 * (attempt + 1)),
+        );
+      }
+    }
+    return lastVoices;
   }
 
   String _ttsLocale(String languageCode) {
@@ -187,9 +207,11 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
       return const <JurisdictaSpeakerVoice>[];
     }
 
-    final normalizedLocale = locale.toLowerCase();
+    final normalizedLocale = _normalizeLocaleTag(locale);
+    final preferredTags = _preferredVoiceTags(normalizedLocale);
     final exactMatches = <JurisdictaSpeakerVoice>[];
-    final languageMatches = <JurisdictaSpeakerVoice>[];
+    final fallbackMatches = <JurisdictaSpeakerVoice>[];
+    final genericMatches = <JurisdictaSpeakerVoice>[];
 
     for (final item in voices) {
       if (item is! Map) {
@@ -203,15 +225,13 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
         }
       });
 
-      final voiceLocale = (normalizedVoice['locale'] ?? '').toLowerCase();
-      if (voiceLocale.isEmpty) {
-        continue;
-      }
-      final voiceName = normalizedVoice['name'] ?? voiceLocale;
+      final rawLocale = normalizedVoice['locale'] ?? '';
+      final voiceLocale = _normalizeLocaleTag(rawLocale);
+      final voiceName = normalizedVoice['name'] ?? rawLocale;
       final speakerVoice = JurisdictaSpeakerVoice(
-        id: '$voiceLocale::$voiceName',
+        id: '${voiceLocale.isEmpty ? 'unknown' : voiceLocale}::$voiceName',
         name: voiceName,
-        locale: normalizedVoice['locale'] ?? locale,
+        locale: rawLocale.isEmpty ? locale : rawLocale,
         config: normalizedVoice,
       );
 
@@ -220,12 +240,21 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
         continue;
       }
 
-      if (voiceLocale.startsWith('${normalizedLocale.split('-').first}-')) {
-        languageMatches.add(speakerVoice);
+      if (_matchesPreferredVoice(speakerVoice, preferredTags)) {
+        fallbackMatches.add(speakerVoice);
+        continue;
+      }
+
+      if (_isGenericVoiceCandidate(speakerVoice)) {
+        genericMatches.add(speakerVoice);
       }
     }
 
-    final preferred = exactMatches.isNotEmpty ? exactMatches : languageMatches;
+    final preferred = exactMatches.isNotEmpty
+        ? exactMatches
+        : fallbackMatches.isNotEmpty
+            ? fallbackMatches
+            : genericMatches;
     preferred.sort(
       (left, right) =>
           _voiceRank(right, locale).compareTo(_voiceRank(left, locale)),
@@ -237,28 +266,15 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
     List<JurisdictaSpeakerVoice> voices,
     String targetLocale,
   ) {
-    if (targetLocale.toLowerCase() == 'sk-sk') {
-      final preferredSkVoice = voices
-          .cast<JurisdictaSpeakerVoice?>()
-          .firstWhere(
-            (voice) =>
-                voice != null &&
-                voice.locale.toLowerCase() == 'sk-sk' &&
-                voice.name.toLowerCase().contains('sk_sk-language'),
-            orElse: () => null,
-          );
-      if (preferredSkVoice != null) {
-        return preferredSkVoice;
-      }
-    }
     return voices.first;
   }
 
   int _voiceRank(JurisdictaSpeakerVoice voice, String targetLocale) {
     final name = voice.name.toLowerCase();
-    final locale = voice.locale.toLowerCase();
+    final locale = _normalizeLocaleTag(voice.locale);
     var score = 0;
     score += _localePreferenceScore(locale, targetLocale);
+    score += _namePreferenceScore(name, targetLocale);
     if (name.contains('local')) {
       score += 100;
     }
@@ -283,8 +299,45 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
     return score;
   }
 
+  int _namePreferenceScore(String name, String targetLocale) {
+    final normalizedTarget = _normalizeLocaleTag(targetLocale);
+    switch (normalizedTarget) {
+      case 'sk-sk':
+        if (name.contains('slovak') || name.contains('slovenc')) {
+          return 300;
+        }
+        if (name.contains('czech') ||
+            name.contains('cesk') ||
+            name.contains('česk')) {
+          return 220;
+        }
+        break;
+      case 'cs-cz':
+        if (name.contains('czech') ||
+            name.contains('cesk') ||
+            name.contains('česk')) {
+          return 300;
+        }
+        if (name.contains('slovak') || name.contains('slovenc')) {
+          return 220;
+        }
+        break;
+      case 'de-de':
+        if (name.contains('german') || name.contains('deutsch')) {
+          return 300;
+        }
+        break;
+    }
+    if (name.contains('english') ||
+        name.contains('en-us') ||
+        name.contains('en_gb')) {
+      return 40;
+    }
+    return 0;
+  }
+
   int _localePreferenceScore(String voiceLocale, String targetLocale) {
-    final normalizedTarget = targetLocale.toLowerCase();
+    final normalizedTarget = _normalizeLocaleTag(targetLocale);
     if (voiceLocale == normalizedTarget) {
       return 500;
     }
@@ -302,14 +355,95 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
     return 0;
   }
 
+  bool _matchesPreferredVoice(
+    JurisdictaSpeakerVoice voice,
+    List<String> preferredTags,
+  ) {
+    final locale = _normalizeLocaleTag(voice.locale);
+    final localeLanguage = _languagePart(locale);
+    final name = voice.name.toLowerCase();
+
+    for (final tag in preferredTags) {
+      if (tag.contains('-')) {
+        if (locale == tag) {
+          return true;
+        }
+        continue;
+      }
+
+      if (localeLanguage == tag) {
+        return true;
+      }
+      if (_voiceNameMatchesLanguage(name, tag)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  bool _isGenericVoiceCandidate(JurisdictaSpeakerVoice voice) {
+    final locale = _normalizeLocaleTag(voice.locale);
+    if (locale.isNotEmpty) {
+      return true;
+    }
+    final name = voice.name.trim().toLowerCase();
+    return name.contains('english') || name.contains('default');
+  }
+
+  bool _voiceNameMatchesLanguage(String name, String languageTag) {
+    switch (languageTag) {
+      case 'sk':
+        return name.contains('slovak') || name.contains('slovenc');
+      case 'cs':
+        return name.contains('czech') ||
+            name.contains('cesk') ||
+            name.contains('česk');
+      case 'de':
+        return name.contains('german') || name.contains('deutsch');
+      case 'en':
+        return name.contains('english');
+      default:
+        return false;
+    }
+  }
+
+  List<String> _preferredVoiceTags(String targetLocale) {
+    switch (targetLocale) {
+      case 'sk-sk':
+        return const <String>['sk-sk', 'sk', 'cs-cz', 'cs', 'en-us', 'en'];
+      case 'cs-cz':
+        return const <String>['cs-cz', 'cs', 'sk-sk', 'sk', 'en-us', 'en'];
+      case 'de-de':
+        return const <String>['de-de', 'de-at', 'de-ch', 'de', 'en-us', 'en'];
+      default:
+        return <String>[
+          targetLocale,
+          _languagePart(targetLocale),
+          'en-us',
+          'en'
+        ];
+    }
+  }
+
   List<String> _localeFallbacks(String targetLocale) {
     switch (targetLocale) {
       case 'de-de':
-        return const <String>['de-at', 'de-ch'];
+        return const <String>['de-at', 'de-ch', 'en-us'];
       case 'sk-sk':
-        return const <String>['cs-cz'];
+        return const <String>['sk', 'cs-cz', 'cs', 'en-us'];
+      case 'cs-cz':
+        return const <String>['cs', 'sk-sk', 'sk', 'en-us'];
       default:
         return const <String>[];
     }
+  }
+
+  String _normalizeLocaleTag(String value) {
+    return value.trim().replaceAll('_', '-').toLowerCase();
+  }
+
+  String _languagePart(String locale) {
+    return locale.split('-').first;
   }
 }
