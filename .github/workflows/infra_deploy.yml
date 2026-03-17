@@ -134,10 +134,6 @@ jobs:
       - name: Detect existing resources and resolve deployment mode
         id: existing
         run: |
-          normalize_location() {
-            echo -n "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]'
-          }
-
           get_location() {
             az resource show \
               --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -175,37 +171,6 @@ jobs:
           [ -n "$app_location" ] && create_container_app=false
 
           resolved_location="$AZURE_LOCATION"
-          desired_location_normalized="$(normalize_location "$AZURE_LOCATION")"
-          mismatches=0
-
-          check_location() {
-            local label="$1"
-            local current="$2"
-            if [ -z "$current" ]; then
-              return
-            fi
-
-            local current_normalized
-            current_normalized="$(normalize_location "$current")"
-            if [ "$current_normalized" != "$desired_location_normalized" ]; then
-              echo "::error::$label exists in '$current', but AZURE_LOCATION is '$AZURE_LOCATION'."
-              mismatches=1
-            fi
-          }
-
-          check_location "Log Analytics Workspace" "$log_location"
-          check_location "Container Apps Environment" "$env_location"
-          check_location "Container Registry" "$acr_location"
-          check_location "Storage Account" "$storage_location"
-          check_location "Application Insights" "$app_insights_location"
-          check_location "Managed Identity" "$identity_location"
-          check_location "PostgreSQL Flexible Server" "$postgres_location"
-          check_location "Container App" "$app_location"
-
-          if [ "$mismatches" -ne 0 ]; then
-            echo "::error::Existing resource locations do not match AZURE_LOCATION. Update the GitHub Environment values or rename/recreate the conflicting Azure resources in '$AZURE_LOCATION'."
-            exit 1
-          fi
 
           echo "resolved_location=$resolved_location" >> "$GITHUB_OUTPUT"
           echo "create_log_analytics_workspace=$create_log_analytics_workspace" >> "$GITHUB_OUTPUT"
