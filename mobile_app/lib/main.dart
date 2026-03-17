@@ -138,7 +138,6 @@ class LocaleOption {
 
   final String countryCode;
   final String languageCode;
-  final AppLogger logger;
   final String label;
 }
 
@@ -2491,11 +2490,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       _isSharingLogs = true;
     });
     try {
-      await SharePlus.instance.share(
-        ShareParams(
-          files: <XFile>[XFile(path)],
-          text: 'JurisDigtA debug log',
-        ),
+      await Share.shareXFiles(
+        <XFile>[XFile(path)],
+        text: 'JurisDigtA debug log',
       );
       if (!mounted) {
         return;
@@ -3496,7 +3493,6 @@ class _ChatHomePageState extends State<ChatHomePage> {
           camera: widget.cameras.first,
           logger: widget.logger,
           languageCode: _selectedLocale.languageCode,
-          logger: widget.logger,
         ),
       ),
     );
