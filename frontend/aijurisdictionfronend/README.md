@@ -31,6 +31,14 @@ The UI includes an in-memory auth state used for local development. It resets on
 
 When authenticated, the home page switches to a 3-column workspace layout (case sidebar, active workspace, AI configuration). On smaller screens the side panels collapse for a single-column layout.
 
+## Protected App Routes
+
+All `/app/*` routes are guarded by mock auth state.
+
+- Unauthenticated users are redirected to `/`
+- Authenticated users can access the full app area (`/app`, `/app/profile`, `/app/workspace`, etc.)
+- Logging out from the profile dropdown immediately removes access to protected routes
+
 ## Navbar Branding
 
 The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + app name/tagline).

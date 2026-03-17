@@ -1,6 +1,7 @@
-﻿import React from "react";
+import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { PageLayout } from "./components/PageLayout";
+import { useAuth } from "./auth/mockAuth";
 import AuthCallbackView from "./auth/AuthCallbackView";
 import Home from "./pages/Home";
 import Auth from "./pages/Auth";
@@ -18,6 +19,20 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import NotFound from "./pages/NotFound";
 
+interface ProtectedRouteProps {
+  children: React.ReactElement;
+}
+
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
 const App: React.FC = () => {
   return (
     <PageLayout>
@@ -29,14 +44,70 @@ const App: React.FC = () => {
           element={<AuthCallbackView onSessionReady={() => undefined} />}
         />
         <Route path="/pricing" element={<Pricing />} />
-        <Route path="/app" element={<AppDashboard />} />
-        <Route path="/app/case" element={<CaseIntake />} />
-        <Route path="/app/workspace" element={<LawyerWorkspace />} />
-        <Route path="/app/advice" element={<AdviceSummary />} />
-        <Route path="/app/communications" element={<Communication />} />
-        <Route path="/app/law-validation" element={<LawValidation />} />
-        <Route path="/app/law-recommendation" element={<LawRecommendation />} />
-        <Route path="/app/profile" element={<Profile />} />
+        <Route
+          path="/app"
+          element={
+            <ProtectedRoute>
+              <AppDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/case"
+          element={
+            <ProtectedRoute>
+              <CaseIntake />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/workspace"
+          element={
+            <ProtectedRoute>
+              <LawyerWorkspace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/advice"
+          element={
+            <ProtectedRoute>
+              <AdviceSummary />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/communications"
+          element={
+            <ProtectedRoute>
+              <Communication />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/law-validation"
+          element={
+            <ProtectedRoute>
+              <LawValidation />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/law-recommendation"
+          element={
+            <ProtectedRoute>
+              <LawRecommendation />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/profile"
+          element={
+            <ProtectedRoute>
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/disclaimer" element={<Disclaimer />} />
         <Route path="/terms" element={<TermsOfService />} />
