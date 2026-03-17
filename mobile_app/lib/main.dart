@@ -219,6 +219,8 @@ class AppStrings {
       'update_download_failed': 'Stahovanie aktualizacie zlyhalo: {{error}}',
       'update_install_failed':
           'Spustenie aktualizacie zlyhalo: {{error}}',
+      'update_install_signature_mismatch':
+          'Nainstalovana aplikacia ma iny podpis ako aktualizacia. Odinstalujte aktualnu aplikaciu a potom nainstalujte novu verziu.',
       'allow_install_unknown_apps':
           'V nastaveniach Androidu povolte instalacie z tejto aplikacie a vratte sa spat.',
       'speech_recognition_error': 'Chyba rozpoznavania reci: {{error}}',
@@ -369,6 +371,8 @@ class AppStrings {
           'Android installer opened. Confirm the upgrade to continue.',
       'update_download_failed': 'Failed to download update: {{error}}',
       'update_install_failed': 'Failed to start update: {{error}}',
+      'update_install_signature_mismatch':
+          'The installed app signature differs from the update APK. Uninstall the current app, then install the new version.',
       'allow_install_unknown_apps':
           'Allow installs from this app in Android settings, then return to continue the update.',
       'speech_recognition_error': 'Speech recognition error: {{error}}',
@@ -518,6 +522,8 @@ class AppStrings {
           'Das Update konnte nicht heruntergeladen werden: {{error}}',
       'update_install_failed':
           'Das Update konnte nicht gestartet werden: {{error}}',
+      'update_install_signature_mismatch':
+          'Die Signatur der installierten App unterscheidet sich von der Update-APK. Deinstallieren Sie die aktuelle App und installieren Sie dann die neue Version.',
       'allow_install_unknown_apps':
           'Erlauben Sie Installationen aus dieser App in den Android-Einstellungen und kehren Sie dann zur App zurueck.',
       'speech_recognition_error': 'Fehler bei der Spracherkennung: {{error}}',
@@ -3348,6 +3354,21 @@ class _ChatHomePageState extends State<ChatHomePage>
       _pendingUpdateInstallPath = null;
       _pendingUpdateVersion = null;
       _showSnackbar(_strings.t('update_install_started'));
+    } on PlatformException catch (error, stackTrace) {
+      if (error.code == 'signature_mismatch') {
+        _showSnackbar(_strings.t('update_install_signature_mismatch'));
+        return;
+      }
+      await widget.logger.error(
+        'Failed to start Android update installer',
+        error,
+        stackTrace,
+      );
+      _showSnackbar(
+        _strings.t('update_install_failed', <String, String>{
+          'error': '$error',
+        }),
+      );
     } catch (error, stackTrace) {
       await widget.logger.error(
         'Failed to start Android update installer',
