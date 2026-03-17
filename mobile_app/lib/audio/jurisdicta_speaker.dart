@@ -85,7 +85,7 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
       _voicesByLocale[locale] = resolved;
       if (!_selectedVoiceIdByLocale.containsKey(locale)) {
         _selectedVoiceIdByLocale[locale] =
-            resolved.isNotEmpty ? _preferDefaultVoice(resolved).id : null;
+            resolved.isNotEmpty ? _preferDefaultVoice(resolved, locale).id : null;
       }
       return resolved;
     } catch (_) {
@@ -102,7 +102,7 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
     final voices = await listVoices(languageCode: languageCode);
     if (voiceId == null || voiceId.isEmpty) {
       _selectedVoiceIdByLocale[locale] =
-          voices.isNotEmpty ? _preferDefaultVoice(voices).id : null;
+          voices.isNotEmpty ? _preferDefaultVoice(voices, locale).id : null;
       return;
     }
 
@@ -141,7 +141,7 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
           .firstWhere(
             (item) => item?.id == selectedVoiceId,
             orElse: () =>
-                voices.isNotEmpty ? _preferDefaultVoice(voices) : null,
+                voices.isNotEmpty ? _preferDefaultVoice(voices, locale) : null,
           )
           ?.config;
       await _tts.stop();
@@ -235,7 +235,22 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
 
   JurisdictaSpeakerVoice _preferDefaultVoice(
     List<JurisdictaSpeakerVoice> voices,
+    String targetLocale,
   ) {
+    if (targetLocale.toLowerCase() == 'sk-sk') {
+      final preferredSkVoice = voices
+          .cast<JurisdictaSpeakerVoice?>()
+          .firstWhere(
+            (voice) =>
+                voice != null &&
+                voice.locale.toLowerCase() == 'sk-sk' &&
+                voice.name.toLowerCase().contains('sk_sk-language'),
+            orElse: () => null,
+          );
+      if (preferredSkVoice != null) {
+        return preferredSkVoice;
+      }
+    }
     return voices.first;
   }
 

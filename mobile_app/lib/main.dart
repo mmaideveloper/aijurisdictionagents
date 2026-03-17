@@ -2318,13 +2318,19 @@ class AccountSettingsPage extends StatefulWidget {
     super.key,
     required this.user,
     required this.authStore,
-    required this.languageCode,
+    required this.selectedLocale,
+    required this.locales,
+    required this.speaker,
+    required this.onLocaleChanged,
     required this.logger,
   });
 
   final LocalAuthUser user;
   final LocalAuthStore authStore;
-  final String languageCode;
+  final LocaleOption selectedLocale;
+  final List<LocaleOption> locales;
+  final JurisdictaSpeaker speaker;
+  final Future<void> Function(LocaleOption locale) onLocaleChanged;
   final AppLogger logger;
 
   @override
@@ -2336,16 +2342,20 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   late final TextEditingController _passwordController;
   late final TextEditingController _firstNameController;
   late final TextEditingController _lastNameController;
+  late LocaleOption _selectedLocale;
   bool _isSaving = false;
   bool _isLoadingSubscriptions = false;
   bool _isUpdatingSubscription = false;
+  bool _isLoadingSpeakerVoices = false;
   List<SubscriptionPlanInfo> _plans = <SubscriptionPlanInfo>[];
   List<UserSubscriptionInfo> _subscriptions = <UserSubscriptionInfo>[];
+  List<JurisdictaSpeakerVoice> _speakerVoices = <JurisdictaSpeakerVoice>[];
   String? _selectedPlanCode;
+  String? _selectedSpeakerVoiceId;
   late bool _debugModeEnabled;
   bool _isSharingLogs = false;
 
-  AppStrings get _strings => AppStrings(widget.languageCode);
+  AppStrings get _strings => AppStrings(_selectedLocale.languageCode);
 
   UserSubscriptionInfo? get _latestSubscription {
     if (_subscriptions.isEmpty) {
@@ -2363,8 +2373,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         TextEditingController(text: widget.user.firstName ?? '');
     _lastNameController =
         TextEditingController(text: widget.user.lastName ?? '');
+    _selectedLocale = widget.selectedLocale;
     _debugModeEnabled = widget.logger.debugModeEnabled;
     _loadSubscriptions();
+    _loadSpeakerVoices();
   }
 
   Future<void> _loadSubscriptions() async {
@@ -2507,6 +2519,75 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     }
   }
 
+  Future<void> _loadSpeakerVoices() async {
+    setState(() {
+      _isLoadingSpeakerVoices = true;
+    });
+    try {
+      final voices = await widget.speaker.listVoices(
+        languageCode: _selectedLocale.languageCode,
+      );
+      final selectedVoiceId = widget.speaker.selectedVoiceIdFor(
+        languageCode: _selectedLocale.languageCode,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _speakerVoices = voices;
+        _selectedSpeakerVoiceId = selectedVoiceId;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingSpeakerVoices = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _changeLocale(LocaleOption locale) async {
+    if (_selectedLocale == locale) {
+      return;
+    }
+    setState(() {
+      _selectedLocale = locale;
+      _speakerVoices = <JurisdictaSpeakerVoice>[];
+      _selectedSpeakerVoiceId = null;
+    });
+    await widget.onLocaleChanged(locale);
+    await _loadSpeakerVoices();
+  }
+
+  Future<void> _selectSpeakerVoice(String? voiceId) async {
+    await widget.speaker.selectVoice(
+      languageCode: _selectedLocale.languageCode,
+      voiceId: voiceId,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedSpeakerVoiceId = widget.speaker.selectedVoiceIdFor(
+        languageCode: _selectedLocale.languageCode,
+      );
+    });
+  }
+
+  Future<void> _testSpeakerVoice() async {
+    final spoke = await widget.speaker.speak(
+      text: _strings.t('speaker_test_sample'),
+      languageCode: _selectedLocale.languageCode,
+    );
+    if (!spoke && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_strings.t('speaker_voice_unavailable')),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _phoneController.dispose();
@@ -2595,6 +2676,68 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
               labelText: strings.t('last_name'),
             ),
           ),
+          const SizedBox(height: 20),
+          Text(
+            strings.t('language_country'),
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<LocaleOption>(
+            value: _selectedLocale,
+            isExpanded: true,
+            onChanged: (locale) {
+              if (locale == null) {
+                return;
+              }
+              unawaited(_changeLocale(locale));
+            },
+            items: widget.locales
+                .map(
+                  (locale) => DropdownMenuItem<LocaleOption>(
+                    value: locale,
+                    child: Text(strings.localeLabel(locale)),
+                  ),
+                )
+                .toList(growable: false),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            strings.t('speaker_voice_label'),
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          if (_isLoadingSpeakerVoices)
+            const LinearProgressIndicator()
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    value: _selectedSpeakerVoiceId,
+                    hint: Text(strings.t('speaker_voice_unavailable')),
+                    items: _speakerVoices
+                        .map(
+                          (voice) => DropdownMenuItem<String>(
+                            value: voice.id,
+                            child: Text('${voice.name} (${voice.locale})'),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: _speakerVoices.isEmpty
+                        ? null
+                        : (value) => unawaited(_selectSpeakerVoice(value)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed:
+                      _speakerVoices.isEmpty ? null : () => unawaited(_testSpeakerVoice()),
+                  icon: const Icon(Icons.play_arrow),
+                  tooltip: strings.t('test_speaker_voice'),
+                ),
+              ],
+            ),
           const SizedBox(height: 20),
           Text(
             strings.t('subscription'),
@@ -2714,9 +2857,6 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _speechEnabled = false;
   bool _speechInputEnabled = true;
   bool _isListening = false;
-  bool _isLoadingSpeakerVoices = false;
-  List<JurisdictaSpeakerVoice> _speakerVoices = <JurisdictaSpeakerVoice>[];
-  String? _selectedSpeakerVoiceId;
   bool _awaitingSpokenName = false;
   bool _isSavingSpokenName = false;
   late LocalAuthUser _signedInUser;
@@ -3301,39 +3441,23 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!mounted) {
       return;
     }
-    setState(() {
-      _isLoadingSpeakerVoices = true;
-    });
-
-    try {
-      final voices = await _speaker.listVoices(
-        languageCode: _selectedLocale.languageCode,
-      );
-      final selectedVoiceId = _speaker.selectedVoiceIdFor(
-        languageCode: _selectedLocale.languageCode,
-      );
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _speakerVoices = voices;
-        _selectedSpeakerVoiceId = selectedVoiceId;
-      });
-      await widget.logger.info(
-        'Speaker voices loaded',
-        <String, Object?>{
-          'language': _selectedLocale.languageCode,
-          'voice_count': voices.length,
-          'selected_voice_id': selectedVoiceId,
-        },
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingSpeakerVoices = false;
-        });
-      }
+    final voices = await _speaker.listVoices(
+      languageCode: _selectedLocale.languageCode,
+    );
+    final selectedVoiceId = _speaker.selectedVoiceIdFor(
+      languageCode: _selectedLocale.languageCode,
+    );
+    if (!mounted) {
+      return;
     }
+    await widget.logger.info(
+      'Speaker voices loaded',
+      <String, Object?>{
+        'language': _selectedLocale.languageCode,
+        'voice_count': voices.length,
+        'selected_voice_id': selectedVoiceId,
+      },
+    );
   }
 
   Future<void> _speakAssistantMessage(String content) async {
@@ -3533,40 +3657,6 @@ class _ChatHomePageState extends State<ChatHomePage>
     await widget.logger.info(
       'Speech input toggle changed',
       <String, Object?>{'enabled': nextValue},
-    );
-  }
-
-  Future<void> _selectSpeakerVoice(String? voiceId) async {
-    await _speaker.selectVoice(
-      languageCode: _selectedLocale.languageCode,
-      voiceId: voiceId,
-    );
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _selectedSpeakerVoiceId = _speaker.selectedVoiceIdFor(
-        languageCode: _selectedLocale.languageCode,
-      );
-    });
-    await widget.logger.info(
-      'Speaker voice changed',
-      <String, Object?>{
-        'language': _selectedLocale.languageCode,
-        'voice_id': _selectedSpeakerVoiceId,
-      },
-    );
-  }
-
-  Future<void> _testSpeakerVoice() async {
-    if (_speakerVoices.isEmpty) {
-      _showSnackbar(_strings.t('speaker_voice_unavailable'));
-      return;
-    }
-    await _speaker.stop();
-    await _speaker.speak(
-      text: _strings.t('speaker_test_sample'),
-      languageCode: _selectedLocale.languageCode,
     );
   }
 
@@ -3890,12 +3980,15 @@ class _ChatHomePageState extends State<ChatHomePage>
         builder: (_) => AccountSettingsPage(
           user: _signedInUser,
           authStore: widget.authStore,
-          languageCode: _selectedLocale.languageCode,
+          selectedLocale: _selectedLocale,
+          locales: _localeOptions,
+          speaker: _speaker,
+          onLocaleChanged: _handleLocaleChanged,
           logger: widget.logger,
         ),
       ),
     );
-    if (!mounted || updated == null) {
+    if (updated == null) {
       return;
     }
     setState(() {
@@ -3909,6 +4002,29 @@ class _ChatHomePageState extends State<ChatHomePage>
         'email': updated.email,
       },
     );
+  }
+
+  Future<void> _handleLocaleChanged(LocaleOption locale) async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedLocale = locale;
+      _updateWelcomeMessageForLocale();
+      _hasExportReady = false;
+    });
+    if (_isListening) {
+      await _speechToText.stop();
+    }
+    await _loadSpeakerVoices();
+    await widget.logger.info(
+      'Locale changed',
+      <String, Object?>{
+        'country': locale.countryCode,
+        'language': locale.languageCode,
+      },
+    );
+    _apiClient.resetSession();
   }
 
   Future<void> _loadCases() async {
@@ -4191,55 +4307,6 @@ class _ChatHomePageState extends State<ChatHomePage>
                     ),
                     child: Column(
                       children: [
-                        Row(
-                          children: [
-                            Text(strings.t('language_country')),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: DropdownButton<LocaleOption>(
-                                isExpanded: true,
-                                value: _selectedLocale,
-                                onChanged: (locale) {
-                                  if (locale == null) {
-                                    return;
-                                  }
-                                  setState(() {
-                                    _selectedLocale = locale;
-                                    _updateWelcomeMessageForLocale();
-                                    _hasExportReady = false;
-                                    _speakerVoices = <JurisdictaSpeakerVoice>[];
-                                    _selectedSpeakerVoiceId = null;
-                                  });
-                                  if (_isListening) {
-                                    unawaited(_speechToText.stop());
-                                  }
-                                  unawaited(_loadSpeakerVoices());
-                                  unawaited(
-                                    widget.logger.info(
-                                      'Locale changed',
-                                      <String, Object?>{
-                                        'country': locale.countryCode,
-                                        'language': locale.languageCode,
-                                      },
-                                    ),
-                                  );
-                                  _apiClient.resetSession();
-                                },
-                                items: _localeOptions
-                                    .map(
-                                      (locale) =>
-                                          DropdownMenuItem<LocaleOption>(
-                                        value: locale,
-                                        child:
-                                            Text(strings.localeLabel(locale)),
-                                      ),
-                                    )
-                                    .toList(),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
                         Align(
                           alignment: Alignment.centerLeft,
                           child: Tooltip(
@@ -4260,47 +4327,6 @@ class _ChatHomePageState extends State<ChatHomePage>
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Text(strings.t('speaker_voice_label')),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _isLoadingSpeakerVoices
-                                  ? const LinearProgressIndicator()
-                                  : DropdownButton<String>(
-                                      isExpanded: true,
-                                      value: _selectedSpeakerVoiceId,
-                                      hint: Text(
-                                        strings.t('speaker_voice_unavailable'),
-                                      ),
-                                      items: _speakerVoices
-                                          .map(
-                                            (voice) => DropdownMenuItem<String>(
-                                              value: voice.id,
-                                              child: Text(
-                                                '${voice.name} (${voice.locale})',
-                                              ),
-                                            ),
-                                          )
-                                          .toList(),
-                                      onChanged: _speakerVoices.isEmpty
-                                          ? null
-                                          : (value) => unawaited(
-                                                _selectSpeakerVoice(value),
-                                              ),
-                                    ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              onPressed: _speakerVoices.isEmpty
-                                  ? null
-                                  : () => unawaited(_testSpeakerVoice()),
-                              icon: const Icon(Icons.play_arrow),
-                              tooltip: strings.t('test_speaker_voice'),
-                            ),
-                          ],
                         ),
                         if (_showLocalResponderSwitch) ...[
                           const SizedBox(height: 10),
