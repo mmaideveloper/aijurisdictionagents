@@ -251,6 +251,7 @@ class AppStrings {
       'pdf_saved_to': 'PDF ulozene do {{path}}',
       'pdf_download_started': 'Stahovanie PDF spustene: {{filename}}',
       'pdf_download_failed': 'Stahovanie PDF zlyhalo: {{error}}',
+      'open_saved_file_failed': 'Subor sa nepodarilo otvorit.',
       'failed_to_load_cases': 'Nepodarilo sa nacitat pripady: {{error}}',
       'failed_to_load_case_history':
           'Nepodarilo sa nacitat historiu pripadu: {{error}}',
@@ -285,6 +286,7 @@ class AppStrings {
       'ai_user_simulator_agent': 'AI simulator pouzivatela',
       'summary_pdf': 'PDF zhrnutie',
       'document_pdf': 'PDF dokument',
+      'export_documents': 'Dokumenty',
       'upload_documents': 'Nahrat dokumenty',
       'case_input_discussion': 'Popiste pripad pre spustenie diskusie...',
       'case_input_question': 'Polozte pravnu otazku...',
@@ -398,6 +400,7 @@ class AppStrings {
       'pdf_saved_to': 'PDF saved to {{path}}',
       'pdf_download_started': 'PDF download started: {{filename}}',
       'pdf_download_failed': 'Failed to download PDF: {{error}}',
+      'open_saved_file_failed': 'Could not open the saved file.',
       'failed_to_load_cases': 'Failed to load cases: {{error}}',
       'failed_to_load_case_history': 'Failed to load case history: {{error}}',
       'maximum_cases':
@@ -431,6 +434,7 @@ class AppStrings {
       'ai_user_simulator_agent': 'AI User Simulator Agent',
       'summary_pdf': 'Summary PDF',
       'document_pdf': 'Document PDF',
+      'export_documents': 'Documents',
       'upload_documents': 'Upload documents',
       'case_input_discussion': 'Describe the case to start discussion...',
       'case_input_question': 'Ask your legal question...',
@@ -547,6 +551,7 @@ class AppStrings {
       'pdf_saved_to': 'PDF gespeichert unter {{path}}',
       'pdf_download_started': 'PDF-Download gestartet: {{filename}}',
       'pdf_download_failed': 'PDF-Download fehlgeschlagen: {{error}}',
+      'open_saved_file_failed': 'Gespeicherte Datei konnte nicht geoeffnet werden.',
       'failed_to_load_cases': 'Faelle konnten nicht geladen werden: {{error}}',
       'failed_to_load_case_history':
           'Fallhistorie konnte nicht geladen werden: {{error}}',
@@ -581,6 +586,7 @@ class AppStrings {
       'ai_user_simulator_agent': 'AI-Benutzer-Simulator',
       'summary_pdf': 'PDF Zusammenfassung',
       'document_pdf': 'PDF Dokument',
+      'export_documents': 'Dokumente',
       'upload_documents': 'Dokumente hochladen',
       'case_input_discussion':
           'Beschreiben Sie den Fall, um die Diskussion zu starten...',
@@ -1924,6 +1930,21 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     );
   }
 
+  Future<void> _openSavedFile(String savedPath) async {
+    final fileUri = Uri.file(savedPath);
+    try {
+      final opened = await launchUrl(
+        fileUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) {
+        _showSnackbar(_strings.t('open_saved_file_failed'));
+      }
+    } catch (_) {
+      _showSnackbar(_strings.t('open_saved_file_failed'));
+    }
+  }
+
   Future<void> _loadRememberedPhoneNumber() async {
     final lastPhoneNumber = await widget.authStore.getLastPhoneNumber();
     if (!mounted) {
@@ -3058,6 +3079,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
           'path': savedPath,
         }));
+        await _openSavedFile(savedPath);
       } else {
         _showSnackbar(_strings.t('pdf_download_started', <String, String>{
           'filename': payload.filename,
@@ -3600,6 +3622,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _toggleSpeechInput() async {
+    await _speaker.stop();
     if (!_speechEnabled) {
       _showSnackbar(_strings.t('speech_unavailable'));
       return;
@@ -3612,7 +3635,6 @@ class _ChatHomePageState extends State<ChatHomePage>
       await _speechToText.stop();
       return;
     }
-    await _speaker.stop();
     if (_awaitingSpokenName) {
       _inputController.clear();
     } else if (_profileName == null) {
@@ -3630,6 +3652,12 @@ class _ChatHomePageState extends State<ChatHomePage>
       localeId: _localeIdForSpeech(_selectedLocale),
       listenMode: ListenMode.dictation,
     );
+  }
+
+  Future<void> _downloadRequestedDocuments() async {
+    for (final kind in <String>['summary', 'document']) {
+      await _downloadPdf(kind);
+    }
   }
 
   Future<void> _toggleSpeechInputEnabled() async {
@@ -3946,6 +3974,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
           'path': savedPath,
         }));
+        await _openSavedFile(savedPath);
       } else {
         _showSnackbar(_strings.t('pdf_download_started', <String, String>{
           'filename': payload.filename,
@@ -4590,7 +4619,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                         onPressed:
                             (_isDownloading || _isSending || !_hasExportReady)
                                 ? null
-                                : () => _downloadPdf('summary'),
+                                : _downloadRequestedDocuments,
                         icon: _isDownloading
                             ? const SizedBox(
                                 width: 14,
@@ -4598,17 +4627,8 @@ class _ChatHomePageState extends State<ChatHomePage>
                                 child:
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : const Icon(Icons.picture_as_pdf),
-                        label: Text(strings.t('summary_pdf')),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.tonalIcon(
-                        onPressed:
-                            (_isDownloading || _isSending || !_hasExportReady)
-                                ? null
-                                : () => _downloadPdf('document'),
-                        icon: const Icon(Icons.description),
-                        label: Text(strings.t('document_pdf')),
+                            : const Icon(Icons.description),
+                        label: Text(strings.t('export_documents')),
                       ),
                     ],
                   ),
@@ -4626,10 +4646,11 @@ class _ChatHomePageState extends State<ChatHomePage>
                       Expanded(
                         child: TextField(
                           controller: _inputController,
-                          minLines: 3,
-                          maxLines: 4,
-                          keyboardType: TextInputType.multiline,
-                          textInputAction: TextInputAction.newline,
+                          minLines: 1,
+                          maxLines: 1,
+                          keyboardType: TextInputType.text,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _sendMessage(),
                           decoration: InputDecoration(
                             hintText:
                                 _responderMode == ResponderMode.aiUserSimulator
@@ -4643,9 +4664,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                       ),
                       const SizedBox(width: 8),
                       IconButton(
-                        onPressed: _speechEnabled && _speechInputEnabled
-                            ? _toggleSpeechInput
-                            : null,
+                        onPressed: _speechEnabled ? _toggleSpeechInput : null,
                         icon: Icon(
                           _isListening ? Icons.mic : Icons.mic_none,
                           color: _isListening
