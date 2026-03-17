@@ -60,6 +60,11 @@ npm run preview
 
 When authenticated, the home page swaps to a 3-column workspace layout: case sidebar, active workspace, and AI configuration panel. On narrow screens the side panels collapse and the center workspace takes full width.
 
+Route access behavior:
+- All `/app/*` routes are protected by auth state.
+- Unauthenticated users attempting `/app/*` are redirected to `/`.
+- After logout, protected routes are no longer accessible until sign-in.
+
 Case sidebar behavior:
 - `+ New case` creates a mock case and makes it active.
 - Clicking a case loads its data into the center workspace and AI configuration panel.
