@@ -39,6 +39,15 @@ The signed-out navigation includes the same app logo treatment used in the signe
 - The logo links to `/` (marketing homepage).
 - The navbar layout is responsive so brand, links, and actions do not overlap at mobile widths.
 
+## Signed-in Profile Dropdown
+
+In signed-in state, the profile icon opens a click-triggered dropdown menu in the navbar.
+
+- Options: `My Profile`, `My Cases`, `Log Out`
+- Menu closes on outside click, on option click, and on `Escape`
+- Keyboard navigation is supported with `ArrowUp`, `ArrowDown`, `Home`, and `End`
+- Mobile layout keeps the dropdown anchored under the trigger with viewport-safe width
+
 ## Legal pages and footer links
 
 Global footer links are available in all language modes (`en`, `sk`, `de`) and are visible on both public and signed-in screens.
