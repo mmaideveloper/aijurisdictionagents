@@ -50,7 +50,11 @@ npm run preview
 - Hero header with session status and region
 - Feature cards for intake, orchestration, and outputs
 - Callout panel for upcoming API integration
-- Navbar reacts to mock auth state: sign-in link when logged out, profile menu with name + email when logged in
+- Navbar reacts to mock auth state:
+  - Sign-in link when logged out
+  - Profile trigger when logged in with dropdown options: `My Profile`, `My Cases`, `Log Out`
+  - Dropdown closes on outside click, option click, and `Escape`
+  - Keyboard support includes `ArrowUp`/`ArrowDown` navigation and `Home`/`End` shortcuts
 
 ## Signed-in homepage
 
