@@ -12,7 +12,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Jurisdicta now speaks assistant messages aloud through text-to-speech, including the welcome message, speech prompts, and backend replies.
 - When speech output is used, Jurisdicta selects an installed TTS voice that matches the current user language/country setup (`SK`, `CS`, `DE`, `EN`) instead of using one fixed speaker voice.
 - German voice selection now explicitly prefers `de-DE` voices first, then `de-AT`, then `de-CH`, so the default German speaker is less likely to drift to the wrong dialect when multiple German voices are installed.
-- The top control area now also shows an assistant voice picker for the current language and a play button so different speaker persons can be tested directly in the app.
+- The `Account` page now also contains the language/country selector and an assistant voice picker with a play button, so the user can choose from voices available for the selected language.
 - The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.
 - The chat input is multiline by default with at least 3 visible lines; pressing `Enter` inserts a new line and messages are sent only with the send button.
 - Message area is centered between login header and selectors.
@@ -28,7 +28,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - device builds expose OS autofill hints for phone/email/password on sign-in and sign-up fields
 - Initial localized Jurisdicta welcome message shown on app start.
 - Selected app language now localizes chat labels, dialogs, action text, and tooltips for `SK`, `EN`, and `GE` (`DE` is accepted as a German alias).
-- Language/country selector is shown in the top control area below the login header (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
+- Language/country selector is shown on the `Account` page (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
   - `Real Agent` is now the default for local tests
   - `AI User Simulator Agent` remains available as the alternate local mode
 - Public/Azure API runs also start in `Real Agent` mode by default; the local responder switch is still shown only for local API hosts.
