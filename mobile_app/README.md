@@ -45,6 +45,8 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - On startup, app checks latest GitHub release and prompts for update when a newer version is available.
   - default source: `mmaideveloper/aijurisdictionagents` -> `releases/latest`
   - override with `--dart-define=AIJ_GITHUB_OWNER=... --dart-define=AIJ_GITHUB_REPO=...`
+  - on Android, if the release contains an APK asset, the app downloads it and opens the Android installer after user confirmation
+  - if Android blocks sideload installs for this app, the app opens the `Install unknown apps` settings page and resumes installation when the user returns
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/users/sign-up`
   - `POST /v1/users/sign-in`
@@ -84,6 +86,7 @@ Android note:
 
 - Release builds also need `android.permission.INTERNET` in `android/app/src/main/AndroidManifest.xml`.
 - Without that permission, Android can surface host lookup failures such as `No address associated with host name` even when the API URL itself is valid.
+- In-app Android updates require `android.permission.REQUEST_INSTALL_PACKAGES` and a `FileProvider` entry in the manifest so the downloaded APK can be handed to the Android package installer.
 
 
 ### Speech input
@@ -193,6 +196,9 @@ Manual mobile workflow runs now also expose a `release` switch:
 
 The GitHub Release tag is the exact mobile app version, for example `0.1.1+2`,
 so the in-app GitHub update check and the downloadable APK stay aligned.
+
+For Android automatic upgrade, the GitHub Release must include an `.apk` asset.
+The workflow uses `app-release.apk`, which the app prefers automatically during the update flow.
 
 CI pins Flutter to `3.41.2` on the `stable` channel with dependency caching,
 uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`
