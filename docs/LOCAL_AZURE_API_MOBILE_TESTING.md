@@ -143,6 +143,51 @@ Check:
 - Chat/session endpoints persist metadata to Azure PostgreSQL.
 - New data appears in Azure DB tables (`users`, `subscriptions`, `case_documents`, etc.).
 
+Important:
+
+- Flutter web or any browser-hosted mobile build requires the API to allow that exact origin in `CORS_ALLOW_ORIGINS`.
+- Native Android/iOS app builds do not need CORS configuration.
+- The mobile app already sends `x-correlation-id` and `x-request-id`; the API now echoes both so the same ID can be copied from the app and searched in ACA logs.
+
+ACA log tracing example:
+
+```powershell
+.\infra\scripts\tail_api_logs.ps1 -Tail 200 -CorrelationId "<copied-mobile-correlation-id>"
+```
+
+Application Insights tracing example:
+
+```kusto
+AppTraces
+| where TimeGenerated > ago(30m)
+| where Message has "<copied-mobile-correlation-id>"
+| order by TimeGenerated desc
+```
+
+Recommended alert baseline for the deployed API:
+
+- `AppExceptions` log alert
+- failed request / HTTP 5xx alert
+- ACA system log alert for revision or container crashes
+
+If a deployed browser build fails before reaching the handler, verify preflight/CORS:
+
+```powershell
+Invoke-WebRequest -Method Options `
+  -Uri "https://<deployed-api-host>/v1/users/sign-in" `
+  -Headers @{
+    Origin = "https://<your-browser-host>"
+    "Access-Control-Request-Method" = "POST"
+    "Access-Control-Request-Headers" = "content-type,x-api-key"
+  }
+```
+
+Expected result:
+
+- `200` with `Access-Control-Allow-Origin: https://<your-browser-host>`
+
+If the origin is not configured, the API returns `400 Disallowed CORS origin`.
+
 ## Environment-constrained fallback plan
 
 If current workstation/container is missing required tooling:

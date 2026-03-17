@@ -28,7 +28,7 @@ If the `.conda` environment already exists, skip `conda env create`.
 
 ### Console logging
 
-- API now writes request logs to console by default (method, path, status, duration, request id).
+- API now writes request logs to console by default (method, path, status, duration, request id, correlation id, origin, user agent).
 - On startup, API prints `API Starting` with API/core version and active log level.
 - API defaults `LLM_PROVIDER` to `azurefoundry` when not explicitly set.
 - Set log level with `API_LOG_LEVEL` (fallback: `LOG_LEVEL`), for example:
@@ -273,10 +273,18 @@ curl -X POST "http://localhost:8080/v1/chat/sessions" \
   - `http://localhost:<any-port>`
   - `http://127.x.x.x:<any-port>` for loopback IPv4 addresses
   - `http://[::1]:<any-port>` for IPv6 loopback
+- Deployed browser clients are blocked until you set `CORS_ALLOW_ORIGINS` explicitly.
+- Native Android/iOS builds do not require `CORS_ALLOW_ORIGINS`.
 - Override allowed origins with `CORS_ALLOW_ORIGINS` (comma-separated), for example:
 
 ```bash
 CORS_ALLOW_ORIGINS=http://localhost:8090,http://127.0.0.1:8090,http://localhost:7357,http://127.0.0.1:7357 uvicorn app.main:app --reload --port 8080
+```
+
+Example for a deployed browser build:
+
+```bash
+CORS_ALLOW_ORIGINS=https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io uvicorn app.main:app --reload --port 8080
 ```
 
 ## Chat simulator
@@ -289,10 +297,26 @@ For Slovak simulated discussions, the AI user now ends the conversation with `To
 
 ## OpenTelemetry
 
-- FastAPI is instrumented with OpenTelemetry spans.
-- If `OTEL_EXPORTER_OTLP_ENDPOINT` is set, traces are exported to that OTLP endpoint.
-- If not set, traces are written via console exporter.
+- Recommended production path: set `APPLICATIONINSIGHTS_CONNECTION_STRING` and the API will export requests, traces, logs, and unhandled exceptions to Azure Monitor / Application Insights.
+- The API keeps writing structured request logs to console, so ACA log streaming and Log Analytics remain available even when Application Insights is enabled.
+- Fallback behavior:
+  - If `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, Azure Monitor OpenTelemetry is used.
+  - Else if `OTEL_EXPORTER_OTLP_ENDPOINT` is set, traces are exported to that OTLP endpoint.
+  - Else traces are written via the console exporter.
+- `OTEL_SERVICE_NAME` defaults to `aijuristiction-api` if not set explicitly.
 - Console trace export uses a synchronous processor in local default mode to avoid shutdown-time exporter thread errors during tests.
+
+Local Azure Monitor example:
+
+```bash
+APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=..." uvicorn app.main:app --reload --port 8080
+```
+
+Local OTLP fallback example:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces uvicorn app.main:app --reload --port 8080
+```
 
 
 ## Database schema updates (local + cloud)
@@ -327,10 +351,46 @@ Cloud rollout:
    - `STORE_CLOUD=https://<storage-account>.blob.core.windows.net/<container-name>`
 4. Roll out a new revision (or restart) and verify startup logs include selected `db_option`.
 
+ACA log access:
+
+```powershell
+.\infra\scripts\tail_api_logs.ps1 -Tail 200
+.\infra\scripts\tail_api_logs.ps1 -Tail 200 -CorrelationId "<mobile-correlation-id>"
+```
+
+The API echoes both `x-request-id` and `x-correlation-id` in responses, and ACA request logs include those values for direct filtering.
+
+Application Insights and alerts:
+
+- In ACA, set `APPLICATIONINSIGHTS_CONNECTION_STRING` as a secret-backed environment variable.
+- The infra deployment now provisions or reuses the Application Insights resource `ai-juris-dev` by default and applies its connection string to the API Container App automatically.
+- Recommended alert sources:
+  - failed requests / HTTP 5xx
+  - `AppExceptions` count
+  - ACA system logs for revision or container failures
+- Example KQL for recent API exceptions:
+
+```kusto
+AppExceptions
+| where TimeGenerated > ago(1h)
+| order by TimeGenerated desc
+| project TimeGenerated, ProblemId, Message, InnermostMessage, OperationName
+```
+
+- Example KQL for failed requests:
+
+```kusto
+AppRequests
+| where TimeGenerated > ago(30m)
+| where Success == false
+| order by TimeGenerated desc
+| project TimeGenerated, Name, ResultCode, DurationMs, OperationId
+```
+
 GitHub workflows:
 
 - `.github/workflows/infra_deploy.yml`: provisions or updates Azure infrastructure, including PostgreSQL Flexible Server
-- `.github/workflows/api_build_deploy.yml`: builds and deploys the API image, then applies schema updates to Azure PostgreSQL
+- `.github/workflows/api_build_deploy.yml`: builds and deploys the API image, applies schema updates to Azure PostgreSQL, and injects `APPLICATIONINSIGHTS_CONNECTION_STRING` into ACA when the GitHub Environment secret is present
 - `.github/workflows/database_schema_upgrade.yml`: upgrades schema on an existing Azure PostgreSQL server without rebuilding or redeploying the API
 
 ## Build + deployment workflow

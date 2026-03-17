@@ -5,6 +5,7 @@ param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'
 param logAnalyticsWorkspaceName string
+param applicationInsightsName string
 param managedIdentityName string
 param postgresServerName string
 param postgresDatabaseName string = 'aijurisdiction'
@@ -21,6 +22,7 @@ param createManagedEnvironment bool = true
 param createAcr bool = true
 param createStorageAccount bool = true
 param createManagedIdentity bool = true
+param createApplicationInsights bool = true
 param createContainerApp bool = true
 param createPostgresServer bool = true
 param tags object = {}
@@ -39,6 +41,22 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09
 
 resource logAnalyticsWorkspaceExisting 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = if (!createLogAnalyticsWorkspace) {
   name: logAnalyticsWorkspaceName
+}
+
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = if (createApplicationInsights) {
+  name: applicationInsightsName
+  location: location
+  kind: 'web'
+  tags: tags
+  properties: {
+    Application_Type: 'web'
+    Request_Source: 'CustomDeployment'
+    WorkspaceResourceId: createLogAnalyticsWorkspace ? logAnalyticsWorkspace.id : logAnalyticsWorkspaceExisting.id
+  }
+}
+
+resource applicationInsightsExisting 'Microsoft.Insights/components@2020-02-02' existing = if (!createApplicationInsights) {
+  name: applicationInsightsName
 }
 
 var logAnalyticsCustomerId = createLogAnalyticsWorkspace
@@ -368,6 +386,10 @@ output acrLoginServer string = acrLoginServer
 output storageAccountName string = createStorageAccount ? storageAccount.name : storageAccountExisting.name
 output storageContainerName string = storageContainerName
 output storageBlobEndpoint string = storageBlobEndpoint
+output applicationInsightsName string = createApplicationInsights ? applicationInsights.name : applicationInsightsExisting.name
+output applicationInsightsConnectionString string = createApplicationInsights
+  ? applicationInsights.properties.ConnectionString
+  : applicationInsightsExisting.properties.ConnectionString
 output containerAppName string = createContainerApp ? containerApp.name : containerAppExisting.name
 output containerAppFqdn string = createContainerApp
   ? containerApp.properties.configuration.ingress.fqdn

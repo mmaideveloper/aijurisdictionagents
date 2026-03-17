@@ -70,10 +70,13 @@ jobs:
       AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
+      AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
       AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
       AZURE_POSTGRES_DATABASE_NAME: ${{ vars.AZURE_POSTGRES_DATABASE_NAME }}
       AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
       AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
+      CORS_ALLOW_ORIGINS: ${{ vars.CORS_ALLOW_ORIGINS }}
     steps:
       - uses: actions/checkout@v5
 
@@ -141,9 +144,10 @@ jobs:
           db_cloud="$(python - <<'PY'
           import os
           from urllib.parse import quote
-          user = quote(os.environ["AZURE_POSTGRES_ADMIN_USERNAME"], safe="")
-          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
           server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
+          admin_username = os.environ["AZURE_POSTGRES_ADMIN_USERNAME"]
+          user = quote(f"{admin_username}@{server}", safe="")
+          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
           database = os.environ["AZURE_POSTGRES_DATABASE_NAME"]
           print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
           PY
@@ -152,21 +156,48 @@ jobs:
           if [ -n "${AZURE_STORAGE_ACCOUNT_NAME:-}" ] && [ -n "${AZURE_STORAGE_CONTAINER_NAME:-}" ]; then
             store_cloud="https://${AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${AZURE_STORAGE_CONTAINER_NAME}"
           fi
-          if [ -n "$store_cloud" ]; then
-            az containerapp update \
-              --name "$AZURE_CONTAINER_APP_NAME" \
+          if [ -z "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
+            app_insights_name="${AZURE_APPLICATION_INSIGHTS_NAME:-ai-juris-dev}"
+            APPLICATIONINSIGHTS_CONNECTION_STRING="$(az monitor app-insights component show \
+              --app "$app_insights_name" \
               --resource-group "$AZURE_RESOURCE_GROUP" \
-              --set-env-vars DB_OPTION=azure DB_CLOUD="$db_cloud" STORAGE_OPTION=azure STORE_CLOUD="$store_cloud" \
-              --only-show-errors \
-              --output none
-          else
-            az containerapp update \
-              --name "$AZURE_CONTAINER_APP_NAME" \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --set-env-vars DB_OPTION=azure DB_CLOUD="$db_cloud" \
-              --only-show-errors \
-              --output none
+              --query connectionString \
+              --output tsv 2>/dev/null || true)"
           fi
+          secret_values=("db-cloud=$db_cloud")
+          if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
+            secret_values+=("applicationinsights-connection-string=$APPLICATIONINSIGHTS_CONNECTION_STRING")
+          fi
+          az containerapp secret set \
+            --name "$AZURE_CONTAINER_APP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --secrets "${secret_values[@]}" \
+            --only-show-errors \
+            --output none
+
+          env_vars=(
+            DB_OPTION=azure
+            DB_CLOUD=secretref:db-cloud
+            DB_LOCAL=/tmp/api.sqlite3
+            STORAGE_OPTION=azure
+            STORE_LOCAL=/tmp/storage
+            OTEL_SERVICE_NAME=aijuristiction-api
+          )
+          if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
+            env_vars+=(APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string)
+          fi
+          if [ -n "$store_cloud" ]; then
+            env_vars+=(STORE_CLOUD="$store_cloud")
+          fi
+          if [ -n "${CORS_ALLOW_ORIGINS:-}" ]; then
+            env_vars+=(CORS_ALLOW_ORIGINS="$CORS_ALLOW_ORIGINS")
+          fi
+          az containerapp update \
+            --name "$AZURE_CONTAINER_APP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --set-env-vars "${env_vars[@]}" \
+            --only-show-errors \
+            --output none
 
       - name: Allow GitHub runner IP on PostgreSQL firewall
         id: runner_ip

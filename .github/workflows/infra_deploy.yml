@@ -49,6 +49,7 @@ jobs:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
       AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
+      AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
       AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
     steps:
       - uses: actions/checkout@v4
@@ -95,6 +96,12 @@ jobs:
           if [ "$(az group exists --name "$AZURE_RESOURCE_GROUP" --output tsv)" != "true" ]; then
             az group create --name "$AZURE_RESOURCE_GROUP" --location "$AZURE_LOCATION" --only-show-errors --output none
           fi
+
+      - name: Resolve Application Insights name
+        id: appinsights
+        run: |
+          app_insights_name="${AZURE_APPLICATION_INSIGHTS_NAME:-ai-juris-dev}"
+          echo "application_insights_name=$app_insights_name" >> "$GITHUB_OUTPUT"
 
       - name: Resolve storage settings
         id: storage
@@ -144,6 +151,7 @@ jobs:
           env_location="$(get_location "$AZURE_CONTAINERAPPS_ENVIRONMENT" "Microsoft.App/managedEnvironments")"
           acr_location="$(get_location "${{ steps.acr.outputs.acr_name }}" "Microsoft.ContainerRegistry/registries")"
           storage_location="$(get_location "${{ steps.storage.outputs.storage_account_name }}" "Microsoft.Storage/storageAccounts")"
+          app_insights_location="$(get_location "${{ steps.appinsights.outputs.application_insights_name }}" "Microsoft.Insights/components")"
           identity_location="$(get_location "$AZURE_MANAGED_IDENTITY_NAME" "Microsoft.ManagedIdentity/userAssignedIdentities")"
           postgres_location="$(get_location "$AZURE_POSTGRES_SERVER_NAME" "Microsoft.DBforPostgreSQL/flexibleServers")"
           app_location="$(get_location "$AZURE_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
@@ -152,6 +160,7 @@ jobs:
           create_managed_environment=true
           create_acr=true
           create_storage_account=true
+          create_application_insights=true
           create_managed_identity=true
           create_postgres_server=true
           create_container_app=true
@@ -160,6 +169,7 @@ jobs:
           [ -n "$env_location" ] && create_managed_environment=false
           [ -n "$acr_location" ] && create_acr=false
           [ -n "$storage_location" ] && create_storage_account=false
+          [ -n "$app_insights_location" ] && create_application_insights=false
           [ -n "$identity_location" ] && create_managed_identity=false
           [ -n "$postgres_location" ] && create_postgres_server=false
           [ -n "$app_location" ] && create_container_app=false
@@ -187,6 +197,7 @@ jobs:
           check_location "Container Apps Environment" "$env_location"
           check_location "Container Registry" "$acr_location"
           check_location "Storage Account" "$storage_location"
+          check_location "Application Insights" "$app_insights_location"
           check_location "Managed Identity" "$identity_location"
           check_location "PostgreSQL Flexible Server" "$postgres_location"
           check_location "Container App" "$app_location"
@@ -201,6 +212,7 @@ jobs:
           echo "create_managed_environment=$create_managed_environment" >> "$GITHUB_OUTPUT"
           echo "create_acr=$create_acr" >> "$GITHUB_OUTPUT"
           echo "create_storage_account=$create_storage_account" >> "$GITHUB_OUTPUT"
+          echo "create_application_insights=$create_application_insights" >> "$GITHUB_OUTPUT"
           echo "create_managed_identity=$create_managed_identity" >> "$GITHUB_OUTPUT"
           echo "create_postgres_server=$create_postgres_server" >> "$GITHUB_OUTPUT"
           echo "create_container_app=$create_container_app" >> "$GITHUB_OUTPUT"
@@ -227,11 +239,13 @@ jobs:
               storageAccountName="${{ steps.storage.outputs.storage_account_name }}" \
               storageContainerName="${{ steps.storage.outputs.storage_container_name }}" \
               logAnalyticsWorkspaceName="$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+              applicationInsightsName="${{ steps.appinsights.outputs.application_insights_name }}" \
               managedIdentityName="$AZURE_MANAGED_IDENTITY_NAME" \
               createLogAnalyticsWorkspace="${{ steps.existing.outputs.create_log_analytics_workspace }}" \
               createManagedEnvironment="${{ steps.existing.outputs.create_managed_environment }}" \
               createAcr="${{ steps.existing.outputs.create_acr }}" \
               createStorageAccount="${{ steps.existing.outputs.create_storage_account }}" \
+              createApplicationInsights="${{ steps.existing.outputs.create_application_insights }}" \
               createManagedIdentity="${{ steps.existing.outputs.create_managed_identity }}" \
               createPostgresServer="${{ steps.existing.outputs.create_postgres_server }}" \
               createContainerApp="${{ steps.existing.outputs.create_container_app }}"

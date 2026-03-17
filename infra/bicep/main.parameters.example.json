@@ -23,6 +23,9 @@
     "logAnalyticsWorkspaceName": {
       "value": "log-aijurisdiction-dev"
     },
+    "applicationInsightsName": {
+      "value": "ai-juris-dev"
+    },
     "managedIdentityName": {
       "value": "id-aijurisdiction-api-dev"
     },
@@ -34,4 +37,3 @@
     }
   }
 }
-

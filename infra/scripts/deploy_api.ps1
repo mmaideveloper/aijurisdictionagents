@@ -17,6 +17,7 @@ param(
     [string]$StorageAccountName,
     [string]$StorageContainerName,
     [string]$LogAnalyticsWorkspaceName,
+    [string]$ApplicationInsightsName,
     [string]$ManagedIdentityName,
     [string]$ImageTag,
     [string]$EnvFilePath = ".env",
@@ -605,6 +606,7 @@ $acrNameFromEnvFile = ""
 $storageAccountNameFromEnvFile = ""
 $storageContainerNameFromEnvFile = ""
 $logAnalyticsWorkspaceFromEnvFile = ""
+$applicationInsightsNameFromEnvFile = ""
 $managedIdentityNameFromEnvFile = ""
 $imageTagFromEnvFile = ""
 $clientIdFromEnvFile = ""
@@ -627,6 +629,7 @@ if (-not $SkipEnvFile -and (Test-Path -Path $resolvedEnvFilePath)) {
     $storageAccountNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_STORAGE_ACCOUNT_NAME"
     $storageContainerNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_STORAGE_CONTAINER_NAME"
     $logAnalyticsWorkspaceFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
+    $applicationInsightsNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_APPLICATION_INSIGHTS_NAME"
     $managedIdentityNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_MANAGED_IDENTITY_NAME"
     $imageTagFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_API_IMAGE_TAG"
     $clientIdFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_CLIENT_ID"
@@ -649,6 +652,7 @@ $AcrName = Resolve-InputValue -ExplicitValue $AcrName -EnvFileValue $acrNameFrom
 $StorageAccountName = Resolve-InputValue -ExplicitValue $StorageAccountName -EnvFileValue $storageAccountNameFromEnvFile -EnvironmentValue $env:AZURE_STORAGE_ACCOUNT_NAME
 $StorageContainerName = Resolve-InputValue -ExplicitValue $StorageContainerName -EnvFileValue $storageContainerNameFromEnvFile -EnvironmentValue $env:AZURE_STORAGE_CONTAINER_NAME
 $LogAnalyticsWorkspaceName = Resolve-InputValue -ExplicitValue $LogAnalyticsWorkspaceName -EnvFileValue $logAnalyticsWorkspaceFromEnvFile -EnvironmentValue $env:AZURE_LOG_ANALYTICS_WORKSPACE_NAME
+$ApplicationInsightsName = Resolve-InputValue -ExplicitValue $ApplicationInsightsName -EnvFileValue $applicationInsightsNameFromEnvFile -EnvironmentValue $env:AZURE_APPLICATION_INSIGHTS_NAME
 $ManagedIdentityName = Resolve-InputValue -ExplicitValue $ManagedIdentityName -EnvFileValue $managedIdentityNameFromEnvFile -EnvironmentValue $env:AZURE_MANAGED_IDENTITY_NAME
 $ImageTag = Resolve-InputValue -ExplicitValue $ImageTag -EnvFileValue $imageTagFromEnvFile -EnvironmentValue $env:AZURE_API_IMAGE_TAG
 $ExpectedServicePrincipalClientId = Resolve-InputValue -ExplicitValue "" -EnvFileValue $clientIdFromEnvFile -EnvironmentValue $env:AZURE_CLIENT_ID
@@ -689,6 +693,9 @@ if ([string]::IsNullOrWhiteSpace($PostgresStorageSizeGb)) {
 if ([string]::IsNullOrWhiteSpace($LogAnalyticsWorkspaceName)) {
     $LogAnalyticsWorkspaceName = "log-aijurisdiction-dev"
 }
+if ([string]::IsNullOrWhiteSpace($ApplicationInsightsName)) {
+    $ApplicationInsightsName = "ai-juris-dev"
+}
 if ([string]::IsNullOrWhiteSpace($ManagedIdentityName)) {
     $ManagedIdentityName = "id-aijurisdiction-api-dev"
 }
@@ -728,6 +735,7 @@ $StorageContainerName = Normalize-StorageContainerName -InputName $StorageContai
 Write-Host "Using ACR name: $AcrName"
 Write-Host "Using PostgreSQL server: $PostgresServerName"
 Write-Host "Using PostgreSQL database: $PostgresDatabaseName"
+Write-Host "Using Application Insights: $ApplicationInsightsName"
 Write-Host "Using storage account: $StorageAccountName"
 Write-Host "Using storage container: $StorageContainerName"
 Write-Host "Using image: ${ImageRepository}:${ImageTag}"
@@ -772,6 +780,10 @@ $storageAccountLocation = Get-ResourceLocationInGroup `
     -ResourceGroupName $ResourceGroupName `
     -ResourceName $StorageAccountName `
     -ResourceType "Microsoft.Storage/storageAccounts"
+$applicationInsightsLocation = Get-ResourceLocationInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $ApplicationInsightsName `
+    -ResourceType "Microsoft.Insights/components"
 $managedIdentityLocation = Get-ResourceLocationInGroup `
     -ResourceGroupName $ResourceGroupName `
     -ResourceName $ManagedIdentityName `
@@ -789,6 +801,7 @@ $createLogAnalyticsWorkspace = [string]::IsNullOrWhiteSpace($logAnalyticsWorkspa
 $createManagedEnvironment = [string]::IsNullOrWhiteSpace($managedEnvironmentLocation)
 $createAcr = [string]::IsNullOrWhiteSpace($acrLocation)
 $createStorageAccount = [string]::IsNullOrWhiteSpace($storageAccountLocation)
+$createApplicationInsights = [string]::IsNullOrWhiteSpace($applicationInsightsLocation)
 $createManagedIdentity = [string]::IsNullOrWhiteSpace($managedIdentityLocation)
 $createPostgresServer = [string]::IsNullOrWhiteSpace($postgresServerLocation)
 $createContainerApp = [string]::IsNullOrWhiteSpace($containerAppLocation)
@@ -799,6 +812,7 @@ $locationChecks = @(
     @{ Label = "Container Apps Environment"; Location = $managedEnvironmentLocation },
     @{ Label = "Container Registry"; Location = $acrLocation },
     @{ Label = "Storage Account"; Location = $storageAccountLocation },
+    @{ Label = "Application Insights"; Location = $applicationInsightsLocation },
     @{ Label = "Managed Identity"; Location = $managedIdentityLocation },
     @{ Label = "PostgreSQL Flexible Server"; Location = $postgresServerLocation },
     @{ Label = "Container App"; Location = $containerAppLocation }
@@ -821,6 +835,7 @@ Write-Host " - Log Analytics Workspace: $createLogAnalyticsWorkspace"
 Write-Host " - Container Apps Environment: $createManagedEnvironment"
 Write-Host " - Container Registry: $createAcr"
 Write-Host " - Storage Account: $createStorageAccount"
+Write-Host " - Application Insights: $createApplicationInsights"
 Write-Host " - Managed Identity: $createManagedIdentity"
 Write-Host " - PostgreSQL Flexible Server: $createPostgresServer"
 Write-Host " - Container App: $createContainerApp"
@@ -853,11 +868,13 @@ $outputsRaw = az deployment group create `
       storageAccountName=$StorageAccountName `
       storageContainerName=$StorageContainerName `
       logAnalyticsWorkspaceName=$LogAnalyticsWorkspaceName `
+      applicationInsightsName=$ApplicationInsightsName `
       managedIdentityName=$ManagedIdentityName `
       createLogAnalyticsWorkspace=$($createLogAnalyticsWorkspace.ToString().ToLower()) `
       createManagedEnvironment=$($createManagedEnvironment.ToString().ToLower()) `
       createAcr=$($createAcr.ToString().ToLower()) `
       createStorageAccount=$($createStorageAccount.ToString().ToLower()) `
+      createApplicationInsights=$($createApplicationInsights.ToString().ToLower()) `
       createManagedIdentity=$($createManagedIdentity.ToString().ToLower()) `
       createPostgresServer=$($createPostgresServer.ToString().ToLower()) `
       createContainerApp=$($createContainerApp.ToString().ToLower()) `
@@ -922,6 +939,18 @@ $storageBlobEndpointOutput = if ($outputs.PSObject.Properties.Name -contains "st
 else {
     ""
 }
+$applicationInsightsConnectionStringOutput = if ($outputs.PSObject.Properties.Name -contains "applicationInsightsConnectionString") {
+    [string]$outputs.applicationInsightsConnectionString.value
+}
+else {
+    ""
+}
+$applicationInsightsNameOutput = if ($outputs.PSObject.Properties.Name -contains "applicationInsightsName") {
+    [string]$outputs.applicationInsightsName.value
+}
+else {
+    $ApplicationInsightsName
+}
 $postgresHostOutput = if ($outputs.PSObject.Properties.Name -contains "postgresHost") {
     [string]$outputs.postgresHost.value
 }
@@ -971,7 +1000,7 @@ $envPairs = Convert-EnvFileToPairs -Path $resolvedEnvFilePath
 $envPairsList = New-Object System.Collections.Generic.List[string]
 foreach ($item in $envPairs) {
     $key = $item.Split("=", 2)[0]
-    if ($key -in @("DB_OPTION", "DB_CLOUD", "DB_LOCAL", "STORAGE_OPTION", "STORE_CLOUD", "STORE_LOCAL")) {
+    if ($key -in @("DB_OPTION", "DB_CLOUD", "DB_LOCAL", "STORAGE_OPTION", "STORE_CLOUD", "STORE_LOCAL", "APPLICATIONINSIGHTS_CONNECTION_STRING")) {
         continue
     }
     $envPairsList.Add($item)
@@ -984,13 +1013,31 @@ $envPairsList.Add("STORE_LOCAL=/tmp/storage")
 if (-not [string]::IsNullOrWhiteSpace($storeCloud)) {
     $envPairsList.Add("STORE_CLOUD=$storeCloud")
 }
-$envPairs = $envPairsList.ToArray()
-
 Write-Host "Updating Container App secret for Azure PostgreSQL connection..."
+$applicationInsightsConnectionStringFromEnvFile = if ($resolvedEnvFilePath) {
+    Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "APPLICATIONINSIGHTS_CONNECTION_STRING"
+}
+else {
+    ""
+}
+$applicationInsightsConnectionString = Resolve-InputValue `
+    -ExplicitValue "" `
+    -EnvFileValue $applicationInsightsConnectionStringFromEnvFile `
+    -EnvironmentValue $env:APPLICATIONINSIGHTS_CONNECTION_STRING
+if ([string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
+    $applicationInsightsConnectionString = $applicationInsightsConnectionStringOutput
+}
+$secretPairs = New-Object System.Collections.Generic.List[string]
+$secretPairs.Add("db-cloud=$dbCloud")
+if (-not [string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
+    $secretPairs.Add("applicationinsights-connection-string=$applicationInsightsConnectionString")
+    $envPairsList.Add("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string")
+}
+$envPairs = $envPairsList.ToArray()
 az containerapp secret set `
     --name $ContainerAppName `
     --resource-group $ResourceGroupName `
-    --secrets "db-cloud=$dbCloud" `
+    --secrets $secretPairs.ToArray() `
     --only-show-errors `
     --output none
 
@@ -1040,6 +1087,7 @@ Write-Host "Container App URL: https://$fqdn"
 Write-Host "Health check:       https://$fqdn/health"
 Write-Host "PostgreSQL host:    $postgresHostOutput"
 Write-Host "PostgreSQL database:$postgresDatabaseNameOutput"
+Write-Host "Application Insights: $applicationInsightsNameOutput"
 Write-Host "Storage account:    $storageAccountNameOutput"
 Write-Host "Storage container:  $storageContainerNameOutput"
 if (-not [string]::IsNullOrWhiteSpace($storageBlobEndpointOutput)) {

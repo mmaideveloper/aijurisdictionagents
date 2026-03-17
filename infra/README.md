@@ -15,6 +15,7 @@ This keeps deployment simple while matching the existing API container workflow.
 
 - Resource Group (created by script)
 - Log Analytics Workspace
+- Application Insights (`ai-juris-dev` by default)
 - Azure Container Apps Environment
 - Azure Database for PostgreSQL Flexible Server
 - PostgreSQL database (`aijurisdiction` by default)
@@ -131,7 +132,8 @@ The script will:
 1. Provision/update Azure infrastructure via `infra/bicep/main.bicep`
 2. Build the API image in ACR using `az acr build`
 3. Store the Azure PostgreSQL connection string as a Container Apps secret and update the Container App image/env configuration
-4. Apply API schema migrations to Azure PostgreSQL
+4. Provision or reuse the Application Insights resource and apply its connection string to the API Container App
+5. Apply API schema migrations to Azure PostgreSQL
 
 The Bicep deployment provisions or reuses:
 
@@ -158,7 +160,11 @@ By default, the script reads selected keys from repo `.env` and sets them on the
 For Azure PostgreSQL deployments, the script expands the database username to the Flexible Server login format
 `<admin>@<server>` when building `DB_CLOUD`, percent-encodes it for the URI, stores that value in a Container Apps secret, and sets
 `DB_CLOUD=secretref:db-cloud` on the API container.
+If Application Insights exists or is provisioned by the same deployment, the script reads the connection string and sets
+`APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string` on the API container automatically.
 `STORE_CLOUD` is set as a blob URL prefix, not as a secret.
+If `CORS_ALLOW_ORIGINS` is present in `.env`, the script passes it through to the API container unchanged.
+Use that only for deployed browser clients such as Flutter web. Native Android/iOS builds do not require CORS configuration.
 
 If your `.env` is at the repo root, no extra flag is needed. To use a different file:
 
@@ -229,6 +235,7 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_RESOURCE_GROUP` = `<RESOURCE_GROUP_NAME>`
 - `AZURE_CONTAINERAPPS_ENVIRONMENT` = `<CONTAINERAPPS_ENV_NAME>`
 - `AZURE_CONTAINER_APP_NAME` = `<CONTAINER_APP_NAME>`
+- `AZURE_APPLICATION_INSIGHTS_NAME` = `ai-juris-dev`
 - `AZURE_POSTGRES_SERVER_NAME` = `db-juris-dev`
 - `AZURE_POSTGRES_DATABASE_NAME` = `aijurisdiction`
 - `AZURE_POSTGRES_ADMIN_USERNAME` = `<POSTGRES_ADMIN_USERNAME>`
@@ -237,6 +244,9 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_CONTAINER_REGISTRY` = `<ACR_NAME>`
 - `AZURE_STORAGE_ACCOUNT_NAME` = `<STORAGE_ACCOUNT_NAME>` (optional; auto-derived if omitted)
 - `AZURE_STORAGE_CONTAINER_NAME` = `<STORAGE_CONTAINER_NAME>` (optional; defaults to `case-documents`)
+- `CORS_ALLOW_ORIGINS` = comma-separated deployed browser origins allowed to call the API (optional)
+  - Example: `https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io`
+  - Do not set this for native Android/iOS-only clients unless you also have a browser-hosted build.
 
 5. Run the workflow:
 
@@ -258,6 +268,74 @@ This workflow:
 2. Opens a temporary firewall rule for the GitHub runner IP
 3. Runs `python databases/scripts/apply_api_db_schema.py` against the existing Azure PostgreSQL server
 4. Removes the temporary firewall rule
+
+## ACA API logs
+
+Use the bundled helper when reproducing mobile/API issues:
+
+```powershell
+.\infra\scripts\tail_api_logs.ps1
+```
+
+Useful filters:
+
+```powershell
+.\infra\scripts\tail_api_logs.ps1 -Tail 200 -CorrelationId "<mobile-correlation-id>"
+.\infra\scripts\tail_api_logs.ps1 -Tail 200 -RequestId "<request-id>"
+.\infra\scripts\tail_api_logs.ps1 -SystemLogs -Tail 200
+```
+
+Resolution order for `tail_api_logs.ps1`:
+
+1. Explicit parameters
+2. Repo `.env`
+3. Process environment variables
+
+The API now logs both `request_id` and `correlation_id`, plus `origin` and `user_agent`, so a mobile-side error can be matched directly to ACA logs.
+
+## Application Insights and alerts
+
+Recommended production setup for this repo:
+
+1. Keep ACA console and system logs in Log Analytics for platform/runtime troubleshooting.
+2. Provision `Microsoft.Insights/components` and set its connection string on the API Container App as a secret-backed environment variable.
+3. Use Application Insights for exceptions, failed requests, traces, and alert rules.
+
+Deployment behavior:
+
+- `infra/scripts/deploy_api.ps1` now provisions or reuses Application Insights and applies its connection string to ACA automatically. Explicit env input still overrides the deployment output if needed.
+- `.github/workflows/api_build_deploy.yml` now queries the configured Application Insights resource and applies its connection string to ACA automatically.
+
+Recommended GitHub Environment additions:
+
+- Variable: `AZURE_APPLICATION_INSIGHTS_NAME` with value `ai-juris-dev`
+- Variable: `CORS_ALLOW_ORIGINS` only for browser-hosted clients
+
+Example KQL for recent exceptions:
+
+```kusto
+AppExceptions
+| where TimeGenerated > ago(1h)
+| order by TimeGenerated desc
+| project TimeGenerated, ProblemId, Message, OperationName
+```
+
+Example KQL for failed requests:
+
+```kusto
+AppRequests
+| where TimeGenerated > ago(30m)
+| where Success == false
+| summarize failures=count() by bin(TimeGenerated, 5m), Name, ResultCode
+| order by TimeGenerated desc
+```
+
+Recommended alerts:
+
+- Log alert on `AppExceptions` count above your chosen threshold over 5-10 minutes
+- Log alert on failed request count / HTTP 5xx
+- ACA system-log alert for `ContainerCrashing`, `ErrImagePull`, or revision provisioning failures
+- Metric alerts for CPU, memory, and restart spikes on the Container App
 
 ## Files
 
