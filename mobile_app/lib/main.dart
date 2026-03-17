@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -137,6 +138,7 @@ class LocaleOption {
 
   final String countryCode;
   final String languageCode;
+  final AppLogger logger;
   final String label;
 }
 
@@ -188,6 +190,13 @@ class AppStrings {
       'saving': 'Ukladam...',
       'update_sign_in_profile': 'Upravit prihlasovaci profil',
       'profile_update_failed': 'Aktualizacia profilu zlyhala: {{error}}',
+      'debug_mode': 'Debug rezim',
+      'debug_mode_description': 'V debug rezime sa vsetky logy ukladaju do suboru na Android zariadeni.',
+      'debug_mode_enabled': 'Debug rezim zapnuty.',
+      'debug_mode_disabled': 'Debug rezim vypnuty.',
+      'share_logs': 'Zdielat logy',
+      'logs_shared': 'Zdielanie logov bolo spustene.',
+      'share_logs_failed': 'Zdielanie logov zlyhalo: {{error}}',
       'subscription': 'Predplatne',
       'subscription_change_requested':
           'Zmena predplatneho bola odoslana (pending).',
@@ -321,6 +330,13 @@ class AppStrings {
       'saving': 'Saving...',
       'update_sign_in_profile': 'Update sign in profile',
       'profile_update_failed': 'Profile update failed: {{error}}',
+      'debug_mode': 'Debug mode',
+      'debug_mode_description': 'In debug mode, all logs are written to a file on Android.',
+      'debug_mode_enabled': 'Debug mode enabled.',
+      'debug_mode_disabled': 'Debug mode disabled.',
+      'share_logs': 'Share logs',
+      'logs_shared': 'Log sharing has started.',
+      'share_logs_failed': 'Failed to share logs: {{error}}',
       'subscription': 'Subscription',
       'subscription_change_requested':
           'Subscription change requested (pending).',
@@ -450,6 +466,13 @@ class AppStrings {
       'saving': 'Speichere...',
       'update_sign_in_profile': 'Anmeldeprofil aktualisieren',
       'profile_update_failed': 'Profilaktualisierung fehlgeschlagen: {{error}}',
+      'debug_mode': 'Debug-Modus',
+      'debug_mode_description': 'Im Debug-Modus werden alle Logs in eine Datei auf Android geschrieben.',
+      'debug_mode_enabled': 'Debug-Modus aktiviert.',
+      'debug_mode_disabled': 'Debug-Modus deaktiviert.',
+      'share_logs': 'Logs teilen',
+      'logs_shared': 'Log-Freigabe wurde gestartet.',
+      'share_logs_failed': 'Logs konnten nicht geteilt werden: {{error}}',
       'subscription': 'Abonnement',
       'subscription_change_requested': 'Abo-Aenderung gesendet (pending).',
       'subscription_change_failed': 'Abo-Aenderung fehlgeschlagen: {{error}}',
@@ -2317,11 +2340,13 @@ class AccountSettingsPage extends StatefulWidget {
     required this.user,
     required this.authStore,
     required this.languageCode,
+    required this.logger,
   });
 
   final LocalAuthUser user;
   final LocalAuthStore authStore;
   final String languageCode;
+  final AppLogger logger;
 
   @override
   State<AccountSettingsPage> createState() => _AccountSettingsPageState();
@@ -2338,6 +2363,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   List<SubscriptionPlanInfo> _plans = <SubscriptionPlanInfo>[];
   List<UserSubscriptionInfo> _subscriptions = <UserSubscriptionInfo>[];
   String? _selectedPlanCode;
+  late bool _debugModeEnabled;
+  bool _isSharingLogs = false;
 
   AppStrings get _strings => AppStrings(widget.languageCode);
 
@@ -2357,6 +2384,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         TextEditingController(text: widget.user.firstName ?? '');
     _lastNameController =
         TextEditingController(text: widget.user.lastName ?? '');
+    _debugModeEnabled = widget.logger.debugModeEnabled;
     _loadSubscriptions();
   }
 
@@ -2431,6 +2459,72 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       if (mounted) {
         setState(() {
           _isUpdatingSubscription = false;
+        });
+      }
+    }
+  }
+
+
+  Future<void> _setDebugModeEnabled(bool enabled) async {
+    setState(() {
+      _debugModeEnabled = enabled;
+    });
+    await widget.logger.setDebugModeEnabled(enabled);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _strings.t(enabled ? 'debug_mode_enabled' : 'debug_mode_disabled'),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _shareLogs() async {
+    final path = widget.logger.logFilePath;
+    if (_isSharingLogs || path == null || path.isEmpty) {
+      return;
+    }
+    setState(() {
+      _isSharingLogs = true;
+    });
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: <XFile>[XFile(path)],
+          text: 'JurisDigtA debug log',
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_strings.t('logs_shared'))),
+      );
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Failed to share logs',
+        error,
+        stackTrace,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _strings.t('share_logs_failed', <String, String>{
+              'error': '$error',
+            }),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSharingLogs = false;
         });
       }
     }
@@ -2560,6 +2654,25 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
               child: Text(strings.t('subscription')),
             ),
           ],
+          const SizedBox(height: 20),
+          SwitchListTile(
+            value: _debugModeEnabled,
+            onChanged: _setDebugModeEnabled,
+            title: Text(strings.t('debug_mode')),
+            subtitle: Text(strings.t('debug_mode_description')),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            onPressed: (_isSharingLogs || !_debugModeEnabled) ? null : _shareLogs,
+            icon: _isSharingLogs
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.ios_share),
+            label: Text(strings.t('share_logs')),
+          ),
           const SizedBox(height: 20),
           FilledButton(
             onPressed: _isSaving ? null : _save,
@@ -3383,6 +3496,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
           camera: widget.cameras.first,
           logger: widget.logger,
           languageCode: _selectedLocale.languageCode,
+          logger: widget.logger,
         ),
       ),
     );
@@ -3640,6 +3754,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
           user: _signedInUser,
           authStore: widget.authStore,
           languageCode: _selectedLocale.languageCode,
+          logger: widget.logger,
         ),
       ),
     );

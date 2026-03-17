@@ -18,6 +18,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Message area is centered between login header and selectors.
 - The top header now uses a single compact line with `AIJurisDigta`, the app version, and the current auth action (`Login` or `Sign up` on the auth screen, `Sign out` after login).
 - Built-in authentication UI:
+  - Account profile now includes a `Debug mode` switch (Android) that controls file logging and a `Share logs` action that opens the Android share sheet for the current log file.
   - `Sign up`: phone number + email/password (required), first/last name (optional), persisted through the API
   - `Sign in`: phone number first; if phone exists, user is signed in automatically through the API
   - if phone is not found, sign in fallback is shown for email/password
@@ -138,6 +139,14 @@ Buttons are enabled after AI stream emits `result`/`done` (PDF must be generated
 In `Real Agent` mode, when the lawyer decides a formal document is needed, the agent first asks for confirmation and the PDF buttons stay disabled until the follow-up reply actually prepares the document.
 In `AI User Simulator` mode, submitting the instruction starts discussion streaming (SSE)
 the same way as the chat simulator by using `user_simulation_mode=AIUserSimulatorAgent`.
+
+
+## Debug mode and log sharing (Android)
+
+- Open `Account` from the chat screen.
+- Enable `Debug mode` to write operational logs into a file under the app documents `logs/` folder.
+- Tap `Share logs` to open the Android share sheet and send the active log file to another app/device.
+- When debug mode is disabled, regular info logs are not persisted to file.
 
 ## Log output location
 

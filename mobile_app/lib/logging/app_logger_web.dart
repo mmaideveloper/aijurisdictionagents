@@ -9,6 +9,12 @@ class WebConsoleLogger implements AppLogger {
   String? get logFilePath => null;
 
   @override
+  bool get debugModeEnabled => false;
+
+  @override
+  Future<void> setDebugModeEnabled(bool enabled) async {}
+
+  @override
   Future<void> info(String message,
       [Map<String, Object?> context = const {}]) async {
     final entry = <String, Object?>{

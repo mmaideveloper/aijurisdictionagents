@@ -5,6 +5,12 @@ class NoopLogger implements AppLogger {
   String? get logFilePath => null;
 
   @override
+  bool get debugModeEnabled => false;
+
+  @override
+  Future<void> setDebugModeEnabled(bool enabled) async {}
+
+  @override
   Future<void> error(
     String message,
     Object error,
