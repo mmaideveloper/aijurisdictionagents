@@ -2132,16 +2132,34 @@ class _AuthEntryPageState extends State<AuthEntryPage>
             ),
           ),
           SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Card(
-                  margin: const EdgeInsets.all(16),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final mediaQuery = MediaQuery.of(context);
+                final isPortrait =
+                    mediaQuery.orientation == Orientation.portrait;
+                final authPanelHeight = max(
+                  360.0,
+                  min(
+                    constraints.maxHeight - (isPortrait ? 220 : 180),
+                    560.0,
+                  ),
+                );
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: max(0, constraints.maxHeight - 32),
+                    ),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        child: Card(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
                         Row(
                           children: [
                             const Expanded(
@@ -2185,9 +2203,10 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                           ],
                         ),
                         const SizedBox(height: 12),
-                        SizedBox(
-                          height: 420,
-                          child: TabBarView(
+                                SizedBox(
+                                  height: authPanelHeight,
+                                  child: AutofillGroup(
+                                    child: TabBarView(
                             controller: _tabController,
                             children: [
                               SingleChildScrollView(
@@ -2198,6 +2217,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                       keyboardType: TextInputType.phone,
                                       autofillHints: const <String>[
                                         AutofillHints.telephoneNumber,
+                                        AutofillHints.telephoneNumberDevice,
                                         AutofillHints.username,
                                       ],
                                       decoration:
@@ -2273,6 +2293,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                       keyboardType: TextInputType.phone,
                                       autofillHints: const <String>[
                                         AutofillHints.telephoneNumber,
+                                        AutofillHints.telephoneNumberDevice,
                                       ],
                                       decoration: InputDecoration(
                                         labelText:
@@ -2334,14 +2355,18 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                   ],
                                 ),
                               ),
-                            ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
         ],

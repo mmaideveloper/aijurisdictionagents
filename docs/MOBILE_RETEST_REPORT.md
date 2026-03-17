@@ -57,3 +57,19 @@ To fully satisfy mobile citation and PDF requirements:
 3. Extend message model to include source citations with URL/path metadata.
 4. Render citations as tappable links and open source documents via a URL launcher / in-app webview.
 5. Add Flutter widget/integration tests for locale selection, export buttons, and citation link taps.
+
+## 0.1.3+4 hotfix notes (auth/orientation)
+- Added Android-oriented autofill hints (`telephoneNumberDevice`) for both sign-in and sign-up phone fields so the OS can propose the device phone number during login/registration.
+- Wrapped the auth tabs with an `AutofillGroup` to improve autofill session behavior on Android.
+- Reworked auth screen layout sizing to be responsive after orientation changes (landscape -> portrait), replacing a rigid fixed panel with viewport-aware height and outer scroll support so registration controls remain reachable.
+
+### Minimal runnable example
+- Backend sanity demo (project default): `python examples/minimal_demo.py`
+
+## 0.1.3+5 release update
+- Bumped Flutter mobile app version from `0.1.3+4` to `0.1.3+5` in `mobile_app/pubspec.yaml`.
+- Performed a dev sign-in verification attempt for phone `+421944400166` via `POST /v1/users/sign-in/phone` with API key `aijuris`.
+- Current environment does not expose a configured dev API URL (`AIJ_PUBLIC_DEV_API_URL`, `PUBLIC_DEV_API_BASE_URL`, or `API_BASE_URL`), so remote dev login could not be executed from this runner.
+
+### Minimal runnable example
+- `python examples/minimal_demo.py`
