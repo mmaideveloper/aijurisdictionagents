@@ -1063,6 +1063,94 @@ textarea {
   gap: 0.6rem;
 }
 
+.profile-page {
+  gap: 1.8rem;
+}
+
+.profile-shell {
+  display: grid;
+  gap: 1.2rem;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+}
+
+.profile-side-panels {
+  display: grid;
+  gap: 1.2rem;
+  align-content: start;
+}
+
+.profile-details {
+  align-self: start;
+  min-height: 100%;
+}
+
+.profile-details h2 {
+  margin-bottom: 0.2rem;
+}
+
+.profile-field-list {
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.profile-field {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+}
+
+.profile-field dt {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.profile-field dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.profile-case-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.profile-case-item {
+  margin: 0;
+}
+
+.profile-case-button {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: inherit;
+  font: inherit;
+  border-radius: 12px;
+  padding: 0.65rem 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  text-align: left;
+}
+
+.profile-case-button small {
+  color: var(--ink-muted);
+}
+
+.profile-case-button:hover {
+  border-color: rgba(31, 27, 22, 0.18);
+}
+
 @media (max-width: 1100px) {
   .workspace-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -1113,6 +1201,14 @@ textarea {
 
   .footer-meta {
     flex-direction: column;
+  }
+
+  .profile-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-side-panels {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

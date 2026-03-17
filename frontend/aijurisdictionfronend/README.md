@@ -33,10 +33,10 @@ When authenticated, the home page switches to a 3-column workspace layout (case 
 
 ## Protected App Routes
 
-All `/app/*` routes are guarded by mock auth state.
+All `/app/*` routes and `/profile` are guarded by mock auth state.
 
 - Unauthenticated users are redirected to `/`
-- Authenticated users can access the full app area (`/app`, `/app/profile`, `/app/workspace`, etc.)
+- Authenticated users can access the full app area (`/app`, `/app/workspace`, etc.) and `/profile`
 - Logging out from the profile dropdown immediately removes access to protected routes
 
 ## Navbar Branding
@@ -52,9 +52,22 @@ The signed-out navigation includes the same app logo treatment used in the signe
 In signed-in state, the profile icon opens a click-triggered dropdown menu in the navbar.
 
 - Options: `My Profile`, `My Cases`, `Log Out`
+- `My Profile` navigates to `/profile`
 - Menu closes on outside click, on option click, and on `Escape`
 - Keyboard navigation is supported with `ArrowUp`, `ArrowDown`, `Home`, and `End`
 - Mobile layout keeps the dropdown anchored under the trigger with viewport-safe width
+
+## My Profile View
+
+The `/profile` page displays structured user information from the current mock auth session.
+
+- First Name
+- Last Name
+- Email
+- Role (currently optional)
+- Account Created Date (currently optional)
+- Includes subscription pricing controls (billing cadence + plan selector)
+- Includes an opened-cases panel with quick navigation back to active matters
 
 ## Legal pages and footer links
 

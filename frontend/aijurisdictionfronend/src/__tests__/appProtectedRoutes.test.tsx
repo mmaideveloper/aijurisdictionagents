@@ -113,11 +113,24 @@ describe("App protected routes", () => {
     expect(screen.queryByText("Lawyer Workspace")).toBeNull();
   });
 
-  it("allows authenticated users to access /app/profile", () => {
+  it("redirects unauthenticated users from /profile to /", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/profile"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.queryByText("Profile Page")).toBeNull();
+  });
+
+  it("allows authenticated users to access /profile", () => {
     authState.isAuthenticated = true;
 
     render(
-      <MemoryRouter initialEntries={["/app/profile"]}>
+      <MemoryRouter initialEntries={["/profile"]}>
         <App />
       </MemoryRouter>
     );
