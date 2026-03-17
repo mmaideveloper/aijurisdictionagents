@@ -14,7 +14,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - German voice selection now explicitly prefers `de-DE` voices first, then `de-AT`, then `de-CH`, so the default German speaker is less likely to drift to the wrong dialect when multiple German voices are installed.
 - The `Account` page now also contains the language/country selector and an assistant voice picker with a play button, so the user can choose from voices available for the selected language.
 - The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.
-- The chat input is multiline by default with at least 3 visible lines; pressing `Enter` inserts a new line and messages are sent only with the send button.
+- The chat input is now single-line; pressing `Enter` sends the message immediately (same as the send button).
 - Message area is centered between login header and selectors.
 - The top header now uses a single compact line with `AIJurisDigta`, the app version, and the current auth action (`Login` or `Sign up` on the auth screen, `Sign out` after login).
 - Built-in authentication UI:
@@ -137,7 +137,8 @@ PDF exports are downloaded through:
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document`
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5`
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...`
-Use the `Summary PDF` and `Document PDF` buttons above the message composer.
+Use the single `Documents` button above the message composer to download all user-requested export documents (summary + document PDF).
+On Android, the app now immediately tries to open the saved file in an external PDF/document app after the download finishes.
 Buttons are enabled after AI stream emits `result`/`done` (PDF must be generated first).
 In `Real Agent` mode, when the lawyer decides a formal document is needed, the agent first asks for confirmation and the PDF buttons stay disabled until the follow-up reply actually prepares the document.
 In `AI User Simulator` mode, submitting the instruction starts discussion streaming (SSE)
