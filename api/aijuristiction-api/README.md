@@ -91,18 +91,28 @@ If you want only the database container, use the dedicated project in `databases
 - `POST /v1/users/sign-in/phone`
 - `PATCH /v1/users/{user_id}`
 
+`GET /health` now verifies the configured API database connection before returning healthy.
+If the database is unreachable or misconfigured, the endpoint returns `503` with
+`error=database_unavailable` and a `message` field that the mobile app can show directly.
+
 `GET /version` response includes:
 - `api_version`: API package version (`api/aijuristiction-api/pyproject.toml`).
 - `core_version`: core system version from installed `aijurisdictionagents` package or local `src/aijurisdictionagents/__init__.py` during monorepo development.
+- `mobile_app_version`: latest mobile app version from `mobile_app/pubspec.yaml`.
+- `mobile_app_release_url`: release page used by the mobile app update flow.
+- `mobile_app_apk_download_url`: default APK asset URL used by Android in-app update flow.
 
 Example:
 
 ```json
 {
   "service": "aijuristiction-api",
-  "version": "0.1.0",
-  "api_version": "0.1.0",
-  "core_version": "0.1.0"
+  "version": "1.0.260318",
+  "api_version": "1.0.260318",
+  "core_version": "0.1.0",
+  "mobile_app_version": "0.1.4+7",
+  "mobile_app_release_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest",
+  "mobile_app_apk_download_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest/download/app-release.apk"
 }
 ```
 
@@ -216,7 +226,7 @@ and support three database modes:
 - `DB_OPTION=local`: local SQLite metadata (`DB_LOCAL`, default `./databases/api.sqlite3`)
 - `DB_OPTION=postgres`: local PostgreSQL for Docker-based development (`DB_CLOUD=postgresql://...`)
 - `DB_OPTION=azure`: Azure Database for PostgreSQL Flexible Server (`DB_CLOUD=postgresql://...sslmode=require`)
-  - Azure Flexible Server username format is `<admin>@<server>`.
+  - Use the exact Flexible Server administrator login as the username.
 
 The dedicated local PostgreSQL project now lives under `databases/README.md`.
 

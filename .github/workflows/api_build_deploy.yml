@@ -146,7 +146,7 @@ jobs:
           from urllib.parse import quote
           server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
           admin_username = os.environ["AZURE_POSTGRES_ADMIN_USERNAME"]
-          user = quote(f"{admin_username}@{server}", safe="")
+          user = quote(admin_username, safe="")
           password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
           database = os.environ["AZURE_POSTGRES_DATABASE_NAME"]
           print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")

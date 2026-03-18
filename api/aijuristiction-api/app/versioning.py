@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import os
 import re
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 
 API_PACKAGE_NAME = "aijuristiction-api"
 CORE_PACKAGE_NAME = "aijurisdictionagents"
+DEFAULT_MOBILE_APP_GITHUB_OWNER = "mmaideveloper"
+DEFAULT_MOBILE_APP_GITHUB_REPO = "aijurisdictionagents"
 UNKNOWN_VERSION = "unknown"
 
 
@@ -29,6 +32,25 @@ def get_core_version() -> str:
     if source_version is not None:
         return source_version
     return UNKNOWN_VERSION
+
+
+def get_mobile_app_version() -> str:
+    source_version = _get_mobile_app_project_version()
+    if source_version is not None:
+        return source_version
+    return UNKNOWN_VERSION
+
+
+def get_mobile_app_release_url() -> str:
+    owner = os.getenv("MOBILE_APP_GITHUB_OWNER", DEFAULT_MOBILE_APP_GITHUB_OWNER).strip()
+    repo = os.getenv("MOBILE_APP_GITHUB_REPO", DEFAULT_MOBILE_APP_GITHUB_REPO).strip()
+    return f"https://github.com/{owner}/{repo}/releases/latest"
+
+
+def get_mobile_app_apk_download_url() -> str:
+    owner = os.getenv("MOBILE_APP_GITHUB_OWNER", DEFAULT_MOBILE_APP_GITHUB_OWNER).strip()
+    repo = os.getenv("MOBILE_APP_GITHUB_REPO", DEFAULT_MOBILE_APP_GITHUB_REPO).strip()
+    return f"https://github.com/{owner}/{repo}/releases/latest/download/app-release.apk"
 
 
 def _get_installed_package_version(package_name: str) -> str:
@@ -62,3 +84,15 @@ def _get_api_project_version() -> str | None:
     if match is None:
         return None
     return match.group(1)
+
+
+def _get_mobile_app_project_version() -> str | None:
+    pubspec_file = Path(__file__).resolve().parents[3] / "mobile_app" / "pubspec.yaml"
+    if not pubspec_file.exists():
+        return None
+
+    content = pubspec_file.read_text(encoding="utf-8")
+    match = re.search(r"(?m)^version\s*:\s*([^\s#]+)\s*$", content)
+    if match is None:
+        return None
+    return match.group(1).strip()

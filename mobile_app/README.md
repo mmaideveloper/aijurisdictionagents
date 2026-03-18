@@ -25,6 +25,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - after sign-in, `Account` page allows updating phone number, password, first name, last name
   - browser/local web remembers the last signed-in phone number and pre-fills the sign-in form
   - local runs also prefill `+421944400166` when no phone was remembered yet
+  - Android builds now also try to read the device phone number on the auth screen and pre-fill both sign-in and sign-up phone fields
   - device builds expose OS autofill hints for phone/email/password on sign-in and sign-up fields
 - Initial localized Jurisdicta welcome message shown on app start.
 - Selected app language now localizes chat labels, dialogs, action text, and tooltips for `SK`, `EN`, and `GE` (`DE` is accepted as a German alias).
@@ -42,16 +43,21 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Selecting a case now loads the latest 5 persisted case messages, with a paging button to load 5 more older messages while keeping chronological order in the chat area.
 - If the selected case already has stored attachments, the mobile app shows download buttons for those case documents above the PDF/export controls.
 - App version is shown in the bottom-left corner of the screen.
-- On startup, app checks latest GitHub release and prompts for update when a newer version is available.
-  - default source: `mmaideveloper/aijurisdictionagents` -> `releases/latest`
-  - override with `--dart-define=AIJ_GITHUB_OWNER=... --dart-define=AIJ_GITHUB_REPO=...`
-  - on Android, if the release contains an APK asset, the app downloads it and opens the Android installer after user confirmation
+- On startup, app blocks the auth flow until `GET /health` returns healthy.
+  - failed health checks show the current API error on screen
+  - if the API is reachable but its database is not, the app shows the DB health error returned by `/health`
+  - startup retry uses exponential backoff: `2s`, `4s`, `8s`, `16s`, then stays capped at `16s`
+- After startup, the app checks for updates through the API every 1 minute, but only when `GET /health` is healthy.
+  - update metadata is read from `GET /version`
+  - on Android, if the API advertises an APK download URL, the app downloads it and opens the Android installer after user confirmation
   - if Android blocks sideload installs for this app, the app opens the `Install unknown apps` settings page and resumes installation when the user returns
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/users/sign-up`
   - `POST /v1/users/sign-in`
-  - `POST /v1/users/sign-in/phone`
-  - `PATCH /v1/users/{user_id}`
+- `POST /v1/users/sign-in/phone`
+- `PATCH /v1/users/{user_id}`
+- `GET /health`
+- `GET /version`
   - `POST /v1/chat/sessions`
   - `POST /v1/chat/sessions/{session_id}/reply`
   - `POST /v1/chat/sessions/{session_id}/stream` (AI User Simulator mode)
@@ -86,6 +92,8 @@ Android note:
 
 - Release builds also need `android.permission.INTERNET` in `android/app/src/main/AndroidManifest.xml`.
 - Without that permission, Android can surface host lookup failures such as `No address associated with host name` even when the API URL itself is valid.
+- Phone prefill now requests `READ_PHONE_NUMBERS` and `READ_PHONE_STATE` at runtime on Android.
+- Android phone-number lookup is best-effort only. Many carriers, SIMs, and Android builds do not expose the device number, so the phone fields can still remain empty even after permission is granted.
 - In-app Android updates require `android.permission.REQUEST_INSTALL_PACKAGES` and a `FileProvider` entry in the manifest so the downloaded APK can be handed to the Android package installer.
 
 
@@ -196,7 +204,7 @@ Manual mobile workflow runs now also expose a `release` switch:
 - `release=true`: after the release APK is built, the workflow publishes or updates a GitHub Release tagged with the mobile app version from `pubspec.yaml` and uploads `app-release.apk` as a release asset
 
 The GitHub Release tag is the exact mobile app version, for example `0.1.1+2`,
-so the in-app GitHub update check and the downloadable APK stay aligned.
+so the API-driven in-app update check and the downloadable APK stay aligned.
 
 For Android automatic upgrade, the GitHub Release must include an `.apk` asset.
 The workflow uses `app-release.apk`, which the app prefers automatically during the update flow.

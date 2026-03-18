@@ -334,10 +334,6 @@ function Convert-ToPostgresConnectionString {
     }
 
     $normalizedAdminUsername = $AdminUsername.Trim()
-    if (-not $normalizedAdminUsername.Contains("@")) {
-        $serverName = $normalizedHostName.Split(".", 2)[0]
-        $normalizedAdminUsername = "${normalizedAdminUsername}@${serverName}"
-    }
 
     $encodedUser = [System.Uri]::EscapeDataString($normalizedAdminUsername)
     $encodedPassword = [System.Uri]::EscapeDataString($AdminPassword)

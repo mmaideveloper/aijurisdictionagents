@@ -232,6 +232,10 @@ class ApiDatabaseStore:
             self._ensure_user_schema(conn)
             self._seed_subscription_plans(conn)
 
+    def check_connection(self) -> None:
+        with self._connect() as conn:
+            self._execute(conn, "SELECT 1").fetchone()
+
     def create_user(
         self,
         *,

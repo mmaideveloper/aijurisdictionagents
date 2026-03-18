@@ -108,6 +108,7 @@ Ensure container app env vars include:
 
 - `DB_OPTION=azure`
 - `DB_CLOUD=postgresql://<user>:<password>@<server>.postgres.database.azure.com:5432/<db>?sslmode=require`
+  Use the exact Azure PostgreSQL Flexible Server admin login as `<user>`, for example `postgres` or `jurisadmin`.
 - `STORAGE_OPTION=azure|local` (as desired)
 - `STORE_CLOUD=<storage connection string>` if `STORAGE_OPTION=azure`
 

@@ -17,7 +17,13 @@ from app.chat.api import router as chat_router
 from app.logging_config import configure_logging
 from app.telemetry import configure_telemetry, instrument_fastapi
 from app.users.api import router as users_router
-from app.versioning import get_api_version, get_core_version
+from app.versioning import (
+    get_api_version,
+    get_core_version,
+    get_mobile_app_apk_download_url,
+    get_mobile_app_release_url,
+    get_mobile_app_version,
+)
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.db_migrations import apply_sql_migrations
@@ -50,6 +56,13 @@ def _cors_allow_origin_regex() -> str | None:
         return None
     # Allow local web/mobile dev servers on localhost or loopback regardless of chosen port.
     return r"^https?://(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?$"
+
+
+def _configured_db_backend() -> str:
+    raw_value = os.getenv("DB_OPTION", "local").strip().lower()
+    if raw_value == "postgress":
+        return "postgres"
+    return raw_value or "local"
 
 app = fastapi.FastAPI(
     title="AI Juristiction API",
@@ -145,7 +158,38 @@ async def unhandled_exception_handler(request: fastapi.Request, exc: Exception) 
 
 @app.get("/health")
 def health() -> JSONResponse:
-    return JSONResponse({"status": "ok"})
+    database_backend = _configured_db_backend()
+    try:
+        store = ApiDatabaseStore.from_env()
+        database_backend = store.db_option
+        store.check_connection()
+    except Exception as exc:
+        message = (
+            f"Database health check failed for backend "
+            f'"{database_backend}": {exc}'
+        )
+        logger.warning(message)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "error": "database_unavailable",
+                "message": message,
+                "database": {
+                    "status": "error",
+                    "backend": database_backend,
+                },
+            },
+        )
+    return JSONResponse(
+        {
+            "status": "ok",
+            "database": {
+                "status": "ok",
+                "backend": database_backend,
+            },
+        }
+    )
 
 
 @app.get("/version")
@@ -156,6 +200,9 @@ def version() -> JSONResponse:
             "version": app.version,
             "api_version": app.version,
             "core_version": get_core_version(),
+            "mobile_app_version": get_mobile_app_version(),
+            "mobile_app_release_url": get_mobile_app_release_url(),
+            "mobile_app_apk_download_url": get_mobile_app_apk_download_url(),
         }
     )
 

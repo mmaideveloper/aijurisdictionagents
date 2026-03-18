@@ -29,12 +29,11 @@ This aligns with your GitHub environment secrets plan:
 - `DB_CLOUD=...`
 - `STORE_CLOUD=...`
 
-Azure Database for PostgreSQL Flexible Server uses the login format
-`<admin>@<server>` in the connection string username. In the URI, that `@`
-must be percent-encoded as `%40`. Example:
+Azure Database for PostgreSQL Flexible Server uses the configured
+administrator login as the connection string username. Example:
 
 ```text
-postgresql://jurisadmin%40db-juris-dev:<password>@db-juris-dev.postgres.database.azure.com:5432/aijurisdiction?sslmode=require
+postgresql://jurisadmin:<password>@db-juris-dev.postgres.database.azure.com:5432/aijurisdiction?sslmode=require
 ```
 
 ## Concrete technology choice

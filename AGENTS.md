@@ -27,6 +27,13 @@ Use scripts/project_status.ps1 when possible and ensure gh has read:project + pr
 Activate the conda environment in `./conda` before running first project command and remember that information, for the next command check if conda has been ran. Run conda only if task if is implementing
 python code.
 
+Azure authentication rule:
+
+- Never use the currently signed-in Azure user for repository Azure work.
+- Always authenticate Azure CLI with the service principal from `.env`.
+- Always prefer `.\infra\scripts\login_service_principal.ps1` before any `az` command that targets repo Azure resources.
+- If Azure credentials appear to point to a different tenant/subscription, re-run the service principal login helper instead of continuing with the current Azure user context.
+
 If the user asks to close a task:
 - Review the PR and perform a code review.
 - If acceptable, approve and merge to `main`.

@@ -14,6 +14,7 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY scripts ./scripts
 COPY databases ./databases
+COPY mobile_app/pubspec.yaml ./mobile_app/pubspec.yaml
 COPY api/aijuristiction-api ./api/aijuristiction-api
 
 RUN pip install --no-cache-dir --upgrade pip && \

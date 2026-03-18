@@ -6,10 +6,45 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_health_endpoint() -> None:
+class _HealthyStore:
+    db_option = "local"
+
+    def check_connection(self) -> None:
+        return None
+
+
+class _UnhealthyStore:
+    db_option = "azure"
+
+    def check_connection(self) -> None:
+        raise RuntimeError("password authentication failed")
+
+
+def test_health_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _HealthyStore())
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {
+        "status": "ok",
+        "database": {
+            "status": "ok",
+            "backend": "local",
+        },
+    }
+
+
+def test_health_endpoint_reports_database_failure(monkeypatch) -> None:
+    monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _UnhealthyStore())
+    response = client.get("/health")
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["status"] == "error"
+    assert payload["error"] == "database_unavailable"
+    assert "password authentication failed" in payload["message"]
+    assert payload["database"] == {
+        "status": "error",
+        "backend": "azure",
+    }
 
 
 def test_version_endpoint() -> None:
@@ -20,6 +55,13 @@ def test_version_endpoint() -> None:
     assert payload["version"] == payload["api_version"]
     assert payload["api_version"] != "unknown"
     assert isinstance(payload["core_version"], str)
+    assert payload["mobile_app_version"] == "0.1.4+7"
+    assert payload["mobile_app_release_url"] == (
+        "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest"
+    )
+    assert payload["mobile_app_apk_download_url"] == (
+        "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest/download/app-release.apk"
+    )
 
 
 def test_swagger_docs_available() -> None:
@@ -35,7 +77,8 @@ def test_openapi_contains_api_key_security_scheme() -> None:
     assert "APIKeyHeader" in security_schemes
 
 
-def test_request_and_correlation_ids_are_echoed() -> None:
+def test_request_and_correlation_ids_are_echoed(monkeypatch) -> None:
+    monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _HealthyStore())
     response = client.get(
         "/health",
         headers={
@@ -48,7 +91,8 @@ def test_request_and_correlation_ids_are_echoed() -> None:
     assert response.headers["x-correlation-id"] == "corr-456"
 
 
-def test_request_id_is_used_as_correlation_id_fallback() -> None:
+def test_request_id_is_used_as_correlation_id_fallback(monkeypatch) -> None:
+    monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _HealthyStore())
     response = client.get(
         "/health",
         headers={

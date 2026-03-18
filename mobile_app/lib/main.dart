@@ -15,11 +15,13 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'api/app_status.dart';
 import 'audio/jurisdicta_speaker.dart';
 import 'auth/local_auth_store.dart';
 import 'chat/speech_flow.dart';
 import 'logging/app_logger.dart';
 import 'platform/app_updater.dart';
+import 'platform/device_phone_number.dart';
 import 'platform/file_saver.dart';
 import 'update/github_release.dart';
 
@@ -41,14 +43,6 @@ const String _defaultLanguage = String.fromEnvironment(
 );
 const String _fallbackLanguageCode = 'SK';
 const String _localAutofillPhoneNumber = '+421944400166';
-const String _githubOwner = String.fromEnvironment(
-  'AIJ_GITHUB_OWNER',
-  defaultValue: 'mmaideveloper',
-);
-const String _githubRepo = String.fromEnvironment(
-  'AIJ_GITHUB_REPO',
-  defaultValue: 'aijurisdictionagents',
-);
 
 const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
   'SK':
@@ -192,7 +186,8 @@ class AppStrings {
       'update_sign_in_profile': 'Upravit prihlasovaci profil',
       'profile_update_failed': 'Aktualizacia profilu zlyhala: {{error}}',
       'debug_mode': 'Debug rezim',
-      'debug_mode_description': 'V debug rezime sa vsetky logy ukladaju do suboru na Android zariadeni.',
+      'debug_mode_description':
+          'V debug rezime sa vsetky logy ukladaju do suboru na Android zariadeni.',
       'debug_mode_enabled': 'Debug rezim zapnuty.',
       'debug_mode_disabled': 'Debug rezim vypnuty.',
       'share_logs': 'Zdielat logy',
@@ -217,8 +212,7 @@ class AppStrings {
       'update_install_started':
           'Android instalator bol otvoreny. Potvrdte aktualizaciu.',
       'update_download_failed': 'Stahovanie aktualizacie zlyhalo: {{error}}',
-      'update_install_failed':
-          'Spustenie aktualizacie zlyhalo: {{error}}',
+      'update_install_failed': 'Spustenie aktualizacie zlyhalo: {{error}}',
       'update_install_signature_mismatch':
           'Nainstalovana aplikacia ma iny podpis ako aktualizacia. Odinstalujte aktualnu aplikaciu a potom nainstalujte novu verziu.',
       'allow_install_unknown_apps':
@@ -242,8 +236,13 @@ class AppStrings {
           'Pred odoslanim spravy vytvorte alebo vyberte pripad.',
       'failed_to_reach_api':
           'Nepodarilo sa spojit s API na adrese {{url}}: {{error}}',
+      'api_health_failed': 'API hlasi chybu: {{error}}',
       'failed_to_reach_api_with_correlation':
           'Nepodarilo sa spojit s API na adrese {{url}}: {{error}} (ID: {{id}})',
+      'checking_api': 'Kontrolujem API...',
+      'api_unavailable_title': 'API nie je dostupne',
+      'api_retry_in': 'Dalsi pokus o {{seconds}} s',
+      'retry_now': 'Skusit znova',
       'request_id_label': 'Correlation ID: {{id}}',
       'show_request_id': 'ID',
       'copy_request_id': 'Kopirovat correlation ID',
@@ -346,7 +345,8 @@ class AppStrings {
       'update_sign_in_profile': 'Update sign in profile',
       'profile_update_failed': 'Profile update failed: {{error}}',
       'debug_mode': 'Debug mode',
-      'debug_mode_description': 'In debug mode, all logs are written to a file on Android.',
+      'debug_mode_description':
+          'In debug mode, all logs are written to a file on Android.',
       'debug_mode_enabled': 'Debug mode enabled.',
       'debug_mode_disabled': 'Debug mode disabled.',
       'share_logs': 'Share logs',
@@ -393,8 +393,13 @@ class AppStrings {
       'create_or_select_case':
           'Create or select a case before sending messages.',
       'failed_to_reach_api': 'Failed to reach API at {{url}}: {{error}}',
+      'api_health_failed': 'API reported an unhealthy state: {{error}}',
       'failed_to_reach_api_with_correlation':
           'Failed to reach API at {{url}}: {{error}} (ID: {{id}})',
+      'checking_api': 'Checking API...',
+      'api_unavailable_title': 'API unavailable',
+      'api_retry_in': 'Retrying in {{seconds}} s',
+      'retry_now': 'Retry now',
       'request_id_label': 'Correlation ID: {{id}}',
       'show_request_id': 'ID',
       'copy_request_id': 'Copy ID',
@@ -495,7 +500,8 @@ class AppStrings {
       'update_sign_in_profile': 'Anmeldeprofil aktualisieren',
       'profile_update_failed': 'Profilaktualisierung fehlgeschlagen: {{error}}',
       'debug_mode': 'Debug-Modus',
-      'debug_mode_description': 'Im Debug-Modus werden alle Logs in eine Datei auf Android geschrieben.',
+      'debug_mode_description':
+          'Im Debug-Modus werden alle Logs in eine Datei auf Android geschrieben.',
       'debug_mode_enabled': 'Debug-Modus aktiviert.',
       'debug_mode_disabled': 'Debug-Modus deaktiviert.',
       'share_logs': 'Logs teilen',
@@ -546,8 +552,13 @@ class AppStrings {
           'Erstellen oder waehlen Sie zuerst einen Fall aus.',
       'failed_to_reach_api':
           'API unter {{url}} konnte nicht erreicht werden: {{error}}',
+      'api_health_failed': 'API meldet einen ungesunden Status: {{error}}',
       'failed_to_reach_api_with_correlation':
           'API unter {{url}} konnte nicht erreicht werden: {{error}} (ID: {{id}})',
+      'checking_api': 'API wird geprueft...',
+      'api_unavailable_title': 'API ist nicht verfuegbar',
+      'api_retry_in': 'Naechster Versuch in {{seconds}} s',
+      'retry_now': 'Erneut versuchen',
       'request_id_label': 'Correlation-ID: {{id}}',
       'show_request_id': 'ID',
       'copy_request_id': 'ID kopieren',
@@ -557,7 +568,8 @@ class AppStrings {
       'pdf_saved_to': 'PDF gespeichert unter {{path}}',
       'pdf_download_started': 'PDF-Download gestartet: {{filename}}',
       'pdf_download_failed': 'PDF-Download fehlgeschlagen: {{error}}',
-      'open_saved_file_failed': 'Gespeicherte Datei konnte nicht geoeffnet werden.',
+      'open_saved_file_failed':
+          'Gespeicherte Datei konnte nicht geoeffnet werden.',
       'failed_to_load_cases': 'Faelle konnten nicht geladen werden: {{error}}',
       'failed_to_load_case_history':
           'Fallhistorie konnte nicht geladen werden: {{error}}',
@@ -1174,6 +1186,56 @@ class ApiClient {
       );
       rethrow;
     }
+  }
+
+  Future<ApiHealthCheckResult> checkHealth() async {
+    try {
+      final response = await _get(
+        path: '/health',
+        action: 'health_check',
+      );
+      return parseApiHealthCheckResult(
+        statusCode: response.statusCode,
+        responseBody: response.body,
+      );
+    } catch (error) {
+      return ApiHealthCheckResult.unhealthy(
+        errorMessage: '$error',
+        isNetworkError: true,
+      );
+    }
+  }
+
+  Future<MobileAppUpdateInfo?> fetchMobileAppUpdateInfo({
+    required SemanticVersion installed,
+  }) async {
+    final response = await _get(
+      path: '/version',
+      action: 'version_check',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+          'Version check failed with status ${response.statusCode}.');
+    }
+    final payload = _decodeResponseBody(response, action: 'version_check');
+    final versionValue = payload['mobile_app_version'] as String? ?? '';
+    final latestVersion = SemanticVersion.tryParse(versionValue);
+    if (latestVersion == null || latestVersion.compareTo(installed) <= 0) {
+      return null;
+    }
+    final releaseUrl =
+        (payload['mobile_app_release_url'] as String? ?? '').trim();
+    final rawApkDownloadUrl =
+        (payload['mobile_app_apk_download_url'] as String?)?.trim();
+    final apkDownloadUrl =
+        rawApkDownloadUrl == null || rawApkDownloadUrl.isEmpty
+            ? null
+            : rawApkDownloadUrl;
+    return MobileAppUpdateInfo(
+      version: latestVersion,
+      releaseUrl: releaseUrl,
+      apkDownloadUrl: apkDownloadUrl,
+    );
   }
 
   Future<List<CaseSummary>> listCases({required String userId}) async {
@@ -1805,8 +1867,18 @@ class AuthGatePage extends StatefulWidget {
 
 class _AuthGatePageState extends State<AuthGatePage> {
   late final LocalAuthStore _authStore;
+  late final ApiClient _apiClient;
   LocalAuthUser? _currentUser;
   bool _loading = true;
+  bool _apiReady = false;
+  bool _checkingApi = true;
+  String? _apiHealthError;
+  bool _apiHealthIsNetworkError = false;
+  int? _apiHealthRetrySeconds;
+  int _apiHealthFailureCount = 0;
+  Timer? _apiHealthRetryTimer;
+
+  AppStrings get _strings => AppStrings(_defaultLanguage);
 
   @override
   void initState() {
@@ -1815,7 +1887,12 @@ class _AuthGatePageState extends State<AuthGatePage> {
       baseUri: Uri.parse(widget.apiBaseUrl),
       apiKey: _apiKey,
     );
-    unawaited(_loadSession());
+    _apiClient = ApiClient(
+      baseUri: Uri.parse(widget.apiBaseUrl),
+      apiKey: _apiKey,
+      logger: widget.logger,
+    );
+    unawaited(_startApiHealthGate());
   }
 
   Future<void> _loadSession() async {
@@ -1827,6 +1904,135 @@ class _AuthGatePageState extends State<AuthGatePage> {
       _currentUser = user;
       _loading = false;
     });
+  }
+
+  Future<void> _startApiHealthGate() async {
+    await _checkApiHealthUntilReady();
+  }
+
+  Future<void> _checkApiHealthUntilReady() async {
+    _apiHealthRetryTimer?.cancel();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _checkingApi = true;
+      _apiHealthRetrySeconds = null;
+    });
+    final healthResult = await _apiClient.checkHealth();
+    if (!mounted) {
+      return;
+    }
+    if (healthResult.isHealthy) {
+      setState(() {
+        _apiReady = true;
+        _checkingApi = false;
+        _apiHealthError = null;
+        _apiHealthIsNetworkError = false;
+        _apiHealthRetrySeconds = null;
+      });
+      _apiHealthFailureCount = 0;
+      await _loadSession();
+      return;
+    }
+    final retrySeconds = apiHealthRetryDelaySeconds(_apiHealthFailureCount);
+    _apiHealthFailureCount += 1;
+    setState(() {
+      _apiReady = false;
+      _checkingApi = false;
+      _apiHealthError = healthResult.errorMessage;
+      _apiHealthIsNetworkError = healthResult.isNetworkError;
+      _apiHealthRetrySeconds = retrySeconds;
+    });
+    await widget.logger.info(
+      'Startup API health check failed',
+      <String, Object?>{
+        'api_base_url': widget.apiBaseUrl,
+        'error': healthResult.errorMessage,
+        'is_network_error': healthResult.isNetworkError,
+        'retry_seconds': retrySeconds,
+      },
+    );
+    _scheduleApiHealthRetry(retrySeconds);
+  }
+
+  void _scheduleApiHealthRetry(int retrySeconds) {
+    var remaining = retrySeconds;
+    _apiHealthRetryTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (remaining <= 1) {
+        timer.cancel();
+        unawaited(_checkApiHealthUntilReady());
+        return;
+      }
+      remaining -= 1;
+      setState(() {
+        _apiHealthRetrySeconds = remaining;
+      });
+    });
+  }
+
+  Widget _buildApiUnavailableScaffold() {
+    final errorMessage = _apiHealthError == null
+        ? _strings.t('checking_api')
+        : _apiHealthIsNetworkError
+            ? _strings.t('failed_to_reach_api', <String, String>{
+                'url': widget.apiBaseUrl,
+                'error': _apiHealthError!,
+              })
+            : _strings.t('api_health_failed', <String, String>{
+                'error': _apiHealthError!,
+              });
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_checkingApi)
+                const CircularProgressIndicator()
+              else
+                const Icon(Icons.cloud_off, size: 56),
+              const SizedBox(height: 16),
+              Text(
+                _checkingApi
+                    ? _strings.t('checking_api')
+                    : _strings.t('api_unavailable_title'),
+                style: Theme.of(context).textTheme.titleLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                errorMessage,
+                textAlign: TextAlign.center,
+              ),
+              if (_apiHealthRetrySeconds != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _strings.t('api_retry_in', <String, String>{
+                    'seconds': '${_apiHealthRetrySeconds!}',
+                  }),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              if (!_checkingApi) ...[
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () {
+                    unawaited(_checkApiHealthUntilReady());
+                  },
+                  child: Text(_strings.t('retry_now')),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _handleSignedIn(LocalAuthUser user) async {
@@ -1859,6 +2065,9 @@ class _AuthGatePageState extends State<AuthGatePage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_apiReady) {
+      return _buildApiUnavailableScaffold();
+    }
     if (_loading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -1883,6 +2092,12 @@ class _AuthGatePageState extends State<AuthGatePage> {
       onProfileUpdated: _handleProfileUpdated,
     );
   }
+
+  @override
+  void dispose() {
+    _apiHealthRetryTimer?.cancel();
+    super.dispose();
+  }
 }
 
 class AuthEntryPage extends StatefulWidget {
@@ -1906,6 +2121,8 @@ class AuthEntryPage extends StatefulWidget {
 class _AuthEntryPageState extends State<AuthEntryPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  final DevicePhoneNumberService _devicePhoneNumberService =
+      const DevicePhoneNumberService();
   final TextEditingController _signInPhoneController = TextEditingController();
   final TextEditingController _signInEmailController = TextEditingController();
   final TextEditingController _signInPasswordController =
@@ -1920,7 +2137,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       TextEditingController();
   bool _showEmailPasswordFallback = false;
   bool _isBusy = false;
-  String _appVersionLabel = 'v0.1.0+1';
+  String _appVersionLabel = 'v0.1.4+7';
 
   AppStrings get _strings => AppStrings(_defaultLanguage);
   bool get _isLocalExecution => _isLocalApiBaseUrl(widget.apiBaseUrl);
@@ -1930,7 +2147,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(_handleTabChanged);
-    unawaited(_loadRememberedPhoneNumber());
+    unawaited(_loadInitialPhoneNumbers());
     unawaited(_loadAppVersion());
   }
 
@@ -1961,17 +2178,24 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     );
   }
 
-  Future<void> _loadRememberedPhoneNumber() async {
+  Future<void> _loadInitialPhoneNumbers() async {
     final lastPhoneNumber = await widget.authStore.getLastPhoneNumber();
+    final devicePhoneNumber =
+        await _devicePhoneNumberService.getDevicePhoneNumber();
     if (!mounted) {
       return;
     }
     if (lastPhoneNumber != null && lastPhoneNumber.isNotEmpty) {
       _signInPhoneController.text = lastPhoneNumber;
-      return;
-    }
-    if (_isLocalExecution) {
+    } else if (devicePhoneNumber != null && devicePhoneNumber.isNotEmpty) {
+      _signInPhoneController.text = devicePhoneNumber;
+    } else if (_isLocalExecution) {
       _signInPhoneController.text = _localAutofillPhoneNumber;
+    }
+    if (devicePhoneNumber != null &&
+        devicePhoneNumber.isNotEmpty &&
+        _signUpPhoneController.text.trim().isEmpty) {
+      _signUpPhoneController.text = devicePhoneNumber;
     }
   }
 
@@ -2492,7 +2716,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     }
   }
 
-
   Future<void> _setDebugModeEnabled(bool enabled) async {
     setState(() {
       _debugModeEnabled = enabled;
@@ -2768,8 +2991,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  onPressed:
-                      _speakerVoices.isEmpty ? null : () => unawaited(_testSpeakerVoice()),
+                  onPressed: _speakerVoices.isEmpty
+                      ? null
+                      : () => unawaited(_testSpeakerVoice()),
                   icon: const Icon(Icons.play_arrow),
                   tooltip: strings.t('test_speaker_voice'),
                 ),
@@ -2820,7 +3044,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           ),
           const SizedBox(height: 8),
           FilledButton.tonalIcon(
-            onPressed: (_isSharingLogs || !_debugModeEnabled) ? null : _shareLogs,
+            onPressed:
+                (_isSharingLogs || !_debugModeEnabled) ? null : _shareLogs,
             icon: _isSharingLogs
                 ? const SizedBox(
                     width: 14,
@@ -2888,7 +3113,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _isSending = false;
   bool _isDownloading = false;
   bool _hasExportReady = false;
-  String _appVersionLabel = 'v0.1.0+1';
+  String _appVersionLabel = 'v0.1.4+7';
   bool _updateDialogShown = false;
   bool _isInstallingUpdate = false;
   bool _speechEnabled = false;
@@ -2906,8 +3131,11 @@ class _ChatHomePageState extends State<ChatHomePage>
   List<CaseDocumentItem> _caseDocuments = <CaseDocumentItem>[];
   final Set<String> _downloadingCaseDocumentIds = <String>{};
   String? _lastErrorCorrelationId;
+  SemanticVersion? _installedAppVersion;
   String? _pendingUpdateInstallPath;
   String? _pendingUpdateVersion;
+  Timer? _updateCheckTimer;
+  bool _updateCheckInProgress = false;
 
   bool get _showLocalResponderSwitch {
     return _isLocalApiBaseUrl(widget.apiBaseUrl);
@@ -2997,9 +3225,11 @@ class _ChatHomePageState extends State<ChatHomePage>
       final parsed = SemanticVersion.tryParse(label);
       setState(() {
         _appVersionLabel = label;
+        _installedAppVersion = parsed;
       });
       if (parsed != null) {
-        unawaited(_checkForGithubUpdate(parsed));
+        _startPeriodicUpdateChecks();
+        unawaited(_checkForApiUpdate());
       }
     } catch (_) {}
   }
@@ -3116,60 +3346,40 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
-  Uri _githubLatestReleaseUri() {
-    return Uri.parse(
-        'https://api.github.com/repos/$_githubOwner/$_githubRepo/releases/latest');
+  void _startPeriodicUpdateChecks() {
+    _updateCheckTimer?.cancel();
+    _updateCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      unawaited(_checkForApiUpdate());
+    });
   }
 
-  Future<void> _checkForGithubUpdate(SemanticVersion installed) async {
+  Future<void> _checkForApiUpdate() async {
+    final installed = _installedAppVersion;
+    if (installed == null || _updateCheckInProgress) {
+      return;
+    }
+    _updateCheckInProgress = true;
     try {
-      final response = await http.get(
-        _githubLatestReleaseUri(),
-        headers: <String, String>{
-          'Accept': 'application/vnd.github+json',
-          'User-Agent': 'AIJurisDigta-Mobile',
-        },
+      final healthResult = await _apiClient.checkHealth();
+      if (!healthResult.isHealthy) {
+        await widget.logger.info(
+          'Skipping API update check because API health is not ready',
+          <String, Object?>{
+            'api_base_url': widget.apiBaseUrl,
+            'error': healthResult.errorMessage,
+            'is_network_error': healthResult.isNetworkError,
+          },
+        );
+        return;
+      }
+      final updateInfo = await _apiClient.fetchMobileAppUpdateInfo(
+        installed: installed,
       );
-      if (response.statusCode == 404) {
+      if (updateInfo == null) {
         await widget.logger.info(
-          'No GitHub release found for update check',
-          <String, Object?>{
-            'owner': _githubOwner,
-            'repo': _githubRepo,
-          },
-        );
-        return;
-      }
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        await widget.logger.info(
-          'GitHub update check failed',
-          <String, Object?>{
-            'status_code': response.statusCode,
-            'body': response.body,
-          },
-        );
-        return;
-      }
-      final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      if ((payload['draft'] as bool? ?? false) ||
-          (payload['prerelease'] as bool? ?? false)) {
-        return;
-      }
-      final releaseInfo = parseGithubReleaseInfo(payload);
-      if (releaseInfo == null) {
-        await widget.logger.info(
-          'GitHub release tag is not parseable for app update',
-          <String, Object?>{'tag_name': payload['tag_name']},
-        );
-        return;
-      }
-      final latestVersion = releaseInfo.version;
-      if (latestVersion.compareTo(installed) <= 0) {
-        await widget.logger.info(
-          'App is already up to date',
+          'App is already up to date according to API',
           <String, Object?>{
             'installed': installed.toString(),
-            'latest': latestVersion.toString(),
           },
         );
         return;
@@ -3179,26 +3389,28 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
       _updateDialogShown = true;
       await widget.logger.info(
-        'New app version available on GitHub',
+        'New app version available via API',
         <String, Object?>{
           'installed': installed.toString(),
-          'latest': latestVersion.toString(),
-          'release_url': releaseInfo.releaseUrl,
-          'apk_download_url': releaseInfo.apkDownloadUrl,
+          'latest': updateInfo.version.toString(),
+          'release_url': updateInfo.releaseUrl,
+          'apk_download_url': updateInfo.apkDownloadUrl,
         },
       );
       await _showUpdateDialog(
         installedVersion: installed.toString(),
-        latestVersion: latestVersion.toString(),
-        releaseUrl: releaseInfo.releaseUrl,
-        apkDownloadUrl: releaseInfo.apkDownloadUrl,
+        latestVersion: updateInfo.version.toString(),
+        releaseUrl: updateInfo.releaseUrl,
+        apkDownloadUrl: updateInfo.apkDownloadUrl,
       );
     } catch (error, stackTrace) {
       await widget.logger.error(
-        'GitHub update check failed',
+        'API update check failed',
         error,
         stackTrace,
       );
+    } finally {
+      _updateCheckInProgress = false;
     }
   }
 
@@ -3735,6 +3947,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _updateCheckTimer?.cancel();
     unawaited(_speaker.stop());
     _speechToText.stop();
     _inputController.dispose();

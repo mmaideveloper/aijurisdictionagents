@@ -33,6 +33,18 @@ This keeps deployment simple while matching the existing API container workflow.
 - Azure CLI Container Apps extension
 - PowerShell 7+ (recommended)
 
+## Azure login rule
+
+For this repository, always use the service principal login flow for Azure CLI access to repo resources.
+Do not use the currently signed-in interactive Azure user for deployment, diagnostics, log access, or resource inspection.
+Before running repo Azure commands, prefer:
+
+```powershell
+.\infra\scripts\login_service_principal.ps1 -EnvFilePath ".env"
+```
+
+If the current Azure context points to the wrong tenant or subscription, run the helper again instead of continuing with the existing user session.
+
 Register the PostgreSQL resource provider on the target subscription before running `infra_deploy`:
 
 ```powershell
@@ -157,8 +169,8 @@ Parameter resolution priority in `deploy_api.ps1`:
 ## Environment variables for the API
 
 By default, the script reads selected keys from repo `.env` and sets them on the Container App.
-For Azure PostgreSQL deployments, the script expands the database username to the Flexible Server login format
-`<admin>@<server>` when building `DB_CLOUD`, percent-encodes it for the URI, stores that value in a Container Apps secret, and sets
+For Azure PostgreSQL deployments, the script uses `AZURE_POSTGRES_ADMIN_USERNAME` as provided when building `DB_CLOUD`,
+stores that value in a Container Apps secret, and sets
 `DB_CLOUD=secretref:db-cloud` on the API container.
 If Application Insights exists or is provisioned by the same deployment, the script reads the connection string and sets
 `APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string` on the API container automatically.
@@ -239,7 +251,7 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_POSTGRES_SERVER_NAME` = `db-juris-dev`
 - `AZURE_POSTGRES_DATABASE_NAME` = `aijurisdiction`
 - `AZURE_POSTGRES_ADMIN_USERNAME` = `<POSTGRES_ADMIN_USERNAME>`
-  - Use the base admin name only, for example `jurisadmin`. The deploy script expands it to `<admin>@<server>` for the Azure PostgreSQL connection string.
+  - Use the exact Flexible Server administrator login, for example `jurisadmin` or `postgres`.
 - GitHub secret `AZURE_POSTGRES_ADMIN_PASSWORD` = `<POSTGRES_ADMIN_PASSWORD>`
 - `AZURE_CONTAINER_REGISTRY` = `<ACR_NAME>`
 - `AZURE_STORAGE_ACCOUNT_NAME` = `<STORAGE_ACCOUNT_NAME>` (optional; auto-derived if omitted)
