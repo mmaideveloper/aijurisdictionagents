@@ -65,6 +65,69 @@ function Test-WebReady {
     }
 }
 
+function Get-ListeningProcessInfo {
+    param(
+        [string]$TargetHost,
+        [int]$TargetPort
+    )
+
+    try {
+        $connection = Get-NetTCPConnection -LocalPort $TargetPort -State Listen -ErrorAction Stop |
+            Where-Object { $_.LocalAddress -in @($TargetHost, "0.0.0.0", "::", "::1") } |
+            Select-Object -First 1
+    } catch {
+        return $null
+    }
+
+    if (-not $connection) {
+        return $null
+    }
+
+    $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+    if (-not $process) {
+        return $null
+    }
+
+    $path = ""
+    try {
+        $path = $process.Path
+    } catch {
+        $path = ""
+    }
+
+    return [pscustomobject]@{
+        Id = $process.Id
+        ProcessName = $process.ProcessName
+        Path = $path
+        LocalAddress = $connection.LocalAddress
+        LocalPort = $connection.LocalPort
+    }
+}
+
+function Stop-StaleFlutterWebServer {
+    param(
+        [string]$TargetHost,
+        [int]$TargetPort
+    )
+
+    $listener = Get-ListeningProcessInfo -TargetHost $TargetHost -TargetPort $TargetPort
+    if (-not $listener) {
+        return $false
+    }
+
+    $processName = $listener.ProcessName.ToLowerInvariant()
+    $path = [string]$listener.Path
+    $isFlutterOwned = $processName -in @("dart", "dartvm", "flutter") -or $path -like "*flutter*"
+    if (-not $isFlutterOwned) {
+        throw "Port $TargetPort is already in use by process $($listener.ProcessName) (PID $($listener.Id))."
+    }
+
+    Stop-Process -Id $listener.Id -Force
+    Start-Sleep -Seconds 2
+    Write-Output "Stopped stale Flutter web server on port $TargetPort (PID $($listener.Id))."
+    return $true
+}
+
 function Open-AppUrl {
     param([string]$Url)
 
@@ -273,7 +336,7 @@ $ApiBaseUrl = Resolve-ApiBaseUrl -Mode $ApiMode -RequestedApiBaseUrl $ApiBaseUrl
 if ($ApiMode -eq "localApi") {
     $DatabaseOption = Resolve-DatabaseOption -RequestedOption $DatabaseOption
     $StorageOption = Resolve-StorageOption -RequestedOption $StorageOption
-    if ($DatabaseOption -in @("postgres", "azure")) {
+    if ($DatabaseOption -eq "azure") {
         $DbCloud = Resolve-RequiredConfigValue -ProvidedValue $DbCloud -EnvironmentVariable "DB_CLOUD" -Prompt "Enter DB_CLOUD connection string"
     }
     if ($StorageOption -eq "azure") {
@@ -282,22 +345,31 @@ if ($ApiMode -eq "localApi") {
 }
 
 if ($ApiMode -eq "localApi") {
+    Write-Output "Starting local mobile app against local API."
+    Write-Output "Requested database: $DatabaseOption"
+    Write-Output "Requested storage: $StorageOption"
     if (-not (Test-ApiReady -Url $ApiBaseUrl)) {
-        $apiStartArgs = @("-ConsoleWindow", "-DatabaseOption", $DatabaseOption, "-StorageOption", $StorageOption)
+        $apiStartArgs = @{
+            ConsoleWindow = $true
+            DatabaseOption = $DatabaseOption
+            StorageOption = $StorageOption
+        }
         if ($DbLocal) {
-            $apiStartArgs += @("-DbLocal", $DbLocal)
+            $apiStartArgs["DbLocal"] = $DbLocal
         }
         if ($DbCloud) {
-            $apiStartArgs += @("-DbCloud", $DbCloud)
+            $apiStartArgs["DbCloud"] = $DbCloud
         }
         if ($StoreLocal) {
-            $apiStartArgs += @("-StoreLocal", $StoreLocal)
+            $apiStartArgs["StoreLocal"] = $StoreLocal
         }
         if ($StoreCloud) {
-            $apiStartArgs += @("-StoreCloud", $StoreCloud)
+            $apiStartArgs["StoreCloud"] = $StoreCloud
         }
-        & (Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1") @apiStartArgs | Out-Null
+        Write-Output "Launching local API with visible console logs..."
+        & (Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1") @apiStartArgs
         Start-Sleep -Seconds 4
+        Write-Output "Waiting for local API health at $ApiBaseUrl/health"
     } elseif ($ConsoleWindow -and (Test-IsLoopbackApiUrl -Url $ApiBaseUrl)) {
         $openedApiLogs = Open-LogTailWindow `
             -ShellPath $shellPath `
@@ -311,6 +383,7 @@ if ($ApiMode -eq "localApi") {
             Write-Output "API log tail window started."
         }
     }
+    Write-Output "Local API URL: $ApiBaseUrl"
 } elseif (-not (Test-ApiReady -Url $ApiBaseUrl)) {
     Write-Warning "Public dev API is not reachable at $ApiBaseUrl."
 }
@@ -381,6 +454,8 @@ try {
             New-Item -Path $runsDir -ItemType Directory | Out-Null
         }
 
+        Stop-StaleFlutterWebServer -TargetHost $BindHost -TargetPort $Port | Out-Null
+
         $stdoutLog = Join-Path $runsDir "mobile-app-$Port.log"
         $stderrLog = Join-Path $runsDir "mobile-app-$Port.err.log"
         $pidFile = Join-Path $runsDir "mobile-app.pid"
@@ -397,18 +472,28 @@ try {
             -PassThru
 
         Start-Sleep -Seconds 25
-
-        if (-not (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) {
-            throw "Mobile app process exited immediately. Check $stderrLog"
+        $starterProcess = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+        $listenerProcess = $null
+        if ($Device -eq "chrome" -or $Device -eq "edge") {
+            $listenerProcess = Get-ListeningProcessInfo -TargetHost $BindHost -TargetPort $Port
         }
 
-        $process.Id | Out-File -FilePath $pidFile -Encoding ascii -NoNewline
+        $pidToPersist = $null
+        if ($starterProcess) {
+            $pidToPersist = $process.Id
+        } elseif ($listenerProcess) {
+            $pidToPersist = $listenerProcess.Id
+        }
+
+        if ($pidToPersist) {
+            $pidToPersist | Out-File -FilePath $pidFile -Encoding ascii -NoNewline
+        }
 
         if ($Device -eq "chrome" -or $Device -eq "edge") {
             $isReady = Test-WebReady -TargetHost $BindHost -TargetPort $Port
             if ($isReady) {
                 Open-AppUrl -Url "http://$BindHost`:$Port"
-                Write-Output "Mobile app started in background. PID: $($process.Id)"
+                Write-Output "Mobile app started in background. PID: $pidToPersist"
                 Write-Output "App URL: http://$BindHost`:$Port"
                 Write-Output "API URL: $ApiBaseUrl"
                 if ($ApiMode -eq "localApi") {
@@ -419,12 +504,18 @@ try {
                 Write-Output "Errors: $stderrLog"
                 Write-Output "Stop: Stop-Process -Id (Get-Content `"$pidFile`") -Force"
             } else {
+                if (-not $starterProcess -and -not $listenerProcess) {
+                    throw "Mobile app process exited immediately. Check $stderrLog"
+                }
                 Write-Warning "Mobile app process started (PID $($process.Id)) but web target is not ready yet."
                 Write-Output "Check logs:"
                 Write-Output "  $stdoutLog"
                 Write-Output "  $stderrLog"
             }
         } else {
+            if (-not $starterProcess) {
+                throw "Mobile app process exited immediately. Check $stderrLog"
+            }
             Write-Output "Mobile app started in background. PID: $($process.Id)"
             Write-Output "Device: $Device"
             Write-Output "API URL: $ApiBaseUrl"
@@ -444,6 +535,7 @@ try {
     if ($ApiMode -eq "localApi") {
         Write-Output "Database: $DatabaseOption"
         Write-Output "Storage: $StorageOption"
+        Write-Output "Flutter logs will stream in this console."
     }
     & $flutter @flutterArgs
 } finally {

@@ -266,6 +266,14 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
     List<JurisdictaSpeakerVoice> voices,
     String targetLocale,
   ) {
+    final normalizedTarget = _normalizeLocaleTag(targetLocale);
+    if (normalizedTarget == 'sk-sk') {
+      for (final voice in voices) {
+        if (_normalizeLocaleTag(voice.locale) == 'sk-sk') {
+          return voice;
+        }
+      }
+    }
     return voices.first;
   }
 

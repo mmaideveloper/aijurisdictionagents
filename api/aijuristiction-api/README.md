@@ -110,7 +110,7 @@ Example:
   "version": "1.0.260318",
   "api_version": "1.0.260318",
   "core_version": "0.1.0",
-  "mobile_app_version": "0.1.4+7",
+  "mobile_app_version": "0.1.5+18",
   "mobile_app_release_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest",
   "mobile_app_apk_download_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest/download/app-release.apk"
 }
@@ -573,6 +573,8 @@ New endpoints:
 - `POST /v1/chat/sessions/{session_id}/stream` (SSE streaming from core orchestrator)
 - `GET /v1/chat/sessions/{session_id}/result`
 - `GET /v1/chat/sessions/{session_id}/export?format=json|pdf&kind=summary|document` (`kind` applies to `pdf`)
+
+If `POST /v1/chat/sessions` is created with `case_id`, the API now seeds that new in-memory session with the stored case history so the next reply/stream turn can continue the existing case context instead of starting with an empty prompt.
 
 
 ## Minimal runnable example (streaming API + core)

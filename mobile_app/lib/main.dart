@@ -185,6 +185,8 @@ class AppStrings {
       'saving': 'Ukladam...',
       'update_sign_in_profile': 'Upravit prihlasovaci profil',
       'profile_update_failed': 'Aktualizacia profilu zlyhala: {{error}}',
+      'profile_name_changed':
+          'Vidim, ze ste zmenili meno. Dobry den, {{name}}.',
       'debug_mode': 'Debug rezim',
       'debug_mode_description':
           'V debug rezime sa vsetky logy ukladaju do suboru na Android zariadeni.',
@@ -202,6 +204,7 @@ class AppStrings {
       'update_body':
           'K dispozicii je nova verzia.\n\n{{current}} -> {{latest}}',
       'later': 'Neskor',
+      'skip_until_restart': 'Preskocit do noveho startu',
       'update': 'Aktualizovat',
       'invalid_release_url': 'Adresa aktualizacie je neplatna.',
       'could_not_open_update_page':
@@ -225,6 +228,7 @@ class AppStrings {
       'speech_input_disabled': 'Vstup hlasom vypnuty',
       'speech_input_disabled_message':
           'Vstup hlasom je vypnuty. Zapnite ho tlacidlom Vstup hlasom.',
+      'speaker_output': 'Hlasovy vystup asistenta',
       'speaker_voice_label': 'Hlas asistenta',
       'speaker_voice_unavailable': 'Pre zvoleny jazyk nie je dostupny hlas.',
       'test_speaker_voice': 'Vyskusat hlas',
@@ -234,6 +238,8 @@ class AppStrings {
       'document_added': 'Dokument bol pridany z kamery.',
       'create_or_select_case':
           'Pred odoslanim spravy vytvorte alebo vyberte pripad.',
+      'create_or_select_case_message':
+          'Pred odoslanim spravy vytvorte alebo vyberte pripad. Mozete povedat naprklad: Vytvor mi novy case s nazvom splnomocnenie.',
       'failed_to_reach_api':
           'Nepodarilo sa spojit s API na adrese {{url}}: {{error}}',
       'api_health_failed': 'API hlasi chybu: {{error}}',
@@ -252,6 +258,8 @@ class AppStrings {
       'pdf_saved_to': 'PDF ulozene do {{path}}',
       'pdf_download_started': 'Stahovanie PDF spustene: {{filename}}',
       'pdf_download_failed': 'Stahovanie PDF zlyhalo: {{error}}',
+      'document_pdf_offer':
+          'Navrh dokumentu som do chatu nezobrazila. Chcete ho vidiet vo formate PDF? Pouzite tlacidlo PDF dokument.',
       'open_saved_file_failed': 'Subor sa nepodarilo otvorit.',
       'failed_to_load_cases': 'Nepodarilo sa nacitat pripady: {{error}}',
       'failed_to_load_case_history':
@@ -264,6 +272,14 @@ class AppStrings {
       'cancel': 'Zrusit',
       'create': 'Vytvorit',
       'case_created': 'Pripad bol vytvoreny.',
+      'case_voice_name_prompt': 'Povedzte prosim nazov noveho pripadu.',
+      'case_voice_created': 'Vytvorila som novy pripad {{name}}.',
+      'case_voice_created_continue':
+          'Vytvorila som novy pripad {{name}}. Prosim, pokracujte svojou otazkou alebo nahrajte dokumenty.',
+      'case_auto_created':
+          'Automaticky som vytvorila novy pripad {{name}} pre tuto diskusiu.',
+      'case_voice_name_retry':
+          'Nezachytila som nazov pripadu dostatocne presne. Povedzte prosim nazov noveho pripadu.',
       'rename_case': 'Premenovat pripad',
       'save': 'Ulozit',
       'rename_case_failed': 'Premenovanie pripadu zlyhalo: {{error}}',
@@ -344,6 +360,7 @@ class AppStrings {
       'saving': 'Saving...',
       'update_sign_in_profile': 'Update sign in profile',
       'profile_update_failed': 'Profile update failed: {{error}}',
+      'profile_name_changed': 'I see you changed a name, hello {{name}}.',
       'debug_mode': 'Debug mode',
       'debug_mode_description':
           'In debug mode, all logs are written to a file on Android.',
@@ -361,6 +378,7 @@ class AppStrings {
       'update_body':
           'A newer version is available.\n\n{{current}} -> {{latest}}',
       'later': 'Later',
+      'skip_until_restart': 'Skip to new start',
       'update': 'Update',
       'invalid_release_url': 'Release URL is invalid.',
       'could_not_open_update_page': 'Could not open update page.',
@@ -382,6 +400,7 @@ class AppStrings {
       'speech_input_disabled': 'Speech input off',
       'speech_input_disabled_message':
           'Speech input is turned off. Use the Speech input button to enable it.',
+      'speaker_output': 'Assistant voice output',
       'speaker_voice_label': 'Assistant voice',
       'speaker_voice_unavailable':
           'No matching speaker voice is available for the selected language.',
@@ -392,6 +411,8 @@ class AppStrings {
       'document_added': 'Document added from camera.',
       'create_or_select_case':
           'Create or select a case before sending messages.',
+      'create_or_select_case_message':
+          'Create or select a case before sending messages. For example, you can say: Create a new case with name power of attorney.',
       'failed_to_reach_api': 'Failed to reach API at {{url}}: {{error}}',
       'api_health_failed': 'API reported an unhealthy state: {{error}}',
       'failed_to_reach_api_with_correlation':
@@ -409,6 +430,8 @@ class AppStrings {
       'pdf_saved_to': 'PDF saved to {{path}}',
       'pdf_download_started': 'PDF download started: {{filename}}',
       'pdf_download_failed': 'Failed to download PDF: {{error}}',
+      'document_pdf_offer':
+          'I did not show the generated document in chat. Do you want to see it as PDF? Use the Document PDF button.',
       'open_saved_file_failed': 'Could not open the saved file.',
       'failed_to_load_cases': 'Failed to load cases: {{error}}',
       'failed_to_load_case_history': 'Failed to load case history: {{error}}',
@@ -420,6 +443,14 @@ class AppStrings {
       'cancel': 'Cancel',
       'create': 'Create',
       'case_created': 'Case created.',
+      'case_voice_name_prompt': 'Please say the new case name.',
+      'case_voice_created': 'I created a new case {{name}}.',
+      'case_voice_created_continue':
+          'I created a new case {{name}}. Please continue with your question or upload documents.',
+      'case_auto_created':
+          'I automatically created a new case {{name}} for this discussion.',
+      'case_voice_name_retry':
+          'I did not catch the case name clearly enough. Please say the new case name.',
       'rename_case': 'Rename case',
       'save': 'Save',
       'rename_case_failed': 'Failed to rename case: {{error}}',
@@ -499,6 +530,8 @@ class AppStrings {
       'saving': 'Speichere...',
       'update_sign_in_profile': 'Anmeldeprofil aktualisieren',
       'profile_update_failed': 'Profilaktualisierung fehlgeschlagen: {{error}}',
+      'profile_name_changed':
+          'Ich sehe, dass Sie den Namen geaendert haben. Hallo {{name}}.',
       'debug_mode': 'Debug-Modus',
       'debug_mode_description':
           'Im Debug-Modus werden alle Logs in eine Datei auf Android geschrieben.',
@@ -515,6 +548,7 @@ class AppStrings {
       'update_body':
           'Eine neuere Version ist verfuegbar.\n\n{{current}} -> {{latest}}',
       'later': 'Spaeter',
+      'skip_until_restart': 'Bis zum Neustart ueberspringen',
       'update': 'Aktualisieren',
       'invalid_release_url': 'Release-URL ist ungueltig.',
       'could_not_open_update_page':
@@ -540,6 +574,7 @@ class AppStrings {
       'speech_input_disabled': 'Spracheingabe aus',
       'speech_input_disabled_message':
           'Spracheingabe ist ausgeschaltet. Aktivieren Sie sie mit der Schaltflaeche Spracheingabe.',
+      'speaker_output': 'Sprachausgabe des Assistenten',
       'speaker_voice_label': 'Assistentenstimme',
       'speaker_voice_unavailable':
           'Fuer die gewaehlte Sprache ist keine passende Stimme verfuegbar.',
@@ -550,6 +585,8 @@ class AppStrings {
       'document_added': 'Dokument wurde von der Kamera hinzugefuegt.',
       'create_or_select_case':
           'Erstellen oder waehlen Sie zuerst einen Fall aus.',
+      'create_or_select_case_message':
+          'Erstellen oder waehlen Sie zuerst einen Fall aus. Sie koennen zum Beispiel sagen: Erstelle einen neuen Fall mit Namen Vollmacht.',
       'failed_to_reach_api':
           'API unter {{url}} konnte nicht erreicht werden: {{error}}',
       'api_health_failed': 'API meldet einen ungesunden Status: {{error}}',
@@ -568,6 +605,8 @@ class AppStrings {
       'pdf_saved_to': 'PDF gespeichert unter {{path}}',
       'pdf_download_started': 'PDF-Download gestartet: {{filename}}',
       'pdf_download_failed': 'PDF-Download fehlgeschlagen: {{error}}',
+      'document_pdf_offer':
+          'Ich habe den erzeugten Dokumententext nicht im Chat angezeigt. Moechten Sie ihn als PDF sehen? Verwenden Sie die Schaltflaeche PDF Dokument.',
       'open_saved_file_failed':
           'Gespeicherte Datei konnte nicht geoeffnet werden.',
       'failed_to_load_cases': 'Faelle konnten nicht geladen werden: {{error}}',
@@ -581,6 +620,14 @@ class AppStrings {
       'cancel': 'Abbrechen',
       'create': 'Erstellen',
       'case_created': 'Fall wurde erstellt.',
+      'case_voice_name_prompt': 'Bitte sagen Sie den Namen des neuen Falls.',
+      'case_voice_created': 'Ich habe einen neuen Fall {{name}} erstellt.',
+      'case_voice_created_continue':
+          'Ich habe einen neuen Fall {{name}} erstellt. Bitte fahren Sie mit Ihrer Frage fort oder laden Sie Dokumente hoch.',
+      'case_auto_created':
+          'Ich habe fuer diese Diskussion automatisch einen neuen Fall {{name}} erstellt.',
+      'case_voice_name_retry':
+          'Ich habe den Fallnamen nicht klar genug verstanden. Bitte sagen Sie den Namen des neuen Falls.',
       'rename_case': 'Fall umbenennen',
       'save': 'Speichern',
       'rename_case_failed': 'Umbenennen des Falls fehlgeschlagen: {{error}}',
@@ -903,6 +950,57 @@ bool _isJsonPayload(String value) {
   } catch (_) {
     return false;
   }
+}
+
+bool _containsDocumentPayloadMarkers(String content) {
+  final lowered = content.toLowerCase();
+  return lowered.contains('case_update_json') ||
+      lowered.contains('```json') ||
+      lowered.contains('"case_update"') ||
+      lowered.contains('"document_ready"');
+}
+
+bool _looksLikeGeneratedDocumentDraft(String content) {
+  final trimmed = content.trim();
+  if (trimmed.isEmpty) {
+    return false;
+  }
+  final lines = trimmed
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
+  if (lines.length < 6) {
+    return false;
+  }
+  final lowered = trimmed.toLowerCase();
+  final hasDocumentKeyword = <String>[
+    'splnomocnenie',
+    'plna moc',
+    'zmluva',
+    'dohoda',
+    'agreement',
+    'power of attorney',
+    'contract',
+    'memorandum',
+    'petition',
+    'declaration',
+    'vollmacht',
+    'vertrag',
+    'erklaerung',
+    'document',
+  ].any(lowered.contains);
+  final hasStructuredSections = <String>[
+    '1.',
+    '2.',
+    'i.',
+    'ii.',
+    'clanok',
+    'article',
+    'section',
+    'abschnitt',
+  ].where(lowered.contains).length >= 2;
+  return trimmed.length >= 350 && (hasDocumentKeyword || hasStructuredSections);
 }
 
 class CaseSummary {
@@ -2137,10 +2235,17 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       TextEditingController();
   bool _showEmailPasswordFallback = false;
   bool _isBusy = false;
-  String _appVersionLabel = 'v0.1.4+7';
+  String _appVersionLabel = 'v0.1.5+18';
+  String? _devicePhoneNumber;
 
   AppStrings get _strings => AppStrings(_defaultLanguage);
   bool get _isLocalExecution => _isLocalApiBaseUrl(widget.apiBaseUrl);
+  bool get _isAndroidDevice =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  bool get _lockPhoneNumberToDevice =>
+      _isAndroidDevice &&
+      _devicePhoneNumber != null &&
+      _devicePhoneNumber!.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -2185,17 +2290,21 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     if (!mounted) {
       return;
     }
-    if (lastPhoneNumber != null && lastPhoneNumber.isNotEmpty) {
-      _signInPhoneController.text = lastPhoneNumber;
-    } else if (devicePhoneNumber != null && devicePhoneNumber.isNotEmpty) {
+    setState(() {
+      _devicePhoneNumber = devicePhoneNumber;
+    });
+    if (devicePhoneNumber != null && devicePhoneNumber.isNotEmpty) {
       _signInPhoneController.text = devicePhoneNumber;
+      _signUpPhoneController.text = devicePhoneNumber;
+    } else if (lastPhoneNumber != null && lastPhoneNumber.isNotEmpty) {
+      _signInPhoneController.text = lastPhoneNumber;
     } else if (_isLocalExecution) {
       _signInPhoneController.text = _localAutofillPhoneNumber;
     }
-    if (devicePhoneNumber != null &&
-        devicePhoneNumber.isNotEmpty &&
-        _signUpPhoneController.text.trim().isEmpty) {
-      _signUpPhoneController.text = devicePhoneNumber;
+    if (!_lockPhoneNumberToDevice &&
+        _signUpPhoneController.text.trim().isEmpty &&
+        _isLocalExecution) {
+      _signUpPhoneController.text = _localAutofillPhoneNumber;
     }
   }
 
@@ -2443,6 +2552,12 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                     _signInPhoneController,
                                                 keyboardType:
                                                     TextInputType.phone,
+                                                readOnly:
+                                                    _lockPhoneNumberToDevice,
+                                                canRequestFocus:
+                                                    !_lockPhoneNumberToDevice,
+                                                enableInteractiveSelection:
+                                                    !_lockPhoneNumberToDevice,
                                                 autofillHints: const <String>[
                                                   AutofillHints.telephoneNumber,
                                                   AutofillHints
@@ -2459,6 +2574,13 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                           'phone_number_hint',
                                                         )
                                                       : null,
+                                                  suffixIcon:
+                                                      _lockPhoneNumberToDevice
+                                                          ? const Icon(
+                                                              Icons
+                                                                  .lock_outline,
+                                                            )
+                                                          : null,
                                                 ),
                                               ),
                                               const SizedBox(height: 12),
@@ -2535,6 +2657,12 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                     _signUpPhoneController,
                                                 keyboardType:
                                                     TextInputType.phone,
+                                                readOnly:
+                                                    _lockPhoneNumberToDevice,
+                                                canRequestFocus:
+                                                    !_lockPhoneNumberToDevice,
+                                                enableInteractiveSelection:
+                                                    !_lockPhoneNumberToDevice,
                                                 autofillHints: const <String>[
                                                   AutofillHints.telephoneNumber,
                                                   AutofillHints
@@ -2544,6 +2672,13 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   labelText: strings.t(
                                                     'phone_number_required',
                                                   ),
+                                                  suffixIcon:
+                                                      _lockPhoneNumberToDevice
+                                                          ? const Icon(
+                                                              Icons
+                                                                  .lock_outline,
+                                                            )
+                                                          : null,
                                                 ),
                                               ),
                                               const SizedBox(height: 12),
@@ -2644,6 +2779,8 @@ class AccountSettingsPage extends StatefulWidget {
     required this.selectedLocale,
     required this.locales,
     required this.speaker,
+    required this.speakerOutputEnabled,
+    required this.onSpeakerOutputChanged,
     required this.onLocaleChanged,
     required this.logger,
   });
@@ -2653,6 +2790,8 @@ class AccountSettingsPage extends StatefulWidget {
   final LocaleOption selectedLocale;
   final List<LocaleOption> locales;
   final JurisdictaSpeaker speaker;
+  final bool speakerOutputEnabled;
+  final Future<void> Function(bool enabled) onSpeakerOutputChanged;
   final Future<void> Function(LocaleOption locale) onLocaleChanged;
   final AppLogger logger;
 
@@ -2661,11 +2800,14 @@ class AccountSettingsPage extends StatefulWidget {
 }
 
 class _AccountSettingsPageState extends State<AccountSettingsPage> {
+  final DevicePhoneNumberService _devicePhoneNumberService =
+      const DevicePhoneNumberService();
   late final TextEditingController _phoneController;
   late final TextEditingController _passwordController;
   late final TextEditingController _firstNameController;
   late final TextEditingController _lastNameController;
   late LocaleOption _selectedLocale;
+  String? _devicePhoneNumber;
   bool _isSaving = false;
   bool _isLoadingSubscriptions = false;
   bool _isUpdatingSubscription = false;
@@ -2675,10 +2817,17 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   List<JurisdictaSpeakerVoice> _speakerVoices = <JurisdictaSpeakerVoice>[];
   String? _selectedPlanCode;
   String? _selectedSpeakerVoiceId;
+  late bool _speakerOutputEnabled;
   late bool _debugModeEnabled;
   bool _isSharingLogs = false;
 
   AppStrings get _strings => AppStrings(_selectedLocale.languageCode);
+  bool get _isAndroidDevice =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  bool get _lockPhoneNumberToDevice =>
+      _isAndroidDevice &&
+      _devicePhoneNumber != null &&
+      _devicePhoneNumber!.trim().isNotEmpty;
 
   UserSubscriptionInfo? get _latestSubscription {
     if (_subscriptions.isEmpty) {
@@ -2697,9 +2846,25 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     _lastNameController =
         TextEditingController(text: widget.user.lastName ?? '');
     _selectedLocale = widget.selectedLocale;
+    _speakerOutputEnabled = widget.speakerOutputEnabled;
     _debugModeEnabled = widget.logger.debugModeEnabled;
+    unawaited(_loadDevicePhoneNumber());
     _loadSubscriptions();
     _loadSpeakerVoices();
+  }
+
+  Future<void> _loadDevicePhoneNumber() async {
+    final devicePhoneNumber =
+        await _devicePhoneNumberService.getDevicePhoneNumber();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _devicePhoneNumber = devicePhoneNumber;
+      if (_lockPhoneNumberToDevice) {
+        _phoneController.text = devicePhoneNumber!;
+      }
+    });
   }
 
   Future<void> _loadSubscriptions() async {
@@ -2910,6 +3075,13 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     }
   }
 
+  Future<void> _setSpeakerOutputEnabled(bool enabled) async {
+    setState(() {
+      _speakerOutputEnabled = enabled;
+    });
+    await widget.onSpeakerOutputChanged(enabled);
+  }
+
   @override
   void dispose() {
     _phoneController.dispose();
@@ -2972,8 +3144,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           TextField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
+            readOnly: _lockPhoneNumberToDevice,
+            canRequestFocus: !_lockPhoneNumberToDevice,
+            enableInteractiveSelection: !_lockPhoneNumberToDevice,
             decoration: InputDecoration(
               labelText: strings.t('phone_number_required'),
+              suffixIcon: _lockPhoneNumberToDevice
+                  ? const Icon(Icons.lock_outline)
+                  : null,
             ),
           ),
           const SizedBox(height: 12),
@@ -3026,6 +3204,13 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           Text(
             strings.t('speaker_voice_label'),
             style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _speakerOutputEnabled,
+            onChanged: (value) => unawaited(_setSpeakerOutputEnabled(value)),
+            title: Text(strings.t('speaker_output')),
           ),
           const SizedBox(height: 8),
           if (_isLoadingSpeakerVoices)
@@ -3175,13 +3360,16 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _isSending = false;
   bool _isDownloading = false;
   bool _hasExportReady = false;
-  String _appVersionLabel = 'v0.1.4+7';
+  String _appVersionLabel = 'v0.1.5+18';
   bool _updateDialogShown = false;
+  bool _skipUpdateChecksUntilRestart = false;
   bool _isInstallingUpdate = false;
+  bool _speakerOutputEnabled = false;
   bool _speechEnabled = false;
-  bool _speechInputEnabled = true;
+  bool _speechInputEnabled = false;
   bool _isListening = false;
   bool _awaitingSpokenName = false;
+  bool _awaitingSpokenCaseTitle = false;
   bool _isSavingSpokenName = false;
   late LocalAuthUser _signedInUser;
   List<CaseSummary> _cases = <CaseSummary>[];
@@ -3197,6 +3385,9 @@ class _ChatHomePageState extends State<ChatHomePage>
   String? _pendingUpdateInstallPath;
   String? _pendingUpdateVersion;
   Timer? _updateCheckTimer;
+  Timer? _speechAutoSendTimer;
+  String? _lastDictatedSpeechDraft;
+  String? _lastHandledSpeechText;
   bool _updateCheckInProgress = false;
 
   bool get _showLocalResponderSwitch {
@@ -3417,7 +3608,9 @@ class _ChatHomePageState extends State<ChatHomePage>
 
   Future<void> _checkForApiUpdate() async {
     final installed = _installedAppVersion;
-    if (installed == null || _updateCheckInProgress) {
+    if (installed == null ||
+        _updateCheckInProgress ||
+        _skipUpdateChecksUntilRestart) {
       return;
     }
     _updateCheckInProgress = true;
@@ -3485,37 +3678,67 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!mounted) {
       return;
     }
-    await showDialog<void>(
+    var skipUntilRestart = false;
+    final startUpgrade = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(_strings.t('update_available')),
-          content: Text(
-            _strings.t('update_body', <String, String>{
-              'current': installedVersion,
-              'latest': latestVersion,
-            }),
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: Text(_strings.t('update_available')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _strings.t('update_body', <String, String>{
+                    'current': installedVersion,
+                    'latest': latestVersion,
+                  }),
+                ),
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  value: skipUntilRestart,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(_strings.t('skip_until_restart')),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      skipUntilRestart = value ?? false;
+                    });
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(_strings.t('later')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(_strings.t('update')),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(_strings.t('later')),
-            ),
-            FilledButton(
-              onPressed: () async {
-                Navigator.of(dialogContext).pop();
-                await _startAppUpgrade(
-                  latestVersion: latestVersion,
-                  releaseUrl: releaseUrl,
-                  apkDownloadUrl: apkDownloadUrl,
-                );
-              },
-              child: Text(_strings.t('update')),
-            ),
-          ],
         );
       },
     );
+    if (skipUntilRestart) {
+      _skipUpdateChecksUntilRestart = true;
+      _updateCheckTimer?.cancel();
+      await widget.logger.info(
+        'API update monitoring skipped until next app start',
+        <String, Object?>{'latest': latestVersion},
+      );
+    }
+    if (startUpgrade == true) {
+      await _startAppUpgrade(
+        latestVersion: latestVersion,
+        releaseUrl: releaseUrl,
+        apkDownloadUrl: apkDownloadUrl,
+      );
+    }
   }
 
   Future<void> _startAppUpgrade({
@@ -3719,7 +3942,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         message.createdAt == null;
   }
 
-  void _appendAssistantMessage(String content) {
+  void _appendAssistantMessage(String content, {bool speak = true}) {
     if (!mounted) {
       return;
     }
@@ -3734,7 +3957,27 @@ class _ChatHomePageState extends State<ChatHomePage>
       );
     });
     _scrollToLatest();
-    unawaited(_speakAssistantMessage(content));
+    if (speak) {
+      unawaited(_speakAssistantMessage(content));
+    }
+  }
+
+  void _appendUserMessageLocally(String content) {
+    final trimmed = content.trim();
+    if (!mounted || trimmed.isEmpty) {
+      return;
+    }
+    setState(() {
+      _messages.add(
+        ChatMessage(
+          role: 'user',
+          content: trimmed,
+          documentPath: _documentPath,
+          createdAt: DateTime.now(),
+        ),
+      );
+    });
+    _scrollToLatest();
   }
 
   Future<void> _initializeSpeechRecognition() async {
@@ -3760,8 +4003,10 @@ class _ChatHomePageState extends State<ChatHomePage>
       await widget.logger.info('Assistant speech output unavailable');
       return;
     }
-    await widget.logger.info('Assistant speech output initialized');
-    await _speakAssistantMessage(_messages.first.content);
+    await widget.logger.info(
+      'Assistant speech output initialized in manual mode',
+      <String, Object?>{'enabled': _speakerOutputEnabled},
+    );
   }
 
   Future<void> _loadSpeakerVoices() async {
@@ -3787,7 +4032,13 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
   }
 
-  Future<void> _speakAssistantMessage(String content) async {
+  Future<void> _speakAssistantMessage(
+    String content, {
+    bool resumeSpeechInputOnCompletion = false,
+  }) async {
+    if (!_speakerOutputEnabled) {
+      return;
+    }
     final visibleContent = _sanitizeVisibleMessageContent(content);
     if (visibleContent.isEmpty) {
       return;
@@ -3801,12 +4052,89 @@ class _ChatHomePageState extends State<ChatHomePage>
         'Assistant speech output skipped',
         <String, Object?>{'message_length': visibleContent.length},
       );
+      return;
     }
+    if (resumeSpeechInputOnCompletion) {
+      await _resumeSpeechListeningAfterAssistantSpeech(
+        reason: 'assistant_message',
+      );
+    }
+  }
+
+  Future<void> _resumeSpeechListeningAfterAssistantSpeech({
+    required String reason,
+  }) async {
+    if (!mounted ||
+        !_speechEnabled ||
+        !_speechInputEnabled ||
+        !_speakerOutputEnabled ||
+        _isListening ||
+        _isSending) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!mounted ||
+        !_speechEnabled ||
+        !_speechInputEnabled ||
+        !_speakerOutputEnabled ||
+        _isListening ||
+        _isSending) {
+      return;
+    }
+    _speechAutoSendTimer?.cancel();
+    if (!_awaitingSpokenName && !_awaitingSpokenCaseTitle) {
+      _inputController.clear();
+    }
+    await widget.logger.info(
+      'Speech listening resumed after assistant speech',
+      <String, Object?>{'reason': reason},
+    );
+    await _startSpeechListening();
+  }
+
+  String _resolveAssistantVisibleReply({
+    required String rawReply,
+    required bool exportReady,
+  }) {
+    final visibleReply = _sanitizeVisibleMessageContent(rawReply);
+    if (visibleReply.isEmpty) {
+      return '';
+    }
+    final shouldSuppressDocumentBody =
+        _containsDocumentPayloadMarkers(rawReply) ||
+            (exportReady && _looksLikeGeneratedDocumentDraft(visibleReply));
+    if (!shouldSuppressDocumentBody) {
+      return visibleReply;
+    }
+    return _strings.t('document_pdf_offer');
+  }
+
+  Future<void> _setSpeakerOutputEnabled(bool enabled) async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _speakerOutputEnabled = enabled;
+    });
+    if (!enabled) {
+      await _speaker.stop();
+    }
+    await widget.logger.info(
+      'Assistant speech output toggled',
+      <String, Object?>{'enabled': enabled},
+    );
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
     if (!mounted) {
       return;
+    }
+    _speechAutoSendTimer?.cancel();
+    final recognizedText = result.recognizedWords.trim();
+    if (recognizedText.isNotEmpty &&
+        !isSpokenSendCommand(recognizedText) &&
+        parseSpokenCaseCreationCommand(recognizedText) == null) {
+      _lastDictatedSpeechDraft = recognizedText;
     }
     setState(() {
       _inputController.text = result.recognizedWords;
@@ -3814,9 +4142,14 @@ class _ChatHomePageState extends State<ChatHomePage>
         TextPosition(offset: _inputController.text.length),
       );
     });
-    if (_awaitingSpokenName && result.finalResult) {
-      unawaited(_storeSpokenName(result.recognizedWords));
+    if (!result.finalResult) {
+      return;
     }
+    if (_awaitingSpokenName) {
+      unawaited(_handleCompletedSpeechInput(result.recognizedWords));
+      return;
+    }
+    unawaited(_handleCompletedSpeechInput(result.recognizedWords));
   }
 
   void _onSpeechStatus(String status) {
@@ -3833,6 +4166,12 @@ class _ChatHomePageState extends State<ChatHomePage>
         <String, Object?>{'status': status},
       ),
     );
+    if (!isListening) {
+      final spokenText = _inputController.text.trim();
+      if (spokenText.isNotEmpty) {
+        unawaited(_handleCompletedSpeechInput(spokenText));
+      }
+    }
   }
 
   void _onSpeechError(SpeechRecognitionError error) {
@@ -3871,6 +4210,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _isSavingSpokenName = true;
     });
     try {
+      final previousUser = _signedInUser;
       final updated = await widget.authStore.updateUser(
         input: UpdateProfileInput(
           phoneNumber: _signedInUser.phoneNumber,
@@ -3900,6 +4240,8 @@ class _ChatHomePageState extends State<ChatHomePage>
           userName: savedName,
         ),
       );
+      _appendProfileNameChangedMessage(
+          previousUser: previousUser, updated: updated);
       await widget.logger.info(
         'Speech profile name stored',
         <String, Object?>{
@@ -3926,7 +4268,144 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
+  void _appendProfileNameChangedMessage({
+    required LocalAuthUser previousUser,
+    required LocalAuthUser updated,
+  }) {
+    final previousName = resolveStoredProfileName(
+      firstName: previousUser.firstName,
+      lastName: previousUser.lastName,
+    );
+    final updatedName = resolveStoredProfileName(
+      firstName: updated.firstName,
+      lastName: updated.lastName,
+    );
+    if (updatedName == null ||
+        updatedName.isEmpty ||
+        previousName == updatedName) {
+      return;
+    }
+    _appendAssistantMessage(
+      _strings.t('profile_name_changed', <String, String>{
+        'name': updatedName,
+      }),
+    );
+  }
+
+  Future<void> _handleCompletedSpeechInput(String spokenText) async {
+    final normalizedText = spokenText.trim();
+    if (normalizedText.isEmpty || _lastHandledSpeechText == normalizedText) {
+      return;
+    }
+
+    if (_awaitingSpokenCaseTitle) {
+      _lastHandledSpeechText = normalizedText;
+      await _createCaseFromVoice(normalizedText);
+      return;
+    }
+
+    if (_awaitingSpokenName) {
+      _lastHandledSpeechText = normalizedText;
+      await _storeSpokenName(normalizedText);
+      return;
+    }
+
+    if (isSpokenSendCommand(normalizedText)) {
+      final pendingMessage = _resolvePendingSpeechMessageForSendCommand(
+        normalizedText,
+      );
+      if (pendingMessage == null) {
+        return;
+      }
+      _lastHandledSpeechText = normalizedText;
+      _speechAutoSendTimer?.cancel();
+      if (_isListening) {
+        await _speechToText.stop();
+        if (!mounted) {
+          return;
+        }
+      }
+      setState(() {
+        _inputController.text = pendingMessage;
+        _inputController.selection = TextSelection.fromPosition(
+          TextPosition(offset: pendingMessage.length),
+        );
+      });
+      await widget.logger.info(
+        'Speech send command recognized',
+        <String, Object?>{'message_length': pendingMessage.length},
+      );
+      await _sendMessage();
+      return;
+    }
+
+    final command = parseSpokenCaseCreationCommand(normalizedText);
+    if (command == null) {
+      _lastHandledSpeechText = normalizedText;
+      _scheduleSpeechAutoSend(normalizedText);
+      return;
+    }
+
+    _lastHandledSpeechText = normalizedText;
+    if (command.requiresTitlePrompt) {
+      await _promptForSpokenCaseTitle();
+      return;
+    }
+
+    await _createCaseFromVoice(command.title!);
+  }
+
+  String? _resolvePendingSpeechMessageForSendCommand(String commandText) {
+    final current = _inputController.text.trim();
+    if (current.isNotEmpty && !isSpokenSendCommand(current)) {
+      return current;
+    }
+    final draft = (_lastDictatedSpeechDraft ?? '').trim();
+    if (draft.isEmpty || draft == commandText) {
+      return null;
+    }
+    return draft;
+  }
+
+  void _scheduleSpeechAutoSend(String spokenText) {
+    final snapshot = spokenText.trim();
+    if (snapshot.isEmpty) {
+      return;
+    }
+    _speechAutoSendTimer?.cancel();
+    _speechAutoSendTimer = Timer(const Duration(seconds: 5), () {
+      unawaited(_autoSendSpeechMessage(snapshot));
+    });
+  }
+
+  Future<void> _autoSendSpeechMessage(String snapshot) async {
+    if (!mounted || _isSending) {
+      return;
+    }
+    final current = _inputController.text.trim();
+    if (current.isEmpty || current != snapshot) {
+      return;
+    }
+    if (_isListening) {
+      await _speechToText.stop();
+      if (!mounted) {
+        return;
+      }
+    }
+    final refreshed = _inputController.text.trim();
+    if (refreshed.isEmpty || refreshed != snapshot || _isSending) {
+      return;
+    }
+    await widget.logger.info(
+      'Auto-sending speech-recognized message after delay',
+      <String, Object?>{'message_length': refreshed.length, 'delay_seconds': 5},
+    );
+    await _sendMessage();
+  }
+
   Future<void> _toggleSpeechInput() async {
+    _speechAutoSendTimer?.cancel();
+    _lastHandledSpeechText = null;
     await _speaker.stop();
     if (!_speechEnabled) {
       _showSnackbar(_strings.t('speech_unavailable'));
@@ -3942,6 +4421,8 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     if (_awaitingSpokenName) {
       _inputController.clear();
+    } else if (_awaitingSpokenCaseTitle) {
+      _inputController.clear();
     } else if (_profileName == null) {
       setState(() {
         _awaitingSpokenName = true;
@@ -3951,18 +4432,30 @@ class _ChatHomePageState extends State<ChatHomePage>
       );
       _inputController.clear();
     }
-    await _speechToText.listen(
-      onResult: _onSpeechResult,
-      partialResults: true,
-      localeId: _localeIdForSpeech(_selectedLocale),
-      listenMode: ListenMode.dictation,
-    );
+    await _startSpeechListening();
   }
 
   Future<void> _downloadRequestedDocuments() async {
     for (final kind in <String>['summary', 'document']) {
       await _downloadPdf(kind);
     }
+  }
+
+  Future<bool> _ensureCaseSelectedForOutgoingMessage(String message) async {
+    if (_selectedCase != null) {
+      return true;
+    }
+    final generatedTitle = generateCaseTitleFromDiscussion(
+      message,
+      languageCode: _selectedLocale.languageCode,
+    );
+    final created = await _createCaseWithTitle(
+      generatedTitle,
+      successMessage: _strings.t('case_auto_created', <String, String>{
+        'name': generatedTitle,
+      }),
+    );
+    return created != null;
   }
 
   Future<void> _toggleSpeechInputEnabled() async {
@@ -3975,6 +4468,10 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!nextValue && _isListening) {
       await _speechToText.stop();
     }
+    if (!nextValue) {
+      _speechAutoSendTimer?.cancel();
+      _lastHandledSpeechText = null;
+    }
 
     if (!mounted) {
       return;
@@ -3982,14 +4479,33 @@ class _ChatHomePageState extends State<ChatHomePage>
 
     setState(() {
       _speechInputEnabled = nextValue;
+      if (nextValue) {
+        _speakerOutputEnabled = true;
+      }
       if (!nextValue) {
         _awaitingSpokenName = false;
+        _awaitingSpokenCaseTitle = false;
+        _lastDictatedSpeechDraft = null;
       }
     });
 
+    if (nextValue) {
+      await _speaker.stop();
+      await _speakAssistantMessage(
+        speechInputReadyMessage(
+          _selectedLocale.languageCode,
+          firstName: _signedInUser.firstName,
+        ),
+        resumeSpeechInputOnCompletion: true,
+      );
+    }
+
     await widget.logger.info(
       'Speech input toggle changed',
-      <String, Object?>{'enabled': nextValue},
+      <String, Object?>{
+        'enabled': nextValue,
+        'speaker_output_enabled': _speakerOutputEnabled,
+      },
     );
   }
 
@@ -4010,6 +4526,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _updateCheckTimer?.cancel();
+    _speechAutoSendTimer?.cancel();
     unawaited(_speaker.stop());
     _speechToText.stop();
     _inputController.dispose();
@@ -4086,8 +4603,28 @@ class _ChatHomePageState extends State<ChatHomePage>
       await _storeSpokenName(text);
       return;
     }
-    if (_selectedCase == null) {
-      _showSnackbar(_strings.t('create_or_select_case'));
+    if (_awaitingSpokenCaseTitle) {
+      await _createCaseFromVoice(text);
+      return;
+    }
+    _lastHandledSpeechText = null;
+    final voiceCaseCommand = parseSpokenCaseCreationCommand(text);
+    if (voiceCaseCommand != null) {
+      _appendUserMessageLocally(text);
+      _inputController.clear();
+      _lastDictatedSpeechDraft = null;
+      if (voiceCaseCommand.requiresTitlePrompt) {
+        await _promptForSpokenCaseTitle();
+      } else {
+        await _createCaseFromVoice(
+          voiceCaseCommand.title!,
+          originatingRequest: text,
+        );
+      }
+      return;
+    }
+    final caseReady = await _ensureCaseSelectedForOutgoingMessage(text);
+    if (!caseReady || _selectedCase == null) {
       return;
     }
     await widget.logger.info(
@@ -4116,6 +4653,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     });
 
     _inputController.clear();
+    _lastDictatedSpeechDraft = null;
     _scrollToLatest();
 
     try {
@@ -4142,7 +4680,12 @@ class _ChatHomePageState extends State<ChatHomePage>
                 .toLowerCase()
                 .trim();
             final content = payload['content'] as String? ?? '';
-            final visibleContent = _sanitizeVisibleMessageContent(content);
+            final visibleContent = role == 'assistant'
+                ? _resolveAssistantVisibleReply(
+                    rawReply: content,
+                    exportReady: false,
+                  )
+                : _sanitizeVisibleMessageContent(content);
             final agentName = payload['agent_name'] as String?;
             if (visibleContent.isEmpty) {
               continue;
@@ -4187,7 +4730,10 @@ class _ChatHomePageState extends State<ChatHomePage>
           documentPath: _documentPath,
         );
         final exportReady = await _apiClient.isDocumentExportReady();
-        final visibleReply = _sanitizeVisibleMessageContent(reply);
+        final visibleReply = _resolveAssistantVisibleReply(
+          rawReply: reply,
+          exportReady: exportReady,
+        );
         if (_selectedCase != null) {
           _caseHistoryOffset += 1;
         }
@@ -4214,7 +4760,12 @@ class _ChatHomePageState extends State<ChatHomePage>
             _hasExportReady = exportReady;
           });
           _scrollToLatest();
-          unawaited(_speakAssistantMessage(visibleReply));
+          unawaited(
+            _speakAssistantMessage(
+              visibleReply,
+              resumeSpeechInputOnCompletion: _speechInputEnabled,
+            ),
+          );
         }
       }
     } on SessionExpiredException {
@@ -4310,6 +4861,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _openAccountSettings() async {
+    final previousUser = _signedInUser;
     final updated = await Navigator.of(context).push<LocalAuthUser>(
       MaterialPageRoute<LocalAuthUser>(
         builder: (_) => AccountSettingsPage(
@@ -4318,6 +4870,8 @@ class _ChatHomePageState extends State<ChatHomePage>
           selectedLocale: _selectedLocale,
           locales: _localeOptions,
           speaker: _speaker,
+          speakerOutputEnabled: _speakerOutputEnabled,
+          onSpeakerOutputChanged: _setSpeakerOutputEnabled,
           onLocaleChanged: _handleLocaleChanged,
           logger: widget.logger,
         ),
@@ -4330,6 +4884,10 @@ class _ChatHomePageState extends State<ChatHomePage>
       _signedInUser = updated;
     });
     widget.onProfileUpdated(updated);
+    _appendProfileNameChangedMessage(
+      previousUser: previousUser,
+      updated: updated,
+    );
     await widget.logger.info(
       'Signed-in profile updated',
       <String, Object?>{
@@ -4417,16 +4975,109 @@ class _ChatHomePageState extends State<ChatHomePage>
       ),
     );
     if (title == null || title.trim().isEmpty) return;
+    await _createCaseWithTitle(title.trim());
+  }
+
+  Future<void> _startSpeechListening() async {
+    _lastHandledSpeechText = null;
+    await _speechToText.listen(
+      onResult: _onSpeechResult,
+      partialResults: true,
+      localeId: _localeIdForSpeech(_selectedLocale),
+      listenMode: ListenMode.dictation,
+    );
+  }
+
+  Future<void> _promptForSpokenCaseTitle() async {
+    if (_cases.length >= 5) {
+      _showSnackbar(_strings.t('maximum_cases'));
+      return;
+    }
+    if (_isListening) {
+      await _speechToText.stop();
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _awaitingSpokenCaseTitle = true;
+      _inputController.clear();
+    });
+    final prompt = _strings.t('case_voice_name_prompt');
+    _appendAssistantMessage(prompt, speak: false);
+    await _speaker.stop();
+    await _speakAssistantMessage(prompt);
+    if (!mounted || !_speechEnabled || !_speechInputEnabled) {
+      return;
+    }
+    await _startSpeechListening();
+  }
+
+  Future<void> _createCaseFromVoice(
+    String spokenTitle, {
+    String? originatingRequest,
+  }) async {
+    final title = spokenTitle.trim();
+    if (title.isEmpty) {
+      final retryPrompt = _strings.t('case_voice_name_retry');
+      _appendAssistantMessage(retryPrompt);
+      return;
+    }
+    await _createCaseWithTitle(
+      title,
+      originatingRequest: originatingRequest,
+      successMessage:
+          _strings.t('case_voice_created_continue', <String, String>{
+        'name': title,
+      }),
+    );
+  }
+
+  Future<CaseSummary?> _createCaseWithTitle(
+    String title, {
+    String? successMessage,
+    String? originatingRequest,
+  }) async {
+    final normalizedTitle = title.trim();
+    if (normalizedTitle.isEmpty) {
+      return null;
+    }
+    if (_cases.length >= 5) {
+      _showSnackbar(_strings.t('maximum_cases'));
+      return null;
+    }
     try {
       final created = await _apiClient.createCase(
-          userId: _signedInUser.userId, title: title.trim());
+        userId: _signedInUser.userId,
+        title: normalizedTitle,
+      );
+      if (!mounted) {
+        return null;
+      }
       setState(() {
         _cases = <CaseSummary>[created, ..._cases];
+        _awaitingSpokenCaseTitle = false;
+        _inputController.clear();
       });
       await _selectCase(created);
-      _showSnackbar(_strings.t('case_created'));
+      if (originatingRequest != null && originatingRequest.trim().isNotEmpty) {
+        _appendUserMessageLocally(originatingRequest);
+      }
+      if (successMessage != null && successMessage.trim().isNotEmpty) {
+        _appendAssistantMessage(successMessage);
+      } else {
+        _showSnackbar(_strings.t('case_created'));
+      }
+      return created;
     } catch (error) {
+      if (!mounted) {
+        return null;
+      }
+      setState(() {
+        _awaitingSpokenCaseTitle = false;
+      });
       _showSnackbar('$error');
+      return null;
     }
   }
 
@@ -4632,86 +5283,59 @@ class _ChatHomePageState extends State<ChatHomePage>
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.94),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Column(
-                      children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Tooltip(
-                            message: strings.t('speech_input_toggle_label'),
-                            child: FilledButton.tonalIcon(
-                              onPressed: _speechEnabled
-                                  ? () => unawaited(
-                                        _toggleSpeechInputEnabled(),
-                                      )
-                                  : null,
-                              icon: Icon(
-                                _speechInputEnabled ? Icons.mic : Icons.mic_off,
-                              ),
-                              label: Text(
-                                _speechInputEnabled
-                                    ? strings.t('speech_input_enabled')
-                                    : strings.t('speech_input_disabled'),
-                              ),
+                if (_showLocalResponderSwitch)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(strings.t('local_mode')),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButton<ResponderMode>(
+                              isExpanded: true,
+                              value: _responderMode,
+                              onChanged: (mode) {
+                                if (mode == null) {
+                                  return;
+                                }
+                                setState(() {
+                                  _responderMode = mode;
+                                  _hasExportReady = false;
+                                });
+                                unawaited(
+                                  widget.logger.info(
+                                    'Responder mode changed',
+                                    <String, Object?>{
+                                      'responder_mode': mode.name,
+                                    },
+                                  ),
+                                );
+                                _apiClient.resetSession();
+                              },
+                              items: [
+                                DropdownMenuItem(
+                                  value: ResponderMode.realPerson,
+                                  child: Text(strings.t('real_agent')),
+                                ),
+                                DropdownMenuItem(
+                                  value: ResponderMode.aiUserSimulator,
+                                  child: Text(
+                                    strings.t('ai_user_simulator_agent'),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                        if (_showLocalResponderSwitch) ...[
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Text(strings.t('local_mode')),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: DropdownButton<ResponderMode>(
-                                  isExpanded: true,
-                                  value: _responderMode,
-                                  onChanged: (mode) {
-                                    if (mode == null) {
-                                      return;
-                                    }
-                                    setState(() {
-                                      _responderMode = mode;
-                                      _hasExportReady = false;
-                                    });
-                                    unawaited(
-                                      widget.logger.info(
-                                        'Responder mode changed',
-                                        <String, Object?>{
-                                          'responder_mode': mode.name,
-                                        },
-                                      ),
-                                    );
-                                    _apiClient.resetSession();
-                                  },
-                                  items: [
-                                    DropdownMenuItem(
-                                      value: ResponderMode.realPerson,
-                                      child: Text(strings.t('real_agent')),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: ResponderMode.aiUserSimulator,
-                                      child: Text(
-                                        strings.t('ai_user_simulator_agent'),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Container(
@@ -4916,6 +5540,19 @@ class _ChatHomePageState extends State<ChatHomePage>
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      Tooltip(
+                        message: _speechInputEnabled
+                            ? strings.t('speech_input_enabled')
+                            : strings.t('speech_input_disabled'),
+                        child: IconButton.filledTonal(
+                          onPressed: _speechEnabled
+                              ? () => unawaited(_toggleSpeechInputEnabled())
+                              : null,
+                          icon: Icon(
+                            _speechInputEnabled ? Icons.mic : Icons.mic_off,
+                          ),
+                        ),
+                      ),
                       FilledButton.tonalIcon(
                         onPressed: _openAccountSettings,
                         icon: const Icon(Icons.manage_accounts),

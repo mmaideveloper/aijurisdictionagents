@@ -1,6 +1,7 @@
 import json
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -312,6 +313,90 @@ def test_reply_endpoint_persists_user_and_returns_lawyer_message() -> None:
     lawyer_message_2 = reply_response_2.json()
     assert lawyer_message_2["role"] == "assistant"
     assert "vzor najomnej zmluvy" in lawyer_message_2["content"].lower()
+
+
+def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    from app.chat.models import MessageRole
+    import app.chat.api as chat_api
+
+    captured: dict[str, object] = {}
+
+    class _FakeStore:
+        def list_case_communications(self, *, case_id: str, limit=None, offset: int = 0):
+            assert case_id == "case-123"
+            return [
+                SimpleNamespace(
+                    summary="ASSISTANT: Existing answer from history (agent=LawyerSlovakia)",
+                    transcript_uri=None,
+                ),
+                SimpleNamespace(
+                    summary="USER: Existing user question from history",
+                    transcript_uri=None,
+                ),
+            ]
+
+        def add_case_message(self, *, case_id: str, role: str, content: str, agent_name: str | None = None):
+            return "comm-id"
+
+    class _FakeLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured["conversation"] = conversation
+            captured["system_prompt_override"] = system_prompt_override
+            return SimpleNamespace(
+                content="Follow-up response based on prior case history.",
+                agent_name="LawyerSlovakia",
+            )
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _FakeLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "SK",
+            "case_id": "case-123",
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    seeded_messages_response = client.get(
+        f"/v1/chat/sessions/{session_id}/messages",
+        headers=AUTH_HEADERS,
+    )
+    assert seeded_messages_response.status_code == 200
+    seeded_messages = seeded_messages_response.json()
+    assert [item["role"] for item in seeded_messages] == ["user", "assistant"]
+    assert seeded_messages[0]["content"] == "Existing user question from history"
+    assert seeded_messages[1]["content"] == "Existing answer from history"
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Please continue with this case."},
+        headers=AUTH_HEADERS,
+    )
+    assert reply_response.status_code == 200
+
+    conversation = captured["conversation"]
+    assert isinstance(conversation, list)
+    assert len(conversation) == 3
+    assert conversation[0].role == MessageRole.USER.value
+    assert conversation[0].content == "Existing user question from history"
+    assert conversation[1].role == MessageRole.ASSISTANT.value
+    assert conversation[1].content == "Existing answer from history"
+    assert conversation[2].role == MessageRole.USER.value
+    assert conversation[2].content == "Please continue with this case."
 
 
 def test_reply_endpoint_respects_session_language_sk() -> None:

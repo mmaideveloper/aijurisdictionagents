@@ -28,8 +28,8 @@ class ApiHealthCheckResult {
         );
 
   const ApiHealthCheckResult.unhealthy({
-    required String this.errorMessage,
-    required bool this.isNetworkError,
+    required this.errorMessage,
+    required this.isNetworkError,
   }) : isHealthy = false;
 
   final bool isHealthy;

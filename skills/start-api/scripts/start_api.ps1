@@ -36,6 +36,20 @@ function Resolve-PythonPath {
     throw "Python interpreter not found. Create .conda env or add python to PATH."
 }
 
+function Resolve-PowerShellPath {
+    $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($pwshCmd) {
+        return $pwshCmd.Source
+    }
+
+    $powershellCmd = Get-Command powershell -ErrorAction SilentlyContinue
+    if ($powershellCmd) {
+        return $powershellCmd.Source
+    }
+
+    throw "PowerShell executable not found."
+}
+
 function Test-ApiHealth {
     param(
         [string]$TargetHost,
@@ -155,19 +169,19 @@ function Ensure-LocalPostgresReady {
     if (-not (Test-Path $skillScript)) {
         throw "PostgreSQL start skill not found: $skillScript"
     }
+    $shellPath = Resolve-PowerShellPath
 
-    $postgresArgs = @()
     $parsed = Get-LocalPostgresSettingsFromConnectionString -ConnectionString $ExistingDbCloud
+    $shellArgs = @("-NoProfile", "-File", $skillScript)
     if ($parsed) {
-        $postgresArgs += @(
+        $shellArgs += @(
             "-DatabaseName", $parsed.DatabaseName,
             "-DatabaseUser", $parsed.DatabaseUser,
             "-DatabasePassword", $parsed.DatabasePassword,
             "-DatabasePort", "$($parsed.DatabasePort)"
         )
     }
-
-    $output = & $skillScript @postgresArgs
+    $output = & $shellPath @shellArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Local PostgreSQL startup failed."
     }

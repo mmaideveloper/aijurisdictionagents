@@ -8,9 +8,21 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Rebranded mobile layout with login card at the top and blue legal-themed background from the footer artwork.
 - Add supporting documents using the device camera.
 - Add questions/answers by speech using the microphone button next to the chat input.
-- A dedicated `Speech input` toggle button lets the user enable or disable speech-to-text without removing the microphone action from the composer.
+- Speech input is off by default and is toggled by a microphone icon button next to `Account`.
+- Assistant voice output is also off by default after login; the user must enable it manually in `Account`.
+- Turning on speech input with the microphone button also enables assistant voice output for that session, so spoken replies follow voice interaction automatically.
+- When a spoken assistant reply finishes in voice mode, the app automatically reopens the microphone so the user can continue speaking hands-free.
+- Normal dictated messages now auto-send 5 seconds after the final speech recognition result; the app stops the active microphone session and submits automatically if the text has not changed.
+- The speech flow also understands spoken send commands such as `Send`, `please send`, `Posli`, `Prosim odosli spravu`, `Senden`, or `Nachricht senden`, and submits the current dictated message immediately.
+- Generated legal documents are no longer shown back into chat as plain text or JSON payloads; instead, the app asks the user whether they want to see the document as PDF and keeps the PDF export action available.
+- If the user starts a discussion without any selected case, the app now creates a case automatically, generates a short title from the discussion text, selects that case, and then sends the original message to the backend.
+- The automatic upgrade dialog now includes a session-only `Skip to new start` checkbox. When checked, the app stops version monitoring for the rest of the current app run and resumes only after the next launch.
+- When the user turns speech input on, Jurisdicta first says `Hallo, <first name>, I am listening.` if the profile contains a first name, otherwise `Hallo, I am listening.`.
+- Speech input can now create a new case from spoken commands in Slovak, English, or German, for example `Create a new case with name ...`, `Vytvor novy pripad s nazvom ...`, `Vytvor mi novy case s nazvom ...`, or `Erstelle einen neuen Fall mit Namen ...`.
+- If the spoken create-case command does not include a case title, the app asks for the new case name and then creates/selects the case after the next spoken title.
 - Jurisdicta now speaks assistant messages aloud through text-to-speech, including the welcome message, speech prompts, and backend replies.
 - When speech output is used, Jurisdicta selects an installed TTS voice that matches the current user language/country setup (`SK`, `CS`, `DE`, `EN`) instead of using one fixed speaker voice.
+- For Slovak on Android, the app now prefers an exact `sk-SK` voice as the default whenever one is available on the device.
 - For `SK`, `CS`, and `GE`/`DE`, the speaker now retries voice discovery on startup and falls back across close Central European voices instead of caching an empty voice list immediately.
 - Current fallback order:
   - `SK`: `sk-SK` -> Slovak-labeled voices -> `cs-CZ`/Czech -> English
@@ -18,7 +30,10 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - `GE`/`DE`: `de-DE` -> `de-AT` -> `de-CH` -> German-labeled voices -> English
 - German voice selection now explicitly prefers `de-DE` voices first, then `de-AT`, then `de-CH`, so the default German speaker is less likely to drift to the wrong dialect when multiple German voices are installed.
 - The `Account` page now also contains the language/country selector and an assistant voice picker with a play button, so the user can choose from voices available for the selected language.
+- The `Account` page now also contains an assistant voice-output switch. Turning it on enables spoken assistant replies for the current session.
+- The app does not support uploading a custom TTS voice asset directly. It can only use voices exposed by the installed platform TTS engine; on Android, install another Slovak-capable TTS engine/voice and then select it in `Account` if it appears in the voice list.
 - The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.
+- When the user changes the stored first or last name, the chat now appends a fresh assistant message greeting the updated full name.
 - The chat input is now single-line; pressing `Enter` sends the message immediately (same as the send button).
 - Message area is centered between login header and selectors.
 - The top header now uses a single compact line with `AIJurisDigta`, the app version, and the current auth action (`Login` or `Sign up` on the auth screen, `Sign out` after login).
@@ -27,12 +42,14 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - `Sign up`: phone number + email/password (required), first/last name (optional), persisted through the API
   - `Sign in`: phone number first; if phone exists, user is signed in automatically through the API
   - if phone is not found, sign in fallback is shown for email/password
-  - after sign-in, `Account` page allows updating phone number, password, first name, last name
+  - after sign-in, `Account` page allows updating password, first name, and last name; on Android it also populates the phone number from the device and locks that field when the device number is available
   - browser/local web remembers the last signed-in phone number and pre-fills the sign-in form
   - local runs also prefill `+421944400166` when no phone was remembered yet
-  - Android builds now also try to read the device phone number on the auth screen and pre-fill both sign-in and sign-up phone fields
+  - Android builds now read the device phone number first on the auth screen and use it for both sign-in and sign-up phone fields
+  - when Android returns a device phone number, both auth phone fields are read-only and locked to that value
   - device builds expose OS autofill hints for phone/email/password on sign-in and sign-up fields
 - Initial localized Jurisdicta welcome message shown on app start.
+- Signed-in session cache is now scoped to the configured API base URL, so switching between local API and dev/public API does not reuse the wrong user account/profile state.
 - Selected app language now localizes chat labels, dialogs, action text, and tooltips for `SK`, `EN`, and `GE` (`DE` is accepted as a German alias).
 - Language/country selector is shown on the `Account` page (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German).
   - `Real Agent` is now the default for local tests
@@ -46,6 +63,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - The `Account` action now sits next to the PDF download buttons instead of the top header.
 - Download generated summary/document PDF files directly from the mobile app once a session exists.
 - Selecting a case now loads the latest 5 persisted case messages, with a paging button to load 5 more older messages while keeping chronological order in the chat area.
+- When an existing case is opened and the next chat session starts, the API now seeds that session with the case's stored message history so the model can continue from the prior conversation context.
 - If the selected case already has stored attachments, the mobile app shows download buttons for those case documents above the PDF/export controls.
 - App version is shown in the bottom-left corner of the screen.
 - On startup, app blocks the auth flow until `GET /health` returns healthy.
@@ -98,7 +116,7 @@ Android note:
 - Release builds also need `android.permission.INTERNET` in `android/app/src/main/AndroidManifest.xml`.
 - Without that permission, Android can surface host lookup failures such as `No address associated with host name` even when the API URL itself is valid.
 - Phone prefill now requests `READ_PHONE_NUMBERS` and `READ_PHONE_STATE` at runtime on Android.
-- Android phone-number lookup is best-effort only. Many carriers, SIMs, and Android builds do not expose the device number, so the phone fields can still remain empty even after permission is granted.
+- Android phone-number lookup is best-effort only. Many carriers, SIMs, emulators, and Android builds do not expose the device number, so the app falls back to editable phone fields when no device number is available.
 - In-app Android updates require `android.permission.REQUEST_INSTALL_PACKAGES` and a `FileProvider` entry in the manifest so the downloaded APK can be handed to the Android package installer.
 
 
@@ -210,6 +228,12 @@ Manual mobile workflow runs now also expose a `release` switch:
 
 The GitHub Release tag is the exact mobile app version, for example `0.1.1+2`,
 so the API-driven in-app update check and the downloadable APK stay aligned.
+
+Mobile app versioning rule:
+
+- For normal mobile app changes, increment only the revision/build suffix in `pubspec.yaml`.
+- Keep the semantic version unchanged unless a release explicitly requires it.
+- Example: `0.1.4+7` -> `0.1.4+8`.
 
 For Android automatic upgrade, the GitHub Release must include an `.apk` asset.
 The workflow uses `app-release.apk`, which the app prefers automatically during the update flow.

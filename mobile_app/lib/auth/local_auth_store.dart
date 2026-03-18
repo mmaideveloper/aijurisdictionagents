@@ -160,8 +160,8 @@ class UpdateProfileInput {
 }
 
 class LocalAuthStore {
-  static const String _currentUserKey = 'mobile_auth_current_user_v2';
-  static const String _lastPhoneKey = 'mobile_auth_last_phone_v2';
+  static const String _currentUserKeyPrefix = 'mobile_auth_current_user_v3';
+  static const String _lastPhoneKeyPrefix = 'mobile_auth_last_phone_v3';
 
   const LocalAuthStore({
     required this.baseUri,
@@ -170,6 +170,33 @@ class LocalAuthStore {
 
   final Uri baseUri;
   final String apiKey;
+
+  String get _currentUserKey => '${_currentUserKeyPrefix}_${_storageScope()}';
+  String get _lastPhoneKey => '${_lastPhoneKeyPrefix}_${_storageScope()}';
+
+  String _storageScope() {
+    final buffer = StringBuffer()
+      ..write(baseUri.scheme.toLowerCase())
+      ..write('_')
+      ..write(baseUri.host.toLowerCase());
+    if (baseUri.hasPort) {
+      buffer
+        ..write('_')
+        ..write(baseUri.port);
+    }
+    final normalizedPath = baseUri.path.trim();
+    if (normalizedPath.isNotEmpty && normalizedPath != '/') {
+      buffer
+        ..write('_')
+        ..write(normalizedPath);
+    }
+    return buffer
+        .toString()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceFirst(RegExp(r'^_+'), '')
+        .replaceFirst(RegExp(r'_+$'), '');
+  }
 
   String _normalizePhone(String value) {
     final trimmed = value.trim();

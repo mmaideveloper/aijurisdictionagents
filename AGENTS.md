@@ -15,6 +15,12 @@ tasks with status "Ready".
 
 Frontend tasks: read tasks from project https://github.com/users/mmaideveloper/projects/6 (Ready status) and do not execute conda commands.
 
+Mobile app versioning rule:
+
+- For any mobile app code or asset change, increase only the revision/build number in `mobile_app/pubspec.yaml`.
+- Keep the semantic version part unchanged unless the user explicitly asks to change it.
+- Example: `0.1.4+7` -> `0.1.4+8`, not `0.1.5+8`.
+
 Ask for implementation of task.  Create for each task separate branch.
 If you start working move task to in progress.
 Before moving a task to In review:

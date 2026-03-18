@@ -107,6 +107,51 @@ def _persist_case_document_marker_if_needed(*, session: Session, content: str) -
     )
 
 
+def _parse_case_history_entry(*, store: ApiDatabaseStore, communication: Any) -> tuple[MessageRole, str, str | None]:
+    content = communication.summary
+    if communication.transcript_uri:
+        content = store.read_storage_text(storage_uri=communication.transcript_uri)
+    role = MessageRole.ASSISTANT
+    agent_name: str | None = None
+    normalized = content.strip()
+    upper = normalized.upper()
+    if upper.startswith("USER:"):
+        role = MessageRole.USER
+        normalized = normalized[5:].strip()
+    elif upper.startswith("ASSISTANT:"):
+        role = MessageRole.ASSISTANT
+        normalized = normalized[10:].strip()
+    elif upper.startswith("SYSTEM:"):
+        role = MessageRole.SYSTEM
+        normalized = normalized[7:].strip()
+    if normalized.endswith(")") and "(agent=" in normalized:
+        prefix, _, suffix = normalized.rpartition("(agent=")
+        agent_name = suffix[:-1].strip() or None
+        normalized = prefix.strip()
+    return role, normalized, agent_name
+
+
+def _bootstrap_case_history_if_needed(*, session: Session) -> None:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return
+    store = _get_store()
+    history = store.list_case_communications(case_id=case_id)
+    for item in reversed(history):
+        role, content, agent_name = _parse_case_history_entry(
+            store=store,
+            communication=item,
+        )
+        _repository.add_message(
+            Message(
+                session_id=session.id,
+                role=role,
+                content=content,
+                agent_name=agent_name,
+            )
+        )
+
+
 class StartSessionStreamRequest(BaseModel):
     instruction: str
     documents: List[InputDocument] = Field(default_factory=list)
@@ -126,7 +171,9 @@ def create_session(payload: CreateSessionRequest) -> Session:
         language=payload.language,
         discussion_type=payload.discussion_type,
     )
-    return _repository.create_session(session)
+    created = _repository.create_session(session)
+    _bootstrap_case_history_if_needed(session=created)
+    return created
 
 
 @router.post("/messages", response_model=Message)
@@ -242,11 +289,23 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
     replies = deque(payload.user_replies)
     communication_minutes = payload.communication_minutes or payload.max_discussion_minutes
     simulation_deadline = time.monotonic() + max(communication_minutes, 0) * 60
-    core_conversation: list[CoreMessage] = []
+    seeded_messages = _repository.list_messages(session_id)
+    core_conversation: list[CoreMessage] = [
+        CoreMessage(
+            role=message.role.value,
+            content=message.content,
+            agent_name=message.agent_name or (
+                "User" if message.role == MessageRole.USER else "Assistant"
+            ),
+        )
+        for message in seeded_messages
+    ]
     question_attempts: dict[str, int] = {}
     simulation_turn = 0
     last_simulator_reply = ""
-    assistant_messages_seen = 0
+    assistant_messages_seen = len(
+        [item for item in seeded_messages if item.role == MessageRole.ASSISTANT]
+    )
     answered_agent_questions = 0
     followup_prompts_seen = 0
     pdf_request_sent = False

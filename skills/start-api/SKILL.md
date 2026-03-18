@@ -49,5 +49,6 @@ If started with `-Background`, stop via:
   `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, and either `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`.
 - For `DatabaseOption=postgres|azure`, set `DB_CLOUD` or pass `-DbCloud`.
 - For `DatabaseOption=postgres`, the launcher prefers the local Docker PostgreSQL skill and resolves `DB_CLOUD` from that running instance automatically.
+- The PostgreSQL handoff calls `start_postgress.ps1` with explicit named parameters when reusing local connection metadata, so database name/user/password/port are not mis-bound positionally.
 - For `StorageOption=azure`, set `STORE_CLOUD` or pass `-StoreCloud`.
 - Use `-LlmProvider mock` for local smoke checks without cloud credentials.
