@@ -17,6 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'api/app_status.dart';
 import 'audio/jurisdicta_speaker.dart';
+import 'speech_service.dart';
 import 'auth/local_auth_store.dart';
 import 'chat/speech_flow.dart';
 import 'logging/app_logger.dart';
@@ -2235,7 +2236,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       TextEditingController();
   bool _showEmailPasswordFallback = false;
   bool _isBusy = false;
-  String _appVersionLabel = 'v0.1.5+18';
+  String _appVersionLabel = 'v0.1.5+20';
   String? _devicePhoneNumber;
 
   AppStrings get _strings => AppStrings(_defaultLanguage);
@@ -3346,13 +3347,14 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const double _communicationMinutes = 60;
 
   final TextEditingController _inputController = TextEditingController();
-  final SpeechToText _speechToText = SpeechToText();
+  late final JurisdictaSpeechService _speechService;
   final ScrollController _messagesScrollController = ScrollController();
 
   late final ApiClient _apiClient;
   late final FileSaver _fileSaver;
   late final AppUpdater _appUpdater;
   late final JurisdictaSpeaker _speaker;
+  late final JurisdictaSpeechRecognizer _speechRecognizer;
   late final List<ChatMessage> _messages;
   late ResponderMode _responderMode;
   late LocaleOption _selectedLocale;
@@ -3360,7 +3362,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _isSending = false;
   bool _isDownloading = false;
   bool _hasExportReady = false;
-  String _appVersionLabel = 'v0.1.5+18';
+  String _appVersionLabel = 'v0.1.5+20';
   bool _updateDialogShown = false;
   bool _skipUpdateChecksUntilRestart = false;
   bool _isInstallingUpdate = false;
@@ -3415,7 +3417,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
     _fileSaver = createFileSaver();
     _appUpdater = createAppUpdater();
-    _speaker = createJurisdictaSpeaker();
+    _speechService = const SpeechServiceFactory().create();
+    _speaker = _speechService.speaker;
+    _speechRecognizer = _speechService.recognizer;
     _apiClient.setSignedInUser(_signedInUser.userId);
     final welcomeLanguage =
         _normalizeLanguageCode(_selectedLocale.languageCode);
@@ -3981,7 +3985,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _initializeSpeechRecognition() async {
-    final enabled = await _speechToText.initialize(
+    final enabled = await _speechRecognizer.initialize(
       onError: _onSpeechError,
       onStatus: _onSpeechStatus,
     );
@@ -3993,7 +3997,11 @@ class _ChatHomePageState extends State<ChatHomePage>
     });
     await widget.logger.info(
       'Speech recognition initialized',
-      <String, Object?>{'enabled': enabled},
+      <String, Object?>{
+        'enabled': enabled,
+        'speech_mode': _speechService.modeLabel,
+        'speech_runtime_mode': _speechService.runtimeModeLabel,
+      },
     );
   }
 
@@ -4005,7 +4013,11 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     await widget.logger.info(
       'Assistant speech output initialized in manual mode',
-      <String, Object?>{'enabled': _speakerOutputEnabled},
+      <String, Object?>{
+        'enabled': _speakerOutputEnabled,
+        'speech_mode': _speechService.modeLabel,
+        'speech_runtime_mode': _speechService.runtimeModeLabel,
+      },
     );
   }
 
@@ -4072,7 +4084,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         _isSending) {
       return;
     }
-    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await Future<void>.delayed(_speechService.config.resumeListeningDelay);
     if (!mounted ||
         !_speechEnabled ||
         !_speechInputEnabled ||
@@ -4320,7 +4332,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _lastHandledSpeechText = normalizedText;
       _speechAutoSendTimer?.cancel();
       if (_isListening) {
-        await _speechToText.stop();
+        await _speechRecognizer.stop();
         if (!mounted) {
           return;
         }
@@ -4373,7 +4385,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     _speechAutoSendTimer?.cancel();
-    _speechAutoSendTimer = Timer(const Duration(seconds: 5), () {
+    _speechAutoSendTimer = Timer(_speechService.config.autoSendDelay, () {
       unawaited(_autoSendSpeechMessage(snapshot));
     });
   }
@@ -4387,7 +4399,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     if (_isListening) {
-      await _speechToText.stop();
+      await _speechRecognizer.stop();
       if (!mounted) {
         return;
       }
@@ -4398,7 +4410,10 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     await widget.logger.info(
       'Auto-sending speech-recognized message after delay',
-      <String, Object?>{'message_length': refreshed.length, 'delay_seconds': 5},
+      <String, Object?>{
+        'message_length': refreshed.length,
+        'delay_ms': _speechService.config.autoSendDelay.inMilliseconds,
+      },
     );
     await _sendMessage();
   }
@@ -4416,7 +4431,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     if (_isListening) {
-      await _speechToText.stop();
+      await _speechRecognizer.stop();
       return;
     }
     if (_awaitingSpokenName) {
@@ -4466,7 +4481,7 @@ class _ChatHomePageState extends State<ChatHomePage>
 
     final nextValue = !_speechInputEnabled;
     if (!nextValue && _isListening) {
-      await _speechToText.stop();
+      await _speechRecognizer.stop();
     }
     if (!nextValue) {
       _speechAutoSendTimer?.cancel();
@@ -4528,7 +4543,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     _updateCheckTimer?.cancel();
     _speechAutoSendTimer?.cancel();
     unawaited(_speaker.stop());
-    _speechToText.stop();
+    _speechRecognizer.stop();
     _inputController.dispose();
     _messagesScrollController.dispose();
     super.dispose();
@@ -4907,7 +4922,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _hasExportReady = false;
     });
     if (_isListening) {
-      await _speechToText.stop();
+      await _speechRecognizer.stop();
     }
     await _loadSpeakerVoices();
     await widget.logger.info(
@@ -4980,7 +4995,7 @@ class _ChatHomePageState extends State<ChatHomePage>
 
   Future<void> _startSpeechListening() async {
     _lastHandledSpeechText = null;
-    await _speechToText.listen(
+    await _speechRecognizer.listen(
       onResult: _onSpeechResult,
       partialResults: true,
       localeId: _localeIdForSpeech(_selectedLocale),
@@ -4994,7 +5009,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     if (_isListening) {
-      await _speechToText.stop();
+      await _speechRecognizer.stop();
     }
     if (!mounted) {
       return;
