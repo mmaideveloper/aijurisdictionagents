@@ -32,6 +32,8 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - The `Account` page now also contains the language/country selector and an assistant voice picker with a play button, so the user can choose from voices available for the selected language.
 - The `Account` page now also contains an assistant voice-output switch. Turning it on enables spoken assistant replies for the current session.
 - The app does not support uploading a custom TTS voice asset directly. It can only use voices exposed by the installed platform TTS engine; on Android, install another Slovak-capable TTS engine/voice and then select it in `Account` if it appears in the voice list.
+- Speech routing now goes through a provider-based speech factory/service layer with `AIJ_SPEECH_MODE=local|azure`. `local` is the default and applies the faster speech recommendations directly to the device runtime: higher TTS speed, shorter pause detection, faster auto-send, and shorter resume delay after assistant playback.
+- `azure` mode now uses Azure Speech for assistant TTS when `AIJ_AZURE_SPEECH_KEY` plus `AIJ_AZURE_SPEECH_REGION` or `AIJ_AZURE_SPEECH_ENDPOINT` are provided, while keeping the same faster local STT flow for microphone input. This keeps the UX responsive now and still lets the app switch providers later.
 - The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.
 - When the user changes the stored first or last name, the chat now appends a fresh assistant message greeting the updated full name.
 - The chat input is now single-line; pressing `Enter` sends the message immediately (same as the send button).
@@ -102,14 +104,23 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 ```bash
 cd mobile_app
 flutter pub get
-flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris
+flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
 ```
 
 For iOS simulator/local device, override `AIJ_API_BASE_URL` with your host IP, for example:
 
 ```bash
-flutter run --dart-define=AIJ_API_BASE_URL=http://127.0.0.1:8080 --dart-define=AIJ_API_KEY=aijuris
+flutter run --dart-define=AIJ_API_BASE_URL=http://127.0.0.1:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
 ```
+
+
+To run Azure speech synthesis mode instead of the local mode, add Azure Speech credentials:
+
+```bash
+flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=azure --dart-define=AIJ_AZURE_SPEECH_KEY=<speech-key> --dart-define=AIJ_AZURE_SPEECH_REGION=<speech-region>
+```
+
+You can also pass `AIJ_AZURE_SPEECH_ENDPOINT` instead of `AIJ_AZURE_SPEECH_REGION`.
 
 Android note:
 
