@@ -12,7 +12,8 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Assistant voice output is also off by default after login; the user must enable it manually in `Account`.
 - Turning on speech input with the microphone button also enables assistant voice output for that session, so spoken replies follow voice interaction automatically.
 - When a spoken assistant reply finishes in voice mode, the app automatically reopens the microphone so the user can continue speaking hands-free.
-- Normal dictated messages now auto-send 5 seconds after the final speech recognition result; the app stops the active microphone session and submits automatically if the text has not changed.
+- After the user taps the mic, dictation stays active until the user stops it manually or no speech is detected for `10` seconds.
+- Normal dictated messages now remain in the message input instead of auto-sending after a short pause; explicit send still works through the send button or a spoken send command.
 - The speech flow also understands spoken send commands such as `Send`, `please send`, `Posli`, `Prosim odosli spravu`, `Senden`, or `Nachricht senden`, and submits the current dictated message immediately.
 - Generated legal documents are no longer shown back into chat as plain text or JSON payloads; instead, the app asks the user whether they want to see the document as PDF and keeps the PDF export action available.
 - If the user starts a discussion without any selected case, the app now creates a case automatically, generates a short title from the discussion text, selects that case, and then sends the original message to the backend.

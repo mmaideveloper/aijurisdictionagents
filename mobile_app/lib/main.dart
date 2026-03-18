@@ -991,15 +991,16 @@ bool _looksLikeGeneratedDocumentDraft(String content) {
     'document',
   ].any(lowered.contains);
   final hasStructuredSections = <String>[
-    '1.',
-    '2.',
-    'i.',
-    'ii.',
-    'clanok',
-    'article',
-    'section',
-    'abschnitt',
-  ].where(lowered.contains).length >= 2;
+        '1.',
+        '2.',
+        'i.',
+        'ii.',
+        'clanok',
+        'article',
+        'section',
+        'abschnitt',
+      ].where(lowered.contains).length >=
+      2;
   return trimmed.length >= 350 && (hasDocumentKeyword || hasStructuredSections);
 }
 
@@ -3344,6 +3345,11 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const double _questionTimeoutSeconds = 3600;
   static const double _maxDiscussionMinutes = 60;
   static const double _communicationMinutes = 60;
+  static const Duration _speechSilenceTimeout = Duration(seconds: 10);
+  static const Duration _speechListenRestartDelay = Duration(
+    milliseconds: 350,
+  );
+  static const Duration _speechMaxListenDuration = Duration(minutes: 30);
 
   final TextEditingController _inputController = TextEditingController();
   final SpeechToText _speechToText = SpeechToText();
@@ -3385,9 +3391,11 @@ class _ChatHomePageState extends State<ChatHomePage>
   String? _pendingUpdateInstallPath;
   String? _pendingUpdateVersion;
   Timer? _updateCheckTimer;
-  Timer? _speechAutoSendTimer;
+  Timer? _speechSilenceTimer;
   String? _lastDictatedSpeechDraft;
   String? _lastHandledSpeechText;
+  bool _speechListeningRequested = false;
+  bool _speechRestartPending = false;
   bool _updateCheckInProgress = false;
 
   bool get _showLocalResponderSwitch {
@@ -4081,7 +4089,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         _isSending) {
       return;
     }
-    _speechAutoSendTimer?.cancel();
+    _speechListeningRequested = true;
     if (!_awaitingSpokenName && !_awaitingSpokenCaseTitle) {
       _inputController.clear();
     }
@@ -4089,7 +4097,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       'Speech listening resumed after assistant speech',
       <String, Object?>{'reason': reason},
     );
-    await _startSpeechListening();
+    await _startSpeechListening(resetHandledText: true);
   }
 
   String _resolveAssistantVisibleReply({
@@ -4129,7 +4137,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!mounted) {
       return;
     }
-    _speechAutoSendTimer?.cancel();
+    _restartSpeechSilenceTimer();
     final recognizedText = result.recognizedWords.trim();
     if (recognizedText.isNotEmpty &&
         !isSpokenSendCommand(recognizedText) &&
@@ -4156,7 +4164,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!mounted) {
       return;
     }
-    final isListening = status == 'listening';
+    final isListening = status == SpeechToText.listeningStatus;
     setState(() {
       _isListening = isListening;
     });
@@ -4166,18 +4174,27 @@ class _ChatHomePageState extends State<ChatHomePage>
         <String, Object?>{'status': status},
       ),
     );
-    if (!isListening) {
-      final spokenText = _inputController.text.trim();
-      if (spokenText.isNotEmpty) {
-        unawaited(_handleCompletedSpeechInput(spokenText));
-      }
+    if (isListening) {
+      _speechRestartPending = false;
+      return;
     }
+    final spokenText = _inputController.text.trim();
+    if (spokenText.isNotEmpty) {
+      unawaited(_handleCompletedSpeechInput(spokenText));
+    }
+    if (_shouldKeepSpeechListeningAlive()) {
+      unawaited(_scheduleSpeechListeningRestart(reason: status));
+      return;
+    }
+    _cancelSpeechSilenceTimer();
   }
 
   void _onSpeechError(SpeechRecognitionError error) {
     if (!mounted) {
       return;
     }
+    _cancelSpeechSilenceTimer();
+    _speechRestartPending = false;
     setState(() {
       _isListening = false;
     });
@@ -4318,12 +4335,9 @@ class _ChatHomePageState extends State<ChatHomePage>
         return;
       }
       _lastHandledSpeechText = normalizedText;
-      _speechAutoSendTimer?.cancel();
-      if (_isListening) {
-        await _speechToText.stop();
-        if (!mounted) {
-          return;
-        }
+      await _stopSpeechListeningSession(reason: 'send_command');
+      if (!mounted) {
+        return;
       }
       setState(() {
         _inputController.text = pendingMessage;
@@ -4342,7 +4356,10 @@ class _ChatHomePageState extends State<ChatHomePage>
     final command = parseSpokenCaseCreationCommand(normalizedText);
     if (command == null) {
       _lastHandledSpeechText = normalizedText;
-      _scheduleSpeechAutoSend(normalizedText);
+      await widget.logger.info(
+        'Speech draft updated',
+        <String, Object?>{'message_length': normalizedText.length},
+      );
       return;
     }
 
@@ -4367,44 +4384,70 @@ class _ChatHomePageState extends State<ChatHomePage>
     return draft;
   }
 
-  void _scheduleSpeechAutoSend(String spokenText) {
-    final snapshot = spokenText.trim();
-    if (snapshot.isEmpty) {
+  bool _shouldKeepSpeechListeningAlive() {
+    return mounted &&
+        _speechListeningRequested &&
+        _speechEnabled &&
+        _speechInputEnabled &&
+        !_isListening &&
+        !_isSending;
+  }
+
+  void _cancelSpeechSilenceTimer() {
+    _speechSilenceTimer?.cancel();
+    _speechSilenceTimer = null;
+  }
+
+  void _restartSpeechSilenceTimer() {
+    if (!_speechListeningRequested) {
       return;
     }
-    _speechAutoSendTimer?.cancel();
-    _speechAutoSendTimer = Timer(const Duration(seconds: 5), () {
-      unawaited(_autoSendSpeechMessage(snapshot));
+    _cancelSpeechSilenceTimer();
+    _speechSilenceTimer = Timer(_speechSilenceTimeout, () {
+      unawaited(_stopSpeechListeningSession(reason: 'silence_timeout'));
     });
   }
 
-  Future<void> _autoSendSpeechMessage(String snapshot) async {
-    if (!mounted || _isSending) {
+  Future<void> _scheduleSpeechListeningRestart({
+    required String reason,
+  }) async {
+    if (_speechRestartPending || !_shouldKeepSpeechListeningAlive()) {
       return;
     }
-    final current = _inputController.text.trim();
-    if (current.isEmpty || current != snapshot) {
-      return;
-    }
-    if (_isListening) {
-      await _speechToText.stop();
-      if (!mounted) {
-        return;
-      }
-    }
-    final refreshed = _inputController.text.trim();
-    if (refreshed.isEmpty || refreshed != snapshot || _isSending) {
+    _speechRestartPending = true;
+    await Future<void>.delayed(_speechListenRestartDelay);
+    if (!_shouldKeepSpeechListeningAlive()) {
+      _speechRestartPending = false;
       return;
     }
     await widget.logger.info(
-      'Auto-sending speech-recognized message after delay',
-      <String, Object?>{'message_length': refreshed.length, 'delay_seconds': 5},
+      'Restarting speech listening after platform stop',
+      <String, Object?>{'reason': reason},
     );
-    await _sendMessage();
+    try {
+      await _startSpeechListening(refreshSilenceTimeout: false);
+    } finally {
+      if (!mounted || !_isListening) {
+        _speechRestartPending = false;
+      }
+    }
+  }
+
+  Future<void> _stopSpeechListeningSession({required String reason}) async {
+    _speechListeningRequested = false;
+    _speechRestartPending = false;
+    _cancelSpeechSilenceTimer();
+    await widget.logger.info(
+      'Stopping speech listening session',
+      <String, Object?>{'reason': reason, 'is_listening': _isListening},
+    );
+    if (_isListening) {
+      await _speechToText.stop();
+    }
   }
 
   Future<void> _toggleSpeechInput() async {
-    _speechAutoSendTimer?.cancel();
+    _cancelSpeechSilenceTimer();
     _lastHandledSpeechText = null;
     await _speaker.stop();
     if (!_speechEnabled) {
@@ -4415,8 +4458,8 @@ class _ChatHomePageState extends State<ChatHomePage>
       _showSnackbar(_strings.t('speech_input_disabled_message'));
       return;
     }
-    if (_isListening) {
-      await _speechToText.stop();
+    if (_isListening || _speechListeningRequested) {
+      await _stopSpeechListeningSession(reason: 'manual_toggle_off');
       return;
     }
     if (_awaitingSpokenName) {
@@ -4432,7 +4475,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       );
       _inputController.clear();
     }
-    await _startSpeechListening();
+    await _startSpeechListening(resetHandledText: true);
   }
 
   Future<void> _downloadRequestedDocuments() async {
@@ -4466,10 +4509,12 @@ class _ChatHomePageState extends State<ChatHomePage>
 
     final nextValue = !_speechInputEnabled;
     if (!nextValue && _isListening) {
-      await _speechToText.stop();
+      await _stopSpeechListeningSession(reason: 'speech_input_disabled');
     }
     if (!nextValue) {
-      _speechAutoSendTimer?.cancel();
+      _cancelSpeechSilenceTimer();
+      _speechListeningRequested = false;
+      _speechRestartPending = false;
       _lastHandledSpeechText = null;
     }
 
@@ -4526,7 +4571,9 @@ class _ChatHomePageState extends State<ChatHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _updateCheckTimer?.cancel();
-    _speechAutoSendTimer?.cancel();
+    _cancelSpeechSilenceTimer();
+    _speechListeningRequested = false;
+    _speechRestartPending = false;
     unawaited(_speaker.stop());
     _speechToText.stop();
     _inputController.dispose();
@@ -4599,6 +4646,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (text.isEmpty || _isSending) {
       return;
     }
+    _speechListeningRequested = false;
+    _speechRestartPending = false;
+    _cancelSpeechSilenceTimer();
     if (_awaitingSpokenName) {
       await _storeSpokenName(text);
       return;
@@ -4907,7 +4957,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _hasExportReady = false;
     });
     if (_isListening) {
-      await _speechToText.stop();
+      await _stopSpeechListeningSession(reason: 'locale_changed');
     }
     await _loadSpeakerVoices();
     await widget.logger.info(
@@ -4978,13 +5028,30 @@ class _ChatHomePageState extends State<ChatHomePage>
     await _createCaseWithTitle(title.trim());
   }
 
-  Future<void> _startSpeechListening() async {
-    _lastHandledSpeechText = null;
+  Future<void> _startSpeechListening({
+    bool resetHandledText = false,
+    bool refreshSilenceTimeout = true,
+  }) async {
+    if (!_speechEnabled || !_speechInputEnabled || _isSending) {
+      return;
+    }
+    if (resetHandledText) {
+      _lastHandledSpeechText = null;
+    }
+    _speechListeningRequested = true;
+    _speechRestartPending = false;
+    if (refreshSilenceTimeout) {
+      _restartSpeechSilenceTimer();
+    }
     await _speechToText.listen(
       onResult: _onSpeechResult,
-      partialResults: true,
+      listenFor: _speechMaxListenDuration,
+      pauseFor: _speechSilenceTimeout,
       localeId: _localeIdForSpeech(_selectedLocale),
-      listenMode: ListenMode.dictation,
+      listenOptions: SpeechListenOptions(
+        partialResults: true,
+        listenMode: ListenMode.dictation,
+      ),
     );
   }
 
@@ -4994,7 +5061,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     if (_isListening) {
-      await _speechToText.stop();
+      await _stopSpeechListeningSession(reason: 'prompt_case_title');
     }
     if (!mounted) {
       return;
@@ -5010,7 +5077,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!mounted || !_speechEnabled || !_speechInputEnabled) {
       return;
     }
-    await _startSpeechListening();
+    await _startSpeechListening(resetHandledText: true);
   }
 
   Future<void> _createCaseFromVoice(
