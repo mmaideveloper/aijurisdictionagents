@@ -53,6 +53,7 @@ npm run preview
 - Navbar reacts to mock auth state:
   - Sign-in link when logged out
   - Profile trigger when logged in with dropdown options: `My Profile`, `My Cases`, `Log Out`
+  - `My Profile` navigates to `/profile`
   - Dropdown closes on outside click, option click, and `Escape`
   - Keyboard support includes `ArrowUp`/`ArrowDown` navigation and `Home`/`End` shortcuts
 
@@ -61,9 +62,14 @@ npm run preview
 When authenticated, the home page swaps to a 3-column workspace layout: case sidebar, active workspace, and AI configuration panel. On narrow screens the side panels collapse and the center workspace takes full width.
 
 Route access behavior:
-- All `/app/*` routes are protected by auth state.
-- Unauthenticated users attempting `/app/*` are redirected to `/`.
+- All `/app/*` routes and `/profile` are protected by auth state.
+- Unauthenticated users attempting `/app/*` or `/profile` are redirected to `/`.
 - After logout, protected routes are no longer accessible until sign-in.
+
+My Profile view behavior:
+- `/profile` displays structured user fields from mock auth state.
+- Current fields include `First Name`, `Last Name`, `Email`, plus optional `Role` and `Account Created Date`.
+- The profile view also includes subscription pricing controls and an opened-cases panel for quick case return.
 
 Case sidebar behavior:
 - `+ New case` creates a mock case and makes it active.

@@ -102,6 +102,10 @@ const App: React.FC = () => {
         />
         <Route
           path="/app/profile"
+          element={<Navigate to="/profile" replace />}
+        />
+        <Route
+          path="/profile"
           element={
             <ProtectedRoute>
               <Profile />

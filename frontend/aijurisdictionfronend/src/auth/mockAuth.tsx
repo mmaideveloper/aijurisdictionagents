@@ -1,15 +1,23 @@
 import React from "react";
 
 export interface MockUser {
+  firstName: string;
+  lastName: string;
   email: string;
   password: string;
   name: string;
+  role?: string;
+  accountCreatedAt?: string;
 }
 
 export const MOCK_USER: MockUser = {
+  firstName: "Admin",
+  lastName: "User",
   email: "admin@admin.com",
   password: "admin123",
-  name: "Admin"
+  name: "Admin User",
+  role: "Administrator",
+  accountCreatedAt: "2025-01-10"
 };
 
 export interface AuthState {
@@ -43,8 +51,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({
       isAuthenticated: true,
       user: {
+        firstName: MOCK_USER.firstName,
+        lastName: MOCK_USER.lastName,
         email: MOCK_USER.email,
-        name: MOCK_USER.name
+        name: MOCK_USER.name,
+        role: MOCK_USER.role,
+        accountCreatedAt: MOCK_USER.accountCreatedAt
       }
     });
     return true;

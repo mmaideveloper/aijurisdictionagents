@@ -4,7 +4,7 @@ import React from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { Navigation } from "../components/Navigation";
 
 const mockSignOut = vi.fn();
@@ -42,9 +42,15 @@ vi.mock("../components/LanguageSwitcher", () => ({
 }));
 
 function renderNavigation() {
+  const PathIndicator = () => {
+    const location = useLocation();
+    return <div data-testid="current-path">{location.pathname}</div>;
+  };
+
   return render(
     <MemoryRouter>
       <Navigation />
+      <PathIndicator />
     </MemoryRouter>
   );
 }
@@ -119,5 +125,18 @@ describe("Navigation profile dropdown", () => {
     await user.click(screen.getByRole("menuitem", { name: "Log Out" }));
     expect(mockSignOut).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("menu", { name: "Profile menu" })).toBeNull();
+  });
+
+  it("navigates to /profile when My Profile is clicked", async () => {
+    const user = userEvent.setup();
+    renderNavigation();
+
+    expect(screen.getByTestId("current-path").textContent).toBe("/");
+    await user.click(screen.getByLabelText("Profile"));
+    await user.click(screen.getByRole("menuitem", { name: "My Profile" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("current-path").textContent).toBe("/profile");
+    });
   });
 });

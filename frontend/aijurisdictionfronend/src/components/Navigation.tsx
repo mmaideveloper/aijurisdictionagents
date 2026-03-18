@@ -26,7 +26,7 @@ export const Navigation: React.FC = () => {
     (action: "profile" | "cases" | "logout") => {
       closeProfileMenu();
       if (action === "profile") {
-        navigate("/app/profile");
+        navigate("/profile");
         return;
       }
       if (action === "cases") {
