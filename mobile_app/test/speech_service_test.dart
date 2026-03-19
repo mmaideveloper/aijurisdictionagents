@@ -1,6 +1,8 @@
 import 'package:ai_jurisdiction_mobile/audio/azure_speech_speaker.dart';
+import 'package:ai_jurisdiction_mobile/audio/jurisdicta_speaker.dart';
 import 'package:ai_jurisdiction_mobile/speech_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 void main() {
   group('SpeechServiceConfig', () {
@@ -13,8 +15,6 @@ void main() {
       expect(config.resumeListeningDelay, const Duration(milliseconds: 150));
     });
   });
-
-
 
   group('AzureSpeechConfig', () {
     test('builds regional TTS and voices endpoints', () {
@@ -32,7 +32,11 @@ void main() {
   });
 
   group('SpeechServiceFactory', () {
-    const factory = SpeechServiceFactory();
+    final factory = SpeechServiceFactory(
+      speakerFactory: _FakeSpeaker.new,
+      azureSpeakerFactory: (config, fallbackSpeaker) => fallbackSpeaker,
+      recognizerFactory: _FakeRecognizer.new,
+    );
 
     test('creates local service when local mode is requested', () {
       final service = factory.create(
@@ -64,4 +68,55 @@ void main() {
       expect(service.runtimeModeLabel, 'azure-tts-local-stt');
     });
   });
+}
+
+class _FakeRecognizer implements JurisdictaSpeechRecognizer {
+  _FakeRecognizer(SpeechServiceConfig config);
+
+  @override
+  Future<bool> initialize({required onError, required onStatus}) async => true;
+
+  @override
+  Future<void> listen({
+    required onResult,
+    required String localeId,
+    Duration? listenFor,
+    Duration? pauseFor,
+    bool partialResults = true,
+    bool cancelOnError = true,
+    listenMode = ListenMode.dictation,
+  }) async {}
+
+  @override
+  Future<void> stop() async {}
+}
+
+class _FakeSpeaker implements JurisdictaSpeaker {
+  @override
+  Future<bool> initialize() async => true;
+
+  @override
+  Future<List<JurisdictaSpeakerVoice>> listVoices({
+    required String languageCode,
+  }) async =>
+      const <JurisdictaSpeakerVoice>[];
+
+  @override
+  Future<void> selectVoice({
+    required String languageCode,
+    required String? voiceId,
+  }) async {}
+
+  @override
+  String? selectedVoiceIdFor({required String languageCode}) => null;
+
+  @override
+  Future<bool> speak({
+    required String text,
+    required String languageCode,
+  }) async =>
+      true;
+
+  @override
+  Future<void> stop() async {}
 }

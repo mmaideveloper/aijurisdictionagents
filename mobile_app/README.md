@@ -263,6 +263,10 @@ CI auto-generates missing Flutter `android/` and `web/` platform scaffolding wit
 `flutter create` before build steps, so APK/web builds work even when only
 shared Flutter sources are committed.
 
+Speech service unit tests now initialize `TestWidgetsFlutterBinding` before constructing
+`FlutterTts`-backed services, which keeps the CI `flutter test` step stable after speech
+service factory coverage was added.
+
 ## Snapshot
 
 Reference UI snapshot prepared for review of the mobile chat layout.
