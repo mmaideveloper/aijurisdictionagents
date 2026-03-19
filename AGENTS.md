@@ -7,6 +7,10 @@ Coding standards: typing, linting, tests, error handling
 Output requirements: always create/update docs, add minimal runnable example
 Minimal runnable example (default): `python examples/minimal_demo.py`
 
+Environment variable rule:
+
+- Whenever you add a new environment variable to the project, add a documented example entry to `.env.example` in the same change.
+
 
 Software Development Life Cycle:
 

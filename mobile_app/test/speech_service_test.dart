@@ -2,15 +2,18 @@ import 'package:ai_jurisdiction_mobile/audio/azure_speech_speaker.dart';
 import 'package:ai_jurisdiction_mobile/audio/jurisdicta_speaker.dart';
 import 'package:ai_jurisdiction_mobile/speech_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('SpeechServiceConfig', () {
     test('defaults to local mode with tuned timing values', () {
       final config = SpeechServiceConfig.fromEnvironment();
 
       expect(config.mode, SpeechMode.local);
-      expect(config.pauseFor, const Duration(milliseconds: 1500));
+      expect(config.pauseFor, const Duration(seconds: 5));
       expect(config.autoSendDelay, const Duration(seconds: 2));
       expect(config.resumeListeningDelay, const Duration(milliseconds: 150));
     });
@@ -28,6 +31,73 @@ void main() {
         config.voicesUri.toString(),
         'https://westeurope.tts.speech.microsoft.com/cognitiveservices/voices/list',
       );
+    });
+
+    test('accepts base TTS endpoint without path', () {
+      const config = AzureSpeechConfig(
+        key: 'key',
+        endpoint: 'https://eastus2.tts.speech.microsoft.com',
+      );
+
+      expect(
+        config.ttsUri.toString(),
+        'https://eastus2.tts.speech.microsoft.com/cognitiveservices/v1',
+      );
+      expect(
+        config.voicesUri.toString(),
+        'https://eastus2.tts.speech.microsoft.com/cognitiveservices/voices/list',
+      );
+    });
+  });
+
+  group('AzureSpeechSpeaker', () {
+    test('loads Azure voices instead of local fallback voices', () async {
+      final fallbackSpeaker = _TrackingSpeaker();
+      final speaker = AzureSpeechSpeaker(
+        config: const AzureSpeechConfig(
+          key: 'key',
+          endpoint: 'https://eastus2.tts.speech.microsoft.com',
+        ),
+        fallbackSpeaker: fallbackSpeaker,
+        httpClient: _FakeHttpClient(
+          (request) async => http.Response(
+            '''
+[
+  {"ShortName":"sk-SK-ViktoriaNeural","Locale":"sk-SK","DisplayName":"Viktoria"},
+  {"ShortName":"en-US-AvaMultilingualNeural","Locale":"en-US","DisplayName":"Ava Multilingual","SecondaryLocaleList":["sk-SK","de-DE"]}
+]
+''',
+            200,
+          ),
+        ),
+      );
+
+      final voices = await speaker.listVoices(languageCode: 'SK');
+
+      expect(voices.map((voice) => voice.id), <String>[
+        'sk-SK-ViktoriaNeural',
+      ]);
+      expect(fallbackSpeaker.listVoicesCalls, 0);
+    });
+
+    test('does not replace Azure voice picker with local voices on failure',
+        () async {
+      final fallbackSpeaker = _TrackingSpeaker();
+      final speaker = AzureSpeechSpeaker(
+        config: const AzureSpeechConfig(
+          key: 'key',
+          endpoint: 'https://eastus2.tts.speech.microsoft.com',
+        ),
+        fallbackSpeaker: fallbackSpeaker,
+        httpClient: _FakeHttpClient(
+          (request) async => http.Response('server error', 500),
+        ),
+      );
+
+      final voices = await speaker.listVoices(languageCode: 'SK');
+
+      expect(voices, isEmpty);
+      expect(fallbackSpeaker.listVoicesCalls, 0);
     });
   });
 
@@ -65,7 +135,31 @@ void main() {
         ),
       );
 
+      expect(service.runtimeModeLabel, 'azure-stt-tts');
+    });
+
+    test('marks mixed runtime when only azure TTS is configured', () {
+      final service = factory.create(
+        config: const SpeechServiceConfig(
+          mode: SpeechMode.azure,
+          azureKey: 'key',
+          azureTtsEndpoint: 'https://eastus2.tts.speech.microsoft.com',
+        ),
+      );
+
       expect(service.runtimeModeLabel, 'azure-tts-local-stt');
+    });
+
+    test('marks mixed runtime when only azure STT is configured', () {
+      final service = factory.create(
+        config: const SpeechServiceConfig(
+          mode: SpeechMode.azure,
+          azureKey: 'key',
+          azureSttEndpoint: 'https://eastus2.stt.speech.microsoft.com',
+        ),
+      );
+
+      expect(service.runtimeModeLabel, 'local-tts-azure-stt');
     });
   });
 }
@@ -119,4 +213,63 @@ class _FakeSpeaker implements JurisdictaSpeaker {
 
   @override
   Future<void> stop() async {}
+}
+
+class _TrackingSpeaker implements JurisdictaSpeaker {
+  int listVoicesCalls = 0;
+
+  @override
+  Future<bool> initialize() async => true;
+
+  @override
+  Future<List<JurisdictaSpeakerVoice>> listVoices({
+    required String languageCode,
+  }) async {
+    listVoicesCalls += 1;
+    return const <JurisdictaSpeakerVoice>[
+      JurisdictaSpeakerVoice(
+        id: 'local::voice',
+        name: 'Local Voice',
+        locale: 'sk-SK',
+        config: <String, String>{},
+      ),
+    ];
+  }
+
+  @override
+  Future<void> selectVoice({
+    required String languageCode,
+    required String? voiceId,
+  }) async {}
+
+  @override
+  String? selectedVoiceIdFor({required String languageCode}) => null;
+
+  @override
+  Future<bool> speak({
+    required String text,
+    required String languageCode,
+  }) async =>
+      true;
+
+  @override
+  Future<void> stop() async {}
+}
+
+class _FakeHttpClient extends http.BaseClient {
+  _FakeHttpClient(this._handler);
+
+  final Future<http.Response> Function(http.BaseRequest request) _handler;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final response = await _handler(request);
+    return http.StreamedResponse(
+      Stream<List<int>>.value(response.bodyBytes),
+      response.statusCode,
+      headers: response.headers,
+      request: request,
+      reasonPhrase: response.reasonPhrase,
+    );
+  }
 }

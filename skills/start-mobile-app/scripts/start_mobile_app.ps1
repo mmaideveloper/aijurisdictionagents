@@ -7,6 +7,8 @@ param(
     [string]$ApiBaseUrl = "",
     [string]$PublicDevApiBaseUrl = "",
     [string]$ApiKey = "aijuris",
+    [ValidateSet("local", "azure")]
+    [string]$SpeechMode = "",
     [string]$DatabaseOption = "",
     [ValidateSet("local", "azure")]
     [string]$StorageOption = "",
@@ -319,6 +321,27 @@ function Resolve-ApiBaseUrl {
     }
 }
 
+function Resolve-SpeechMode {
+    param([string]$RequestedMode)
+
+    if ($RequestedMode) {
+        return $RequestedMode
+    }
+
+    $envFile = Join-Path $repoRoot ".env"
+    if (Test-Path $envFile) {
+        $speechLine = Get-Content $envFile | Where-Object { $_ -like "AIJ_SPEECH_MODE=*" } | Select-Object -First 1
+        if ($speechLine) {
+            $resolved = $speechLine.Split("=", 2)[1].Trim().ToLowerInvariant()
+            if ($resolved -in @("local", "azure")) {
+                return $resolved
+            }
+        }
+    }
+
+    return ""
+}
+
 $skillScriptsDir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $skillScriptsDir "..\..\..")
 $appDir = Join-Path $repoRoot "mobile_app"
@@ -332,6 +355,7 @@ if (-not (Test-Path $appDir)) {
 $flutter = Resolve-FlutterPath
 $ApiMode = Resolve-ApiMode -RequestedMode $ApiMode
 $ApiBaseUrl = Resolve-ApiBaseUrl -Mode $ApiMode -RequestedApiBaseUrl $ApiBaseUrl -RequestedPublicDevApiBaseUrl $PublicDevApiBaseUrl
+$SpeechMode = Resolve-SpeechMode -RequestedMode $SpeechMode
 
 if ($ApiMode -eq "localApi") {
     $DatabaseOption = Resolve-DatabaseOption -RequestedOption $DatabaseOption
@@ -391,6 +415,9 @@ if ($ApiMode -eq "localApi") {
 if ($ConsoleWindow) {
     $scriptPath = Join-Path $repoRoot "skills\start-mobile-app\scripts\start_mobile_app.ps1"
     $commandArgs = @("-NoExit", "-File", $scriptPath, "-Device", $Device, "-BindHost", $BindHost, "-Port", "$Port", "-ApiMode", $ApiMode, "-ApiBaseUrl", $ApiBaseUrl, "-ApiKey", $ApiKey)
+    if ($SpeechMode) {
+        $commandArgs += @("-SpeechMode", $SpeechMode)
+    }
     if ($PublicDevApiBaseUrl) {
         $commandArgs += @("-PublicDevApiBaseUrl", $PublicDevApiBaseUrl)
     }
@@ -445,6 +472,14 @@ try {
         "--dart-define=AIJ_API_KEY=$ApiKey"
     )
 
+    $dartDefineFile = Join-Path $repoRoot ".env"
+    if (Test-Path $dartDefineFile) {
+        $flutterArgs += "--dart-define-from-file=..\.env"
+    }
+    if ($SpeechMode) {
+        $flutterArgs += "--dart-define=AIJ_SPEECH_MODE=$SpeechMode"
+    }
+
     if ($Device -eq "chrome" -or $Device -eq "edge") {
         $flutterArgs += @("--web-hostname", $BindHost, "--web-port", "$Port")
     }
@@ -496,6 +531,9 @@ try {
                 Write-Output "Mobile app started in background. PID: $pidToPersist"
                 Write-Output "App URL: http://$BindHost`:$Port"
                 Write-Output "API URL: $ApiBaseUrl"
+                if ($SpeechMode) {
+                    Write-Output "Speech mode: $SpeechMode"
+                }
                 if ($ApiMode -eq "localApi") {
                     Write-Output "Database: $DatabaseOption"
                     Write-Output "Storage: $StorageOption"
@@ -519,6 +557,9 @@ try {
             Write-Output "Mobile app started in background. PID: $($process.Id)"
             Write-Output "Device: $Device"
             Write-Output "API URL: $ApiBaseUrl"
+            if ($SpeechMode) {
+                Write-Output "Speech mode: $SpeechMode"
+            }
             if ($ApiMode -eq "localApi") {
                 Write-Output "Database: $DatabaseOption"
                 Write-Output "Storage: $StorageOption"
@@ -531,6 +572,9 @@ try {
     Write-Output "Starting mobile app on device '$Device' (API=$ApiBaseUrl)"
     if ($Device -eq "chrome" -or $Device -eq "edge") {
         Write-Output "App URL: http://$BindHost`:$Port"
+    }
+    if ($SpeechMode) {
+        Write-Output "Speech mode: $SpeechMode"
     }
     if ($ApiMode -eq "localApi") {
         Write-Output "Database: $DatabaseOption"

@@ -10,8 +10,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -47,7 +45,7 @@ const String _localAutofillPhoneNumber = '+421944400166';
 
 const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
   'SK':
-      'Relacia vyprsala. Vytvorili sme novu relaciu. Prosim, odoslite poslednu spravu znova.',
+      'Relácia vypršala. Vytvorili sme novú reláciu. Prosím, odošlite poslednú správu znova.',
   'EN':
       'Your session expired. A new session was created. Please send your last message again.',
   'GE':
@@ -155,179 +153,179 @@ class AppStrings {
   static const Map<String, Map<String, String>> _localized =
       <String, Map<String, String>>{
     'SK': <String, String>{
-      'auth_sign_in_tab': 'Prihlasenie',
-      'auth_sign_up_tab': 'Registracia',
-      'phone_number': 'Telefonne cislo',
-      'phone_number_required': 'Telefonne cislo *',
+      'auth_sign_in_tab': 'Prihlásenie',
+      'auth_sign_up_tab': 'Registrácia',
+      'phone_number': 'Telefónne číslo',
+      'phone_number_required': 'Telefónne číslo *',
       'phone_number_hint': _localAutofillPhoneNumber,
       'email': 'E-mail',
       'email_required': 'E-mail *',
       'password': 'Heslo',
       'password_required': 'Heslo *',
       'first_name': 'Meno',
-      'first_name_optional': 'Meno (volitelne)',
+      'first_name_optional': 'Meno (voliteľné)',
       'last_name': 'Priezvisko',
-      'last_name_optional': 'Priezvisko (volitelne)',
+      'last_name_optional': 'Priezvisko (voliteľné)',
       'signing_in': 'Prihlasujem...',
-      'login': 'Prihlasenie',
-      'sign_in_by_phone': 'Prihlasit cez telefon',
-      'sign_in_by_email_password': 'Prihlasit cez e-mail a heslo',
-      'sign_in_failed': 'Prihlasenie zlyhalo: {{error}}',
+      'login': 'Prihlásenie',
+      'sign_in_by_phone': 'Prihlásiť cez telefón',
+      'sign_in_by_email_password': 'Prihlásiť cez e-mail a heslo',
+      'sign_in_failed': 'Prihlásenie zlyhalo: {{error}}',
       'phone_not_found':
-          'Telefonne cislo sa nenaslo. Prihlaste sa e-mailom a heslom.',
-      'invalid_email_password': 'Neplatny e-mail alebo heslo.',
+          'Telefónne číslo sa nenašlo. Prihláste sa e-mailom a heslom.',
+      'invalid_email_password': 'Neplatný e-mail alebo heslo.',
       'signing_up': 'Registrujem...',
-      'go_to_sign_up': 'Registracia',
-      'create_account': 'Vytvorit ucet',
-      'sign_up_failed': 'Registracia zlyhala: {{error}}',
-      'account': 'Ucet',
-      'sign_out': 'Odhlasit sa',
-      'save_changes': 'Ulozit zmeny',
-      'saving': 'Ukladam...',
-      'update_sign_in_profile': 'Upravit prihlasovaci profil',
-      'profile_update_failed': 'Aktualizacia profilu zlyhala: {{error}}',
+      'go_to_sign_up': 'Registrácia',
+      'create_account': 'Vytvoriť účet',
+      'sign_up_failed': 'Registrácia zlyhala: {{error}}',
+      'account': 'Účet',
+      'sign_out': 'Odhlásiť sa',
+      'save_changes': 'Uložiť zmeny',
+      'saving': 'Ukladám...',
+      'update_sign_in_profile': 'Upraviť prihlasovací profil',
+      'profile_update_failed': 'Aktualizácia profilu zlyhala: {{error}}',
       'profile_name_changed':
-          'Vidim, ze ste zmenili meno. Dobry den, {{name}}.',
-      'debug_mode': 'Debug rezim',
+          'Vidím, že ste zmenili meno. Dobrý deň, {{name}}.',
+      'debug_mode': 'Debug režim',
       'debug_mode_description':
-          'V debug rezime sa vsetky logy ukladaju do suboru na Android zariadeni.',
-      'debug_mode_enabled': 'Debug rezim zapnuty.',
-      'debug_mode_disabled': 'Debug rezim vypnuty.',
-      'share_logs': 'Zdielat logy',
-      'logs_shared': 'Zdielanie logov bolo spustene.',
-      'share_logs_failed': 'Zdielanie logov zlyhalo: {{error}}',
-      'subscription': 'Predplatne',
+          'V debug režime sa všetky logy ukladajú do súboru na Android zariadení.',
+      'debug_mode_enabled': 'Debug režim zapnutý.',
+      'debug_mode_disabled': 'Debug režim vypnutý.',
+      'share_logs': 'Zdieľať logy',
+      'logs_shared': 'Zdieľanie logov bolo spustené.',
+      'share_logs_failed': 'Zdieľanie logov zlyhalo: {{error}}',
+      'subscription': 'Predplatné',
       'subscription_change_requested':
-          'Zmena predplatneho bola odoslana (pending).',
-      'subscription_change_failed': 'Zmena predplatneho zlyhala: {{error}}',
+          'Zmena predplatného bola odoslaná (pending).',
+      'subscription_change_failed': 'Zmena predplatného zlyhala: {{error}}',
       'subscription_status': 'Stav: {{status}}',
-      'update_available': 'Dostupna aktualizacia',
+      'update_available': 'Dostupná aktualizácia',
       'update_body':
-          'K dispozicii je nova verzia.\n\n{{current}} -> {{latest}}',
-      'later': 'Neskor',
-      'skip_until_restart': 'Preskocit do noveho startu',
-      'update': 'Aktualizovat',
-      'invalid_release_url': 'Adresa aktualizacie je neplatna.',
+          'K dispozícii je nová verzia.\n\n{{current}} -> {{latest}}',
+      'later': 'Neskôr',
+      'skip_until_restart': 'Preskočiť do nového štartu',
+      'update': 'Aktualizovať',
+      'invalid_release_url': 'Adresa aktualizácie je neplatná.',
       'could_not_open_update_page':
-          'Stranku s aktualizaciou sa nepodarilo otvorit.',
+          'Stránku s aktualizáciou sa nepodarilo otvoriť.',
       'update_apk_missing':
-          'Release neobsahuje Android APK subor. Otvaram stranku release.',
-      'update_download_started': 'Stahujem aktualizaciu {{latest}}...',
+          'Release neobsahuje Android APK súbor. Otváram stránku release.',
+      'update_download_started': 'Sťahujem aktualizáciu {{latest}}...',
       'update_install_started':
-          'Android instalator bol otvoreny. Potvrdte aktualizaciu.',
-      'update_download_failed': 'Stahovanie aktualizacie zlyhalo: {{error}}',
-      'update_install_failed': 'Spustenie aktualizacie zlyhalo: {{error}}',
+          'Android inštalátor bol otvorený. Potvrďte aktualizáciu.',
+      'update_download_failed': 'Sťahovanie aktualizácie zlyhalo: {{error}}',
+      'update_install_failed': 'Spustenie aktualizácie zlyhalo: {{error}}',
       'update_install_signature_mismatch':
-          'Nainstalovana aplikacia ma iny podpis ako aktualizacia. Odinstalujte aktualnu aplikaciu a potom nainstalujte novu verziu.',
+          'Nainštalovaná aplikácia má iný podpis ako aktualizácia. Odinštalujte aktuálnu aplikáciu a potom nainštalujte novú verziu.',
       'allow_install_unknown_apps':
-          'V nastaveniach Androidu povolte instalacie z tejto aplikacie a vratte sa spat.',
-      'speech_recognition_error': 'Chyba rozpoznavania reci: {{error}}',
+          'V nastaveniach Androidu povoľte inštalácie z tejto aplikácie a vráťte sa späť.',
+      'speech_recognition_error': 'Chyba rozpoznávania reči: {{error}}',
       'speech_unavailable':
-          'Rozpoznavanie reci na tomto zariadeni nie je dostupne.',
+          'Rozpoznávanie reči na tomto zariadení nie je dostupné.',
       'speech_input_toggle_label': 'Vstup hlasom',
-      'speech_input_enabled': 'Vstup hlasom zapnuty',
-      'speech_input_disabled': 'Vstup hlasom vypnuty',
+      'speech_input_enabled': 'Vstup hlasom zapnutý',
+      'speech_input_disabled': 'Vstup hlasom vypnutý',
       'speech_input_disabled_message':
-          'Vstup hlasom je vypnuty. Zapnite ho tlacidlom Vstup hlasom.',
-      'speaker_output': 'Hlasovy vystup asistenta',
+          'Vstup hlasom je vypnutý. Zapnite ho tlačidlom Vstup hlasom.',
+      'speaker_output': 'Hlasový výstup asistenta',
       'speaker_voice_label': 'Hlas asistenta',
-      'speaker_voice_unavailable': 'Pre zvoleny jazyk nie je dostupny hlas.',
-      'test_speaker_voice': 'Vyskusat hlas',
+      'speaker_voice_unavailable': 'Pre zvolený jazyk nie je dostupný hlas.',
+      'test_speaker_voice': 'Vyskúšať hlas',
       'speaker_test_sample':
-          'Dobry den, som Jurisdicta a toto je ukazka hlasu.',
-      'no_camera_available': 'Na tomto zariadeni nie je dostupna kamera.',
-      'document_added': 'Dokument bol pridany z kamery.',
+          'Dobrý deň, som Jurisdicta a toto je ukážka hlasu.',
+      'no_camera_available': 'Na tomto zariadení nie je dostupná kamera.',
+      'document_added': 'Dokument bol pridaný z kamery.',
       'create_or_select_case':
-          'Pred odoslanim spravy vytvorte alebo vyberte pripad.',
+          'Pred odoslaním správy vytvorte alebo vyberte prípad.',
       'create_or_select_case_message':
-          'Pred odoslanim spravy vytvorte alebo vyberte pripad. Mozete povedat naprklad: Vytvor mi novy case s nazvom splnomocnenie.',
+          'Pred odoslaním správy vytvorte alebo vyberte prípad. Môžete povedať napríklad: Vytvor mi nový case s názvom splnomocnenie.',
       'failed_to_reach_api':
-          'Nepodarilo sa spojit s API na adrese {{url}}: {{error}}',
-      'api_health_failed': 'API hlasi chybu: {{error}}',
+          'Nepodarilo sa spojiť s API na adrese {{url}}: {{error}}',
+      'api_health_failed': 'API hlási chybu: {{error}}',
       'failed_to_reach_api_with_correlation':
-          'Nepodarilo sa spojit s API na adrese {{url}}: {{error}} (ID: {{id}})',
+          'Nepodarilo sa spojiť s API na adrese {{url}}: {{error}} (ID: {{id}})',
       'checking_api': 'Kontrolujem API...',
-      'api_unavailable_title': 'API nie je dostupne',
-      'api_retry_in': 'Dalsi pokus o {{seconds}} s',
-      'retry_now': 'Skusit znova',
+      'api_unavailable_title': 'API nie je dostupné',
+      'api_retry_in': 'Ďalší pokus o {{seconds}} s',
+      'retry_now': 'Skúsiť znova',
       'request_id_label': 'Correlation ID: {{id}}',
       'show_request_id': 'ID',
-      'copy_request_id': 'Kopirovat correlation ID',
-      'request_id_copied': 'Correlation ID bolo skopirovane: {{id}}',
+      'copy_request_id': 'Kopírovať correlation ID',
+      'request_id_copied': 'Correlation ID bolo skopírované: {{id}}',
       'pdf_not_ready':
-          'PDF este nie je pripravene. Najprv dokoncite AI diskusiu.',
-      'pdf_saved_to': 'PDF ulozene do {{path}}',
-      'pdf_download_started': 'Stahovanie PDF spustene: {{filename}}',
-      'pdf_download_failed': 'Stahovanie PDF zlyhalo: {{error}}',
+          'PDF ešte nie je pripravené. Najprv dokončite AI diskusiu.',
+      'pdf_saved_to': 'PDF uložené do {{path}}',
+      'pdf_download_started': 'Sťahovanie PDF spustené: {{filename}}',
+      'pdf_download_failed': 'Sťahovanie PDF zlyhalo: {{error}}',
       'document_pdf_offer':
-          'Navrh dokumentu som do chatu nezobrazila. Chcete ho vidiet vo formate PDF? Pouzite tlacidlo PDF dokument.',
-      'open_saved_file_failed': 'Subor sa nepodarilo otvorit.',
-      'failed_to_load_cases': 'Nepodarilo sa nacitat pripady: {{error}}',
+          'Návrh dokumentu som do chatu nezobrazila. Chcete ho vidieť vo formáte PDF? Použite tlačidlo PDF dokument.',
+      'open_saved_file_failed': 'Súbor sa nepodarilo otvoriť.',
+      'failed_to_load_cases': 'Nepodarilo sa načítať prípady: {{error}}',
       'failed_to_load_case_history':
-          'Nepodarilo sa nacitat historiu pripadu: {{error}}',
+          'Nepodarilo sa načítať históriu prípadu: {{error}}',
       'maximum_cases':
-          'Maximum je 5 pripadov. Najprv odstran existujuci pripad.',
-      'create_case': 'Vytvorit pripad',
-      'delete_case': 'Odstranit pripad',
-      'case_name': 'Nazov pripadu',
-      'cancel': 'Zrusit',
-      'create': 'Vytvorit',
-      'case_created': 'Pripad bol vytvoreny.',
-      'case_voice_name_prompt': 'Povedzte prosim nazov noveho pripadu.',
-      'case_voice_created': 'Vytvorila som novy pripad {{name}}.',
+          'Maximum je 5 prípadov. Najprv odstráň existujúci prípad.',
+      'create_case': 'Vytvoriť prípad',
+      'delete_case': 'Odstrániť prípad',
+      'case_name': 'Názov prípadu',
+      'cancel': 'Zrušiť',
+      'create': 'Vytvoriť',
+      'case_created': 'Prípad bol vytvorený.',
+      'case_voice_name_prompt': 'Povedzte prosím názov nového prípadu.',
+      'case_voice_created': 'Vytvorila som nový prípad {{name}}.',
       'case_voice_created_continue':
-          'Vytvorila som novy pripad {{name}}. Prosim, pokracujte svojou otazkou alebo nahrajte dokumenty.',
+          'Vytvorila som nový prípad {{name}}. Prosím, pokračujte svojou otázkou alebo nahrajte dokumenty.',
       'case_auto_created':
-          'Automaticky som vytvorila novy pripad {{name}} pre tuto diskusiu.',
+          'Automaticky som vytvorila nový prípad {{name}} pre túto diskusiu.',
       'case_voice_name_retry':
-          'Nezachytila som nazov pripadu dostatocne presne. Povedzte prosim nazov noveho pripadu.',
-      'rename_case': 'Premenovat pripad',
-      'save': 'Ulozit',
-      'rename_case_failed': 'Premenovanie pripadu zlyhalo: {{error}}',
-      'case_deleted': 'Pripad bol odstraneny.',
-      'delete_case_failed': 'Odstranenie pripadu zlyhalo: {{error}}',
-      'select_case': 'Vyberte pripad',
-      'case_history': 'Historia pripadu',
-      'case_documents': 'Dokumenty pripadu',
-      'show_next_5_messages': 'Zobrazit dalsich 5 sprav',
-      'download_case_document': 'Stiahnut {{filename}}',
+          'Nezachytila som názov prípadu dostatočne presne. Povedzte prosím názov nového prípadu.',
+      'rename_case': 'Premenovať prípad',
+      'save': 'Uložiť',
+      'rename_case_failed': 'Premenovanie prípadu zlyhalo: {{error}}',
+      'case_deleted': 'Prípad bol odstránený.',
+      'delete_case_failed': 'Odstránenie prípadu zlyhalo: {{error}}',
+      'select_case': 'Vyberte prípad',
+      'case_history': 'História prípadu',
+      'case_documents': 'Dokumenty prípadu',
+      'show_next_5_messages': 'Zobraziť ďalších 5 správ',
+      'download_case_document': 'Stiahnuť {{filename}}',
       'case_document_download_failed':
-          'Stahovanie dokumentu zlyhalo: {{error}}',
-      'attached_document': 'Prilozeny dokument: {{path}}',
+          'Sťahovanie dokumentu zlyhalo: {{error}}',
+      'attached_document': 'Priložený dokument: {{path}}',
       'clear': 'VYMAZAT',
       'you': 'Vy',
       'assistant': 'Asistent',
       'document_label': 'Dokument: {{path}}',
       'language_country': 'Jazyk a krajina',
-      'local_mode': 'Lokalny rezim',
-      'real_agent': 'Realny agent',
-      'ai_user_simulator_agent': 'AI simulator pouzivatela',
+      'local_mode': 'Lokálny režim',
+      'real_agent': 'Reálny agent',
+      'ai_user_simulator_agent': 'AI simulátor používateľa',
       'summary_pdf': 'PDF zhrnutie',
       'document_pdf': 'PDF dokument',
       'export_documents': 'Dokumenty',
-      'upload_documents': 'Nahrat dokumenty',
-      'case_input_discussion': 'Popiste pripad pre spustenie diskusie...',
-      'case_input_question': 'Polozte pravnu otazku...',
-      'stop_speech_input': 'Zastavit hlasovy vstup',
-      'speech_input': 'Pridat otazku alebo odpoved hlasom',
-      'start_ai_discussion': 'Spustit AI diskusiu',
-      'send_to_api': 'Odoslat do API',
-      'capture_document': 'Zachytit dokument',
-      'use_photo': 'Pouzit fotku',
+      'upload_documents': 'Nahrať dokumenty',
+      'case_input_discussion': 'Popíšte prípad pre spustenie diskusie...',
+      'case_input_question': 'Položte právnu otázku...',
+      'stop_speech_input': 'Zastaviť hlasový vstup',
+      'speech_input': 'Pridať otázku alebo odpoveď hlasom',
+      'start_ai_discussion': 'Spustiť AI diskusiu',
+      'send_to_api': 'Odoslať do API',
+      'capture_document': 'Zachytiť dokument',
+      'use_photo': 'Použiť fotku',
       'camera_unavailable':
-          'Kameru sa nepodarilo inicializovat. Skuste znova alebo pouzite ine zariadenie.',
+          'Kameru sa nepodarilo inicializovať. Skúste znova alebo použite iné zariadenie.',
       'camera_busy':
-          'Kamera je obsadena alebo nedostupna. Zatvorte ine aplikacie a skuste znova.',
+          'Kamera je obsadená alebo nedostupná. Zatvorte iné aplikácie a skúste znova.',
       'camera_access_denied':
-          'Pristup ku kamere bol zamietnuty. Povolte kameru v prehliadaci a skuste znova.',
+          'Prístup ku kamere bol zamietnutý. Povoľte kameru v prehliadači a skúste znova.',
       'camera_error_with_reason':
-          'Kameru sa nepodarilo inicializovat. {{reason}}',
+          'Kameru sa nepodarilo inicializovať. {{reason}}',
       'camera_capture_failed':
-          'Obrazok sa nepodarilo zachytit. Skuste znova alebo pouzite ine zariadenie.',
+          'Obrázok sa nepodarilo zachytiť. Skúste znova alebo použite iné zariadenie.',
       'locale_SK': 'Slovensko (SK)',
-      'locale_CZ': 'Cesko (CS)',
+      'locale_CZ': 'Česko (CS)',
       'locale_DE': 'Nemecko (DE)',
-      'locale_US': 'Spojene staty (EN)',
+      'locale_US': 'Spojené štáty (EN)',
     },
     'EN': <String, String>{
       'auth_sign_in_tab': 'Sign in',
@@ -992,15 +990,16 @@ bool _looksLikeGeneratedDocumentDraft(String content) {
     'document',
   ].any(lowered.contains);
   final hasStructuredSections = <String>[
-    '1.',
-    '2.',
-    'i.',
-    'ii.',
-    'clanok',
-    'article',
-    'section',
-    'abschnitt',
-  ].where(lowered.contains).length >= 2;
+        '1.',
+        '2.',
+        'i.',
+        'ii.',
+        'clanok',
+        'article',
+        'section',
+        'abschnitt',
+      ].where(lowered.contains).length >=
+      2;
   return trimmed.length >= 350 && (hasDocumentKeyword || hasStructuredSections);
 }
 
@@ -3387,9 +3386,12 @@ class _ChatHomePageState extends State<ChatHomePage>
   String? _pendingUpdateInstallPath;
   String? _pendingUpdateVersion;
   Timer? _updateCheckTimer;
-  Timer? _speechAutoSendTimer;
   String? _lastDictatedSpeechDraft;
+  String? _lastFinalSpeechResult;
   String? _lastHandledSpeechText;
+  Completer<void>? _speechStopCompleter;
+  bool _submitSpeechOnStop = true;
+  bool _processSpeechOnStop = true;
   bool _updateCheckInProgress = false;
 
   bool get _showLocalResponderSwitch {
@@ -4093,7 +4095,6 @@ class _ChatHomePageState extends State<ChatHomePage>
         _isSending) {
       return;
     }
-    _speechAutoSendTimer?.cancel();
     if (!_awaitingSpokenName && !_awaitingSpokenCaseTitle) {
       _inputController.clear();
     }
@@ -4137,12 +4138,14 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
   }
 
-  void _onSpeechResult(SpeechRecognitionResult result) {
+  void _onSpeechResult(JurisdictaSpeechRecognitionResult result) {
     if (!mounted) {
       return;
     }
-    _speechAutoSendTimer?.cancel();
     final recognizedText = result.recognizedWords.trim();
+    if (result.finalResult && recognizedText.isNotEmpty) {
+      _lastFinalSpeechResult = recognizedText;
+    }
     if (recognizedText.isNotEmpty &&
         !isSpokenSendCommand(recognizedText) &&
         parseSpokenCaseCreationCommand(recognizedText) == null) {
@@ -4157,11 +4160,6 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!result.finalResult) {
       return;
     }
-    if (_awaitingSpokenName) {
-      unawaited(_handleCompletedSpeechInput(result.recognizedWords));
-      return;
-    }
-    unawaited(_handleCompletedSpeechInput(result.recognizedWords));
   }
 
   void _onSpeechStatus(String status) {
@@ -4179,14 +4177,23 @@ class _ChatHomePageState extends State<ChatHomePage>
       ),
     );
     if (!isListening) {
-      final spokenText = _inputController.text.trim();
-      if (spokenText.isNotEmpty) {
-        unawaited(_handleCompletedSpeechInput(spokenText));
+      final shouldProcess = _processSpeechOnStop;
+      final shouldSubmit = _submitSpeechOnStop;
+      _processSpeechOnStop = true;
+      _submitSpeechOnStop = true;
+      _speechStopCompleter?.complete();
+      _speechStopCompleter = null;
+      if (shouldProcess) {
+        unawaited(
+          _handleSpeechStopped(
+            submitAfterStop: shouldSubmit,
+          ),
+        );
       }
     }
   }
 
-  void _onSpeechError(SpeechRecognitionError error) {
+  void _onSpeechError(JurisdictaSpeechRecognitionError error) {
     if (!mounted) {
       return;
     }
@@ -4204,6 +4211,63 @@ class _ChatHomePageState extends State<ChatHomePage>
         <String, Object?>{'permanent': error.permanent},
       ),
     );
+    _speechStopCompleter?.complete();
+    _speechStopCompleter = null;
+  }
+
+  Future<void> _handleSpeechStopped({
+    required bool submitAfterStop,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (!mounted) {
+      return;
+    }
+    final spokenText = _resolvedSpeechTextOnStop();
+    if (spokenText.isEmpty) {
+      return;
+    }
+    await _handleCompletedSpeechInput(
+      spokenText,
+      submitAfterRecognition: submitAfterStop,
+    );
+  }
+
+  String _resolvedSpeechTextOnStop() {
+    final current = _inputController.text.trim();
+    if (current.isNotEmpty) {
+      return current;
+    }
+    final finalResult = (_lastFinalSpeechResult ?? '').trim();
+    if (finalResult.isNotEmpty) {
+      return finalResult;
+    }
+    return (_lastDictatedSpeechDraft ?? '').trim();
+  }
+
+  Future<void> _stopSpeechListening({
+    required bool submitAfterStop,
+    bool processStoppedInput = true,
+  }) async {
+    _submitSpeechOnStop = submitAfterStop;
+    _processSpeechOnStop = processStoppedInput;
+    if (!_isListening) {
+      if (processStoppedInput) {
+        await _handleSpeechStopped(submitAfterStop: submitAfterStop);
+      }
+      return;
+    }
+    final completer = Completer<void>();
+    _speechStopCompleter = completer;
+    await _speechRecognizer.stop();
+    if (!completer.isCompleted) {
+      await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {},
+      );
+    }
   }
 
   Future<void> _storeSpokenName(String spokenText) async {
@@ -4304,7 +4368,10 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
   }
 
-  Future<void> _handleCompletedSpeechInput(String spokenText) async {
+  Future<void> _handleCompletedSpeechInput(
+    String spokenText, {
+    bool submitAfterRecognition = false,
+  }) async {
     final normalizedText = spokenText.trim();
     if (normalizedText.isEmpty || _lastHandledSpeechText == normalizedText) {
       return;
@@ -4330,9 +4397,8 @@ class _ChatHomePageState extends State<ChatHomePage>
         return;
       }
       _lastHandledSpeechText = normalizedText;
-      _speechAutoSendTimer?.cancel();
       if (_isListening) {
-        await _speechRecognizer.stop();
+        await _stopSpeechListening(submitAfterStop: false);
         if (!mounted) {
           return;
         }
@@ -4354,7 +4420,14 @@ class _ChatHomePageState extends State<ChatHomePage>
     final command = parseSpokenCaseCreationCommand(normalizedText);
     if (command == null) {
       _lastHandledSpeechText = normalizedText;
-      _scheduleSpeechAutoSend(normalizedText);
+      if (!submitAfterRecognition) {
+        return;
+      }
+      await widget.logger.info(
+        'Submitting speech-recognized message after speech stop',
+        <String, Object?>{'message_length': normalizedText.length},
+      );
+      await _sendMessage();
       return;
     }
 
@@ -4379,47 +4452,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     return draft;
   }
 
-  void _scheduleSpeechAutoSend(String spokenText) {
-    final snapshot = spokenText.trim();
-    if (snapshot.isEmpty) {
-      return;
-    }
-    _speechAutoSendTimer?.cancel();
-    _speechAutoSendTimer = Timer(_speechService.config.autoSendDelay, () {
-      unawaited(_autoSendSpeechMessage(snapshot));
-    });
-  }
-
-  Future<void> _autoSendSpeechMessage(String snapshot) async {
-    if (!mounted || _isSending) {
-      return;
-    }
-    final current = _inputController.text.trim();
-    if (current.isEmpty || current != snapshot) {
-      return;
-    }
-    if (_isListening) {
-      await _speechRecognizer.stop();
-      if (!mounted) {
-        return;
-      }
-    }
-    final refreshed = _inputController.text.trim();
-    if (refreshed.isEmpty || refreshed != snapshot || _isSending) {
-      return;
-    }
-    await widget.logger.info(
-      'Auto-sending speech-recognized message after delay',
-      <String, Object?>{
-        'message_length': refreshed.length,
-        'delay_ms': _speechService.config.autoSendDelay.inMilliseconds,
-      },
-    );
-    await _sendMessage();
-  }
-
   Future<void> _toggleSpeechInput() async {
-    _speechAutoSendTimer?.cancel();
     _lastHandledSpeechText = null;
     await _speaker.stop();
     if (!_speechEnabled) {
@@ -4431,7 +4464,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     if (_isListening) {
-      await _speechRecognizer.stop();
+      await _stopSpeechListening(submitAfterStop: true);
       return;
     }
     if (_awaitingSpokenName) {
@@ -4481,10 +4514,12 @@ class _ChatHomePageState extends State<ChatHomePage>
 
     final nextValue = !_speechInputEnabled;
     if (!nextValue && _isListening) {
-      await _speechRecognizer.stop();
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
     }
     if (!nextValue) {
-      _speechAutoSendTimer?.cancel();
       _lastHandledSpeechText = null;
     }
 
@@ -4541,8 +4576,9 @@ class _ChatHomePageState extends State<ChatHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _updateCheckTimer?.cancel();
-    _speechAutoSendTimer?.cancel();
     unawaited(_speaker.stop());
+    _submitSpeechOnStop = false;
+    _processSpeechOnStop = false;
     _speechRecognizer.stop();
     _inputController.dispose();
     _messagesScrollController.dispose();
@@ -4610,6 +4646,10 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _sendMessage() async {
+    if (_isListening) {
+      await _stopSpeechListening(submitAfterStop: true);
+      return;
+    }
     final text = _inputController.text.trim();
     if (text.isEmpty || _isSending) {
       return;
@@ -4995,10 +5035,14 @@ class _ChatHomePageState extends State<ChatHomePage>
 
   Future<void> _startSpeechListening() async {
     _lastHandledSpeechText = null;
+    _lastFinalSpeechResult = null;
+    _submitSpeechOnStop = true;
+    _processSpeechOnStop = true;
     await _speechRecognizer.listen(
       onResult: _onSpeechResult,
       partialResults: true,
       localeId: _localeIdForSpeech(_selectedLocale),
+      pauseFor: _speechService.config.pauseFor,
       listenMode: ListenMode.dictation,
     );
   }
@@ -5009,7 +5053,10 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     if (_isListening) {
-      await _speechRecognizer.stop();
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
     }
     if (!mounted) {
       return;

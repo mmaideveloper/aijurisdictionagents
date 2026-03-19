@@ -39,7 +39,8 @@ bool isSpokenSendCommand(String spokenText) {
   if (filtered.isEmpty) {
     return false;
   }
-  return _sendCommandPatterns.any((pattern) => _matchesExactPattern(filtered, pattern));
+  return _sendCommandPatterns
+      .any((pattern) => _matchesExactPattern(filtered, pattern));
 }
 
 const String _fallbackLanguageCode = 'SK';
@@ -72,7 +73,7 @@ const List<List<String>> _sendCommandPatterns = <List<String>>[
 
 const Map<String, String> _fallbackGeneratedCaseTitleByLanguage =
     <String, String>{
-  'SK': 'Novy pripad',
+  'SK': 'Nový prípad',
   'EN': 'New case',
   'GE': 'Neuer Fall',
 };
@@ -157,20 +158,20 @@ String generateCaseTitleFromDiscussion(
   final selectedTokens = meaningfulTokens.isNotEmpty
       ? meaningfulTokens
       : tokens
-            .map(_sanitizeCaseTitleToken)
-            .where((token) {
-              if (token.isEmpty) {
-                return false;
-              }
-              final normalized = _normalizeSpeechCommandToken(token);
-              if (_genericCaseTitleStopwords.contains(normalized)) {
-                return false;
-              }
-              return normalized.length > 2 ||
-                  RegExp(r'^\d+$').hasMatch(normalized);
-            })
-            .take(4)
-            .toList(growable: false);
+          .map(_sanitizeCaseTitleToken)
+          .where((token) {
+            if (token.isEmpty) {
+              return false;
+            }
+            final normalized = _normalizeSpeechCommandToken(token);
+            if (_genericCaseTitleStopwords.contains(normalized)) {
+              return false;
+            }
+            return normalized.length > 2 ||
+                RegExp(r'^\d+$').hasMatch(normalized);
+          })
+          .take(4)
+          .toList(growable: false);
 
   if (selectedTokens.isEmpty) {
     return _fallbackGeneratedCaseTitleByLanguage[normalizedLanguage] ??
@@ -187,7 +188,7 @@ String generateCaseTitleFromDiscussion(
 
 const Map<String, String> _welcomeMessagesByLanguage = <String, String>{
   'SK':
-      'Ahoj, som Jurisdicta. Pomozem vam s vasim pripadom. Popiste svoj problem a nahrajte relevantnu dokumentaciu.',
+      'Ahoj, som Jurisdicta. Pomôžem vám s vaším prípadom. Popíšte svoj problém a nahrajte relevantnú dokumentáciu.',
   'EN':
       'Hello, I am Jurisdicta. I can help you with your case. Please describe your problem and upload relevant documentation.',
   'GE':
@@ -196,7 +197,7 @@ const Map<String, String> _welcomeMessagesByLanguage = <String, String>{
 
 const Map<String, String> _namedWelcomeMessagesByLanguage = <String, String>{
   'SK':
-      'Ahoj, {{name}}, som Jurisdicta. Pomozem vam s vasim pripadom. Popiste svoj problem a nahrajte relevantnu dokumentaciu.',
+      'Ahoj, {{name}}, som Jurisdicta. Pomôžem vám s vaším prípadom. Popíšte svoj problém a nahrajte relevantnú dokumentáciu.',
   'EN':
       'Hello, {{name}}, I am Jurisdicta. I can help you with your case. Please describe your problem and upload relevant documentation.',
   'GE':
@@ -205,7 +206,7 @@ const Map<String, String> _namedWelcomeMessagesByLanguage = <String, String>{
 
 const Map<String, String> _namePromptMessagesByLanguage = <String, String>{
   'SK':
-      'Ahoj, som Jurisdicta. Pred spustenim hlasoveho toku mi prosim povedzte, ako vas mam oslovovat.',
+      'Ahoj, som Jurisdicta. Pred spustením hlasového toku mi prosím povedzte, ako vás mám oslovovať.',
   'EN':
       'Hello, I am Jurisdicta. Before we start the speech flow, please tell me what I should call you.',
   'GE':
@@ -214,7 +215,7 @@ const Map<String, String> _namePromptMessagesByLanguage = <String, String>{
 
 const Map<String, String> _nameSavedMessagesByLanguage = <String, String>{
   'SK':
-      'Tesim ma, {{name}}. Vase meno som ulozila do profilu. Teraz mozete nadiktovat svoju otazku.',
+      'Teší ma, {{name}}. Vaše meno som uložila do profilu. Teraz môžete nadiktovať svoju otázku.',
   'EN':
       'Nice to meet you, {{name}}. I saved your name to your profile. You can dictate your question now.',
   'GE':
@@ -223,7 +224,7 @@ const Map<String, String> _nameSavedMessagesByLanguage = <String, String>{
 
 const Map<String, String> _nameRetryMessagesByLanguage = <String, String>{
   'SK':
-      'Nezachytila som meno dostatocne presne. Prosim, povedzte iba svoje meno alebo meno a priezvisko.',
+      'Nezachytila som meno dostatočne presne. Prosím, povedzte iba svoje meno alebo meno a priezvisko.',
   'EN':
       'I did not catch the name clearly enough. Please say only your first name or your first and last name.',
   'GE':
@@ -231,7 +232,7 @@ const Map<String, String> _nameRetryMessagesByLanguage = <String, String>{
 };
 
 const Map<String, String> _inputReadyMessagesByLanguage = <String, String>{
-  'SK': 'Ahoj{{name_part}}, pocuvam vas.',
+  'SK': 'Ahoj{{name_part}}, počúvam vás.',
   'EN': 'Hello{{name_part}}, I am listening.',
   'GE': 'Hallo{{name_part}}, ich hoere zu.',
 };
