@@ -65,7 +65,7 @@ void main() {
     test('localizes the listening prompt for Slovak', () {
       expect(
         speechInputReadyMessage('SK', firstName: 'Martin'),
-        'Ahoj, Martin, pocuvam vas.',
+        'Ahoj, Martin, počúvam vás.',
       );
     });
   });
