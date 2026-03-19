@@ -5,6 +5,14 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'audio/azure_speech_speaker.dart';
 import 'audio/jurisdicta_speaker.dart';
 
+typedef JurisdictaSpeakerFactory = JurisdictaSpeaker Function();
+typedef AzureJurisdictaSpeakerFactory = JurisdictaSpeaker Function(
+  SpeechServiceConfig config,
+  JurisdictaSpeaker fallbackSpeaker,
+);
+typedef JurisdictaSpeechRecognizerFactory = JurisdictaSpeechRecognizer Function(
+    SpeechServiceConfig config);
+
 const String _speechModeDefine = String.fromEnvironment(
   'AIJ_SPEECH_MODE',
   defaultValue: 'local',
@@ -114,23 +122,44 @@ abstract class JurisdictaSpeechService {
 }
 
 class SpeechServiceFactory {
-  const SpeechServiceFactory();
+  const SpeechServiceFactory({
+    this.speakerFactory = createJurisdictaSpeaker,
+    this.azureSpeakerFactory = _defaultAzureSpeakerFactory,
+    this.recognizerFactory = _defaultSpeechRecognizerFactory,
+  });
+
+  final JurisdictaSpeakerFactory speakerFactory;
+  final AzureJurisdictaSpeakerFactory azureSpeakerFactory;
+  final JurisdictaSpeechRecognizerFactory recognizerFactory;
 
   JurisdictaSpeechService create({SpeechServiceConfig? config}) {
     final resolvedConfig = config ?? SpeechServiceConfig.fromEnvironment();
     switch (resolvedConfig.mode) {
       case SpeechMode.azure:
-        return AzureSpeechService(config: resolvedConfig);
+        return AzureSpeechService(
+          config: resolvedConfig,
+          recognizerFactory: recognizerFactory,
+          speakerFactory: speakerFactory,
+          azureSpeakerFactory: azureSpeakerFactory,
+        );
       case SpeechMode.local:
-        return LocalSpeechService(config: resolvedConfig);
+        return LocalSpeechService(
+          config: resolvedConfig,
+          recognizerFactory: recognizerFactory,
+          speakerFactory: speakerFactory,
+        );
     }
   }
 }
 
 class LocalSpeechService implements JurisdictaSpeechService {
-  LocalSpeechService({required this.config})
-    : speaker = createJurisdictaSpeaker(),
-      recognizer = PlatformSpeechRecognizer(config: config);
+  LocalSpeechService({
+    required this.config,
+    JurisdictaSpeakerFactory speakerFactory = createJurisdictaSpeaker,
+    JurisdictaSpeechRecognizerFactory recognizerFactory =
+        _defaultSpeechRecognizerFactory,
+  })  : speaker = speakerFactory(),
+        recognizer = recognizerFactory(config);
 
   @override
   final SpeechServiceConfig config;
@@ -149,17 +178,15 @@ class LocalSpeechService implements JurisdictaSpeechService {
 }
 
 class AzureSpeechService implements JurisdictaSpeechService {
-  AzureSpeechService({required this.config})
-    : recognizer = PlatformSpeechRecognizer(config: config),
-      speaker = AzureSpeechSpeaker(
-        config: AzureSpeechConfig(
-          key: config.azureKey ?? '',
-          region: config.azureRegion,
-          endpoint: config.azureEndpoint,
-        ),
-        fallbackSpeaker: createJurisdictaSpeaker(),
-      );
-
+  AzureSpeechService({
+    required this.config,
+    JurisdictaSpeechRecognizerFactory recognizerFactory =
+        _defaultSpeechRecognizerFactory,
+    JurisdictaSpeakerFactory speakerFactory = createJurisdictaSpeaker,
+    AzureJurisdictaSpeakerFactory azureSpeakerFactory =
+        _defaultAzureSpeakerFactory,
+  })  : recognizer = recognizerFactory(config),
+        speaker = azureSpeakerFactory(config, speakerFactory());
 
   @override
   final SpeechServiceConfig config;
@@ -218,4 +245,24 @@ class PlatformSpeechRecognizer implements JurisdictaSpeechRecognizer {
   Future<void> stop() {
     return _speechToText.stop();
   }
+}
+
+JurisdictaSpeechRecognizer _defaultSpeechRecognizerFactory(
+  SpeechServiceConfig config,
+) {
+  return PlatformSpeechRecognizer(config: config);
+}
+
+JurisdictaSpeaker _defaultAzureSpeakerFactory(
+  SpeechServiceConfig config,
+  JurisdictaSpeaker fallbackSpeaker,
+) {
+  return AzureSpeechSpeaker(
+    config: AzureSpeechConfig(
+      key: config.azureKey ?? '',
+      region: config.azureRegion,
+      endpoint: config.azureEndpoint,
+    ),
+    fallbackSpeaker: fallbackSpeaker,
+  );
 }
