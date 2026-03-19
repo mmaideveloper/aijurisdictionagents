@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'jurisdicta_speaker.dart';
@@ -24,25 +23,37 @@ class AzureSpeechConfig {
   }
 
   Uri get ttsUri {
-    final explicitEndpoint = endpoint?.trim();
-    if (explicitEndpoint != null && explicitEndpoint.isNotEmpty) {
-      return Uri.parse(explicitEndpoint);
-    }
-    final normalizedRegion = (region ?? '').trim();
-    return Uri.parse(
-      'https://$normalizedRegion.tts.speech.microsoft.com/cognitiveservices/v1',
-    );
+    return _baseEndpoint('cognitiveservices/v1');
   }
 
   Uri get voicesUri {
+    return _baseEndpoint('cognitiveservices/voices/list');
+  }
+
+  Uri _baseEndpoint(String pathSuffix) {
     final explicitEndpoint = endpoint?.trim();
     if (explicitEndpoint != null && explicitEndpoint.isNotEmpty) {
-      final base = Uri.parse(explicitEndpoint);
-      return base.replace(path: '/cognitiveservices/voices/list');
+      final parsed = Uri.parse(explicitEndpoint);
+      final normalizedPath = parsed.path.trim();
+      if (normalizedPath.isEmpty || normalizedPath == '/') {
+        return parsed.replace(path: '/$pathSuffix');
+      }
+      if (normalizedPath.endsWith('/$pathSuffix')) {
+        return parsed;
+      }
+      if (normalizedPath.endsWith('/cognitiveservices/v1') &&
+          pathSuffix == 'cognitiveservices/voices/list') {
+        return parsed.replace(path: '/cognitiveservices/voices/list');
+      }
+      return parsed.replace(
+        path: normalizedPath.startsWith('/')
+            ? normalizedPath
+            : '/$normalizedPath',
+      );
     }
     final normalizedRegion = (region ?? '').trim();
     return Uri.parse(
-      'https://$normalizedRegion.tts.speech.microsoft.com/cognitiveservices/voices/list',
+      'https://$normalizedRegion.tts.speech.microsoft.com/$pathSuffix',
     );
   }
 }
@@ -53,15 +64,15 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
     required JurisdictaSpeaker fallbackSpeaker,
     http.Client? httpClient,
     AudioPlayer? audioPlayer,
-  }) : _config = config,
-       _fallbackSpeaker = fallbackSpeaker,
-       _httpClient = httpClient ?? http.Client(),
-       _audioPlayer = audioPlayer ?? AudioPlayer();
+  })  : _config = config,
+        _fallbackSpeaker = fallbackSpeaker,
+        _httpClient = httpClient ?? http.Client(),
+        _audioPlayer = audioPlayer;
 
   final AzureSpeechConfig _config;
   final JurisdictaSpeaker _fallbackSpeaker;
   final http.Client _httpClient;
-  final AudioPlayer _audioPlayer;
+  AudioPlayer? _audioPlayer;
 
   bool _initialized = false;
   final Map<String, List<JurisdictaSpeakerVoice>> _voicesByLocale =
@@ -76,10 +87,10 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
       return true;
     }
     _initialized = true;
-    await _audioPlayer.setReleaseMode(ReleaseMode.stop);
-    if (!_config.isConfigured || kIsWeb) {
+    if (!_config.isConfigured) {
       return _fallbackSpeaker.initialize();
     }
+    await _player.setReleaseMode(ReleaseMode.stop);
     return true;
   }
 
@@ -92,7 +103,7 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
     if (cached != null && cached.isNotEmpty) {
       return cached;
     }
-    if (!_config.isConfigured || kIsWeb) {
+    if (!_config.isConfigured) {
       return _fallbackSpeaker.listVoices(languageCode: languageCode);
     }
 
@@ -104,27 +115,32 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
         },
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        return _fallbackSpeaker.listVoices(languageCode: languageCode);
+        return const <JurisdictaSpeakerVoice>[];
       }
       final payload = jsonDecode(response.body);
       if (payload is! List) {
-        return _fallbackSpeaker.listVoices(languageCode: languageCode);
+        return const <JurisdictaSpeakerVoice>[];
       }
       final voices = payload
           .whereType<Map<String, dynamic>>()
           .map(_voiceFromAzureJson)
           .whereType<JurisdictaSpeakerVoice>()
-          .where((voice) => _normalizeLocaleTag(voice.locale) == _normalizeLocaleTag(locale))
-          .toList(growable: false);
+          .where((voice) => _voiceMatchesLocale(voice, locale))
+          .toList(growable: false)
+        ..sort(
+          (left, right) => left.name.toLowerCase().compareTo(
+                right.name.toLowerCase(),
+              ),
+        );
       if (voices.isEmpty) {
-        return _fallbackSpeaker.listVoices(languageCode: languageCode);
+        return const <JurisdictaSpeakerVoice>[];
       }
       _voicesByLocale[locale] = voices;
       _selectedVoiceByLocale[locale] ??= voices.first;
       _selectedVoiceIdByLocale[locale] ??= voices.first.id;
       return voices;
     } catch (_) {
-      return _fallbackSpeaker.listVoices(languageCode: languageCode);
+      return const <JurisdictaSpeakerVoice>[];
     }
   }
 
@@ -134,7 +150,7 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
     required String? voiceId,
   }) async {
     final locale = _ttsLocale(languageCode);
-    if (!_config.isConfigured || kIsWeb) {
+    if (!_config.isConfigured) {
       return _fallbackSpeaker.selectVoice(
         languageCode: languageCode,
         voiceId: voiceId,
@@ -161,7 +177,7 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
   String? selectedVoiceIdFor({
     required String languageCode,
   }) {
-    if (!_config.isConfigured || kIsWeb) {
+    if (!_config.isConfigured) {
       return _fallbackSpeaker.selectedVoiceIdFor(languageCode: languageCode);
     }
     return _selectedVoiceIdByLocale[_ttsLocale(languageCode)];
@@ -176,16 +192,16 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
     if (message.isEmpty) {
       return false;
     }
-    if (!_config.isConfigured || kIsWeb) {
+    if (!_config.isConfigured) {
       return _fallbackSpeaker.speak(text: text, languageCode: languageCode);
     }
 
     final locale = _ttsLocale(languageCode);
     final voices = await listVoices(languageCode: languageCode);
-    final selectedVoice =
-        _selectedVoiceByLocale[locale] ?? (voices.isNotEmpty ? voices.first : null);
+    final selectedVoice = _selectedVoiceByLocale[locale] ??
+        (voices.isNotEmpty ? voices.first : null);
     if (selectedVoice == null) {
-      return _fallbackSpeaker.speak(text: text, languageCode: languageCode);
+      return false;
     }
 
     try {
@@ -204,30 +220,33 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
         ),
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        return _fallbackSpeaker.speak(text: text, languageCode: languageCode);
+        return false;
       }
-      await _audioPlayer.stop();
-      await _audioPlayer.play(BytesSource(response.bodyBytes));
-      await _audioPlayer.onPlayerComplete.first;
+      await _player.stop();
+      await _player.play(BytesSource(response.bodyBytes));
+      await _player.onPlayerComplete.first;
       return true;
     } catch (_) {
-      return _fallbackSpeaker.speak(text: text, languageCode: languageCode);
+      return false;
     }
   }
 
   @override
   Future<void> stop() async {
-    if (!_config.isConfigured || kIsWeb) {
+    if (!_config.isConfigured) {
       await _fallbackSpeaker.stop();
       return;
     }
-    await _audioPlayer.stop();
+    await _player.stop();
   }
 
   JurisdictaSpeakerVoice? _voiceFromAzureJson(Map<String, dynamic> raw) {
     final shortName = raw['ShortName']?.toString();
     final locale = raw['Locale']?.toString();
-    if (shortName == null || shortName.isEmpty || locale == null || locale.isEmpty) {
+    if (shortName == null ||
+        shortName.isEmpty ||
+        locale == null ||
+        locale.isEmpty) {
       return null;
     }
     final displayName = raw['DisplayName']?.toString() ?? shortName;
@@ -239,9 +258,28 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
         'shortName': shortName,
         'locale': locale,
         'name': displayName,
+        'secondaryLocales': _encodeSecondaryLocales(raw['SecondaryLocaleList']),
       },
     );
   }
+
+  bool _voiceMatchesLocale(JurisdictaSpeakerVoice voice, String locale) {
+    final normalizedLocale = _normalizeLocaleTag(locale);
+    final voiceLocale = _normalizeLocaleTag(voice.locale);
+    return voiceLocale == normalizedLocale;
+  }
+
+  String _encodeSecondaryLocales(dynamic rawValue) {
+    if (rawValue is! List) {
+      return '';
+    }
+    return rawValue
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .join(',');
+  }
+
+  AudioPlayer get _player => _audioPlayer ??= AudioPlayer();
 
   String _buildSsml({
     required String text,

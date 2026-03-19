@@ -23,6 +23,8 @@ description: Start and verify the local Flutter mobile app in this monorepo. Use
   `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -ConsoleWindow`
 - Background start on Chrome:
   `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background`
+- Background start on Chrome with Azure Speech defines from repo `.env`:
+  `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -ApiMode localApi -DatabaseOption postgres -StorageOption local -SpeechMode azure`
 - Background start without opening a browser tab:
   `.\skills\start-mobile-app\scripts\start_mobile_app.ps1 -Background -NoOpen`
 - Explicit local API mode:
@@ -49,6 +51,8 @@ If started with `-Background`, stop via:
 - Default Flutter device is `chrome`.
 - Default web URL is `http://127.0.0.1:7357`.
 - By default, the launcher opens the app URL in the browser after the web target becomes ready.
+- When repo `.env` exists, the launcher passes it through `--dart-define-from-file=..\.env`.
+- `-SpeechMode azure` adds `AIJ_SPEECH_MODE=azure` on top of the `.env` Dart defines.
 - Use `-ConsoleWindow` when you want live Flutter logs in a separate terminal window instead of background log files.
 - With `localApi`, `-ConsoleWindow` now also opens a visible API log tail window when the local API is already running in the background.
 - For `localApi`, default API URL is `http://127.0.0.1:8080`.
