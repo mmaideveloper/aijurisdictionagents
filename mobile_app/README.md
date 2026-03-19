@@ -270,6 +270,10 @@ Speech service unit tests now initialize `TestWidgetsFlutterBinding` before cons
 `FlutterTts`-backed services, which keeps the CI `flutter test` step stable after speech
 service factory coverage was added.
 
+Speech flow expectations now assert the actual localized Slovak prompt with diacritics
+(`Ahoj, Martin, počúvam vás.`), so the unit test matches the current UI copy used by
+the app.
+
 ## Snapshot
 
 Reference UI snapshot prepared for review of the mobile chat layout.
