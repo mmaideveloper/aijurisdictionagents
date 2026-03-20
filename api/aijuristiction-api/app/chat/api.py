@@ -88,25 +88,6 @@ def _persist_case_message_if_needed(*, session: Session, role: str, content: str
     store.add_case_message(case_id=case_id, role=role, content=content, agent_name=agent_name)
 
 
-def _persist_case_document_marker_if_needed(*, session: Session, content: str) -> None:
-    case_id = session.case_id
-    if case_id is None or not case_id.strip():
-        return
-    match = re.search(r"\[Attached local document path:\s*([^\]]+)\]", content, flags=re.IGNORECASE)
-    if not match:
-        return
-    path_value = match.group(1).strip()
-    if not path_value:
-        return
-    store = _get_store()
-    store.add_case_text_document(
-        case_id=case_id,
-        original_filename=Path(path_value).name or "attachment.txt",
-        content=f"Local path reference: {path_value}",
-        uploaded_by_user_id=str(session.user_id) if session.user_id else None,
-    )
-
-
 def _parse_case_history_entry(*, store: ApiDatabaseStore, communication: Any) -> tuple[MessageRole, str, str | None]:
     content = communication.summary
     if communication.transcript_uri:
@@ -129,6 +110,40 @@ def _parse_case_history_entry(*, store: ApiDatabaseStore, communication: Any) ->
         agent_name = suffix[:-1].strip() or None
         normalized = prefix.strip()
     return role, normalized, agent_name
+
+
+def _load_case_documents_for_llm(*, case_id: str) -> tuple[list[CoreDocument], list[str], list[str]]:
+    store = _get_store()
+    processed_documents: list[CoreDocument] = []
+    processed_names: list[str] = []
+    unprocessed_names: list[str] = []
+    contents_by_doc_id = {doc_id: (name, text) for doc_id, name, text, _vector in store.list_case_document_contents(case_id=case_id)}
+    for document in store.list_case_documents(case_id=case_id):
+        if document.kind != 'uploaded':
+            continue
+        if document.processing_status == 'processed' and document.doc_id in contents_by_doc_id:
+            name, text = contents_by_doc_id[document.doc_id]
+            processed_names.append(name)
+            processed_documents.append(CoreDocument(doc_id=document.doc_id, path=name, content=text))
+        else:
+            unprocessed_names.append(document.original_filename)
+    return processed_documents, processed_names, unprocessed_names
+
+
+def _prepend_document_status_note(*, reply: str, processed_names: list[str], unprocessed_names: list[str]) -> str:
+    if not processed_names and not unprocessed_names:
+        return reply
+    lines: list[str] = []
+    if processed_names:
+        lines.append('Processed documents available for search: ' + ', '.join(processed_names) + '.')
+    if unprocessed_names:
+        lines.append('Still processing: ' + ', '.join(unprocessed_names) + '.')
+    note = '\n'.join(lines).strip()
+    if not note:
+        return reply
+    if not reply.strip():
+        return note
+    return f"{note}\n\n{reply}"
 
 
 def _bootstrap_case_history_if_needed(*, session: Session) -> None:
@@ -205,8 +220,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         )
     )
     _persist_case_message_if_needed(session=session, role="user", content=content, agent_name="User")
-    _persist_case_document_marker_if_needed(session=session, content=content)
-
+    
     from aijurisdictionagents.agents import create_lawyer_agent
     from aijurisdictionagents.llm import get_llm_client
 
@@ -237,24 +251,43 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
             "- Include CASE_UPDATE_JSON after the user-facing content."
         )
 
+    case_documents: list[CoreDocument] = []
+    processed_names: list[str] = []
+    unprocessed_names: list[str] = []
+    if session.case_id:
+        case_documents, processed_names, unprocessed_names = _load_case_documents_for_llm(case_id=session.case_id)
+        if processed_names or unprocessed_names:
+            context_note = (
+                '\n\nCASE DOCUMENT STATUS:\n'
+                f"Processed documents: {', '.join(processed_names) if processed_names else 'none'}.\n"
+                f"Unprocessed documents: {', '.join(unprocessed_names) if unprocessed_names else 'none'}.\n"
+                'Use processed documents as case evidence and explicitly mention any unprocessed documents.'
+            )
+            prompt_override = f"{prompt_override}{context_note}"
+
     lawyer_message = lawyer.respond(
         conversation=conversation,
-        documents=[],
+        documents=case_documents,
         sources=[],
         system_prompt_override=prompt_override,
+    )
+    visible_lawyer_content = _prepend_document_status_note(
+        reply=lawyer_message.content,
+        processed_names=processed_names,
+        unprocessed_names=unprocessed_names,
     )
     persisted_lawyer = _repository.add_message(
         Message(
             session_id=session_id,
             role=MessageRole.ASSISTANT,
-            content=lawyer_message.content,
+            content=visible_lawyer_content,
             agent_name=lawyer_message.agent_name,
         )
     )
     _persist_case_message_if_needed(
         session=session,
         role="assistant",
-        content=lawyer_message.content,
+        content=visible_lawyer_content,
         agent_name=lawyer_message.agent_name,
     )
     _repository.set_result(
@@ -263,7 +296,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
             session_id=session_id,
             session=session,
             messages=_repository.list_messages(session_id),
-            lawyer_message=lawyer_message.content,
+            lawyer_message=visible_lawyer_content,
         ),
     )
 

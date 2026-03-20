@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -1064,6 +1066,9 @@ class CaseDocumentItem {
     required this.kind,
     required this.version,
     required this.originalFilename,
+    required this.processingStatus,
+    this.processingError,
+    this.processedAt,
     required this.createdAt,
   });
 
@@ -1071,7 +1076,12 @@ class CaseDocumentItem {
   final String kind;
   final int version;
   final String originalFilename;
+  final String processingStatus;
+  final String? processingError;
+  final String? processedAt;
   final String createdAt;
+
+  bool get isProcessed => processingStatus.toLowerCase() == 'processed';
 
   static CaseDocumentItem fromJson(Map<String, dynamic> json) {
     return CaseDocumentItem(
@@ -1079,7 +1089,29 @@ class CaseDocumentItem {
       kind: json['kind'] as String? ?? '',
       version: json['version'] as int? ?? 0,
       originalFilename: json['original_filename'] as String? ?? 'document',
+      processingStatus: json['processing_status'] as String? ?? 'uploaded',
+      processingError: json['processing_error'] as String?,
+      processedAt: json['processed_at'] as String?,
       createdAt: json['created_at'] as String? ?? '',
+    );
+  }
+}
+
+class CaseDocumentContext {
+  const CaseDocumentContext({
+    required this.processedDocuments,
+    required this.unprocessedDocuments,
+  });
+
+  final List<String> processedDocuments;
+  final List<String> unprocessedDocuments;
+
+  static CaseDocumentContext fromJson(Map<String, dynamic> json) {
+    final processed = (json['processed_documents'] as List<dynamic>? ?? const <dynamic>[]).whereType<String>().toList();
+    final unprocessed = (json['unprocessed_documents'] as List<dynamic>? ?? const <dynamic>[]).whereType<String>().toList();
+    return CaseDocumentContext(
+      processedDocuments: processed,
+      unprocessedDocuments: unprocessed,
     );
   }
 }
@@ -1879,6 +1911,58 @@ class ApiClient {
       bytes: response.bodyBytes,
       filename: filename,
       contentType: contentType,
+    );
+  }
+
+  Future<List<CaseDocumentItem>> uploadCaseDocuments({
+    required String caseId,
+    required String userId,
+    required List<PlatformFile> files,
+  }) async {
+    final uri = baseUri.resolve('/v1/cases/$caseId/documents?user_id=$userId');
+    final requestId = _generateRequestId();
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll(<String, String>{
+        'x-api-key': apiKey,
+        'x-correlation-id': _flowCorrelationId,
+        'x-request-id': requestId,
+      });
+    for (final file in files) {
+      final filename = file.name.trim().isEmpty ? 'document' : file.name;
+      if (file.bytes != null) {
+        request.files.add(http.MultipartFile.fromBytes('files', file.bytes!, filename: filename));
+      } else if (file.path != null && file.path!.isNotEmpty) {
+        request.files.add(await http.MultipartFile.fromPath('files', file.path!, filename: filename));
+      }
+    }
+    final streamed = await request.send();
+    _recordCorrelationId(streamed);
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = _extractErrorDetail(response);
+      throw Exception('Case document upload failed with status ${response.statusCode}: $detail');
+    }
+    final decoded = _decodeResponseBody(response, action: 'case_document_upload');
+    final rawUploaded = decoded['uploaded'] as List<dynamic>? ?? const <dynamic>[];
+    return rawUploaded
+        .whereType<Map>()
+        .map((value) => CaseDocumentItem.fromJson(Map<String, dynamic>.from(value)))
+        .toList();
+  }
+
+  Future<CaseDocumentContext> loadCaseDocumentContext({
+    required String caseId,
+    required String userId,
+  }) async {
+    final response = await _get(
+      path: '/v1/cases/$caseId/documents/context?user_id=$userId',
+      action: 'case_document_context',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Case document context failed with status ${response.statusCode}.');
+    }
+    return CaseDocumentContext.fromJson(
+      _decodeResponseBody(response, action: 'case_document_context'),
     );
   }
 
@@ -4613,6 +4697,10 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _captureDocument() async {
+    if (_selectedCase == null) {
+      _showSnackbar(_strings.t('select_case'));
+      return;
+    }
     if (widget.cameras.isEmpty) {
       await widget.logger
           .info('Document capture requested with no available camera');
@@ -4629,20 +4717,75 @@ class _ChatHomePageState extends State<ChatHomePage>
         ),
       ),
     );
-    if (!mounted) {
+    if (!mounted || path == null || path.isEmpty) {
       return;
     }
+    await _uploadPlatformFiles(<PlatformFile>[
+      PlatformFile(name: path.split(Platform.pathSeparator).last, path: path, size: await File(path).length()),
+    ]);
+  }
 
-    if (path != null) {
-      setState(() {
-        _documentPath = path;
-      });
-      await widget.logger.info(
-        'Document captured',
-        <String, Object?>{'document_path': path},
-      );
-      _showSnackbar(_strings.t('document_added'));
+  Future<void> _pickDocuments() async {
+    if (_selectedCase == null) {
+      _showSnackbar(_strings.t('select_case'));
+      return;
     }
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+    await _uploadPlatformFiles(result.files);
+  }
+
+  Future<void> _uploadPlatformFiles(List<PlatformFile> files) async {
+    final selected = _selectedCase;
+    if (selected == null || files.isEmpty) {
+      return;
+    }
+    try {
+      final uploaded = await _apiClient.uploadCaseDocuments(
+        caseId: selected.caseId,
+        userId: _signedInUser.userId,
+        files: files,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _caseDocuments = <CaseDocumentItem>[...uploaded, ..._caseDocuments]
+            .fold<List<CaseDocumentItem>>(<CaseDocumentItem>[], (items, document) {
+          if (!items.any((existing) => existing.docId == document.docId)) {
+            items.add(document);
+          }
+          return items;
+        });
+      });
+      _showSnackbar('${uploaded.length} document(s) uploaded.');
+      await _refreshDocumentContext();
+    } catch (error) {
+      _showSnackbar('$error');
+    }
+  }
+
+  Future<void> _refreshDocumentContext() async {
+    final selected = _selectedCase;
+    if (selected == null) {
+      return;
+    }
+    try {
+      final context = await _apiClient.loadCaseDocumentContext(
+        caseId: selected.caseId,
+        userId: _signedInUser.userId,
+      );
+      if (!mounted) {
+        return;
+      }
+      final processed = context.processedDocuments.join(', ');
+      final pending = context.unprocessedDocuments.join(', ');
+      if (pending.isNotEmpty) {
+        _showSnackbar('Processed: ${processed.isEmpty ? 'none' : processed}; pending: $pending');
+      }
+    } catch (_) {}
   }
 
   Future<void> _sendMessage() async {
@@ -5589,7 +5732,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                                         ),
                                       )
                                     : const Icon(Icons.download_outlined),
-                                label: Text(document.originalFilename),
+                                label: Text('${document.originalFilename} (${document.processingStatus})'),
                               ),
                             )
                             .toList(),
@@ -5644,7 +5787,12 @@ class _ChatHomePageState extends State<ChatHomePage>
                     children: [
                       IconButton(
                         onPressed: _captureDocument,
-                        icon: const Icon(Icons.document_scanner),
+                        icon: const Icon(Icons.camera_alt_outlined),
+                        tooltip: strings.t('capture_document'),
+                      ),
+                      IconButton(
+                        onPressed: _pickDocuments,
+                        icon: const Icon(Icons.upload_file),
                         tooltip: strings.t('upload_documents'),
                       ),
                       const SizedBox(width: 8),

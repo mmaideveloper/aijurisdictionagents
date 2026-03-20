@@ -58,6 +58,7 @@ class SubscriptionPlanResponse(BaseModel):
     subscription_type: str
     price_eur: int
     max_cases: int
+    max_documents_per_case: int
     case_ttl_days: int | None = None
 
 
@@ -339,6 +340,7 @@ def _to_plan_response(plan: SubscriptionPlan) -> SubscriptionPlanResponse:
         subscription_type=plan.subscription_type,
         price_eur=plan.price_eur,
         max_cases=plan.max_cases,
+        max_documents_per_case=plan.max_documents_per_case,
         case_ttl_days=plan.case_ttl_days,
     )
 
