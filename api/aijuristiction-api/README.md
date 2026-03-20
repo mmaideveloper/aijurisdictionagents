@@ -1,5 +1,13 @@
 # aijuristiction-api
 
+## Testing
+
+Run the API unit tests from the repo-managed Python environment:
+
+```powershell
+..\..\.conda\python.exe -m pytest tests
+```
+
 Dedicated API service project for exposing `aijurisdictionagents` to frontend clients.
 
 ## Azure infrastructure

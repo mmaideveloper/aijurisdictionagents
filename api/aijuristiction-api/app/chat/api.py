@@ -117,8 +117,17 @@ def _load_case_documents_for_llm(*, case_id: str) -> tuple[list[CoreDocument], l
     processed_documents: list[CoreDocument] = []
     processed_names: list[str] = []
     unprocessed_names: list[str] = []
-    contents_by_doc_id = {doc_id: (name, text) for doc_id, name, text, _vector in store.list_case_document_contents(case_id=case_id)}
-    for document in store.list_case_documents(case_id=case_id):
+
+    list_case_documents = getattr(store, "list_case_documents", None)
+    list_case_document_contents = getattr(store, "list_case_document_contents", None)
+    if not callable(list_case_documents) or not callable(list_case_document_contents):
+        return processed_documents, processed_names, unprocessed_names
+
+    contents_by_doc_id = {
+        doc_id: (name, text)
+        for doc_id, name, text, _vector in list_case_document_contents(case_id=case_id)
+    }
+    for document in list_case_documents(case_id=case_id):
         if document.kind != 'uploaded':
             continue
         if document.processing_status == 'processed' and document.doc_id in contents_by_doc_id:
