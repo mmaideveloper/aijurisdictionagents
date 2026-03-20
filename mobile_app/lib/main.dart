@@ -1130,8 +1130,14 @@ class CaseDocumentContext {
   final List<String> unprocessedDocuments;
 
   static CaseDocumentContext fromJson(Map<String, dynamic> json) {
-    final processed = (json['processed_documents'] as List<dynamic>? ?? const <dynamic>[]).whereType<String>().toList();
-    final unprocessed = (json['unprocessed_documents'] as List<dynamic>? ?? const <dynamic>[]).whereType<String>().toList();
+    final processed =
+        (json['processed_documents'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<String>()
+            .toList();
+    final unprocessed =
+        (json['unprocessed_documents'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<String>()
+            .toList();
     return CaseDocumentContext(
       processedDocuments: processed,
       unprocessedDocuments: unprocessed,
@@ -1371,11 +1377,6 @@ class ApiClient {
           'Version check failed with status ${response.statusCode}.');
     }
     final payload = _decodeResponseBody(response, action: 'version_check');
-    final versionValue = payload['mobile_app_version'] as String? ?? '';
-    final latestVersion = SemanticVersion.tryParse(versionValue);
-    if (latestVersion == null || latestVersion.compareTo(installed) <= 0) {
-      return null;
-    }
     final releaseUrl =
         (payload['mobile_app_release_url'] as String? ?? '').trim();
     final rawApkDownloadUrl =
@@ -1384,11 +1385,76 @@ class ApiClient {
         rawApkDownloadUrl == null || rawApkDownloadUrl.isEmpty
             ? null
             : rawApkDownloadUrl;
+    final githubRelease = await _fetchLatestGithubReleaseInfo(
+      releaseUrl: releaseUrl,
+    );
+    if (githubRelease != null) {
+      if (githubRelease.version.compareTo(installed) <= 0) {
+        return null;
+      }
+      return MobileAppUpdateInfo(
+        version: githubRelease.version,
+        releaseUrl: githubRelease.releaseUrl,
+        apkDownloadUrl: githubRelease.apkDownloadUrl,
+      );
+    }
+    final versionValue = payload['mobile_app_version'] as String? ?? '';
+    final latestVersion = SemanticVersion.tryParse(versionValue);
+    if (latestVersion == null || latestVersion.compareTo(installed) <= 0) {
+      return null;
+    }
     return MobileAppUpdateInfo(
       version: latestVersion,
       releaseUrl: releaseUrl,
       apkDownloadUrl: apkDownloadUrl,
     );
+  }
+
+  Future<GithubReleaseInfo?> _fetchLatestGithubReleaseInfo({
+    required String releaseUrl,
+  }) async {
+    final githubApiUri = githubLatestReleaseApiUriFromReleaseUrl(releaseUrl);
+    if (githubApiUri == null) {
+      return null;
+    }
+
+    await logger.info(
+      'GitHub release check request',
+      <String, Object?>{
+        'url': githubApiUri.toString(),
+      },
+    );
+    try {
+      final response = await http.get(
+        githubApiUri,
+        headers: const <String, String>{
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'aijurisdiction-mobile',
+        },
+      );
+      await logger.info(
+        'GitHub release check response',
+        <String, Object?>{
+          'status_code': response.statusCode,
+          'content_type': response.headers['content-type'],
+          'bytes': response.bodyBytes.length,
+        },
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      return parseGithubReleaseResponseBody(response.body);
+    } catch (error, stackTrace) {
+      await logger.error(
+        'GitHub release check failed',
+        error,
+        stackTrace,
+        <String, Object?>{
+          'url': githubApiUri.toString(),
+        },
+      );
+      return null;
+    }
   }
 
   Future<List<CaseSummary>> listCases({required String userId}) async {
@@ -1953,9 +2019,11 @@ class ApiClient {
     for (final file in files) {
       final filename = file.name.trim().isEmpty ? 'document' : file.name;
       if (file.bytes != null) {
-        request.files.add(http.MultipartFile.fromBytes('files', file.bytes!, filename: filename));
+        request.files.add(http.MultipartFile.fromBytes('files', file.bytes!,
+            filename: filename));
       } else if (file.path != null && file.path!.isNotEmpty) {
-        request.files.add(await http.MultipartFile.fromPath('files', file.path!, filename: filename));
+        request.files.add(await http.MultipartFile.fromPath('files', file.path!,
+            filename: filename));
       }
     }
     final streamed = await request.send();
@@ -1963,13 +2031,17 @@ class ApiClient {
     final response = await http.Response.fromStream(streamed);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = _extractErrorDetail(response);
-      throw Exception('Case document upload failed with status ${response.statusCode}: $detail');
+      throw Exception(
+          'Case document upload failed with status ${response.statusCode}: $detail');
     }
-    final decoded = _decodeResponseBody(response, action: 'case_document_upload');
-    final rawUploaded = decoded['uploaded'] as List<dynamic>? ?? const <dynamic>[];
+    final decoded =
+        _decodeResponseBody(response, action: 'case_document_upload');
+    final rawUploaded =
+        decoded['uploaded'] as List<dynamic>? ?? const <dynamic>[];
     return rawUploaded
         .whereType<Map>()
-        .map((value) => CaseDocumentItem.fromJson(Map<String, dynamic>.from(value)))
+        .map((value) =>
+            CaseDocumentItem.fromJson(Map<String, dynamic>.from(value)))
         .toList();
   }
 
@@ -1982,7 +2054,8 @@ class ApiClient {
       action: 'case_document_context',
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Case document context failed with status ${response.statusCode}.');
+      throw Exception(
+          'Case document context failed with status ${response.statusCode}.');
     }
     return CaseDocumentContext.fromJson(
       _decodeResponseBody(response, action: 'case_document_context'),
@@ -4839,7 +4912,10 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     await _uploadPlatformFiles(<PlatformFile>[
-      PlatformFile(name: path.split(Platform.pathSeparator).last, path: path, size: await File(path).length()),
+      PlatformFile(
+          name: path.split(Platform.pathSeparator).last,
+          path: path,
+          size: await File(path).length()),
     ]);
   }
 
@@ -4848,7 +4924,8 @@ class _ChatHomePageState extends State<ChatHomePage>
       _showSnackbar(_strings.t('select_case'));
       return;
     }
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
+    final result = await FilePicker.platform
+        .pickFiles(allowMultiple: true, withData: true);
     if (result == null || result.files.isEmpty) {
       return;
     }
@@ -4870,8 +4947,10 @@ class _ChatHomePageState extends State<ChatHomePage>
         return;
       }
       setState(() {
-        _caseDocuments = <CaseDocumentItem>[...uploaded, ..._caseDocuments]
-            .fold<List<CaseDocumentItem>>(<CaseDocumentItem>[], (items, document) {
+        _caseDocuments = <CaseDocumentItem>[
+          ...uploaded,
+          ..._caseDocuments
+        ].fold<List<CaseDocumentItem>>(<CaseDocumentItem>[], (items, document) {
           if (!items.any((existing) => existing.docId == document.docId)) {
             items.add(document);
           }
@@ -4901,7 +4980,8 @@ class _ChatHomePageState extends State<ChatHomePage>
       final processed = context.processedDocuments.join(', ');
       final pending = context.unprocessedDocuments.join(', ');
       if (pending.isNotEmpty) {
-        _showSnackbar('Processed: ${processed.isEmpty ? 'none' : processed}; pending: $pending');
+        _showSnackbar(
+            'Processed: ${processed.isEmpty ? 'none' : processed}; pending: $pending');
       }
     } catch (_) {}
   }
@@ -5864,7 +5944,8 @@ class _ChatHomePageState extends State<ChatHomePage>
                                         ),
                                       )
                                     : const Icon(Icons.download_outlined),
-                                label: Text('${document.originalFilename} (${document.processingStatus})'),
+                                label: Text(
+                                    '${document.originalFilename} (${document.processingStatus})'),
                               ),
                             )
                             .toList(),
