@@ -219,13 +219,13 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
     switch (languageCode.trim().toUpperCase()) {
       case 'SK':
       case 'CS':
-        return 0.92;
+        return 0.72;
       case 'DE':
       case 'GE':
-        return 0.95;
+        return 0.76;
       case 'EN':
       default:
-        return 0.98;
+        return 0.8;
     }
   }
 

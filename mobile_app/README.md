@@ -24,6 +24,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Speech input can now create a new case from spoken commands in Slovak, English, or German, for example `Create a new case with name ...`, `Vytvor novy pripad s nazvom ...`, `Vytvor mi novy case s nazvom ...`, or `Erstelle einen neuen Fall mit Namen ...`.
 - If the spoken create-case command does not include a case title, the app asks for the new case name and then creates/selects the case after the next spoken title.
 - Jurisdicta now speaks assistant messages aloud through text-to-speech, including the welcome message, speech prompts, and backend replies.
+- Assistant speech output is intentionally slowed down for clearer playback in both local-device TTS and Azure Speech TTS mode.
 - When speech output is used, Jurisdicta selects an installed TTS voice that matches the current user language/country setup (`SK`, `CS`, `DE`, `EN`) instead of using one fixed speaker voice.
 - For Slovak on Android, the app now prefers an exact `sk-SK` voice as the default whenever one is available on the device.
 - For `SK`, `CS`, and `GE`/`DE`, the speaker now retries voice discovery on startup and falls back across close Central European voices instead of caching an empty voice list immediately.

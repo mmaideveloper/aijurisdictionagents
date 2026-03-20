@@ -3525,9 +3525,6 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const double _maxDiscussionMinutes = 60;
   static const double _communicationMinutes = 60;
   static const Duration _speechSilenceTimeout = Duration(seconds: 10);
-  static const Duration _speechListenRestartDelay = Duration(
-    milliseconds: 350,
-  );
   static const Duration _speechMaxListenDuration = Duration(minutes: 30);
 
   final TextEditingController _inputController = TextEditingController();
@@ -4379,15 +4376,12 @@ class _ChatHomePageState extends State<ChatHomePage>
         );
       }
     }
-    _cancelSpeechSilenceTimer();
   }
 
   void _onSpeechError(JurisdictaSpeechRecognitionError error) {
     if (!mounted) {
       return;
     }
-    _cancelSpeechSilenceTimer();
-    _speechRestartPending = false;
     setState(() {
       _isListening = false;
     });
@@ -5392,8 +5386,10 @@ class _ChatHomePageState extends State<ChatHomePage>
     await _createCaseWithTitle(title.trim());
   }
 
-  Future<void> _startSpeechListening() async {
-    _lastHandledSpeechText = null;
+  Future<void> _startSpeechListening({bool resetHandledText = false}) async {
+    if (resetHandledText) {
+      _lastHandledSpeechText = null;
+    }
     _lastFinalSpeechResult = null;
     _submitSpeechOnStop = true;
     _processSpeechOnStop = true;
@@ -5402,7 +5398,6 @@ class _ChatHomePageState extends State<ChatHomePage>
       listenFor: _speechMaxListenDuration,
       pauseFor: _speechSilenceTimeout,
       localeId: _localeIdForSpeech(_selectedLocale),
-      pauseFor: _speechService.config.pauseFor,
       listenMode: ListenMode.dictation,
     );
   }

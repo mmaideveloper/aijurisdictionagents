@@ -296,13 +296,13 @@ class AzureSpeechSpeaker implements JurisdictaSpeaker {
     switch (languageCode.trim().toUpperCase()) {
       case 'SK':
       case 'CS':
-        return '+8%';
+        return '-18%';
       case 'DE':
       case 'GE':
-        return '+6%';
+        return '-15%';
       case 'EN':
       default:
-        return '+4%';
+        return '-12%';
     }
   }
 
