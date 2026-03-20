@@ -12,9 +12,11 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Assistant voice output is also off by default after login; the user must enable it manually in `Account`.
 - Turning on speech input with the microphone button also enables assistant voice output for that session, so spoken replies follow voice interaction automatically.
 - When a spoken assistant reply finishes in voice mode, the app automatically reopens the microphone so the user can continue speaking hands-free.
-- After the user taps the mic, dictation stays active until the user stops it manually or no speech is detected for `10` seconds.
-- Normal dictated messages now remain in the message input instead of auto-sending after a short pause; explicit send still works through the send button or a spoken send command.
+- Normal dictated messages now keep listening through short 1-2 second pauses and stop only after about 5 seconds of silence. When the microphone session stops, the current dictated message is submitted automatically.
 - The speech flow also understands spoken send commands such as `Send`, `please send`, `Posli`, `Prosim odosli spravu`, `Senden`, or `Nachricht senden`, and submits the current dictated message immediately.
+- When the user says a spoken command like `please create a new case` while another case is active, the app now asks for confirmation before archiving the current case. After confirmation it creates and switches to the new case, and if no new case name was spoken yet it asks for the name first.
+- The Slovak and German localizations were also cleaned up so user-facing system prompts and settings use proper localized text instead of ASCII-only fallbacks.
+- Speech and text command rules now go through a dedicated `RuleEngine` component so future request rules can be added without growing `main.dart` command branching.
 - Generated legal documents are no longer shown back into chat as plain text or JSON payloads; instead, the app asks the user whether they want to see the document as PDF and keeps the PDF export action available.
 - If the user starts a discussion without any selected case, the app now creates a case automatically, generates a short title from the discussion text, selects that case, and then sends the original message to the backend.
 - The automatic upgrade dialog now includes a session-only `Skip to new start` checkbox. When checked, the app stops version monitoring for the rest of the current app run and resumes only after the next launch.
@@ -33,6 +35,8 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - The `Account` page now also contains the language/country selector and an assistant voice picker with a play button, so the user can choose from voices available for the selected language.
 - The `Account` page now also contains an assistant voice-output switch. Turning it on enables spoken assistant replies for the current session.
 - The app does not support uploading a custom TTS voice asset directly. It can only use voices exposed by the installed platform TTS engine; on Android, install another Slovak-capable TTS engine/voice and then select it in `Account` if it appears in the voice list.
+- Speech routing now goes through a provider-based speech factory/service layer with `AIJ_SPEECH_MODE=local|azure`. `local` is the default and applies the speech timing directly to the device runtime: higher TTS speed, 5-second silence detection for STT, and shorter resume delay after assistant playback.
+- `azure` mode now supports both Azure Speech TTS and Azure Speech STT. The app can derive both service URLs from `AIJ_AZURE_SPEECH_REGION`, or you can pass explicit split endpoints with `AIJ_AZURE_SPEECH_TTS_ENDPOINT` and `AIJ_AZURE_SPEECH_STT_ENDPOINT`.
 - The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.
 - When the user changes the stored first or last name, the chat now appends a fresh assistant message greeting the updated full name.
 - The chat input is now single-line; pressing `Enter` sends the message immediately (same as the send button).
@@ -103,18 +107,30 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 ```bash
 cd mobile_app
 flutter pub get
-flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris
+flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
 ```
 
 For iOS simulator/local device, override `AIJ_API_BASE_URL` with your host IP, for example:
 
 ```bash
-flutter run --dart-define=AIJ_API_BASE_URL=http://127.0.0.1:8080 --dart-define=AIJ_API_KEY=aijuris
+flutter run --dart-define=AIJ_API_BASE_URL=http://127.0.0.1:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
 ```
+
+
+To run full Azure Speech mode instead of the local mode, add Azure Speech credentials:
+
+```bash
+flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=azure --dart-define=AIJ_AZURE_SPEECH_KEY=<speech-key> --dart-define=AIJ_AZURE_SPEECH_TTS_ENDPOINT=https://eastus2.tts.speech.microsoft.com --dart-define=AIJ_AZURE_SPEECH_STT_ENDPOINT=https://eastus2.stt.speech.microsoft.com
+```
+
+You can also pass `AIJ_AZURE_SPEECH_REGION=<speech-region>` and let the app derive both Azure Speech endpoints automatically.
+
+For backward compatibility, `AIJ_AZURE_SPEECH_ENDPOINT` is still accepted as the TTS endpoint only.
 
 Android note:
 
 - Release builds also need `android.permission.INTERNET` in `android/app/src/main/AndroidManifest.xml`.
+- Speech recording requires `android.permission.RECORD_AUDIO`.
 - Without that permission, Android can surface host lookup failures such as `No address associated with host name` even when the API URL itself is valid.
 - Phone prefill now requests `READ_PHONE_NUMBERS` and `READ_PHONE_STATE` at runtime on Android.
 - Android phone-number lookup is best-effort only. Many carriers, SIMs, emulators, and Android builds do not expose the device number, so the app falls back to editable phone fields when no device number is available.
@@ -123,7 +139,7 @@ Android note:
 
 ### Speech input
 
-Use the `Speech input` button in the top control area to enable speech-to-text. When it is on, use the microphone icon in the chat composer to dictate a message. Tap the microphone again to stop recording, then send the recognized text as a normal chat message.
+Use the `Speech input` button in the top control area to enable speech-to-text. When it is on, use the microphone icon in the chat composer to dictate a message. The app now keeps the session open through short pauses, then stops and submits after about 5 seconds of silence. Clicking the send button or clicking the microphone while it is already listening also stops the session and submits the current dictated message. In Azure mode, the app records microphone audio and sends it to Azure Speech STT when the recording stops.
 
 When `Speech input` is turned off, the microphone action in the composer is disabled until you turn speech back on.
 
@@ -228,7 +244,9 @@ Manual mobile workflow runs now also expose a `release` switch:
 - `release=true`: after the release APK is built, the workflow publishes or updates a GitHub Release tagged with the mobile app version from `pubspec.yaml` and uploads `app-release.apk` as a release asset
 
 The GitHub Release tag is the exact mobile app version, for example `0.1.1+2`,
-so the API-driven in-app update check and the downloadable APK stay aligned.
+so the in-app update check and the downloadable APK stay aligned. The app now
+resolves the actual latest GitHub release from the API-provided release URL, so
+a new mobile release can be detected without redeploying the API.
 
 Mobile app versioning rule:
 
@@ -252,6 +270,14 @@ transient dependency installation failures caused by stale/corrupted cache state
 CI auto-generates missing Flutter `android/` and `web/` platform scaffolding with
 `flutter create` before build steps, so APK/web builds work even when only
 shared Flutter sources are committed.
+
+Speech service unit tests now initialize `TestWidgetsFlutterBinding` before constructing
+`FlutterTts`-backed services, which keeps the CI `flutter test` step stable after speech
+service factory coverage was added.
+
+Speech flow expectations now assert the actual localized Slovak prompt with diacritics
+(`Ahoj, Martin, počúvam vás.`), so the unit test matches the current UI copy used by
+the app.
 
 ## Snapshot
 

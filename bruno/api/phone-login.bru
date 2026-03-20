@@ -1,0 +1,21 @@
+meta {
+  name: phone login
+  type: http
+  seq: 1
+}
+
+post {
+  url: https://api-juris-dev.victoriousdesert-e45eec11.westeurope.azurecontainerapps.io/v1/users/sign-in/phone
+  body: json
+  auth: none
+}
+
+headers {
+  x-api-key: aijuris
+}
+
+body:json {
+  {
+    "phone_number": "+421944400166"
+  }
+}

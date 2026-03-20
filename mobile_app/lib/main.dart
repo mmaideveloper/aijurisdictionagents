@@ -1,23 +1,25 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api/app_status.dart';
 import 'audio/jurisdicta_speaker.dart';
+import 'speech_service.dart';
 import 'auth/local_auth_store.dart';
+import 'chat/rule_engine.dart';
 import 'chat/speech_flow.dart';
 import 'logging/app_logger.dart';
 import 'platform/app_updater.dart';
@@ -46,7 +48,7 @@ const String _localAutofillPhoneNumber = '+421944400166';
 
 const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
   'SK':
-      'Relacia vyprsala. Vytvorili sme novu relaciu. Prosim, odoslite poslednu spravu znova.',
+      'Relácia vypršala. Vytvorili sme novú reláciu. Prosím, odošlite poslednú správu znova.',
   'EN':
       'Your session expired. A new session was created. Please send your last message again.',
   'GE':
@@ -154,179 +156,186 @@ class AppStrings {
   static const Map<String, Map<String, String>> _localized =
       <String, Map<String, String>>{
     'SK': <String, String>{
-      'auth_sign_in_tab': 'Prihlasenie',
-      'auth_sign_up_tab': 'Registracia',
-      'phone_number': 'Telefonne cislo',
-      'phone_number_required': 'Telefonne cislo *',
+      'auth_sign_in_tab': 'Prihlásenie',
+      'auth_sign_up_tab': 'Registrácia',
+      'phone_number': 'Telefónne číslo',
+      'phone_number_required': 'Telefónne číslo *',
       'phone_number_hint': _localAutofillPhoneNumber,
       'email': 'E-mail',
       'email_required': 'E-mail *',
       'password': 'Heslo',
       'password_required': 'Heslo *',
       'first_name': 'Meno',
-      'first_name_optional': 'Meno (volitelne)',
+      'first_name_optional': 'Meno (voliteľné)',
       'last_name': 'Priezvisko',
-      'last_name_optional': 'Priezvisko (volitelne)',
+      'last_name_optional': 'Priezvisko (voliteľné)',
       'signing_in': 'Prihlasujem...',
-      'login': 'Prihlasenie',
-      'sign_in_by_phone': 'Prihlasit cez telefon',
-      'sign_in_by_email_password': 'Prihlasit cez e-mail a heslo',
-      'sign_in_failed': 'Prihlasenie zlyhalo: {{error}}',
+      'login': 'Prihlásenie',
+      'sign_in_by_phone': 'Prihlásiť cez telefón',
+      'sign_in_by_email_password': 'Prihlásiť cez e-mail a heslo',
+      'sign_in_failed': 'Prihlásenie zlyhalo: {{error}}',
       'phone_not_found':
-          'Telefonne cislo sa nenaslo. Prihlaste sa e-mailom a heslom.',
-      'invalid_email_password': 'Neplatny e-mail alebo heslo.',
+          'Telefónne číslo sa nenašlo. Prihláste sa e-mailom a heslom.',
+      'invalid_email_password': 'Neplatný e-mail alebo heslo.',
       'signing_up': 'Registrujem...',
-      'go_to_sign_up': 'Registracia',
-      'create_account': 'Vytvorit ucet',
-      'sign_up_failed': 'Registracia zlyhala: {{error}}',
-      'account': 'Ucet',
-      'sign_out': 'Odhlasit sa',
-      'save_changes': 'Ulozit zmeny',
-      'saving': 'Ukladam...',
-      'update_sign_in_profile': 'Upravit prihlasovaci profil',
-      'profile_update_failed': 'Aktualizacia profilu zlyhala: {{error}}',
+      'go_to_sign_up': 'Registrácia',
+      'create_account': 'Vytvoriť účet',
+      'sign_up_failed': 'Registrácia zlyhala: {{error}}',
+      'account': 'Účet',
+      'sign_out': 'Odhlásiť sa',
+      'save_changes': 'Uložiť zmeny',
+      'saving': 'Ukladám...',
+      'update_sign_in_profile': 'Upraviť prihlasovací profil',
+      'profile_update_failed': 'Aktualizácia profilu zlyhala: {{error}}',
       'profile_name_changed':
-          'Vidim, ze ste zmenili meno. Dobry den, {{name}}.',
-      'debug_mode': 'Debug rezim',
+          'Vidím, že ste zmenili meno. Dobrý deň, {{name}}.',
+      'debug_mode': 'Debug režim',
       'debug_mode_description':
-          'V debug rezime sa vsetky logy ukladaju do suboru na Android zariadeni.',
-      'debug_mode_enabled': 'Debug rezim zapnuty.',
-      'debug_mode_disabled': 'Debug rezim vypnuty.',
-      'share_logs': 'Zdielat logy',
-      'logs_shared': 'Zdielanie logov bolo spustene.',
-      'share_logs_failed': 'Zdielanie logov zlyhalo: {{error}}',
-      'subscription': 'Predplatne',
+          'V debug režime sa všetky logy ukladajú do súboru na Android zariadení.',
+      'debug_mode_enabled': 'Debug režim zapnutý.',
+      'debug_mode_disabled': 'Debug režim vypnutý.',
+      'share_logs': 'Zdieľať logy',
+      'logs_shared': 'Zdieľanie logov bolo spustené.',
+      'share_logs_failed': 'Zdieľanie logov zlyhalo: {{error}}',
+      'subscription': 'Predplatné',
       'subscription_change_requested':
-          'Zmena predplatneho bola odoslana (pending).',
-      'subscription_change_failed': 'Zmena predplatneho zlyhala: {{error}}',
+          'Zmena predplatného bola odoslaná (pending).',
+      'subscription_change_failed': 'Zmena predplatného zlyhala: {{error}}',
       'subscription_status': 'Stav: {{status}}',
-      'update_available': 'Dostupna aktualizacia',
+      'update_available': 'Dostupná aktualizácia',
       'update_body':
-          'K dispozicii je nova verzia.\n\n{{current}} -> {{latest}}',
-      'later': 'Neskor',
-      'skip_until_restart': 'Preskocit do noveho startu',
-      'update': 'Aktualizovat',
-      'invalid_release_url': 'Adresa aktualizacie je neplatna.',
+          'K dispozícii je nová verzia.\n\n{{current}} -> {{latest}}',
+      'later': 'Neskôr',
+      'skip_until_restart': 'Preskočiť do nového štartu',
+      'update': 'Aktualizovať',
+      'invalid_release_url': 'Adresa aktualizácie je neplatná.',
       'could_not_open_update_page':
-          'Stranku s aktualizaciou sa nepodarilo otvorit.',
+          'Stránku s aktualizáciou sa nepodarilo otvoriť.',
       'update_apk_missing':
-          'Release neobsahuje Android APK subor. Otvaram stranku release.',
-      'update_download_started': 'Stahujem aktualizaciu {{latest}}...',
+          'Release neobsahuje Android APK súbor. Otváram stránku release.',
+      'update_download_started': 'Sťahujem aktualizáciu {{latest}}...',
       'update_install_started':
-          'Android instalator bol otvoreny. Potvrdte aktualizaciu.',
-      'update_download_failed': 'Stahovanie aktualizacie zlyhalo: {{error}}',
-      'update_install_failed': 'Spustenie aktualizacie zlyhalo: {{error}}',
+          'Android inštalátor bol otvorený. Potvrďte aktualizáciu.',
+      'update_download_failed': 'Sťahovanie aktualizácie zlyhalo: {{error}}',
+      'update_install_failed': 'Spustenie aktualizácie zlyhalo: {{error}}',
       'update_install_signature_mismatch':
-          'Nainstalovana aplikacia ma iny podpis ako aktualizacia. Odinstalujte aktualnu aplikaciu a potom nainstalujte novu verziu.',
+          'Nainštalovaná aplikácia má iný podpis ako aktualizácia. Odinštalujte aktuálnu aplikáciu a potom nainštalujte novú verziu.',
       'allow_install_unknown_apps':
-          'V nastaveniach Androidu povolte instalacie z tejto aplikacie a vratte sa spat.',
-      'speech_recognition_error': 'Chyba rozpoznavania reci: {{error}}',
+          'V nastaveniach Androidu povoľte inštalácie z tejto aplikácie a vráťte sa späť.',
+      'speech_recognition_error': 'Chyba rozpoznávania reči: {{error}}',
       'speech_unavailable':
-          'Rozpoznavanie reci na tomto zariadeni nie je dostupne.',
+          'Rozpoznávanie reči na tomto zariadení nie je dostupné.',
       'speech_input_toggle_label': 'Vstup hlasom',
-      'speech_input_enabled': 'Vstup hlasom zapnuty',
-      'speech_input_disabled': 'Vstup hlasom vypnuty',
+      'speech_input_enabled': 'Vstup hlasom zapnutý',
+      'speech_input_disabled': 'Vstup hlasom vypnutý',
       'speech_input_disabled_message':
-          'Vstup hlasom je vypnuty. Zapnite ho tlacidlom Vstup hlasom.',
-      'speaker_output': 'Hlasovy vystup asistenta',
+          'Vstup hlasom je vypnutý. Zapnite ho tlačidlom Vstup hlasom.',
+      'speaker_output': 'Hlasový výstup asistenta',
       'speaker_voice_label': 'Hlas asistenta',
-      'speaker_voice_unavailable': 'Pre zvoleny jazyk nie je dostupny hlas.',
-      'test_speaker_voice': 'Vyskusat hlas',
+      'speaker_voice_unavailable': 'Pre zvolený jazyk nie je dostupný hlas.',
+      'test_speaker_voice': 'Vyskúšať hlas',
       'speaker_test_sample':
-          'Dobry den, som Jurisdicta a toto je ukazka hlasu.',
-      'no_camera_available': 'Na tomto zariadeni nie je dostupna kamera.',
-      'document_added': 'Dokument bol pridany z kamery.',
+          'Dobrý deň, som Jurisdicta a toto je ukážka hlasu.',
+      'no_camera_available': 'Na tomto zariadení nie je dostupná kamera.',
+      'document_added': 'Dokument bol pridaný z kamery.',
       'create_or_select_case':
-          'Pred odoslanim spravy vytvorte alebo vyberte pripad.',
+          'Pred odoslaním správy vytvorte alebo vyberte prípad.',
       'create_or_select_case_message':
-          'Pred odoslanim spravy vytvorte alebo vyberte pripad. Mozete povedat naprklad: Vytvor mi novy case s nazvom splnomocnenie.',
+          'Pred odoslaním správy vytvorte alebo vyberte prípad. Môžete povedať napríklad: Vytvor mi nový prípad s názvom splnomocnenie.',
       'failed_to_reach_api':
-          'Nepodarilo sa spojit s API na adrese {{url}}: {{error}}',
-      'api_health_failed': 'API hlasi chybu: {{error}}',
+          'Nepodarilo sa spojiť s API na adrese {{url}}: {{error}}',
+      'api_health_failed': 'API hlási chybu: {{error}}',
       'failed_to_reach_api_with_correlation':
-          'Nepodarilo sa spojit s API na adrese {{url}}: {{error}} (ID: {{id}})',
+          'Nepodarilo sa spojiť s API na adrese {{url}}: {{error}} (ID: {{id}})',
       'checking_api': 'Kontrolujem API...',
-      'api_unavailable_title': 'API nie je dostupne',
-      'api_retry_in': 'Dalsi pokus o {{seconds}} s',
-      'retry_now': 'Skusit znova',
-      'request_id_label': 'Correlation ID: {{id}}',
+      'api_unavailable_title': 'API nie je dostupné',
+      'api_retry_in': 'Ďalší pokus o {{seconds}} s',
+      'retry_now': 'Skúsiť znova',
+      'request_id_label': 'ID korelácie: {{id}}',
       'show_request_id': 'ID',
-      'copy_request_id': 'Kopirovat correlation ID',
-      'request_id_copied': 'Correlation ID bolo skopirovane: {{id}}',
+      'copy_request_id': 'Kopírovať ID korelácie',
+      'request_id_copied': 'ID korelácie bolo skopírované: {{id}}',
       'pdf_not_ready':
-          'PDF este nie je pripravene. Najprv dokoncite AI diskusiu.',
-      'pdf_saved_to': 'PDF ulozene do {{path}}',
-      'pdf_download_started': 'Stahovanie PDF spustene: {{filename}}',
-      'pdf_download_failed': 'Stahovanie PDF zlyhalo: {{error}}',
+          'PDF ešte nie je pripravené. Najprv dokončite AI diskusiu.',
+      'pdf_saved_to': 'PDF uložené do {{path}}',
+      'pdf_download_started': 'Sťahovanie PDF spustené: {{filename}}',
+      'pdf_download_failed': 'Sťahovanie PDF zlyhalo: {{error}}',
       'document_pdf_offer':
-          'Navrh dokumentu som do chatu nezobrazila. Chcete ho vidiet vo formate PDF? Pouzite tlacidlo PDF dokument.',
-      'open_saved_file_failed': 'Subor sa nepodarilo otvorit.',
-      'failed_to_load_cases': 'Nepodarilo sa nacitat pripady: {{error}}',
+          'Návrh dokumentu som do chatu nezobrazila. Chcete ho vidieť vo formáte PDF? Použite tlačidlo PDF dokument.',
+      'open_saved_file_failed': 'Súbor sa nepodarilo otvoriť.',
+      'failed_to_load_cases': 'Nepodarilo sa načítať prípady: {{error}}',
       'failed_to_load_case_history':
-          'Nepodarilo sa nacitat historiu pripadu: {{error}}',
+          'Nepodarilo sa načítať históriu prípadu: {{error}}',
       'maximum_cases':
-          'Maximum je 5 pripadov. Najprv odstran existujuci pripad.',
-      'create_case': 'Vytvorit pripad',
-      'delete_case': 'Odstranit pripad',
-      'case_name': 'Nazov pripadu',
-      'cancel': 'Zrusit',
-      'create': 'Vytvorit',
-      'case_created': 'Pripad bol vytvoreny.',
-      'case_voice_name_prompt': 'Povedzte prosim nazov noveho pripadu.',
-      'case_voice_created': 'Vytvorila som novy pripad {{name}}.',
+          'Maximum je 5 prípadov. Najprv odstráň existujúci prípad.',
+      'create_case': 'Vytvoriť prípad',
+      'delete_case': 'Odstrániť prípad',
+      'case_name': 'Názov prípadu',
+      'cancel': 'Zrušiť',
+      'create': 'Vytvoriť',
+      'case_created': 'Prípad bol vytvorený.',
+      'case_voice_name_prompt': 'Povedzte prosím názov nového prípadu.',
+      'case_voice_created': 'Vytvorila som nový prípad {{name}}.',
       'case_voice_created_continue':
-          'Vytvorila som novy pripad {{name}}. Prosim, pokracujte svojou otazkou alebo nahrajte dokumenty.',
+          'Vytvorila som nový prípad {{name}}. Prosím, pokračujte svojou otázkou alebo nahrajte dokumenty.',
       'case_auto_created':
-          'Automaticky som vytvorila novy pripad {{name}} pre tuto diskusiu.',
+          'Automaticky som vytvorila nový prípad {{name}} pre túto diskusiu.',
+      'case_archive_confirmation':
+          'Aktuálny prípad {{name}} bude archivovaný. Chcete vytvoriť nový prípad? Odpovedzte prosím áno alebo nie.',
+      'case_archive_confirmation_named':
+          'Aktuálny prípad {{current}} bude archivovaný. Chcete vytvoriť nový prípad s názvom {{name}}? Odpovedzte prosím áno alebo nie.',
+      'case_archive_confirmation_retry':
+          'Prosím, odpovedzte áno alebo nie. Mám archivovať aktuálny prípad a vytvoriť nový?',
+      'case_archive_cancelled': 'Dobre, ponechám aktuálny prípad aktívny.',
       'case_voice_name_retry':
-          'Nezachytila som nazov pripadu dostatocne presne. Povedzte prosim nazov noveho pripadu.',
-      'rename_case': 'Premenovat pripad',
-      'save': 'Ulozit',
-      'rename_case_failed': 'Premenovanie pripadu zlyhalo: {{error}}',
-      'case_deleted': 'Pripad bol odstraneny.',
-      'delete_case_failed': 'Odstranenie pripadu zlyhalo: {{error}}',
-      'select_case': 'Vyberte pripad',
-      'case_history': 'Historia pripadu',
-      'case_documents': 'Dokumenty pripadu',
-      'show_next_5_messages': 'Zobrazit dalsich 5 sprav',
-      'download_case_document': 'Stiahnut {{filename}}',
+          'Nezachytila som názov prípadu dostatočne presne. Povedzte prosím názov nového prípadu.',
+      'rename_case': 'Premenovať prípad',
+      'save': 'Uložiť',
+      'rename_case_failed': 'Premenovanie prípadu zlyhalo: {{error}}',
+      'case_deleted': 'Prípad bol odstránený.',
+      'delete_case_failed': 'Odstránenie prípadu zlyhalo: {{error}}',
+      'select_case': 'Vyberte prípad',
+      'case_history': 'História prípadu',
+      'case_documents': 'Dokumenty prípadu',
+      'show_next_5_messages': 'Zobraziť ďalších 5 správ',
+      'download_case_document': 'Stiahnuť {{filename}}',
       'case_document_download_failed':
-          'Stahovanie dokumentu zlyhalo: {{error}}',
-      'attached_document': 'Prilozeny dokument: {{path}}',
+          'Sťahovanie dokumentu zlyhalo: {{error}}',
+      'attached_document': 'Priložený dokument: {{path}}',
       'clear': 'VYMAZAT',
       'you': 'Vy',
       'assistant': 'Asistent',
       'document_label': 'Dokument: {{path}}',
       'language_country': 'Jazyk a krajina',
-      'local_mode': 'Lokalny rezim',
-      'real_agent': 'Realny agent',
-      'ai_user_simulator_agent': 'AI simulator pouzivatela',
+      'local_mode': 'Lokálny režim',
+      'real_agent': 'Reálny agent',
+      'ai_user_simulator_agent': 'AI simulátor používateľa',
       'summary_pdf': 'PDF zhrnutie',
       'document_pdf': 'PDF dokument',
       'export_documents': 'Dokumenty',
-      'upload_documents': 'Nahrat dokumenty',
-      'case_input_discussion': 'Popiste pripad pre spustenie diskusie...',
-      'case_input_question': 'Polozte pravnu otazku...',
-      'stop_speech_input': 'Zastavit hlasovy vstup',
-      'speech_input': 'Pridat otazku alebo odpoved hlasom',
-      'start_ai_discussion': 'Spustit AI diskusiu',
-      'send_to_api': 'Odoslat do API',
-      'capture_document': 'Zachytit dokument',
-      'use_photo': 'Pouzit fotku',
+      'upload_documents': 'Nahrať dokumenty',
+      'case_input_discussion': 'Popíšte prípad pre spustenie diskusie...',
+      'case_input_question': 'Položte právnu otázku...',
+      'stop_speech_input': 'Zastaviť hlasový vstup',
+      'speech_input': 'Pridať otázku alebo odpoveď hlasom',
+      'start_ai_discussion': 'Spustiť AI diskusiu',
+      'send_to_api': 'Odoslať do API',
+      'capture_document': 'Zachytiť dokument',
+      'use_photo': 'Použiť fotku',
       'camera_unavailable':
-          'Kameru sa nepodarilo inicializovat. Skuste znova alebo pouzite ine zariadenie.',
+          'Kameru sa nepodarilo inicializovať. Skúste znova alebo použite iné zariadenie.',
       'camera_busy':
-          'Kamera je obsadena alebo nedostupna. Zatvorte ine aplikacie a skuste znova.',
+          'Kamera je obsadená alebo nedostupná. Zatvorte iné aplikácie a skúste znova.',
       'camera_access_denied':
-          'Pristup ku kamere bol zamietnuty. Povolte kameru v prehliadaci a skuste znova.',
+          'Prístup ku kamere bol zamietnutý. Povoľte kameru v prehliadači a skúste znova.',
       'camera_error_with_reason':
-          'Kameru sa nepodarilo inicializovat. {{reason}}',
+          'Kameru sa nepodarilo inicializovať. {{reason}}',
       'camera_capture_failed':
-          'Obrazok sa nepodarilo zachytit. Skuste znova alebo pouzite ine zariadenie.',
+          'Obrázok sa nepodarilo zachytiť. Skúste znova alebo použite iné zariadenie.',
       'locale_SK': 'Slovensko (SK)',
-      'locale_CZ': 'Cesko (CS)',
+      'locale_CZ': 'Česko (CS)',
       'locale_DE': 'Nemecko (DE)',
-      'locale_US': 'Spojene staty (EN)',
+      'locale_US': 'Spojené štáty (EN)',
     },
     'EN': <String, String>{
       'auth_sign_in_tab': 'Sign in',
@@ -449,6 +458,13 @@ class AppStrings {
           'I created a new case {{name}}. Please continue with your question or upload documents.',
       'case_auto_created':
           'I automatically created a new case {{name}} for this discussion.',
+      'case_archive_confirmation':
+          'The current case {{name}} will be archived. Do you want me to create a new case? Please answer yes or no.',
+      'case_archive_confirmation_named':
+          'The current case {{current}} will be archived. Do you want me to create a new case named {{name}}? Please answer yes or no.',
+      'case_archive_confirmation_retry':
+          'Please answer yes or no. Should I archive the current case and create a new one?',
+      'case_archive_cancelled': 'Okay, I will keep the current case active.',
       'case_voice_name_retry':
           'I did not catch the case name clearly enough. Please say the new case name.',
       'rename_case': 'Rename case',
@@ -512,26 +528,26 @@ class AppStrings {
       'first_name_optional': 'Vorname (optional)',
       'last_name': 'Nachname',
       'last_name_optional': 'Nachname (optional)',
-      'signing_in': 'Anmeldung laeuft...',
+      'signing_in': 'Anmeldung läuft...',
       'login': 'Login',
       'sign_in_by_phone': 'Mit Telefonnummer anmelden',
       'sign_in_by_email_password': 'Mit E-Mail und Passwort anmelden',
       'sign_in_failed': 'Anmeldung fehlgeschlagen: {{error}}',
       'phone_not_found':
           'Telefonnummer nicht gefunden. Bitte mit E-Mail und Passwort anmelden.',
-      'invalid_email_password': 'Ungueltige E-Mail oder falsches Passwort.',
-      'signing_up': 'Registrierung laeuft...',
+      'invalid_email_password': 'Ungültige E-Mail oder falsches Passwort.',
+      'signing_up': 'Registrierung läuft...',
       'go_to_sign_up': 'Registrieren',
       'create_account': 'Konto erstellen',
       'sign_up_failed': 'Registrierung fehlgeschlagen: {{error}}',
       'account': 'Konto',
       'sign_out': 'Abmelden',
-      'save_changes': 'Aenderungen speichern',
+      'save_changes': 'Änderungen speichern',
       'saving': 'Speichere...',
       'update_sign_in_profile': 'Anmeldeprofil aktualisieren',
       'profile_update_failed': 'Profilaktualisierung fehlgeschlagen: {{error}}',
       'profile_name_changed':
-          'Ich sehe, dass Sie den Namen geaendert haben. Hallo {{name}}.',
+          'Ich sehe, dass Sie den Namen geändert haben. Hallo {{name}}.',
       'debug_mode': 'Debug-Modus',
       'debug_mode_description':
           'Im Debug-Modus werden alle Logs in eine Datei auf Android geschrieben.',
@@ -541,23 +557,23 @@ class AppStrings {
       'logs_shared': 'Log-Freigabe wurde gestartet.',
       'share_logs_failed': 'Logs konnten nicht geteilt werden: {{error}}',
       'subscription': 'Abonnement',
-      'subscription_change_requested': 'Abo-Aenderung gesendet (pending).',
-      'subscription_change_failed': 'Abo-Aenderung fehlgeschlagen: {{error}}',
+      'subscription_change_requested': 'Abo-Änderung gesendet (pending).',
+      'subscription_change_failed': 'Abo-Änderung fehlgeschlagen: {{error}}',
       'subscription_status': 'Status: {{status}}',
-      'update_available': 'Update verfuegbar',
+      'update_available': 'Update verfügbar',
       'update_body':
-          'Eine neuere Version ist verfuegbar.\n\n{{current}} -> {{latest}}',
-      'later': 'Spaeter',
-      'skip_until_restart': 'Bis zum Neustart ueberspringen',
+          'Eine neuere Version ist verfügbar.\n\n{{current}} -> {{latest}}',
+      'later': 'Später',
+      'skip_until_restart': 'Bis zum Neustart überspringen',
       'update': 'Aktualisieren',
-      'invalid_release_url': 'Release-URL ist ungueltig.',
+      'invalid_release_url': 'Release-URL ist ungültig.',
       'could_not_open_update_page':
-          'Update-Seite konnte nicht geoeffnet werden.',
+          'Update-Seite konnte nicht geöffnet werden.',
       'update_apk_missing':
-          'Dieses Release enthaelt keine Android-APK. Die Release-Seite wird geoeffnet.',
+          'Dieses Release enthält keine Android-APK. Die Release-Seite wird geöffnet.',
       'update_download_started': 'Update {{latest}} wird heruntergeladen...',
       'update_install_started':
-          'Android-Installer wurde geoeffnet. Bestaetigen Sie das Update.',
+          'Android-Installer wurde geöffnet. Bestätigen Sie das Update.',
       'update_download_failed':
           'Das Update konnte nicht heruntergeladen werden: {{error}}',
       'update_install_failed':
@@ -565,57 +581,57 @@ class AppStrings {
       'update_install_signature_mismatch':
           'Die Signatur der installierten App unterscheidet sich von der Update-APK. Deinstallieren Sie die aktuelle App und installieren Sie dann die neue Version.',
       'allow_install_unknown_apps':
-          'Erlauben Sie Installationen aus dieser App in den Android-Einstellungen und kehren Sie dann zur App zurueck.',
+          'Erlauben Sie Installationen aus dieser App in den Android-Einstellungen und kehren Sie dann zur App zurück.',
       'speech_recognition_error': 'Fehler bei der Spracherkennung: {{error}}',
       'speech_unavailable':
-          'Spracherkennung ist auf diesem Geraet nicht verfuegbar.',
+          'Spracherkennung ist auf diesem Gerät nicht verfügbar.',
       'speech_input_toggle_label': 'Spracheingabe',
       'speech_input_enabled': 'Spracheingabe an',
       'speech_input_disabled': 'Spracheingabe aus',
       'speech_input_disabled_message':
-          'Spracheingabe ist ausgeschaltet. Aktivieren Sie sie mit der Schaltflaeche Spracheingabe.',
+          'Spracheingabe ist ausgeschaltet. Aktivieren Sie sie mit der Schaltfläche Spracheingabe.',
       'speaker_output': 'Sprachausgabe des Assistenten',
       'speaker_voice_label': 'Assistentenstimme',
       'speaker_voice_unavailable':
-          'Fuer die gewaehlte Sprache ist keine passende Stimme verfuegbar.',
+          'Für die gewählte Sprache ist keine passende Stimme verfügbar.',
       'test_speaker_voice': 'Stimme testen',
       'speaker_test_sample':
           'Guten Tag, ich bin Jurisdicta und dies ist eine Sprachprobe.',
-      'no_camera_available': 'Auf diesem Geraet ist keine Kamera verfuegbar.',
-      'document_added': 'Dokument wurde von der Kamera hinzugefuegt.',
+      'no_camera_available': 'Auf diesem Gerät ist keine Kamera verfügbar.',
+      'document_added': 'Dokument wurde von der Kamera hinzugefügt.',
       'create_or_select_case':
-          'Erstellen oder waehlen Sie zuerst einen Fall aus.',
+          'Erstellen oder wählen Sie zuerst einen Fall aus.',
       'create_or_select_case_message':
-          'Erstellen oder waehlen Sie zuerst einen Fall aus. Sie koennen zum Beispiel sagen: Erstelle einen neuen Fall mit Namen Vollmacht.',
+          'Erstellen oder wählen Sie zuerst einen Fall aus. Sie können zum Beispiel sagen: Erstelle einen neuen Fall mit dem Namen Vollmacht.',
       'failed_to_reach_api':
           'API unter {{url}} konnte nicht erreicht werden: {{error}}',
       'api_health_failed': 'API meldet einen ungesunden Status: {{error}}',
       'failed_to_reach_api_with_correlation':
           'API unter {{url}} konnte nicht erreicht werden: {{error}} (ID: {{id}})',
-      'checking_api': 'API wird geprueft...',
-      'api_unavailable_title': 'API ist nicht verfuegbar',
-      'api_retry_in': 'Naechster Versuch in {{seconds}} s',
+      'checking_api': 'API wird geprüft...',
+      'api_unavailable_title': 'API ist nicht verfügbar',
+      'api_retry_in': 'Nächster Versuch in {{seconds}} s',
       'retry_now': 'Erneut versuchen',
       'request_id_label': 'Correlation-ID: {{id}}',
       'show_request_id': 'ID',
       'copy_request_id': 'ID kopieren',
       'request_id_copied': 'Correlation-ID kopiert: {{id}}',
       'pdf_not_ready':
-          'PDF ist noch nicht bereit. Schliessen Sie zuerst die AI-Diskussion ab.',
+          'PDF ist noch nicht bereit. Schließen Sie zuerst die AI-Diskussion ab.',
       'pdf_saved_to': 'PDF gespeichert unter {{path}}',
       'pdf_download_started': 'PDF-Download gestartet: {{filename}}',
       'pdf_download_failed': 'PDF-Download fehlgeschlagen: {{error}}',
       'document_pdf_offer':
-          'Ich habe den erzeugten Dokumententext nicht im Chat angezeigt. Moechten Sie ihn als PDF sehen? Verwenden Sie die Schaltflaeche PDF Dokument.',
+          'Ich habe den erzeugten Dokumententext nicht im Chat angezeigt. Möchten Sie ihn als PDF sehen? Verwenden Sie die Schaltfläche PDF Dokument.',
       'open_saved_file_failed':
-          'Gespeicherte Datei konnte nicht geoeffnet werden.',
-      'failed_to_load_cases': 'Faelle konnten nicht geladen werden: {{error}}',
+          'Gespeicherte Datei konnte nicht geöffnet werden.',
+      'failed_to_load_cases': 'Fälle konnten nicht geladen werden: {{error}}',
       'failed_to_load_case_history':
           'Fallhistorie konnte nicht geladen werden: {{error}}',
       'maximum_cases':
-          'Maximal 5 Faelle erlaubt. Loeschen Sie zuerst einen bestehenden Fall.',
+          'Maximal 5 Fälle erlaubt. Löschen Sie zuerst einen bestehenden Fall.',
       'create_case': 'Fall erstellen',
-      'delete_case': 'Fall loeschen',
+      'delete_case': 'Fall löschen',
       'case_name': 'Fallname',
       'cancel': 'Abbrechen',
       'create': 'Erstellen',
@@ -625,23 +641,31 @@ class AppStrings {
       'case_voice_created_continue':
           'Ich habe einen neuen Fall {{name}} erstellt. Bitte fahren Sie mit Ihrer Frage fort oder laden Sie Dokumente hoch.',
       'case_auto_created':
-          'Ich habe fuer diese Diskussion automatisch einen neuen Fall {{name}} erstellt.',
+          'Ich habe für diese Diskussion automatisch einen neuen Fall {{name}} erstellt.',
+      'case_archive_confirmation':
+          'Der aktuelle Fall {{name}} wird archiviert. Soll ich einen neuen Fall erstellen? Bitte antworten Sie mit Ja oder Nein.',
+      'case_archive_confirmation_named':
+          'Der aktuelle Fall {{current}} wird archiviert. Soll ich einen neuen Fall mit dem Namen {{name}} erstellen? Bitte antworten Sie mit Ja oder Nein.',
+      'case_archive_confirmation_retry':
+          'Bitte antworten Sie mit Ja oder Nein. Soll ich den aktuellen Fall archivieren und einen neuen erstellen?',
+      'case_archive_cancelled':
+          'In Ordnung, ich lasse den aktuellen Fall aktiv.',
       'case_voice_name_retry':
           'Ich habe den Fallnamen nicht klar genug verstanden. Bitte sagen Sie den Namen des neuen Falls.',
       'rename_case': 'Fall umbenennen',
       'save': 'Speichern',
       'rename_case_failed': 'Umbenennen des Falls fehlgeschlagen: {{error}}',
-      'case_deleted': 'Fall wurde geloescht.',
-      'delete_case_failed': 'Loeschen des Falls fehlgeschlagen: {{error}}',
-      'select_case': 'Fall auswaehlen',
+      'case_deleted': 'Fall wurde gelöscht.',
+      'delete_case_failed': 'Löschen des Falls fehlgeschlagen: {{error}}',
+      'select_case': 'Fall auswählen',
       'case_history': 'Fallhistorie',
       'case_documents': 'Falldokumente',
       'show_next_5_messages': 'Weitere 5 Nachrichten zeigen',
       'download_case_document': '{{filename}} herunterladen',
       'case_document_download_failed':
           'Download des Dokuments fehlgeschlagen: {{error}}',
-      'attached_document': 'Angehaengtes Dokument: {{path}}',
-      'clear': 'LOESCHEN',
+      'attached_document': 'Angehängtes Dokument: {{path}}',
+      'clear': 'LÖSCHEN',
       'you': 'Sie',
       'assistant': 'Assistent',
       'document_label': 'Dokument: {{path}}',
@@ -657,21 +681,21 @@ class AppStrings {
           'Beschreiben Sie den Fall, um die Diskussion zu starten...',
       'case_input_question': 'Stellen Sie Ihre Rechtsfrage...',
       'stop_speech_input': 'Spracheingabe stoppen',
-      'speech_input': 'Frage oder Antwort per Sprache hinzufuegen',
+      'speech_input': 'Frage oder Antwort per Sprache hinzufügen',
       'start_ai_discussion': 'AI-Diskussion starten',
       'send_to_api': 'An API senden',
       'capture_document': 'Dokument erfassen',
       'use_photo': 'Foto verwenden',
       'camera_unavailable':
-          'Kamera konnte nicht initialisiert werden. Bitte erneut versuchen oder anderes Geraet verwenden.',
+          'Kamera konnte nicht initialisiert werden. Bitte erneut versuchen oder ein anderes Gerät verwenden.',
       'camera_busy':
-          'Kamera ist belegt oder nicht verfuegbar. Schliessen Sie andere Apps und versuchen Sie es erneut.',
+          'Kamera ist belegt oder nicht verfügbar. Schließen Sie andere Apps und versuchen Sie es erneut.',
       'camera_access_denied':
           'Kamerazugriff wurde verweigert. Erlauben Sie den Zugriff im Browser und versuchen Sie es erneut.',
       'camera_error_with_reason':
           'Kamera konnte nicht initialisiert werden. {{reason}}',
       'camera_capture_failed':
-          'Bild konnte nicht aufgenommen werden. Bitte erneut versuchen oder anderes Geraet verwenden.',
+          'Bild konnte nicht aufgenommen werden. Bitte erneut versuchen oder ein anderes Gerät verwenden.',
       'locale_SK': 'Slowakei (SK)',
       'locale_CZ': 'Tschechien (CS)',
       'locale_DE': 'Deutschland (DE)',
@@ -1065,6 +1089,9 @@ class CaseDocumentItem {
     required this.kind,
     required this.version,
     required this.originalFilename,
+    required this.processingStatus,
+    this.processingError,
+    this.processedAt,
     required this.createdAt,
   });
 
@@ -1072,7 +1099,12 @@ class CaseDocumentItem {
   final String kind;
   final int version;
   final String originalFilename;
+  final String processingStatus;
+  final String? processingError;
+  final String? processedAt;
   final String createdAt;
+
+  bool get isProcessed => processingStatus.toLowerCase() == 'processed';
 
   static CaseDocumentItem fromJson(Map<String, dynamic> json) {
     return CaseDocumentItem(
@@ -1080,7 +1112,35 @@ class CaseDocumentItem {
       kind: json['kind'] as String? ?? '',
       version: json['version'] as int? ?? 0,
       originalFilename: json['original_filename'] as String? ?? 'document',
+      processingStatus: json['processing_status'] as String? ?? 'uploaded',
+      processingError: json['processing_error'] as String?,
+      processedAt: json['processed_at'] as String?,
       createdAt: json['created_at'] as String? ?? '',
+    );
+  }
+}
+
+class CaseDocumentContext {
+  const CaseDocumentContext({
+    required this.processedDocuments,
+    required this.unprocessedDocuments,
+  });
+
+  final List<String> processedDocuments;
+  final List<String> unprocessedDocuments;
+
+  static CaseDocumentContext fromJson(Map<String, dynamic> json) {
+    final processed =
+        (json['processed_documents'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<String>()
+            .toList();
+    final unprocessed =
+        (json['unprocessed_documents'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<String>()
+            .toList();
+    return CaseDocumentContext(
+      processedDocuments: processed,
+      unprocessedDocuments: unprocessed,
     );
   }
 }
@@ -1317,11 +1377,6 @@ class ApiClient {
           'Version check failed with status ${response.statusCode}.');
     }
     final payload = _decodeResponseBody(response, action: 'version_check');
-    final versionValue = payload['mobile_app_version'] as String? ?? '';
-    final latestVersion = SemanticVersion.tryParse(versionValue);
-    if (latestVersion == null || latestVersion.compareTo(installed) <= 0) {
-      return null;
-    }
     final releaseUrl =
         (payload['mobile_app_release_url'] as String? ?? '').trim();
     final rawApkDownloadUrl =
@@ -1330,11 +1385,76 @@ class ApiClient {
         rawApkDownloadUrl == null || rawApkDownloadUrl.isEmpty
             ? null
             : rawApkDownloadUrl;
+    final githubRelease = await _fetchLatestGithubReleaseInfo(
+      releaseUrl: releaseUrl,
+    );
+    if (githubRelease != null) {
+      if (githubRelease.version.compareTo(installed) <= 0) {
+        return null;
+      }
+      return MobileAppUpdateInfo(
+        version: githubRelease.version,
+        releaseUrl: githubRelease.releaseUrl,
+        apkDownloadUrl: githubRelease.apkDownloadUrl,
+      );
+    }
+    final versionValue = payload['mobile_app_version'] as String? ?? '';
+    final latestVersion = SemanticVersion.tryParse(versionValue);
+    if (latestVersion == null || latestVersion.compareTo(installed) <= 0) {
+      return null;
+    }
     return MobileAppUpdateInfo(
       version: latestVersion,
       releaseUrl: releaseUrl,
       apkDownloadUrl: apkDownloadUrl,
     );
+  }
+
+  Future<GithubReleaseInfo?> _fetchLatestGithubReleaseInfo({
+    required String releaseUrl,
+  }) async {
+    final githubApiUri = githubLatestReleaseApiUriFromReleaseUrl(releaseUrl);
+    if (githubApiUri == null) {
+      return null;
+    }
+
+    await logger.info(
+      'GitHub release check request',
+      <String, Object?>{
+        'url': githubApiUri.toString(),
+      },
+    );
+    try {
+      final response = await http.get(
+        githubApiUri,
+        headers: const <String, String>{
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'aijurisdiction-mobile',
+        },
+      );
+      await logger.info(
+        'GitHub release check response',
+        <String, Object?>{
+          'status_code': response.statusCode,
+          'content_type': response.headers['content-type'],
+          'bytes': response.bodyBytes.length,
+        },
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      return parseGithubReleaseResponseBody(response.body);
+    } catch (error, stackTrace) {
+      await logger.error(
+        'GitHub release check failed',
+        error,
+        stackTrace,
+        <String, Object?>{
+          'url': githubApiUri.toString(),
+        },
+      );
+      return null;
+    }
   }
 
   Future<List<CaseSummary>> listCases({required String userId}) async {
@@ -1883,6 +2003,65 @@ class ApiClient {
     );
   }
 
+  Future<List<CaseDocumentItem>> uploadCaseDocuments({
+    required String caseId,
+    required String userId,
+    required List<PlatformFile> files,
+  }) async {
+    final uri = baseUri.resolve('/v1/cases/$caseId/documents?user_id=$userId');
+    final requestId = _generateRequestId();
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll(<String, String>{
+        'x-api-key': apiKey,
+        'x-correlation-id': _flowCorrelationId,
+        'x-request-id': requestId,
+      });
+    for (final file in files) {
+      final filename = file.name.trim().isEmpty ? 'document' : file.name;
+      if (file.bytes != null) {
+        request.files.add(http.MultipartFile.fromBytes('files', file.bytes!,
+            filename: filename));
+      } else if (file.path != null && file.path!.isNotEmpty) {
+        request.files.add(await http.MultipartFile.fromPath('files', file.path!,
+            filename: filename));
+      }
+    }
+    final streamed = await request.send();
+    _recordCorrelationId(streamed);
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = _extractErrorDetail(response);
+      throw Exception(
+          'Case document upload failed with status ${response.statusCode}: $detail');
+    }
+    final decoded =
+        _decodeResponseBody(response, action: 'case_document_upload');
+    final rawUploaded =
+        decoded['uploaded'] as List<dynamic>? ?? const <dynamic>[];
+    return rawUploaded
+        .whereType<Map>()
+        .map((value) =>
+            CaseDocumentItem.fromJson(Map<String, dynamic>.from(value)))
+        .toList();
+  }
+
+  Future<CaseDocumentContext> loadCaseDocumentContext({
+    required String caseId,
+    required String userId,
+  }) async {
+    final response = await _get(
+      path: '/v1/cases/$caseId/documents/context?user_id=$userId',
+      action: 'case_document_context',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+          'Case document context failed with status ${response.statusCode}.');
+    }
+    return CaseDocumentContext.fromJson(
+      _decodeResponseBody(response, action: 'case_document_context'),
+    );
+  }
+
   Future<ExportFilePayload> downloadCaseDocument({
     required String caseId,
     required String userId,
@@ -2236,7 +2415,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       TextEditingController();
   bool _showEmailPasswordFallback = false;
   bool _isBusy = false;
-  String _appVersionLabel = 'v0.1.5+18';
+  String _appVersionLabel = 'v0.1.5+20';
   String? _devicePhoneNumber;
 
   AppStrings get _strings => AppStrings(_defaultLanguage);
@@ -3352,13 +3531,15 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const Duration _speechMaxListenDuration = Duration(minutes: 30);
 
   final TextEditingController _inputController = TextEditingController();
-  final SpeechToText _speechToText = SpeechToText();
+  final RuleEngine _ruleEngine = const RuleEngine();
+  late final JurisdictaSpeechService _speechService;
   final ScrollController _messagesScrollController = ScrollController();
 
   late final ApiClient _apiClient;
   late final FileSaver _fileSaver;
   late final AppUpdater _appUpdater;
   late final JurisdictaSpeaker _speaker;
+  late final JurisdictaSpeechRecognizer _speechRecognizer;
   late final List<ChatMessage> _messages;
   late ResponderMode _responderMode;
   late LocaleOption _selectedLocale;
@@ -3366,7 +3547,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _isSending = false;
   bool _isDownloading = false;
   bool _hasExportReady = false;
-  String _appVersionLabel = 'v0.1.5+18';
+  String _appVersionLabel = 'v0.1.5+20';
   bool _updateDialogShown = false;
   bool _skipUpdateChecksUntilRestart = false;
   bool _isInstallingUpdate = false;
@@ -3375,6 +3556,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _speechInputEnabled = false;
   bool _isListening = false;
   bool _awaitingSpokenName = false;
+  bool _awaitingCaseArchiveConfirmation = false;
   bool _awaitingSpokenCaseTitle = false;
   bool _isSavingSpokenName = false;
   late LocalAuthUser _signedInUser;
@@ -3391,11 +3573,13 @@ class _ChatHomePageState extends State<ChatHomePage>
   String? _pendingUpdateInstallPath;
   String? _pendingUpdateVersion;
   Timer? _updateCheckTimer;
-  Timer? _speechSilenceTimer;
   String? _lastDictatedSpeechDraft;
+  String? _pendingNewCaseTitle;
+  String? _lastFinalSpeechResult;
   String? _lastHandledSpeechText;
-  bool _speechListeningRequested = false;
-  bool _speechRestartPending = false;
+  Completer<void>? _speechStopCompleter;
+  bool _submitSpeechOnStop = true;
+  bool _processSpeechOnStop = true;
   bool _updateCheckInProgress = false;
 
   bool get _showLocalResponderSwitch {
@@ -3423,7 +3607,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
     _fileSaver = createFileSaver();
     _appUpdater = createAppUpdater();
-    _speaker = createJurisdictaSpeaker();
+    _speechService = const SpeechServiceFactory().create();
+    _speaker = _speechService.speaker;
+    _speechRecognizer = _speechService.recognizer;
     _apiClient.setSignedInUser(_signedInUser.userId);
     final welcomeLanguage =
         _normalizeLanguageCode(_selectedLocale.languageCode);
@@ -3989,7 +4175,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _initializeSpeechRecognition() async {
-    final enabled = await _speechToText.initialize(
+    final enabled = await _speechRecognizer.initialize(
       onError: _onSpeechError,
       onStatus: _onSpeechStatus,
     );
@@ -4001,7 +4187,11 @@ class _ChatHomePageState extends State<ChatHomePage>
     });
     await widget.logger.info(
       'Speech recognition initialized',
-      <String, Object?>{'enabled': enabled},
+      <String, Object?>{
+        'enabled': enabled,
+        'speech_mode': _speechService.modeLabel,
+        'speech_runtime_mode': _speechService.runtimeModeLabel,
+      },
     );
   }
 
@@ -4013,7 +4203,11 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     await widget.logger.info(
       'Assistant speech output initialized in manual mode',
-      <String, Object?>{'enabled': _speakerOutputEnabled},
+      <String, Object?>{
+        'enabled': _speakerOutputEnabled,
+        'speech_mode': _speechService.modeLabel,
+        'speech_runtime_mode': _speechService.runtimeModeLabel,
+      },
     );
   }
 
@@ -4080,7 +4274,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         _isSending) {
       return;
     }
-    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await Future<void>.delayed(_speechService.config.resumeListeningDelay);
     if (!mounted ||
         !_speechEnabled ||
         !_speechInputEnabled ||
@@ -4089,7 +4283,6 @@ class _ChatHomePageState extends State<ChatHomePage>
         _isSending) {
       return;
     }
-    _speechListeningRequested = true;
     if (!_awaitingSpokenName && !_awaitingSpokenCaseTitle) {
       _inputController.clear();
     }
@@ -4133,12 +4326,14 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
   }
 
-  void _onSpeechResult(SpeechRecognitionResult result) {
+  void _onSpeechResult(JurisdictaSpeechRecognitionResult result) {
     if (!mounted) {
       return;
     }
-    _restartSpeechSilenceTimer();
     final recognizedText = result.recognizedWords.trim();
+    if (result.finalResult && recognizedText.isNotEmpty) {
+      _lastFinalSpeechResult = recognizedText;
+    }
     if (recognizedText.isNotEmpty &&
         !isSpokenSendCommand(recognizedText) &&
         parseSpokenCaseCreationCommand(recognizedText) == null) {
@@ -4153,11 +4348,6 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!result.finalResult) {
       return;
     }
-    if (_awaitingSpokenName) {
-      unawaited(_handleCompletedSpeechInput(result.recognizedWords));
-      return;
-    }
-    unawaited(_handleCompletedSpeechInput(result.recognizedWords));
   }
 
   void _onSpeechStatus(String status) {
@@ -4174,22 +4364,25 @@ class _ChatHomePageState extends State<ChatHomePage>
         <String, Object?>{'status': status},
       ),
     );
-    if (isListening) {
-      _speechRestartPending = false;
-      return;
-    }
-    final spokenText = _inputController.text.trim();
-    if (spokenText.isNotEmpty) {
-      unawaited(_handleCompletedSpeechInput(spokenText));
-    }
-    if (_shouldKeepSpeechListeningAlive()) {
-      unawaited(_scheduleSpeechListeningRestart(reason: status));
-      return;
+    if (!isListening) {
+      final shouldProcess = _processSpeechOnStop;
+      final shouldSubmit = _submitSpeechOnStop;
+      _processSpeechOnStop = true;
+      _submitSpeechOnStop = true;
+      _speechStopCompleter?.complete();
+      _speechStopCompleter = null;
+      if (shouldProcess) {
+        unawaited(
+          _handleSpeechStopped(
+            submitAfterStop: shouldSubmit,
+          ),
+        );
+      }
     }
     _cancelSpeechSilenceTimer();
   }
 
-  void _onSpeechError(SpeechRecognitionError error) {
+  void _onSpeechError(JurisdictaSpeechRecognitionError error) {
     if (!mounted) {
       return;
     }
@@ -4209,13 +4402,154 @@ class _ChatHomePageState extends State<ChatHomePage>
         <String, Object?>{'permanent': error.permanent},
       ),
     );
+    _speechStopCompleter?.complete();
+    _speechStopCompleter = null;
   }
 
-  Future<void> _storeSpokenName(String spokenText) async {
+  Future<void> _handleSpeechStopped({
+    required bool submitAfterStop,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (!mounted) {
+      return;
+    }
+    final spokenText = _resolvedSpeechTextOnStop();
+    if (spokenText.isEmpty) {
+      return;
+    }
+    await _handleCompletedSpeechInput(
+      spokenText,
+      submitAfterRecognition: submitAfterStop,
+    );
+  }
+
+  String _resolvedSpeechTextOnStop() {
+    final current = _inputController.text.trim();
+    if (current.isNotEmpty) {
+      return current;
+    }
+    final finalResult = (_lastFinalSpeechResult ?? '').trim();
+    if (finalResult.isNotEmpty) {
+      return finalResult;
+    }
+    return (_lastDictatedSpeechDraft ?? '').trim();
+  }
+
+  Future<void> _stopSpeechListening({
+    required bool submitAfterStop,
+    bool processStoppedInput = true,
+  }) async {
+    _submitSpeechOnStop = submitAfterStop;
+    _processSpeechOnStop = processStoppedInput;
+    if (!_isListening) {
+      if (processStoppedInput) {
+        await _handleSpeechStopped(submitAfterStop: submitAfterStop);
+      }
+      return;
+    }
+    final completer = Completer<void>();
+    _speechStopCompleter = completer;
+    await _speechRecognizer.stop();
+    if (!completer.isCompleted) {
+      await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {},
+      );
+    }
+  }
+
+  Future<void> _requestNewCaseFromCommand({
+    String? title,
+  }) async {
+    if (_cases.length >= 5) {
+      _showSnackbar(_strings.t('maximum_cases'));
+      return;
+    }
+
+    final normalizedTitle = title?.trim();
+    if (_selectedCase == null) {
+      if (normalizedTitle == null || normalizedTitle.isEmpty) {
+        await _promptForSpokenCaseTitle();
+        return;
+      }
+      await _createCaseWithTitle(
+        normalizedTitle,
+        successMessage:
+            _strings.t('case_voice_created_continue', <String, String>{
+          'name': normalizedTitle,
+        }),
+      );
+      return;
+    }
+
+    final currentCase = _selectedCase!;
+    final prompt = normalizedTitle != null && normalizedTitle.isNotEmpty
+        ? _strings.t('case_archive_confirmation_named', <String, String>{
+            'current': currentCase.title,
+            'name': normalizedTitle,
+          })
+        : _strings.t('case_archive_confirmation', <String, String>{
+            'name': currentCase.title,
+          });
+
+    setState(() {
+      _awaitingCaseArchiveConfirmation = true;
+      _pendingNewCaseTitle = normalizedTitle;
+      _inputController.clear();
+    });
+
+    _appendAssistantMessage(prompt, speak: false);
+    await _speaker.stop();
+    await _speakAssistantMessage(prompt, resumeSpeechInputOnCompletion: true);
+  }
+
+  Future<void> _handleCaseArchiveConfirmation(
+    SpokenConfirmationChoice? confirmation,
+  ) async {
+    if (confirmation == null) {
+      final retryPrompt = _strings.t('case_archive_confirmation_retry');
+      _appendAssistantMessage(retryPrompt, speak: false);
+      await _speaker.stop();
+      await _speakAssistantMessage(
+        retryPrompt,
+        resumeSpeechInputOnCompletion: true,
+      );
+      return;
+    }
+
+    final pendingTitle = (_pendingNewCaseTitle ?? '').trim();
+    setState(() {
+      _awaitingCaseArchiveConfirmation = false;
+      _pendingNewCaseTitle = null;
+      _inputController.clear();
+    });
+
+    if (confirmation == SpokenConfirmationChoice.no) {
+      _appendAssistantMessage(_strings.t('case_archive_cancelled'));
+      return;
+    }
+
+    if (pendingTitle.isEmpty) {
+      await _promptForSpokenCaseTitle();
+      return;
+    }
+
+    await _createCaseWithTitle(
+      pendingTitle,
+      successMessage:
+          _strings.t('case_voice_created_continue', <String, String>{
+        'name': pendingTitle,
+      }),
+    );
+  }
+
+  Future<void> _storeSpokenName(SpokenProfileName? parsed) async {
     if (_isSavingSpokenName) {
       return;
     }
-    final parsed = parseSpokenProfileName(spokenText);
     if (parsed == null) {
       final retryMessage = speechNameRetryMessage(_selectedLocale.languageCode);
       _showSnackbar(retryMessage);
@@ -4309,145 +4643,97 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
   }
 
-  Future<void> _handleCompletedSpeechInput(String spokenText) async {
+  RuleEngineContext _buildRuleEngineContext({
+    required bool submitMessageWhenNoRuleMatches,
+  }) {
+    return RuleEngineContext(
+      awaitingProfileName: _awaitingSpokenName,
+      awaitingCaseArchiveConfirmation: _awaitingCaseArchiveConfirmation,
+      awaitingCaseTitle: _awaitingSpokenCaseTitle,
+      submitMessageWhenNoRuleMatches: submitMessageWhenNoRuleMatches,
+      currentDraft: _inputController.text,
+      lastDictatedDraft: _lastDictatedSpeechDraft,
+    );
+  }
+
+  Future<void> _applyRuleEngineAction(
+    RuleEngineAction action, {
+    required String originalInput,
+  }) async {
+    switch (action) {
+      case IgnoreRuleAction():
+        return;
+      case ConfirmCaseArchiveRuleAction(:final confirmation):
+        _lastHandledSpeechText = originalInput;
+        await _handleCaseArchiveConfirmation(confirmation);
+        return;
+      case StoreProfileNameRuleAction(:final profileName):
+        _lastHandledSpeechText = originalInput;
+        await _storeSpokenName(profileName);
+        return;
+      case SendCurrentDraftRuleAction(:final message):
+        _lastHandledSpeechText = originalInput;
+        if (_isListening) {
+          await _stopSpeechListening(submitAfterStop: false);
+          if (!mounted) {
+            return;
+          }
+        }
+        setState(() {
+          _inputController.text = message;
+          _inputController.selection = TextSelection.fromPosition(
+            TextPosition(offset: message.length),
+          );
+        });
+        await widget.logger.info(
+          'Speech send command recognized',
+          <String, Object?>{'message_length': message.length},
+        );
+        await _submitMessageText(message);
+        return;
+      case SubmitMessageRuleAction(:final message):
+        _lastHandledSpeechText = originalInput;
+        if (_awaitingSpokenCaseTitle) {
+          await _createCaseFromVoice(message);
+          return;
+        }
+        await widget.logger.info(
+          'Submitting speech-recognized message after speech stop',
+          <String, Object?>{'message_length': message.length},
+        );
+        await _submitMessageText(message);
+        return;
+      case CreateCaseRuleAction(:final title):
+        _lastHandledSpeechText = originalInput;
+        _inputController.clear();
+        _lastDictatedSpeechDraft = null;
+        await _requestNewCaseFromCommand(title: title);
+        return;
+    }
+  }
+
+  Future<void> _handleCompletedSpeechInput(
+    String spokenText, {
+    bool submitAfterRecognition = false,
+  }) async {
     final normalizedText = spokenText.trim();
     if (normalizedText.isEmpty || _lastHandledSpeechText == normalizedText) {
       return;
     }
 
-    if (_awaitingSpokenCaseTitle) {
-      _lastHandledSpeechText = normalizedText;
-      await _createCaseFromVoice(normalizedText);
-      return;
-    }
-
-    if (_awaitingSpokenName) {
-      _lastHandledSpeechText = normalizedText;
-      await _storeSpokenName(normalizedText);
-      return;
-    }
-
-    if (isSpokenSendCommand(normalizedText)) {
-      final pendingMessage = _resolvePendingSpeechMessageForSendCommand(
-        normalizedText,
-      );
-      if (pendingMessage == null) {
-        return;
-      }
-      _lastHandledSpeechText = normalizedText;
-      await _stopSpeechListeningSession(reason: 'send_command');
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _inputController.text = pendingMessage;
-        _inputController.selection = TextSelection.fromPosition(
-          TextPosition(offset: pendingMessage.length),
-        );
-      });
-      await widget.logger.info(
-        'Speech send command recognized',
-        <String, Object?>{'message_length': pendingMessage.length},
-      );
-      await _sendMessage();
-      return;
-    }
-
-    final command = parseSpokenCaseCreationCommand(normalizedText);
-    if (command == null) {
-      _lastHandledSpeechText = normalizedText;
-      await widget.logger.info(
-        'Speech draft updated',
-        <String, Object?>{'message_length': normalizedText.length},
-      );
-      return;
-    }
-
-    _lastHandledSpeechText = normalizedText;
-    if (command.requiresTitlePrompt) {
-      await _promptForSpokenCaseTitle();
-      return;
-    }
-
-    await _createCaseFromVoice(command.title!);
-  }
-
-  String? _resolvePendingSpeechMessageForSendCommand(String commandText) {
-    final current = _inputController.text.trim();
-    if (current.isNotEmpty && !isSpokenSendCommand(current)) {
-      return current;
-    }
-    final draft = (_lastDictatedSpeechDraft ?? '').trim();
-    if (draft.isEmpty || draft == commandText) {
-      return null;
-    }
-    return draft;
-  }
-
-  bool _shouldKeepSpeechListeningAlive() {
-    return mounted &&
-        _speechListeningRequested &&
-        _speechEnabled &&
-        _speechInputEnabled &&
-        !_isListening &&
-        !_isSending;
-  }
-
-  void _cancelSpeechSilenceTimer() {
-    _speechSilenceTimer?.cancel();
-    _speechSilenceTimer = null;
-  }
-
-  void _restartSpeechSilenceTimer() {
-    if (!_speechListeningRequested) {
-      return;
-    }
-    _cancelSpeechSilenceTimer();
-    _speechSilenceTimer = Timer(_speechSilenceTimeout, () {
-      unawaited(_stopSpeechListeningSession(reason: 'silence_timeout'));
-    });
-  }
-
-  Future<void> _scheduleSpeechListeningRestart({
-    required String reason,
-  }) async {
-    if (_speechRestartPending || !_shouldKeepSpeechListeningAlive()) {
-      return;
-    }
-    _speechRestartPending = true;
-    await Future<void>.delayed(_speechListenRestartDelay);
-    if (!_shouldKeepSpeechListeningAlive()) {
-      _speechRestartPending = false;
-      return;
-    }
-    await widget.logger.info(
-      'Restarting speech listening after platform stop',
-      <String, Object?>{'reason': reason},
+    final action = _ruleEngine.evaluate(
+      input: normalizedText,
+      context: _buildRuleEngineContext(
+        submitMessageWhenNoRuleMatches: submitAfterRecognition,
+      ),
     );
-    try {
-      await _startSpeechListening(refreshSilenceTimeout: false);
-    } finally {
-      if (!mounted || !_isListening) {
-        _speechRestartPending = false;
-      }
-    }
-  }
-
-  Future<void> _stopSpeechListeningSession({required String reason}) async {
-    _speechListeningRequested = false;
-    _speechRestartPending = false;
-    _cancelSpeechSilenceTimer();
-    await widget.logger.info(
-      'Stopping speech listening session',
-      <String, Object?>{'reason': reason, 'is_listening': _isListening},
+    await _applyRuleEngineAction(
+      action,
+      originalInput: normalizedText,
     );
-    if (_isListening) {
-      await _speechToText.stop();
-    }
   }
 
   Future<void> _toggleSpeechInput() async {
-    _cancelSpeechSilenceTimer();
     _lastHandledSpeechText = null;
     await _speaker.stop();
     if (!_speechEnabled) {
@@ -4458,8 +4744,8 @@ class _ChatHomePageState extends State<ChatHomePage>
       _showSnackbar(_strings.t('speech_input_disabled_message'));
       return;
     }
-    if (_isListening || _speechListeningRequested) {
-      await _stopSpeechListeningSession(reason: 'manual_toggle_off');
+    if (_isListening) {
+      await _stopSpeechListening(submitAfterStop: true);
       return;
     }
     if (_awaitingSpokenName) {
@@ -4509,12 +4795,12 @@ class _ChatHomePageState extends State<ChatHomePage>
 
     final nextValue = !_speechInputEnabled;
     if (!nextValue && _isListening) {
-      await _stopSpeechListeningSession(reason: 'speech_input_disabled');
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
     }
     if (!nextValue) {
-      _cancelSpeechSilenceTimer();
-      _speechListeningRequested = false;
-      _speechRestartPending = false;
       _lastHandledSpeechText = null;
     }
 
@@ -4529,7 +4815,9 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
       if (!nextValue) {
         _awaitingSpokenName = false;
+        _awaitingCaseArchiveConfirmation = false;
         _awaitingSpokenCaseTitle = false;
+        _pendingNewCaseTitle = null;
         _lastDictatedSpeechDraft = null;
       }
     });
@@ -4571,11 +4859,10 @@ class _ChatHomePageState extends State<ChatHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _updateCheckTimer?.cancel();
-    _cancelSpeechSilenceTimer();
-    _speechListeningRequested = false;
-    _speechRestartPending = false;
     unawaited(_speaker.stop());
-    _speechToText.stop();
+    _submitSpeechOnStop = false;
+    _processSpeechOnStop = false;
+    _speechRecognizer.stop();
     _inputController.dispose();
     _messagesScrollController.dispose();
     super.dispose();
@@ -4609,6 +4896,10 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _captureDocument() async {
+    if (_selectedCase == null) {
+      _showSnackbar(_strings.t('select_case'));
+      return;
+    }
     if (widget.cameras.isEmpty) {
       await widget.logger
           .info('Document capture requested with no available camera');
@@ -4625,52 +4916,125 @@ class _ChatHomePageState extends State<ChatHomePage>
         ),
       ),
     );
-    if (!mounted) {
+    if (!mounted || path == null || path.isEmpty) {
       return;
     }
+    await _uploadPlatformFiles(<PlatformFile>[
+      PlatformFile(
+          name: path.split(Platform.pathSeparator).last,
+          path: path,
+          size: await File(path).length()),
+    ]);
+  }
 
-    if (path != null) {
-      setState(() {
-        _documentPath = path;
-      });
-      await widget.logger.info(
-        'Document captured',
-        <String, Object?>{'document_path': path},
+  Future<void> _pickDocuments() async {
+    if (_selectedCase == null) {
+      _showSnackbar(_strings.t('select_case'));
+      return;
+    }
+    final result = await FilePicker.platform
+        .pickFiles(allowMultiple: true, withData: true);
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+    await _uploadPlatformFiles(result.files);
+  }
+
+  Future<void> _uploadPlatformFiles(List<PlatformFile> files) async {
+    final selected = _selectedCase;
+    if (selected == null || files.isEmpty) {
+      return;
+    }
+    try {
+      final uploaded = await _apiClient.uploadCaseDocuments(
+        caseId: selected.caseId,
+        userId: _signedInUser.userId,
+        files: files,
       );
-      _showSnackbar(_strings.t('document_added'));
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _caseDocuments = <CaseDocumentItem>[
+          ...uploaded,
+          ..._caseDocuments
+        ].fold<List<CaseDocumentItem>>(<CaseDocumentItem>[], (items, document) {
+          if (!items.any((existing) => existing.docId == document.docId)) {
+            items.add(document);
+          }
+          return items;
+        });
+      });
+      _showSnackbar('${uploaded.length} document(s) uploaded.');
+      await _refreshDocumentContext();
+    } catch (error) {
+      _showSnackbar('$error');
     }
   }
 
+  Future<void> _refreshDocumentContext() async {
+    final selected = _selectedCase;
+    if (selected == null) {
+      return;
+    }
+    try {
+      final context = await _apiClient.loadCaseDocumentContext(
+        caseId: selected.caseId,
+        userId: _signedInUser.userId,
+      );
+      if (!mounted) {
+        return;
+      }
+      final processed = context.processedDocuments.join(', ');
+      final pending = context.unprocessedDocuments.join(', ');
+      if (pending.isNotEmpty) {
+        _showSnackbar(
+            'Processed: ${processed.isEmpty ? 'none' : processed}; pending: $pending');
+      }
+    } catch (_) {}
+  }
+
   Future<void> _sendMessage() async {
+    if (_isListening) {
+      await _stopSpeechListening(submitAfterStop: true);
+      return;
+    }
     final text = _inputController.text.trim();
     if (text.isEmpty || _isSending) {
       return;
     }
-    _speechListeningRequested = false;
-    _speechRestartPending = false;
-    _cancelSpeechSilenceTimer();
-    if (_awaitingSpokenName) {
-      await _storeSpokenName(text);
-      return;
+
+    final action = _ruleEngine.evaluate(
+      input: text,
+      context: _buildRuleEngineContext(
+        submitMessageWhenNoRuleMatches: true,
+      ),
+    );
+    switch (action) {
+      case IgnoreRuleAction():
+        return;
+      case ConfirmCaseArchiveRuleAction(:final confirmation):
+        await _handleCaseArchiveConfirmation(confirmation);
+        return;
+      case StoreProfileNameRuleAction(:final profileName):
+        await _storeSpokenName(profileName);
+        return;
+      case CreateCaseRuleAction(:final title):
+        _inputController.clear();
+        _lastDictatedSpeechDraft = null;
+        await _requestNewCaseFromCommand(title: title);
+        return;
+      case SendCurrentDraftRuleAction(:final message):
+        await _submitMessageText(message);
+        return;
+      case SubmitMessageRuleAction(:final message):
+        await _submitMessageText(message);
+        return;
     }
-    if (_awaitingSpokenCaseTitle) {
-      await _createCaseFromVoice(text);
-      return;
-    }
-    _lastHandledSpeechText = null;
-    final voiceCaseCommand = parseSpokenCaseCreationCommand(text);
-    if (voiceCaseCommand != null) {
-      _appendUserMessageLocally(text);
-      _inputController.clear();
-      _lastDictatedSpeechDraft = null;
-      if (voiceCaseCommand.requiresTitlePrompt) {
-        await _promptForSpokenCaseTitle();
-      } else {
-        await _createCaseFromVoice(
-          voiceCaseCommand.title!,
-          originatingRequest: text,
-        );
-      }
+  }
+
+  Future<void> _submitMessageText(String text) async {
+    if (text.trim().isEmpty || _isSending) {
       return;
     }
     final caseReady = await _ensureCaseSelectedForOutgoingMessage(text);
@@ -4957,7 +5321,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _hasExportReady = false;
     });
     if (_isListening) {
-      await _stopSpeechListeningSession(reason: 'locale_changed');
+      await _speechRecognizer.stop();
     }
     await _loadSpeakerVoices();
     await widget.logger.info(
@@ -5028,30 +5392,18 @@ class _ChatHomePageState extends State<ChatHomePage>
     await _createCaseWithTitle(title.trim());
   }
 
-  Future<void> _startSpeechListening({
-    bool resetHandledText = false,
-    bool refreshSilenceTimeout = true,
-  }) async {
-    if (!_speechEnabled || !_speechInputEnabled || _isSending) {
-      return;
-    }
-    if (resetHandledText) {
-      _lastHandledSpeechText = null;
-    }
-    _speechListeningRequested = true;
-    _speechRestartPending = false;
-    if (refreshSilenceTimeout) {
-      _restartSpeechSilenceTimer();
-    }
-    await _speechToText.listen(
+  Future<void> _startSpeechListening() async {
+    _lastHandledSpeechText = null;
+    _lastFinalSpeechResult = null;
+    _submitSpeechOnStop = true;
+    _processSpeechOnStop = true;
+    await _speechRecognizer.listen(
       onResult: _onSpeechResult,
       listenFor: _speechMaxListenDuration,
       pauseFor: _speechSilenceTimeout,
       localeId: _localeIdForSpeech(_selectedLocale),
-      listenOptions: SpeechListenOptions(
-        partialResults: true,
-        listenMode: ListenMode.dictation,
-      ),
+      pauseFor: _speechService.config.pauseFor,
+      listenMode: ListenMode.dictation,
     );
   }
 
@@ -5061,7 +5413,10 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     if (_isListening) {
-      await _stopSpeechListeningSession(reason: 'prompt_case_title');
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
     }
     if (!mounted) {
       return;
@@ -5123,7 +5478,9 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
       setState(() {
         _cases = <CaseSummary>[created, ..._cases];
+        _awaitingCaseArchiveConfirmation = false;
         _awaitingSpokenCaseTitle = false;
+        _pendingNewCaseTitle = null;
         _inputController.clear();
       });
       await _selectCase(created);
@@ -5141,7 +5498,9 @@ class _ChatHomePageState extends State<ChatHomePage>
         return null;
       }
       setState(() {
+        _awaitingCaseArchiveConfirmation = false;
         _awaitingSpokenCaseTitle = false;
+        _pendingNewCaseTitle = null;
       });
       _showSnackbar('$error');
       return null;
@@ -5594,7 +5953,8 @@ class _ChatHomePageState extends State<ChatHomePage>
                                         ),
                                       )
                                     : const Icon(Icons.download_outlined),
-                                label: Text(document.originalFilename),
+                                label: Text(
+                                    '${document.originalFilename} (${document.processingStatus})'),
                               ),
                             )
                             .toList(),
@@ -5649,7 +6009,12 @@ class _ChatHomePageState extends State<ChatHomePage>
                     children: [
                       IconButton(
                         onPressed: _captureDocument,
-                        icon: const Icon(Icons.document_scanner),
+                        icon: const Icon(Icons.camera_alt_outlined),
+                        tooltip: strings.t('capture_document'),
+                      ),
+                      IconButton(
+                        onPressed: _pickDocuments,
+                        icon: const Icon(Icons.upload_file),
                         tooltip: strings.t('upload_documents'),
                       ),
                       const SizedBox(width: 8),

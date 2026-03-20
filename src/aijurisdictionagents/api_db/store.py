@@ -37,6 +37,7 @@ class SubscriptionPlan:
     subscription_type: str
     price_eur: int
     max_cases: int
+    max_documents_per_case: int
     case_ttl_days: int | None
 
 
@@ -79,6 +80,9 @@ class CaseDocument:
     storage_uri: str
     original_filename: str
     uploaded_by_user_id: str | None
+    processing_status: str
+    processing_error: str | None
+    processed_at: str | None
     created_at: str
 
 
@@ -188,9 +192,24 @@ class ApiDatabaseStore:
                     storage_uri TEXT NOT NULL,
                     original_filename TEXT NOT NULL,
                     uploaded_by_user_id TEXT,
+                    processing_status TEXT NOT NULL DEFAULT 'uploaded',
+                    processing_error TEXT,
+                    processed_at TEXT,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE,
                     FOREIGN KEY(uploaded_by_user_id) REFERENCES users(user_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS case_document_contents (
+                    content_id TEXT PRIMARY KEY,
+                    doc_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    extracted_text TEXT NOT NULL,
+                    embedding_vector TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(doc_id) REFERENCES case_documents(doc_id) ON DELETE CASCADE,
+                    FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS case_communications (
@@ -209,6 +228,7 @@ class ApiDatabaseStore:
                     subscription_type TEXT NOT NULL,
                     price_eur INTEGER NOT NULL,
                     max_cases INTEGER NOT NULL,
+                    max_documents_per_case INTEGER NOT NULL DEFAULT 2,
                     case_ttl_days INTEGER,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -230,6 +250,8 @@ class ApiDatabaseStore:
                 """,
             )
             self._ensure_user_schema(conn)
+            self._ensure_case_document_schema(conn)
+            self._ensure_subscription_schema(conn)
             self._seed_subscription_plans(conn)
 
     def check_connection(self) -> None:
@@ -304,7 +326,7 @@ class ApiDatabaseStore:
             rows = self._execute(
                 conn,
                 """
-                SELECT plan_code, display_name, subscription_type, price_eur, max_cases, case_ttl_days
+                SELECT plan_code, display_name, subscription_type, price_eur, max_cases, max_documents_per_case, case_ttl_days
                 FROM subscription_plans
                 ORDER BY price_eur ASC
                 """,
@@ -662,7 +684,8 @@ class ApiDatabaseStore:
             rows = self._execute(
                 conn,
                 """
-                SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id, created_at
+                SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id,
+                       processing_status, processing_error, processed_at, created_at
                 FROM case_documents
                 WHERE case_id = ?
                 ORDER BY created_at DESC, version DESC
@@ -676,7 +699,8 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id, created_at
+                SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id,
+                       processing_status, processing_error, processed_at, created_at
                 FROM case_documents
                 WHERE case_id = ? AND doc_id = ?
                 """,
@@ -794,9 +818,10 @@ class ApiDatabaseStore:
                 conn,
                 """
                 INSERT INTO case_documents(
-                    doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id, created_at
+                    doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id,
+                    processing_status, processing_error, processed_at, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded', NULL, NULL, ?)
                 """,
                 (
                     doc_id,
@@ -858,6 +883,109 @@ class ApiDatabaseStore:
                 (_now_iso(), case_id),
             )
         return communication_id
+
+    def count_case_documents(self, *, case_id: str, include_generated: bool = False) -> int:
+        query = "SELECT COUNT(*) FROM case_documents WHERE case_id = ?"
+        params: tuple[Any, ...] = (case_id,)
+        if not include_generated:
+            query += " AND kind = 'uploaded'"
+        with self._connect() as conn:
+            row = self._fetchone(conn, query, params)
+        return int(row[0]) if row else 0
+
+    def get_effective_subscription_plan(self, *, user_id: str) -> SubscriptionPlan:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT sp.plan_code, sp.display_name, sp.subscription_type, sp.price_eur,
+                       sp.max_cases, sp.max_documents_per_case, sp.case_ttl_days
+                FROM user_subscriptions us
+                JOIN subscription_plans sp ON sp.plan_code = us.plan_code
+                WHERE us.user_id = ? AND us.status = 'paid'
+                ORDER BY us.created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+        if row is None:
+            return SubscriptionPlan('free', 'Free', 'none', 0, 5, 2, 1)
+        return _row_to_subscription_plan(row)
+
+    def get_document_upload_limit(self, *, user_id: str) -> int:
+        user = self.find_user_by_id(user_id=user_id)
+        if user and (user.phone_number or '').strip() == '+421944400166':
+            return 50
+        return self.get_effective_subscription_plan(user_id=user_id).max_documents_per_case
+
+    def list_unprocessed_case_documents(self, *, limit: int = 20) -> list[CaseDocument]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id,
+                       processing_status, processing_error, processed_at, created_at
+                FROM case_documents
+                WHERE kind = 'uploaded' AND processing_status IN ('uploaded', 'failed')
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [_row_to_case_document(row) for row in rows]
+
+    def mark_document_processing(self, *, doc_id: str, status: str, error: str | None = None) -> None:
+        processed_at = _now_iso() if status == 'processed' else None
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE case_documents
+                SET processing_status = ?, processing_error = ?, processed_at = COALESCE(?, processed_at)
+                WHERE doc_id = ?
+                """,
+                (status, error, processed_at, doc_id),
+            )
+
+    def upsert_document_content(self, *, doc_id: str, case_id: str, extracted_text: str, embedding_vector: str) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            existing = self._fetchone(conn, 'SELECT content_id FROM case_document_contents WHERE doc_id = ?', (doc_id,))
+            if existing is None:
+                self._execute(
+                    conn,
+                    """
+                    INSERT INTO case_document_contents(
+                        content_id, doc_id, case_id, extracted_text, embedding_vector, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (str(uuid.uuid4()), doc_id, case_id, extracted_text, embedding_vector, now, now),
+                )
+            else:
+                self._execute(
+                    conn,
+                    """
+                    UPDATE case_document_contents
+                    SET extracted_text = ?, embedding_vector = ?, updated_at = ?
+                    WHERE doc_id = ?
+                    """,
+                    (extracted_text, embedding_vector, now, doc_id),
+                )
+
+    def list_case_document_contents(self, *, case_id: str) -> list[tuple[str, str, str, str]]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT c.doc_id, d.original_filename, c.extracted_text, c.embedding_vector
+                FROM case_document_contents c
+                JOIN case_documents d ON d.doc_id = c.doc_id
+                WHERE c.case_id = ?
+                ORDER BY d.created_at ASC
+                """,
+                (case_id,),
+            ).fetchall()
+        return [(str(r[0]), str(r[1]), str(r[2]), str(r[3])) for r in rows]
 
     def _ensure_case_root(self, case_id: str) -> None:
         (self.blob_root / case_id).mkdir(parents=True, exist_ok=True)
@@ -967,26 +1095,63 @@ class ApiDatabaseStore:
             """,
         )
 
+    def _ensure_case_document_schema(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'case_documents'",
+                ).fetchall()
+            }
+        else:
+            columns = {row[1] for row in self._execute(conn, "PRAGMA table_info(case_documents)").fetchall()}
+        if 'processing_status' not in columns:
+            self._execute(conn, "ALTER TABLE case_documents ADD COLUMN processing_status TEXT NOT NULL DEFAULT 'uploaded'")
+        if 'processing_error' not in columns:
+            self._execute(conn, "ALTER TABLE case_documents ADD COLUMN processing_error TEXT")
+        if 'processed_at' not in columns:
+            self._execute(conn, "ALTER TABLE case_documents ADD COLUMN processed_at TEXT")
+
+    def _ensure_subscription_schema(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'subscription_plans'",
+                ).fetchall()
+            }
+        else:
+            columns = {row[1] for row in self._execute(conn, "PRAGMA table_info(subscription_plans)").fetchall()}
+        if 'max_documents_per_case' not in columns:
+            self._execute(conn, "ALTER TABLE subscription_plans ADD COLUMN max_documents_per_case INTEGER NOT NULL DEFAULT 2")
+
     def _seed_subscription_plans(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
         now = _now_iso()
         plans = [
-            ("free", "Free", "none", 0, 5, 1),
-            ("case", "Case", "perCase", 10, 1, None),
-            ("basic", "Basic", "monthly", 30, 10, None),
-            ("premium", "Premium", "monthly", 100, 100, None),
+            ("free", "Free", "none", 0, 5, 2, 1),
+            ("case", "Case", "perCase", 10, 1, 5, None),
+            ("basic", "Basic", "monthly", 30, 10, 5, None),
+            ("premium", "Premium", "monthly", 100, 100, 50, None),
         ]
         for plan in plans:
             self._execute(
                 conn,
                 """
                 INSERT INTO subscription_plans(
-                    plan_code, display_name, subscription_type, price_eur, max_cases, case_ttl_days, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    plan_code, display_name, subscription_type, price_eur, max_cases, max_documents_per_case, case_ttl_days, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(plan_code) DO UPDATE SET
                     display_name = excluded.display_name,
                     subscription_type = excluded.subscription_type,
                     price_eur = excluded.price_eur,
                     max_cases = excluded.max_cases,
+                    max_documents_per_case = excluded.max_documents_per_case,
                     case_ttl_days = excluded.case_ttl_days,
                     updated_at = excluded.updated_at
                 """,
@@ -1022,7 +1187,8 @@ def _row_to_subscription_plan(row: tuple[object, ...]) -> SubscriptionPlan:
         subscription_type=str(values[2]),
         price_eur=int(values[3]),
         max_cases=int(values[4]),
-        case_ttl_days=int(values[5]) if values[5] is not None else None,
+        max_documents_per_case=int(values[5]),
+        case_ttl_days=int(values[6]) if values[6] is not None else None,
     )
 
 
@@ -1068,7 +1234,10 @@ def _row_to_case_document(row: tuple[Any, ...]) -> CaseDocument:
         storage_uri=str(row[4]),
         original_filename=str(row[5]),
         uploaded_by_user_id=str(row[6]) if row[6] is not None else None,
-        created_at=str(row[7]),
+        processing_status=str(row[7]),
+        processing_error=str(row[8]) if row[8] is not None else None,
+        processed_at=str(row[9]) if row[9] is not None else None,
+        created_at=str(row[10]),
     )
 
 

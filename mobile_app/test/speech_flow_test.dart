@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ai_jurisdiction_mobile/chat/rule_engine.dart';
 import 'package:ai_jurisdiction_mobile/chat/speech_flow.dart';
 
 void main() {
@@ -65,12 +66,20 @@ void main() {
     test('localizes the listening prompt for Slovak', () {
       expect(
         speechInputReadyMessage('SK', firstName: 'Martin'),
-        'Ahoj, Martin, pocuvam vas.',
+        'Ahoj, Martin, počúvam vás.',
       );
     });
   });
 
   group('parseSpokenCaseCreationCommand', () {
+    test('matches a polite English command without a spoken title', () {
+      final parsed = parseSpokenCaseCreationCommand('Please create a new case');
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, isNull);
+      expect(parsed.requiresTitlePrompt, isTrue);
+    });
+
     test('extracts a case title from an English command', () {
       final parsed = parseSpokenCaseCreationCommand(
         'Create a new case with name Tenant dispute',
@@ -121,6 +130,29 @@ void main() {
     });
   });
 
+  group('parseSpokenConfirmation', () {
+    test('matches an English confirmation', () {
+      expect(
+        parseSpokenConfirmation('please yes'),
+        SpokenConfirmationChoice.yes,
+      );
+    });
+
+    test('matches a Slovak rejection', () {
+      expect(
+        parseSpokenConfirmation('nie'),
+        SpokenConfirmationChoice.no,
+      );
+    });
+
+    test('does not treat normal content as a confirmation', () {
+      expect(
+        parseSpokenConfirmation('I need help with my contract'),
+        isNull,
+      );
+    });
+  });
+
   group('isSpokenSendCommand', () {
     test('matches English send command', () {
       expect(isSpokenSendCommand('Send'), isTrue);
@@ -167,6 +199,63 @@ void main() {
       expect(
         generateCaseTitleFromDiscussion('a a a', languageCode: 'EN'),
         'New case',
+      );
+    });
+  });
+
+  group('RuleEngine', () {
+    const engine = RuleEngine();
+
+    test('routes create-case commands to a dedicated rule action', () {
+      final action = engine.evaluate(
+        input: 'Please create a new case',
+        context: const RuleEngineContext(
+          awaitingProfileName: false,
+          awaitingCaseArchiveConfirmation: false,
+          awaitingCaseTitle: false,
+          submitMessageWhenNoRuleMatches: true,
+        ),
+      );
+
+      expect(action, isA<CreateCaseRuleAction>());
+      expect((action as CreateCaseRuleAction).requiresTitlePrompt, isTrue);
+    });
+
+    test('routes archive confirmation replies to a confirmation action', () {
+      final action = engine.evaluate(
+        input: 'áno',
+        context: const RuleEngineContext(
+          awaitingProfileName: false,
+          awaitingCaseArchiveConfirmation: true,
+          awaitingCaseTitle: false,
+          submitMessageWhenNoRuleMatches: true,
+        ),
+      );
+
+      expect(action, isA<ConfirmCaseArchiveRuleAction>());
+      expect(
+        (action as ConfirmCaseArchiveRuleAction).confirmation,
+        SpokenConfirmationChoice.yes,
+      );
+    });
+
+    test('routes send commands to the current dictated draft', () {
+      final action = engine.evaluate(
+        input: 'please send',
+        context: const RuleEngineContext(
+          awaitingProfileName: false,
+          awaitingCaseArchiveConfirmation: false,
+          awaitingCaseTitle: false,
+          submitMessageWhenNoRuleMatches: true,
+          currentDraft: 'please send',
+          lastDictatedDraft: 'Need help with contract termination',
+        ),
+      );
+
+      expect(action, isA<SendCurrentDraftRuleAction>());
+      expect(
+        (action as SendCurrentDraftRuleAction).message,
+        'Need help with contract termination',
       );
     });
   });
