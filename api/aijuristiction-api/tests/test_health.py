@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.versioning import get_mobile_app_version
 
 
 client = TestClient(app)
@@ -55,7 +56,7 @@ def test_version_endpoint() -> None:
     assert payload["version"] == payload["api_version"]
     assert payload["api_version"] != "unknown"
     assert isinstance(payload["core_version"], str)
-    assert payload["mobile_app_version"] == "0.1.5+18"
+    assert payload["mobile_app_version"] == get_mobile_app_version()
     assert payload["mobile_app_release_url"] == (
         "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest"
     )
