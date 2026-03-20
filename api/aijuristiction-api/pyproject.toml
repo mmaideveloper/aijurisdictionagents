@@ -12,6 +12,7 @@ dependencies = [
   "opentelemetry-instrumentation-fastapi>=0.48b0",
   "opentelemetry-sdk>=1.27.0",
   "python-dotenv>=1.0",
+  "python-multipart>=0.0.9",
   "reportlab>=4.0",
   "uvicorn[standard]>=0.35.0",
 ]

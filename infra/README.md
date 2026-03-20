@@ -427,3 +427,31 @@ Run from repository root:
 ```
 
 The script builds the laws collector image in ACR using `src/services/laws_collector/Dockerfile` and deploys the Container App with the image tag you provide.
+
+
+## Deploy document processor ACA job
+
+A dedicated deployment script and Bicep template are available for the document processor service:
+
+- Script: `infra/scripts/deploy_document_processor.ps1`
+- Template: `infra/bicep/document_processor.job.bicep`
+
+The deployment builds `src/services/document_processor/Dockerfile`, publishes the image to ACR, and creates or updates a scheduled Azure Container Apps Job that processes uploaded case documents into text/vector records.
+
+```powershell
+./infra/scripts/deploy_document_processor.ps1 \
+  -SubscriptionId "<subscription-id>" \
+  -ResourceGroupName "<resource-group>" \
+  -Location "westeurope" \
+  -ContainerAppEnvironmentName "<container-app-env-name>" \
+  -AcrName "<acr-name>" \
+  -ManagedIdentityName "<managed-identity-name>" \
+  -PostgresServerName "<postgres-server-name>" \
+  -PostgresDatabaseName "api" \
+  -PostgresAdminUsername "<postgres-admin-user>" \
+  -PostgresAdminPassword "<postgres-admin-password>" \
+  -StorageAccountName "<storage-account-name>" \
+  -StorageContainerName "documents" \
+  -CronExpression "0 */15 * * * *" \
+  -ImageTag "latest"
+```

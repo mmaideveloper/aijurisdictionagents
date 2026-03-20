@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from mimetypes import guess_type
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -52,6 +53,9 @@ class CaseDocumentResponse(BaseModel):
     kind: str
     version: int
     original_filename: str
+    processing_status: str
+    processing_error: str | None = None
+    processed_at: str | None = None
     created_at: str
 
 
@@ -59,6 +63,18 @@ class CaseHistoryResponse(BaseModel):
     messages: list[CaseHistoryMessageResponse]
     has_more: bool
     documents: list[CaseDocumentResponse]
+
+
+class CaseDocumentUploadResponse(BaseModel):
+    uploaded: list[CaseDocumentResponse]
+    document_limit: int
+    processed_document_count: int
+    unprocessed_document_count: int
+
+
+class CaseDocumentContextResponse(BaseModel):
+    processed_documents: list[str]
+    unprocessed_documents: list[str]
 
 
 def get_store() -> ApiDatabaseStore:
@@ -128,6 +144,55 @@ def get_case_history(
         for item in store.list_case_documents(case_id=case_id)
     ]
     return CaseHistoryResponse(messages=messages, has_more=has_more, documents=documents)
+
+
+@router.post('/{case_id}/documents', response_model=CaseDocumentUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_case_documents(
+    case_id: str,
+    user_id: str = Query(..., min_length=1),
+    files: list[UploadFile] = File(...),
+    store: ApiDatabaseStore = Depends(get_store),
+) -> CaseDocumentUploadResponse:
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    limit = store.get_document_upload_limit(user_id=user_id)
+    existing = store.count_case_documents(case_id=case_id)
+    if existing + len(files) > limit:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'Document limit reached for this case ({limit}).',
+        )
+    uploaded: list[CaseDocumentResponse] = []
+    next_version = existing + 1
+    for file in files:
+        filename = Path(file.filename or 'document').name or 'document'
+        payload = await file.read()
+        doc_id = store.add_case_document(
+            case_id=case_id,
+            kind='uploaded',
+            version=next_version,
+            original_filename=filename,
+            payload=payload,
+            uploaded_by_user_id=user_id,
+        )
+        uploaded.append(_to_case_document_response(store.get_case_document(case_id=case_id, doc_id=doc_id)))
+        next_version += 1
+    context = _document_context(case_id=case_id, store=store)
+    return CaseDocumentUploadResponse(
+        uploaded=uploaded,
+        document_limit=limit,
+        processed_document_count=len(context.processed_documents),
+        unprocessed_document_count=len(context.unprocessed_documents),
+    )
+
+
+@router.get('/{case_id}/documents/context', response_model=CaseDocumentContextResponse)
+def get_case_document_context(
+    case_id: str,
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_store),
+) -> CaseDocumentContextResponse:
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    return _document_context(case_id=case_id, store=store)
 
 
 @router.get('/{case_id}/documents/{doc_id}')
@@ -213,5 +278,24 @@ def _to_case_document_response(document: CaseDocument) -> CaseDocumentResponse:
         kind=document.kind,
         version=document.version,
         original_filename=document.original_filename,
+        processing_status=document.processing_status,
+        processing_error=document.processing_error,
+        processed_at=document.processed_at,
         created_at=document.created_at,
+    )
+
+
+def _document_context(*, case_id: str, store: ApiDatabaseStore) -> CaseDocumentContextResponse:
+    processed: list[str] = []
+    unprocessed: list[str] = []
+    for document in store.list_case_documents(case_id=case_id):
+        if document.kind != 'uploaded':
+            continue
+        if document.processing_status == 'processed':
+            processed.append(document.original_filename)
+        else:
+            unprocessed.append(document.original_filename)
+    return CaseDocumentContextResponse(
+        processed_documents=processed,
+        unprocessed_documents=unprocessed,
     )
