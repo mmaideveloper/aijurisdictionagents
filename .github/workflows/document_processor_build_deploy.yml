@@ -1,0 +1,205 @@
+name: Document Processor Build and Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/services/document_processor/**"
+      - "src/aijurisdictionagents/document_processor.py"
+      - "api/aijuristiction-api/tests/test_case_documents_processing.py"
+      - "infra/scripts/deploy_document_processor.ps1"
+      - "infra/bicep/document_processor.job.bicep"
+      - ".github/workflows/document_processor_build_deploy.yml"
+  pull_request:
+    paths:
+      - "src/services/document_processor/**"
+      - "src/aijurisdictionagents/document_processor.py"
+      - "api/aijuristiction-api/tests/test_case_documents_processing.py"
+      - "infra/scripts/deploy_document_processor.ps1"
+      - "infra/bicep/document_processor.job.bicep"
+      - ".github/workflows/document_processor_build_deploy.yml"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy the document processor ACA job"
+        required: false
+        type: boolean
+        default: true
+      github_environment:
+        description: "GitHub Environment that contains Azure variables"
+        required: true
+        default: "dev"
+      image_tag:
+        description: "Optional image tag override. Defaults to the commit SHA."
+        required: false
+        default: ""
+
+jobs:
+  test_and_build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install root dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Install API test dependencies
+        working-directory: api/aijuristiction-api
+        run: pip install -e .[dev]
+
+      - name: Run root unit tests
+        run: pytest
+
+      - name: Run document processor API integration test
+        working-directory: api/aijuristiction-api
+        run: pytest tests/test_case_documents_processing.py
+
+      - name: Build document processor Docker image
+        run: docker build -f src/services/document_processor/Dockerfile -t document-processor:${{ github.sha }} .
+
+  deploy_to_azure:
+    runs-on: windows-latest
+    needs: test_and_build
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.github_environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
+      AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
+      AZURE_POSTGRES_DATABASE_NAME: ${{ vars.AZURE_POSTGRES_DATABASE_NAME }}
+      AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
+      AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
+      AZURE_DOCUMENT_PROCESSOR_JOB_NAME: ${{ vars.AZURE_DOCUMENT_PROCESSOR_JOB_NAME }}
+      AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION: ${{ vars.AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate required environment variables
+        shell: pwsh
+        run: |
+          $required = @(
+            "AZURE_CLIENT_ID",
+            "AZURE_TENANT_ID",
+            "AZURE_SUBSCRIPTION_ID",
+            "AZURE_RESOURCE_GROUP",
+            "AZURE_LOCATION",
+            "AZURE_CONTAINERAPPS_ENVIRONMENT",
+            "AZURE_CONTAINER_REGISTRY",
+            "AZURE_MANAGED_IDENTITY_NAME",
+            "AZURE_POSTGRES_SERVER_NAME",
+            "AZURE_POSTGRES_ADMIN_USERNAME",
+            "AZURE_POSTGRES_ADMIN_PASSWORD",
+            "AZURE_STORAGE_ACCOUNT_NAME"
+          )
+
+          $missing = @()
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace((Get-Item "env:$name" -ErrorAction SilentlyContinue).Value)) {
+              $missing += $name
+            }
+          }
+
+          if ($missing.Count -gt 0) {
+            $missing | ForEach-Object { Write-Host "Missing GitHub Environment variable: $_" }
+            exit 1
+          }
+
+      - name: Normalize ACR settings
+        id: acr
+        shell: pwsh
+        run: |
+          $raw = "${env:AZURE_CONTAINER_REGISTRY}"
+          $lowered = $raw.Trim().ToLowerInvariant()
+          if ($lowered.EndsWith(".azurecr.io")) {
+            $lowered = $lowered.Substring(0, $lowered.Length - ".azurecr.io".Length)
+          }
+          $acrName = [regex]::Replace($lowered, "[^a-z0-9]", "")
+
+          if ([string]::IsNullOrWhiteSpace($acrName) -or $acrName.Length -lt 5 -or $acrName.Length -gt 50) {
+            Write-Error "Invalid ACR value '$raw'. Normalized name '$acrName' must be 5-50 alphanumeric characters."
+          }
+
+          if ($raw -ne $acrName -and $raw -ne "$acrName.azurecr.io") {
+            Write-Host "::warning::Normalized AZURE_CONTAINER_REGISTRY from '$raw' to '$acrName'."
+          }
+
+          "acr_name=$acrName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure Azure Container Apps extension
+        shell: pwsh
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Deploy document processor job
+        shell: pwsh
+        run: |
+          $jobName = if ([string]::IsNullOrWhiteSpace($env:AZURE_DOCUMENT_PROCESSOR_JOB_NAME)) {
+            "document-processor"
+          } else {
+            $env:AZURE_DOCUMENT_PROCESSOR_JOB_NAME
+          }
+
+          $cronExpression = if ([string]::IsNullOrWhiteSpace($env:AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION)) {
+            "0 */15 * * * *"
+          } else {
+            $env:AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION
+          }
+
+          $imageTagInput = "${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}"
+          $imageTag = if ([string]::IsNullOrWhiteSpace($imageTagInput)) {
+            "${{ github.sha }}"
+          } else {
+            $imageTagInput
+          }
+
+          $postgresDatabaseName = if ([string]::IsNullOrWhiteSpace($env:AZURE_POSTGRES_DATABASE_NAME)) {
+            "api"
+          } else {
+            $env:AZURE_POSTGRES_DATABASE_NAME
+          }
+
+          $storageContainerName = if ([string]::IsNullOrWhiteSpace($env:AZURE_STORAGE_CONTAINER_NAME)) {
+            "documents"
+          } else {
+            $env:AZURE_STORAGE_CONTAINER_NAME
+          }
+
+          ./infra/scripts/deploy_document_processor.ps1 `
+            -SkipEnvFile `
+            -SubscriptionId $env:AZURE_SUBSCRIPTION_ID `
+            -ResourceGroupName $env:AZURE_RESOURCE_GROUP `
+            -Location $env:AZURE_LOCATION `
+            -ContainerAppEnvironmentName $env:AZURE_CONTAINERAPPS_ENVIRONMENT `
+            -JobName $jobName `
+            -AcrName "${{ steps.acr.outputs.acr_name }}" `
+            -ManagedIdentityName $env:AZURE_MANAGED_IDENTITY_NAME `
+            -PostgresServerName $env:AZURE_POSTGRES_SERVER_NAME `
+            -PostgresDatabaseName $postgresDatabaseName `
+            -PostgresAdminUsername $env:AZURE_POSTGRES_ADMIN_USERNAME `
+            -PostgresAdminPassword $env:AZURE_POSTGRES_ADMIN_PASSWORD `
+            -StorageAccountName $env:AZURE_STORAGE_ACCOUNT_NAME `
+            -StorageContainerName $storageContainerName `
+            -CronExpression $cronExpression `
+            -ImageTag $imageTag

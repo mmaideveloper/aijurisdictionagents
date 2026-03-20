@@ -455,3 +455,16 @@ The deployment builds `src/services/document_processor/Dockerfile`, publishes th
   -CronExpression "0 */15 * * * *" \
   -ImageTag "latest"
 ```
+
+GitHub Actions workflow:
+
+- Workflow file: `.github/workflows/document_processor_build_deploy.yml`
+- Push to `main` for document processor changes: runs tests, validates the Docker image build, and deploys to the `dev` GitHub Environment
+- Pull requests: run tests and Docker build only
+- Manual run: supports `deploy=true|false`, custom GitHub Environment, and optional image tag override
+
+Required GitHub Environment variables/secrets for deployment:
+
+- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_DATABASE_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`, `AZURE_STORAGE_ACCOUNT_NAME`
+- Secret: `AZURE_POSTGRES_ADMIN_PASSWORD`
+- Optional variables: `AZURE_STORAGE_CONTAINER_NAME`, `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION`
