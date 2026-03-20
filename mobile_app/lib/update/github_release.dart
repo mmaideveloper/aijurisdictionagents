@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class SemanticVersion implements Comparable<SemanticVersion> {
   const SemanticVersion({
     required this.major,
@@ -77,6 +79,44 @@ GithubReleaseInfo? parseGithubReleaseInfo(Map<String, dynamic> payload) {
     version: version,
     releaseUrl: releaseUrl,
     apkDownloadUrl: pickGithubApkAssetDownloadUrl(assets),
+  );
+}
+
+GithubReleaseInfo? parseGithubReleaseResponseBody(String responseBody) {
+  try {
+    final decoded = jsonDecode(responseBody);
+    if (decoded is Map<String, dynamic>) {
+      return parseGithubReleaseInfo(decoded);
+    }
+    if (decoded is Map) {
+      return parseGithubReleaseInfo(Map<String, dynamic>.from(decoded));
+    }
+  } catch (_) {}
+  return null;
+}
+
+Uri? githubLatestReleaseApiUriFromReleaseUrl(String releaseUrl) {
+  final trimmed = releaseUrl.trim();
+  if (trimmed.isEmpty) {
+    return null;
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || uri.host.toLowerCase() != 'github.com') {
+    return null;
+  }
+  final segments =
+      uri.pathSegments.where((segment) => segment.isNotEmpty).toList();
+  if (segments.length < 4 || segments[2] != 'releases') {
+    return null;
+  }
+  final owner = segments[0];
+  final repo = segments[1];
+  if (owner.isEmpty || repo.isEmpty) {
+    return null;
+  }
+  return Uri.https(
+    'api.github.com',
+    '/repos/$owner/$repo/releases/latest',
   );
 }
 

@@ -244,7 +244,9 @@ Manual mobile workflow runs now also expose a `release` switch:
 - `release=true`: after the release APK is built, the workflow publishes or updates a GitHub Release tagged with the mobile app version from `pubspec.yaml` and uploads `app-release.apk` as a release asset
 
 The GitHub Release tag is the exact mobile app version, for example `0.1.1+2`,
-so the API-driven in-app update check and the downloadable APK stay aligned.
+so the in-app update check and the downloadable APK stay aligned. The app now
+resolves the actual latest GitHub release from the API-provided release URL, so
+a new mobile release can be detected without redeploying the API.
 
 Mobile app versioning rule:
 
