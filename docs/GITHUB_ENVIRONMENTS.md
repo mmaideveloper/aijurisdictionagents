@@ -2,6 +2,10 @@
 
 Use this guide to create `test` and `prod` GitHub Environments that mirror the existing `dev` setup for this repository.
 
+Maintenance rule:
+
+- Whenever a GitHub workflow gains new parameters, or infrastructure/deployment setup changes, update this document in the same change so `test` and `prod` setup instructions stay current.
+
 ## Goal
 
 Create two new GitHub Environments:

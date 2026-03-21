@@ -11,6 +11,11 @@ Environment variable rule:
 
 - Whenever you add a new environment variable to the project, add a documented example entry to `.env.example` in the same change.
 
+GitHub workflow / infra environment rule:
+
+- Whenever you add new parameters to a GitHub workflow, or change infrastructure inputs/required settings, update the documented setup steps for `test` and `prod` GitHub Environments in the same change.
+- Keep `docs/GITHUB_ENVIRONMENTS.md` aligned with workflow inputs, required GitHub Environment variables, required secrets, and any new manual setup steps.
+
 
 Software Development Life Cycle:
 

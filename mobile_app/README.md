@@ -299,6 +299,9 @@ CI auto-generates missing Flutter `android/` and `web/` platform scaffolding wit
 `flutter create` before build steps, so APK/web builds work even when only
 shared Flutter sources are committed.
 
+The CI analyze step also scans files under `tool/`, so helper/demo scripts in that
+folder should stay analyzer-clean and avoid warning-level lints.
+
 Speech service unit tests now initialize `TestWidgetsFlutterBinding` before constructing
 `FlutterTts`-backed services, which keeps the CI `flutter test` step stable after speech
 service factory coverage was added.
