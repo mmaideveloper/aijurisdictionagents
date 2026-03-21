@@ -400,6 +400,9 @@ Required GitHub Environment variable for frontend deployment:
 
 - `AZURE_FRONTEND_CONTAINER_APP_NAME`
 
+For a repo-level checklist to create additional GitHub Environments such as `test`
+and `prod`, see `docs/GITHUB_ENVIRONMENTS.md`.
+
 ## Deploy laws collector Container App
 
 A dedicated deployment script and Bicep template are available for the laws collector worker:

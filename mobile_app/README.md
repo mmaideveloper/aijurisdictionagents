@@ -235,6 +235,9 @@ and pass it to Flutter as `--dart-define=AIJ_API_BASE_URL=...` for APK/Web build
 Set `API_BASE_URL` per GitHub Environment (for example dev/stage/prod) to target
 that environment's API during build.
 
+For a full repository checklist to create additional GitHub Environments such as
+`test` and `prod`, see `docs/GITHUB_ENVIRONMENTS.md`.
+
 The workflow binds to GitHub Environment `dev` by default for push/pull_request builds,
 and `workflow_dispatch` allows overriding the environment with the `github_environment`
 input. If `API_BASE_URL` is missing, the workflow fails instead of falling back to a hardcoded URL.
