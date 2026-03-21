@@ -249,6 +249,21 @@ so the in-app update check and the downloadable APK stay aligned. The app now
 resolves the actual latest GitHub release from the API-provided release URL, so
 a new mobile release can be detected without redeploying the API.
 
+To keep Android upgrades installable over an existing app, published release APKs
+must be signed with the same keystore every time. Configure these GitHub secrets
+in the target environment or repository before running `release=true` builds:
+
+- `MOBILE_ANDROID_KEYSTORE_BASE64`: base64-encoded release keystore file
+- `MOBILE_ANDROID_KEYSTORE_PASSWORD`: keystore password
+- `MOBILE_ANDROID_KEY_ALIAS`: signing key alias inside the keystore
+- `MOBILE_ANDROID_KEY_PASSWORD`: signing key password
+
+When all four secrets are present, CI decodes the keystore into a temporary file
+and signs `app-release.apk` with that stable release key. If any secret is
+missing, CI falls back to the debug key, which is useful for ad hoc testing but
+can still cause Android signature mismatch errors during upgrade if the currently
+installed app was signed with a different key.
+
 Mobile app versioning rule:
 
 - For normal mobile app changes, increment only the revision/build suffix in `pubspec.yaml`.
@@ -260,6 +275,8 @@ The workflow uses `app-release.apk`, which the app prefers automatically during 
 If Android shows "App not installed" due to package/signature conflict, it means
 the installed build was signed differently (for example debug vs release). The app
 now warns about this case; uninstall the existing app and then install the new APK.
+For production-like update testing, install only APKs produced from the same
+configured release keystore; otherwise Android correctly rejects the upgrade.
 
 CI pins Flutter to `3.41.2` on the `stable` channel with dependency caching,
 uses the Flutter action cache and a 3-attempt retry loop for `flutter pub get`

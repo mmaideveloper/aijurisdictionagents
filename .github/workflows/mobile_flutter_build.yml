@@ -87,6 +87,32 @@ jobs:
           echo "Building APK version: ${APP_BUILD_NAME}+${APP_BUILD_NUMBER}"
           echo "GitHub release publish enabled: $RELEASE_ENABLED"
 
+      - name: Prepare Android release signing
+        shell: bash
+        env:
+          MOBILE_ANDROID_KEYSTORE_BASE64: ${{ secrets.MOBILE_ANDROID_KEYSTORE_BASE64 }}
+          MOBILE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.MOBILE_ANDROID_KEYSTORE_PASSWORD }}
+          MOBILE_ANDROID_KEY_ALIAS: ${{ secrets.MOBILE_ANDROID_KEY_ALIAS }}
+          MOBILE_ANDROID_KEY_PASSWORD: ${{ secrets.MOBILE_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${MOBILE_ANDROID_KEYSTORE_BASE64}" ] && \
+             [ -n "${MOBILE_ANDROID_KEYSTORE_PASSWORD}" ] && \
+             [ -n "${MOBILE_ANDROID_KEY_ALIAS}" ] && \
+             [ -n "${MOBILE_ANDROID_KEY_PASSWORD}" ]; then
+            KEYSTORE_PATH="$RUNNER_TEMP/aij-mobile-release.keystore"
+            printf '%s' "$MOBILE_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            {
+              echo "ORG_GRADLE_PROJECT_aijReleaseKeystorePath=$KEYSTORE_PATH"
+              echo "ORG_GRADLE_PROJECT_aijReleaseKeystorePassword=$MOBILE_ANDROID_KEYSTORE_PASSWORD"
+              echo "ORG_GRADLE_PROJECT_aijReleaseKeyAlias=$MOBILE_ANDROID_KEY_ALIAS"
+              echo "ORG_GRADLE_PROJECT_aijReleaseKeyPassword=$MOBILE_ANDROID_KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Stable Android release signing configured."
+          else
+            echo "Android release signing secrets not fully configured; falling back to the debug signing key."
+          fi
+
       - name: Install dependencies (retry)
         shell: bash
         run: |
