@@ -69,6 +69,8 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - The `Account` action now sits next to the PDF download buttons instead of the top header.
 - Download generated summary/document PDF files directly from the mobile app once a session exists.
 - Selecting a case now loads the latest 5 persisted case messages, with a paging button to load 5 more older messages while keeping chronological order in the chat area.
+- The mobile app now remembers the last selected case per signed-in user and API base URL, so reopening the app returns to the same existing case instead of always jumping back to the first item in the case list.
+- The case edit dialog now also shows the current case documents. Tapping a listed document downloads it and opens it with the same file-view flow used from the main case screen.
 - When an existing case is opened and the next chat session starts, the API now seeds that session with the case's stored message history so the model can continue from the prior conversation context.
 - If the selected case already has stored attachments, the mobile app shows download buttons for those case documents above the PDF/export controls.
 - After the user uploads case documents, the app now waits until those uploads reach a terminal processing state and then automatically sends a follow-up request asking the backend to summarize and analyze the uploaded material under the selected country law, including problems, risks, missing parts, and outdated clauses.

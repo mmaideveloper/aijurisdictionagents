@@ -12,6 +12,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -265,6 +266,8 @@ class AppStrings {
       'rename_case': 'Premenovať prípad',
       'save': 'Uložiť',
       'rename_case_failed': 'Premenovanie prípadu zlyhalo: {{error}}',
+      'open_case_document': 'Otvoriť {{filename}}',
+      'no_case_documents': 'Prípad zatiaľ neobsahuje dokumenty.',
       'case_deleted': 'Prípad bol odstránený.',
       'delete_case_failed': 'Odstránenie prípadu zlyhalo: {{error}}',
       'select_case': 'Vyberte prípad',
@@ -450,6 +453,8 @@ class AppStrings {
       'rename_case': 'Rename case',
       'save': 'Save',
       'rename_case_failed': 'Failed to rename case: {{error}}',
+      'open_case_document': 'Open {{filename}}',
+      'no_case_documents': 'This case does not contain documents yet.',
       'case_deleted': 'Case deleted.',
       'delete_case_failed': 'Failed to delete case: {{error}}',
       'select_case': 'Select case',
@@ -642,6 +647,8 @@ class AppStrings {
       'rename_case': 'Fall umbenennen',
       'save': 'Speichern',
       'rename_case_failed': 'Umbenennen des Falls fehlgeschlagen: {{error}}',
+      'open_case_document': '{{filename}} öffnen',
+      'no_case_documents': 'Dieser Fall enthält noch keine Dokumente.',
       'case_deleted': 'Fall wurde gelöscht.',
       'delete_case_failed': 'Löschen des Falls fehlgeschlagen: {{error}}',
       'select_case': 'Fall auswählen',
@@ -1227,6 +1234,16 @@ class CaseHistoryPage {
       hasMore: json['has_more'] == true,
     );
   }
+}
+
+class CaseEditDialogResult {
+  const CaseEditDialogResult({
+    this.renamedTitle,
+    this.documentToOpen,
+  });
+
+  final String? renamedTitle;
+  final CaseDocumentItem? documentToOpen;
 }
 
 class StreamEvent {
@@ -3647,6 +3664,7 @@ class ChatHomePage extends StatefulWidget {
 
 class _ChatHomePageState extends State<ChatHomePage>
     with WidgetsBindingObserver {
+  static const String _selectedCaseKeyPrefix = 'mobile_selected_case_v1';
   static const double _questionTimeoutSeconds = 3600;
   static const double _maxDiscussionMinutes = 60;
   static const double _communicationMinutes = 60;
@@ -3829,6 +3847,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _apiClient.setActiveCase(selected?.caseId);
       _resetMessagesForCurrentCase();
     });
+    await _persistSelectedCaseId(selected?.caseId);
     if (selected == null) {
       return;
     }
@@ -5732,7 +5751,12 @@ class _ChatHomePageState extends State<ChatHomePage>
       if (!mounted) {
         return;
       }
-      final selected = cases.isNotEmpty ? cases.first : null;
+      final preferredCaseId =
+          _selectedCase?.caseId ?? await _readPersistedSelectedCaseId();
+      final selected = _resolvePreferredCase(
+        cases: cases,
+        preferredCaseId: preferredCaseId,
+      );
       setState(() {
         _cases = cases;
       });
@@ -5748,6 +5772,68 @@ class _ChatHomePageState extends State<ChatHomePage>
         });
       }
     }
+  }
+
+  CaseSummary? _resolvePreferredCase({
+    required List<CaseSummary> cases,
+    required String? preferredCaseId,
+  }) {
+    if (cases.isEmpty) {
+      return null;
+    }
+    if (preferredCaseId == null || preferredCaseId.trim().isEmpty) {
+      return cases.first;
+    }
+    for (final item in cases) {
+      if (item.caseId == preferredCaseId) {
+        return item;
+      }
+    }
+    return cases.first;
+  }
+
+  Future<void> _persistSelectedCaseId(String? caseId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = _selectedCaseStorageKey();
+    if (caseId == null || caseId.trim().isEmpty) {
+      await prefs.remove(key);
+      return;
+    }
+    await prefs.setString(key, caseId.trim());
+  }
+
+  Future<String?> _readPersistedSelectedCaseId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_selectedCaseStorageKey());
+  }
+
+  String _selectedCaseStorageKey() {
+    final baseUri = Uri.parse(widget.apiBaseUrl);
+    final buffer = StringBuffer()
+      ..write(_selectedCaseKeyPrefix)
+      ..write('_')
+      ..write(baseUri.scheme.toLowerCase())
+      ..write('_')
+      ..write(baseUri.host.toLowerCase())
+      ..write('_')
+      ..write(_signedInUser.userId);
+    if (baseUri.hasPort) {
+      buffer
+        ..write('_')
+        ..write(baseUri.port);
+    }
+    final normalizedPath = baseUri.path.trim();
+    if (normalizedPath.isNotEmpty && normalizedPath != '/') {
+      buffer
+        ..write('_')
+        ..write(normalizedPath);
+    }
+    return buffer
+        .toString()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceFirst(RegExp(r'^_+'), '')
+        .replaceFirst(RegExp(r'_+$'), '');
   }
 
   Future<void> _createCase() async {
@@ -5902,23 +5988,75 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (selected == null) return;
     final controller = TextEditingController(text: selected.title);
     final strings = _strings;
-    final title = await showDialog<String>(
+    final dialogResult = await showDialog<CaseEditDialogResult>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(strings.t('rename_case')),
-        content: TextField(controller: controller),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(controller: controller),
+                const SizedBox(height: 16),
+                Text(
+                  strings.t('case_documents'),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                if (_caseDocuments.isEmpty)
+                  Text(strings.t('no_case_documents'))
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _caseDocuments.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final document = _caseDocuments[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.description_outlined),
+                          title: Text(document.originalFilename),
+                          subtitle: Text(document.processingStatus),
+                          onTap: () => Navigator.pop(
+                            context,
+                            CaseEditDialogResult(documentToOpen: document),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(strings.t('cancel')),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            onPressed: () => Navigator.pop(
+              context,
+              CaseEditDialogResult(renamedTitle: controller.text.trim()),
+            ),
             child: Text(strings.t('save')),
           ),
         ],
       ),
     );
+
+    final documentToOpen = dialogResult?.documentToOpen;
+    if (documentToOpen != null) {
+      await _downloadCaseDocument(documentToOpen);
+      return;
+    }
+
+    final title = dialogResult?.renamedTitle;
     if (title == null || title.trim().isEmpty) return;
     try {
       final updated = await _apiClient.renameCase(
