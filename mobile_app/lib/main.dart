@@ -270,6 +270,11 @@ class AppStrings {
       'select_case': 'Vyberte prípad',
       'case_history': 'História prípadu',
       'case_documents': 'Dokumenty prípadu',
+      'case_validation_title': 'Validacia pripadu',
+      'validation_accuracy_label': 'Presnost',
+      'validation_summary_label': 'Zhrnutie validacie',
+      'knowledge_updated_label': 'Pravne data aktualizovane',
+      'model_version_label': 'Verzia modelu',
       'show_next_5_messages': 'Zobraziť ďalších 5 správ',
       'download_case_document': 'Stiahnuť {{filename}}',
       'case_document_download_failed':
@@ -450,6 +455,11 @@ class AppStrings {
       'select_case': 'Select case',
       'case_history': 'Case history',
       'case_documents': 'Case documents',
+      'case_validation_title': 'Case validation',
+      'validation_accuracy_label': 'Accuracy',
+      'validation_summary_label': 'Validation summary',
+      'knowledge_updated_label': 'Legal data updated',
+      'model_version_label': 'Model version',
       'show_next_5_messages': 'Show next 5 messages',
       'download_case_document': 'Download {{filename}}',
       'case_document_download_failed':
@@ -637,6 +647,11 @@ class AppStrings {
       'select_case': 'Fall auswählen',
       'case_history': 'Fallhistorie',
       'case_documents': 'Falldokumente',
+      'case_validation_title': 'Fallvalidierung',
+      'validation_accuracy_label': 'Genauigkeit',
+      'validation_summary_label': 'Validierungszusammenfassung',
+      'knowledge_updated_label': 'Rechtsdaten aktualisiert',
+      'model_version_label': 'Modellversion',
       'show_next_5_messages': 'Weitere 5 Nachrichten zeigen',
       'download_case_document': '{{filename}} herunterladen',
       'case_document_download_failed':
@@ -1012,6 +1027,60 @@ bool _looksLikeGeneratedDocumentDraft(String content) {
   return trimmed.length >= 350 && (hasDocumentKeyword || hasStructuredSections);
 }
 
+String _documentAutoAnalysisPrompt({
+  required String languageCode,
+  required String countryCode,
+}) {
+  final normalized = _normalizeLanguageCode(languageCode);
+  if (normalized == 'SK') {
+    return 'Prosim zhrn a analyzuj vsetky nahrane dokumenty podla prava $countryCode. '
+        'Vypis pravne problemy, rozpory, rizika, chybajuce udaje alebo chybajuce casti. '
+        'Ak je dokument zastarany oproti novsej pravnej uprave, vysvetli co treba aktualizovat.';
+  }
+  if (normalized == 'GE') {
+    return 'Bitte fasse alle hochgeladenen Dokumente nach dem Recht von $countryCode zusammen und analysiere sie. '
+        'Nenne rechtliche Probleme, Widersprueche, Risiken sowie fehlende Angaben oder fehlende Teile. '
+        'Wenn ein Dokument gegenueber neuerem Recht veraltet ist, erklaere bitte, was aktualisiert werden muss.';
+  }
+  return 'Please summarize and analyze all uploaded documents under $countryCode law. '
+      'List legal problems, inconsistencies, risks, missing information, and missing clauses. '
+      'If any uploaded text is outdated compared with newer law, explain what should be updated.';
+}
+
+String _formatSessionTimestamp(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return '-';
+  }
+  final parsed = DateTime.tryParse(value.trim());
+  if (parsed == null) {
+    return value.trim();
+  }
+  final local = parsed.toLocal();
+  final year = local.year.toString().padLeft(4, '0');
+  final month = local.month.toString().padLeft(2, '0');
+  final day = local.day.toString().padLeft(2, '0');
+  final hour = local.hour.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '$year-$month-$day $hour:$minute';
+}
+
+String _formatAccuracy(double? value) {
+  if (value == null) {
+    return '-';
+  }
+  return '${value.toStringAsFixed(1)}%';
+}
+
+double? _parseDoubleValue(Object? value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value);
+  }
+  return null;
+}
+
 class CaseSummary {
   const CaseSummary({
     required this.caseId,
@@ -1177,6 +1246,48 @@ class ExportFilePayload {
   final Uint8List bytes;
   final String filename;
   final String contentType;
+}
+
+class SessionResultDetails {
+  const SessionResultDetails({
+    required this.finalRecommendation,
+    required this.judgeRationale,
+    required this.documentReady,
+    required this.validationAccuracy,
+    required this.validationSummary,
+    required this.knowledgeLastUpdatedAt,
+    required this.coreVersion,
+  });
+
+  final String finalRecommendation;
+  final String judgeRationale;
+  final bool documentReady;
+  final double? validationAccuracy;
+  final String? validationSummary;
+  final String? knowledgeLastUpdatedAt;
+  final String? coreVersion;
+
+  bool get hasValidationData =>
+      validationAccuracy != null ||
+      (validationSummary != null && validationSummary!.trim().isNotEmpty) ||
+      (knowledgeLastUpdatedAt != null &&
+          knowledgeLastUpdatedAt!.trim().isNotEmpty) ||
+      (coreVersion != null && coreVersion!.trim().isNotEmpty);
+
+  static SessionResultDetails fromJson(Map<String, dynamic> json) {
+    final metadata = Map<String, dynamic>.from(
+      json['metadata'] as Map? ?? const <String, dynamic>{},
+    );
+    return SessionResultDetails(
+      finalRecommendation: json['final_recommendation'] as String? ?? '',
+      judgeRationale: json['judge_rationale'] as String? ?? '',
+      documentReady: metadata['document_ready'] == true,
+      validationAccuracy: _parseDoubleValue(metadata['validation_accuracy']),
+      validationSummary: metadata['validation_summary'] as String?,
+      knowledgeLastUpdatedAt: metadata['knowledge_last_updated_at'] as String?,
+      coreVersion: metadata['core_version'] as String?,
+    );
+  }
 }
 
 class SessionExpiredException implements Exception {
@@ -2046,6 +2157,23 @@ class ApiClient {
     );
   }
 
+  Future<List<CaseDocumentItem>> loadCaseDocumentsSnapshot({
+    required String caseId,
+    required String userId,
+  }) async {
+    final response = await _get(
+      path: '/v1/cases/$caseId/history?user_id=$userId&offset=0&limit=1',
+      action: 'case_documents_snapshot',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+          'Case documents snapshot failed with status ${response.statusCode}.');
+    }
+    return CaseHistoryPage.fromJson(
+      _decodeResponseBody(response, action: 'case_documents_snapshot'),
+    ).documents;
+  }
+
   Future<ExportFilePayload> downloadCaseDocument({
     required String caseId,
     required String userId,
@@ -2074,16 +2202,21 @@ class ApiClient {
   }
 
   Future<bool> isDocumentExportReady() async {
+    final result = await loadSessionResultDetails();
+    return result?.documentReady ?? false;
+  }
+
+  Future<SessionResultDetails?> loadSessionResultDetails() async {
     final sessionId = _sessionId;
     if (sessionId == null || sessionId.isEmpty) {
-      return false;
+      return null;
     }
     final response = await _get(
       path: '/v1/chat/sessions/$sessionId/result',
       action: 'session_result',
     );
     if (response.statusCode == 404) {
-      return false;
+      return null;
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = _extractErrorDetail(response);
@@ -2091,12 +2224,9 @@ class ApiClient {
         'Session result lookup failed with status ${response.statusCode}: $detail',
       );
     }
-    final body = _decodeResponseBody(response, action: 'session_result');
-    final metadata = body['metadata'];
-    if (metadata is! Map) {
-      return false;
-    }
-    return metadata['document_ready'] == true;
+    return SessionResultDetails.fromJson(
+      _decodeResponseBody(response, action: 'session_result'),
+    );
   }
 
   void resetSession() {
@@ -3560,7 +3690,9 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _caseHistoryHasMore = false;
   int _caseHistoryOffset = 0;
   List<CaseDocumentItem> _caseDocuments = <CaseDocumentItem>[];
+  SessionResultDetails? _latestSessionResult;
   final Set<String> _downloadingCaseDocumentIds = <String>{};
+  final Set<String> _queuedAutoAnalysisDocIds = <String>{};
   String? _lastErrorCorrelationId;
   SemanticVersion? _installedAppVersion;
   String? _pendingUpdateInstallPath;
@@ -3574,6 +3706,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _submitSpeechOnStop = true;
   bool _processSpeechOnStop = true;
   bool _updateCheckInProgress = false;
+  bool _documentAutoAnalysisInProgress = false;
 
   bool get _showLocalResponderSwitch {
     return _isLocalApiBaseUrl(widget.apiBaseUrl);
@@ -3643,6 +3776,7 @@ class _ChatHomePageState extends State<ChatHomePage>
 
   void _resetMessagesForCurrentCase() {
     _awaitingSpokenName = false;
+    _latestSessionResult = null;
     _messages
       ..clear()
       ..add(_buildWelcomeMessage());
@@ -3690,6 +3824,8 @@ class _ChatHomePageState extends State<ChatHomePage>
       _caseHistoryOffset = 0;
       _caseHistoryHasMore = false;
       _caseDocuments = <CaseDocumentItem>[];
+      _latestSessionResult = null;
+      _queuedAutoAnalysisDocIds.clear();
       _apiClient.setActiveCase(selected?.caseId);
       _resetMessagesForCurrentCase();
     });
@@ -3790,6 +3926,53 @@ class _ChatHomePageState extends State<ChatHomePage>
         });
       }
     }
+  }
+
+  Widget _buildSessionResultCard(AppStrings strings) {
+    final result = _latestSessionResult;
+    if (result == null || !result.hasValidationData) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                strings.t('case_validation_title'),
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${strings.t('validation_accuracy_label')}: ${_formatAccuracy(result.validationAccuracy)}',
+              ),
+              if (result.validationSummary != null &&
+                  result.validationSummary!.trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '${strings.t('validation_summary_label')}: ${result.validationSummary!.trim()}',
+                ),
+              ],
+              const SizedBox(height: 6),
+              Text(
+                '${strings.t('knowledge_updated_label')}: ${_formatSessionTimestamp(result.knowledgeLastUpdatedAt)}',
+              ),
+              if (result.coreVersion != null &&
+                  result.coreVersion!.trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '${strings.t('model_version_label')}: ${result.coreVersion!.trim()}',
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _startPeriodicUpdateChecks() {
@@ -4621,11 +4804,11 @@ class _ChatHomePageState extends State<ChatHomePage>
   }) async {
     final container = ProviderScope.containerOf(context, listen: false);
     final result = await container.read(userCommandExecutorProvider).execute(
-      rawText,
-      currentUser: _signedInUser,
-      locales: appLocaleOptions,
-      authStore: widget.authStore,
-    );
+          rawText,
+          currentUser: _signedInUser,
+          locales: appLocaleOptions,
+          authStore: widget.authStore,
+        );
     if (!result.handled) {
       return false;
     }
@@ -4643,8 +4826,8 @@ class _ChatHomePageState extends State<ChatHomePage>
         return true;
       }
       final localeLabel = _strings.localeLabel(locale);
-      final message =
-          _strings.t('language_changed', <String, String>{'language': localeLabel});
+      final message = _strings
+          .t('language_changed', <String, String>{'language': localeLabel});
       _showSnackbar(message);
       _appendAssistantMessage(message);
     }
@@ -5027,6 +5210,12 @@ class _ChatHomePageState extends State<ChatHomePage>
       });
       _showSnackbar('${uploaded.length} document(s) uploaded.');
       await _refreshDocumentContext();
+      unawaited(
+        _queueUploadedDocumentAnalysis(
+          caseId: selected.caseId,
+          uploadedDocIds: uploaded.map((document) => document.docId).toSet(),
+        ),
+      );
     } catch (error) {
       _showSnackbar('$error');
     }
@@ -5052,6 +5241,128 @@ class _ChatHomePageState extends State<ChatHomePage>
             'Processed: ${processed.isEmpty ? 'none' : processed}; pending: $pending');
       }
     } catch (_) {}
+  }
+
+  Future<void> _queueUploadedDocumentAnalysis({
+    required String caseId,
+    required Set<String> uploadedDocIds,
+  }) async {
+    if (uploadedDocIds.isEmpty) {
+      return;
+    }
+    _queuedAutoAnalysisDocIds.addAll(uploadedDocIds);
+    if (_documentAutoAnalysisInProgress) {
+      return;
+    }
+    _documentAutoAnalysisInProgress = true;
+    try {
+      while (_queuedAutoAnalysisDocIds.isNotEmpty) {
+        if (!mounted || _selectedCase?.caseId != caseId) {
+          _queuedAutoAnalysisDocIds.clear();
+          return;
+        }
+        final currentBatch = Set<String>.from(_queuedAutoAnalysisDocIds);
+        final ready = await _waitForUploadedDocumentsToReachTerminalState(
+          caseId: caseId,
+          uploadedDocIds: currentBatch,
+        );
+        if (!ready || !mounted || _selectedCase?.caseId != caseId) {
+          return;
+        }
+        _queuedAutoAnalysisDocIds.removeAll(currentBatch);
+        await _waitForSendChannelToBeIdle();
+        if (!mounted || _selectedCase?.caseId != caseId) {
+          return;
+        }
+        final prompt = _documentAutoAnalysisPrompt(
+          languageCode: _selectedLocale.languageCode,
+          countryCode: _selectedLocale.countryCode,
+        );
+        await widget.logger.info(
+          'Automatic document analysis triggered',
+          <String, Object?>{
+            'case_id': caseId,
+            'document_count': currentBatch.length,
+          },
+        );
+        await _submitMessageText(prompt);
+      }
+    } finally {
+      _documentAutoAnalysisInProgress = false;
+    }
+  }
+
+  Future<bool> _waitForUploadedDocumentsToReachTerminalState({
+    required String caseId,
+    required Set<String> uploadedDocIds,
+  }) async {
+    const maxAttempts = 30;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      if (!mounted || _selectedCase?.caseId != caseId) {
+        return false;
+      }
+      try {
+        final documents = await _apiClient.loadCaseDocumentsSnapshot(
+          caseId: caseId,
+          userId: _signedInUser.userId,
+        );
+        if (!mounted || _selectedCase?.caseId != caseId) {
+          return false;
+        }
+        setState(() {
+          _caseDocuments = documents;
+        });
+        final tracked = documents
+            .where((document) => uploadedDocIds.contains(document.docId))
+            .toList(growable: false);
+        final allTerminal = tracked.length == uploadedDocIds.length &&
+            tracked.every((document) {
+              final status = document.processingStatus.toLowerCase();
+              return status == 'processed' || status == 'failed';
+            });
+        if (allTerminal) {
+          return true;
+        }
+      } catch (error, stackTrace) {
+        await widget.logger.error(
+          'Failed to poll uploaded document processing state',
+          error,
+          stackTrace,
+          <String, Object?>{
+            'case_id': caseId,
+            'tracked_document_count': uploadedDocIds.length,
+            'attempt': attempt + 1,
+          },
+        );
+      }
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+    return false;
+  }
+
+  Future<void> _waitForSendChannelToBeIdle() async {
+    while (mounted && _isSending) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+  }
+
+  Future<void> _refreshSessionResultDetails() async {
+    try {
+      final details = await _apiClient.loadSessionResultDetails();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _latestSessionResult = details;
+        _hasExportReady = details?.documentReady ?? _hasExportReady;
+      });
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Failed to refresh session result metadata',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -5191,12 +5502,19 @@ class _ChatHomePageState extends State<ChatHomePage>
               unawaited(_speakAssistantMessage(visibleContent));
             }
           }
-          if (event.event == 'result' || event.event == 'done') {
+          if (event.event == 'result' && event.data is Map) {
+            final result = SessionResultDetails.fromJson(
+              Map<String, dynamic>.from(event.data as Map),
+            );
             if (mounted) {
               setState(() {
-                _hasExportReady = true;
+                _latestSessionResult = result;
+                _hasExportReady = result.documentReady;
               });
             }
+          }
+          if (event.event == 'done') {
+            await _refreshSessionResultDetails();
           }
           if (event.event == 'error') {
             throw Exception('Discussion stream reported error: ${event.data}');
@@ -5209,7 +5527,8 @@ class _ChatHomePageState extends State<ChatHomePage>
           locale: _selectedLocale,
           documentPath: _documentPath,
         );
-        final exportReady = await _apiClient.isDocumentExportReady();
+        final sessionResult = await _apiClient.loadSessionResultDetails();
+        final exportReady = sessionResult?.documentReady ?? false;
         final visibleReply = _resolveAssistantVisibleReply(
           rawReply: reply,
           exportReady: exportReady,
@@ -5238,6 +5557,7 @@ class _ChatHomePageState extends State<ChatHomePage>
               ),
             );
             _hasExportReady = exportReady;
+            _latestSessionResult = sessionResult;
           });
           _scrollToLatest();
           unawaited(
@@ -6031,6 +6351,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                       ),
                     ),
                   ),
+                _buildSessionResultCard(strings),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
                   child: Wrap(

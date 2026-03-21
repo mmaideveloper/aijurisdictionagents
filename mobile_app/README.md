@@ -71,6 +71,8 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Selecting a case now loads the latest 5 persisted case messages, with a paging button to load 5 more older messages while keeping chronological order in the chat area.
 - When an existing case is opened and the next chat session starts, the API now seeds that session with the case's stored message history so the model can continue from the prior conversation context.
 - If the selected case already has stored attachments, the mobile app shows download buttons for those case documents above the PDF/export controls.
+- After the user uploads case documents, the app now waits until those uploads reach a terminal processing state and then automatically sends a follow-up request asking the backend to summarize and analyze the uploaded material under the selected country law, including problems, risks, missing parts, and outdated clauses.
+- After a backend reply or completed AI discussion, the chat screen now shows a compact case-validation card with the latest validation accuracy, validation summary, legal-data freshness timestamp, and current core model version returned by the API session result metadata.
 - App version is shown in the bottom-left corner of the screen.
 - On startup, app blocks the auth flow until `GET /health` returns healthy.
   - failed health checks show the current API error on screen
@@ -185,6 +187,7 @@ PDF exports are downloaded through:
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary`
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document`
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5`
+- `GET /v1/chat/sessions/{session_id}/result`
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...`
 Use the single `Documents` button above the message composer to download all user-requested export documents (summary + document PDF).
 On Android, the app now immediately tries to open the saved file in an external PDF/document app after the download finishes.
@@ -192,6 +195,7 @@ Buttons are enabled after AI stream emits `result`/`done` (PDF must be generated
 In `Real Agent` mode, when the lawyer decides a formal document is needed, the agent first asks for confirmation and the PDF buttons stay disabled until the follow-up reply actually prepares the document.
 In `AI User Simulator` mode, submitting the instruction starts discussion streaming (SSE)
 the same way as the chat simulator by using `user_simulation_mode=AIUserSimulatorAgent`.
+The app also reads `GET /v1/chat/sessions/{session_id}/result` metadata to show validation accuracy and the latest known legal-data update timestamp for the selected country.
 
 
 ## Debug mode and log sharing (Android)

@@ -1,6 +1,7 @@
 import json
 from io import BytesIO
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -472,6 +473,9 @@ def test_reply_endpoint_requires_confirmation_before_document_pdf_ready() -> Non
     assert second_metadata["document_requested"] is True
     assert second_metadata["document_confirmed"] is True
     assert second_metadata["document_ready"] is True
+    assert "validation_accuracy" in second_metadata
+    assert "validation_summary" in second_metadata
+    assert "core_version" in second_metadata
 
     export_doc_pdf = client.get(
         f"/v1/chat/sessions/{session_id}/export?format=pdf&kind=document",
@@ -536,6 +540,64 @@ def test_document_export_ready_after_confirmation_with_prior_case_update() -> No
     assert result.metadata["document_requested"] is True
     assert result.metadata["document_confirmed"] is True
     assert result.metadata["document_ready"] is True
+
+
+def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_path) -> None:
+    from app.chat.api import _build_direct_reply_result
+    from app.chat.models import Message, MessageRole, Session
+
+    laws_db = tmp_path / "laws.sqlite3"
+    with sqlite3.connect(laws_db) as conn:
+        conn.execute(
+            """
+            CREATE TABLE law_documents (
+                document_id TEXT PRIMARY KEY,
+                country_code TEXT NOT NULL,
+                last_stored_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO law_documents(document_id, country_code, last_stored_at)
+            VALUES ('doc-1', 'SK', '2026-02-10T12:30:00Z')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO law_documents(document_id, country_code, last_stored_at)
+            VALUES ('doc-2', 'SK', '2026-03-11T08:15:00Z')
+            """
+        )
+        conn.commit()
+
+    monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
+    monkeypatch.setenv("LAWS_DB_LOCAL", str(laws_db))
+
+    session_id = uuid4()
+    session = Session(id=session_id, country="SK", language="EN", discussion_type="court")
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Please review my uploaded lease amendment and tell me what is missing.",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="The document is missing a termination clause and clear effective date.",
+        ),
+    ]
+
+    result = _build_direct_reply_result(
+        session_id=session_id,
+        session=session,
+        messages=messages,
+        lawyer_message=messages[-1].content,
+    )
+
+    assert result.metadata["knowledge_last_updated_at"] == "2026-03-11T08:15:00Z"
 
 
 def test_chat_endpoints_require_api_key() -> None:

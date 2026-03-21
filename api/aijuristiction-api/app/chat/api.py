@@ -25,6 +25,7 @@ from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 from app.chat.core_runtime import core_message_role, run_orchestration
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.repository import InMemoryChatRepository
+from app.chat.result_metadata import build_session_result_metadata
 from app.security import require_api_key
 from app.versioning import get_api_version, get_core_version
 
@@ -495,11 +496,17 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 user_response_provider=user_response_provider,
                 message_callback=message_callback,
             )
+            persisted_messages = _repository.list_messages(session_id)
             session_result = SessionResult(
                 final_recommendation=result.final_recommendation,
                 judge_rationale=result.judge_rationale,
                 citations=[{"filename": c.filename, "snippet": c.snippet} for c in result.citations],
-                metadata={"message_count": len(result.messages)},
+                metadata=build_session_result_metadata(
+                    session=session,
+                    messages=persisted_messages,
+                    final_recommendation=result.final_recommendation,
+                    base_metadata={"message_count": len(result.messages), "mode": "discussion_stream"},
+                ),
             )
             _repository.set_result(session_id, session_result)
             event_queue.put(("result", session_result.model_dump(mode="json")))
@@ -633,15 +640,20 @@ def _build_direct_reply_result(
         final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
         judge_rationale=rationale,
         citations=[],
-        metadata={
-            "message_count": len(messages),
-            "mode": "direct_reply",
-            "country": session.country,
-            "language": session.language or "",
-            "document_requested": document_requested,
-            "document_confirmed": document_confirmed,
-            "document_ready": document_ready,
-        },
+        metadata=build_session_result_metadata(
+            session=session,
+            messages=messages,
+            final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
+            base_metadata={
+                "message_count": len(messages),
+                "mode": "direct_reply",
+                "country": session.country,
+                "language": session.language or "",
+                "document_requested": document_requested,
+                "document_confirmed": document_confirmed,
+                "document_ready": document_ready,
+            },
+        ),
     )
 
 
