@@ -203,12 +203,12 @@ Typical order:
 
 ## 11. Current Workflow Defaults
 
-Some workflows still default to `dev` for push-based execution.
+Some workflows default to `dev` for push-based execution.
 
 That means:
 
-- `dev` remains the default automatic environment for some workflows
-- `test` and `prod` are primarily intended for manual `workflow_dispatch` runs unless workflow defaults are changed
+- `API Build and Deploy` now deploys automatically to `dev` on `push` to `main` after tests/build pass
+- `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 
 ## 12. Quick Validation Checklist
 

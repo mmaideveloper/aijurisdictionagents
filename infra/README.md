@@ -263,7 +263,9 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 5. Run the workflow:
 
 - Workflow: `API Build and Deploy`
+- Push to `main`: automatically deploys to the `dev` GitHub Environment after tests/build pass
 - Inputs: `deploy=true`, `github_environment=<environment>`
+  - Manual `workflow_dispatch` is still the path for non-`dev` environments such as `test` and `prod`
 
 ## GitHub workflow for database schema upgrades only
 

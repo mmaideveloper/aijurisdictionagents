@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - "api/aijuristiction-api/**"
+      - "src/aijurisdictionagents/**"
+      - "databases/**"
       - ".github/workflows/api_build_deploy.yml"
   pull_request:
     paths:
       - "api/aijuristiction-api/**"
+      - "src/aijurisdictionagents/**"
+      - "databases/**"
       - ".github/workflows/api_build_deploy.yml"
   workflow_dispatch:
     inputs:
@@ -55,8 +59,8 @@ jobs:
   deploy_to_azure:
     runs-on: ubuntu-latest
     needs: test_and_build
-    if: inputs.deploy == 'true'
-    environment: ${{ inputs.github_environment }}
+    if: github.event_name != 'workflow_dispatch' || inputs.deploy == 'true'
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.github_environment || 'dev' }}
     permissions:
       id-token: write
       contents: read
