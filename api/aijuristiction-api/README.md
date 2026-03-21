@@ -115,8 +115,8 @@ Example:
 ```json
 {
   "service": "aijuristiction-api",
-  "version": "1.0.260318",
-  "api_version": "1.0.260318",
+  "version": "1.0.260321",
+  "api_version": "1.0.260321",
   "core_version": "0.1.0",
   "mobile_app_version": "0.1.5+18",
   "mobile_app_release_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest",
@@ -243,6 +243,7 @@ The dedicated local PostgreSQL project now lives under `databases/README.md`.
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
 - The mobile app uses these endpoints to show the latest 5 saved case messages after case selection and to expose case-document download buttons.
+- If an older case-history transcript blob is missing or unreadable, the API now falls back to the stored communication summary instead of failing the history load or blocking new session creation for that case.
 
 ## PDF export
 
@@ -583,6 +584,7 @@ New endpoints:
 - `GET /v1/chat/sessions/{session_id}/export?format=json|pdf&kind=summary|document` (`kind` applies to `pdf`)
 
 If `POST /v1/chat/sessions` is created with `case_id`, the API now seeds that new in-memory session with the stored case history so the next reply/stream turn can continue the existing case context instead of starting with an empty prompt.
+If one of those seeded case-history transcript files is missing, the API falls back to the saved summary text so existing cases can still create a session and continue.
 
 
 ## Minimal runnable example (streaming API + core)

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import time
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -95,6 +98,7 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
             content=f"Message {index}",
             agent_name="LawyerSlovakia" if role == "assistant" else "User",
         )
+        time.sleep(0.002)
     doc_id = store.add_case_text_document(
         case_id=case_id,
         original_filename="evidence.txt",
@@ -130,3 +134,45 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert document.status_code == 200
     assert document.content == b"Case evidence payload"
     assert document.headers["content-disposition"].endswith('filename="evidence.txt"')
+
+
+def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:
+    import app.cases_api as cases_api
+
+    client = TestClient(app)
+
+    class _FakeStore:
+        def get_case(self, *, case_id: str):
+            return SimpleNamespace(case_id=case_id, user_id="user-1", status="active")
+
+        def list_case_communications(self, *, case_id: str, limit=None, offset: int = 0):
+            return [
+                SimpleNamespace(
+                    communication_id="comm-1",
+                    case_id=case_id,
+                    channel="chat",
+                    transcript_uri="missing://transcript",
+                    summary="ASSISTANT: Summary fallback content (agent=LawyerSlovakia)",
+                    created_at="2026-03-21T10:00:00Z",
+                ),
+            ]
+
+        def list_case_documents(self, *, case_id: str):
+            return []
+
+        def read_storage_text(self, *, storage_uri: str) -> str:
+            raise FileNotFoundError(storage_uri)
+
+    app.dependency_overrides[cases_api.get_store] = lambda: _FakeStore()
+    try:
+        response = client.get(
+            "/v1/cases/case-1/history?user_id=user-1&offset=0&limit=5",
+            headers=_headers(),
+        )
+    finally:
+        app.dependency_overrides.pop(cases_api.get_store, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["messages"][0]["content"] == "Summary fallback content"
+    assert payload["messages"][0]["agent_name"] == "LawyerSlovakia"

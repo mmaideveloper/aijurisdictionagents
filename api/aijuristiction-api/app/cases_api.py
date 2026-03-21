@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from mimetypes import guess_type
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from aijurisdictionagents.api_db import (
 
 router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key)])
 _MAX_ACTIVE_CASES = 5
+_LOGGER = logging.getLogger(__name__)
 
 
 class CaseResponse(BaseModel):
@@ -240,12 +242,32 @@ def _ensure_case_access(*, case_id: str, user_id: str, store: ApiDatabaseStore) 
     return case
 
 
+def _read_case_communication_content(
+    *, store: ApiDatabaseStore, communication: CaseCommunication
+) -> str:
+    content: str = communication.summary
+    transcript_uri = communication.transcript_uri
+    if transcript_uri is None or not transcript_uri.strip():
+        return content
+    try:
+        return str(store.read_storage_text(storage_uri=transcript_uri))
+    except Exception:
+        _LOGGER.warning(
+            'Falling back to case communication summary because transcript could not be read',
+            extra={
+                'case_id': communication.case_id,
+                'communication_id': communication.communication_id,
+                'transcript_uri': transcript_uri,
+            },
+            exc_info=True,
+        )
+        return content
+
+
 def _to_case_history_message_response(
     *, store: ApiDatabaseStore, communication: CaseCommunication
 ) -> CaseHistoryMessageResponse:
-    content = communication.summary
-    if communication.transcript_uri:
-        content = store.read_storage_text(storage_uri=communication.transcript_uri)
+    content = _read_case_communication_content(store=store, communication=communication)
     role = 'assistant'
     agent_name: str | None = None
     normalized = content.strip()

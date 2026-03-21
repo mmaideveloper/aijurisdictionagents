@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 import json
+import logging
 import re
 import time
 import textwrap
@@ -38,6 +39,7 @@ _repository = InMemoryChatRepository()
 _FINISH_RESPONSES = {"finish", "no", "nope", "done", "exit", "quit", "stop"}
 _API_VERSION = get_api_version()
 _CORE_VERSION = get_core_version()
+_LOGGER = logging.getLogger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
@@ -89,10 +91,28 @@ def _persist_case_message_if_needed(*, session: Session, role: str, content: str
     store.add_case_message(case_id=case_id, role=role, content=content, agent_name=agent_name)
 
 
+def _read_case_communication_content(*, store: ApiDatabaseStore, communication: Any) -> str:
+    content = str(getattr(communication, "summary", ""))
+    transcript_uri = getattr(communication, "transcript_uri", None)
+    if not isinstance(transcript_uri, str) or not transcript_uri.strip():
+        return content
+    try:
+        return str(store.read_storage_text(storage_uri=transcript_uri))
+    except Exception:
+        _LOGGER.warning(
+            "Falling back to case communication summary because transcript could not be read",
+            extra={
+                "case_id": getattr(communication, "case_id", None),
+                "communication_id": getattr(communication, "communication_id", None),
+                "transcript_uri": transcript_uri,
+            },
+            exc_info=True,
+        )
+        return content
+
+
 def _parse_case_history_entry(*, store: ApiDatabaseStore, communication: Any) -> tuple[MessageRole, str, str | None]:
-    content = communication.summary
-    if communication.transcript_uri:
-        content = store.read_storage_text(storage_uri=communication.transcript_uri)
+    content = _read_case_communication_content(store=store, communication=communication)
     role = MessageRole.ASSISTANT
     agent_name: str | None = None
     normalized = content.strip()
