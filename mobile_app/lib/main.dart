@@ -4707,20 +4707,12 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
   }
 
-    final handledCommand = await _tryHandleUserCommand(
-      normalizedText,
-      appendUserMessage: true,
-    );
-    if (handledCommand) {
-      _lastHandledSpeechText = normalizedText;
-      return;
-    }
-
-    if (isSpokenSendCommand(normalizedText)) {
-      final pendingMessage = _resolvePendingSpeechMessageForSendCommand(
-        normalizedText,
-      );
-      if (pendingMessage == null) {
+  Future<void> _applyRuleEngineAction(
+    RuleEngineAction action, {
+    required String originalInput,
+  }) async {
+    switch (action) {
+      case IgnoreRuleAction():
         return;
       case ConfirmCaseArchiveRuleAction(:final confirmation):
         _lastHandledSpeechText = originalInput;
@@ -4777,6 +4769,15 @@ class _ChatHomePageState extends State<ChatHomePage>
   }) async {
     final normalizedText = spokenText.trim();
     if (normalizedText.isEmpty || _lastHandledSpeechText == normalizedText) {
+      return;
+    }
+
+    final handledCommand = await _tryHandleUserCommand(
+      normalizedText,
+      appendUserMessage: true,
+    );
+    if (handledCommand) {
+      _lastHandledSpeechText = normalizedText;
       return;
     }
 
@@ -5063,6 +5064,15 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
 
+    _lastHandledSpeechText = null;
+    final handledCommand = await _tryHandleUserCommand(
+      text,
+      appendUserMessage: true,
+    );
+    if (handledCommand) {
+      return;
+    }
+
     final action = _ruleEngine.evaluate(
       input: text,
       context: _buildRuleEngineContext(
@@ -5090,29 +5100,9 @@ class _ChatHomePageState extends State<ChatHomePage>
         await _submitMessageText(message);
         return;
     }
-    _lastHandledSpeechText = null;
-    final handledCommand = await _tryHandleUserCommand(
-      text,
-      appendUserMessage: true,
-    );
-    if (handledCommand) {
-      return;
-    }
-    final voiceCaseCommand = parseSpokenCaseCreationCommand(text);
-    if (voiceCaseCommand != null) {
-      _appendUserMessageLocally(text);
-      _inputController.clear();
-      _lastDictatedSpeechDraft = null;
-      if (voiceCaseCommand.requiresTitlePrompt) {
-        await _promptForSpokenCaseTitle();
-      } else {
-        await _createCaseFromVoice(
-          voiceCaseCommand.title!,
-          originatingRequest: text,
-        );
-      }
-      return;
-    }
+  }
+
+  Future<void> _submitMessageText(String text) async {
     final caseReady = await _ensureCaseSelectedForOutgoingMessage(text);
     if (!caseReady || _selectedCase == null) {
       return;

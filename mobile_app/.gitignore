@@ -6,3 +6,5 @@ build/
 .flutter-plugins-dependencies
 .idea/
 *.iml
+release.keystore
+release.keystore.base64.txt

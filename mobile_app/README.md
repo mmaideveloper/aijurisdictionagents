@@ -264,6 +264,13 @@ missing, CI falls back to the debug key, which is useful for ad hoc testing but
 can still cause Android signature mismatch errors during upgrade if the currently
 installed app was signed with a different key.
 
+Local helper scripts:
+
+- Export the release keystore as base64 for `MOBILE_ANDROID_KEYSTORE_BASE64`:
+  `pwsh ./mobile_app/tool/export_release_keystore_base64.ps1`
+- Build a signed release APK locally with the generated keystore:
+  `pwsh ./mobile_app/tool/build_release_signed.ps1 -KeystorePassword "<password>" -KeyAlias "release" -ApiBaseUrl "http://10.0.2.2:8080"`
+
 Mobile app versioning rule:
 
 - For normal mobile app changes, increment only the revision/build suffix in `pubspec.yaml`.
