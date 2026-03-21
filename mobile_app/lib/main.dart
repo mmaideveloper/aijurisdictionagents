@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -16,6 +17,8 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api/app_status.dart';
+import 'app/app_locale.dart';
+import 'state/mobile_app_providers.dart';
 import 'audio/jurisdicta_speaker.dart';
 import 'speech_service.dart';
 import 'auth/local_auth_store.dart';
@@ -43,7 +46,6 @@ const String _defaultLanguage = String.fromEnvironment(
   'AIJ_DEFAULT_LANGUAGE',
   defaultValue: 'SK',
 );
-const String _fallbackLanguageCode = 'SK';
 const String _localAutofillPhoneNumber = '+421944400166';
 
 const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
@@ -56,24 +58,13 @@ const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
 };
 
 String _normalizeLanguageCode(String languageCode) {
-  final normalized = languageCode.trim().toUpperCase();
-  if (normalized == 'DE') {
-    return 'GE';
-  }
-  switch (normalized) {
-    case 'SK':
-    case 'EN':
-    case 'GE':
-      return normalized;
-    default:
-      return _fallbackLanguageCode;
-  }
+  return normalizeAppLanguageCode(languageCode);
 }
 
 String _sessionExpiredMessageForLanguage(String languageCode) {
   final normalized = _normalizeLanguageCode(languageCode);
   return _sessionExpiredMessagesByLanguage[normalized] ??
-      _sessionExpiredMessagesByLanguage[_fallbackLanguageCode]!;
+      _sessionExpiredMessagesByLanguage[fallbackAppLanguageCode]!;
 }
 
 String _defaultApiBaseUrl() {
@@ -127,26 +118,6 @@ bool _isLocalApiBaseUrl(String apiBaseUrl) {
 
 enum ResponderMode { aiUserSimulator, realPerson }
 
-class LocaleOption {
-  const LocaleOption({
-    required this.countryCode,
-    required this.languageCode,
-    required this.label,
-  });
-
-  final String countryCode;
-  final String languageCode;
-  final String label;
-}
-
-const List<LocaleOption> _localeOptions = <LocaleOption>[
-  LocaleOption(countryCode: 'SK', languageCode: 'SK', label: 'Slovakia (SK)'),
-  LocaleOption(countryCode: 'CZ', languageCode: 'CS', label: 'Czechia (CS)'),
-  LocaleOption(countryCode: 'DE', languageCode: 'DE', label: 'Germany (DE)'),
-  LocaleOption(
-      countryCode: 'US', languageCode: 'EN', label: 'United States (EN)'),
-];
-
 class AppStrings {
   AppStrings(String languageCode)
       : languageCode = _normalizeLanguageCode(languageCode);
@@ -184,6 +155,8 @@ class AppStrings {
       'account': 'Účet',
       'sign_out': 'Odhlásiť sa',
       'save_changes': 'Uložiť zmeny',
+      'language_changed': 'Jazyk bol zmenený na {{language}}.',
+      'profile_updated_success': 'Profil bol aktualizovaný.',
       'saving': 'Ukladám...',
       'update_sign_in_profile': 'Upraviť prihlasovací profil',
       'profile_update_failed': 'Aktualizácia profilu zlyhala: {{error}}',
@@ -366,6 +339,8 @@ class AppStrings {
       'account': 'Account',
       'sign_out': 'Sign out',
       'save_changes': 'Save changes',
+      'language_changed': 'Language changed to {{language}}.',
+      'profile_updated_success': 'Profile updated.',
       'saving': 'Saving...',
       'update_sign_in_profile': 'Update sign in profile',
       'profile_update_failed': 'Profile update failed: {{error}}',
@@ -542,7 +517,9 @@ class AppStrings {
       'sign_up_failed': 'Registrierung fehlgeschlagen: {{error}}',
       'account': 'Konto',
       'sign_out': 'Abmelden',
-      'save_changes': 'Änderungen speichern',
+      'save_changes': 'Aenderungen speichern',
+      'language_changed': 'Sprache wurde auf {{language}} geaendert.',
+      'profile_updated_success': 'Profil wurde aktualisiert.',
       'saving': 'Speichere...',
       'update_sign_in_profile': 'Anmeldeprofil aktualisieren',
       'profile_update_failed': 'Profilaktualisierung fehlgeschlagen: {{error}}',
@@ -706,8 +683,8 @@ class AppStrings {
   String t(String key,
       [Map<String, String> params = const <String, String>{}]) {
     final bundle =
-        _localized[languageCode] ?? _localized[_fallbackLanguageCode]!;
-    var value = bundle[key] ?? _localized[_fallbackLanguageCode]![key] ?? key;
+        _localized[languageCode] ?? _localized[fallbackAppLanguageCode]!;
+    var value = bundle[key] ?? _localized[fallbackAppLanguageCode]![key] ?? key;
     for (final entry in params.entries) {
       value = value.replaceAll('{{${entry.key}}}', entry.value);
     }
@@ -745,8 +722,15 @@ Future<void> main() async {
       stackTrace,
     );
   }
-  runApp(AIJurisdictionMobileApp(
-      cameras: cameras, logger: logger, apiBaseUrl: apiBaseUrl));
+  runApp(
+    ProviderScope(
+      child: AIJurisdictionMobileApp(
+        cameras: cameras,
+        logger: logger,
+        apiBaseUrl: apiBaseUrl,
+      ),
+    ),
+  );
 }
 
 Future<String> _readAppVersionLabel() async {
@@ -2178,6 +2162,9 @@ class _AuthGatePageState extends State<AuthGatePage> {
     if (!mounted) {
       return;
     }
+    ProviderScope.containerOf(context, listen: false)
+        .read(signedInUserProvider.notifier)
+        .setUser(user);
     setState(() {
       _currentUser = user;
       _loading = false;
@@ -2317,6 +2304,9 @@ class _AuthGatePageState extends State<AuthGatePage> {
     if (!mounted) {
       return;
     }
+    ProviderScope.containerOf(context, listen: false)
+        .read(signedInUserProvider.notifier)
+        .setUser(user);
     setState(() {
       _currentUser = user;
     });
@@ -2327,6 +2317,9 @@ class _AuthGatePageState extends State<AuthGatePage> {
     if (!mounted) {
       return;
     }
+    ProviderScope.containerOf(context, listen: false)
+        .read(signedInUserProvider.notifier)
+        .setUser(null);
     setState(() {
       _currentUser = null;
     });
@@ -2336,6 +2329,9 @@ class _AuthGatePageState extends State<AuthGatePage> {
     if (!mounted) {
       return;
     }
+    ProviderScope.containerOf(context, listen: false)
+        .read(signedInUserProvider.notifier)
+        .setUser(user);
     setState(() {
       _currentUser = user;
     });
@@ -3590,11 +3586,11 @@ class _ChatHomePageState extends State<ChatHomePage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _signedInUser = widget.signedInUser;
-    _selectedLocale = _localeOptions.firstWhere(
+    _selectedLocale = appLocaleOptions.firstWhere(
       (option) =>
           option.countryCode == _defaultCountry &&
           option.languageCode == _defaultLanguage,
-      orElse: () => _localeOptions.first,
+      orElse: () => appLocaleOptions.first,
     );
     _responderMode = ResponderMode.realPerson;
     _apiClient = ApiClient(
@@ -3635,6 +3631,12 @@ class _ChatHomePageState extends State<ChatHomePage>
     unawaited(_loadCases());
     unawaited(_loadAppVersion());
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ProviderScope.containerOf(context, listen: false)
+          .read(appLocaleProvider.notifier)
+          .setLocale(_selectedLocale);
       _scrollToLatest(animated: false);
     });
   }
@@ -4613,6 +4615,61 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
+  Future<bool> _tryHandleUserCommand(
+    String rawText, {
+    required bool appendUserMessage,
+  }) async {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final result = await container.read(userCommandExecutorProvider).execute(
+      rawText,
+      currentUser: _signedInUser,
+      locales: appLocaleOptions,
+      authStore: widget.authStore,
+    );
+    if (!result.handled) {
+      return false;
+    }
+
+    if (appendUserMessage) {
+      _appendUserMessageLocally(rawText);
+      _inputController.clear();
+      _lastDictatedSpeechDraft = null;
+    }
+
+    if (result.updatedLocale != null) {
+      final locale = result.updatedLocale!;
+      await _handleLocaleChanged(locale);
+      if (!mounted) {
+        return true;
+      }
+      final localeLabel = _strings.localeLabel(locale);
+      final message =
+          _strings.t('language_changed', <String, String>{'language': localeLabel});
+      _showSnackbar(message);
+      _appendAssistantMessage(message);
+    }
+
+    if (result.updatedUser != null) {
+      final updated = result.updatedUser!;
+      final previousUser = _signedInUser;
+      setState(() {
+        _signedInUser = updated;
+        _awaitingSpokenName = false;
+        _updateWelcomeMessageForLocale();
+      });
+      widget.onProfileUpdated(updated);
+      final successMessage = _strings.t('profile_updated_success');
+      _showSnackbar(successMessage);
+      _appendAssistantMessage(successMessage);
+      _appendProfileNameChangedMessage(
+        previousUser: previousUser,
+        updated: updated,
+      );
+    }
+
+    return true;
+  }
+
   void _appendProfileNameChangedMessage({
     required LocalAuthUser previousUser,
     required LocalAuthUser updated,
@@ -4650,12 +4707,20 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
   }
 
-  Future<void> _applyRuleEngineAction(
-    RuleEngineAction action, {
-    required String originalInput,
-  }) async {
-    switch (action) {
-      case IgnoreRuleAction():
+    final handledCommand = await _tryHandleUserCommand(
+      normalizedText,
+      appendUserMessage: true,
+    );
+    if (handledCommand) {
+      _lastHandledSpeechText = normalizedText;
+      return;
+    }
+
+    if (isSpokenSendCommand(normalizedText)) {
+      final pendingMessage = _resolvePendingSpeechMessageForSendCommand(
+        normalizedText,
+      );
+      if (pendingMessage == null) {
         return;
       case ConfirmCaseArchiveRuleAction(:final confirmation):
         _lastHandledSpeechText = originalInput;
@@ -5025,10 +5090,27 @@ class _ChatHomePageState extends State<ChatHomePage>
         await _submitMessageText(message);
         return;
     }
-  }
-
-  Future<void> _submitMessageText(String text) async {
-    if (text.trim().isEmpty || _isSending) {
+    _lastHandledSpeechText = null;
+    final handledCommand = await _tryHandleUserCommand(
+      text,
+      appendUserMessage: true,
+    );
+    if (handledCommand) {
+      return;
+    }
+    final voiceCaseCommand = parseSpokenCaseCreationCommand(text);
+    if (voiceCaseCommand != null) {
+      _appendUserMessageLocally(text);
+      _inputController.clear();
+      _lastDictatedSpeechDraft = null;
+      if (voiceCaseCommand.requiresTitlePrompt) {
+        await _promptForSpokenCaseTitle();
+      } else {
+        await _createCaseFromVoice(
+          voiceCaseCommand.title!,
+          originatingRequest: text,
+        );
+      }
       return;
     }
     final caseReady = await _ensureCaseSelectedForOutgoingMessage(text);
@@ -5276,7 +5358,7 @@ class _ChatHomePageState extends State<ChatHomePage>
           user: _signedInUser,
           authStore: widget.authStore,
           selectedLocale: _selectedLocale,
-          locales: _localeOptions,
+          locales: appLocaleOptions,
           speaker: _speaker,
           speakerOutputEnabled: _speakerOutputEnabled,
           onSpeakerOutputChanged: _setSpeakerOutputEnabled,
@@ -5314,6 +5396,9 @@ class _ChatHomePageState extends State<ChatHomePage>
       _updateWelcomeMessageForLocale();
       _hasExportReady = false;
     });
+    ProviderScope.containerOf(context, listen: false)
+        .read(appLocaleProvider.notifier)
+        .setLocale(locale);
     if (_isListening) {
       await _speechRecognizer.stop();
     }

@@ -1,5 +1,7 @@
 # Minimal runnable example: Flutter mobile app
 
+## Full app
+
 ```bash
 cd mobile_app
 flutter pub get
@@ -7,6 +9,15 @@ flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AI
 ```
 
 After launch, use the microphone icon in the chat input row to dictate a question or answer and then press send.
+
+## Riverpod command demo
+
+```bash
+cd mobile_app
+dart run tool/riverpod_command_demo.dart
+```
+
+This prints the locale selected by the shared Riverpod provider after parsing a natural-language command.
 
 Optional local API smoke request:
 
