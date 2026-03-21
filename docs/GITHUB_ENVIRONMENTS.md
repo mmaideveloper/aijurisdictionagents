@@ -160,6 +160,10 @@ Recommended signing secrets for stable Android release upgrades:
 | `MOBILE_ANDROID_KEY_ALIAS` | Key alias inside the keystore |
 | `MOBILE_ANDROID_KEY_PASSWORD` | Key password |
 
+Paste those values without extra whitespace. The mobile workflow trims accidental
+line breaks, validates the keystore and alias with `keytool`, and warns early if
+the selected GitHub Environment contains stale or mismatched signing secrets.
+
 ## 9. Populate `test` and `prod`
 
 The fastest approach is:

@@ -267,6 +267,12 @@ missing, CI falls back to the debug key, which is useful for ad hoc testing but
 can still cause Android signature mismatch errors during upgrade if the currently
 installed app was signed with a different key.
 
+The workflow also strips accidental line breaks from those secrets before use and
+validates that the keystore password and alias can be opened with `keytool`. If
+the secrets are present but invalid, normal CI builds fall back to the debug key
+with a warning, while manual `release=true` runs fail early with a clear signing
+error so an invalid APK is not published.
+
 Local helper scripts:
 
 - Export the release keystore as base64 for `MOBILE_ANDROID_KEYSTORE_BASE64`:
