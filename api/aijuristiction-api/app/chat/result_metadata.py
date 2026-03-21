@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib
+import os
+from pathlib import Path
 import re
 import sqlite3
 from typing import Any, Sequence
@@ -9,7 +12,8 @@ from app.versioning import get_core_version
 
 from aijurisdictionagents.agents import AIAgentsValidator, ValidatorInputs
 from aijurisdictionagents.agents.validator import EvaluationCriterion
-from services.laws_collector.config import LawsCollectorConfig
+
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 _SESSION_VALIDATION_CRITERIA: tuple[EvaluationCriterion, ...] = (
     EvaluationCriterion(
@@ -199,13 +203,15 @@ def _latest_legal_update_for_country(country_code: str | None) -> str | None:
     if not normalized_country:
         return None
 
-    try:
-        config = LawsCollectorConfig.from_env()
-    except Exception:
-        return None
+    db_backend = os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower()
+    db_local = os.getenv(
+        "LAWS_DB_LOCAL",
+        "./databases/laws-collector/sk_laws.sqlite3",
+    ).strip()
+    db_cloud = os.getenv("LAWS_DB_CLOUD", "").strip()
 
-    if config.db_backend == "sqlite":
-        db_path = config.db_path
+    if db_backend == "sqlite":
+        db_path = _resolve_repo_path(db_local)
         if not db_path.exists():
             return None
         try:
@@ -224,11 +230,11 @@ def _latest_legal_update_for_country(country_code: str | None) -> str | None:
             return None
         return str(row[0])
 
-    if config.db_backend == "postgres" and config.db_cloud:
+    if db_backend == "postgres" and db_cloud:
         try:
-            import psycopg
+            psycopg = importlib.import_module("psycopg")
 
-            with psycopg.connect(config.db_cloud) as conn:
+            with psycopg.connect(db_cloud) as conn:
                 row = conn.execute(
                     """
                     SELECT MAX(last_stored_at)
@@ -244,3 +250,10 @@ def _latest_legal_update_for_country(country_code: str | None) -> str | None:
         return str(row[0])
 
     return None
+
+
+def _resolve_repo_path(value: str) -> Path:
+    candidate = Path(value)
+    if candidate.is_absolute():
+        return candidate
+    return _REPO_ROOT / candidate
