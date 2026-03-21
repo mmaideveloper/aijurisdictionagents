@@ -1,5 +1,7 @@
 # Minimal runnable example: Flutter mobile app
 
+## Full app
+
 ```bash
 cd mobile_app
 flutter pub get
