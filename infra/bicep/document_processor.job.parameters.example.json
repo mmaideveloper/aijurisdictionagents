@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "managedEnvironmentName": { "value": "cae-juris-dev" },
+    "jobName": { "value": "document-processor" },
+    "acrName": { "value": "aijurdevacr12345" },
+    "managedIdentityName": { "value": "id-juris-dev" },
+    "image": { "value": "aijurdevacr12345.azurecr.io/document-processor:latest" },
+    "postgresServerName": { "value": "db-juris-dev" },
+    "postgresDatabaseName": { "value": "api" },
+    "postgresAdminUsername": { "value": "pgadmin" },
+    "postgresAdminPassword": { "value": "<set-secure-value>" },
+    "storageAccountName": { "value": "stjurisdev12345" },
+    "storageContainerName": { "value": "documents" },
+    "cronExpression": { "value": "0 */15 * * * *" }
+  }
+}

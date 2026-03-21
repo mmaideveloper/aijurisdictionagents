@@ -49,3 +49,11 @@ Remote FTP folder: `www_root_aiagenticsolutions_eu`.
 - `assets/aj-logo.svg` - placeholder logo
 - `assets/hero-graph.svg` - hero illustration
 - `README.md` - local debugging notes
+
+
+## Document upload limits
+
+- Free plan: up to 2 uploaded documents per case.
+- Basic plan: up to 5 uploaded documents per case.
+- Premium plan: up to 50 uploaded documents per case.
+- Test phone `+421944400166` keeps premium-equivalent document capacity for validation flows.

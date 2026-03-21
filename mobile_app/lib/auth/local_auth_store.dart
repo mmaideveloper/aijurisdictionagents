@@ -10,6 +10,7 @@ class SubscriptionPlanInfo {
     required this.subscriptionType,
     required this.priceEur,
     required this.maxCases,
+    required this.maxDocumentsPerCase,
     this.caseTtlDays,
   });
 
@@ -18,6 +19,7 @@ class SubscriptionPlanInfo {
   final String subscriptionType;
   final int priceEur;
   final int maxCases;
+  final int maxDocumentsPerCase;
   final int? caseTtlDays;
 
   static SubscriptionPlanInfo fromJson(Map<String, dynamic> json) {
@@ -27,6 +29,7 @@ class SubscriptionPlanInfo {
       subscriptionType: json['subscription_type'] as String? ?? '',
       priceEur: json['price_eur'] as int? ?? 0,
       maxCases: json['max_cases'] as int? ?? 0,
+      maxDocumentsPerCase: json['max_documents_per_case'] as int? ?? 0,
       caseTtlDays: json['case_ttl_days'] as int?,
     );
   }

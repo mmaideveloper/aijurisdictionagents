@@ -14,6 +14,9 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - When a spoken assistant reply finishes in voice mode, the app automatically reopens the microphone so the user can continue speaking hands-free.
 - Normal dictated messages now keep listening through short 1-2 second pauses and stop only after about 5 seconds of silence. When the microphone session stops, the current dictated message is submitted automatically.
 - The speech flow also understands spoken send commands such as `Send`, `please send`, `Posli`, `Prosim odosli spravu`, `Senden`, or `Nachricht senden`, and submits the current dictated message immediately.
+- When the user says a spoken command like `please create a new case` while another case is active, the app now asks for confirmation before archiving the current case. After confirmation it creates and switches to the new case, and if no new case name was spoken yet it asks for the name first.
+- The Slovak and German localizations were also cleaned up so user-facing system prompts and settings use proper localized text instead of ASCII-only fallbacks.
+- Speech and text command rules now go through a dedicated `RuleEngine` component so future request rules can be added without growing `main.dart` command branching.
 - Generated legal documents are no longer shown back into chat as plain text or JSON payloads; instead, the app asks the user whether they want to see the document as PDF and keeps the PDF export action available.
 - If the user starts a discussion without any selected case, the app now creates a case automatically, generates a short title from the discussion text, selects that case, and then sends the original message to the backend.
 - The automatic upgrade dialog now includes a session-only `Skip to new start` checkbox. When checked, the app stops version monitoring for the rest of the current app run and resumes only after the next launch.
@@ -21,6 +24,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Speech input can now create a new case from spoken commands in Slovak, English, or German, for example `Create a new case with name ...`, `Vytvor novy pripad s nazvom ...`, `Vytvor mi novy case s nazvom ...`, or `Erstelle einen neuen Fall mit Namen ...`.
 - If the spoken create-case command does not include a case title, the app asks for the new case name and then creates/selects the case after the next spoken title.
 - Jurisdicta now speaks assistant messages aloud through text-to-speech, including the welcome message, speech prompts, and backend replies.
+- Assistant speech output is intentionally slowed down for clearer playback in both local-device TTS and Azure Speech TTS mode.
 - When speech output is used, Jurisdicta selects an installed TTS voice that matches the current user language/country setup (`SK`, `CS`, `DE`, `EN`) instead of using one fixed speaker voice.
 - For Slovak on Android, the app now prefers an exact `sk-SK` voice as the default whenever one is available on the device.
 - For `SK`, `CS`, and `GE`/`DE`, the speaker now retries voice discovery on startup and falls back across close Central European voices instead of caching an empty voice list immediately.
@@ -241,7 +245,9 @@ Manual mobile workflow runs now also expose a `release` switch:
 - `release=true`: after the release APK is built, the workflow publishes or updates a GitHub Release tagged with the mobile app version from `pubspec.yaml` and uploads `app-release.apk` as a release asset
 
 The GitHub Release tag is the exact mobile app version, for example `0.1.1+2`,
-so the API-driven in-app update check and the downloadable APK stay aligned.
+so the in-app update check and the downloadable APK stay aligned. The app now
+resolves the actual latest GitHub release from the API-provided release URL, so
+a new mobile release can be detected without redeploying the API.
 
 Mobile app versioning rule:
 

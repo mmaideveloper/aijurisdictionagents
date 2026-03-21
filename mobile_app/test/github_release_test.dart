@@ -53,4 +53,49 @@ void main() {
       expect(release, isNull);
     });
   });
+
+  group('parseGithubReleaseResponseBody', () {
+    test('parses a valid GitHub latest release payload', () {
+      final release = parseGithubReleaseResponseBody('''
+{
+  "tag_name": "v0.1.5+29",
+  "html_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/tag/v0.1.5+29",
+  "assets": [
+    {
+      "name": "app-release.apk",
+      "browser_download_url": "https://example.invalid/app-release.apk"
+    }
+  ]
+}
+''');
+
+      expect(release, isNotNull);
+      expect(release!.version.toString(), '0.1.5+29');
+      expect(
+        release.apkDownloadUrl,
+        'https://example.invalid/app-release.apk',
+      );
+    });
+  });
+
+  group('githubLatestReleaseApiUriFromReleaseUrl', () {
+    test('derives the GitHub API latest-release endpoint', () {
+      final uri = githubLatestReleaseApiUriFromReleaseUrl(
+        'https://github.com/mmaideveloper/aijurisdictionagents/releases/latest',
+      );
+
+      expect(
+        uri?.toString(),
+        'https://api.github.com/repos/mmaideveloper/aijurisdictionagents/releases/latest',
+      );
+    });
+
+    test('returns null for non-GitHub release URLs', () {
+      final uri = githubLatestReleaseApiUriFromReleaseUrl(
+        'https://example.invalid/releases/latest',
+      );
+
+      expect(uri, isNull);
+    });
+  });
 }
