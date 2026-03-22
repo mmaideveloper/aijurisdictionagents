@@ -3780,6 +3780,9 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const double _communicationMinutes = 60;
   static const Duration _speechSilenceTimeout = Duration(seconds: 10);
   static const Duration _speechMaxListenDuration = Duration(minutes: 30);
+  static const Duration _informationalUploadMessageLifetime = Duration(
+    seconds: 5,
+  );
 
   final TextEditingController _inputController = TextEditingController();
   final RuleEngine _ruleEngine = const RuleEngine();
@@ -3823,6 +3826,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _caseHistoryHasMore = false;
   int _caseHistoryOffset = 0;
   List<CaseDocumentItem> _caseDocuments = <CaseDocumentItem>[];
+  final Map<String, Timer> _informationalMessageTimers = <String, Timer>{};
   SessionResultDetails? _latestSessionResult;
   final Set<String> _downloadingCaseDocumentIds = <String>{};
   final List<_PendingDocumentUploadBatch> _queuedDocumentUploadBatches =
@@ -4732,6 +4736,23 @@ class _ChatHomePageState extends State<ChatHomePage>
     return messageId;
   }
 
+  void _scheduleInformationalMessageRemoval(String messageId) {
+    _informationalMessageTimers.remove(messageId)?.cancel();
+    _informationalMessageTimers[messageId] = Timer(
+      _informationalUploadMessageLifetime,
+      () {
+        if (!mounted) {
+          _informationalMessageTimers.remove(messageId)?.cancel();
+          return;
+        }
+        setState(() {
+          _messages.removeWhere((message) => message.localId == messageId);
+        });
+        _informationalMessageTimers.remove(messageId)?.cancel();
+      },
+    );
+  }
+
   Future<void> _updateDocumentUploadStatusMessage(
     String messageId, {
     required String content,
@@ -4761,6 +4782,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!updated) {
       return;
     }
+    _scheduleInformationalMessageRemoval(messageId);
     _scrollToLatest();
     if (speak) {
       await _speaker.stop();
@@ -5514,6 +5536,10 @@ class _ChatHomePageState extends State<ChatHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _updateCheckTimer?.cancel();
+    for (final timer in _informationalMessageTimers.values) {
+      timer.cancel();
+    }
+    _informationalMessageTimers.clear();
     unawaited(_speaker.stop());
     _submitSpeechOnStop = false;
     _processSpeechOnStop = false;
