@@ -33,6 +33,12 @@ from app.versioning import get_api_version, get_core_version
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
+from services.document_processor.runtime import (
+    build_embedding_vector,
+    cosine_similarity,
+    lexical_overlap_score,
+    parse_embedding_vector,
+)
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"], dependencies=[Depends(require_api_key)])
 _repository = InMemoryChatRepository()
@@ -133,7 +139,11 @@ def _parse_case_history_entry(*, store: ApiDatabaseStore, communication: Any) ->
     return role, normalized, agent_name
 
 
-def _load_case_documents_for_llm(*, case_id: str) -> tuple[list[CoreDocument], list[str], list[str]]:
+def _load_case_documents_for_llm(
+    *,
+    case_id: str,
+    query: str,
+) -> tuple[list[CoreDocument], list[str], list[str]]:
     store = _get_store()
     processed_documents: list[CoreDocument] = []
     processed_names: list[str] = []
@@ -145,19 +155,103 @@ def _load_case_documents_for_llm(*, case_id: str) -> tuple[list[CoreDocument], l
         return processed_documents, processed_names, unprocessed_names
 
     contents_by_doc_id = {
-        doc_id: (name, text)
+        doc_id: (name, text, vector)
         for doc_id, name, text, _vector in list_case_document_contents(case_id=case_id)
+        for vector in [_vector]
     }
+    processed_entries: list[tuple[str, str, str, str]] = []
     for document in list_case_documents(case_id=case_id):
         if document.kind != 'uploaded':
             continue
         if document.processing_status == 'processed' and document.doc_id in contents_by_doc_id:
-            name, text = contents_by_doc_id[document.doc_id]
+            name, text, vector = contents_by_doc_id[document.doc_id]
             processed_names.append(name)
-            processed_documents.append(CoreDocument(doc_id=document.doc_id, path=name, content=text))
+            processed_entries.append((document.doc_id, name, text, vector))
         else:
             unprocessed_names.append(document.original_filename)
+    selected_entries = _select_relevant_case_documents(
+        query=query,
+        processed_entries=processed_entries,
+    )
+    processed_documents = [
+        CoreDocument(doc_id=doc_id, path=name, content=text)
+        for doc_id, name, text, _vector in selected_entries
+    ]
     return processed_documents, processed_names, unprocessed_names
+
+
+def _select_relevant_case_documents(
+    *,
+    query: str,
+    processed_entries: list[tuple[str, str, str, str]],
+    limit: int = 4,
+) -> list[tuple[str, str, str, str]]:
+    if len(processed_entries) <= limit or _requests_all_processed_documents(query):
+        return processed_entries
+    normalized_query = query.strip()
+    if not normalized_query:
+        return processed_entries[:limit]
+
+    query_vector = parse_embedding_vector(build_embedding_vector(normalized_query))
+    scored: list[tuple[float, int, tuple[str, str, str, str]]] = []
+    for index, entry in enumerate(processed_entries):
+        _doc_id, _name, text, raw_vector = entry
+        lexical_score = lexical_overlap_score(normalized_query, text)
+        vector_score = cosine_similarity(
+            query_vector,
+            parse_embedding_vector(raw_vector),
+        )
+        score = (lexical_score * 10.0) + vector_score
+        scored.append((score, index, entry))
+    ranked = sorted(scored, key=lambda item: (item[0], -item[1]), reverse=True)
+    selected = [entry for score, _index, entry in ranked if score > 0][:limit]
+    if selected:
+        return selected
+    return processed_entries[:limit]
+
+
+def _requests_all_processed_documents(query: str) -> bool:
+    normalized = " ".join(query.lower().split())
+    phrases = (
+        "all uploaded documents",
+        "all documents in this case",
+        "summarize all uploaded documents",
+        "analyze all uploaded documents",
+        "vsetky nahrane dokumenty",
+        "vsetky dokumenty v tomto pripade",
+        "alle hochgeladenen dokumente",
+        "alle dokumente in diesem fall",
+    )
+    return any(phrase in normalized for phrase in phrases)
+
+
+def _is_document_summary_request(query: str) -> bool:
+    normalized = " ".join(query.lower().split())
+    summary_terms = (
+        "summary",
+        "summar",
+        "summarize",
+        "summarise",
+        "short summary",
+        "sumar",
+        "sumariz",
+        "sumarizovanie",
+        "zhrn",
+        "zhrnut",
+        "zusammenfass",
+    )
+    document_terms = (
+        "document",
+        "documents",
+        "uploaded",
+        "pdf",
+        "dokument",
+        "dokumenty",
+        "dokumente",
+    )
+    return any(term in normalized for term in summary_terms) and any(
+        term in normalized for term in document_terms
+    )
 
 
 def _prepend_document_status_note(*, reply: str, processed_names: list[str], unprocessed_names: list[str]) -> str:
@@ -285,7 +379,10 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     processed_names: list[str] = []
     unprocessed_names: list[str] = []
     if session.case_id:
-        case_documents, processed_names, unprocessed_names = _load_case_documents_for_llm(case_id=session.case_id)
+        case_documents, processed_names, unprocessed_names = _load_case_documents_for_llm(
+            case_id=session.case_id,
+            query=content,
+        )
         if processed_names or unprocessed_names:
             context_note = (
                 '\n\nCASE DOCUMENT STATUS:\n'
@@ -294,6 +391,16 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
                 'Use processed documents as case evidence and explicitly mention any unprocessed documents.'
             )
             prompt_override = f"{prompt_override}{context_note}"
+        if case_documents and _is_document_summary_request(content):
+            summary_note = (
+                "\n\nDOCUMENT SUMMARY MODE:\n"
+                "- The user asked for a concise summary of uploaded case documents.\n"
+                "- Start with a plain-language summary of the document contents in no more than 5 sentences.\n"
+                "- Mention the main document purpose, parties, dates, obligations, and obvious missing items if available.\n"
+                "- If the user also asked for issues or risks, mention them only after the short summary.\n"
+                "- Do not answer with validation metadata only.\n"
+            )
+            prompt_override = f"{prompt_override}{summary_note}"
 
     lawyer_message = lawyer.respond(
         conversation=conversation,
@@ -507,6 +614,12 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content)
                 for d in payload.documents
             ]
+            if session.case_id:
+                case_documents, _processed_names, _unprocessed_names = _load_case_documents_for_llm(
+                    case_id=session.case_id,
+                    query=payload.instruction,
+                )
+                docs.extend(case_documents)
             result = run_orchestration(
                 session=session,
                 instruction=payload.instruction,
@@ -583,6 +696,10 @@ def _is_explicit_document_request(normalized: str) -> bool:
         "draft",
         "template",
         "zmluv",
+        "zakon",
+        "zakonov",
+        "law",
+        "laws",
         "predzalob",
         "predžalob",
         "vzor",
@@ -593,12 +710,23 @@ def _is_explicit_document_request(normalized: str) -> bool:
         "generate",
         "create",
         "draft",
+        "review",
+        "revise",
+        "update",
+        "amend",
+        "fix",
         "prosim",
         "please",
         "chcem",
         "priprav",
         "vytvor",
         "vygeneruj",
+        "pozri",
+        "skontroluj",
+        "oprav",
+        "uprav",
+        "aktualizuj",
+        "podla",
     )
     return any(marker in normalized for marker in document_markers) and any(
         marker in normalized for marker in request_markers
@@ -1070,6 +1198,9 @@ def _build_summary_export_content(
     core_version = str(metadata.get("core_version") or _CORE_VERSION)
     last_law_update_date = str(metadata.get("last_law_update_date") or "").strip()
     last_law_update_source = str(metadata.get("last_law_update_source") or "").strip()
+    validation_accuracy = _format_validation_accuracy(
+        metadata.get("validation_accuracy")
+    )
     validation_summary = str(metadata.get("validation_summary") or "").strip()
     law_reference_links = [
         str(link).strip()
@@ -1116,6 +1247,18 @@ def _build_summary_export_content(
         if law_reference_links:
             lines.extend(["", "Oficialne odkazy na pravne predpisy"])
             lines.extend([f"- {link}" for link in law_reference_links])
+        lines.extend(
+            [
+                "",
+                "Validacia pripadu",
+                f"Presnost: {validation_accuracy}",
+                (
+                    f"Zhrnutie validacie: {validation_summary}"
+                    if validation_summary
+                    else "Zhrnutie validacie: neposkytnute"
+                ),
+            ]
+        )
         return (
             f"Zhrnutie diskusie {session_id}",
             lines,
@@ -1158,10 +1301,37 @@ def _build_summary_export_content(
     if law_reference_links:
         lines.extend(["", "Official law links available in the system"])
         lines.extend([f"- {link}" for link in law_reference_links])
+    lines.extend(
+        [
+            "",
+            "Case validation",
+            f"Accuracy: {validation_accuracy}",
+            (
+                f"Validation summary: {validation_summary}"
+                if validation_summary
+                else "Validation summary: not provided"
+            ),
+        ]
+    )
     return (
         f"Discussion Summary {session_id}",
         lines,
     )
+
+
+def _format_validation_accuracy(value: object) -> str:
+    if isinstance(value, bool):
+        return "-"
+    if isinstance(value, (int, float)):
+        numeric = float(value)
+    elif isinstance(value, str):
+        try:
+            numeric = float(value)
+        except ValueError:
+            return "-"
+    else:
+        return "-"
+    return f"{numeric:.1f}%"
 
 
 def _summary_citation_lines(citations: list[dict[str, str]]) -> list[str]:

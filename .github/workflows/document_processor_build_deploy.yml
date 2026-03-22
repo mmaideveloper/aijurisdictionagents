@@ -6,6 +6,7 @@ on:
     paths:
       - "src/services/document_processor/**"
       - "src/aijurisdictionagents/document_processor.py"
+      - "pyproject.toml"
       - "api/aijuristiction-api/tests/test_case_documents_processing.py"
       - "infra/scripts/deploy_document_processor.ps1"
       - "infra/bicep/document_processor.job.bicep"
@@ -14,6 +15,7 @@ on:
     paths:
       - "src/services/document_processor/**"
       - "src/aijurisdictionagents/document_processor.py"
+      - "pyproject.toml"
       - "api/aijuristiction-api/tests/test_case_documents_processing.py"
       - "infra/scripts/deploy_document_processor.ps1"
       - "infra/bicep/document_processor.job.bicep"

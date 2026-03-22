@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import re
 import unicodedata
+import logging
 from pathlib import Path
 from typing import Sequence
 
+from .base import log_llm_request, log_llm_response
 from .base import LLMClient
 from ..schemas import Document, Message
+
+logger = logging.getLogger(__name__)
 
 
 class MockLLMClient:
@@ -17,6 +21,27 @@ class MockLLMClient:
         conversation: Sequence[Message],
         documents: Sequence[Document],
     ) -> str:
+        request_payload = [
+            {"role": "system", "content": system_prompt},
+            *(
+                [{"role": "system", "content": _render_documents_for_log(documents)}]
+                if documents
+                else []
+            ),
+            *[
+                {
+                    "role": message.role,
+                    "content": f"{message.agent_name}: {message.content}",
+                }
+                for message in conversation
+            ],
+        ]
+        log_llm_request(
+            logger,
+            provider="mock",
+            agent_name=agent_name,
+            request_payload=request_payload,
+        )
         user_message = _latest_user_message(conversation)
         first_user_message = _first_user_message(conversation)
         prefers_slovak = _prefers_slovak(system_prompt, first_user_message, user_message)
@@ -27,74 +52,176 @@ class MockLLMClient:
 
         agent_key = agent_name.lower()
         if "aiusersimulatoragent" in agent_key:
-            return _simulate_user_answer(user_message, prefers_slovak, conversation)
+            response = _simulate_user_answer(user_message, prefers_slovak, conversation)
+            log_llm_response(
+                logger,
+                provider="mock",
+                agent_name=agent_name,
+                raw_response=response,
+            )
+            return response
 
         if "lawyer" in agent_key:
+            if documents and _is_document_summary_request(user_message):
+                response = _document_summary_response(documents, prefers_slovak)
+                log_llm_response(
+                    logger,
+                    provider="mock",
+                    agent_name=agent_name,
+                    raw_response=response,
+                )
+                return response
+            if documents and _is_document_update_request(user_message):
+                response = _document_update_response(documents, prefers_slovak)
+                log_llm_response(
+                    logger,
+                    provider="mock",
+                    agent_name=agent_name,
+                    raw_response=response,
+                )
+                return response
             if _wants_slovak_rental_template(first_user_message) or _wants_slovak_rental_template(
                 user_message
             ):
-                return _slovak_rental_template_response(
+                response = _slovak_rental_template_response(
                     first_user_message=first_user_message,
                     latest_user_message=user_message,
                     conversation=conversation,
                 )
+                log_llm_response(
+                    logger,
+                    provider="mock",
+                    agent_name=agent_name,
+                    raw_response=response,
+                )
+                return response
             if prefers_slovak:
                 if not _has_answered_lawyer_question(conversation):
-                    return (
+                    response = (
                         "Aby som mohol pripravit presny navrh, potrebujem doplnit klucove udaje: "
                         "kedy vznikol spor, ake su hlavne datumy a co je vas hlavny ciel?"
                     )
-                return (
+                    log_llm_response(
+                        logger,
+                        provider="mock",
+                        agent_name=agent_name,
+                        raw_response=response,
+                    )
+                    return response
+                response = (
                     "Pravne posudenie: podla dostupnych faktov je poziadavka klienta obhajitelna. "
                     f"Hlavny kontext: {user_message}. Dostupne dokumenty: {doc_list}. "
                     "Dalsi krok: doplnte konkretne datumy, strany a zmluvne podmienky pre finalny navrh. "
                     "Chcete finalny vystup aj vo formate PDF?"
                 )
+                log_llm_response(
+                    logger,
+                    provider="mock",
+                    agent_name=agent_name,
+                    raw_response=response,
+                )
+                return response
             if not _has_answered_lawyer_question(conversation):
-                return (
+                response = (
                     "To prepare an accurate draft, I need key details first: "
                     "when the dispute started, the main dates, and your concrete target outcome?"
                 )
-            return (
+                log_llm_response(
+                    logger,
+                    provider="mock",
+                    agent_name=agent_name,
+                    raw_response=response,
+                )
+                return response
+            response = (
                 "Legal assessment: based on the provided facts, the user's requested outcome is supportable. "
                 f"Primary context: {user_message}. Available documents: {doc_list}. "
                 "Next step: provide concrete dates, party names, and contract terms so I can draft an actionable response. "
                 "Do you want the final result in PDF format?"
             )
+            log_llm_response(
+                logger,
+                provider="mock",
+                agent_name=agent_name,
+                raw_response=response,
+            )
+            return response
 
         if "judge" in agent_key:
             if prefers_slovak:
-                return (
+                response = (
                     "Pohlad sudcu: argumenty a dokazy hodnotim nestranne. "
                     "Spresnujuca otazka: Ake rozhodne pravo alebo jurisdikcia sa uplatni? "
                     f"Fokus pouzivatela: {user_message}"
                 )
-            return (
+                log_llm_response(
+                    logger,
+                    provider="mock",
+                    agent_name=agent_name,
+                    raw_response=response,
+                )
+                return response
+            response = (
                 "Judicial view: I weigh the arguments and evidence neutrally. "
                 "Clarifying question: What jurisdiction or governing law applies? "
                 f"User focus: {user_message}"
             )
+            log_llm_response(
+                logger,
+                provider="mock",
+                agent_name=agent_name,
+                raw_response=response,
+            )
+            return response
 
         if "finalsummary" in agent_key:
             if _wants_slovak_rental_template(first_user_message) or _wants_slovak_rental_template(
                 user_message
             ):
-                return (
+                response = (
                     "Recommendation: Pripravit a pouzit pisomny vzor najomnej zmluvy s konkretnymi udajmi o stranach, "
                     "predmete, platbach a ukonceni.\n"
                     "Rationale: Diskusia potvrdila, ze vzor najomnej zmluvy je poziadovany a vhodny vystup."
                 )
+                log_llm_response(
+                    logger,
+                    provider="mock",
+                    agent_name=agent_name,
+                    raw_response=response,
+                )
+                return response
             if prefers_slovak:
-                return (
+                response = (
                     "Recommendation: Pokracovat podla poziadavky klienta s doplnenim chybanucich skutocnosti.\n"
                     "Rationale: Diskusia poskytla dostatocny zaklad pre dalsi postup."
                 )
-            return (
+                log_llm_response(
+                    logger,
+                    provider="mock",
+                    agent_name=agent_name,
+                    raw_response=response,
+                )
+                return response
+            response = (
                 "Recommendation: Proceed with the user's requested position.\n"
                 "Rationale: The discussion supports the user's arguments based on the provided facts."
             )
+            log_llm_response(
+                logger,
+                provider="mock",
+                agent_name=agent_name,
+                raw_response=response,
+            )
+            return response
 
-        return f"Response prepared for {agent_name}. User focus: {user_message}"
+        response = f"Response prepared for {agent_name}. User focus: {user_message}"
+        log_llm_response(
+            logger,
+            provider="mock",
+            agent_name=agent_name,
+            raw_response=response,
+        )
+        return response
 
 
 def _latest_user_message(conversation: Sequence[Message]) -> str:
@@ -321,7 +448,170 @@ def _prefers_slovak(system_prompt: str, first_user_message: str, latest_user_mes
     return any(marker in combined for marker in slovak_markers)
 
 
+def _is_document_summary_request(user_message: str) -> bool:
+    normalized = _normalize_text(user_message)
+    summary_terms = (
+        "summary",
+        "summar",
+        "summarize",
+        "summarise",
+        "short summary",
+        "sumar",
+        "sumariz",
+        "sumarizovanie",
+        "zhrn",
+        "zhrnut",
+        "zusammenfass",
+    )
+    document_terms = (
+        "document",
+        "documents",
+        "uploaded",
+        "pdf",
+        "dokument",
+        "dokumenty",
+        "dokumente",
+        "zmluv",
+        "vertrag",
+    )
+    return any(term in normalized for term in summary_terms) and any(
+        term in normalized for term in document_terms
+    )
+
+
+def _document_summary_response(
+    documents: Sequence[Document],
+    prefers_slovak: bool,
+) -> str:
+    primary = documents[0]
+    normalized_text = " ".join(primary.content.split())
+    sentences = _split_sentences(normalized_text)
+    snippet_sentences = sentences[:3]
+    snippet = " ".join(snippet_sentences).strip()
+    filename = Path(primary.path).name
+    additional_count = max(0, len(documents) - 1)
+
+    if prefers_slovak:
+        lines = [
+            f"Dokument {filename} som zhrnul v kratkej forme.",
+            snippet or "Text dokumentu je kratky alebo slabo citatelny, preto viem potvrdit len zakladny obsah bez detailov.",
+        ]
+        if additional_count > 0:
+            lines.append(
+                f"V pripade su este {additional_count} dalsie nahrane dokumenty, ktore mozem zhrnut podrobnejsie na poziadanie."
+            )
+        lines.append(
+            "Ak chcete, v dalsom kroku vypisem aj hlavne pravne rizika alebo chybajuce casti."
+        )
+        return " ".join(lines[:4])
+
+    lines = [
+        f"I prepared a short summary of {filename}.",
+        snippet or "The extracted text is short or low quality, so I can confirm only the basic document context without reliable detail.",
+    ]
+    if additional_count > 0:
+        lines.append(
+            f"The case also includes {additional_count} additional uploaded document(s) that I can summarize separately if needed."
+        )
+    lines.append(
+        "If you want, I can next list the main legal risks, contradictions, or missing parts."
+    )
+    return " ".join(lines[:4])
+
+
+def _is_document_update_request(user_message: str) -> bool:
+    normalized = _normalize_text(user_message)
+    document_terms = (
+        "document",
+        "documents",
+        "pdf",
+        "dokument",
+        "dokumenty",
+        "zmluv",
+        "vertrag",
+    )
+    update_terms = (
+        "prepare",
+        "generate",
+        "create",
+        "review",
+        "revise",
+        "update",
+        "amend",
+        "fix",
+        "correct",
+        "pozri",
+        "skontroluj",
+        "oprav",
+        "uprav",
+        "aktualizuj",
+        "zmen",
+        "zmien",
+        "zakon",
+        "zakona",
+        "zakonov",
+        "law",
+        "laws",
+        "change",
+        "changes",
+    )
+    return any(term in normalized for term in document_terms) and any(
+        term in normalized for term in update_terms
+    )
+
+
+def _document_update_response(
+    documents: Sequence[Document],
+    prefers_slovak: bool,
+) -> str:
+    primary = documents[0]
+    filename = Path(primary.path).name
+    normalized_text = " ".join(primary.content.split())
+    sentences = _split_sentences(normalized_text)
+    basis = " ".join(sentences[:2]).strip()
+    if prefers_slovak:
+        lines = [
+            f"Pripravil som aktualizovane znenie dokumentu {filename} podla poslednych zmien zakonov.",
+            basis
+            or "Vychadzal som z nahraneho dokumentu a jeho extrahovaneho textu.",
+            "Doplnil som potrebne upravy a finalny dokument je pripraveny na export do PDF.",
+        ]
+        return " ".join(lines)
+
+    lines = [
+        f"I prepared an updated version of {filename} based on the latest legal changes.",
+        basis or "I used the uploaded document and its extracted text as the starting point.",
+        "The final revised document is ready for PDF export.",
+    ]
+    return " ".join(lines)
+
+
+def _split_sentences(text: str) -> list[str]:
+    if not text:
+        return []
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    cleaned = [part.strip() for part in parts if part.strip()]
+    if cleaned:
+        return cleaned
+    return [text.strip()] if text.strip() else []
+
+
 def _normalize_text(text: str) -> str:
     lowered = (text or "").lower()
     normalized = unicodedata.normalize("NFKD", lowered)
     return normalized.encode("ascii", "ignore").decode("ascii")
+
+
+def _render_documents_for_log(documents: Sequence[Document], max_chars: int = 4000) -> str:
+    chunks = ["Context documents:"]
+    total = 0
+    for doc in documents:
+        header = f"[{Path(doc.path).name}]"
+        body = doc.content.strip().replace("\n", " ")
+        snippet = body[:800]
+        entry = f"{header} {snippet}"
+        total += len(entry)
+        if total > max_chars:
+            break
+        chunks.append(entry)
+    return "\n".join(chunks)

@@ -1,6 +1,17 @@
 # Document Processor Service
 
-This service scans uploaded case documents, extracts best-effort text, stores deterministic vector representations, and marks each document as `processed` or `failed`.
+This service scans uploaded case documents, extracts best-effort text, stores extracted text plus vector representations, and marks each document as `processed` or `failed`.
+
+Current extraction behavior:
+
+- Plain-text formats are decoded directly.
+- PDFs first use embedded text extraction (`pypdf`).
+- If a PDF appears scanned/image-only, the service falls back to OCR using `RapidOCR` over rendered PDF pages.
+
+Current runtime modes:
+
+- `DOCUMENT_PROCESSOR=local`: the API processes uploads immediately inside the API request after the file is stored.
+- `DOCUMENT_PROCESSOR=azure`: the API leaves uploads pending and this ACA scheduled job processes them asynchronously.
 
 ## Run locally
 

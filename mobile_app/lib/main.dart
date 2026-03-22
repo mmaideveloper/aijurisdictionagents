@@ -276,6 +276,17 @@ class AppStrings {
       'rename_case_failed': 'Premenovanie prípadu zlyhalo: {{error}}',
       'open_case_document': 'Otvoriť {{filename}}',
       'no_case_documents': 'Prípad zatiaľ neobsahuje dokumenty.',
+      'document_status_uploaded': 'Nahrané',
+      'document_status_processing': 'Spracováva sa',
+      'document_status_processed': 'Spracované',
+      'document_status_failed': 'Chyba spracovania',
+      'document_status_unknown': 'Neznámy stav',
+      'document_status_ready': 'Text a vektor pripravené pre analýzu.',
+      'document_status_pending_message':
+          'Operáciu s dokumentmi teraz neviem vykonať. Tieto dokumenty sa ešte spracúvajú: {{documents}}',
+      'document_status_report_intro': 'Stav dokumentov v tomto prípade:',
+      'document_status_report_empty':
+          'Tento prípad zatiaľ neobsahuje dokumenty.',
       'case_deleted': 'Prípad bol odstránený.',
       'delete_case_failed': 'Odstránenie prípadu zlyhalo: {{error}}',
       'select_case': 'Vyberte prípad',
@@ -475,6 +486,17 @@ class AppStrings {
       'rename_case_failed': 'Failed to rename case: {{error}}',
       'open_case_document': 'Open {{filename}}',
       'no_case_documents': 'This case does not contain documents yet.',
+      'document_status_uploaded': 'Uploaded',
+      'document_status_processing': 'Processing',
+      'document_status_processed': 'Processed',
+      'document_status_failed': 'Processing failed',
+      'document_status_unknown': 'Unknown status',
+      'document_status_ready': 'Text and vector are ready for analysis.',
+      'document_status_pending_message':
+          'I cannot perform a document operation yet. These documents are still processing: {{documents}}',
+      'document_status_report_intro': 'Document status for this case:',
+      'document_status_report_empty':
+          'This case does not contain documents yet.',
       'case_deleted': 'Case deleted.',
       'delete_case_failed': 'Failed to delete case: {{error}}',
       'select_case': 'Select case',
@@ -681,6 +703,17 @@ class AppStrings {
       'rename_case_failed': 'Umbenennen des Falls fehlgeschlagen: {{error}}',
       'open_case_document': '{{filename}} öffnen',
       'no_case_documents': 'Dieser Fall enthält noch keine Dokumente.',
+      'document_status_uploaded': 'Hochgeladen',
+      'document_status_processing': 'Wird verarbeitet',
+      'document_status_processed': 'Verarbeitet',
+      'document_status_failed': 'Verarbeitung fehlgeschlagen',
+      'document_status_unknown': 'Unbekannter Status',
+      'document_status_ready': 'Text und Vektor sind für die Analyse bereit.',
+      'document_status_pending_message':
+          'Ich kann die Dokumentoperation noch nicht ausführen. Diese Dokumente werden noch verarbeitet: {{documents}}',
+      'document_status_report_intro': 'Dokumentstatus für diesen Fall:',
+      'document_status_report_empty':
+          'Dieser Fall enthält noch keine Dokumente.',
       'case_deleted': 'Fall wurde gelöscht.',
       'delete_case_failed': 'Löschen des Falls fehlgeschlagen: {{error}}',
       'select_case': 'Fall auswählen',
@@ -871,6 +904,9 @@ class ChatMessage {
   final DateTime? createdAt;
   final String? localId;
 }
+
+const String _caseDocumentsStatusMessageId = 'case-documents-status';
+const String _caseValidationMessageId = 'case-validation-status';
 
 class _PendingDocumentUploadBatch {
   const _PendingDocumentUploadBatch({
@@ -2668,7 +2704,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       TextEditingController();
   bool _showEmailPasswordFallback = false;
   bool _isBusy = false;
-  String _appVersionLabel = 'v0.1.5+41';
+  String _appVersionLabel = 'v0.1.5+43';
   String? _devicePhoneNumber;
 
   AppStrings get _strings => AppStrings(_defaultLanguage);
@@ -3780,9 +3816,6 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const double _communicationMinutes = 60;
   static const Duration _speechSilenceTimeout = Duration(seconds: 10);
   static const Duration _speechMaxListenDuration = Duration(minutes: 30);
-  static const Duration _informationalUploadMessageLifetime = Duration(
-    seconds: 5,
-  );
 
   final TextEditingController _inputController = TextEditingController();
   final RuleEngine _ruleEngine = const RuleEngine();
@@ -3826,7 +3859,6 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _caseHistoryHasMore = false;
   int _caseHistoryOffset = 0;
   List<CaseDocumentItem> _caseDocuments = <CaseDocumentItem>[];
-  final Map<String, Timer> _informationalMessageTimers = <String, Timer>{};
   SessionResultDetails? _latestSessionResult;
   final Set<String> _downloadingCaseDocumentIds = <String>{};
   final List<_PendingDocumentUploadBatch> _queuedDocumentUploadBatches =
@@ -3999,6 +4031,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     await _loadCaseHistory(reset: true);
+    await _refreshSessionResultDetails();
   }
 
   Future<void> _loadCaseHistory({required bool reset}) async {
@@ -4046,6 +4079,7 @@ class _ChatHomePageState extends State<ChatHomePage>
           _messages.insertAll(0, loadedMessages);
         }
       });
+      _syncCaseDocumentStatusThreadMessage(scrollToEnd: false);
       if (reset) {
         _scrollToLatest(animated: false);
       } else if (loadedMessages.isNotEmpty &&
@@ -4118,53 +4152,6 @@ class _ChatHomePageState extends State<ChatHomePage>
         });
       }
     }
-  }
-
-  Widget _buildSessionResultCard(AppStrings strings) {
-    final result = _latestSessionResult;
-    if (result == null || !result.hasValidationData) {
-      return const SizedBox.shrink();
-    }
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                strings.t('case_validation_title'),
-                style: theme.textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${strings.t('validation_accuracy_label')}: ${_formatAccuracy(result.validationAccuracy)}',
-              ),
-              if (result.validationSummary != null &&
-                  result.validationSummary!.trim().isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '${strings.t('validation_summary_label')}: ${result.validationSummary!.trim()}',
-                ),
-              ],
-              const SizedBox(height: 6),
-              Text(
-                '${strings.t('knowledge_updated_label')}: ${_formatSessionTimestamp(result.knowledgeLastUpdatedAt)}',
-              ),
-              if (result.coreVersion != null &&
-                  result.coreVersion!.trim().isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '${strings.t('model_version_label')}: ${result.coreVersion!.trim()}',
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _startPeriodicUpdateChecks() {
@@ -4736,23 +4723,6 @@ class _ChatHomePageState extends State<ChatHomePage>
     return messageId;
   }
 
-  void _scheduleInformationalMessageRemoval(String messageId) {
-    _informationalMessageTimers.remove(messageId)?.cancel();
-    _informationalMessageTimers[messageId] = Timer(
-      _informationalUploadMessageLifetime,
-      () {
-        if (!mounted) {
-          _informationalMessageTimers.remove(messageId)?.cancel();
-          return;
-        }
-        setState(() {
-          _messages.removeWhere((message) => message.localId == messageId);
-        });
-        _informationalMessageTimers.remove(messageId)?.cancel();
-      },
-    );
-  }
-
   Future<void> _updateDocumentUploadStatusMessage(
     String messageId, {
     required String content,
@@ -4782,12 +4752,101 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!updated) {
       return;
     }
-    _scheduleInformationalMessageRemoval(messageId);
     _scrollToLatest();
     if (speak) {
       await _speaker.stop();
       await _speakAssistantMessage(content);
     }
+  }
+
+  void _removeThreadMessage(String messageId) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _messages.removeWhere((message) => message.localId == messageId);
+    });
+  }
+
+  void _upsertThreadAssistantMessage({
+    required String messageId,
+    required String content,
+    bool scrollToEnd = false,
+  }) {
+    if (!mounted) {
+      return;
+    }
+    final trimmed = content.trim();
+    setState(() {
+      _messages.removeWhere((message) => message.localId == messageId);
+      if (trimmed.isEmpty) {
+        return;
+      }
+      _messages.add(
+        ChatMessage(
+          role: 'assistant',
+          content: trimmed,
+          agentName: 'Jurisdicta',
+          createdAt: DateTime.now(),
+          localId: messageId,
+        ),
+      );
+    });
+    if (trimmed.isNotEmpty && scrollToEnd) {
+      _scrollToLatest();
+    }
+  }
+
+  String _buildCaseValidationThreadMessage(SessionResultDetails result) {
+    final strings = _strings;
+    final lines = <String>[
+      strings.t('case_validation_title'),
+      '${strings.t('validation_accuracy_label')}: ${_formatAccuracy(result.validationAccuracy)}',
+    ];
+    final summary = result.validationSummary?.trim();
+    if (summary != null && summary.isNotEmpty) {
+      lines.add('${strings.t('validation_summary_label')}: $summary');
+    }
+    final knowledgeUpdated = _formatSessionTimestamp(
+      result.knowledgeLastUpdatedAt,
+    );
+    if (knowledgeUpdated.isNotEmpty) {
+      lines.add('${strings.t('knowledge_updated_label')}: $knowledgeUpdated');
+    }
+    final coreVersion = result.coreVersion?.trim();
+    if (coreVersion != null && coreVersion.isNotEmpty) {
+      lines.add('${strings.t('model_version_label')}: $coreVersion');
+    }
+    return lines.join('\n');
+  }
+
+  void _syncCaseDocumentStatusThreadMessage({bool scrollToEnd = false}) {
+    if (_selectedCase == null || _caseDocuments.isEmpty) {
+      _removeThreadMessage(_caseDocumentsStatusMessageId);
+      return;
+    }
+    _upsertThreadAssistantMessage(
+      messageId: _caseDocumentsStatusMessageId,
+      content: _buildCaseDocumentStatusMessage(),
+      scrollToEnd: scrollToEnd,
+    );
+  }
+
+  void _syncValidationThreadMessage({bool scrollToEnd = false}) {
+    if (_responderMode != ResponderMode.aiUserSimulator) {
+      _removeThreadMessage(_caseValidationMessageId);
+      return;
+    }
+    final result = _latestSessionResult;
+    if (result == null || !result.hasValidationData) {
+      _removeThreadMessage(_caseValidationMessageId);
+      return;
+    }
+    _upsertThreadAssistantMessage(
+      messageId: _caseValidationMessageId,
+      content: _buildCaseValidationThreadMessage(result),
+      scrollToEnd: scrollToEnd,
+    );
   }
 
   Future<void> _initializeSpeechRecognition() async {
@@ -5536,10 +5595,6 @@ class _ChatHomePageState extends State<ChatHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _updateCheckTimer?.cancel();
-    for (final timer in _informationalMessageTimers.values) {
-      timer.cancel();
-    }
-    _informationalMessageTimers.clear();
     unawaited(_speaker.stop());
     _submitSpeechOnStop = false;
     _processSpeechOnStop = false;
@@ -5649,6 +5704,7 @@ class _ChatHomePageState extends State<ChatHomePage>
           return items;
         });
       });
+      _syncCaseDocumentStatusThreadMessage(scrollToEnd: true);
       if (uploaded.isEmpty) {
         await _updateDocumentUploadStatusMessage(
           statusMessageId,
@@ -5746,6 +5802,7 @@ class _ChatHomePageState extends State<ChatHomePage>
           appendUserMessage: false,
           includeAttachedDocumentPath: false,
           speakAssistantReply: false,
+          interceptDocumentIntent: false,
         );
       }
     } finally {
@@ -5780,6 +5837,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         setState(() {
           _caseDocuments = documents;
         });
+        _syncCaseDocumentStatusThreadMessage(scrollToEnd: true);
         final tracked = documents
             .where((document) => uploadedDocIds.contains(document.docId))
             .toList(growable: false);
@@ -5833,6 +5891,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         _latestSessionResult = details;
         _hasExportReady = details?.documentReady ?? _hasExportReady;
       });
+      _syncValidationThreadMessage(scrollToEnd: true);
     } catch (error, stackTrace) {
       await widget.logger.error(
         'Failed to refresh session result metadata',
@@ -5895,7 +5954,17 @@ class _ChatHomePageState extends State<ChatHomePage>
     bool appendUserMessage = true,
     bool includeAttachedDocumentPath = true,
     bool speakAssistantReply = true,
+    bool interceptDocumentIntent = true,
   }) async {
+    if (interceptDocumentIntent) {
+      final handled = await _handleDocumentIntentBeforeSend(
+        text,
+        appendUserMessage: appendUserMessage,
+      );
+      if (handled) {
+        return;
+      }
+    }
     final activeDocumentPath =
         includeAttachedDocumentPath ? _documentPath : null;
     final caseReady = await _ensureCaseSelectedForOutgoingMessage(text);
@@ -6002,6 +6071,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                 _latestSessionResult = result;
                 _hasExportReady = result.documentReady;
               });
+              _syncValidationThreadMessage(scrollToEnd: false);
             }
           }
           if (event.event == 'done') {
@@ -6050,6 +6120,7 @@ class _ChatHomePageState extends State<ChatHomePage>
             _hasExportReady = exportReady;
             _latestSessionResult = sessionResult;
           });
+          _syncValidationThreadMessage(scrollToEnd: true);
           _scrollToLatest();
           if (speakAssistantReply) {
             unawaited(
@@ -6083,6 +6154,166 @@ class _ChatHomePageState extends State<ChatHomePage>
         });
       }
     }
+  }
+
+  Future<bool> _handleDocumentIntentBeforeSend(
+    String text, {
+    required bool appendUserMessage,
+  }) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _isInternalDocumentAutoAnalysisPrompt(trimmed)) {
+      return false;
+    }
+    final statusRequest = _isDocumentStatusRequest(trimmed);
+    final operationRequest = _isDocumentOperationRequest(trimmed);
+    if (!statusRequest && !operationRequest) {
+      return false;
+    }
+    if (_selectedCase == null) {
+      _showSnackbar(_strings.t('create_or_select_case'));
+      return true;
+    }
+    try {
+      final documents = await _apiClient.loadCaseDocumentsSnapshot(
+        caseId: _selectedCase!.caseId,
+        userId: _signedInUser.userId,
+      );
+      if (mounted) {
+        setState(() {
+          _caseDocuments = documents;
+        });
+        _syncCaseDocumentStatusThreadMessage(scrollToEnd: false);
+      }
+    } catch (_) {}
+    if (statusRequest) {
+      if (appendUserMessage) {
+        _appendUserMessageLocally(trimmed);
+      }
+      _appendAssistantMessage(_buildCaseDocumentStatusMessage(), speak: false);
+      return true;
+    }
+    final pendingDocuments = _caseDocuments
+        .where((document) =>
+            document.processingStatus.toLowerCase() != 'processed')
+        .toList(growable: false);
+    if (pendingDocuments.isEmpty) {
+      return false;
+    }
+    if (appendUserMessage) {
+      _appendUserMessageLocally(trimmed);
+    }
+    final pendingNames = pendingDocuments
+        .map((document) =>
+            '${document.originalFilename} (${_localizedDocumentStatusLabel(document.processingStatus)})')
+        .join(', ');
+    _appendAssistantMessage(
+      _strings.t('document_status_pending_message', <String, String>{
+        'documents': pendingNames,
+      }),
+      speak: false,
+    );
+    return true;
+  }
+
+  bool _isDocumentStatusRequest(String text) {
+    final normalized = ' ${text.toLowerCase().trim()} ';
+    const phrases = <String>[
+      ' document status ',
+      ' status of documents ',
+      ' status documents ',
+      ' uploaded documents status ',
+      ' stav dokumentov ',
+      ' status dokumentov ',
+      ' dokument status ',
+      ' dokumenty status ',
+      ' dokumentstatus ',
+      ' status der dokumente ',
+      ' status von dokumenten ',
+    ];
+    return phrases.any(normalized.contains);
+  }
+
+  bool _isDocumentOperationRequest(String text) {
+    final normalized = text.toLowerCase().trim();
+    final documentWords = <String>[
+      'document',
+      'documents',
+      'uploaded',
+      'upload',
+      'pdf',
+      'contract',
+      'dokument',
+      'dokumenty',
+      'pdf',
+      'zmluva',
+      'zmluvy',
+      'vertrag',
+      'dokumente',
+    ];
+    final actionWords = <String>[
+      'summary',
+      'summarize',
+      'analyse',
+      'analyze',
+      'analysis',
+      'review',
+      'check',
+      'compare',
+      'zhrn',
+      'zhrnut',
+      'analyz',
+      'skontrol',
+      'porovnaj',
+      'zusammen',
+      'analys',
+      'prüf',
+      'pruef',
+      'vergleich',
+    ];
+    final mentionsDocument = documentWords.any(normalized.contains);
+    final mentionsAction = actionWords.any(normalized.contains);
+    return mentionsDocument && mentionsAction;
+  }
+
+  String _buildCaseDocumentStatusMessage() {
+    if (_caseDocuments.isEmpty) {
+      return _strings.t('document_status_report_empty');
+    }
+    final lines = <String>[_strings.t('document_status_report_intro')];
+    for (final document in _caseDocuments) {
+      lines.add(
+        '- ${document.originalFilename}: ${_localizedDocumentStatusLabel(document.processingStatus)}',
+      );
+    }
+    return lines.join('\n');
+  }
+
+  String _localizedDocumentStatusLabel(String status) {
+    switch (status.toLowerCase()) {
+      case 'uploaded':
+        return _strings.t('document_status_uploaded');
+      case 'processing':
+        return _strings.t('document_status_processing');
+      case 'processed':
+        return _strings.t('document_status_processed');
+      case 'failed':
+        return _strings.t('document_status_failed');
+      default:
+        return _strings.t('document_status_unknown');
+    }
+  }
+
+  String _documentStatusSubtitle(CaseDocumentItem document) {
+    final status = _localizedDocumentStatusLabel(document.processingStatus);
+    if (document.processingStatus.toLowerCase() == 'failed' &&
+        document.processingError != null &&
+        document.processingError!.trim().isNotEmpty) {
+      return '$status • ${document.processingError!.trim()}';
+    }
+    if (document.processingStatus.toLowerCase() == 'processed') {
+      return '$status • ${_strings.t('document_status_ready')}';
+    }
+    return status;
   }
 
   Future<void> _downloadPdf(String kind) async {
@@ -6460,6 +6691,17 @@ class _ChatHomePageState extends State<ChatHomePage>
   Future<void> _renameSelectedCase() async {
     final selected = _selectedCase;
     if (selected == null) return;
+    try {
+      final documents = await _apiClient.loadCaseDocumentsSnapshot(
+        caseId: selected.caseId,
+        userId: _signedInUser.userId,
+      );
+      if (mounted) {
+        setState(() {
+          _caseDocuments = documents;
+        });
+      }
+    } catch (_) {}
     final controller = TextEditingController(text: selected.title);
     final strings = _strings;
     final dialogResult = await showDialog<CaseEditDialogResult>(
@@ -6491,11 +6733,18 @@ class _ChatHomePageState extends State<ChatHomePage>
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final document = _caseDocuments[index];
+                        final status = document.processingStatus.toLowerCase();
+                        final leadingIcon = switch (status) {
+                          'processed' => Icons.check_circle_outline,
+                          'failed' => Icons.error_outline,
+                          'processing' => Icons.sync,
+                          _ => Icons.schedule,
+                        };
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.description_outlined),
+                          leading: Icon(leadingIcon),
                           title: Text(document.originalFilename),
-                          subtitle: Text(document.processingStatus),
+                          subtitle: Text(_documentStatusSubtitle(document)),
                           onTap: () => Navigator.pop(
                             context,
                             CaseEditDialogResult(documentToOpen: document),
@@ -6873,8 +7122,11 @@ class _ChatHomePageState extends State<ChatHomePage>
                           message,
                         );
                         final isUser = message.role == 'user';
-                        final speaker =
-                            isUser ? strings.t('you') : strings.t('assistant');
+                        final speaker = isUser
+                            ? strings.t('you')
+                            : ((message.agentName?.trim().isNotEmpty ?? false)
+                                ? message.agentName!.trim()
+                                : strings.t('assistant'));
                         return Align(
                           alignment: isUser
                               ? Alignment.centerRight
@@ -6923,40 +7175,6 @@ class _ChatHomePageState extends State<ChatHomePage>
                     ),
                   ),
                 ),
-                if (_caseDocuments.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _caseDocuments
-                            .map(
-                              (document) => FilledButton.tonalIcon(
-                                onPressed: _downloadingCaseDocumentIds
-                                        .contains(document.docId)
-                                    ? null
-                                    : () => _downloadCaseDocument(document),
-                                icon: _downloadingCaseDocumentIds
-                                        .contains(document.docId)
-                                    ? const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.download_outlined),
-                                label: Text(
-                                    '${document.originalFilename} (${document.processingStatus})'),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ),
-                  ),
-                _buildSessionResultCard(strings),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
                   child: Wrap(

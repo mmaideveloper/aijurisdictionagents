@@ -6,12 +6,14 @@ on:
     paths:
       - "api/aijuristiction-api/**"
       - "src/aijurisdictionagents/**"
+      - "pyproject.toml"
       - "databases/**"
       - ".github/workflows/api_build_deploy.yml"
   pull_request:
     paths:
       - "api/aijuristiction-api/**"
       - "src/aijurisdictionagents/**"
+      - "pyproject.toml"
       - "databases/**"
       - ".github/workflows/api_build_deploy.yml"
   workflow_dispatch:
@@ -81,6 +83,7 @@ jobs:
       AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
       CORS_ALLOW_ORIGINS: ${{ vars.CORS_ALLOW_ORIGINS }}
+      DOCUMENT_PROCESSOR: ${{ vars.DOCUMENT_PROCESSOR }}
     steps:
       - uses: actions/checkout@v5
 
@@ -185,6 +188,7 @@ jobs:
             DB_LOCAL=/tmp/api.sqlite3
             STORAGE_OPTION=azure
             STORE_LOCAL=/tmp/storage
+            DOCUMENT_PROCESSOR=${DOCUMENT_PROCESSOR:-azure}
             OTEL_SERVICE_NAME=aijuristiction-api
           )
           if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then

@@ -103,6 +103,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_STORAGE_CONTAINER_NAME` | Blob container name |
 | `AZURE_LOG_ANALYTICS_WORKSPACE_NAME` | Log Analytics workspace name |
 | `AZURE_MANAGED_IDENTITY_NAME` | Managed identity name |
+| `DOCUMENT_PROCESSOR` | API document-processing mode: use `azure` in deployed environments, `local` only for local/dev API runs without the ACA job |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
 | `AZURE_POSTGRES_VERSION` | Optional PostgreSQL version |
@@ -135,6 +136,7 @@ These are used by the document processor deployment workflow:
 
 | Variable | Purpose |
 | --- | --- |
+| `DOCUMENT_PROCESSOR` | Keep this as `azure` in deployed GitHub Environments so uploaded documents are processed by the ACA scheduled job |
 | `AZURE_MANAGED_IDENTITY_NAME` | Identity used by the job |
 | `AZURE_STORAGE_ACCOUNT_NAME` | Storage account with uploaded documents |
 | `AZURE_STORAGE_CONTAINER_NAME` | Storage container name |
@@ -197,9 +199,14 @@ Typical order:
 1. `infra_deploy`
 2. `Database Schema Upgrade` if needed
 3. `API Build and Deploy`
-4. `web_build_deploy`
-5. `Document Processor Build and Deploy`
+4. `Document Processor Build and Deploy`
+5. `web_build_deploy`
 6. `mobile_flutter_build`
+
+Recommended deployed value:
+
+- `DOCUMENT_PROCESSOR=azure` for `dev`, `test`, and `prod`
+- Keep `DOCUMENT_PROCESSOR=local` only in local workstation `.env` files when you want the API process to extract documents immediately without waiting for the ACA job
 
 ## 11. Current Workflow Defaults
 

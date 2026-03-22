@@ -30,6 +30,7 @@ def _create_user(client: TestClient, phone: str, email: str) -> str:
 
 def test_case_document_upload_limit_and_processing_context(monkeypatch, tmp_path) -> None:
     _configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("DOCUMENT_PROCESSOR", "azure")
     client = TestClient(app)
     user_id = _create_user(client, "+421900222111", "docs@example.com")
     case_id = client.post(
@@ -78,6 +79,48 @@ def test_case_document_upload_limit_and_processing_context(monkeypatch, tmp_path
     history = client.get(f"/v1/cases/{case_id}/history?user_id={user_id}", headers=_headers())
     assert history.status_code == 200
     assert {item["processing_status"] for item in history.json()["documents"]} == {"processed"}
+
+
+def test_case_document_upload_processes_immediately_in_local_mode(monkeypatch, tmp_path) -> None:
+    _configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("DOCUMENT_PROCESSOR", "local")
+    client = TestClient(app)
+    user_id = _create_user(client, "+421900222112", "docs-local@example.com")
+    case_id = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Immediate processing"},
+    ).json()["case_id"]
+
+    upload = client.post(
+        f"/v1/cases/{case_id}/documents?user_id={user_id}",
+        headers=_headers(),
+        files=[("files", ("one.txt", b"alpha evidence", "text/plain"))],
+    )
+    assert upload.status_code == 201
+    uploaded = upload.json()["uploaded"]
+    assert len(uploaded) == 1
+    assert uploaded[0]["processing_status"] == "processed"
+    assert upload.json()["processed_document_count"] == 1
+    assert upload.json()["unprocessed_document_count"] == 0
+
+    context = client.get(
+        f"/v1/cases/{case_id}/documents/context?user_id={user_id}",
+        headers=_headers(),
+    )
+    assert context.status_code == 200
+    assert context.json()["processed_documents"] == ["one.txt"]
+    assert context.json()["unprocessed_documents"] == []
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    contents = store.list_case_document_contents(case_id=case_id)
+    assert len(contents) == 1
+    doc_id, filename, text, vector = contents[0]
+    assert doc_id
+    assert filename == "one.txt"
+    assert text == "alpha evidence"
+    assert vector.startswith("[")
 
 
 def test_whitelisted_phone_gets_extended_free_document_limit(monkeypatch, tmp_path) -> None:

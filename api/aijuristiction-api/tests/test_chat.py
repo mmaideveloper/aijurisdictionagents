@@ -178,6 +178,8 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     assert "jazyk:" not in document_text
     assert "session id" in summary_text
     assert "zhrnutie" in summary_text or "summary" in summary_text
+    assert "validation" in summary_text or "validacia" in summary_text
+    assert "accuracy" in summary_text or "presnost" in summary_text
     assert "nájomná zmluva" in document_text
     assert "čl. i - zmluvné strany" in document_text
     assert "čl. vi - skončenie nájmu" in document_text
@@ -551,6 +553,15 @@ def test_reply_endpoint_requires_confirmation_before_document_pdf_ready() -> Non
     )
     assert export_doc_pdf.status_code == 200
     assert export_doc_pdf.content.startswith(b"%PDF")
+
+
+def test_explicit_slovak_document_update_request_is_recognized() -> None:
+    from app.chat.api import _user_requested_document_generation
+
+    assert _user_requested_document_generation(
+        content="Pozri na dokument a oprav ho podla poslednych zmien zakona.",
+        previous_messages=[],
+    ) is True
 
 
 def test_document_export_ready_after_confirmation_with_prior_case_update() -> None:

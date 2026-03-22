@@ -7,6 +7,7 @@ from typing import Iterable, Sequence
 
 from openai import AzureOpenAI
 
+from .base import log_llm_request, log_llm_response
 from ..schemas import Document, Message
 
 logger = logging.getLogger(__name__)
@@ -58,13 +59,26 @@ class AzureFoundryClient:
                 }
             )
 
+        log_llm_request(
+            logger,
+            provider="azurefoundry",
+            agent_name=agent_name,
+            request_payload=messages,
+        )
         response = self._client.chat.completions.create(
             model=self._config.deployment,
             temperature=self._config.temperature,
             messages=messages,
         )
         content = response.choices[0].message.content if response.choices else ""
-        return (content or "").strip()
+        normalized = (content or "").strip()
+        log_llm_response(
+            logger,
+            provider="azurefoundry",
+            agent_name=agent_name,
+            raw_response=normalized,
+        )
+        return normalized
 
 
 def load_azure_foundry_config_from_env() -> AzureFoundryConfig:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from mimetypes import guess_type
 from pathlib import Path
 
@@ -16,10 +17,18 @@ from aijurisdictionagents.api_db import (
     CaseCommunication,
     CaseDocument,
 )
+from services.document_processor.service import DocumentProcessor
 
 router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key)])
 _MAX_ACTIVE_CASES = 5
 _LOGGER = logging.getLogger(__name__)
+
+
+def _document_processor_mode() -> str:
+    value = os.getenv("DOCUMENT_PROCESSOR", "local").strip().lower()
+    if value in {"local", "azure"}:
+        return value
+    return "local"
 
 
 class CaseResponse(BaseModel):
@@ -164,6 +173,7 @@ async def upload_case_documents(
             detail=f'Document limit reached for this case ({limit}).',
         )
     uploaded: list[CaseDocumentResponse] = []
+    uploaded_documents: list[CaseDocument] = []
     next_version = existing + 1
     for file in files:
         filename = Path(file.filename or 'document').name or 'document'
@@ -176,8 +186,19 @@ async def upload_case_documents(
             payload=payload,
             uploaded_by_user_id=user_id,
         )
-        uploaded.append(_to_case_document_response(store.get_case_document(case_id=case_id, doc_id=doc_id)))
+        stored_document = store.get_case_document(case_id=case_id, doc_id=doc_id)
+        uploaded_documents.append(stored_document)
+        uploaded.append(_to_case_document_response(stored_document))
         next_version += 1
+    if _document_processor_mode() == "local" and uploaded_documents:
+        processor = DocumentProcessor(store)
+        processor.process_documents(uploaded_documents)
+        uploaded = [
+            _to_case_document_response(
+                store.get_case_document(case_id=case_id, doc_id=document.doc_id)
+            )
+            for document in uploaded_documents
+        ]
     context = _document_context(case_id=case_id, store=store)
     return CaseDocumentUploadResponse(
         uploaded=uploaded,

@@ -37,6 +37,7 @@ API_VERSION = get_api_version()
 DEFAULT_API_LLM_PROVIDER = "azurefoundry"
 os.environ.setdefault("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER)
 EFFECTIVE_LLM_PROVIDER = os.getenv("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER).strip().lower()
+DOCUMENT_PROCESSOR_MODE = os.getenv("DOCUMENT_PROCESSOR", "local").strip().lower() or "local"
 LOG_LEVEL = configure_logging()
 TELEMETRY_MODE = configure_telemetry(
     service_name="aijuristiction-api",
@@ -103,13 +104,14 @@ async def startup_log() -> None:
     logger.info(
         (
             "API Starting | api_version=%s | core_version=%s | log_level=%s "
-            "| llm_provider=%s | db_option=%s | last_law_update_date=%s | law_source=%s"
+            "| llm_provider=%s | db_option=%s | document_processor=%s | last_law_update_date=%s | law_source=%s"
         ),
         app.version,
         get_core_version(),
         logging.getLevelName(LOG_LEVEL),
         EFFECTIVE_LLM_PROVIDER,
         store.db_option,
+        DOCUMENT_PROCESSOR_MODE,
         law_snapshot.last_law_update_date,
         law_snapshot.last_law_update_source,
     )

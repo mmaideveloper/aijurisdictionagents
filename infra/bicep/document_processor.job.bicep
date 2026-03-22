@@ -116,6 +116,10 @@ resource documentProcessorJob 'Microsoft.App/jobs@2024-03-01' = {
               value: 'azure'
             }
             {
+              name: 'DOCUMENT_PROCESSOR'
+              value: 'azure'
+            }
+            {
               name: 'STORE_CLOUD'
               value: 'https://${storageAccount.name}.blob.core.windows.net/${storageContainerName}'
             }

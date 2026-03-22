@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+import logging
 from typing import Iterable, Sequence
 
 from openai import OpenAI
 
+from .base import log_llm_request, log_llm_response
 from ..schemas import Document, Message
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -47,13 +51,26 @@ class OpenAIClient:
                 }
             )
 
+        log_llm_request(
+            logger,
+            provider="openai",
+            agent_name=agent_name,
+            request_payload=messages,
+        )
         response = self._client.chat.completions.create(
             model=self._config.model,
             temperature=self._config.temperature,
             messages=messages,
         )
         content = response.choices[0].message.content if response.choices else ""
-        return (content or "").strip()
+        normalized = (content or "").strip()
+        log_llm_response(
+            logger,
+            provider="openai",
+            agent_name=agent_name,
+            raw_response=normalized,
+        )
+        return normalized
 
 
 def load_openai_config_from_env() -> OpenAIConfig:
