@@ -294,6 +294,7 @@ Mobile app versioning rule:
 
 For Android automatic upgrade, the GitHub Release must include an `.apk` asset.
 The workflow uses `app-release.apk`, which the app prefers automatically during the update flow. Releases without an APK are treated as non-mobile releases, so the in-app upgrade prompt is skipped for them.
+The release-check model also needs to stay aligned with `MobileAppUpdateInfo`; this revision removes a stale constructor argument so CI and release builds compile again after the GitHub-release APK gating change.
 If Android shows "App not installed" due to package/signature conflict, it means
 the installed build was signed differently (for example debug vs release). The app
 now warns about this case; uninstall the existing app and then install the new APK.

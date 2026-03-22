@@ -1508,7 +1508,6 @@ class ApiClient {
       return MobileAppUpdateInfo(
         version: githubRelease.version,
         releaseUrl: githubRelease.releaseUrl,
-        isMobileAppRelease: githubRelease.isMobileAppRelease,
         apkDownloadUrl: githubRelease.apkDownloadUrl,
       );
     }
@@ -1522,7 +1521,6 @@ class ApiClient {
     return MobileAppUpdateInfo(
       version: latestVersion,
       releaseUrl: releaseUrl,
-      isMobileAppRelease: true,
       apkDownloadUrl: apkDownloadUrl,
     );
   }
