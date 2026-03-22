@@ -3,12 +3,30 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+class AppDownloadProgress {
+  const AppDownloadProgress({
+    required this.receivedBytes,
+    required this.totalBytes,
+  });
+
+  final int receivedBytes;
+  final int totalBytes;
+
+  double? get fractionComplete {
+    if (totalBytes <= 0) {
+      return null;
+    }
+    return receivedBytes / totalBytes;
+  }
+}
+
 abstract class AppUpdater {
   bool get supportsInAppUpdate;
 
   Future<String> downloadReleaseAsset({
     required Uri downloadUri,
     required String fileName,
+    void Function(AppDownloadProgress progress)? onProgress,
   });
 
   Future<bool> canInstallPackages();
@@ -38,6 +56,7 @@ class _IoAppUpdater implements AppUpdater {
   Future<String> downloadReleaseAsset({
     required Uri downloadUri,
     required String fileName,
+    void Function(AppDownloadProgress progress)? onProgress,
   }) async {
     if (!supportsInAppUpdate) {
       throw UnsupportedError('In-app update is not supported on this platform.');
@@ -66,7 +85,18 @@ class _IoAppUpdater implements AppUpdater {
         );
       }
       sink = file.openWrite();
-      await response.pipe(sink);
+      var receivedBytes = 0;
+      final totalBytes = response.contentLength;
+      await for (final chunk in response) {
+        sink.add(chunk);
+        receivedBytes += chunk.length;
+        onProgress?.call(
+          AppDownloadProgress(
+            receivedBytes: receivedBytes,
+            totalBytes: totalBytes,
+          ),
+        );
+      }
       await sink.flush();
       return file.path;
     } finally {
