@@ -1,0 +1,6 @@
+{
+  "deployment": "",
+  "model_knowledge_cutoff_date": "2020-12-31",
+  "provider": "mock",
+  "source": "model_knowledge_cutoff_cache"
+}
