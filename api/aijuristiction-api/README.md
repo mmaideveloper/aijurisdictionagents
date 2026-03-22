@@ -106,9 +106,21 @@ If the database is unreachable or misconfigured, the endpoint returns `503` with
 `GET /version` response includes:
 - `api_version`: API package version (`api/aijuristiction-api/pyproject.toml`).
 - `core_version`: core system version from installed `aijurisdictionagents` package or local `src/aijurisdictionagents/__init__.py` during monorepo development.
+- `last_law_update_date`: latest law-ingestion timestamp available to the system from the laws database. This reflects the newest law content collected by the law processor, even when the underlying LLM was trained earlier.
+- `last_law_update_source`: whether that timestamp comes from country-specific or global `law_documents` data.
+- `model_knowledge_cutoff_date`: cached fallback date used when `last_law_update_date` is not available yet.
+- `model_knowledge_cutoff_source`: source of that fallback date, currently the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value.
+- `law_reference_links`: recent official law links available in the system knowledge store.
 - `mobile_app_version`: latest mobile app version from `mobile_app/pubspec.yaml`.
 - `mobile_app_release_url`: release page used by the mobile app update flow.
 - `mobile_app_apk_download_url`: default APK asset URL used by Android in-app update flow.
+
+Fallback configuration:
+
+- `MODEL_KNOWLEDGE_CUTOFF_DATE`: manually configured cutoff date used only when `law_documents` has no imported records yet.
+- `MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE`: JSON cache file persisted on first startup/run so the fallback date remains stable without expiration until real law-import timestamps become available.
+
+The API warms this snapshot during startup, so the cached fallback file is created on the initial run when the laws database is empty and `MODEL_KNOWLEDGE_CUTOFF_DATE` is configured.
 
 Example:
 
@@ -118,6 +130,13 @@ Example:
   "version": "1.0.260321",
   "api_version": "1.0.260321",
   "core_version": "0.1.0",
+  "last_law_update_date": "2026-03-20T00:00:00Z",
+  "last_law_update_source": "law_documents_global",
+  "model_knowledge_cutoff_date": "2020-12-31",
+  "model_knowledge_cutoff_source": "model_knowledge_cutoff_cache",
+  "law_reference_links": [
+    "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
+  ],
   "mobile_app_version": "0.1.5+18",
   "mobile_app_release_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest",
   "mobile_app_apk_download_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest/download/app-release.apk"
@@ -248,9 +267,12 @@ The dedicated local PostgreSQL project now lives under `databases/README.md`.
 ## PDF export
 
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary` returns the session summary.
+- The summary PDF now includes generation date, API version, system core version, the latest law update date available to the system, the law-update source, the final recommendation for the user case, and official law links stored by the law processor.
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` now builds a document that matches the detected case topic instead of always returning a lease template.
 - Direct `POST /v1/chat/sessions/{session_id}/reply` sessions also persist a session result now, so the mobile `Real Agent` flow can download PDFs without going through the simulator stream.
 - In `Real Agent` mode, the lawyer can first ask whether a formal document should be prepared as PDF; once the user confirms, the next direct reply marks `metadata.document_ready=true` in `GET /v1/chat/sessions/{session_id}/result`.
+- `GET /v1/chat/sessions/{session_id}/result` metadata now also includes `last_law_update_date`, `last_law_update_source`, `model_knowledge_cutoff_date`, `model_knowledge_cutoff_source`, `law_reference_links`, `api_version`, and the backward-compatible `knowledge_last_updated_at` alias.
+- When the laws database has no import timestamp yet, `knowledge_last_updated_at` falls back to the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value while `last_law_update_date` remains empty.
 - For Slovak and other Central European locales, the exporter uses a Unicode TrueType font when available so characters such as `á`, `č`, `ľ`, `ô`, and `ž` render correctly in the generated PDF.
 
 Additional PDF font notes:

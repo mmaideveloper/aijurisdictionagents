@@ -1065,41 +1065,117 @@ def _build_summary_export_content(
     assistant_count = len([m for m in messages if m.role == MessageRole.ASSISTANT])
     lang_label = (language or "auto").strip() or "auto"
     generated = result.generated_at.isoformat()
+    metadata = result.metadata or {}
+    api_version = str(metadata.get("api_version") or _API_VERSION)
+    core_version = str(metadata.get("core_version") or _CORE_VERSION)
+    last_law_update_date = str(metadata.get("last_law_update_date") or "").strip()
+    last_law_update_source = str(metadata.get("last_law_update_source") or "").strip()
+    validation_summary = str(metadata.get("validation_summary") or "").strip()
+    law_reference_links = [
+        str(link).strip()
+        for link in (metadata.get("law_reference_links") or [])
+        if str(link).strip()
+    ]
+    citation_lines = _summary_citation_lines(result.citations)
     if (language or "").strip().lower().startswith("sk"):
+        lines = [
+            "AI Jurisdiction",
+            "Zhrnutie diskusie",
+            "",
+            "Systemove informacie",
+            f"Session ID: {session_id}",
+            f"Krajina: {country}",
+            f"Jazyk: {lang_label}",
+            f"Datum generovania: {generated}",
+            f"Verzia API: {api_version}",
+            f"Verzia system core: {core_version}",
+            (
+                f"Posledna aktualizacia zakonov v systeme: {last_law_update_date}"
+                if last_law_update_date
+                else "Posledna aktualizacia zakonov v systeme: nie je dostupna"
+            ),
+            (
+                f"Zdroj aktualizacie zakonov: {last_law_update_source}"
+                if last_law_update_source
+                else "Zdroj aktualizacie zakonov: neznamy"
+            ),
+            "",
+            "Pouzivatelske odporucanie",
+            f"Finalne odporucanie: {result.final_recommendation}",
+            f"Odovodnenie: {result.judge_rationale or 'neposkytnute'}",
+            (
+                f"Validacne zhrnutie: {validation_summary}"
+                if validation_summary
+                else "Validacne zhrnutie: neposkytnute"
+            ),
+            f"Pocet sprav pouzivatela: {user_count}",
+            f"Pocet odpovedi asistenta: {assistant_count}",
+        ]
+        if citation_lines:
+            lines.extend(["", "Relevantne odkazy alebo citacie"] + citation_lines)
+        if law_reference_links:
+            lines.extend(["", "Oficialne odkazy na pravne predpisy"])
+            lines.extend([f"- {link}" for link in law_reference_links])
         return (
             f"Zhrnutie diskusie {session_id}",
-            [
-                "AI Jurisdiction",
-                "Zhrnutie diskusie",
-                "",
-                f"Session ID: {session_id}",
-                f"Krajina: {country}",
-                f"Jazyk: {lang_label}",
-                f"Vygenerovane: {generated}",
-                "",
-                f"Finalne odporucanie: {result.final_recommendation}",
-                f"Odovodnenie: {result.judge_rationale or 'neposkytnute'}",
-                f"Pocet sprav pouzivatela: {user_count}",
-                f"Pocet odpovedi asistenta: {assistant_count}",
-            ],
+            lines,
         )
+    lines = [
+        "AI Jurisdiction",
+        "Discussion summary",
+        "",
+        "System information",
+        f"Session ID: {session_id}",
+        f"Country: {country}",
+        f"Language: {lang_label}",
+        f"Generation date: {generated}",
+        f"API version: {api_version}",
+        f"System core version: {core_version}",
+        (
+            f"Last law update date available to the system: {last_law_update_date}"
+            if last_law_update_date
+            else "Last law update date available to the system: unavailable"
+        ),
+        (
+            f"Law update source: {last_law_update_source}"
+            if last_law_update_source
+            else "Law update source: unknown"
+        ),
+        "",
+        "User recommendation",
+        f"Final recommendation: {result.final_recommendation}",
+        f"Rationale: {result.judge_rationale or 'not provided'}",
+        (
+            f"Validation summary: {validation_summary}"
+            if validation_summary
+            else "Validation summary: not provided"
+        ),
+        f"User messages: {user_count}",
+        f"Assistant messages: {assistant_count}",
+    ]
+    if citation_lines:
+        lines.extend(["", "Relevant links or citations"] + citation_lines)
+    if law_reference_links:
+        lines.extend(["", "Official law links available in the system"])
+        lines.extend([f"- {link}" for link in law_reference_links])
     return (
         f"Discussion Summary {session_id}",
-        [
-            "AI Jurisdiction",
-            "Discussion summary",
-            "",
-            f"Session ID: {session_id}",
-            f"Country: {country}",
-            f"Language: {lang_label}",
-            f"Generated at: {generated}",
-            "",
-            f"Final recommendation: {result.final_recommendation}",
-            f"Rationale: {result.judge_rationale or 'not provided'}",
-            f"User messages: {user_count}",
-            f"Assistant messages: {assistant_count}",
-        ],
+        lines,
     )
+
+
+def _summary_citation_lines(citations: list[dict[str, str]]) -> list[str]:
+    lines: list[str] = []
+    for citation in citations[:5]:
+        filename = str(citation.get("filename") or "").strip()
+        snippet = " ".join(str(citation.get("snippet") or "").split())
+        if filename and snippet:
+            lines.append(f"- {filename}: {snippet}")
+        elif filename:
+            lines.append(f"- {filename}")
+        elif snippet:
+            lines.append(f"- {snippet}")
+    return lines
 
 
 def _build_document_export_content(

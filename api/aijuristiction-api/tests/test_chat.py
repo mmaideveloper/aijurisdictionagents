@@ -621,26 +621,28 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
             CREATE TABLE law_documents (
                 document_id TEXT PRIMARY KEY,
                 country_code TEXT NOT NULL,
-                last_stored_at TEXT NOT NULL
+                last_stored_at TEXT NOT NULL,
+                source_url TEXT NOT NULL
             )
             """
         )
         conn.execute(
             """
-            INSERT INTO law_documents(document_id, country_code, last_stored_at)
-            VALUES ('doc-1', 'SK', '2026-02-10T12:30:00Z')
+            INSERT INTO law_documents(document_id, country_code, last_stored_at, source_url)
+            VALUES ('doc-1', 'SK', '2026-02-10T12:30:00Z', 'https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/2/')
             """
         )
         conn.execute(
             """
-            INSERT INTO law_documents(document_id, country_code, last_stored_at)
-            VALUES ('doc-2', 'SK', '2026-03-11T08:15:00Z')
+            INSERT INTO law_documents(document_id, country_code, last_stored_at, source_url)
+            VALUES ('doc-2', 'SK', '2026-03-11T08:15:00Z', 'https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/11/')
             """
         )
         conn.commit()
 
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(laws_db))
+    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "2020-12-31")
 
     session_id = uuid4()
     session = Session(id=session_id, country="SK", language="EN", discussion_type="court")
@@ -666,6 +668,114 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
     )
 
     assert result.metadata["knowledge_last_updated_at"] == "2026-03-11T08:15:00Z"
+    assert result.metadata["last_law_update_date"] == "2026-03-11T08:15:00Z"
+    assert result.metadata["last_law_update_source"] == "law_documents_country"
+    assert result.metadata["model_knowledge_cutoff_date"] == "2020-12-31"
+    assert result.metadata["model_knowledge_cutoff_source"] == "model_knowledge_cutoff_cache"
+    assert result.metadata["law_reference_links"] == [
+        "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/11/",
+        "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/2/",
+    ]
+    assert result.metadata["api_version"]
+
+
+def test_law_snapshot_falls_back_to_model_cutoff_and_writes_cache(monkeypatch, tmp_path) -> None:
+    from app.chat.result_metadata import get_law_knowledge_snapshot
+
+    cache_path = tmp_path / "model-knowledge-cutoff.json"
+    monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
+    monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
+    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", str(cache_path))
+    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "2024-12-31")
+    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1")
+
+    snapshot = get_law_knowledge_snapshot("SK")
+
+    assert snapshot.last_law_update_date is None
+    assert snapshot.last_law_update_source == "unavailable"
+    assert snapshot.model_knowledge_cutoff_date == "2024-12-31"
+    assert snapshot.model_knowledge_cutoff_source == "model_knowledge_cutoff_cache"
+    assert snapshot.reference_links == ()
+
+    payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert payload["model_knowledge_cutoff_date"] == "2024-12-31"
+    assert payload["source"] == "model_knowledge_cutoff_cache"
+    assert payload["provider"] == "azurefoundry"
+    assert payload["deployment"] == "gpt-4.1"
+
+
+def test_law_snapshot_reuses_cached_model_cutoff_without_expiration(monkeypatch, tmp_path) -> None:
+    from app.chat.result_metadata import get_law_knowledge_snapshot
+
+    cache_path = tmp_path / "model-knowledge-cutoff.json"
+    monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
+    monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
+    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", str(cache_path))
+    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "2024-12-31")
+
+    first_snapshot = get_law_knowledge_snapshot("SK")
+    assert first_snapshot.model_knowledge_cutoff_date == "2024-12-31"
+
+    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "2026-01-01")
+    second_snapshot = get_law_knowledge_snapshot("SK")
+
+    assert second_snapshot.last_law_update_date is None
+    assert second_snapshot.model_knowledge_cutoff_date == "2024-12-31"
+    assert second_snapshot.model_knowledge_cutoff_source == "model_knowledge_cutoff_cache"
+
+
+def test_summary_export_content_includes_system_versions_and_law_links() -> None:
+    from app.chat.api import _build_summary_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    result = SessionResult(
+        final_recommendation="Send a written demand first and prepare court filing only if the counterparty does not comply.",
+        judge_rationale="The uploaded documents support the user's claim and the missing performance deadline should be fixed first.",
+        citations=[
+            {
+                "filename": "Act 40/1964",
+                "snippet": "Section 517 covers delay and written demand before escalation.",
+            }
+        ],
+        metadata={
+            "api_version": "1.0.260322",
+            "core_version": "1.0.260202",
+            "last_law_update_date": "2026-03-20T00:00:00Z",
+            "last_law_update_source": "law_documents_country",
+            "law_reference_links": [
+                "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
+            ],
+            "validation_summary": "The recommendation is legally plausible but depends on proving delivery of the written notice.",
+        },
+    )
+    messages = [
+        Message(session_id=session_id, role=MessageRole.USER, content="My supplier missed the deadline."),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="You should send a written demand and preserve delivery evidence.",
+        ),
+    ]
+
+    _title, lines = _build_summary_export_content(
+        session_id=session_id,
+        result=result,
+        messages=messages,
+        country="SK",
+        language="EN",
+    )
+
+    joined = "\n".join(lines)
+    assert "Generation date:" in joined
+    assert "API version: 1.0.260322" in joined
+    assert "System core version: 1.0.260202" in joined
+    assert "Last law update date available to the system: 2026-03-20T00:00:00Z" in joined
+    assert "User recommendation" in joined
+    assert "Final recommendation:" in joined
+    assert "Official law links available in the system" in joined
+    assert "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/" in joined
 
 
 def test_chat_endpoints_require_api_key() -> None:

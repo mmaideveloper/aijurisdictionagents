@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.cases_api import router as cases_router
+from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.chat.api import router as chat_router
 from app.logging_config import configure_logging
 from app.telemetry import configure_telemetry, instrument_fastapi
@@ -98,13 +99,19 @@ async def startup_log() -> None:
             dry_run=False,
         )
     store.initialize()
+    law_snapshot = get_law_knowledge_snapshot(None)
     logger.info(
-        "API Starting | api_version=%s | core_version=%s | log_level=%s | llm_provider=%s | db_option=%s",
+        (
+            "API Starting | api_version=%s | core_version=%s | log_level=%s "
+            "| llm_provider=%s | db_option=%s | last_law_update_date=%s | law_source=%s"
+        ),
         app.version,
         get_core_version(),
         logging.getLevelName(LOG_LEVEL),
         EFFECTIVE_LLM_PROVIDER,
         store.db_option,
+        law_snapshot.last_law_update_date,
+        law_snapshot.last_law_update_source,
     )
 
 
@@ -194,12 +201,18 @@ def health() -> JSONResponse:
 
 @app.get("/version")
 def version() -> JSONResponse:
+    law_snapshot = get_law_knowledge_snapshot(None)
     return JSONResponse(
         {
             "service": "aijuristiction-api",
             "version": app.version,
             "api_version": app.version,
             "core_version": get_core_version(),
+            "last_law_update_date": law_snapshot.last_law_update_date,
+            "last_law_update_source": law_snapshot.last_law_update_source,
+            "model_knowledge_cutoff_date": law_snapshot.model_knowledge_cutoff_date,
+            "model_knowledge_cutoff_source": law_snapshot.model_knowledge_cutoff_source,
+            "law_reference_links": list(law_snapshot.reference_links),
             "mobile_app_version": get_mobile_app_version(),
             "mobile_app_release_url": get_mobile_app_release_url(),
             "mobile_app_apk_download_url": get_mobile_app_apk_download_url(),

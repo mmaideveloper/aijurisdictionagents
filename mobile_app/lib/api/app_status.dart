@@ -15,6 +15,16 @@ class MobileAppUpdateInfo {
   final String? apkDownloadUrl;
 }
 
+class ApiSystemVersionInfo {
+  const ApiSystemVersionInfo({
+    required this.lastLawUpdateDate,
+    required this.modelKnowledgeCutoffDate,
+  });
+
+  final String? lastLawUpdateDate;
+  final String? modelKnowledgeCutoffDate;
+}
+
 class ApiHealthCheckResult {
   const ApiHealthCheckResult._({
     required this.isHealthy,

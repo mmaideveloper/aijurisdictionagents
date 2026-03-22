@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 from pathlib import Path
 import re
 import sqlite3
+from dataclasses import dataclass
 from typing import Any, Sequence
 
 from app.chat.models import Message, MessageRole, Session
-from app.versioning import get_core_version
+from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.agents import AIAgentsValidator, ValidatorInputs
 from aijurisdictionagents.agents.validator import EvaluationCriterion
@@ -81,6 +83,15 @@ _STOPWORDS = {
 }
 
 
+@dataclass(frozen=True)
+class LawKnowledgeSnapshot:
+    last_law_update_date: str | None
+    last_law_update_source: str
+    model_knowledge_cutoff_date: str | None
+    model_knowledge_cutoff_source: str
+    reference_links: tuple[str, ...] = ()
+
+
 def build_session_result_metadata(
     *,
     session: Session,
@@ -119,7 +130,7 @@ def build_session_result_metadata(
         final_result=final_recommendation,
     )
 
-    knowledge_last_updated_at = _latest_legal_update_for_country(session.country)
+    knowledge_snapshot = get_law_knowledge_snapshot(session.country)
     metadata.update(
         {
             "validation_accuracy": report.weighted_accuracy,
@@ -132,10 +143,21 @@ def build_session_result_metadata(
                 }
                 for score in report.scores
             ],
-            "knowledge_last_updated_at": knowledge_last_updated_at,
-            "knowledge_last_updated_source": (
-                "law_documents" if knowledge_last_updated_at else "unavailable"
+            "knowledge_last_updated_at": (
+                knowledge_snapshot.last_law_update_date
+                or knowledge_snapshot.model_knowledge_cutoff_date
             ),
+            "knowledge_last_updated_source": (
+                knowledge_snapshot.last_law_update_source
+                if knowledge_snapshot.last_law_update_date
+                else knowledge_snapshot.model_knowledge_cutoff_source
+            ),
+            "last_law_update_date": knowledge_snapshot.last_law_update_date,
+            "last_law_update_source": knowledge_snapshot.last_law_update_source,
+            "model_knowledge_cutoff_date": knowledge_snapshot.model_knowledge_cutoff_date,
+            "model_knowledge_cutoff_source": knowledge_snapshot.model_knowledge_cutoff_source,
+            "law_reference_links": list(knowledge_snapshot.reference_links),
+            "api_version": get_api_version(),
             "core_version": get_core_version(),
         }
     )
@@ -198,10 +220,10 @@ def _derive_expected_points(
     return (fallback[:120],)
 
 
-def _latest_legal_update_for_country(country_code: str | None) -> str | None:
+def get_law_knowledge_snapshot(country_code: str | None) -> LawKnowledgeSnapshot:
     normalized_country = (country_code or "").strip().upper()
-    if not normalized_country:
-        return None
+    scope = "country" if normalized_country else "global"
+    model_cutoff = _read_or_create_model_knowledge_cutoff_snapshot()
 
     db_backend = os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower()
     db_local = os.getenv(
@@ -213,43 +235,188 @@ def _latest_legal_update_for_country(country_code: str | None) -> str | None:
     if db_backend == "sqlite":
         db_path = _resolve_repo_path(db_local)
         if not db_path.exists():
-            return None
+            return _law_snapshot_without_db(model_cutoff=model_cutoff)
         try:
             with sqlite3.connect(db_path) as conn:
-                row = conn.execute(
-                    """
-                    SELECT MAX(last_stored_at)
-                    FROM law_documents
-                    WHERE UPPER(country_code) = ?
-                    """,
-                    (normalized_country,),
-                ).fetchone()
+                if normalized_country:
+                    row = conn.execute(
+                        _law_snapshot_sqlite_query(filtered=True),
+                        (normalized_country,),
+                    ).fetchone()
+                else:
+                    row = conn.execute(_law_snapshot_sqlite_query(filtered=False)).fetchone()
         except sqlite3.Error:
-            return None
-        if row is None or row[0] is None:
-            return None
-        return str(row[0])
+            return _law_snapshot_without_db(model_cutoff=model_cutoff)
+        snapshot = _law_snapshot_from_row(row, scope=scope, model_cutoff=model_cutoff)
+        if snapshot.last_law_update_date is not None:
+            return snapshot
+        return _law_snapshot_without_db(model_cutoff=model_cutoff)
 
     if db_backend == "postgres" and db_cloud:
         try:
             psycopg = importlib.import_module("psycopg")
 
             with psycopg.connect(db_cloud) as conn:
-                row = conn.execute(
-                    """
-                    SELECT MAX(last_stored_at)
-                    FROM law_documents
-                    WHERE UPPER(country_code) = %s
-                    """,
-                    (normalized_country,),
-                ).fetchone()
+                if normalized_country:
+                    row = conn.execute(
+                        _law_snapshot_postgres_query(filtered=True),
+                        (normalized_country,),
+                    ).fetchone()
+                else:
+                    row = conn.execute(_law_snapshot_postgres_query(filtered=False)).fetchone()
         except Exception:
-            return None
-        if row is None or row[0] is None:
-            return None
-        return str(row[0])
+            return _law_snapshot_without_db(model_cutoff=model_cutoff)
+        snapshot = _law_snapshot_from_row(row, scope=scope, model_cutoff=model_cutoff)
+        if snapshot.last_law_update_date is not None:
+            return snapshot
+        return _law_snapshot_without_db(model_cutoff=model_cutoff)
 
-    return None
+    return _law_snapshot_without_db(model_cutoff=model_cutoff)
+
+
+def _law_snapshot_sqlite_query(*, filtered: bool) -> str:
+    where_clause = "WHERE UPPER(country_code) = ?" if filtered else ""
+    return f"""
+        SELECT
+            MAX(last_stored_at) AS latest_update,
+            GROUP_CONCAT(source_url, '||') AS source_urls
+        FROM (
+            SELECT last_stored_at, source_url
+            FROM law_documents
+            {where_clause}
+            ORDER BY last_stored_at DESC, source_url ASC
+            LIMIT 5
+        )
+    """
+
+
+def _law_snapshot_postgres_query(*, filtered: bool) -> str:
+    where_clause = "WHERE UPPER(country_code) = %s" if filtered else ""
+    return f"""
+        SELECT
+            MAX(last_stored_at) AS latest_update,
+            STRING_AGG(source_url, '||') AS source_urls
+        FROM (
+            SELECT last_stored_at, source_url
+            FROM law_documents
+            {where_clause}
+            ORDER BY last_stored_at DESC, source_url ASC
+            LIMIT 5
+        ) AS latest_laws
+    """
+
+
+def _law_snapshot_from_row(
+    row: Sequence[Any] | None,
+    *,
+    scope: str,
+    model_cutoff: tuple[str | None, str],
+) -> LawKnowledgeSnapshot:
+    if row is None:
+        return _law_snapshot_without_db(
+            model_cutoff=model_cutoff,
+            reference_links=(),
+        )
+    latest_update = row[0]
+    raw_links = row[1] if len(row) > 1 else None
+    links = _parse_reference_links(raw_links)
+    if latest_update is None:
+        return _law_snapshot_without_db(
+            model_cutoff=model_cutoff,
+            reference_links=links,
+        )
+    return LawKnowledgeSnapshot(
+        last_law_update_date=str(latest_update),
+        last_law_update_source=f"law_documents_{scope}",
+        model_knowledge_cutoff_date=model_cutoff[0],
+        model_knowledge_cutoff_source=model_cutoff[1],
+        reference_links=links,
+    )
+
+
+def _parse_reference_links(raw_links: Any) -> tuple[str, ...]:
+    if raw_links is None:
+        return ()
+    seen: list[str] = []
+    for raw_value in str(raw_links).split("||"):
+        value = raw_value.strip()
+        if not value or value in seen:
+            continue
+        seen.append(value)
+    return tuple(seen)
+
+
+def _law_snapshot_without_db(
+    *,
+    model_cutoff: tuple[str | None, str],
+    reference_links: tuple[str, ...] = (),
+) -> LawKnowledgeSnapshot:
+    return LawKnowledgeSnapshot(
+        last_law_update_date=None,
+        last_law_update_source="unavailable",
+        model_knowledge_cutoff_date=model_cutoff[0],
+        model_knowledge_cutoff_source=model_cutoff[1],
+        reference_links=reference_links,
+    )
+
+
+def _read_or_create_model_knowledge_cutoff_snapshot() -> tuple[str | None, str]:
+    cache_path = _resolve_repo_path(
+        os.getenv(
+            "MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE",
+            "./databases/model_knowledge_cutoff_cache.json",
+        ).strip()
+    )
+    cached_snapshot = _read_model_knowledge_cutoff_cache(cache_path)
+    if cached_snapshot is not None:
+        return cached_snapshot
+
+    configured_cutoff = os.getenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "").strip()
+    if not configured_cutoff:
+        return (None, "unavailable")
+
+    snapshot = (configured_cutoff, "model_knowledge_cutoff_cache")
+    _write_model_knowledge_cutoff_cache(cache_path, snapshot)
+    return snapshot
+
+
+def _read_model_knowledge_cutoff_cache(cache_path: Path) -> tuple[str, str] | None:
+    if not cache_path.exists():
+        return None
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    cutoff_date = str(payload.get("model_knowledge_cutoff_date") or "").strip()
+    if not cutoff_date:
+        return None
+    source = str(payload.get("source") or "model_knowledge_cutoff_cache").strip()
+    return (cutoff_date, source or "model_knowledge_cutoff_cache")
+
+
+def _write_model_knowledge_cutoff_cache(
+    cache_path: Path,
+    snapshot: tuple[str | None, str],
+) -> None:
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "model_knowledge_cutoff_date": snapshot[0],
+                    "source": snapshot[1],
+                    "provider": os.getenv("LLM_PROVIDER", "").strip().lower(),
+                    "deployment": os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip(),
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        return
 
 
 def _resolve_repo_path(value: str) -> Path:

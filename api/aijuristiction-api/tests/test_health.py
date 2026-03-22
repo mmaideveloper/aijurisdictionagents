@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
 
 from app.main import app
 from app.versioning import get_mobile_app_version
@@ -48,7 +49,19 @@ def test_health_endpoint_reports_database_failure(monkeypatch) -> None:
     }
 
 
-def test_version_endpoint() -> None:
+def test_version_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.main.get_law_knowledge_snapshot",
+        lambda _country: SimpleNamespace(
+            last_law_update_date="2026-03-20T00:00:00Z",
+            last_law_update_source="law_documents_global",
+            model_knowledge_cutoff_date="2020-12-31",
+            model_knowledge_cutoff_source="model_knowledge_cutoff_cache",
+            reference_links=(
+                "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/",
+            ),
+        ),
+    )
     response = client.get("/version")
     assert response.status_code == 200
     payload = response.json()
@@ -56,6 +69,13 @@ def test_version_endpoint() -> None:
     assert payload["version"] == payload["api_version"]
     assert payload["api_version"] != "unknown"
     assert isinstance(payload["core_version"], str)
+    assert payload["last_law_update_date"] == "2026-03-20T00:00:00Z"
+    assert payload["last_law_update_source"] == "law_documents_global"
+    assert payload["model_knowledge_cutoff_date"] == "2020-12-31"
+    assert payload["model_knowledge_cutoff_source"] == "model_knowledge_cutoff_cache"
+    assert payload["law_reference_links"] == [
+        "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
+    ]
     assert payload["mobile_app_version"] == get_mobile_app_version()
     assert payload["mobile_app_release_url"] == (
         "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest"

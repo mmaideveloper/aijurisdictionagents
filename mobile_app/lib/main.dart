@@ -278,6 +278,7 @@ class AppStrings {
       'validation_summary_label': 'Zhrnutie validacie',
       'knowledge_updated_label': 'Pravne data aktualizovane',
       'model_version_label': 'Verzia modelu',
+      'law_date_label': 'Law Date',
       'show_next_5_messages': 'Zobraziť ďalších 5 správ',
       'download_case_document': 'Stiahnuť {{filename}}',
       'case_document_download_failed':
@@ -468,6 +469,7 @@ class AppStrings {
       'validation_summary_label': 'Validation summary',
       'knowledge_updated_label': 'Legal data updated',
       'model_version_label': 'Model version',
+      'law_date_label': 'Law Date',
       'show_next_5_messages': 'Show next 5 messages',
       'download_case_document': 'Download {{filename}}',
       'case_document_download_failed':
@@ -665,6 +667,7 @@ class AppStrings {
       'validation_summary_label': 'Validierungszusammenfassung',
       'knowledge_updated_label': 'Rechtsdaten aktualisiert',
       'model_version_label': 'Modellversion',
+      'law_date_label': 'Law Date',
       'show_next_5_messages': 'Weitere 5 Nachrichten zeigen',
       'download_case_document': '{{filename}} herunterladen',
       'case_document_download_failed':
@@ -1121,6 +1124,10 @@ String _formatSessionTimestamp(String? value) {
   return '$year-$month-$day $hour:$minute';
 }
 
+String _formatFooterLawDate(String? value) {
+  return _formatSessionTimestamp(value);
+}
+
 String _formatAccuracy(double? value) {
   if (value == null) {
     return '-';
@@ -1531,18 +1538,28 @@ class ApiClient {
     }
   }
 
+  Future<ApiSystemVersionInfo> fetchApiSystemVersionInfo() async {
+    final payload = await _fetchVersionPayload();
+    final rawLastLawUpdateDate =
+        (payload['last_law_update_date'] as String?)?.trim();
+    final rawModelKnowledgeCutoffDate =
+        (payload['model_knowledge_cutoff_date'] as String?)?.trim();
+    return ApiSystemVersionInfo(
+      lastLawUpdateDate:
+          rawLastLawUpdateDate == null || rawLastLawUpdateDate.isEmpty
+              ? null
+              : rawLastLawUpdateDate,
+      modelKnowledgeCutoffDate: rawModelKnowledgeCutoffDate == null ||
+              rawModelKnowledgeCutoffDate.isEmpty
+          ? null
+          : rawModelKnowledgeCutoffDate,
+    );
+  }
+
   Future<MobileAppUpdateInfo?> fetchMobileAppUpdateInfo({
     required SemanticVersion installed,
   }) async {
-    final response = await _get(
-      path: '/version',
-      action: 'version_check',
-    );
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(
-          'Version check failed with status ${response.statusCode}.');
-    }
-    final payload = _decodeResponseBody(response, action: 'version_check');
+    final payload = await _fetchVersionPayload();
     final releaseUrl =
         (payload['mobile_app_release_url'] as String? ?? '').trim();
     final rawApkDownloadUrl =
@@ -1577,6 +1594,18 @@ class ApiClient {
       releaseUrl: releaseUrl,
       apkDownloadUrl: apkDownloadUrl,
     );
+  }
+
+  Future<Map<String, dynamic>> _fetchVersionPayload() async {
+    final response = await _get(
+      path: '/version',
+      action: 'version_check',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+          'Version check failed with status ${response.statusCode}.');
+    }
+    return _decodeResponseBody(response, action: 'version_check');
   }
 
   Future<GithubReleaseInfo?> _fetchLatestGithubReleaseInfo({
@@ -3746,6 +3775,8 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _isDownloading = false;
   bool _hasExportReady = false;
   String _appVersionLabel = 'v0.1.5+20';
+  String? _systemLastLawUpdateDate;
+  String? _systemModelKnowledgeCutoffDate;
   bool _updateDialogShown = false;
   bool _skipUpdateChecksUntilRestart = false;
   bool _isInstallingUpdate = false;
@@ -3840,6 +3871,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     unawaited(_loadSpeakerVoices());
     unawaited(_loadCases());
     unawaited(_loadAppVersion());
+    unawaited(_refreshSystemLawDate());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -3889,6 +3921,31 @@ class _ChatHomePageState extends State<ChatHomePage>
         unawaited(_checkForApiUpdate());
       }
     } catch (_) {}
+  }
+
+  Future<void> _refreshSystemLawDate() async {
+    try {
+      final info = await _apiClient.fetchApiSystemVersionInfo();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _systemLastLawUpdateDate = info.lastLawUpdateDate;
+        _systemModelKnowledgeCutoffDate = info.modelKnowledgeCutoffDate;
+      });
+    } catch (_) {}
+  }
+
+  String? _effectiveSystemLawDate() {
+    final lastLaw = _systemLastLawUpdateDate?.trim();
+    if (lastLaw != null && lastLaw.isNotEmpty) {
+      return lastLaw;
+    }
+    final modelCutoff = _systemModelKnowledgeCutoffDate?.trim();
+    if (modelCutoff != null && modelCutoff.isNotEmpty) {
+      return modelCutoff;
+    }
+    return null;
   }
 
   Future<void> _selectCase(CaseSummary? selected) async {
@@ -4106,6 +4163,14 @@ class _ChatHomePageState extends State<ChatHomePage>
           },
         );
         return;
+      }
+      final systemVersionInfo = await _apiClient.fetchApiSystemVersionInfo();
+      if (mounted) {
+        setState(() {
+          _systemLastLawUpdateDate = systemVersionInfo.lastLawUpdateDate;
+          _systemModelKnowledgeCutoffDate =
+              systemVersionInfo.modelKnowledgeCutoffDate;
+        });
       }
       final updateInfo = await _apiClient.fetchMobileAppUpdateInfo(
         installed: installed,
@@ -6798,13 +6863,26 @@ class _ChatHomePageState extends State<ChatHomePage>
                       ),
                       const SizedBox(height: 6),
                       Padding(
-                        padding: const EdgeInsets.only(left: 12),
-                        child: Text(
-                          _appVersionLabel,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: const Color(0xFF4A628A)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          children: [
+                            Text(
+                              _appVersionLabel,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: const Color(0xFF4A628A)),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${strings.t('law_date_label')}: ${_formatFooterLawDate(_effectiveSystemLawDate())}',
+                              textAlign: TextAlign.right,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: const Color(0xFF4A628A)),
+                            ),
+                          ],
                         ),
                       ),
                     ],

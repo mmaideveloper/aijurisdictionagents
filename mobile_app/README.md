@@ -77,6 +77,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - The automatic document-analysis follow-up is still sent after uploads finish successfully, but its internal prompt is hidden from the chat timeline and its reply is no longer auto-spoken, so normal user message order stays readable.
 - After a backend reply or completed AI discussion, the chat screen now shows a compact case-validation card with the latest validation accuracy, validation summary, legal-data freshness timestamp, and current core model version returned by the API session result metadata.
 - The chat input row sits above a dedicated footer line, and the app version is shown on the last line in the bottom-left corner of the screen.
+- The footer now also shows `Law Date:` in the bottom-right corner using the backend `/version` fields. It prefers `last_law_update_date`, and if that is empty it falls back to `model_knowledge_cutoff_date` until the law processor imports newer records.
 - On startup, app blocks the auth flow until `GET /health` returns healthy.
   - failed health checks show the current API error on screen
   - if the API is reachable but its database is not, the app shows the DB health error returned by `/health`
