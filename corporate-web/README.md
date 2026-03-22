@@ -24,6 +24,15 @@ python -m http.server 8001
 The page ships with Slovak (default), German, and English translations. Use the `SK/DE/EN` toggle in the header.
 The selection is stored in `localStorage` (`aj_lang`).
 
+## Pricing sync
+
+The pricing cards and FAQ mirror the backend subscription limits for document uploads per case:
+
+- `Free`: 2 documents per case
+- `Case`: 5 documents per case
+- `Basic`: 5 documents per case
+- `Premium`: 50 documents per case
+
 ## Branding assets
 
 The site now uses `assets/branding.png` as the source sheet for:
