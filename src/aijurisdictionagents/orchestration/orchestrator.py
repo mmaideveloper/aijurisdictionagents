@@ -302,7 +302,7 @@ class Orchestrator:
 
         final_text = self._generate_final_summary(
             conversation,
-            [],
+            documents,
             country,
             output_language_hint,
         )
