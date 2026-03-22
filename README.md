@@ -128,6 +128,22 @@ Minimal runnable demo:
 
 For full endpoint details, see `service/README.md`.
 
+## End-to-end contract simulations
+
+Deterministic end-to-end test scenarios for contract summarization and Slovak `prenajom` lease modernization are documented in `docs/E2E_CONTRACT_TESTS.md`.
+
+Run the minimal example:
+
+```bash
+python examples/minimal_demo.py
+```
+
+Run the end-to-end tests:
+
+```bash
+pytest e2etests/test_contract_end_to_end.py root_contract_end_to_end_test.py
+```
+
 ## Features
 
 - Document ingestion from `data/` (txt/md, PDF optional)

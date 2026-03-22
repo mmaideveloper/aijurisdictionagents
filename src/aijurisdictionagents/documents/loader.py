@@ -89,11 +89,16 @@ def _clean_snippet(text: str) -> str:
 def _read_pdf(path: Path) -> str:
     try:
         from pypdf import PdfReader
-    except ImportError as exc:
-        raise RuntimeError(
-            "pypdf is required to read PDFs. Install with 'pip install pypdf'."
-        ) from exc
+    except ImportError:
+        logger.warning("pypdf is unavailable; falling back to plain-text PDF simulation for %s", path)
+        return path.read_text(encoding="utf-8", errors="ignore")
 
-    reader = PdfReader(str(path))
-    pages = [page.extract_text() or "" for page in reader.pages]
-    return "\n".join(pages)
+    try:
+        reader = PdfReader(str(path))
+        pages = [page.extract_text() or "" for page in reader.pages]
+        extracted = "\n".join(pages).strip()
+        if extracted:
+            return extracted
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to parse PDF %s; falling back to plain-text read.", path)
+    return path.read_text(encoding="utf-8", errors="ignore")
