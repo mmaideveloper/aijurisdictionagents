@@ -188,6 +188,14 @@ class AppStrings {
       'update_apk_missing':
           'Release neobsahuje Android APK súbor. Otváram stránku release.',
       'update_download_started': 'Sťahujem aktualizáciu {{latest}}...',
+      'update_download_progress':
+          'Sťahovanie {{percent}}% ({{received}} / {{total}} MB)',
+      'update_download_finishing':
+          'Sťahovanie dokončené. Pripravujem inštaláciu...',
+      'update_install_permission_check':
+          'Kontrolujem povolenie na inštaláciu Android APK.',
+      'update_install_permission_required':
+          'Povoľte inštaláciu z tejto aplikácie a vráťte sa späť.',
       'update_install_started':
           'Android inštalátor bol otvorený. Potvrďte aktualizáciu.',
       'update_download_failed': 'Sťahovanie aktualizácie zlyhalo: {{error}}',
@@ -381,6 +389,14 @@ class AppStrings {
       'update_apk_missing':
           'This release does not include an Android APK. Opening the release page.',
       'update_download_started': 'Downloading update {{latest}}...',
+      'update_download_progress':
+          'Downloading {{percent}}% ({{received}} / {{total}} MB)',
+      'update_download_finishing':
+          'Download finished. Preparing installation...',
+      'update_install_permission_check':
+          'Checking Android install permission for the APK.',
+      'update_install_permission_required':
+          'Allow installs from this app and return to continue.',
       'update_install_started':
           'Android installer opened. Confirm the upgrade to continue.',
       'update_download_failed': 'Failed to download update: {{error}}',
@@ -572,6 +588,14 @@ class AppStrings {
       'update_apk_missing':
           'Dieses Release enthält keine Android-APK. Die Release-Seite wird geöffnet.',
       'update_download_started': 'Update {{latest}} wird heruntergeladen...',
+      'update_download_progress':
+          'Download {{percent}}% ({{received}} / {{total}} MB)',
+      'update_download_finishing':
+          'Download abgeschlossen. Installation wird vorbereitet...',
+      'update_install_permission_check':
+          'Android-Berechtigung zur APK-Installation wird geprüft.',
+      'update_install_permission_required':
+          'Erlauben Sie Installationen aus dieser App und kehren Sie zurück.',
       'update_install_started':
           'Android-Installer wurde geöffnet. Bestätigen Sie das Update.',
       'update_download_failed':
@@ -2644,7 +2668,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       TextEditingController();
   bool _showEmailPasswordFallback = false;
   bool _isBusy = false;
-  String _appVersionLabel = 'v0.1.5+20';
+  String _appVersionLabel = 'v0.1.5+41';
   String? _devicePhoneNumber;
 
   AppStrings get _strings => AppStrings(_defaultLanguage);
@@ -3777,12 +3801,15 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _isSending = false;
   bool _isDownloading = false;
   bool _hasExportReady = false;
-  String _appVersionLabel = 'v0.1.5+20';
+  String _appVersionLabel = 'v0.1.5+41';
   String? _systemLastLawUpdateDate;
   String? _systemModelKnowledgeCutoffDate;
   bool _updateDialogShown = false;
   bool _skipUpdateChecksUntilRestart = false;
   bool _isInstallingUpdate = false;
+  String? _updateProgressMessage;
+  String? _updateProgressDetail;
+  double? _updateDownloadProgress;
   bool _speakerOutputEnabled = false;
   bool _speechEnabled = false;
   bool _speechInputEnabled = false;
@@ -4290,6 +4317,100 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
+  void _setUpgradeProgress({
+    required String message,
+    String? detail,
+    double? progress,
+  }) {
+    if (!mounted) {
+      _updateProgressMessage = message;
+      _updateProgressDetail = detail;
+      _updateDownloadProgress = progress;
+      return;
+    }
+    setState(() {
+      _updateProgressMessage = message;
+      _updateProgressDetail = detail;
+      _updateDownloadProgress = progress;
+    });
+  }
+
+  String _formatMegabytes(int bytes) {
+    final value = bytes / (1024 * 1024);
+    return value.toStringAsFixed(value >= 10 ? 0 : 1);
+  }
+
+  Widget _buildUpgradeProgressCard(ThemeData theme, AppStrings strings) {
+    final progress = _updateDownloadProgress;
+    final message = _updateProgressMessage;
+    if (message == null) {
+      return const SizedBox.shrink();
+    }
+    final progressLabel =
+        progress == null ? '...' : '${(progress * 100).clamp(0, 100).round()}%';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E4FF)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.system_update_alt,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  strings.t('update_available'),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                progressLabel,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(message, style: theme.textTheme.bodyMedium),
+          if (_updateProgressDetail != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              _updateProgressDetail!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF4A628A),
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          progress == null
+              ? const LinearProgressIndicator()
+              : LinearProgressIndicator(value: progress.clamp(0.0, 1.0)),
+        ],
+      ),
+    );
+  }
+
   Future<void> _startAppUpgrade({
     required String latestVersion,
     required String releaseUrl,
@@ -4321,6 +4442,12 @@ class _ChatHomePageState extends State<ChatHomePage>
       _isInstallingUpdate = true;
     });
     try {
+      _setUpgradeProgress(
+        message: _strings.t('update_download_started', <String, String>{
+          'latest': latestVersion,
+        }),
+        progress: 0,
+      );
       _showSnackbar(
         _strings.t('update_download_started', <String, String>{
           'latest': latestVersion,
@@ -4336,6 +4463,26 @@ class _ChatHomePageState extends State<ChatHomePage>
       final filePath = await _appUpdater.downloadReleaseAsset(
         downloadUri: downloadUri,
         fileName: 'app-release-$latestVersion.apk',
+        onProgress: (progress) {
+          final fraction = progress.fractionComplete;
+          _setUpgradeProgress(
+            message: _strings.t('update_download_progress', <String, String>{
+              'percent': fraction == null
+                  ? '?'
+                  : '${(fraction * 100).clamp(0, 100).round()}',
+              'received': _formatMegabytes(progress.receivedBytes),
+              'total': progress.totalBytes <= 0
+                  ? '?'
+                  : _formatMegabytes(progress.totalBytes),
+            }),
+            detail: apkDownloadUrl,
+            progress: fraction,
+          );
+        },
+      );
+      _setUpgradeProgress(
+        message: _strings.t('update_download_finishing'),
+        detail: filePath,
       );
       _pendingUpdateInstallPath = filePath;
       _pendingUpdateVersion = latestVersion;
@@ -4345,6 +4492,12 @@ class _ChatHomePageState extends State<ChatHomePage>
         'In-app Android update failed',
         error,
         stackTrace,
+      );
+      _setUpgradeProgress(
+        message: _strings.t('update_download_failed', <String, String>{
+          'error': '$error',
+        }),
+        detail: apkDownloadUrl,
       );
       _showSnackbar(
         _strings.t('update_download_failed', <String, String>{
@@ -4385,6 +4538,10 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
 
     try {
+      _setUpgradeProgress(
+        message: _strings.t('update_install_permission_check'),
+        detail: filePath,
+      );
       final canInstall = await _appUpdater.canInstallPackages();
       if (!canInstall) {
         await widget.logger.info(
@@ -4393,6 +4550,10 @@ class _ChatHomePageState extends State<ChatHomePage>
             'file_path': filePath,
             'latest': _pendingUpdateVersion,
           },
+        );
+        _setUpgradeProgress(
+          message: _strings.t('update_install_permission_required'),
+          detail: filePath,
         );
         await _appUpdater.openInstallPermissionSettings();
         _showSnackbar(_strings.t('allow_install_unknown_apps'));
@@ -4409,9 +4570,18 @@ class _ChatHomePageState extends State<ChatHomePage>
       );
       _pendingUpdateInstallPath = null;
       _pendingUpdateVersion = null;
+      _setUpgradeProgress(
+        message: _strings.t('update_install_started'),
+        detail: filePath,
+        progress: 1,
+      );
       _showSnackbar(_strings.t('update_install_started'));
     } on PlatformException catch (error, stackTrace) {
       if (error.code == 'signature_mismatch') {
+        _setUpgradeProgress(
+          message: _strings.t('update_install_signature_mismatch'),
+          detail: filePath,
+        );
         _showSnackbar(_strings.t('update_install_signature_mismatch'));
         return;
       }
@@ -4419,6 +4589,12 @@ class _ChatHomePageState extends State<ChatHomePage>
         'Failed to start Android update installer',
         error,
         stackTrace,
+      );
+      _setUpgradeProgress(
+        message: _strings.t('update_install_failed', <String, String>{
+          'error': '$error',
+        }),
+        detail: filePath,
       );
       _showSnackbar(
         _strings.t('update_install_failed', <String, String>{
@@ -4430,6 +4606,12 @@ class _ChatHomePageState extends State<ChatHomePage>
         'Failed to start Android update installer',
         error,
         stackTrace,
+      );
+      _setUpgradeProgress(
+        message: _strings.t('update_install_failed', <String, String>{
+          'error': '$error',
+        }),
+        detail: filePath,
       );
       _showSnackbar(
         _strings.t('update_install_failed', <String, String>{
@@ -6887,6 +7069,8 @@ class _ChatHomePageState extends State<ChatHomePage>
                           ),
                         ],
                       ),
+                      const SizedBox(height: 6),
+                      _buildUpgradeProgressCard(Theme.of(context), strings),
                       const SizedBox(height: 6),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),

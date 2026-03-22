@@ -84,7 +84,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - startup retry uses exponential backoff: `2s`, `4s`, `8s`, `16s`, then stays capped at `16s`
 - After startup, the app checks for updates through the API every 1 minute, but only when `GET /health` is healthy.
   - update metadata is read from `GET /version`
-  - on Android, if the API advertises an APK download URL, the app downloads it and opens the Android installer after user confirmation
+  - on Android, if the API advertises an APK download URL, the app now shows an inline progress card with download percentage, downloaded/total MB, APK path/URL context, permission check state, and installer handoff status before opening the Android installer after user confirmation
   - if Android blocks sideload installs for this app, the app opens the `Install unknown apps` settings page and resumes installation when the user returns
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/users/sign-up`

@@ -1,9 +1,22 @@
+class AppDownloadProgress {
+  const AppDownloadProgress({
+    required this.receivedBytes,
+    required this.totalBytes,
+  });
+
+  final int receivedBytes;
+  final int totalBytes;
+
+  double? get fractionComplete => null;
+}
+
 abstract class AppUpdater {
   bool get supportsInAppUpdate;
 
   Future<String> downloadReleaseAsset({
     required Uri downloadUri,
     required String fileName,
+    void Function(AppDownloadProgress progress)? onProgress,
   });
 
   Future<bool> canInstallPackages();
@@ -24,6 +37,7 @@ class _StubAppUpdater implements AppUpdater {
   Future<String> downloadReleaseAsset({
     required Uri downloadUri,
     required String fileName,
+    void Function(AppDownloadProgress progress)? onProgress,
   }) {
     throw UnsupportedError('In-app update is not supported on this platform.');
   }
