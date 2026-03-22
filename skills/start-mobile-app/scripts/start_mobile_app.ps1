@@ -261,17 +261,62 @@ function Open-LogTailWindow {
         return $false
     }
 
-    $quotedPaths = $existing | ForEach-Object { "'$_'" }
-    $tailCommand = @(
-        '$Host.UI.RawUI.WindowTitle = ''' + $WindowTitle.Replace("'", "''") + '''',
-        '$paths = @(' + ($quotedPaths -join ", ") + ')',
-        'Write-Host "Tailing logs:"',
-        '$paths | ForEach-Object { Write-Host "  $_" }',
-        'Get-Content -Path $paths -Wait -Tail 20'
-    ) -join '; '
+    Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowTitle -eq $WindowTitle } |
+        ForEach-Object {
+            try {
+                Stop-Process -Id $_.Id -Force -ErrorAction Stop
+            } catch {
+            }
+        }
 
-    Start-Process -FilePath $ShellPath -ArgumentList @("-NoExit", "-Command", $tailCommand) -WorkingDirectory $RepoRoot | Out-Null
+    $tailHelperPath = Join-Path $RepoRoot "skills\shared\scripts\tail_logs.ps1"
+    if (-not (Test-Path $tailHelperPath)) {
+        throw "Log tail helper not found: $tailHelperPath"
+    }
+
+    $quotedHelperPath = '"{0}"' -f $tailHelperPath
+    $quotedWindowTitle = '"{0}"' -f $WindowTitle.Replace('"', '\"')
+    $quotedPathsJoined = '"{0}"' -f (($existing -join '|').Replace('"', '\"'))
+    $tailArgs = @("-NoExit", "-File", $quotedHelperPath, "-WindowTitle", $quotedWindowTitle, "-TailLines", "20", "-PathsJoined", $quotedPathsJoined)
+    Start-Process -FilePath $ShellPath -ArgumentList $tailArgs -WorkingDirectory $RepoRoot | Out-Null
     return $true
+}
+
+function Close-LogTailWindows {
+    param([string[]]$Titles)
+
+    if (-not $Titles) {
+        return
+    }
+
+    Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowTitle -in $Titles } |
+        ForEach-Object {
+            try {
+                Stop-Process -Id $_.Id -Force -ErrorAction Stop
+            } catch {
+            }
+        }
+}
+
+function Reset-LogFile {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        return
+    }
+
+    try {
+        Remove-Item $Path -Force -ErrorAction Stop
+        return
+    } catch {
+    }
+
+    try {
+        Set-Content -Path $Path -Value @() -Encoding ascii -ErrorAction Stop
+    } catch {
+    }
 }
 
 function Test-IsLoopbackApiUrl {
@@ -394,7 +439,9 @@ if ($ApiMode -eq "localApi") {
         & (Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1") @apiStartArgs
         Start-Sleep -Seconds 4
         Write-Output "Waiting for local API health at $ApiBaseUrl/health"
-    } elseif ($ConsoleWindow -and (Test-IsLoopbackApiUrl -Url $ApiBaseUrl)) {
+    }
+
+    if (Test-IsLoopbackApiUrl -Url $ApiBaseUrl) {
         $openedApiLogs = Open-LogTailWindow `
             -ShellPath $shellPath `
             -RepoRoot $repoRoot `
@@ -465,9 +512,14 @@ try {
         & $flutter pub get
     }
 
+    $effectiveDevice = $Device
+    if ($Background -and $Device -in @("chrome", "edge")) {
+        $effectiveDevice = "web-server"
+    }
+
     $flutterArgs = @(
         "run",
-        "-d", $Device,
+        "-d", $effectiveDevice,
         "--dart-define=AIJ_API_BASE_URL=$ApiBaseUrl",
         "--dart-define=AIJ_API_KEY=$ApiKey"
     )
@@ -480,7 +532,7 @@ try {
         $flutterArgs += "--dart-define=AIJ_SPEECH_MODE=$SpeechMode"
     }
 
-    if ($Device -eq "chrome" -or $Device -eq "edge") {
+    if ($Device -eq "chrome" -or $Device -eq "edge" -or $effectiveDevice -eq "web-server") {
         $flutterArgs += @("--web-hostname", $BindHost, "--web-port", "$Port")
     }
 
@@ -489,14 +541,15 @@ try {
             New-Item -Path $runsDir -ItemType Directory | Out-Null
         }
 
+        Close-LogTailWindows -Titles @("AI Jurisdiction API Logs", "AI Jurisdiction Mobile Logs")
         Stop-StaleFlutterWebServer -TargetHost $BindHost -TargetPort $Port | Out-Null
 
         $stdoutLog = Join-Path $runsDir "mobile-app-$Port.log"
         $stderrLog = Join-Path $runsDir "mobile-app-$Port.err.log"
         $pidFile = Join-Path $runsDir "mobile-app.pid"
 
-        if (Test-Path $stdoutLog) { Remove-Item $stdoutLog -Force }
-        if (Test-Path $stderrLog) { Remove-Item $stderrLog -Force }
+        Reset-LogFile -Path $stdoutLog
+        Reset-LogFile -Path $stderrLog
 
         $process = Start-Process `
             -FilePath $flutter `
@@ -527,9 +580,18 @@ try {
         if ($Device -eq "chrome" -or $Device -eq "edge") {
             $isReady = Test-WebReady -TargetHost $BindHost -TargetPort $Port
             if ($isReady) {
+                $openedMobileLogs = Open-LogTailWindow `
+                    -ShellPath $shellPath `
+                    -RepoRoot $repoRoot `
+                    -Paths @($stdoutLog, $stderrLog) `
+                    -WindowTitle "AI Jurisdiction Mobile Logs"
+                if ($openedMobileLogs) {
+                    Write-Output "Mobile app log tail window started."
+                }
                 Open-AppUrl -Url "http://$BindHost`:$Port"
                 Write-Output "Mobile app started in background. PID: $pidToPersist"
                 Write-Output "App URL: http://$BindHost`:$Port"
+                Write-Output "Flutter device: $effectiveDevice"
                 Write-Output "API URL: $ApiBaseUrl"
                 if ($SpeechMode) {
                     Write-Output "Speech mode: $SpeechMode"
@@ -569,7 +631,7 @@ try {
         exit 0
     }
 
-    Write-Output "Starting mobile app on device '$Device' (API=$ApiBaseUrl)"
+Write-Output "Starting mobile app on device '$Device' (API=$ApiBaseUrl)"
     if ($Device -eq "chrome" -or $Device -eq "edge") {
         Write-Output "App URL: http://$BindHost`:$Port"
     }

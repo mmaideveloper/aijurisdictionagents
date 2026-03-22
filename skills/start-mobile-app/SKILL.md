@@ -54,14 +54,15 @@ If started with `-Background`, stop via:
 - When repo `.env` exists, the launcher passes it through `--dart-define-from-file=..\.env`.
 - `-SpeechMode azure` adds `AIJ_SPEECH_MODE=azure` on top of the `.env` Dart defines.
 - Use `-ConsoleWindow` when you want live Flutter logs in a separate terminal window instead of background log files.
-- With `localApi`, `-ConsoleWindow` now also opens a visible API log tail window when the local API is already running in the background.
+- Local background starts now automatically open a Flutter log tail window, and `localApi` starts also open an API log tail window, so both app and backend logs stay visible by default.
+- For reliability, background web starts now use Flutter's `web-server` device under the hood even when `-Device chrome` is requested, and then open the app URL in the browser.
 - For `localApi`, default API URL is `http://127.0.0.1:8080`.
 - For `localApi`, the launcher now also asks for database mode (`local`, `postgres`, `azure`) and storage mode (`local`, `azure`) unless they are passed as parameters.
 - `-DatabaseOption postgress` is accepted and normalized to `postgres`.
 - If `DatabaseOption` is `postgres` or `azure`, the launcher requires `DB_CLOUD` or `-DbCloud`.
 - If `StorageOption` is `azure`, the launcher requires `STORE_CLOUD` or `-StoreCloud`.
 - For `publicDevApi`, the launcher uses `-PublicDevApiBaseUrl`, `PUBLIC_DEV_API_BASE_URL`, or `AIJ_PUBLIC_DEV_API_URL`. If none are set, it prompts for the URL.
-- The local API path uses `start-api -ConsoleWindow`, so request logs stay visible in the API console window.
+- The local API path uses `start-api` with local LLM I/O logging enabled, so the API logs the model prompt payload and raw model answer during local debugging.
 - The local API path inherits PostgreSQL schema upgrades from `start-api` when `DatabaseOption=postgres`.
 - Default API key is `aijuris`.
 - The launcher prefers Flutter from `%USERPROFILE%\develop\flutter\bin\flutter.bat`, then falls back to `flutter` on `PATH`.

@@ -18,6 +18,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Resolve-EffectiveLlmProvider {
+    param([string]$RequestedProvider)
+
+    $normalized = $RequestedProvider.Trim().ToLowerInvariant()
+    if ($normalized -ne "azurefoundry") {
+        return $normalized
+    }
+
+    $hasEndpoint = -not [string]::IsNullOrWhiteSpace($env:AZURE_OPENAI_ENDPOINT)
+    $hasDeployment = -not [string]::IsNullOrWhiteSpace($env:AZURE_OPENAI_DEPLOYMENT)
+    $hasApiKey = -not [string]::IsNullOrWhiteSpace($env:AZURE_OPENAI_API_KEY)
+    $hasAdToken = -not [string]::IsNullOrWhiteSpace($env:AZURE_OPENAI_AD_TOKEN)
+
+    if ($hasEndpoint -and $hasDeployment -and ($hasApiKey -or $hasAdToken)) {
+        return "azurefoundry"
+    }
+
+    Write-Warning "AZURE_OPENAI_* settings are incomplete for local Azure Foundry use. Falling back to LLM_PROVIDER=mock."
+    return "mock"
+}
+
 function Resolve-PythonPath {
     param([string]$RepoRoot)
 
@@ -48,6 +69,45 @@ function Resolve-PowerShellPath {
     }
 
     throw "PowerShell executable not found."
+}
+
+function Open-LogTailWindow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ShellPath,
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Paths,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowTitle
+    )
+
+    $existing = @($Paths | Where-Object { Test-Path $_ })
+    if (-not $existing) {
+        return $false
+    }
+
+    Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowTitle -eq $WindowTitle } |
+        ForEach-Object {
+            try {
+                Stop-Process -Id $_.Id -Force -ErrorAction Stop
+            } catch {
+            }
+        }
+
+    $tailHelperPath = Join-Path $RepoRoot "skills\shared\scripts\tail_logs.ps1"
+    if (-not (Test-Path $tailHelperPath)) {
+        throw "Log tail helper not found: $tailHelperPath"
+    }
+
+    $quotedHelperPath = '"{0}"' -f $tailHelperPath
+    $quotedWindowTitle = '"{0}"' -f $WindowTitle.Replace('"', '\"')
+    $quotedPathsJoined = '"{0}"' -f (($existing -join '|').Replace('"', '\"'))
+    $tailArgs = @("-NoExit", "-File", $quotedHelperPath, "-WindowTitle", $quotedWindowTitle, "-TailLines", "40", "-PathsJoined", $quotedPathsJoined)
+    Start-Process -FilePath $ShellPath -ArgumentList $tailArgs -WorkingDirectory $RepoRoot | Out-Null
+    return $true
 }
 
 function Test-ApiHealth {
@@ -197,14 +257,18 @@ function Ensure-LocalPostgresReady {
 $skillScriptsDir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $skillScriptsDir "..\\..\\..")
 $apiDir = Join-Path $repoRoot "api\\aijuristiction-api"
-$pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+$shellPath = Resolve-PowerShellPath
 
 if (-not (Test-Path $apiDir)) {
     throw "API project folder not found: $apiDir"
 }
 
 $python = Resolve-PythonPath -RepoRoot $repoRoot
+$LlmProvider = Resolve-EffectiveLlmProvider -RequestedProvider $LlmProvider
 $env:LLM_PROVIDER = $LlmProvider
+if (-not $env:LOCAL_LLM_IO_LOGGING) {
+    $env:LOCAL_LLM_IO_LOGGING = "1"
+}
 
 $DatabaseOption = Normalize-DatabaseOption -Value $DatabaseOption
 if ($DatabaseOption) {
@@ -263,10 +327,6 @@ if ($Reload) {
 }
 
 if ($ConsoleWindow) {
-    if (-not $pwsh) {
-        throw "PowerShell 7 (pwsh) was not found on PATH."
-    }
-
     $scriptPath = Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1"
     $consoleArgs = @("-NoExit", "-File", $scriptPath, "-LlmProvider", $LlmProvider, "-BindHost", $BindHost, "-Port", "$Port")
     if ($DatabaseOption) {
@@ -294,12 +354,13 @@ if ($ConsoleWindow) {
         $consoleArgs += "-Install"
     }
 
-    Start-Process -FilePath $pwsh -ArgumentList $consoleArgs -WorkingDirectory $repoRoot | Out-Null
+    Start-Process -FilePath $shellPath -ArgumentList $consoleArgs -WorkingDirectory $repoRoot | Out-Null
     Write-Output "API console window started."
     Write-Output "Health: http://$BindHost`:$Port/health"
     Write-Output "Docs: http://$BindHost`:$Port/docs"
     Write-Output "Database: $($env:DB_OPTION)"
     Write-Output "Storage: $($env:STORAGE_OPTION)"
+    Write-Output "LLM I/O logging: $($env:LOCAL_LLM_IO_LOGGING)"
     exit 0
 }
 
@@ -339,6 +400,15 @@ if ($Background) {
         Write-Output "Docs: http://$BindHost`:$Port/docs"
         Write-Output "Database: $($env:DB_OPTION)"
         Write-Output "Storage: $($env:STORAGE_OPTION)"
+        Write-Output "LLM I/O logging: $($env:LOCAL_LLM_IO_LOGGING)"
+        $openedLogs = Open-LogTailWindow `
+            -ShellPath $shellPath `
+            -RepoRoot $repoRoot `
+            -Paths @($stdoutLog, $stderrLog) `
+            -WindowTitle "AI Jurisdiction API Logs"
+        if ($openedLogs) {
+            Write-Output "API log tail window started."
+        }
         Write-Output "Stop: Stop-Process -Id (Get-Content `"$pidFile`") -Force"
     } else {
         Write-Warning "API started (PID $($process.Id)) but health endpoint is not ready yet."

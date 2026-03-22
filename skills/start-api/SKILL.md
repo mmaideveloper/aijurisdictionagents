@@ -42,6 +42,8 @@ If started with `-Background`, stop via:
 ## Environment Notes
 
 - Default provider is `azurefoundry`.
+- If local Azure Foundry settings are incomplete, the launcher automatically falls back to `mock` so local API smoke checks still work.
+- Local starts now enable `LOCAL_LLM_IO_LOGGING=1` by default, so the API logs the exact model request payload and raw model answer in local runs only.
 - Default database mode is `local`.
 - Default storage mode is `local`.
 - `-DatabaseOption postgress` is accepted and normalized to `postgres`.
@@ -52,3 +54,4 @@ If started with `-Background`, stop via:
 - The PostgreSQL handoff calls `start_postgress.ps1` with explicit named parameters when reusing local connection metadata, so database name/user/password/port are not mis-bound positionally.
 - For `StorageOption=azure`, set `STORE_CLOUD` or pass `-StoreCloud`.
 - Use `-LlmProvider mock` for local smoke checks without cloud credentials.
+- `-Background` now also opens a live API log tail window automatically, so request/model logs remain visible even when the server is not attached to the current terminal.
