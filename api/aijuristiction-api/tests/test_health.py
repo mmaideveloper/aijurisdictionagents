@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from types import SimpleNamespace
 
+import app.main as app_main
 from app.main import app
 from app.versioning import get_mobile_app_version
 
@@ -51,7 +52,8 @@ def test_health_endpoint_reports_database_failure(monkeypatch) -> None:
 
 def test_version_endpoint(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.main.get_law_knowledge_snapshot",
+        app_main,
+        "get_law_knowledge_snapshot",
         lambda _country: SimpleNamespace(
             last_law_update_date="2026-03-20T00:00:00Z",
             last_law_update_source="law_documents_global",
