@@ -58,12 +58,14 @@ class GithubReleaseInfo {
     required this.version,
     required this.releaseUrl,
     required this.apkDownloadUrl,
+    required this.isMobileAppRelease,
   });
 
   final String tagName;
   final SemanticVersion version;
   final String releaseUrl;
   final String? apkDownloadUrl;
+  final bool isMobileAppRelease;
 }
 
 GithubReleaseInfo? parseGithubReleaseInfo(Map<String, dynamic> payload) {
@@ -74,11 +76,13 @@ GithubReleaseInfo? parseGithubReleaseInfo(Map<String, dynamic> payload) {
     return null;
   }
   final assets = payload['assets'];
+  final apkDownloadUrl = pickGithubApkAssetDownloadUrl(assets);
   return GithubReleaseInfo(
     tagName: tagName,
     version: version,
     releaseUrl: releaseUrl,
-    apkDownloadUrl: pickGithubApkAssetDownloadUrl(assets),
+    apkDownloadUrl: apkDownloadUrl,
+    isMobileAppRelease: apkDownloadUrl != null,
   );
 }
 

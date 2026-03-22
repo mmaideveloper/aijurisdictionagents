@@ -37,10 +37,28 @@ void main() {
 
       expect(release, isNotNull);
       expect(release!.version.toString(), '0.1.2');
+      expect(release.isMobileAppRelease, isTrue);
       expect(
         release.apkDownloadUrl,
         'https://example.invalid/app-release.apk',
       );
+    });
+
+    test('marks releases without apk assets as non-mobile releases', () {
+      final release = parseGithubReleaseInfo(<String, dynamic>{
+        'tag_name': '0.1.3',
+        'html_url': 'https://github.com/example/release',
+        'assets': <Map<String, String>>[
+          <String, String>{
+            'name': 'notes.txt',
+            'browser_download_url': 'https://example.invalid/notes.txt',
+          },
+        ],
+      });
+
+      expect(release, isNotNull);
+      expect(release!.apkDownloadUrl, isNull);
+      expect(release.isMobileAppRelease, isFalse);
     });
 
     test('returns null when release tag is not semantic version', () {
@@ -71,6 +89,7 @@ void main() {
 
       expect(release, isNotNull);
       expect(release!.version.toString(), '0.1.5+29');
+      expect(release.isMobileAppRelease, isTrue);
       expect(
         release.apkDownloadUrl,
         'https://example.invalid/app-release.apk',

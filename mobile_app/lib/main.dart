@@ -1501,23 +1501,28 @@ class ApiClient {
       releaseUrl: releaseUrl,
     );
     if (githubRelease != null) {
-      if (githubRelease.version.compareTo(installed) <= 0) {
+      if (!githubRelease.isMobileAppRelease ||
+          githubRelease.version.compareTo(installed) <= 0) {
         return null;
       }
       return MobileAppUpdateInfo(
         version: githubRelease.version,
         releaseUrl: githubRelease.releaseUrl,
+        isMobileAppRelease: githubRelease.isMobileAppRelease,
         apkDownloadUrl: githubRelease.apkDownloadUrl,
       );
     }
     final versionValue = payload['mobile_app_version'] as String? ?? '';
     final latestVersion = SemanticVersion.tryParse(versionValue);
-    if (latestVersion == null || latestVersion.compareTo(installed) <= 0) {
+    if (latestVersion == null ||
+        latestVersion.compareTo(installed) <= 0 ||
+        apkDownloadUrl == null) {
       return null;
     }
     return MobileAppUpdateInfo(
       version: latestVersion,
       releaseUrl: releaseUrl,
+      isMobileAppRelease: true,
       apkDownloadUrl: apkDownloadUrl,
     );
   }
@@ -6207,13 +6212,6 @@ class _ChatHomePageState extends State<ChatHomePage>
                             ),
                           ),
                         ),
-                        Text(
-                          _appVersionLabel,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: const Color(0xFF4A628A)),
-                        ),
                         const SizedBox(width: 8),
                         if (_lastErrorCorrelationId != null &&
                             _lastErrorCorrelationId!.isNotEmpty)
@@ -6534,65 +6532,82 @@ class _ChatHomePageState extends State<ChatHomePage>
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      IconButton(
-                        onPressed: _captureDocument,
-                        icon: const Icon(Icons.camera_alt_outlined),
-                        tooltip: strings.t('capture_document'),
-                      ),
-                      IconButton(
-                        onPressed: _pickDocuments,
-                        icon: const Icon(Icons.upload_file),
-                        tooltip: strings.t('upload_documents'),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _inputController,
-                          minLines: 1,
-                          maxLines: 1,
-                          keyboardType: TextInputType.text,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _sendMessage(),
-                          decoration: InputDecoration(
-                            hintText:
-                                _responderMode == ResponderMode.aiUserSimulator
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: _captureDocument,
+                            icon: const Icon(Icons.camera_alt_outlined),
+                            tooltip: strings.t('capture_document'),
+                          ),
+                          IconButton(
+                            onPressed: _pickDocuments,
+                            icon: const Icon(Icons.upload_file),
+                            tooltip: strings.t('upload_documents'),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _inputController,
+                              minLines: 1,
+                              maxLines: 1,
+                              keyboardType: TextInputType.text,
+                              textInputAction: TextInputAction.send,
+                              onSubmitted: (_) => _sendMessage(),
+                              decoration: InputDecoration(
+                                hintText: _responderMode ==
+                                        ResponderMode.aiUserSimulator
                                     ? strings.t('case_input_discussion')
                                     : strings.t('case_input_question'),
-                            filled: true,
-                            fillColor: Colors.white,
-                            border: const OutlineInputBorder(),
+                                filled: true,
+                                fillColor: Colors.white,
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed:
+                                _speechEnabled ? _toggleSpeechInput : null,
+                            icon: Icon(
+                              _isListening ? Icons.mic : Icons.mic_none,
+                              color: _isListening
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                            ),
+                            tooltip: _isListening
+                                ? strings.t('stop_speech_input')
+                                : strings.t('speech_input'),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: _isSending ? null : _sendMessage,
+                            icon: _isSending
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.send),
+                            tooltip:
+                                _responderMode == ResponderMode.aiUserSimulator
+                                    ? strings.t('start_ai_discussion')
+                                    : strings.t('send_to_api'),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: _speechEnabled ? _toggleSpeechInput : null,
-                        icon: Icon(
-                          _isListening ? Icons.mic : Icons.mic_none,
-                          color: _isListening
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
+                      const SizedBox(height: 6),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: Text(
+                          _appVersionLabel,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: const Color(0xFF4A628A)),
                         ),
-                        tooltip: _isListening
-                            ? strings.t('stop_speech_input')
-                            : strings.t('speech_input'),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: _isSending ? null : _sendMessage,
-                        icon: _isSending
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.send),
-                        tooltip: _responderMode == ResponderMode.aiUserSimulator
-                            ? strings.t('start_ai_discussion')
-                            : strings.t('send_to_api'),
                       ),
                     ],
                   ),

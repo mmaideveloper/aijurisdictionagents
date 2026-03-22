@@ -75,7 +75,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - If the selected case already has stored attachments, the mobile app shows download buttons for those case documents above the PDF/export controls.
 - After the user uploads case documents, the app now waits until those uploads reach a terminal processing state and then automatically sends a follow-up request asking the backend to summarize and analyze the uploaded material under the selected country law, including problems, risks, missing parts, and outdated clauses.
 - After a backend reply or completed AI discussion, the chat screen now shows a compact case-validation card with the latest validation accuracy, validation summary, legal-data freshness timestamp, and current core model version returned by the API session result metadata.
-- App version is shown in the bottom-left corner of the screen.
+- The chat input row sits above a dedicated footer line, and the app version is shown on the last line in the bottom-left corner of the screen.
 - On startup, app blocks the auth flow until `GET /health` returns healthy.
   - failed health checks show the current API error on screen
   - if the API is reachable but its database is not, the app shows the DB health error returned by `/health`
@@ -293,7 +293,7 @@ Mobile app versioning rule:
 - Example: `0.1.4+7` -> `0.1.4+8`.
 
 For Android automatic upgrade, the GitHub Release must include an `.apk` asset.
-The workflow uses `app-release.apk`, which the app prefers automatically during the update flow.
+The workflow uses `app-release.apk`, which the app prefers automatically during the update flow. Releases without an APK are treated as non-mobile releases, so the in-app upgrade prompt is skipped for them.
 If Android shows "App not installed" due to package/signature conflict, it means
 the installed build was signed differently (for example debug vs release). The app
 now warns about this case; uninstall the existing app and then install the new APK.
