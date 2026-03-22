@@ -302,6 +302,9 @@ class AppStrings {
       'start_ai_discussion': 'Spustiť AI diskusiu',
       'send_to_api': 'Odoslať do API',
       'capture_document': 'Zachytiť dokument',
+      'documents_uploading': 'Dokumenty sa nahrávajú.',
+      'documents_uploaded': 'Dokumenty sú nahrané.',
+      'documents_upload_error': 'Nahrávanie dokumentov zlyhalo.',
       'use_photo': 'Použiť fotku',
       'camera_unavailable':
           'Kameru sa nepodarilo inicializovať. Skúste znova alebo použite iné zariadenie.',
@@ -489,6 +492,9 @@ class AppStrings {
       'start_ai_discussion': 'Start AI discussion',
       'send_to_api': 'Send to API',
       'capture_document': 'Capture document',
+      'documents_uploading': 'Documents are uploading.',
+      'documents_uploaded': 'Documents are uploaded.',
+      'documents_upload_error': 'Document upload failed.',
       'use_photo': 'Use photo',
       'camera_unavailable':
           'Could not initialize camera. Try again or use another device.',
@@ -684,6 +690,10 @@ class AppStrings {
       'start_ai_discussion': 'AI-Diskussion starten',
       'send_to_api': 'An API senden',
       'capture_document': 'Dokument erfassen',
+      'documents_uploading': 'Dokumente werden hochgeladen.',
+      'documents_uploaded': 'Dokumente sind hochgeladen.',
+      'documents_upload_error':
+          'Das Hochladen der Dokumente ist fehlgeschlagen.',
       'use_photo': 'Foto verwenden',
       'camera_unavailable':
           'Kamera konnte nicht initialisiert werden. Bitte erneut versuchen oder ein anderes Gerät verwenden.',
@@ -824,6 +834,7 @@ class ChatMessage {
     this.agentName,
     this.documentPath,
     this.createdAt,
+    this.localId,
   });
 
   final String role;
@@ -831,6 +842,29 @@ class ChatMessage {
   final String? agentName;
   final String? documentPath;
   final DateTime? createdAt;
+  final String? localId;
+}
+
+class _PendingDocumentUploadBatch {
+  const _PendingDocumentUploadBatch({
+    required this.caseId,
+    required this.uploadedDocIds,
+    required this.statusMessageId,
+  });
+
+  final String caseId;
+  final Set<String> uploadedDocIds;
+  final String statusMessageId;
+}
+
+class _DocumentUploadWaitResult {
+  const _DocumentUploadWaitResult({
+    required this.completed,
+    required this.hasFailures,
+  });
+
+  final bool completed;
+  final bool hasFailures;
 }
 
 String _displayContentForMessage(ChatMessage message) {
@@ -1054,6 +1088,22 @@ String _documentAutoAnalysisPrompt({
       'If any uploaded text is outdated compared with newer law, explain what should be updated.';
 }
 
+bool _isInternalDocumentAutoAnalysisPrompt(String content) {
+  final trimmed = content.trim();
+  if (trimmed.isEmpty) {
+    return false;
+  }
+  return trimmed.startsWith(
+        'Please summarize and analyze all uploaded documents under ',
+      ) ||
+      trimmed.startsWith(
+        'Prosim zhrn a analyzuj vsetky nahrane dokumenty podla prava ',
+      ) ||
+      trimmed.startsWith(
+        'Bitte fasse alle hochgeladenen Dokumente nach dem Recht von ',
+      );
+}
+
 String _formatSessionTimestamp(String? value) {
   if (value == null || value.trim().isEmpty) {
     return '-';
@@ -1133,7 +1183,11 @@ class CaseHistoryMessage {
     );
   }
 
-  ChatMessage toChatMessage() {
+  ChatMessage? toChatMessage() {
+    if (role.toLowerCase() == 'user' &&
+        _isInternalDocumentAutoAnalysisPrompt(content)) {
+      return null;
+    }
     return ChatMessage(
       role: role,
       content: content,
@@ -3713,7 +3767,8 @@ class _ChatHomePageState extends State<ChatHomePage>
   List<CaseDocumentItem> _caseDocuments = <CaseDocumentItem>[];
   SessionResultDetails? _latestSessionResult;
   final Set<String> _downloadingCaseDocumentIds = <String>{};
-  final Set<String> _queuedAutoAnalysisDocIds = <String>{};
+  final List<_PendingDocumentUploadBatch> _queuedDocumentUploadBatches =
+      <_PendingDocumentUploadBatch>[];
   String? _lastErrorCorrelationId;
   SemanticVersion? _installedAppVersion;
   String? _pendingUpdateInstallPath;
@@ -3728,6 +3783,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _processSpeechOnStop = true;
   bool _updateCheckInProgress = false;
   bool _documentAutoAnalysisInProgress = false;
+  int _localMessageSequence = 0;
 
   bool get _showLocalResponderSwitch {
     return _isLocalApiBaseUrl(widget.apiBaseUrl);
@@ -3846,7 +3902,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _caseHistoryHasMore = false;
       _caseDocuments = <CaseDocumentItem>[];
       _latestSessionResult = null;
-      _queuedAutoAnalysisDocIds.clear();
+      _queuedDocumentUploadBatches.clear();
       _apiClient.setActiveCase(selected?.caseId);
       _resetMessagesForCurrentCase();
     });
@@ -3863,6 +3919,13 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     final offset = reset ? 0 : _caseHistoryOffset;
+    final previousScrollOffset = !reset && _messagesScrollController.hasClients
+        ? _messagesScrollController.offset
+        : null;
+    final previousMaxScrollExtent =
+        !reset && _messagesScrollController.hasClients
+            ? _messagesScrollController.position.maxScrollExtent
+            : null;
     setState(() {
       _isLoadingCaseHistory = true;
     });
@@ -3876,11 +3939,14 @@ class _ChatHomePageState extends State<ChatHomePage>
       if (!mounted || _selectedCase?.caseId != selected.caseId) {
         return;
       }
-      final loadedMessages = page.messages.map((item) => item.toChatMessage());
+      final loadedMessages = page.messages
+          .map((item) => item.toChatMessage())
+          .whereType<ChatMessage>()
+          .toList(growable: false);
       setState(() {
         _caseDocuments = page.documents;
         _caseHistoryHasMore = page.hasMore;
-        _caseHistoryOffset = offset + loadedMessages.length;
+        _caseHistoryOffset = offset + page.messages.length;
         if (reset) {
           _messages.clear();
           if (loadedMessages.isEmpty) {
@@ -3892,7 +3958,23 @@ class _ChatHomePageState extends State<ChatHomePage>
           _messages.insertAll(0, loadedMessages);
         }
       });
-      _scrollToLatest(animated: false);
+      if (reset) {
+        _scrollToLatest(animated: false);
+      } else if (loadedMessages.isNotEmpty &&
+          previousScrollOffset != null &&
+          previousMaxScrollExtent != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_messagesScrollController.hasClients) {
+            return;
+          }
+          final maxScrollExtent =
+              _messagesScrollController.position.maxScrollExtent;
+          final delta = maxScrollExtent - previousMaxScrollExtent;
+          final targetOffset = previousScrollOffset + delta;
+          final clampedOffset = targetOffset.clamp(0.0, maxScrollExtent);
+          _messagesScrollController.jumpTo(clampedOffset.toDouble());
+        });
+      }
     } catch (error) {
       _showSnackbar(_strings.t('failed_to_load_case_history', <String, String>{
         'error': '$error',
@@ -4376,6 +4458,67 @@ class _ChatHomePageState extends State<ChatHomePage>
       );
     });
     _scrollToLatest();
+  }
+
+  String _nextLocalMessageId(String prefix) {
+    _localMessageSequence += 1;
+    return '$prefix-${DateTime.now().microsecondsSinceEpoch}-$_localMessageSequence';
+  }
+
+  String _appendDocumentUploadStatusMessage(String content) {
+    final messageId = _nextLocalMessageId('upload');
+    if (!mounted) {
+      return messageId;
+    }
+    setState(() {
+      _messages.add(
+        ChatMessage(
+          role: 'assistant',
+          content: content,
+          agentName: 'Jurisdicta',
+          createdAt: DateTime.now(),
+          localId: messageId,
+        ),
+      );
+    });
+    _scrollToLatest();
+    return messageId;
+  }
+
+  Future<void> _updateDocumentUploadStatusMessage(
+    String messageId, {
+    required String content,
+    bool speak = false,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    var updated = false;
+    setState(() {
+      final index =
+          _messages.indexWhere((message) => message.localId == messageId);
+      if (index < 0) {
+        return;
+      }
+      final existing = _messages[index];
+      _messages[index] = ChatMessage(
+        role: existing.role,
+        content: content,
+        agentName: existing.agentName,
+        documentPath: existing.documentPath,
+        createdAt: existing.createdAt,
+        localId: existing.localId,
+      );
+      updated = true;
+    });
+    if (!updated) {
+      return;
+    }
+    _scrollToLatest();
+    if (speak) {
+      await _speaker.stop();
+      await _speakAssistantMessage(content);
+    }
   }
 
   Future<void> _initializeSpeechRecognition() async {
@@ -5210,6 +5353,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (selected == null || files.isEmpty) {
       return;
     }
+    final statusMessageId = _appendDocumentUploadStatusMessage(
+      _strings.t('documents_uploading'),
+    );
     try {
       final uploaded = await _apiClient.uploadCaseDocuments(
         caseId: selected.caseId,
@@ -5230,70 +5376,85 @@ class _ChatHomePageState extends State<ChatHomePage>
           return items;
         });
       });
-      _showSnackbar('${uploaded.length} document(s) uploaded.');
-      await _refreshDocumentContext();
+      if (uploaded.isEmpty) {
+        await _updateDocumentUploadStatusMessage(
+          statusMessageId,
+          content: _strings.t('documents_upload_error'),
+          speak: true,
+        );
+        return;
+      }
       unawaited(
         _queueUploadedDocumentAnalysis(
-          caseId: selected.caseId,
-          uploadedDocIds: uploaded.map((document) => document.docId).toSet(),
+          batch: _PendingDocumentUploadBatch(
+            caseId: selected.caseId,
+            uploadedDocIds: uploaded.map((document) => document.docId).toSet(),
+            statusMessageId: statusMessageId,
+          ),
         ),
       );
     } catch (error) {
-      _showSnackbar('$error');
-    }
-  }
-
-  Future<void> _refreshDocumentContext() async {
-    final selected = _selectedCase;
-    if (selected == null) {
-      return;
-    }
-    try {
-      final context = await _apiClient.loadCaseDocumentContext(
-        caseId: selected.caseId,
-        userId: _signedInUser.userId,
+      await _updateDocumentUploadStatusMessage(
+        statusMessageId,
+        content: _strings.t('documents_upload_error'),
+        speak: true,
       );
-      if (!mounted) {
-        return;
-      }
-      final processed = context.processedDocuments.join(', ');
-      final pending = context.unprocessedDocuments.join(', ');
-      if (pending.isNotEmpty) {
-        _showSnackbar(
-            'Processed: ${processed.isEmpty ? 'none' : processed}; pending: $pending');
-      }
-    } catch (_) {}
+      _showSnackbar(_strings.t('documents_upload_error'));
+      await widget.logger.error(
+        'Failed to upload case documents',
+        error,
+        StackTrace.current,
+        <String, Object?>{
+          'case_id': selected.caseId,
+          'file_count': files.length,
+        },
+      );
+    }
   }
 
   Future<void> _queueUploadedDocumentAnalysis({
-    required String caseId,
-    required Set<String> uploadedDocIds,
+    required _PendingDocumentUploadBatch batch,
   }) async {
-    if (uploadedDocIds.isEmpty) {
+    if (batch.uploadedDocIds.isEmpty) {
+      await _updateDocumentUploadStatusMessage(
+        batch.statusMessageId,
+        content: _strings.t('documents_upload_error'),
+        speak: true,
+      );
       return;
     }
-    _queuedAutoAnalysisDocIds.addAll(uploadedDocIds);
+    _queuedDocumentUploadBatches.add(batch);
     if (_documentAutoAnalysisInProgress) {
       return;
     }
     _documentAutoAnalysisInProgress = true;
     try {
-      while (_queuedAutoAnalysisDocIds.isNotEmpty) {
-        if (!mounted || _selectedCase?.caseId != caseId) {
-          _queuedAutoAnalysisDocIds.clear();
+      while (_queuedDocumentUploadBatches.isNotEmpty) {
+        final currentBatch = _queuedDocumentUploadBatches.removeAt(0);
+        if (!mounted || _selectedCase?.caseId != currentBatch.caseId) {
+          _queuedDocumentUploadBatches.clear();
           return;
         }
-        final currentBatch = Set<String>.from(_queuedAutoAnalysisDocIds);
-        final ready = await _waitForUploadedDocumentsToReachTerminalState(
-          caseId: caseId,
-          uploadedDocIds: currentBatch,
+        final result = await _waitForUploadedDocumentsToReachTerminalState(
+          caseId: currentBatch.caseId,
+          uploadedDocIds: currentBatch.uploadedDocIds,
         );
-        if (!ready || !mounted || _selectedCase?.caseId != caseId) {
+        if (!mounted || _selectedCase?.caseId != currentBatch.caseId) {
           return;
         }
-        _queuedAutoAnalysisDocIds.removeAll(currentBatch);
+        final uploadSucceeded = result.completed && !result.hasFailures;
+        await _updateDocumentUploadStatusMessage(
+          currentBatch.statusMessageId,
+          content: _strings.t(
+            uploadSucceeded ? 'documents_uploaded' : 'documents_upload_error',
+          ),
+          speak: true,
+        );
+        if (!uploadSucceeded) {
+          continue;
+        }
         await _waitForSendChannelToBeIdle();
-        if (!mounted || _selectedCase?.caseId != caseId) {
+        if (!mounted || _selectedCase?.caseId != currentBatch.caseId) {
           return;
         }
         final prompt = _documentAutoAnalysisPrompt(
@@ -5303,25 +5464,34 @@ class _ChatHomePageState extends State<ChatHomePage>
         await widget.logger.info(
           'Automatic document analysis triggered',
           <String, Object?>{
-            'case_id': caseId,
-            'document_count': currentBatch.length,
+            'case_id': currentBatch.caseId,
+            'document_count': currentBatch.uploadedDocIds.length,
           },
         );
-        await _submitMessageText(prompt);
+        await _submitMessageText(
+          prompt,
+          appendUserMessage: false,
+          includeAttachedDocumentPath: false,
+          speakAssistantReply: false,
+        );
       }
     } finally {
       _documentAutoAnalysisInProgress = false;
     }
   }
 
-  Future<bool> _waitForUploadedDocumentsToReachTerminalState({
+  Future<_DocumentUploadWaitResult>
+      _waitForUploadedDocumentsToReachTerminalState({
     required String caseId,
     required Set<String> uploadedDocIds,
   }) async {
     const maxAttempts = 30;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (!mounted || _selectedCase?.caseId != caseId) {
-        return false;
+        return const _DocumentUploadWaitResult(
+          completed: false,
+          hasFailures: true,
+        );
       }
       try {
         final documents = await _apiClient.loadCaseDocumentsSnapshot(
@@ -5329,7 +5499,10 @@ class _ChatHomePageState extends State<ChatHomePage>
           userId: _signedInUser.userId,
         );
         if (!mounted || _selectedCase?.caseId != caseId) {
-          return false;
+          return const _DocumentUploadWaitResult(
+            completed: false,
+            hasFailures: true,
+          );
         }
         setState(() {
           _caseDocuments = documents;
@@ -5343,7 +5516,13 @@ class _ChatHomePageState extends State<ChatHomePage>
               return status == 'processed' || status == 'failed';
             });
         if (allTerminal) {
-          return true;
+          final hasFailures = tracked.any(
+            (document) => document.processingStatus.toLowerCase() == 'failed',
+          );
+          return _DocumentUploadWaitResult(
+            completed: true,
+            hasFailures: hasFailures,
+          );
         }
       } catch (error, stackTrace) {
         await widget.logger.error(
@@ -5359,7 +5538,10 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
       await Future<void>.delayed(const Duration(seconds: 3));
     }
-    return false;
+    return const _DocumentUploadWaitResult(
+      completed: false,
+      hasFailures: true,
+    );
   }
 
   Future<void> _waitForSendChannelToBeIdle() async {
@@ -5435,7 +5617,14 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
-  Future<void> _submitMessageText(String text) async {
+  Future<void> _submitMessageText(
+    String text, {
+    bool appendUserMessage = true,
+    bool includeAttachedDocumentPath = true,
+    bool speakAssistantReply = true,
+  }) async {
+    final activeDocumentPath =
+        includeAttachedDocumentPath ? _documentPath : null;
     final caseReady = await _ensureCaseSelectedForOutgoingMessage(text);
     if (!caseReady || _selectedCase == null) {
       return;
@@ -5444,30 +5633,37 @@ class _ChatHomePageState extends State<ChatHomePage>
       'User message submission',
       <String, Object?>{
         'message_length': text.length,
-        'has_document_path': _documentPath != null,
+        'has_document_path': activeDocumentPath != null,
         'responder_mode': _responderMode.name,
+        'append_user_message': appendUserMessage,
       },
     );
 
     setState(() {
       _isSending = true;
       _hasExportReady = false;
-      if (_selectedCase != null) {
+      if (appendUserMessage && _selectedCase != null) {
         _caseHistoryOffset += 1;
       }
-      _messages.add(
-        ChatMessage(
-          role: 'user',
-          content: text,
-          documentPath: _documentPath,
-          createdAt: DateTime.now(),
-        ),
-      );
+      if (appendUserMessage) {
+        _messages.add(
+          ChatMessage(
+            role: 'user',
+            content: text,
+            documentPath: activeDocumentPath,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
     });
 
-    _inputController.clear();
-    _lastDictatedSpeechDraft = null;
-    _scrollToLatest();
+    if (appendUserMessage) {
+      _inputController.clear();
+      _lastDictatedSpeechDraft = null;
+    }
+    if (appendUserMessage) {
+      _scrollToLatest();
+    }
 
     try {
       if (_responderMode == ResponderMode.aiUserSimulator) {
@@ -5485,7 +5681,7 @@ class _ChatHomePageState extends State<ChatHomePage>
           questionTimeoutSeconds: _questionTimeoutSeconds,
           maxDiscussionMinutes: _maxDiscussionMinutes,
           communicationMinutes: _communicationMinutes,
-          documentPath: _documentPath,
+          documentPath: activeDocumentPath,
         )) {
           if (event.event == 'message' && event.data is Map) {
             final payload = Map<String, dynamic>.from(event.data as Map);
@@ -5520,7 +5716,7 @@ class _ChatHomePageState extends State<ChatHomePage>
               );
             });
             _scrollToLatest();
-            if (role == 'assistant') {
+            if (role == 'assistant' && speakAssistantReply) {
               unawaited(_speakAssistantMessage(visibleContent));
             }
           }
@@ -5547,7 +5743,7 @@ class _ChatHomePageState extends State<ChatHomePage>
           message: text,
           responderMode: _responderMode,
           locale: _selectedLocale,
-          documentPath: _documentPath,
+          documentPath: activeDocumentPath,
         );
         final sessionResult = await _apiClient.loadSessionResultDetails();
         final exportReady = sessionResult?.documentReady ?? false;
@@ -5582,12 +5778,14 @@ class _ChatHomePageState extends State<ChatHomePage>
             _latestSessionResult = sessionResult;
           });
           _scrollToLatest();
-          unawaited(
-            _speakAssistantMessage(
-              visibleReply,
-              resumeSpeechInputOnCompletion: _speechInputEnabled,
-            ),
-          );
+          if (speakAssistantReply) {
+            unawaited(
+              _speakAssistantMessage(
+                visibleReply,
+                resumeSpeechInputOnCompletion: _speechInputEnabled,
+              ),
+            );
+          }
         }
       }
     } on SessionExpiredException {
@@ -6603,7 +6801,9 @@ class _ChatHomePageState extends State<ChatHomePage>
                         padding: const EdgeInsets.only(left: 12),
                         child: Text(
                           _appVersionLabel,
-                          style: Theme.of(context).textTheme.bodySmall
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
                               ?.copyWith(color: const Color(0xFF4A628A)),
                         ),
                       ),
