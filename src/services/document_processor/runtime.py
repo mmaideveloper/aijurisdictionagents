@@ -193,7 +193,7 @@ def _has_meaningful_text(value: str) -> bool:
 
 def _extract_pdf_text(payload: bytes) -> str:
     try:
-        from pypdf import PdfReader  # type: ignore[import-not-found]
+        from pypdf import PdfReader
     except Exception:
         return ""
     try:
@@ -211,10 +211,10 @@ def _extract_pdf_text(payload: bytes) -> str:
 
 def _extract_pdf_text_with_ocr(payload: bytes) -> str:
     try:
-        import fitz  # type: ignore[import-not-found]
-        import numpy as np  # type: ignore[import-not-found]
-        from PIL import Image  # type: ignore[import-not-found]
-        from rapidocr_onnxruntime import RapidOCR  # type: ignore[import-not-found]
+        import fitz
+        import numpy as np
+        from PIL import Image
+        from rapidocr_onnxruntime import RapidOCR
     except Exception:
         return ""
 
@@ -240,4 +240,3 @@ def _extract_pdf_text_with_ocr(payload: bytes) -> str:
         except Exception:
             continue
     return "\n".join(text_parts).strip()
-

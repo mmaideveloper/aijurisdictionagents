@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import uuid
 
-from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocumentChunk
+from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument, CaseDocumentChunk
 from aijurisdictionagents.llm import EmbeddingClient, get_embedding_client
 
 from .runtime import (
@@ -34,7 +34,7 @@ class DocumentProcessor:
         documents = self.store.list_unprocessed_case_documents(limit=limit)
         return self.process_documents(documents)
 
-    def process_documents(self, documents: list) -> list[ProcessedDocumentResult]:
+    def process_documents(self, documents: list[CaseDocument]) -> list[ProcessedDocumentResult]:
         results: list[ProcessedDocumentResult] = []
         for document in documents:
             self.store.mark_document_processing(doc_id=document.doc_id, status='processing', error=None)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import sqlite3
+from types import ModuleType
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -18,7 +19,7 @@ from app.users.notifications import (
 from aijurisdictionagents.api_db import ApiDatabaseStore, SubscriptionPlan, User, UserSubscription
 
 try:
-    _psycopg_module = importlib.import_module("psycopg")
+    _psycopg_module: ModuleType | None = importlib.import_module("psycopg")
 except ModuleNotFoundError:  # pragma: no cover - optional for local sqlite-only runs
     _psycopg_module = None
 
