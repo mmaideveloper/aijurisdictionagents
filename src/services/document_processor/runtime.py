@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import io
 import json
 import math
@@ -211,10 +212,12 @@ def _extract_pdf_text(payload: bytes) -> str:
 
 def _extract_pdf_text_with_ocr(payload: bytes) -> str:
     try:
-        import fitz
-        import numpy as np
         from PIL import Image
-        from rapidocr_onnxruntime import RapidOCR
+
+        fitz = importlib.import_module("fitz")
+        np = importlib.import_module("numpy")
+        rapidocr_module = importlib.import_module("rapidocr_onnxruntime")
+        rapidocr_factory = getattr(rapidocr_module, "RapidOCR")
     except Exception:
         return ""
 
@@ -223,7 +226,7 @@ def _extract_pdf_text_with_ocr(payload: bytes) -> str:
     except Exception:
         return ""
 
-    ocr_engine = RapidOCR()
+    ocr_engine = rapidocr_factory()
     text_parts: list[str] = []
     for page in document:
         try:

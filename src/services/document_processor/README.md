@@ -7,6 +7,7 @@ Current extraction behavior:
 - Plain-text formats are decoded directly.
 - PDFs first use embedded text extraction (`pypdf`).
 - If a PDF appears scanned/image-only, the service falls back to OCR using `RapidOCR` over rendered PDF pages.
+- Optional OCR libraries are loaded dynamically at runtime so API `mypy` checks do not require third-party type stubs for `fitz`, `numpy`, or `rapidocr_onnxruntime`.
 
 Current runtime modes:
 

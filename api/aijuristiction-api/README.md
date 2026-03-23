@@ -512,6 +512,7 @@ git merge origin/main
 ```
 
 - CI checks: install deps, lint (`ruff`), type-check (`mypy`), tests (`pytest`), and Docker build.
+- GitHub Actions installs both the repo root package (`pip install -e ../..`) and the API package (`pip install -e .[dev]`) so tests can import `../../src/aijurisdictionagents` with its runtime dependencies.
 - Local pre-flight command to mirror CI from this folder:
 
 ```bash
