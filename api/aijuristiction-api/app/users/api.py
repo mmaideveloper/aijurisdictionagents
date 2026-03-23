@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import sqlite3
 from uuid import uuid4
 
@@ -15,6 +16,11 @@ from app.users.notifications import (
 )
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, SubscriptionPlan, User, UserSubscription
+
+try:
+    _psycopg_module = importlib.import_module("psycopg")
+except ModuleNotFoundError:  # pragma: no cover - optional for local sqlite-only runs
+    _psycopg_module = None
 
 router = APIRouter(prefix="/v1/users", tags=["users"], dependencies=[Depends(require_api_key)])
 
@@ -129,7 +135,9 @@ def sign_up(
             first_name=payload.first_name,
             last_name=payload.last_name,
         )
-    except sqlite3.IntegrityError as exc:
+    except Exception as exc:
+        if not _is_unique_constraint_error(exc):
+            raise
         raise _conflict_from_integrity_error(exc) from exc
     queue_registration_email(scheduler=scheduler, user=user)
     return _to_user_profile_response(user)
@@ -173,7 +181,9 @@ def update_user_profile(
         )
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except sqlite3.IntegrityError as exc:
+    except Exception as exc:
+        if not _is_unique_constraint_error(exc):
+            raise
         raise _conflict_from_integrity_error(exc) from exc
     return _to_user_profile_response(user)
 
@@ -202,7 +212,9 @@ def request_subscription_change(
 ) -> UserSubscriptionResponse:
     try:
         item = store.request_subscription_change(user_id=user_id, plan_code=payload.plan_code)
-    except sqlite3.IntegrityError as exc:
+    except Exception as exc:
+        if not _is_integrity_error(exc):
+            raise
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan code") from exc
 
     user = store.find_user_by_id(user_id=user_id)
@@ -258,7 +270,9 @@ def checkout_subscription_change(
     try:
         subscription = store.request_subscription_change(user_id=user_id, plan_code=plan_code)
         subscription = store.update_subscription_status(subscription_id=subscription.subscription_id, status="paying")
-    except sqlite3.IntegrityError as exc:
+    except Exception as exc:
+        if not _is_integrity_error(exc):
+            raise
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan code") from exc
 
     payment_id = f"PAY-{uuid4()}"
@@ -359,7 +373,22 @@ def _to_subscription_response(item: UserSubscription) -> UserSubscriptionRespons
     )
 
 
-def _conflict_from_integrity_error(exc: sqlite3.IntegrityError) -> HTTPException:
+def _is_integrity_error(exc: Exception) -> bool:
+    if isinstance(exc, sqlite3.IntegrityError):
+        return True
+    if _psycopg_module is not None and isinstance(exc, _psycopg_module.IntegrityError):
+        return True
+    return False
+
+
+def _is_unique_constraint_error(exc: Exception) -> bool:
+    if not _is_integrity_error(exc):
+        return False
+    message = str(exc).lower()
+    return "unique" in message or "duplicate" in message or "phone_number" in message or "email" in message
+
+
+def _conflict_from_integrity_error(exc: Exception) -> HTTPException:
     detail = "User already exists"
     message = str(exc).lower()
     if "phone_number" in message:

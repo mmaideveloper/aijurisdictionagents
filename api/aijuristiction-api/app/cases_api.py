@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from app.chat.api import _load_case_documents_for_llm
 from app.security import require_api_key
 
 from aijurisdictionagents.api_db import (
@@ -18,6 +19,7 @@ from aijurisdictionagents.api_db import (
     CaseDocument,
 )
 from services.document_processor.service import DocumentProcessor
+from services.document_processor.runtime import render_documents_for_prompt
 
 router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key)])
 _MAX_ACTIVE_CASES = 5
@@ -86,6 +88,39 @@ class CaseDocumentUploadResponse(BaseModel):
 class CaseDocumentContextResponse(BaseModel):
     processed_documents: list[str]
     unprocessed_documents: list[str]
+
+
+class CaseDocumentDebugStoredResponse(BaseModel):
+    doc_id: str
+    original_filename: str
+    storage_uri: str
+    processing_status: str
+    processed_at: str | None = None
+    extracted_characters: int
+    embedding_model: str
+    embedding_dimensions: int
+    vector_present: bool
+    chunk_count: int
+    vector_preview: str
+
+
+class CaseDocumentDebugPromptChunkResponse(BaseModel):
+    doc_id: str
+    path: str
+    content: str
+
+
+class CaseDocumentDebugResponse(BaseModel):
+    case_id: str
+    user_id: str
+    db_option: str
+    uses_postgres: bool
+    storage_option: str
+    document_processor: str
+    query: str
+    stored_documents: list[CaseDocumentDebugStoredResponse]
+    selected_prompt_chunks: list[CaseDocumentDebugPromptChunkResponse]
+    prompt_preview: str
 
 
 def get_store() -> ApiDatabaseStore:
@@ -216,6 +251,87 @@ def get_case_document_context(
 ) -> CaseDocumentContextResponse:
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
     return _document_context(case_id=case_id, store=store)
+
+
+@router.get('/{case_id}/documents/debug', response_model=CaseDocumentDebugResponse)
+def get_case_document_debug(
+    case_id: str,
+    user_id: str,
+    query: str = "",
+    store: ApiDatabaseStore = Depends(get_store),
+) -> CaseDocumentDebugResponse:
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    contents_by_doc_id = {
+        doc_id: {
+            "original_filename": name,
+            "extracted_text": text,
+            "embedding_vector": vector,
+        }
+        for doc_id, name, text, vector in store.list_case_document_contents(case_id=case_id)
+    }
+    all_chunks = store.list_case_document_chunks(case_id=case_id)
+    chunks_by_doc_id: dict[str, int] = {}
+    first_chunk_by_doc_id: dict[str, tuple[str, int]] = {}
+    for chunk in all_chunks:
+        chunks_by_doc_id[chunk.doc_id] = chunks_by_doc_id.get(chunk.doc_id, 0) + 1
+        first_chunk_by_doc_id.setdefault(
+            chunk.doc_id,
+            (chunk.embedding_model, chunk.embedding_dimensions),
+        )
+
+    stored_documents: list[CaseDocumentDebugStoredResponse] = []
+    for document in store.list_case_documents(case_id=case_id):
+        if document.kind != 'uploaded':
+            continue
+        content_entry = contents_by_doc_id.get(document.doc_id)
+        embedding_vector = str(content_entry["embedding_vector"]) if content_entry else ""
+        extracted_text = str(content_entry["extracted_text"]) if content_entry else ""
+        embedding_model, embedding_dimensions = first_chunk_by_doc_id.get(document.doc_id, ("", 0))
+        stored_documents.append(
+            CaseDocumentDebugStoredResponse(
+                doc_id=document.doc_id,
+                original_filename=document.original_filename,
+                storage_uri=document.storage_uri,
+                processing_status=document.processing_status,
+                processed_at=document.processed_at,
+                extracted_characters=len(extracted_text),
+                embedding_model=embedding_model,
+                embedding_dimensions=embedding_dimensions,
+                vector_present=bool(embedding_vector.strip()),
+                chunk_count=chunks_by_doc_id.get(document.doc_id, 0),
+                vector_preview=embedding_vector[:120],
+            )
+        )
+
+    selected_documents, _processed_names, _unprocessed_names = _load_case_documents_for_llm(
+        case_id=case_id,
+        query=query,
+    )
+    selected_prompt_chunks = [
+        CaseDocumentDebugPromptChunkResponse(
+            doc_id=item.doc_id,
+            path=item.path,
+            content=item.content,
+        )
+        for item in selected_documents
+    ]
+    prompt_preview = render_documents_for_prompt(
+        [(item.path, item.content) for item in selected_documents],
+        max_chars=4000,
+        per_document_chars=900,
+    )
+    return CaseDocumentDebugResponse(
+        case_id=case_id,
+        user_id=user_id,
+        db_option=store.db_option,
+        uses_postgres=store.uses_postgres,
+        storage_option=store.storage_option,
+        document_processor=_document_processor_mode(),
+        query=query,
+        stored_documents=stored_documents,
+        selected_prompt_chunks=selected_prompt_chunks,
+        prompt_preview=prompt_preview,
+    )
 
 
 @router.get('/{case_id}/documents/{doc_id}')

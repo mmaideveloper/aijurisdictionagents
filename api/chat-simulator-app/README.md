@@ -10,12 +10,22 @@ pip install -e ".[dev]"
 uvicorn app.main:app --reload --port 8090
 ```
 
-Open `http://localhost:8090/chat-simulator` and set **API base URL** to your API service (default `http://localhost:8080`).
+Open `http://localhost:8090/chat-simulator` and set **API base URL** to your API service.
+
+For local development, the simulator now defaults to `http://127.0.0.1:8080` and automatically normalizes loopback hostnames (`localhost`, `127.0.0.1`, `::1`) to the same host as the simulator page. This avoids the common browser `Failed to fetch` problem when the simulator is opened on `127.0.0.1` but the API field still points to `localhost`.
+
+For local PostgreSQL validation, run the API with a persisted case backend:
+
+```bash
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR=local LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
+```
 
 The simulator now supports:
 - creating chat sessions with country/language/discussion type
 - showing an initial localized Jurisdicta welcome message in the End User Chat View (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German)
 - submitting a case instruction and uploading text documents
+- provisioning a real API user + persisted case, uploading documents through `POST /v1/cases/{case_id}/documents`, and binding new chat sessions to that case
+- inspecting persisted document debug data from the API, including stored vectors, chunk counts, and the exact prompt chunks selected for the current query
 - starting `POST /v1/chat/sessions/{session_id}/stream` and viewing streamed events in real time
 - showing a dedicated **AI Agent Questions** log (question-only view extracted from assistant turns)
 - using the new right-side **End User Chat View** panel that renders core messages as user-facing chat bubbles
@@ -23,8 +33,22 @@ The simulator now supports:
 - setting communication minutes for AI user simulation responses
 - in `AIUserSimulatorAgent` mode, the simulator answers each AI agent question before conversation finish flow
 - sending manual end-user answers from the bottom input box and getting immediate lawyer response via `POST /v1/chat/sessions/{session_id}/reply`
+  - `Send answer` is enabled only in `ReadUser` mode
+  - if the stream has not started yet for the current session, clicking `Send answer` automatically starts the stream first
+  - after the assistant asks the first question, the same click flow sends the typed answer and clears the input box
+  - the reply panel now shows the exact reason when manual reply is not ready yet, instead of relying on silent browser form validation
 - auto-downloading PDF export when user requests PDF and later says thank you during a completed stream
 - fetching result payload and downloading exports as JSON or PDF (summary + requested document as separate PDF files)
+
+For persisted document review, the simulator now enforces this order and shows a workflow warning if a step is skipped:
+- `Ensure User`
+- `Create Case`
+- `Upload To Case`
+- `Create Session`
+- `Start Stream`
+- `Send answer`
+
+If the active case or uploaded documents change after a session was created, the simulator invalidates that session and requires a fresh `Create Session` before continuing. This prevents the common error where the first streamed turn sees inline document context but later `/reply` turns no longer have access to the uploaded file.
 
 ## Default simulator inputs
 

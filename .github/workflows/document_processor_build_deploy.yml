@@ -88,6 +88,11 @@ jobs:
       AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+      AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_EMBEDDINGS_MODEL: ${{ vars.AZURE_OPENAI_EMBEDDINGS_MODEL }}
+      AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
+      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       AZURE_DOCUMENT_PROCESSOR_JOB_NAME: ${{ vars.AZURE_DOCUMENT_PROCESSOR_JOB_NAME }}
       AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION: ${{ vars.AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION }}
     steps:
@@ -108,7 +113,9 @@ jobs:
             "AZURE_POSTGRES_SERVER_NAME",
             "AZURE_POSTGRES_ADMIN_USERNAME",
             "AZURE_POSTGRES_ADMIN_PASSWORD",
-            "AZURE_STORAGE_ACCOUNT_NAME"
+            "AZURE_STORAGE_ACCOUNT_NAME",
+            "AZURE_OPENAI_ENDPOINT",
+            "AZURE_OPENAI_API_KEY"
           )
 
           $missing = @()
@@ -203,5 +210,10 @@ jobs:
             -PostgresAdminPassword $env:AZURE_POSTGRES_ADMIN_PASSWORD `
             -StorageAccountName $env:AZURE_STORAGE_ACCOUNT_NAME `
             -StorageContainerName $storageContainerName `
+            -LlmProvider $env:LLM_PROVIDER `
+            -AzureOpenAIEndpoint $env:AZURE_OPENAI_ENDPOINT `
+            -AzureOpenAIEmbeddingsModel $env:AZURE_OPENAI_EMBEDDINGS_MODEL `
+            -AzureOpenAIApiVersion $env:AZURE_OPENAI_API_VERSION `
+            -AzureOpenAIApiKey $env:AZURE_OPENAI_API_KEY `
             -CronExpression $cronExpression `
             -ImageTag $imageTag

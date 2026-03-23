@@ -12,7 +12,7 @@ SIMULATOR_PACKAGE = "chat-simulator-app"
 
 app = FastAPI(
     title="AI Juristiction Chat Simulator App",
-    version="0.1.1",
+    version="0.1.6",
     description="Standalone chat simulator application for validating core chat APIs.",
 )
 

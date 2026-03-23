@@ -4,6 +4,15 @@ import os
 
 from .base import LLMClient
 from .mock import MockLLMClient
+from .embeddings import (
+    AzureFoundryEmbeddingClient,
+    EmbeddingClient,
+    MockEmbeddingClient,
+    OpenAIEmbeddingClient,
+    get_embedding_client,
+    load_azure_foundry_embedding_config_from_env,
+    load_openai_embedding_config_from_env,
+)
 
 try:
     from .openai_client import OpenAIClient, load_openai_config_from_env
@@ -43,10 +52,17 @@ def get_llm_client() -> LLMClient:
 
 __all__ = [
     "LLMClient",
+    "EmbeddingClient",
     "MockLLMClient",
+    "MockEmbeddingClient",
     "AzureFoundryClient",
+    "AzureFoundryEmbeddingClient",
     "OpenAIClient",
+    "OpenAIEmbeddingClient",
     "get_llm_client",
+    "get_embedding_client",
     "load_azure_foundry_config_from_env",
+    "load_azure_foundry_embedding_config_from_env",
     "load_openai_config_from_env",
+    "load_openai_embedding_config_from_env",
 ]

@@ -26,7 +26,7 @@ from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 from app.chat.core_runtime import core_message_role, run_orchestration
 from app.chat.intent_policy_service import (
     build_document_task_plan_note,
-    is_document_summary_request,
+    is_document_modernization_request,
 )
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.repository import InMemoryChatRepository
@@ -35,10 +35,10 @@ from app.security import require_api_key
 from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.llm import get_embedding_client
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
 from services.document_processor.runtime import (
-    build_embedding_vector,
     cosine_similarity,
     lexical_overlap_score,
     parse_embedding_vector,
@@ -153,6 +153,7 @@ def _load_case_documents_for_llm(
 
     list_case_documents = getattr(store, "list_case_documents", None)
     list_case_document_contents = getattr(store, "list_case_document_contents", None)
+    list_case_document_chunks = getattr(store, "list_case_document_chunks", None)
     if not callable(list_case_documents) or not callable(list_case_document_contents):
         return processed_documents, processed_names, unprocessed_names
 
@@ -162,15 +163,38 @@ def _load_case_documents_for_llm(
         for vector in [_vector]
     }
     processed_entries: list[tuple[str, str, str, str]] = []
+    processed_names_by_doc_id: dict[str, str] = {}
     for document in list_case_documents(case_id=case_id):
         if document.kind != 'uploaded':
             continue
         if document.processing_status == 'processed' and document.doc_id in contents_by_doc_id:
             name, text, vector = contents_by_doc_id[document.doc_id]
             processed_names.append(name)
+            processed_names_by_doc_id[document.doc_id] = name
             processed_entries.append((document.doc_id, name, text, vector))
         else:
             unprocessed_names.append(document.original_filename)
+    selected_entries = []
+    if callable(list_case_document_chunks):
+        chunk_entries = [
+            chunk
+            for chunk in list_case_document_chunks(case_id=case_id)
+            if chunk.doc_id in processed_names_by_doc_id
+        ]
+        selected_chunks = _select_relevant_case_document_chunks(
+            query=query,
+            chunk_entries=chunk_entries,
+        )
+        if selected_chunks:
+            processed_documents = [
+                CoreDocument(
+                    doc_id=chunk.doc_id,
+                    path=f"{processed_names_by_doc_id[chunk.doc_id]}#chunk-{chunk.chunk_index + 1}",
+                    content=chunk.chunk_text,
+                )
+                for chunk in selected_chunks
+            ]
+            return processed_documents, processed_names, unprocessed_names
     selected_entries = _select_relevant_case_documents(
         query=query,
         processed_entries=processed_entries,
@@ -194,22 +218,99 @@ def _select_relevant_case_documents(
     if not normalized_query:
         return processed_entries[:limit]
 
-    query_vector = parse_embedding_vector(build_embedding_vector(normalized_query))
     scored: list[tuple[float, int, tuple[str, str, str, str]]] = []
     for index, entry in enumerate(processed_entries):
-        _doc_id, _name, text, raw_vector = entry
+        _doc_id, _name, text, _raw_vector = entry
         lexical_score = lexical_overlap_score(normalized_query, text)
-        vector_score = cosine_similarity(
-            query_vector,
-            parse_embedding_vector(raw_vector),
-        )
-        score = (lexical_score * 10.0) + vector_score
+        score = lexical_score * 10.0
         scored.append((score, index, entry))
     ranked = sorted(scored, key=lambda item: (item[0], -item[1]), reverse=True)
     selected = [entry for score, _index, entry in ranked if score > 0][:limit]
     if selected:
         return selected
     return processed_entries[:limit]
+
+
+def _select_relevant_case_document_chunks(
+    *,
+    query: str,
+    chunk_entries: list[Any],
+    limit: int = 6,
+    per_document_limit: int = 2,
+) -> list[Any]:
+    if not chunk_entries:
+        return []
+    if _requests_all_processed_documents(query):
+        return _limit_chunks_per_document(
+            chunk_entries,
+            limit=max(limit, 8),
+            per_document_limit=per_document_limit,
+        )
+
+    normalized_query = query.strip()
+    if not normalized_query:
+        return _limit_chunks_per_document(
+            chunk_entries,
+            limit=limit,
+            per_document_limit=per_document_limit,
+        )
+
+    query_vector: list[float] = []
+    query_model_name = ""
+    try:
+        embedding_client = get_embedding_client()
+        query_batch = embedding_client.embed_texts([normalized_query])
+        query_vector = query_batch.vectors[0]
+        query_model_name = query_batch.model_name
+    except Exception:
+        _LOGGER.warning("Falling back to lexical-only case document chunk retrieval", exc_info=True)
+
+    scored: list[tuple[float, int, Any]] = []
+    for index, chunk in enumerate(chunk_entries):
+        lexical_score = lexical_overlap_score(normalized_query, chunk.chunk_text)
+        vector_score = 0.0
+        if (
+            query_vector
+            and chunk.embedding_model == query_model_name
+            and chunk.embedding_dimensions == len(query_vector)
+        ):
+            vector_score = cosine_similarity(
+                query_vector,
+                parse_embedding_vector(chunk.embedding_vector),
+            )
+        score = (lexical_score * 10.0) + vector_score
+        scored.append((score, index, chunk))
+    ranked = [entry for score, _index, entry in sorted(scored, key=lambda item: (item[0], -item[1]), reverse=True) if score > 0]
+    if ranked:
+        return _limit_chunks_per_document(
+            ranked,
+            limit=limit,
+            per_document_limit=per_document_limit,
+        )
+    return _limit_chunks_per_document(
+        chunk_entries,
+        limit=limit,
+        per_document_limit=per_document_limit,
+    )
+
+
+def _limit_chunks_per_document(
+    chunk_entries: list[Any],
+    *,
+    limit: int,
+    per_document_limit: int,
+) -> list[Any]:
+    selected: list[Any] = []
+    counts_by_doc_id: dict[str, int] = {}
+    for chunk in chunk_entries:
+        count = counts_by_doc_id.get(chunk.doc_id, 0)
+        if count >= per_document_limit:
+            continue
+        selected.append(chunk)
+        counts_by_doc_id[chunk.doc_id] = count + 1
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def _requests_all_processed_documents(query: str) -> bool:
@@ -264,51 +365,29 @@ def _bootstrap_case_history_if_needed(*, session: Session) -> None:
         )
 
 
-class StartSessionStreamRequest(BaseModel):
-    instruction: str
-    documents: List[InputDocument] = Field(default_factory=list)
-    question_timeout_seconds: float = 300
-    max_discussion_minutes: float = 15
-    communication_minutes: float | None = None
-    user_simulation_mode: Literal["ReadUser", "AIUserSimulatorAgent"] = "ReadUser"
-    user_replies: List[str] = Field(default_factory=list)
+def _message_payload(message: Message) -> dict[str, object]:
+    return {
+        "id": str(message.id),
+        "session_id": str(message.session_id),
+        "role": message.role.value,
+        "agent_name": message.agent_name,
+        "content": message.content,
+        "created_at": message.created_at.isoformat(),
+    }
 
 
-@router.post("/sessions", response_model=Session)
-def create_session(payload: CreateSessionRequest) -> Session:
-    session = Session(
-        user_id=payload.user_id,
-        case_id=payload.case_id,
-        country=payload.country,
-        language=payload.language,
-        discussion_type=payload.discussion_type,
-    )
-    created = _repository.create_session(session)
-    _bootstrap_case_history_if_needed(session=created)
-    return created
+def _assistant_requests_user_reply(content: str) -> bool:
+    return "?" in content
 
 
-@router.post("/messages", response_model=Message)
-def create_message(payload: CreateMessageRequest) -> Message:
-    try:
-        return _repository.add_message(
-            Message(session_id=payload.session_id, role=payload.role, content=payload.content)
-        )
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.post("/sessions/{session_id}/reply", response_model=Message)
-def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
-    session = _repository.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-
-    content = payload.content.strip()
-    if not content:
-        raise HTTPException(status_code=400, detail="Reply content is required")
-
-    _repository.add_message(
+def _run_direct_lawyer_turn(
+    *,
+    session_id: UUID,
+    session: Session,
+    content: str,
+    supplemental_documents: list[CoreDocument] | None = None,
+) -> tuple[Message, Message, str]:
+    persisted_user = _repository.add_message(
         Message(
             session_id=session_id,
             role=MessageRole.USER,
@@ -317,7 +396,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         )
     )
     _persist_case_message_if_needed(session=session, role="user", content=content, agent_name="User")
-    
+
     from aijurisdictionagents.agents import create_lawyer_agent
     from aijurisdictionagents.llm import get_llm_client
 
@@ -365,14 +444,16 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
             prompt_override = f"{prompt_override}{context_note}"
     task_plan_note = build_document_task_plan_note(
         query=content,
-        has_processed_documents=bool(case_documents),
+        has_processed_documents=bool(case_documents or supplemental_documents),
     )
     if task_plan_note:
         prompt_override = f"{prompt_override}{task_plan_note}"
 
+    all_documents = list(supplemental_documents or [])
+    all_documents.extend(case_documents)
     lawyer_message = lawyer.respond(
         conversation=conversation,
-        documents=case_documents,
+        documents=all_documents,
         sources=[],
         system_prompt_override=prompt_override,
     )
@@ -394,6 +475,58 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         role="assistant",
         content=visible_lawyer_content,
         agent_name=lawyer_message.agent_name,
+    )
+    return persisted_user, persisted_lawyer, visible_lawyer_content
+
+
+class StartSessionStreamRequest(BaseModel):
+    instruction: str
+    documents: List[InputDocument] = Field(default_factory=list)
+    question_timeout_seconds: float = 300
+    max_discussion_minutes: float = 15
+    communication_minutes: float | None = None
+    user_simulation_mode: Literal["ReadUser", "AIUserSimulatorAgent"] = "ReadUser"
+    user_replies: List[str] = Field(default_factory=list)
+
+
+@router.post("/sessions", response_model=Session)
+def create_session(payload: CreateSessionRequest) -> Session:
+    session = Session(
+        user_id=payload.user_id,
+        case_id=payload.case_id,
+        country=payload.country,
+        language=payload.language,
+        discussion_type=payload.discussion_type,
+    )
+    created = _repository.create_session(session)
+    _bootstrap_case_history_if_needed(session=created)
+    return created
+
+
+@router.post("/messages", response_model=Message)
+def create_message(payload: CreateMessageRequest) -> Message:
+    try:
+        return _repository.add_message(
+            Message(session_id=payload.session_id, role=payload.role, content=payload.content)
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/sessions/{session_id}/reply", response_model=Message)
+def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
+    session = _repository.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Reply content is required")
+
+    _persisted_user, persisted_lawyer, visible_lawyer_content = _run_direct_lawyer_turn(
+        session_id=session_id,
+        session=session,
+        content=content,
     )
     _repository.set_result(
         session_id,
@@ -422,6 +555,8 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if session.state == SessionState.COMPLETED:
         raise HTTPException(status_code=409, detail="Session already completed")
+    if payload.user_simulation_mode == "ReadUser":
+        return _stream_read_user_session(session_id=session_id, session=session, payload=payload)
 
     event_queue: Queue[tuple[str, dict[str, object]] | None] = Queue()
     replies = deque(payload.user_replies)
@@ -626,6 +761,55 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
             if item is None:
                 break
             event_name, body = item
+            yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+def _stream_read_user_session(
+    *,
+    session_id: UUID,
+    session: Session,
+    payload: StartSessionStreamRequest,
+) -> StreamingResponse:
+    inline_documents = [CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content) for d in payload.documents]
+    persisted_user, persisted_lawyer, visible_lawyer_content = _run_direct_lawyer_turn(
+        session_id=session_id,
+        session=session,
+        content=payload.instruction,
+        supplemental_documents=inline_documents,
+    )
+
+    events: list[tuple[str, dict[str, object]]] = [
+        ("message", _message_payload(persisted_user)),
+        ("message", _message_payload(persisted_lawyer)),
+    ]
+
+    if _assistant_requests_user_reply(visible_lawyer_content):
+        events.append(
+            (
+                "waiting_for_reply",
+                {
+                    "session_id": str(session_id),
+                    "mode": "ReadUser",
+                    "message": "Stream paused. Waiting for manual /reply input.",
+                },
+            )
+        )
+        events.append(("done", {"session_id": str(session_id), "status": "waiting_for_reply"}))
+    else:
+        session_result = _build_direct_reply_result(
+            session_id=session_id,
+            session=session,
+            messages=_repository.list_messages(session_id),
+            lawyer_message=visible_lawyer_content,
+        )
+        _repository.set_result(session_id, session_result)
+        events.append(("result", session_result.model_dump(mode="json")))
+        events.append(("done", {"session_id": str(session_id), "status": "completed"}))
+
+    def stream() -> Generator[str, None, None]:
+        for event_name, body in events:
             yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
@@ -1176,6 +1360,13 @@ def _build_summary_export_content(
         if str(link).strip()
     ]
     citation_lines = _summary_citation_lines(result.citations)
+    document_law_basis_lines = _document_law_basis_lines(
+        messages=messages,
+        law_reference_links=law_reference_links,
+        last_law_update_date=last_law_update_date,
+        last_law_update_source=last_law_update_source,
+        language=language,
+    )
     if (language or "").strip().lower().startswith("sk"):
         lines = [
             "AI Jurisdiction",
@@ -1215,6 +1406,8 @@ def _build_summary_export_content(
         if law_reference_links:
             lines.extend(["", "Oficialne odkazy na pravne predpisy"])
             lines.extend([f"- {link}" for link in law_reference_links])
+        if document_law_basis_lines:
+            lines.extend(["", "Pravny zaklad hodnotenia dokumentu"] + document_law_basis_lines)
         lines.extend(
             [
                 "",
@@ -1269,6 +1462,8 @@ def _build_summary_export_content(
     if law_reference_links:
         lines.extend(["", "Official law links available in the system"])
         lines.extend([f"- {link}" for link in law_reference_links])
+    if document_law_basis_lines:
+        lines.extend(["", "Legal basis used to evaluate the document"] + document_law_basis_lines)
     lines.extend(
         [
             "",
@@ -1285,6 +1480,62 @@ def _build_summary_export_content(
         f"Discussion Summary {session_id}",
         lines,
     )
+
+
+def _document_law_basis_lines(
+    *,
+    messages: List[Message],
+    law_reference_links: list[str],
+    last_law_update_date: str,
+    last_law_update_source: str,
+    language: str | None,
+) -> list[str]:
+    if not _summary_requires_document_law_basis(messages):
+        return []
+
+    prefers_slovak = (language or "").strip().lower().startswith("sk")
+    lines: list[str] = []
+    if prefers_slovak:
+        lines.append(
+            (
+                f"Dokument bol posudzovany podla najnovsich pravnych podkladov dostupnych v systeme k datumu {last_law_update_date}."
+                if last_law_update_date
+                else "Dokument bol posudzovany podla najnovsich pravnych podkladov dostupnych v systeme."
+            )
+        )
+        if last_law_update_source:
+            lines.append(f"Zdroj pravnych podkladov: {last_law_update_source}")
+        if law_reference_links:
+            lines.append("Pouzite odkazy na pravne predpisy:")
+            lines.extend([f"- {link}" for link in law_reference_links])
+        else:
+            lines.append("Konkretny odkaz na pravny predpis nebol v metadatach dostupny.")
+        return lines
+
+    lines.append(
+        (
+            f"The document was evaluated against the latest legal materials available to the system as of {last_law_update_date}."
+            if last_law_update_date
+            else "The document was evaluated against the latest legal materials available to the system."
+        )
+    )
+    if last_law_update_source:
+        lines.append(f"Legal source used by the system: {last_law_update_source}")
+    if law_reference_links:
+        lines.append("Law references used for the document evaluation:")
+        lines.extend([f"- {link}" for link in law_reference_links])
+    else:
+        lines.append("No specific law reference link was available in metadata.")
+    return lines
+
+
+def _summary_requires_document_law_basis(messages: List[Message]) -> bool:
+    for message in messages:
+        if message.role != MessageRole.USER:
+            continue
+        if is_document_modernization_request(message.content):
+            return True
+    return False
 
 
 def _format_validation_accuracy(value: object) -> str:

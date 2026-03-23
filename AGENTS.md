@@ -30,6 +30,12 @@ Mobile app versioning rule:
 - Keep the semantic version part unchanged unless the user explicitly asks to change it.
 - Example: `0.1.4+7` -> `0.1.4+8`, not `0.1.5+8`.
 
+API and system core versioning rule:
+
+- Whenever you change API code under `api/aijuristiction-api`, increase the revision number in `api/aijuristiction-api/pyproject.toml`.
+- Whenever you change system core code under `src/`, increase the revision number in `src/aijurisdictionagents/__init__.py` and keep the root package version aligned when applicable.
+- Unless the user explicitly asks otherwise, bump only the revision portion of the version, not the major or minor portion.
+
 Ask for implementation of task.  Create for each task separate branch.
 If you start working move task to in progress.
 Before moving a task to In review:

@@ -16,7 +16,7 @@
           <section class="grid">
             <div>
               <label for="baseUrl">API base URL</label>
-              <input id="baseUrl" value="http://localhost:8080" placeholder="http://localhost:8080" />
+              <input id="baseUrl" value="http://127.0.0.1:8080" placeholder="http://127.0.0.1:8080" />
             </div>
             <div>
               <label for="apiKey">x-api-key</label>
@@ -49,6 +49,54 @@
           </section>
 
           <section class="row">
+            <h2>Workflow Warning</h2>
+            <pre id="workflowWarning">No workflow warnings.</pre>
+          </section>
+
+          <section class="row">
+            <h2>Persisted Case Debug</h2>
+            <p>Create a real API user and case, upload documents through <code>/v1/cases</code>, then inspect stored vectors and selected prompt chunks.</p>
+          </section>
+
+          <section class="grid row">
+            <div>
+              <label for="userPhone">User phone</label>
+              <input id="userPhone" value="+421900777001" />
+            </div>
+            <div>
+              <label for="userEmail">User email</label>
+              <input id="userEmail" value="simulator.case@example.com" />
+            </div>
+            <div>
+              <label for="userPassword">User password</label>
+              <input id="userPassword" type="password" value="secret123" />
+            </div>
+            <div>
+              <label for="caseTitle">Case title</label>
+              <input id="caseTitle" value="Simulator persisted case" />
+            </div>
+          </section>
+
+          <section class="grid row">
+            <div>
+              <button id="ensureUser">Ensure User</button>
+            </div>
+            <div>
+              <button id="createCase" class="secondary">Create Case</button>
+            </div>
+            <div>
+              <button id="uploadCaseDocuments" class="secondary">Upload To Case</button>
+            </div>
+            <div>
+              <button id="inspectCaseDocuments" class="secondary">Inspect Stored Docs</button>
+            </div>
+          </section>
+
+          <section class="row">
+            <pre id="caseStatus">No persisted user/case created yet.</pre>
+          </section>
+
+          <section class="row">
             <label for="instruction">Case instruction</label>
             <textarea id="instruction" placeholder="Describe your case and request legal support..."></textarea>
           </section>
@@ -67,7 +115,12 @@
           <section class="row">
             <label for="documents">Upload documents (text-based files)</label>
             <input id="documents" type="file" multiple />
-            <small>Uploaded file contents are sent as API document payloads.</small>
+            <small>Use <strong>Upload To Case</strong> to persist files into the API backend and database. If a persisted case exists, stream/reply calls use that stored case context instead of inline temporary documents.</small>
+          </section>
+
+          <section class="row">
+            <label for="debugQuery">Prompt retrieval query</label>
+            <textarea id="debugQuery" placeholder="Question used to inspect which document chunks are selected for prompt injection..."></textarea>
           </section>
 
           <section class="row actions">
@@ -98,6 +151,11 @@
             <h2>Result</h2>
             <pre id="result">No result fetched yet.</pre>
           </section>
+
+          <section class="row">
+            <h2>Stored Document Debug</h2>
+            <pre id="documentDebug">No document debug fetched yet.</pre>
+          </section>
         </div>
 
         <aside class="simulator-chat">
@@ -106,7 +164,7 @@
           <div id="chatTranscript" class="chat-transcript">
             <p class="chat-placeholder">No chat messages yet. Start a stream or refresh messages.</p>
           </div>
-          <form id="chatReplyForm" class="chat-reply-form">
+          <form id="chatReplyForm" class="chat-reply-form" novalidate>
             <label for="userSimulationMode">Reply mode</label>
             <select id="userSimulationMode">
               <option value="ReadUser">ReadUser</option>
@@ -119,7 +177,8 @@
             <input id="communicationMinutes" type="number" min="1" value="3" />
 
             <label for="userReplyInput">End user answer</label>
-            <textarea id="userReplyInput" placeholder="Type end user response..." required></textarea>
+            <textarea id="userReplyInput" placeholder="Type end user response..."></textarea>
+            <small id="replyStatus">Manual Send answer is available only in ReadUser mode.</small>
             <button id="sendUserReply" type="submit">Send answer</button>
           </form>
         </aside>

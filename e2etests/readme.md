@@ -33,6 +33,7 @@ Je pripravený tak, aby sa dal použiť:
 | V2 | `test_unit_document_validation_flags` | Unit | Validácia pravidiel dokumentu | Text zmluvy bez údajov o depozite, opravách a výpovedi | Validator vráti flags ako `missing_deposit=True`, `missing_termination_clause=True`, `missing_party_identification=True`. |
 | V3 | `test_integration_document_validation_with_latest_laws` | Integration | Dokument + law store + validator | Seeded law store s novelou účinnou od `2026-01-01`, upload starého dokumentu | Odpoveď obsahuje validation summary, zoznam porušení voči posledným pravidlám a timestamp poslednej aktualizácie zdroja práva. |
 | V4 | `test_slovak_lease_review_e2e` | E2E | Revízia starej slovenskej nájomnej zmluvy | Existujúci fixture upload v `simulate_slovak_lease_review(...)` | Výstup vytvorí revidovaný dokument, diff artefakt, summary vykonaných zmien a zachytí chýbajúce oblasti ako identifikácia strán, depozit, opravy a písomná výpoveď. |
+| V5 | `test_uploaded_pdf_is_stored_vectorized_and_used_for_vector_prompt_context` | Integration/E2E | Upload reálneho PDF dokumentu do API case flow | `e2etests/Zmluva_test_nevyhodna_2000.pdf` + vstup `Pozri na document a uprav zmvluvu podla najnovsieho zakona o prenajme, priprav summary a uved z ktoreho zakona si cerpal.` | Test overí insert dokumentu do DB, extrakciu textu z PDF, uloženie document/chunk embeddingov, vektorové chunk vyhľadanie pre query a odovzdanie vybraného chunku do promptu modelu. |
 
 ## Detail očakávaní podľa hlavných business flow
 
@@ -129,3 +130,12 @@ Ak chceš túto sadu zaviesť hneď, odporúčané je začať týmito testami:
 6. `test_unit_document_request_classifier`
 
 Tieto názvy sú zámerne konzistentné s `pytest` naming convention a môžu byť priamo použité pri doplnení automatizovaných testov.
+
+## Spustenie PDF vector prompt testu
+
+Test je implementovaný v API suite a používa fixture PDF z `e2etests/`.
+
+```bash
+cd api/aijuristiction-api
+..\..\.conda\python.exe -m pytest tests/test_case_documents_processing.py -k vector_prompt_context
+```

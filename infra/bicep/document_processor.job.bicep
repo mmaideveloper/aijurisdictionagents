@@ -11,6 +11,12 @@ param postgresAdminUsername string
 param postgresAdminPassword string
 param storageAccountName string
 param storageContainerName string = 'documents'
+param llmProvider string = 'azurefoundry'
+param azureOpenAIEndpoint string
+param azureOpenAIEmbeddingsModel string = 'text-embedding-3-large'
+param azureOpenAIApiVersion string = '2024-12-01-preview'
+@secure()
+param azureOpenAIApiKey string
 param triggerType string = 'Schedule'
 param cronExpression string = '0 */15 * * * *'
 param replicaTimeout int = 1800
@@ -91,6 +97,10 @@ resource documentProcessorJob 'Microsoft.App/jobs@2024-03-01' = {
           name: 'processor-db-cloud'
           value: 'postgresql://${postgresAdminUsername}:${postgresAdminPassword}@${postgresServer.name}.postgres.database.azure.com:5432/${postgresDatabaseName}?sslmode=require'
         }
+        {
+          name: 'azure-openai-api-key'
+          value: azureOpenAIApiKey
+        }
       ]
     }
     template: {
@@ -118,6 +128,26 @@ resource documentProcessorJob 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'DOCUMENT_PROCESSOR'
               value: 'azure'
+            }
+            {
+              name: 'LLM_PROVIDER'
+              value: llmProvider
+            }
+            {
+              name: 'AZURE_OPENAI_ENDPOINT'
+              value: azureOpenAIEndpoint
+            }
+            {
+              name: 'AZURE_OPENAI_EMBEDDINGS_MODEL'
+              value: azureOpenAIEmbeddingsModel
+            }
+            {
+              name: 'AZURE_OPENAI_API_VERSION'
+              value: azureOpenAIApiVersion
+            }
+            {
+              name: 'AZURE_OPENAI_API_KEY'
+              secretRef: 'azure-openai-api-key'
             }
             {
               name: 'STORE_CLOUD'

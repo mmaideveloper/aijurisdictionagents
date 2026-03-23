@@ -77,10 +77,16 @@ jobs:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
       AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+      AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+      AZURE_OPENAI_EMBEDDINGS_MODEL: ${{ vars.AZURE_OPENAI_EMBEDDINGS_MODEL }}
+      AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
       AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
       AZURE_POSTGRES_DATABASE_NAME: ${{ vars.AZURE_POSTGRES_DATABASE_NAME }}
       AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
       AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
+      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
       CORS_ALLOW_ORIGINS: ${{ vars.CORS_ALLOW_ORIGINS }}
       DOCUMENT_PROCESSOR: ${{ vars.DOCUMENT_PROCESSOR }}
@@ -175,6 +181,9 @@ jobs:
           if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
             secret_values+=("applicationinsights-connection-string=$APPLICATIONINSIGHTS_CONNECTION_STRING")
           fi
+          if [ -n "${AZURE_OPENAI_API_KEY:-}" ]; then
+            secret_values+=("azure-openai-api-key=$AZURE_OPENAI_API_KEY")
+          fi
           az containerapp secret set \
             --name "$AZURE_CONTAINER_APP_NAME" \
             --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -188,9 +197,25 @@ jobs:
             DB_LOCAL=/tmp/api.sqlite3
             STORAGE_OPTION=azure
             STORE_LOCAL=/tmp/storage
+            LLM_PROVIDER=${LLM_PROVIDER:-azurefoundry}
             DOCUMENT_PROCESSOR=${DOCUMENT_PROCESSOR:-azure}
             OTEL_SERVICE_NAME=aijuristiction-api
           )
+          if [ -n "${AZURE_OPENAI_ENDPOINT:-}" ]; then
+            env_vars+=(AZURE_OPENAI_ENDPOINT="$AZURE_OPENAI_ENDPOINT")
+          fi
+          if [ -n "${AZURE_OPENAI_DEPLOYMENT:-}" ]; then
+            env_vars+=(AZURE_OPENAI_DEPLOYMENT="$AZURE_OPENAI_DEPLOYMENT")
+          fi
+          if [ -n "${AZURE_OPENAI_EMBEDDINGS_MODEL:-}" ]; then
+            env_vars+=(AZURE_OPENAI_EMBEDDINGS_MODEL="$AZURE_OPENAI_EMBEDDINGS_MODEL")
+          fi
+          if [ -n "${AZURE_OPENAI_API_VERSION:-}" ]; then
+            env_vars+=(AZURE_OPENAI_API_VERSION="$AZURE_OPENAI_API_VERSION")
+          fi
+          if [ -n "${AZURE_OPENAI_API_KEY:-}" ]; then
+            env_vars+=(AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key)
+          fi
           if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
             env_vars+=(APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string)
           fi

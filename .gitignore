@@ -39,3 +39,5 @@ databases/postgress/data/**
 !databases/postgress/data/.gitkeep
 .codex/runlogs/**
 api/aijuristiction-api/storage/**
+.playwright-cli/**
+

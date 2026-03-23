@@ -96,6 +96,11 @@ These are used by infrastructure deployment and API deployment workflows:
 | --- | --- |
 | `AZURE_CONTAINER_APP_NAME` | API Azure Container App name |
 | `AZURE_APPLICATION_INSIGHTS_NAME` | Application Insights resource name |
+| `LLM_PROVIDER` | Runtime LLM provider, keep `azurefoundry` for deployed Azure environments |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used by chat and document embeddings |
+| `AZURE_OPENAI_DEPLOYMENT` | Azure OpenAI chat deployment name used by the API |
+| `AZURE_OPENAI_EMBEDDINGS_MODEL` | Azure OpenAI embedding deployment name used for document chunk embeddings, recommended `text-embedding-3-large` |
+| `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version, keep aligned with `.env.example` unless you intentionally upgrade |
 | `AZURE_POSTGRES_SERVER_NAME` | Azure PostgreSQL Flexible Server name |
 | `AZURE_POSTGRES_DATABASE_NAME` | API database name |
 | `AZURE_POSTGRES_ADMIN_USERNAME` | PostgreSQL admin login |
@@ -114,6 +119,7 @@ Required GitHub Environment secret:
 
 | Secret | Purpose |
 | --- | --- |
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI key used by the API and document processor for chat completions and embeddings |
 | `AZURE_POSTGRES_ADMIN_PASSWORD` | PostgreSQL admin password |
 
 Optional GitHub Environment secret:
@@ -137,6 +143,10 @@ These are used by the document processor deployment workflow:
 | Variable | Purpose |
 | --- | --- |
 | `DOCUMENT_PROCESSOR` | Keep this as `azure` in deployed GitHub Environments so uploaded documents are processed by the ACA scheduled job |
+| `LLM_PROVIDER` | Runtime provider for the job, keep `azurefoundry` in Azure deployments |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used for embeddings |
+| `AZURE_OPENAI_EMBEDDINGS_MODEL` | Embedding deployment name used by the job, recommended `text-embedding-3-large` |
+| `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version for embeddings |
 | `AZURE_MANAGED_IDENTITY_NAME` | Identity used by the job |
 | `AZURE_STORAGE_ACCOUNT_NAME` | Storage account with uploaded documents |
 | `AZURE_STORAGE_CONTAINER_NAME` | Storage container name |
@@ -183,6 +193,9 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_CONTAINERAPPS_ENVIRONMENT`
 - `AZURE_CONTAINER_APP_NAME`
 - `AZURE_FRONTEND_CONTAINER_APP_NAME`
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_DEPLOYMENT`
+- `AZURE_OPENAI_EMBEDDINGS_MODEL`
 - `AZURE_POSTGRES_SERVER_NAME`
 - `AZURE_STORAGE_ACCOUNT_NAME`
 - `AZURE_APPLICATION_INSIGHTS_NAME`

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.services.email_scheduler import EmailScheduler
 from app.services.email_queue import EmailQueueConfig, EmailQueueStore
+from app.users.api import get_email_scheduler, get_user_store
 
 client = TestClient(app)
 AUTH_HEADERS = {"x-api-key": "aijuris"}
@@ -128,6 +129,39 @@ def test_sign_up_rejects_duplicate_phone_and_email(monkeypatch, tmp_path: Path) 
         },
     )
     assert duplicate_email.status_code == 409
+
+
+def test_sign_up_returns_conflict_for_postgres_style_duplicate_user(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+
+    class FakePostgresIntegrityError(Exception):
+        pass
+
+    class DuplicateUserStore:
+        def create_user(self, **_kwargs):
+            raise FakePostgresIntegrityError(
+                'duplicate key value violates unique constraint "users_email_key"'
+            )
+
+    app.dependency_overrides[get_user_store] = lambda: DuplicateUserStore()
+    scheduler = EmailScheduler.from_env()
+    app.dependency_overrides[get_email_scheduler] = lambda: scheduler
+    monkeypatch.setattr("app.users.api._psycopg_module", type("FakePsycopg", (), {"IntegrityError": FakePostgresIntegrityError}))
+    try:
+        response = client.post(
+            "/v1/users/sign-up",
+            headers=AUTH_HEADERS,
+            json={
+                "phone_number": "+421900111222",
+                "email": "founder@example.com",
+                "password": "secret-pass",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Email is already registered"
 
 
 def test_subscription_lifecycle_queues_notifications(monkeypatch, tmp_path: Path) -> None:

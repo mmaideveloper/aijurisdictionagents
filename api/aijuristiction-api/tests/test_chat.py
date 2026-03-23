@@ -3,7 +3,7 @@ from io import BytesIO
 from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
@@ -381,6 +381,63 @@ def test_reply_endpoint_persists_user_and_returns_lawyer_message() -> None:
     lawyer_message_2 = reply_response_2.json()
     assert lawyer_message_2["role"] == "assistant"
     assert "vzor najomnej zmluvy" in lawyer_message_2["content"].lower()
+
+
+def test_stream_read_user_pauses_and_waits_for_manual_reply() -> None:
+    from app.chat import api as chat_api
+    from app.chat.models import SessionState
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "Potrebujem poradit so sporom o najom bytu.",
+            "documents": [],
+            "question_timeout_seconds": 3000,
+            "max_discussion_minutes": 15,
+            "communication_minutes": 3,
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert "event: waiting_for_reply" in events
+    assert '"status": "waiting_for_reply"' in events
+    assert "Používateľ nemohol odpovedať do 50 minút." not in events
+    assert '"role": "assistant"' in events
+    assert "event: result" not in events
+
+    session = chat_api._repository.get_session(UUID(session_id))
+    assert session is not None
+    assert session.state == SessionState.ACTIVE
+
+    messages_response = client.get(
+        f"/v1/chat/sessions/{session_id}/messages",
+        headers=AUTH_HEADERS,
+    )
+    assert messages_response.status_code == 200
+    messages = messages_response.json()
+    assert [item["role"] for item in messages] == ["user", "assistant"]
+    assert "?" in messages[1]["content"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Spor vznikol v januari 2026 a moj ciel je ukoncit najom."},
+        headers=AUTH_HEADERS,
+    )
+    assert reply_response.status_code == 200
+    reply_content = reply_response.json()["content"].lower()
+    assert "pravne posudenie" in reply_content or "dalsi krok" in reply_content
 
 
 def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> None:
@@ -851,6 +908,55 @@ def test_summary_export_content_includes_system_versions_and_law_links() -> None
     assert "User recommendation" in joined
     assert "Final recommendation:" in joined
     assert "Official law links available in the system" in joined
+    assert "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/" in joined
+
+
+def test_summary_export_content_includes_document_evaluation_law_basis_for_recreate_request() -> None:
+    from app.chat.api import _build_summary_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    result = SessionResult(
+        final_recommendation="I reviewed the uploaded lease agreement, updated the outdated clauses, and prepared the revised version.",
+        judge_rationale="The uploaded document required modernization under current rental-law requirements.",
+        citations=[],
+        metadata={
+            "api_version": "1.0.260322",
+            "core_version": "1.0.260202",
+            "last_law_update_date": "2026-03-20T00:00:00Z",
+            "last_law_update_source": "law_documents_country",
+            "law_reference_links": [
+                "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
+            ],
+            "validation_summary": "The recreated document reflects the currently available legal basis.",
+        },
+    )
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Please review the uploaded document and recreate it under current law.",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="I reviewed the uploaded document and prepared the updated version.",
+        ),
+    ]
+
+    _title, lines = _build_summary_export_content(
+        session_id=session_id,
+        result=result,
+        messages=messages,
+        country="SK",
+        language="EN",
+    )
+
+    joined = "\n".join(lines)
+    assert "Legal basis used to evaluate the document" in joined
+    assert "The document was evaluated against the latest legal materials available to the system as of 2026-03-20T00:00:00Z." in joined
+    assert "Legal source used by the system: law_documents_country" in joined
+    assert "Law references used for the document evaluation:" in joined
     assert "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/" in joined
 
 

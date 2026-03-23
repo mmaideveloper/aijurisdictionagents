@@ -16,6 +16,14 @@ class ExtractedDocumentContent:
     extraction_method: str
 
 
+@dataclass(frozen=True)
+class DocumentChunk:
+    chunk_index: int
+    text: str
+    start_offset: int
+    end_offset: int
+
+
 def extract_document_text(*, filename: str, payload: bytes) -> ExtractedDocumentContent:
     suffix = Path(filename).suffix.lower()
     if suffix in {".txt", ".md", ".json", ".csv", ".html", ".xml"}:
@@ -58,6 +66,10 @@ def build_embedding_vector(text: str, *, dimensions: int = 32) -> str:
         integer = int.from_bytes(chunk, "big", signed=False)
         values.append(round((integer / 2**32) * 2 - 1, 6))
     return json.dumps(values)
+
+
+def serialize_embedding_vector(values: Sequence[float]) -> str:
+    return json.dumps([float(value) for value in values])
 
 
 def parse_embedding_vector(raw: str) -> list[float]:
@@ -126,6 +138,54 @@ def render_documents_for_prompt(
     return "\n".join(chunks)
 
 
+def chunk_document_text(
+    text: str,
+    *,
+    target_chars: int = 1200,
+    overlap_chars: int = 180,
+    min_chunk_chars: int = 240,
+) -> list[DocumentChunk]:
+    normalized = text.strip()
+    if not normalized:
+        return []
+    chunks: list[DocumentChunk] = []
+    cursor = 0
+    while cursor < len(normalized):
+        end = min(cursor + target_chars, len(normalized))
+        window = normalized[cursor:end]
+        if end < len(normalized):
+            split_at = max(window.rfind("\n\n"), window.rfind(". "), window.rfind(" "))
+            if split_at >= max(target_chars // 2, min_chunk_chars):
+                end = cursor + split_at + 1
+                window = normalized[cursor:end]
+        chunk_text = window.strip()
+        if chunk_text:
+            chunks.append(
+                DocumentChunk(
+                    chunk_index=len(chunks),
+                    text=chunk_text,
+                    start_offset=cursor,
+                    end_offset=end,
+                )
+            )
+        if end >= len(normalized):
+            break
+        cursor = max(end - overlap_chars, cursor + 1)
+        while cursor < len(normalized) and normalized[cursor].isspace():
+            cursor += 1
+
+    compacted = [chunk for chunk in chunks if len(chunk.text) >= min_chunk_chars or len(chunks) == 1]
+    return [
+        DocumentChunk(
+            chunk_index=index,
+            text=chunk.text,
+            start_offset=chunk.start_offset,
+            end_offset=chunk.end_offset,
+        )
+        for index, chunk in enumerate(compacted or chunks[:1])
+    ]
+
+
 def _has_meaningful_text(value: str) -> bool:
     normalized = " ".join(value.split())
     return len(normalized) >= 40
@@ -180,3 +240,4 @@ def _extract_pdf_text_with_ocr(payload: bytes) -> str:
         except Exception:
             continue
     return "\n".join(text_parts).strip()
+

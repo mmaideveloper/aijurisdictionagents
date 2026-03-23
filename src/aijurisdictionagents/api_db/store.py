@@ -96,6 +96,22 @@ class CaseCommunication:
     created_at: str
 
 
+@dataclass(frozen=True)
+class CaseDocumentChunk:
+    chunk_id: str
+    doc_id: str
+    case_id: str
+    chunk_index: int
+    chunk_text: str
+    embedding_vector: str
+    embedding_model: str
+    embedding_dimensions: int
+    start_offset: int
+    end_offset: int
+    created_at: str
+    updated_at: str
+
+
 class ApiDatabaseStore:
     """Local-first API metadata store using SQLite + external blob storage references.
 
@@ -206,11 +222,34 @@ class ApiDatabaseStore:
                     case_id TEXT NOT NULL,
                     extracted_text TEXT NOT NULL,
                     embedding_vector TEXT NOT NULL,
+                    embedding_model TEXT NOT NULL DEFAULT '',
+                    embedding_dimensions INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(doc_id) REFERENCES case_documents(doc_id) ON DELETE CASCADE,
                     FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS case_document_chunks (
+                    chunk_id TEXT PRIMARY KEY,
+                    doc_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    chunk_text TEXT NOT NULL,
+                    embedding_vector TEXT NOT NULL,
+                    embedding_model TEXT NOT NULL DEFAULT '',
+                    embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+                    start_offset INTEGER NOT NULL DEFAULT 0,
+                    end_offset INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(doc_id, chunk_index),
+                    FOREIGN KEY(doc_id) REFERENCES case_documents(doc_id) ON DELETE CASCADE,
+                    FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_case_document_chunks_case_doc_chunk
+                ON case_document_chunks(case_id, doc_id, chunk_index);
 
                 CREATE TABLE IF NOT EXISTS case_communications (
                     communication_id TEXT PRIMARY KEY,
@@ -947,7 +986,16 @@ class ApiDatabaseStore:
                 (status, error, processed_at, doc_id),
             )
 
-    def upsert_document_content(self, *, doc_id: str, case_id: str, extracted_text: str, embedding_vector: str) -> None:
+    def upsert_document_content(
+        self,
+        *,
+        doc_id: str,
+        case_id: str,
+        extracted_text: str,
+        embedding_vector: str,
+        embedding_model: str,
+        embedding_dimensions: int,
+    ) -> None:
         now = _now_iso()
         with self._connect() as conn:
             existing = self._fetchone(conn, 'SELECT content_id FROM case_document_contents WHERE doc_id = ?', (doc_id,))
@@ -956,20 +1004,74 @@ class ApiDatabaseStore:
                     conn,
                     """
                     INSERT INTO case_document_contents(
-                        content_id, doc_id, case_id, extracted_text, embedding_vector, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        content_id, doc_id, case_id, extracted_text, embedding_vector,
+                        embedding_model, embedding_dimensions, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (str(uuid.uuid4()), doc_id, case_id, extracted_text, embedding_vector, now, now),
+                    (
+                        str(uuid.uuid4()),
+                        doc_id,
+                        case_id,
+                        extracted_text,
+                        embedding_vector,
+                        embedding_model,
+                        embedding_dimensions,
+                        now,
+                        now,
+                    ),
                 )
             else:
                 self._execute(
                     conn,
                     """
                     UPDATE case_document_contents
-                    SET extracted_text = ?, embedding_vector = ?, updated_at = ?
+                    SET extracted_text = ?, embedding_vector = ?, embedding_model = ?,
+                        embedding_dimensions = ?, updated_at = ?
                     WHERE doc_id = ?
                     """,
-                    (extracted_text, embedding_vector, now, doc_id),
+                    (
+                        extracted_text,
+                        embedding_vector,
+                        embedding_model,
+                        embedding_dimensions,
+                        now,
+                        doc_id,
+                    ),
+                )
+
+    def replace_document_chunks(
+        self,
+        *,
+        doc_id: str,
+        case_id: str,
+        chunks: list[CaseDocumentChunk],
+    ) -> None:
+        with self._connect() as conn:
+            self._execute(conn, "DELETE FROM case_document_chunks WHERE doc_id = ?", (doc_id,))
+            for chunk in chunks:
+                self._execute(
+                    conn,
+                    """
+                    INSERT INTO case_document_chunks(
+                        chunk_id, doc_id, case_id, chunk_index, chunk_text, embedding_vector,
+                        embedding_model, embedding_dimensions, start_offset, end_offset,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        chunk.chunk_id,
+                        doc_id,
+                        case_id,
+                        chunk.chunk_index,
+                        chunk.chunk_text,
+                        chunk.embedding_vector,
+                        chunk.embedding_model,
+                        chunk.embedding_dimensions,
+                        chunk.start_offset,
+                        chunk.end_offset,
+                        chunk.created_at,
+                        chunk.updated_at,
+                    ),
                 )
 
     def list_case_document_contents(self, *, case_id: str) -> list[tuple[str, str, str, str]]:
@@ -986,6 +1088,22 @@ class ApiDatabaseStore:
                 (case_id,),
             ).fetchall()
         return [(str(r[0]), str(r[1]), str(r[2]), str(r[3])) for r in rows]
+
+    def list_case_document_chunks(self, *, case_id: str) -> list[CaseDocumentChunk]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT chunk_id, doc_id, case_id, chunk_index, chunk_text, embedding_vector,
+                       embedding_model, embedding_dimensions, start_offset, end_offset,
+                       created_at, updated_at
+                FROM case_document_chunks
+                WHERE case_id = ?
+                ORDER BY created_at ASC, chunk_index ASC
+                """,
+                (case_id,),
+            ).fetchall()
+        return [_row_to_case_document_chunk(row) for row in rows]
 
     def _ensure_case_root(self, case_id: str) -> None:
         (self.blob_root / case_id).mkdir(parents=True, exist_ok=True)
@@ -1114,6 +1232,58 @@ class ApiDatabaseStore:
             self._execute(conn, "ALTER TABLE case_documents ADD COLUMN processing_error TEXT")
         if 'processed_at' not in columns:
             self._execute(conn, "ALTER TABLE case_documents ADD COLUMN processed_at TEXT")
+        if self.uses_postgres:
+            content_columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'case_document_contents'",
+                ).fetchall()
+            }
+        else:
+            content_columns = {
+                row[1]
+                for row in self._execute(conn, "PRAGMA table_info(case_document_contents)").fetchall()
+            }
+        if 'embedding_model' not in content_columns:
+            self._execute(
+                conn,
+                "ALTER TABLE case_document_contents ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''",
+            )
+        if 'embedding_dimensions' not in content_columns:
+            self._execute(
+                conn,
+                "ALTER TABLE case_document_contents ADD COLUMN embedding_dimensions INTEGER NOT NULL DEFAULT 0",
+            )
+        self._execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS case_document_chunks (
+                chunk_id TEXT PRIMARY KEY,
+                doc_id TEXT NOT NULL,
+                case_id TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                embedding_vector TEXT NOT NULL,
+                embedding_model TEXT NOT NULL DEFAULT '',
+                embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+                start_offset INTEGER NOT NULL DEFAULT 0,
+                end_offset INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(doc_id, chunk_index),
+                FOREIGN KEY(doc_id) REFERENCES case_documents(doc_id) ON DELETE CASCADE,
+                FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+            )
+            """,
+        )
+        self._execute(
+            conn,
+            """
+            CREATE INDEX IF NOT EXISTS idx_case_document_chunks_case_doc_chunk
+            ON case_document_chunks(case_id, doc_id, chunk_index)
+            """,
+        )
 
     def _ensure_subscription_schema(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -1249,6 +1419,23 @@ def _row_to_case_communication(row: tuple[Any, ...]) -> CaseCommunication:
         transcript_uri=str(row[3]) if row[3] is not None else None,
         summary=str(row[4]),
         created_at=str(row[5]),
+    )
+
+
+def _row_to_case_document_chunk(row: tuple[Any, ...]) -> CaseDocumentChunk:
+    return CaseDocumentChunk(
+        chunk_id=str(row[0]),
+        doc_id=str(row[1]),
+        case_id=str(row[2]),
+        chunk_index=int(row[3]),
+        chunk_text=str(row[4]),
+        embedding_vector=str(row[5]),
+        embedding_model=str(row[6]),
+        embedding_dimensions=int(row[7]),
+        start_offset=int(row[8]),
+        end_offset=int(row[9]),
+        created_at=str(row[10]),
+        updated_at=str(row[11]),
     )
 
 

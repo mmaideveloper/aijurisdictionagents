@@ -49,7 +49,14 @@ Required env vars for default Azure Foundry provider:
 
 - `AZURE_OPENAI_ENDPOINT`
 - `AZURE_OPENAI_DEPLOYMENT`
+- `AZURE_OPENAI_EMBEDDINGS_MODEL` (embedding deployment name, recommended: `text-embedding-3-large`)
 - one of: `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`
+
+Optional env vars for the OpenAI provider:
+
+- `OPENAI_KEY`
+- `OPENAI_MODEL`
+- `OPENAI_EMBEDDINGS_MODEL` (recommended: `text-embedding-3-large`)
 
 Local API startup loads the repository root `.env` automatically. If you override variables in the shell before starting `uvicorn`, those explicit shell values still win because `.env` is loaded with `override=False`.
 
@@ -300,8 +307,8 @@ The dedicated local PostgreSQL project now lives under `databases/README.md`.
 
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
-- Uploaded case documents are stored as `case -> many documents`, and each processed uploaded document keeps its original filename, extracted text, and vector representation in `case_document_contents`.
-- Direct `POST /v1/chat/sessions/{session_id}/reply` now loads only the most relevant processed case documents for the user query by combining lexical overlap with vector similarity, while still allowing "summarize all uploaded documents" style prompts to include every processed case document.
+- Uploaded case documents are stored as `case -> many documents`. Each processed uploaded document keeps the extracted full text plus a real embedding in `case_document_contents`, and chunk-level text/embedding rows in `case_document_chunks`.
+- Direct `POST /v1/chat/sessions/{session_id}/reply` now loads the most relevant processed document chunks for the user query by combining lexical overlap with semantic similarity from real embeddings, then injects those chunks into the extra system-context document message.
 - Local API starts through [skills/start-api/scripts/start_api.ps1](/C:/Users/maton/Projects/aijurisdictionagents/skills/start-api/scripts/start_api.ps1) now enable `LOCAL_LLM_IO_LOGGING=1` by default, so local logs include the exact model payload and raw model response for debugging without changing deployed environments.
 - The mobile app uses these endpoints to show the latest 5 saved case messages after case selection and to expose case-document download buttons.
 - If an older case-history transcript blob is missing or unreadable, the API now falls back to the stored communication summary instead of failing the history load or blocking new session creation for that case.
@@ -310,6 +317,7 @@ The dedicated local PostgreSQL project now lives under `databases/README.md`.
 
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=summary` returns the session summary.
 - The summary PDF now includes generation date, API version, system core version, the latest law update date available to the system, the law-update source, the final recommendation for the user case, official law links stored by the law processor, and a dedicated case-validation section at the end with accuracy and validation summary.
+- When the user asks to review and recreate an uploaded document under current law, the summary PDF also includes a dedicated legal-basis section that states which legal dataset and official law links were used to evaluate the document.
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` now builds a document that matches the detected case topic instead of always returning a lease template.
 - Direct `POST /v1/chat/sessions/{session_id}/reply` sessions also persist a session result now, so the mobile `Real Agent` flow can download PDFs without going through the simulator stream.
 - In `Real Agent` mode, the lawyer can first ask whether a formal document should be prepared as PDF; once the user confirms, the next direct reply marks `metadata.document_ready=true` in `GET /v1/chat/sessions/{session_id}/result`.
@@ -323,6 +331,10 @@ Additional PDF font notes:
 - On Windows, the exporter prefers `Times New Roman` and then `Arial` for Central European PDF exports.
 
 ## Version bump workflow
+
+Rule:
+- Whenever API or system core code changes, increase the revision number in the corresponding version file in the same change.
+- Unless explicitly requested otherwise, do not change major or minor version numbers for these routine updates.
 
 When API code changes:
 1. Bump `version` in `api/aijuristiction-api/pyproject.toml`.
@@ -376,6 +388,17 @@ CORS_ALLOW_ORIGINS=https://mobile-web-dev.example.com,https://web-juris-dev.<reg
 The chat simulator has been moved to a separate application: `api/chat-simulator-app`.
 
 Run it independently to test chat flows before frontend deployment.
+
+For persisted-case debugging with local PostgreSQL, start the API with:
+
+```bash
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR=local LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
+```
+
+The simulator can then call `GET /v1/cases/{case_id}/documents/debug?user_id=...&query=...` to show:
+- stored uploaded document rows from the API database
+- embedding/vector presence and chunk counts
+- the exact document chunks selected for prompt injection for a query
 
 For Slovak simulated discussions, the AI user now ends the conversation with `To je vsetko` instead of the internal sentinel word `finish`.
 

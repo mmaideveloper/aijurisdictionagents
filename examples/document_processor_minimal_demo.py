@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from services.document_processor.worker import run_document_processor
 
-with TemporaryDirectory() as temp_dir:
+temp_dir = mkdtemp(prefix="document-processor-demo-")
+try:
     root = Path(temp_dir)
+    os.environ['LLM_PROVIDER'] = 'mock'
     os.environ['DB_OPTION'] = 'local'
     os.environ['STORAGE_OPTION'] = 'local'
     os.environ['DB_LOCAL'] = str(root / 'api.sqlite3')
@@ -33,3 +36,6 @@ with TemporaryDirectory() as temp_dir:
     results = run_document_processor(limit=5)
     print(results)
     print(store.list_case_document_contents(case_id=case.case_id))
+    print(store.list_case_document_chunks(case_id=case.case_id))
+finally:
+    shutil.rmtree(temp_dir, ignore_errors=True)

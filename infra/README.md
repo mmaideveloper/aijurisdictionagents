@@ -256,6 +256,12 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_CONTAINER_REGISTRY` = `<ACR_NAME>`
 - `AZURE_STORAGE_ACCOUNT_NAME` = `<STORAGE_ACCOUNT_NAME>` (optional; auto-derived if omitted)
 - `AZURE_STORAGE_CONTAINER_NAME` = `<STORAGE_CONTAINER_NAME>` (optional; defaults to `case-documents`)
+- `LLM_PROVIDER` = `azurefoundry`
+- `AZURE_OPENAI_ENDPOINT` = `https://<resource>.openai.azure.com/`
+- `AZURE_OPENAI_DEPLOYMENT` = `<chat_deployment_name>`
+- `AZURE_OPENAI_EMBEDDINGS_MODEL` = `text-embedding-3-large` (or your embedding deployment name)
+- `AZURE_OPENAI_API_VERSION` = `2024-12-01-preview`
+- GitHub secret `AZURE_OPENAI_API_KEY` = `<AZURE_OPENAI_KEY>`
 - `DOCUMENT_PROCESSOR` = `azure` for deployed environments so the API leaves uploads pending for the ACA document-processor job
 - `CORS_ALLOW_ORIGINS` = comma-separated deployed browser origins allowed to call the API (optional)
   - Example: `https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io`
@@ -474,8 +480,8 @@ GitHub Actions workflow:
 
 Required GitHub Environment variables/secrets for deployment:
 
-- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_DATABASE_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`, `AZURE_STORAGE_ACCOUNT_NAME`, `DOCUMENT_PROCESSOR`
-- Secret: `AZURE_POSTGRES_ADMIN_PASSWORD`
+- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_DATABASE_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`, `AZURE_STORAGE_ACCOUNT_NAME`, `LLM_PROVIDER`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, `DOCUMENT_PROCESSOR`
+- Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`, `AZURE_OPENAI_API_KEY`
 - Optional variables: `AZURE_STORAGE_CONTAINER_NAME`, `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION`
 
 Recommended GitHub Environment values:

@@ -1,6 +1,6 @@
 # Document Processor Service
 
-This service scans uploaded case documents, extracts best-effort text, stores extracted text plus vector representations, and marks each document as `processed` or `failed`.
+This service scans uploaded case documents, extracts best-effort text, creates real embeddings through the configured provider, stores the full document text/vector plus chunk text/vector records, and marks each document as `processed` or `failed`.
 
 Current extraction behavior:
 
@@ -12,6 +12,12 @@ Current runtime modes:
 
 - `DOCUMENT_PROCESSOR=local`: the API processes uploads immediately inside the API request after the file is stored.
 - `DOCUMENT_PROCESSOR=azure`: the API leaves uploads pending and this ACA scheduled job processes them asynchronously.
+
+Embedding model env vars:
+
+- `AZURE_OPENAI_EMBEDDINGS_MODEL`: Azure OpenAI embedding deployment name. Recommended for Jurisdicta: `text-embedding-3-large`.
+- `OPENAI_EMBEDDINGS_MODEL`: OpenAI embedding model name. Recommended default: `text-embedding-3-large`.
+- Local tests and the minimal demo use `LLM_PROVIDER=mock`, which keeps embeddings deterministic and offline.
 
 ## Run locally
 
