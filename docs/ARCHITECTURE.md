@@ -34,4 +34,16 @@ Each agent message includes:
 9. Orchestrator synthesizes a final recommendation and rationale in the requested output language and stores trace artifacts.
 10. For Slovak advice runs, the CLI persists a case folder under `cases/` with documents and discussion logs.
 
+## API document-task planning
+
+The API chat reply flow can add policy-driven task-planning guidance for uploaded-document requests before sending the prompt to the lawyer agent.
+
+- Mixed requests such as "review/update uploaded document and summarize it" are converted into an ordered internal task plan.
+- The task order follows the user message order.
+- A policy layer maps matched intents to ordered tasks plus communication rules while keeping a single legal agent/persona.
+- The intent-policy feature is implemented in a dedicated chat service module so the API router can stay focused on endpoint mapping and auth wiring.
+- For modernization requests, the plan explicitly instructs the model to review the uploaded document first, then update it under current law, and only then prepare any requested summary.
+- Policies can also defer content-specific steps when uploaded documents are still unprocessed, instead of forcing the agent to improvise around missing evidence.
+- This planning layer is separate from developer/runtime Codex skills; it is application orchestration logic used to keep user-facing communication aligned with the requested task and make future policies/tasks easier to add.
+
 See `docs/SEQUENCE.md` for a high-level sequence diagram.

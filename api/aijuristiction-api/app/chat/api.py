@@ -24,6 +24,10 @@ from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
 from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 
 from app.chat.core_runtime import core_message_role, run_orchestration
+from app.chat.intent_policy_service import (
+    build_document_task_plan_note,
+    is_document_summary_request,
+)
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.repository import InMemoryChatRepository
 from app.chat.result_metadata import build_session_result_metadata
@@ -79,8 +83,6 @@ class InputDocument(BaseModel):
     doc_id: str = Field(default="doc")
     path: str
     content: str
-
-
 
 
 def _get_store() -> ApiDatabaseStore:
@@ -225,35 +227,6 @@ def _requests_all_processed_documents(query: str) -> bool:
     return any(phrase in normalized for phrase in phrases)
 
 
-def _is_document_summary_request(query: str) -> bool:
-    normalized = " ".join(query.lower().split())
-    summary_terms = (
-        "summary",
-        "summar",
-        "summarize",
-        "summarise",
-        "short summary",
-        "sumar",
-        "sumariz",
-        "sumarizovanie",
-        "zhrn",
-        "zhrnut",
-        "zusammenfass",
-    )
-    document_terms = (
-        "document",
-        "documents",
-        "uploaded",
-        "pdf",
-        "dokument",
-        "dokumenty",
-        "dokumente",
-    )
-    return any(term in normalized for term in summary_terms) and any(
-        term in normalized for term in document_terms
-    )
-
-
 def _prepend_document_status_note(*, reply: str, processed_names: list[str], unprocessed_names: list[str]) -> str:
     if not processed_names and not unprocessed_names:
         return reply
@@ -374,7 +347,6 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
             "- Produce the finalized draft-oriented response for PDF export in this turn.\n"
             "- Include CASE_UPDATE_JSON after the user-facing content."
         )
-
     case_documents: list[CoreDocument] = []
     processed_names: list[str] = []
     unprocessed_names: list[str] = []
@@ -391,16 +363,12 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
                 'Use processed documents as case evidence and explicitly mention any unprocessed documents.'
             )
             prompt_override = f"{prompt_override}{context_note}"
-        if case_documents and _is_document_summary_request(content):
-            summary_note = (
-                "\n\nDOCUMENT SUMMARY MODE:\n"
-                "- The user asked for a concise summary of uploaded case documents.\n"
-                "- Start with a plain-language summary of the document contents in no more than 5 sentences.\n"
-                "- Mention the main document purpose, parties, dates, obligations, and obvious missing items if available.\n"
-                "- If the user also asked for issues or risks, mention them only after the short summary.\n"
-                "- Do not answer with validation metadata only.\n"
-            )
-            prompt_override = f"{prompt_override}{summary_note}"
+    task_plan_note = build_document_task_plan_note(
+        query=content,
+        has_processed_documents=bool(case_documents),
+    )
+    if task_plan_note:
+        prompt_override = f"{prompt_override}{task_plan_note}"
 
     lawyer_message = lawyer.respond(
         conversation=conversation,
