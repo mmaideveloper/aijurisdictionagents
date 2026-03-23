@@ -228,6 +228,7 @@ Some workflows default to `dev` for push-based execution.
 That means:
 
 - `API Build and Deploy` now deploys automatically to `dev` on `push` to `main` after tests/build pass
+- `API Build and Deploy` waits for Azure Container App provisioning to settle before applying secret and environment updates, which reduces transient `ContainerAppOperationInProgress` failures during deployment
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 
 ## 12. Quick Validation Checklist
