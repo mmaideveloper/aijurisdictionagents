@@ -51,6 +51,8 @@ jobs:
       AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
       AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
       AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
+      AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME: ${{ vars.AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME }}
+      AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
     steps:
       - uses: actions/checkout@v4
 
@@ -131,6 +133,15 @@ jobs:
           echo "storage_account_name=$storage_account" >> "$GITHUB_OUTPUT"
           echo "storage_container_name=$storage_container" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve laws collector settings
+        id: laws
+        run: |
+          laws_container_app="${AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME:-laws-collector}"
+          laws_postgres_database="${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}"
+
+          echo "laws_container_app_name=$laws_container_app" >> "$GITHUB_OUTPUT"
+          echo "laws_postgres_database_name=$laws_postgres_database" >> "$GITHUB_OUTPUT"
+
       - name: Detect existing resources and resolve deployment mode
         id: existing
         run: |
@@ -151,6 +162,7 @@ jobs:
           identity_location="$(get_location "$AZURE_MANAGED_IDENTITY_NAME" "Microsoft.ManagedIdentity/userAssignedIdentities")"
           postgres_location="$(get_location "$AZURE_POSTGRES_SERVER_NAME" "Microsoft.DBforPostgreSQL/flexibleServers")"
           app_location="$(get_location "$AZURE_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
+          laws_collector_location="$(get_location "${{ steps.laws.outputs.laws_container_app_name }}" "Microsoft.App/containerApps")"
 
           create_log_analytics_workspace=true
           create_managed_environment=true
@@ -160,6 +172,7 @@ jobs:
           create_managed_identity=true
           create_postgres_server=true
           create_container_app=true
+          create_laws_collector_container_app=true
 
           [ -n "$log_location" ] && create_log_analytics_workspace=false
           [ -n "$env_location" ] && create_managed_environment=false
@@ -169,6 +182,7 @@ jobs:
           [ -n "$identity_location" ] && create_managed_identity=false
           [ -n "$postgres_location" ] && create_postgres_server=false
           [ -n "$app_location" ] && create_container_app=false
+          [ -n "$laws_collector_location" ] && create_laws_collector_container_app=false
 
           resolved_location="$AZURE_LOCATION"
 
@@ -181,6 +195,7 @@ jobs:
           echo "create_managed_identity=$create_managed_identity" >> "$GITHUB_OUTPUT"
           echo "create_postgres_server=$create_postgres_server" >> "$GITHUB_OUTPUT"
           echo "create_container_app=$create_container_app" >> "$GITHUB_OUTPUT"
+          echo "create_laws_collector_container_app=$create_laws_collector_container_app" >> "$GITHUB_OUTPUT"
 
       - name: Deploy infrastructure from Bicep
         run: |
@@ -192,8 +207,10 @@ jobs:
               location="${{ steps.existing.outputs.resolved_location }}" \
               environmentName="$AZURE_CONTAINERAPPS_ENVIRONMENT" \
               containerAppName="$AZURE_CONTAINER_APP_NAME" \
+              lawsCollectorContainerAppName="${{ steps.laws.outputs.laws_container_app_name }}" \
               postgresServerName="$AZURE_POSTGRES_SERVER_NAME" \
               postgresDatabaseName="$AZURE_POSTGRES_DATABASE_NAME" \
+              lawsPostgresDatabaseName="${{ steps.laws.outputs.laws_postgres_database_name }}" \
               postgresAdminUsername="$AZURE_POSTGRES_ADMIN_USERNAME" \
               postgresAdminPassword="$AZURE_POSTGRES_ADMIN_PASSWORD" \
               postgresSkuName="${AZURE_POSTGRES_SKU_NAME:-Standard_B1ms}" \
@@ -213,4 +230,5 @@ jobs:
               createApplicationInsights="${{ steps.existing.outputs.create_application_insights }}" \
               createManagedIdentity="${{ steps.existing.outputs.create_managed_identity }}" \
               createPostgresServer="${{ steps.existing.outputs.create_postgres_server }}" \
-              createContainerApp="${{ steps.existing.outputs.create_container_app }}"
+              createContainerApp="${{ steps.existing.outputs.create_container_app }}" \
+              createLawsCollectorContainerApp="${{ steps.existing.outputs.create_laws_collector_container_app }}"

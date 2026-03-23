@@ -83,10 +83,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           }
           env: [
             {
-              name: 'LAWS_COUNTRY'
-              value: 'SK'
-            }
-            {
               name: 'LAWS_DB_BACKEND'
               value: 'postgres'
             }

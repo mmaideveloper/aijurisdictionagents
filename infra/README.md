@@ -151,8 +151,10 @@ The Bicep deployment provisions or reuses:
 
 - Azure Database for PostgreSQL Flexible Server (`AZURE_POSTGRES_SERVER_NAME`, default `db-juris-dev`)
 - PostgreSQL database (`AZURE_POSTGRES_DATABASE_NAME`, default `aijurisdiction`)
+- PostgreSQL database for the Slovak laws corpus (`AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, default `laws_sk`)
 - firewall rule for Azure services
 - `azure.extensions=vector`
+- Private Azure Container App for the laws collector (`AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, default `laws-collector`)
 
 Existing-resource behavior:
 
@@ -441,6 +443,24 @@ Run from repository root:
 ```
 
 The script builds the laws collector image in ACR using `src/services/laws_collector/Dockerfile` and deploys the Container App with the image tag you provide.
+
+GitHub Actions workflow:
+
+- Workflow file: `.github/workflows/laws_collector_build_deploy.yml`
+- Push to `main` for laws collector changes: runs `tests/test_laws_collector.py`, validates the Docker image build, and deploys to the `dev` GitHub Environment
+- Pull requests: run tests and Docker build only
+- Manual run: supports `deploy=true|false`, custom GitHub Environment, and optional image tag override
+
+Required GitHub Environment variables/secrets for deployment:
+
+- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`
+- Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`
+- Optional variables: `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
+
+Recommended GitHub Environment values:
+
+- `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME=laws-collector`
+- `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
 
 
 ## Deploy document processor ACA job
