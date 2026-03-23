@@ -15,6 +15,71 @@ client = TestClient(app)
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 
 
+def test_planned_document_tasks_keep_user_intent_order() -> None:
+    from app.chat.intent_policy_service import planned_document_tasks
+
+    tasks = planned_document_tasks(
+        "Recreate the uploaded document based on new law and send me summary from document."
+    )
+
+    assert [task.task_id for task in tasks] == [
+        "review_uploaded_document",
+        "update_based_on_current_law",
+        "prepare_summary",
+    ]
+
+
+def test_document_policy_plan_keeps_policy_order_for_future_extension() -> None:
+    from app.chat.intent_policy_service import build_document_policy_plan
+
+    plan = build_document_policy_plan(
+        "Please recreate the uploaded document under current law and then summarize it."
+    )
+
+    assert [policy.policy_id for policy in plan.ordered_policies] == [
+        "document_modernization",
+        "document_summary",
+    ]
+    assert [task.task_id for task in plan.ordered_tasks] == [
+        "review_uploaded_document",
+        "update_based_on_current_law",
+        "prepare_summary",
+    ]
+
+
+def test_document_task_plan_note_describes_multi_task_execution_order() -> None:
+    from app.chat.intent_policy_service import build_document_task_plan_note
+
+    note = build_document_task_plan_note(
+        query="Fix uploaded document based on current laws and send me summary from document.",
+        has_processed_documents=True,
+    )
+
+    assert "DOCUMENT TASK PLAN MODE" in note
+    assert "Use a single policy-driven legal agent response." in note
+    assert "Execute the requested document tasks in the same order as the user's intent." in note
+    assert "Active policies in user-intent order:" in note
+    assert "1. document_modernization" in note
+    assert "2. document_summary" in note
+    assert "1. review_uploaded_document" in note
+    assert "2. update_based_on_current_law" in note
+    assert "3. prepare_summary" in note
+    assert "summarize the updated result" in note
+
+
+def test_document_task_plan_note_defers_summary_output_until_documents_are_processed() -> None:
+    from app.chat.intent_policy_service import build_document_task_plan_note
+
+    note = build_document_task_plan_note(
+        query="Send me summary from uploaded document.",
+        has_processed_documents=False,
+    )
+
+    assert "document_summary" in note
+    assert "defer content-specific output until processed" in note
+    assert "Start with a plain-language summary" not in note
+
+
 def test_create_session_and_messages_roundtrip() -> None:
     session_response = client.post(
         "/v1/chat/sessions",

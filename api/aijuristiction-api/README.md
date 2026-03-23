@@ -59,6 +59,39 @@ Document processing mode:
 - `DOCUMENT_PROCESSOR=azure`: uploads stay pending until the Azure Container Apps document-processor job runs.
 - Recommended deployed value: `DOCUMENT_PROCESSOR=azure`
 
+### Policy-driven multi-intent document task planning
+
+The chat reply path now uses a single legal agent with a reusable policy layer for uploaded-document intents. Each matched policy contributes ordered tasks and communication rules before the legal agent is prompted.
+
+Implementation note: the policy logic now lives in a dedicated chat service module so `app/chat/api.py` can stay focused on endpoint mapping and request/response handling.
+
+Examples:
+
+- `Fix uploaded document based on current law and send me summary from document`
+- `Analyze uploaded agreement, rebuild outdated clauses, and summarize the result`
+
+When the same message asks for multiple document actions, the API keeps the user's intent order and instructs the model to execute the tasks in sequence, for example:
+
+1. review uploaded document
+2. update/rebuild if current law requires it
+3. prepare summary
+
+Current built-in policies:
+
+- `document_analysis`
+- `document_modernization`
+- `document_summary`
+
+The summary step is instructed to describe the updated result when both update + summary are requested together. Future policies can add their own tasks/guidance while still using the same single-agent flow.
+
+If summary-like output is requested before uploaded documents are processed, the policy note tells the agent to defer content-specific summary output until processed documents are available.
+
+Minimal runnable example:
+
+```bash
+python examples/document_task_plan_demo.py
+```
+
 When using API key auth, leave `AZURE_OPENAI_AD_TOKEN` unset instead of setting it to an empty string. Likewise, leave `AZURE_OPENAI_API_KEY` unset when using Entra ID auth. The shared Azure Foundry loader strips blank auth values, but direct SDK smoke scripts can fail with an invalid `Authorization: Bearer ` header when an empty token variable is present.
 
 Optional explicit override:
