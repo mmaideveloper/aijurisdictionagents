@@ -28,7 +28,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' e
 }
 
 resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(acr.id, managedIdentity.id, 'AcrPull', containerAppName)
+  name: guid(acr.id, managedIdentity.id, 'AcrPull')
   scope: acr
   properties: {
     principalId: managedIdentity.properties.principalId

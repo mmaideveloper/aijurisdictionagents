@@ -168,6 +168,7 @@ Existing-resource behavior:
 
 - If a named resource already exists in the target resource group, deployment reuses it instead of creating it again.
 - The deploy script requires existing named resources to already be in the requested location. If a resource with the same name exists in a different region, deployment fails with a location mismatch instead of silently switching regions.
+- Shared RBAC assignments for the user-assigned managed identity are intentionally keyed only by `scope + principal + role`. This keeps `AcrPull` and `Storage Blob Data Contributor` idempotent across `infra_deploy`, laws collector, frontend, and document processor workflows.
 
 Parameter resolution priority in `deploy_api.ps1`:
 
