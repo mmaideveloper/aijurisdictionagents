@@ -206,6 +206,8 @@ Add these to `.env` when you start wiring the service into real runs:
 - `LAWS_DB_LOCAL=./databases/laws-collector/sk_laws.sqlite3`
 - `LAWS_STORAGE_LOCAL=./storage/laws/sk`
 - `LAWS_DELTA_POLL_HOURS=3`
+- `LAWS_INITIAL_IMPORT_FROM=2025-01-01`
+- `LAWS_HISTORICAL_IMPORT_FROM=1946-01-01`
 
 Future cloud settings:
 
@@ -278,3 +280,23 @@ Deployment assets for a dedicated Azure Container App named `laws-collector` are
 - container image definition: `src/services/laws_collector/Dockerfile`
 
 The deploy script builds the image in ACR and deploys it to Azure Container Apps with PostgreSQL env configuration.
+
+
+## SlovLex import order for Slovakia
+
+The collector now plans Slovakia imports in two explicit windows:
+
+1. `2025-01-01` through the current day.
+2. `1946-01-01` through `2024-12-31`, but only after the first window is complete.
+
+The country-specific database naming stays aligned with the existing provisioning flow:
+
+- SQLite default: `./databases/laws-collector/sk_laws.sqlite3`
+- PostgreSQL database name: `laws_sk`
+
+Preview the planned windows with:
+
+```bash
+PYTHONPATH=src python -m services.laws_collector --plan-import
+PYTHONPATH=src python -m services.laws_collector --plan-import --initial-window-complete
+```

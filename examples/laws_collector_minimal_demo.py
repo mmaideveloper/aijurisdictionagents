@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 import tempfile
 
-from services.laws_collector import LawsCollectorConfig, SlovakLawsCollectorService, SqliteLawStore
+from services.laws_collector import LawsCollectorConfig, SlovLexImportPlanner, SlovakLawsCollectorService, SqliteLawStore
 from services.laws_collector.source_fixtures import baseline_snapshots, delta_snapshots
 
 
@@ -18,10 +19,13 @@ def main() -> None:
             storage_local="",
             storage_cloud="",
             delta_poll_hours=3,
+            initial_import_from=date(2025, 1, 1),
+            historical_import_from=date(1946, 1, 1),
         )
         store = SqliteLawStore.from_config(config)
         store.initialize()
         service = SlovakLawsCollectorService(config=config, store=store)
+        planner = SlovLexImportPlanner(config=config)
 
         baseline = service.sync(baseline_snapshots())
         delta = service.sync(delta_snapshots())
@@ -29,6 +33,8 @@ def main() -> None:
         counts = store.get_counts()
         overview = store.list_document_overview()
 
+        print("Country DB name:", config.country_db_name)
+        print("Import plan:", planner.build_plan(initial_window_complete=False))
         print("Baseline sync:", baseline)
         print("Delta sync:", delta)
         print("Planned updates:", plan.items_with_updates)
