@@ -60,6 +60,7 @@ jobs:
       AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME: ${{ vars.AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME }}
+      AZURE_LAWS_COLLECTOR_CRON_EXPRESSION: ${{ vars.AZURE_LAWS_COLLECTOR_CRON_EXPRESSION }}
       AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
     steps:
       - uses: actions/checkout@v4
@@ -144,10 +145,12 @@ jobs:
       - name: Resolve laws collector settings
         id: laws
         run: |
-          laws_container_app="${AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME:-laws-collector}"
+          laws_job_name="${AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME:-laws-collector}"
+          laws_cron_expression="${AZURE_LAWS_COLLECTOR_CRON_EXPRESSION:-0 0 * * * *}"
           laws_postgres_database="${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}"
 
-          echo "laws_container_app_name=$laws_container_app" >> "$GITHUB_OUTPUT"
+          echo "laws_job_name=$laws_job_name" >> "$GITHUB_OUTPUT"
+          echo "laws_cron_expression=$laws_cron_expression" >> "$GITHUB_OUTPUT"
           echo "laws_postgres_database_name=$laws_postgres_database" >> "$GITHUB_OUTPUT"
 
       - name: Resolve document processor settings
@@ -187,7 +190,7 @@ jobs:
           app_location="$(get_location "$AZURE_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
           frontend_location="$(get_location "$AZURE_FRONTEND_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
           document_processor_location="$(get_location "${{ steps.documentprocessor.outputs.document_processor_job_name }}" "Microsoft.App/jobs")"
-          laws_collector_location="$(get_location "${{ steps.laws.outputs.laws_container_app_name }}" "Microsoft.App/containerApps")"
+          laws_collector_location="$(get_location "${{ steps.laws.outputs.laws_job_name }}" "Microsoft.App/jobs")"
 
           create_log_analytics_workspace=true
           create_managed_environment=true
@@ -199,7 +202,7 @@ jobs:
           create_container_app=true
           create_frontend_container_app=true
           create_document_processor_job=true
-          create_laws_collector_container_app=true
+          create_laws_collector_job=true
 
           [ -n "$log_location" ] && create_log_analytics_workspace=false
           [ -n "$env_location" ] && create_managed_environment=false
@@ -211,7 +214,7 @@ jobs:
           [ -n "$app_location" ] && create_container_app=false
           [ -n "$frontend_location" ] && create_frontend_container_app=false
           [ -n "$document_processor_location" ] && create_document_processor_job=false
-          [ -n "$laws_collector_location" ] && create_laws_collector_container_app=false
+          [ -n "$laws_collector_location" ] && create_laws_collector_job=false
 
           resolved_location="$AZURE_LOCATION"
 
@@ -226,7 +229,7 @@ jobs:
           echo "create_container_app=$create_container_app" >> "$GITHUB_OUTPUT"
           echo "create_frontend_container_app=$create_frontend_container_app" >> "$GITHUB_OUTPUT"
           echo "create_document_processor_job=$create_document_processor_job" >> "$GITHUB_OUTPUT"
-          echo "create_laws_collector_container_app=$create_laws_collector_container_app" >> "$GITHUB_OUTPUT"
+          echo "create_laws_collector_job=$create_laws_collector_job" >> "$GITHUB_OUTPUT"
 
       - name: Deploy infrastructure from Bicep
         run: |
@@ -240,7 +243,9 @@ jobs:
               containerAppName="$AZURE_CONTAINER_APP_NAME" \
               frontendContainerAppName="$AZURE_FRONTEND_CONTAINER_APP_NAME" \
               documentProcessorJobName="${{ steps.documentprocessor.outputs.document_processor_job_name }}" \
-              lawsCollectorContainerAppName="${{ steps.laws.outputs.laws_container_app_name }}" \
+              documentProcessorCronExpression="${{ steps.documentprocessor.outputs.document_processor_cron_expression }}" \
+              lawsCollectorJobName="${{ steps.laws.outputs.laws_job_name }}" \
+              lawsCollectorCronExpression="${{ steps.laws.outputs.laws_cron_expression }}" \
               postgresServerName="$AZURE_POSTGRES_SERVER_NAME" \
               postgresDatabaseName="$AZURE_POSTGRES_DATABASE_NAME" \
               lawsPostgresDatabaseName="${{ steps.laws.outputs.laws_postgres_database_name }}" \
@@ -271,7 +276,7 @@ jobs:
               createContainerApp="${{ steps.existing.outputs.create_container_app }}" \
               createFrontendContainerApp="${{ steps.existing.outputs.create_frontend_container_app }}" \
               createDocumentProcessorJob="${{ steps.existing.outputs.create_document_processor_job }}" \
-              createLawsCollectorContainerApp="${{ steps.existing.outputs.create_laws_collector_container_app }}"
+              createLawsCollectorJob="${{ steps.existing.outputs.create_laws_collector_job }}"
 
       - name: Summarize ACA infrastructure
         run: |
@@ -293,7 +298,7 @@ jobs:
           if [ "${{ steps.existing.outputs.create_document_processor_job }}" = "true" ]; then
             document_processor_result="created"
           fi
-          if [ "${{ steps.existing.outputs.create_laws_collector_container_app }}" = "true" ]; then
+          if [ "${{ steps.existing.outputs.create_laws_collector_job }}" = "true" ]; then
             laws_result="created"
           fi
 
@@ -326,5 +331,5 @@ jobs:
             echo "| API container app | $AZURE_CONTAINER_APP_NAME | $api_result | $api_endpoint |"
             echo "| Frontend container app | $AZURE_FRONTEND_CONTAINER_APP_NAME | $frontend_result | $frontend_endpoint |"
             echo "| Document processor ACA job | ${{ steps.documentprocessor.outputs.document_processor_job_name }} | $document_processor_result | schedule: ${{ steps.documentprocessor.outputs.document_processor_cron_expression }} |"
-            echo "| Laws collector container app | ${{ steps.laws.outputs.laws_container_app_name }} | $laws_result | internal ingress |"
+            echo "| Laws collector ACA job | ${{ steps.laws.outputs.laws_job_name }} | $laws_result | schedule: ${{ steps.laws.outputs.laws_cron_expression }} |"
           } >> "$GITHUB_STEP_SUMMARY"

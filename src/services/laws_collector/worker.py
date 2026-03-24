@@ -4,10 +4,9 @@ from dataclasses import dataclass
 import os
 import time
 
+from .country_registry import get_country_laws_collector_definition
 from .config import LawsCollectorConfig
 from .postgres_store import PostgresLawStore
-from .service import SlovakLawsCollectorService
-from .source_fixtures import baseline_snapshots, delta_snapshots
 from .sqlite_store import SqliteLawStore
 
 
@@ -36,19 +35,30 @@ class WorkerOptions:
 
 def run_worker() -> None:
     config = LawsCollectorConfig.from_env()
+    collector_definition = get_country_laws_collector_definition(config.country_code)
     store = SqliteLawStore.from_config(config) if config.db_backend == "sqlite" else PostgresLawStore.from_config(config)
     store.initialize()
-    service = SlovakLawsCollectorService(config=config, store=store)
+    service = collector_definition.create_service(config=config, store=store)
 
     options = WorkerOptions.from_env()
     cycle = 0
 
     while True:
         cycle += 1
-        snapshots = baseline_snapshots() if options.fixture == "baseline" else delta_snapshots()
+        snapshots = (
+            collector_definition.baseline_snapshots()
+            if options.fixture == "baseline"
+            else collector_definition.delta_snapshots()
+        )
         summary = service.sync(snapshots)
 
-        print(f"[laws-collector] cycle={cycle} fixture={options.fixture} processed={summary.processed} new_documents={summary.new_documents} new_versions={summary.new_versions} metadata_updates={summary.metadata_updates} skipped={summary.skipped}")
+        print(
+            f"[laws-collector] collector={collector_definition.collector_name} "
+            f"country={config.country_code} cycle={cycle} fixture={options.fixture} "
+            f"processed={summary.processed} new_documents={summary.new_documents} "
+            f"new_versions={summary.new_versions} metadata_updates={summary.metadata_updates} "
+            f"skipped={summary.skipped}"
+        )
 
         if options.max_cycles > 0 and cycle >= options.max_cycles:
             print("[laws-collector] worker stopped after max cycles")

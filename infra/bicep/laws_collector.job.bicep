@@ -1,6 +1,6 @@
 param location string = resourceGroup().location
 param managedEnvironmentName string
-param containerAppName string = 'laws-collector'
+param jobName string = 'laws-collector'
 param acrName string
 param managedIdentityName string
 param image string
@@ -9,6 +9,11 @@ param postgresDatabaseName string = 'laws_sk'
 param postgresAdminUsername string
 @secure()
 param postgresAdminPassword string
+param cronExpression string = '0 0 * * * *'
+param replicaTimeout int = 3600
+param replicaRetryLimit int = 1
+param parallelism int = 1
+param completions int = 1
 param tags object = {}
 
 resource managedEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
@@ -40,8 +45,8 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
-  name: containerAppName
+resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
+  name: jobName
   location: location
   tags: tags
   identity: {
@@ -51,14 +56,16 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     }
   }
   properties: {
-    managedEnvironmentId: managedEnvironment.id
+    environmentId: managedEnvironment.id
     configuration: {
-      activeRevisionsMode: 'Single'
-      ingress: {
-        external: false
-        targetPort: 8080
-        transport: 'auto'
+      triggerType: 'Schedule'
+      scheduleTriggerConfig: {
+        cronExpression: cronExpression
+        parallelism: parallelism
+        replicaCompletionCount: completions
       }
+      replicaTimeout: replicaTimeout
+      replicaRetryLimit: replicaRetryLimit
       registries: [
         {
           server: acr.properties.loginServer
@@ -83,6 +90,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           }
           env: [
             {
+              name: 'LAWS_COUNTRY'
+              value: 'SK'
+            }
+            {
               name: 'LAWS_DB_BACKEND'
               value: 'postgres'
             }
@@ -91,20 +102,16 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               secretRef: 'laws-db-cloud'
             }
             {
-              name: 'LAWS_WORKER_POLL_SECONDS'
-              value: '3600'
-            }
-            {
               name: 'LAWS_WORKER_FIXTURE'
               value: 'baseline'
+            }
+            {
+              name: 'LAWS_WORKER_MAX_CYCLES'
+              value: '1'
             }
           ]
         }
       ]
-      scale: {
-        minReplicas: 1
-        maxReplicas: 1
-      }
     }
   }
   dependsOn: [
@@ -112,4 +119,4 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   ]
 }
 
-output containerAppName string = containerApp.name
+output jobName string = lawsCollectorJob.name
