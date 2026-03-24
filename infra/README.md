@@ -26,6 +26,14 @@ This keeps deployment simple while matching the existing API container workflow.
 - User-assigned Managed Identity with `Storage Blob Data Contributor` on Storage Account
 - Azure Container App (public ingress on port `8080`)
 
+ACA resources created by repository deployments:
+
+- Managed Environment: `AZURE_CONTAINERAPPS_ENVIRONMENT`
+- API Container App: `AZURE_CONTAINER_APP_NAME`
+- Frontend Container App: `AZURE_FRONTEND_CONTAINER_APP_NAME`
+- Laws Collector Container App: `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
+- Document Processor ACA Job: `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`
+
 ## Prerequisites
 
 - Azure subscription with permission to create resources
@@ -264,7 +272,7 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_OPENAI_EMBEDDINGS_MODEL` = `text-embedding-3-large` (or your embedding deployment name)
 - `AZURE_OPENAI_API_VERSION` = `2024-12-01-preview`
 - GitHub secret `AZURE_OPENAI_API_KEY` = `<AZURE_OPENAI_KEY>`
-- `DOCUMENT_PROCESSOR` = `azure` for deployed environments so the API leaves uploads pending for the ACA document-processor job
+- `DOCUMENT_PROCESSOR_OPTION` = `azure` for deployed environments so the API leaves uploads pending for the ACA document-processor job
 - `CORS_ALLOW_ORIGINS` = comma-separated deployed browser origins allowed to call the API (optional)
   - Example: `https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io`
   - Do not set this for native Android/iOS-only clients unless you also have a browser-hosted build.
@@ -472,8 +480,9 @@ A dedicated deployment script and Bicep template are available for the document 
 
 The deployment builds `src/services/document_processor/Dockerfile`, publishes the image to ACR, and creates or updates a scheduled Azure Container Apps Job that processes uploaded case documents into text/vector records.
 
-Use `DOCUMENT_PROCESSOR=azure` on the deployed API Container App together with this ACA job.
-For local development only, you can set `DOCUMENT_PROCESSOR=local` so uploads are processed immediately inside the API process.
+Use `DOCUMENT_PROCESSOR_OPTION=azure` on the deployed API Container App together with this ACA job.
+For local development only, you can set `DOCUMENT_PROCESSOR_OPTION=local` so uploads are processed immediately inside the API process.
+All Azure deployment workflows now append an `ACA deployment summary` table to the GitHub Actions run summary so you can see which ACA resources were created, reused, or updated without scanning the raw logs.
 
 ```powershell
 ./infra/scripts/deploy_document_processor.ps1 \
@@ -502,11 +511,10 @@ GitHub Actions workflow:
 
 Required GitHub Environment variables/secrets for deployment:
 
-- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_DATABASE_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`, `AZURE_STORAGE_ACCOUNT_NAME`, `LLM_PROVIDER`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, `DOCUMENT_PROCESSOR`
+- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_DATABASE_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`, `AZURE_STORAGE_ACCOUNT_NAME`, `LLM_PROVIDER`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`
 - Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`, `AZURE_OPENAI_API_KEY`
 - Optional variables: `AZURE_STORAGE_CONTAINER_NAME`, `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION`
 
 Recommended GitHub Environment values:
 
-- `DOCUMENT_PROCESSOR=azure`
 - `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION=0 */15 * * * *` unless you need a different schedule

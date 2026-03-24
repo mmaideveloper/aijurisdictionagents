@@ -11,8 +11,8 @@ Current extraction behavior:
 
 Current runtime modes:
 
-- `DOCUMENT_PROCESSOR=local`: the API processes uploads immediately inside the API request after the file is stored.
-- `DOCUMENT_PROCESSOR=azure`: the API leaves uploads pending and this ACA scheduled job processes them asynchronously.
+- `DOCUMENT_PROCESSOR_OPTION=local`: the API processes uploads immediately inside the API request after the file is stored.
+- `DOCUMENT_PROCESSOR_OPTION=azure`: the API leaves uploads pending and this ACA scheduled job processes them asynchronously.
 
 Embedding model env vars:
 

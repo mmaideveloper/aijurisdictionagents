@@ -27,7 +27,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _document_processor_mode() -> str:
-    value = os.getenv("DOCUMENT_PROCESSOR", "local").strip().lower()
+    value = os.getenv(
+        "DOCUMENT_PROCESSOR_OPTION",
+        os.getenv("DOCUMENT_PROCESSOR", "local"),
+    ).strip().lower()
     if value in {"local", "azure"}:
         return value
     return "local"

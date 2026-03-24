@@ -248,3 +248,22 @@ jobs:
           fi
           az containerapp logs show --name "$app_name" --resource-group "$rg" --type system --tail 200 || true
           exit 1
+
+      - name: Summarize ACA deployment
+        run: |
+          app_name="${AZURE_FRONTEND_CONTAINER_APP_NAME}"
+          rg="${AZURE_RESOURCE_GROUP}"
+          fqdn="$(az containerapp show --name "$app_name" --resource-group "$rg" --query "properties.configuration.ingress.fqdn" --output tsv)"
+          endpoint="n/a"
+          if [ -n "$fqdn" ]; then
+            endpoint="https://$fqdn"
+          fi
+
+          {
+            echo "## ACA deployment summary"
+            echo ""
+            echo "| Resource | Name | Result | Endpoint |"
+            echo "| --- | --- | --- | --- |"
+            echo "| Managed environment | $AZURE_CONTAINERAPPS_ENVIRONMENT | reused | n/a |"
+            echo "| Frontend container app | $app_name | updated | $endpoint |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -90,7 +90,7 @@ class RecordingLLMClient:
 
 def test_case_document_upload_limit_and_processing_context(monkeypatch, tmp_path) -> None:
     _configure(monkeypatch, tmp_path)
-    monkeypatch.setenv("DOCUMENT_PROCESSOR", "azure")
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "azure")
     client = TestClient(app)
     user_id = _create_user(client, "+421900222111", "docs@example.com")
     case_id = client.post(
@@ -143,7 +143,7 @@ def test_case_document_upload_limit_and_processing_context(monkeypatch, tmp_path
 
 def test_case_document_upload_processes_immediately_in_local_mode(monkeypatch, tmp_path) -> None:
     _configure(monkeypatch, tmp_path)
-    monkeypatch.setenv("DOCUMENT_PROCESSOR", "local")
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "local")
     client = TestClient(app)
     user_id = _create_user(client, "+421900222112", "docs-local@example.com")
     case_id = client.post(
@@ -258,7 +258,7 @@ def test_chunk_retrieval_adds_relevant_document_excerpt_to_prompt_context(monkey
 
 def test_case_document_debug_reports_vectors_and_selected_prompt_chunks(monkeypatch, tmp_path) -> None:
     _configure(monkeypatch, tmp_path)
-    monkeypatch.setenv("DOCUMENT_PROCESSOR", "local")
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "local")
     client = TestClient(app)
     user_id = _create_user(client, "+421900222114", "docs-debug@example.com")
     case_id = client.post(
@@ -306,7 +306,7 @@ def test_uploaded_pdf_is_stored_vectorized_and_used_for_vector_prompt_context(
     tmp_path,
 ) -> None:
     _configure(monkeypatch, tmp_path)
-    monkeypatch.setenv("DOCUMENT_PROCESSOR", "local")
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "local")
     monkeypatch.setenv("LLM_PROVIDER", "mock")
 
     from app.chat import api as chat_api

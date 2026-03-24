@@ -90,7 +90,7 @@ jobs:
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
       CORS_ALLOW_ORIGINS: ${{ vars.CORS_ALLOW_ORIGINS }}
-      DOCUMENT_PROCESSOR: ${{ vars.DOCUMENT_PROCESSOR }}
+      DOCUMENT_PROCESSOR_OPTION: ${{ vars.DOCUMENT_PROCESSOR_OPTION }}
     steps:
       - uses: actions/checkout@v5
 
@@ -307,7 +307,7 @@ jobs:
             STORAGE_OPTION=azure
             STORE_LOCAL=/tmp/storage
             LLM_PROVIDER=${LLM_PROVIDER:-azurefoundry}
-            DOCUMENT_PROCESSOR=${DOCUMENT_PROCESSOR:-azure}
+            DOCUMENT_PROCESSOR_OPTION=${DOCUMENT_PROCESSOR_OPTION:-azure}
             OTEL_SERVICE_NAME=aijuristiction-api
           )
           if [ -n "${AZURE_OPENAI_ENDPOINT:-}" ]; then
@@ -377,6 +377,28 @@ jobs:
           PY
           )"
           python databases/scripts/apply_api_db_schema.py
+
+      - name: Summarize ACA deployment
+        shell: bash
+        run: |
+          fqdn="$(az containerapp show \
+            --name "$AZURE_CONTAINER_APP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)"
+          endpoint="n/a"
+          if [ -n "$fqdn" ]; then
+            endpoint="https://$fqdn"
+          fi
+
+          {
+            echo "## ACA deployment summary"
+            echo ""
+            echo "| Resource | Name | Result | Endpoint |"
+            echo "| --- | --- | --- | --- |"
+            echo "| Managed environment | $AZURE_CONTAINERAPPS_ENVIRONMENT | reused | n/a |"
+            echo "| API container app | $AZURE_CONTAINER_APP_NAME | updated | $endpoint |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove GitHub runner firewall rule
         if: always()

@@ -110,7 +110,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_MANAGED_IDENTITY_NAME` | Managed identity name |
 | `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional laws collector Azure Container App name, default `laws-collector` |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk` |
-| `DOCUMENT_PROCESSOR` | API document-processing mode: use `azure` in deployed environments, `local` only for local/dev API runs without the ACA job |
+| `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode: use `azure` in deployed environments, `local` only for local/dev API runs without the ACA job |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
 | `AZURE_POSTGRES_VERSION` | Optional PostgreSQL version |
@@ -144,7 +144,6 @@ These are used by the document processor deployment workflow:
 
 | Variable | Purpose |
 | --- | --- |
-| `DOCUMENT_PROCESSOR` | Keep this as `azure` in deployed GitHub Environments so uploaded documents are processed by the ACA scheduled job |
 | `LLM_PROVIDER` | Runtime provider for the job, keep `azurefoundry` in Azure deployments |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used for embeddings |
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Embedding deployment name used by the job, recommended `text-embedding-3-large` |
@@ -246,8 +245,8 @@ Typical order:
 
 Recommended deployed value:
 
-- `DOCUMENT_PROCESSOR=azure` for `dev`, `test`, and `prod`
-- Keep `DOCUMENT_PROCESSOR=local` only in local workstation `.env` files when you want the API process to extract documents immediately without waiting for the ACA job
+- `DOCUMENT_PROCESSOR_OPTION=azure` for `dev`, `test`, and `prod`
+- Keep `DOCUMENT_PROCESSOR_OPTION=local` only in local workstation `.env` files when you want the API process to extract documents immediately without waiting for the ACA job
 
 ## 12. Current Workflow Defaults
 

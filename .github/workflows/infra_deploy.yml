@@ -232,3 +232,39 @@ jobs:
               createPostgresServer="${{ steps.existing.outputs.create_postgres_server }}" \
               createContainerApp="${{ steps.existing.outputs.create_container_app }}" \
               createLawsCollectorContainerApp="${{ steps.existing.outputs.create_laws_collector_container_app }}"
+
+      - name: Summarize ACA infrastructure
+        run: |
+          api_result="reused"
+          laws_result="reused"
+          env_result="reused"
+
+          if [ "${{ steps.existing.outputs.create_managed_environment }}" = "true" ]; then
+            env_result="created"
+          fi
+          if [ "${{ steps.existing.outputs.create_container_app }}" = "true" ]; then
+            api_result="created"
+          fi
+          if [ "${{ steps.existing.outputs.create_laws_collector_container_app }}" = "true" ]; then
+            laws_result="created"
+          fi
+
+          api_fqdn="$(az containerapp show \
+            --name "$AZURE_CONTAINER_APP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)"
+          api_endpoint="n/a"
+          if [ -n "$api_fqdn" ]; then
+            api_endpoint="https://$api_fqdn"
+          fi
+
+          {
+            echo "## ACA deployment summary"
+            echo ""
+            echo "| Resource | Name | Result | Endpoint |"
+            echo "| --- | --- | --- | --- |"
+            echo "| Managed environment | $AZURE_CONTAINERAPPS_ENVIRONMENT | $env_result | n/a |"
+            echo "| API container app | $AZURE_CONTAINER_APP_NAME | $api_result | $api_endpoint |"
+            echo "| Laws collector container app | ${{ steps.laws.outputs.laws_container_app_name }} | $laws_result | internal ingress |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -61,6 +61,33 @@ function Require-Value {
     }
 }
 
+function Test-ResourceExistsInGroup {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceGroupName,
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceName,
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceType
+    )
+
+    az resource show `
+        --resource-group $ResourceGroupName `
+        --name $ResourceName `
+        --resource-type $ResourceType `
+        --query id `
+        --output tsv 2>$null | Out-Null
+
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Write-WorkflowSummary {
+    param([Parameter(Mandatory = $true)][string[]]$Lines)
+    if ([string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) { return }
+    (($Lines -join [Environment]::NewLine) + [Environment]::NewLine + [Environment]::NewLine) |
+        Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+}
+
 Assert-ToolInstalled -ToolName "az"
 
 $envSubscriptionId = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_SUBSCRIPTION_ID" }
@@ -127,6 +154,11 @@ Require-Value -Name "AzureOpenAIApiKey" -Value $AzureOpenAIApiKey
 az account set --subscription $SubscriptionId | Out-Null
 az group create --name $ResourceGroupName --location $Location | Out-Null
 
+$jobExistedBeforeDeployment = Test-ResourceExistsInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $JobName `
+    -ResourceType "Microsoft.App/jobs"
+
 $imageRepository = "document-processor"
 $image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
 
@@ -156,4 +188,18 @@ az deployment group create `
       azureOpenAIApiKey=$AzureOpenAIApiKey `
       cronExpression=$CronExpression | Out-Null
 
+$jobDisposition = if ($jobExistedBeforeDeployment) { "updated" } else { "created" }
+
 Write-Host "Document processor deployment complete."
+Write-Host "ACA resources:"
+Write-Host " - Managed environment (reused): $ContainerAppEnvironmentName"
+Write-Host " - Document processor ACA job ($jobDisposition): $JobName"
+
+Write-WorkflowSummary -Lines @(
+    "## ACA deployment summary",
+    "",
+    "| Resource | Name | Result | Endpoint |",
+    "| --- | --- | --- | --- |",
+    "| Managed environment | $ContainerAppEnvironmentName | reused | n/a |",
+    "| Document processor ACA job | $JobName | $jobDisposition | schedule: $CronExpression |"
+)

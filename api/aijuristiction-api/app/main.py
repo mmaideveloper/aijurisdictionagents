@@ -37,7 +37,13 @@ API_VERSION = get_api_version()
 DEFAULT_API_LLM_PROVIDER = "azurefoundry"
 os.environ.setdefault("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER)
 EFFECTIVE_LLM_PROVIDER = os.getenv("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER).strip().lower()
-DOCUMENT_PROCESSOR_MODE = os.getenv("DOCUMENT_PROCESSOR", "local").strip().lower() or "local"
+DOCUMENT_PROCESSOR_MODE = (
+    os.getenv(
+        "DOCUMENT_PROCESSOR_OPTION",
+        os.getenv("DOCUMENT_PROCESSOR", "local"),
+    ).strip().lower()
+    or "local"
+)
 LOG_LEVEL = configure_logging()
 TELEMETRY_MODE = configure_telemetry(
     service_name="aijuristiction-api",
