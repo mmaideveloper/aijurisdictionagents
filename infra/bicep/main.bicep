@@ -1,6 +1,7 @@
 param location string = resourceGroup().location
 param environmentName string
 param containerAppName string
+param frontendContainerAppName string
 param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'
@@ -26,6 +27,7 @@ param createStorageAccount bool = true
 param createManagedIdentity bool = true
 param createApplicationInsights bool = true
 param createContainerApp bool = true
+param createFrontendContainerApp bool = true
 param createLawsCollectorContainerApp bool = true
 param createPostgresServer bool = true
 param tags object = {}
@@ -403,6 +405,28 @@ resource containerAppExisting 'Microsoft.App/containerApps@2024-03-01' existing 
   name: containerAppName
 }
 
+module frontendContainerApp 'frontend.containerapp.bicep' = if (createFrontendContainerApp) {
+  name: 'frontendContainerApp'
+  params: {
+    location: location
+    managedEnvironmentName: environmentName
+    containerAppName: frontendContainerAppName
+    acrName: acrName
+    managedIdentityName: managedIdentityName
+    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    tags: tags
+  }
+  dependsOn: [
+    managedEnvironment
+    acr
+    managedIdentity
+  ]
+}
+
+resource frontendContainerAppExisting 'Microsoft.App/containerApps@2024-03-01' existing = if (!createFrontendContainerApp) {
+  name: frontendContainerAppName
+}
+
 module lawsCollectorContainerApp 'laws_collector.containerapp.bicep' = if (createLawsCollectorContainerApp) {
   name: 'lawsCollectorContainerApp'
   params: {
@@ -447,6 +471,15 @@ output containerAppFqdn string = createContainerApp
 output containerAppUrl string = createContainerApp
   ? 'https://${containerApp.properties.configuration.ingress.fqdn}'
   : 'https://${containerAppExisting.properties.configuration.ingress.fqdn}'
+output frontendContainerAppName string = createFrontendContainerApp
+  ? frontendContainerApp.outputs.containerAppName
+  : frontendContainerAppExisting.name
+output frontendContainerAppFqdn string = createFrontendContainerApp
+  ? frontendContainerApp.outputs.containerAppFqdn
+  : frontendContainerAppExisting.properties.configuration.ingress.fqdn
+output frontendContainerAppUrl string = createFrontendContainerApp
+  ? frontendContainerApp.outputs.containerAppUrl
+  : 'https://${frontendContainerAppExisting.properties.configuration.ingress.fqdn}'
 output containerAppsEnvironmentName string = createManagedEnvironment
   ? managedEnvironment.name
   : managedEnvironmentExisting.name

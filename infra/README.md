@@ -162,6 +162,7 @@ The Bicep deployment provisions or reuses:
 - PostgreSQL database for the Slovak laws corpus (`AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, default `laws_sk`)
 - firewall rule for Azure services
 - `azure.extensions=vector`
+- Public frontend Azure Container App (`AZURE_FRONTEND_CONTAINER_APP_NAME`)
 - Private Azure Container App for the laws collector (`AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, default `laws-collector`)
 
 Existing-resource behavior:
@@ -418,9 +419,14 @@ New frontend deployment assets:
 - `.github/workflows/web_build_deploy.yml`: frontend CI/CD workflow
 - `.github/workflows/infra_deploy.yml`: infrastructure provisioning workflow (Bicep)
 
-Required GitHub Environment variable for frontend deployment:
+Required GitHub Environment variables for frontend deployment:
 
 - `AZURE_FRONTEND_CONTAINER_APP_NAME`
+- `AZURE_LOCATION`
+- `AZURE_MANAGED_IDENTITY_NAME`
+
+`infra_deploy` now provisions or reuses the frontend Container App shell using `AZURE_FRONTEND_CONTAINER_APP_NAME`.
+`web_build_deploy` updates that app with the built frontend image and can also bootstrap it directly if the shell was not provisioned yet.
 
 For a repo-level checklist to create additional GitHub Environments such as `test`
 and `prod`, see `docs/GITHUB_ENVIRONMENTS.md`.

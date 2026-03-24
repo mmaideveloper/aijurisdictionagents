@@ -37,6 +37,7 @@ jobs:
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
       AZURE_CONTAINER_APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
+      AZURE_FRONTEND_CONTAINER_APP_NAME: ${{ vars.AZURE_FRONTEND_CONTAINER_APP_NAME }}
       AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
       AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
       AZURE_POSTGRES_DATABASE_NAME: ${{ vars.AZURE_POSTGRES_DATABASE_NAME }}
@@ -59,7 +60,7 @@ jobs:
       - name: Validate required environment variables
         run: |
           missing=0
-          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_LOCATION AZURE_CONTAINERAPPS_ENVIRONMENT AZURE_CONTAINER_APP_NAME AZURE_CONTAINER_REGISTRY AZURE_LOG_ANALYTICS_WORKSPACE_NAME AZURE_MANAGED_IDENTITY_NAME AZURE_POSTGRES_SERVER_NAME AZURE_POSTGRES_DATABASE_NAME AZURE_POSTGRES_ADMIN_USERNAME AZURE_POSTGRES_ADMIN_PASSWORD; do
+          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_LOCATION AZURE_CONTAINERAPPS_ENVIRONMENT AZURE_CONTAINER_APP_NAME AZURE_FRONTEND_CONTAINER_APP_NAME AZURE_CONTAINER_REGISTRY AZURE_LOG_ANALYTICS_WORKSPACE_NAME AZURE_MANAGED_IDENTITY_NAME AZURE_POSTGRES_SERVER_NAME AZURE_POSTGRES_DATABASE_NAME AZURE_POSTGRES_ADMIN_USERNAME AZURE_POSTGRES_ADMIN_PASSWORD; do
             if [ -z "${!key}" ]; then
               echo "Missing GitHub Environment variable: $key"
               missing=1
@@ -162,6 +163,7 @@ jobs:
           identity_location="$(get_location "$AZURE_MANAGED_IDENTITY_NAME" "Microsoft.ManagedIdentity/userAssignedIdentities")"
           postgres_location="$(get_location "$AZURE_POSTGRES_SERVER_NAME" "Microsoft.DBforPostgreSQL/flexibleServers")"
           app_location="$(get_location "$AZURE_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
+          frontend_location="$(get_location "$AZURE_FRONTEND_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
           laws_collector_location="$(get_location "${{ steps.laws.outputs.laws_container_app_name }}" "Microsoft.App/containerApps")"
 
           create_log_analytics_workspace=true
@@ -172,6 +174,7 @@ jobs:
           create_managed_identity=true
           create_postgres_server=true
           create_container_app=true
+          create_frontend_container_app=true
           create_laws_collector_container_app=true
 
           [ -n "$log_location" ] && create_log_analytics_workspace=false
@@ -182,6 +185,7 @@ jobs:
           [ -n "$identity_location" ] && create_managed_identity=false
           [ -n "$postgres_location" ] && create_postgres_server=false
           [ -n "$app_location" ] && create_container_app=false
+          [ -n "$frontend_location" ] && create_frontend_container_app=false
           [ -n "$laws_collector_location" ] && create_laws_collector_container_app=false
 
           resolved_location="$AZURE_LOCATION"
@@ -195,6 +199,7 @@ jobs:
           echo "create_managed_identity=$create_managed_identity" >> "$GITHUB_OUTPUT"
           echo "create_postgres_server=$create_postgres_server" >> "$GITHUB_OUTPUT"
           echo "create_container_app=$create_container_app" >> "$GITHUB_OUTPUT"
+          echo "create_frontend_container_app=$create_frontend_container_app" >> "$GITHUB_OUTPUT"
           echo "create_laws_collector_container_app=$create_laws_collector_container_app" >> "$GITHUB_OUTPUT"
 
       - name: Deploy infrastructure from Bicep
@@ -207,6 +212,7 @@ jobs:
               location="${{ steps.existing.outputs.resolved_location }}" \
               environmentName="$AZURE_CONTAINERAPPS_ENVIRONMENT" \
               containerAppName="$AZURE_CONTAINER_APP_NAME" \
+              frontendContainerAppName="$AZURE_FRONTEND_CONTAINER_APP_NAME" \
               lawsCollectorContainerAppName="${{ steps.laws.outputs.laws_container_app_name }}" \
               postgresServerName="$AZURE_POSTGRES_SERVER_NAME" \
               postgresDatabaseName="$AZURE_POSTGRES_DATABASE_NAME" \
@@ -231,11 +237,13 @@ jobs:
               createManagedIdentity="${{ steps.existing.outputs.create_managed_identity }}" \
               createPostgresServer="${{ steps.existing.outputs.create_postgres_server }}" \
               createContainerApp="${{ steps.existing.outputs.create_container_app }}" \
+              createFrontendContainerApp="${{ steps.existing.outputs.create_frontend_container_app }}" \
               createLawsCollectorContainerApp="${{ steps.existing.outputs.create_laws_collector_container_app }}"
 
       - name: Summarize ACA infrastructure
         run: |
           api_result="reused"
+          frontend_result="reused"
           laws_result="reused"
           env_result="reused"
 
@@ -244,6 +252,9 @@ jobs:
           fi
           if [ "${{ steps.existing.outputs.create_container_app }}" = "true" ]; then
             api_result="created"
+          fi
+          if [ "${{ steps.existing.outputs.create_frontend_container_app }}" = "true" ]; then
+            frontend_result="created"
           fi
           if [ "${{ steps.existing.outputs.create_laws_collector_container_app }}" = "true" ]; then
             laws_result="created"
@@ -259,6 +270,16 @@ jobs:
             api_endpoint="https://$api_fqdn"
           fi
 
+          frontend_fqdn="$(az containerapp show \
+            --name "$AZURE_FRONTEND_CONTAINER_APP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)"
+          frontend_endpoint="n/a"
+          if [ -n "$frontend_fqdn" ]; then
+            frontend_endpoint="https://$frontend_fqdn"
+          fi
+
           {
             echo "## ACA deployment summary"
             echo ""
@@ -266,5 +287,6 @@ jobs:
             echo "| --- | --- | --- | --- |"
             echo "| Managed environment | $AZURE_CONTAINERAPPS_ENVIRONMENT | $env_result | n/a |"
             echo "| API container app | $AZURE_CONTAINER_APP_NAME | $api_result | $api_endpoint |"
+            echo "| Frontend container app | $AZURE_FRONTEND_CONTAINER_APP_NAME | $frontend_result | $frontend_endpoint |"
             echo "| Laws collector container app | ${{ steps.laws.outputs.laws_container_app_name }} | $laws_result | internal ingress |"
           } >> "$GITHUB_STEP_SUMMARY"

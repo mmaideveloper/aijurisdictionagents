@@ -11,6 +11,9 @@
     "containerAppName": {
       "value": "ca-aijuristiction-api-dev"
     },
+    "frontendContainerAppName": {
+      "value": "ca-aijurisdiction-frontend-dev"
+    },
     "lawsCollectorContainerAppName": {
       "value": "laws-collector"
     },

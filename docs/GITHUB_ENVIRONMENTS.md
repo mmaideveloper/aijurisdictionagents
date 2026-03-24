@@ -95,6 +95,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | Variable | Purpose |
 | --- | --- |
 | `AZURE_CONTAINER_APP_NAME` | API Azure Container App name |
+| `AZURE_FRONTEND_CONTAINER_APP_NAME` | Frontend Azure Container App name provisioned by `infra_deploy` and updated by `web_build_deploy` |
 | `AZURE_APPLICATION_INSIGHTS_NAME` | Application Insights resource name |
 | `LLM_PROVIDER` | Runtime LLM provider, keep `azurefoundry` for deployed Azure environments |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used by chat and document embeddings |
@@ -137,6 +138,17 @@ These are used by the web frontend deployment workflow:
 | Variable | Purpose |
 | --- | --- |
 | `AZURE_FRONTEND_CONTAINER_APP_NAME` | Frontend Azure Container App name |
+
+The frontend workflow also reuses these shared Azure deployment variables:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `AZURE_RESOURCE_GROUP`
+- `AZURE_LOCATION`
+- `AZURE_CONTAINERAPPS_ENVIRONMENT`
+- `AZURE_CONTAINER_REGISTRY`
+- `AZURE_MANAGED_IDENTITY_NAME`
 
 ## 7. Configure Document Processor Variables
 
