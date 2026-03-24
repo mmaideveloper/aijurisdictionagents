@@ -111,6 +111,8 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_MANAGED_IDENTITY_NAME` | Managed identity name |
 | `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional laws collector Azure Container App name, default `laws-collector` |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk` |
+| `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
+| `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `0 */15 * * * *` |
 | `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode: use `azure` in deployed environments, `local` only for local/dev API runs without the ACA job |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
@@ -152,7 +154,7 @@ The frontend workflow also reuses these shared Azure deployment variables:
 
 ## 7. Configure Document Processor Variables
 
-These are used by the document processor deployment workflow:
+These are used by the document processor deployment workflow and by `infra_deploy` when it provisions the initial ACA job shell:
 
 | Variable | Purpose |
 | --- | --- |

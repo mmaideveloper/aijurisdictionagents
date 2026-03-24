@@ -163,6 +163,7 @@ The Bicep deployment provisions or reuses:
 - firewall rule for Azure services
 - `azure.extensions=vector`
 - Public frontend Azure Container App (`AZURE_FRONTEND_CONTAINER_APP_NAME`)
+- Document processor ACA Job (`AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, default `document-processor`)
 - Private Azure Container App for the laws collector (`AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, default `laws-collector`)
 
 Existing-resource behavior:
@@ -490,6 +491,7 @@ The deployment builds `src/services/document_processor/Dockerfile`, publishes th
 Use `DOCUMENT_PROCESSOR_OPTION=azure` on the deployed API Container App together with this ACA job.
 For local development only, you can set `DOCUMENT_PROCESSOR_OPTION=local` so uploads are processed immediately inside the API process.
 All Azure deployment workflows now append an `ACA deployment summary` table to the GitHub Actions run summary so you can see which ACA resources were created, reused, or updated without scanning the raw logs.
+`infra_deploy` also provisions or reuses the initial document processor ACA job shell so the later document processor workflow can focus on publishing the service image and job configuration updates.
 
 ```powershell
 ./infra/scripts/deploy_document_processor.ps1 \

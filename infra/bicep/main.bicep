@@ -2,6 +2,7 @@ param location string = resourceGroup().location
 param environmentName string
 param containerAppName string
 param frontendContainerAppName string
+param documentProcessorJobName string = 'document-processor'
 param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'
@@ -20,6 +21,12 @@ param postgresSkuTier string = 'Burstable'
 param postgresVersion string = '17'
 param postgresStorageSizeGb int = 32
 param postgresClientIp string = ''
+param llmProvider string = 'azurefoundry'
+param azureOpenAIEndpoint string
+param azureOpenAIEmbeddingsModel string = 'text-embedding-3-large'
+param azureOpenAIApiVersion string = '2024-12-01-preview'
+@secure()
+param azureOpenAIApiKey string
 param createLogAnalyticsWorkspace bool = true
 param createManagedEnvironment bool = true
 param createAcr bool = true
@@ -28,6 +35,7 @@ param createManagedIdentity bool = true
 param createApplicationInsights bool = true
 param createContainerApp bool = true
 param createFrontendContainerApp bool = true
+param createDocumentProcessorJob bool = true
 param createLawsCollectorContainerApp bool = true
 param createPostgresServer bool = true
 param tags object = {}
@@ -427,6 +435,44 @@ resource frontendContainerAppExisting 'Microsoft.App/containerApps@2024-03-01' e
   name: frontendContainerAppName
 }
 
+module documentProcessorJob 'document_processor.job.bicep' = if (createDocumentProcessorJob) {
+  name: 'documentProcessorJob'
+  params: {
+    location: location
+    managedEnvironmentName: environmentName
+    jobName: documentProcessorJobName
+    acrName: acrName
+    managedIdentityName: managedIdentityName
+    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    postgresServerName: postgresServerName
+    postgresDatabaseName: postgresDatabaseName
+    postgresAdminUsername: postgresAdminUsername
+    postgresAdminPassword: postgresAdminPassword
+    storageAccountName: storageAccountName
+    storageContainerName: storageContainerName
+    llmProvider: llmProvider
+    azureOpenAIEndpoint: azureOpenAIEndpoint
+    azureOpenAIEmbeddingsModel: azureOpenAIEmbeddingsModel
+    azureOpenAIApiVersion: azureOpenAIApiVersion
+    azureOpenAIApiKey: azureOpenAIApiKey
+    tags: tags
+  }
+  dependsOn: [
+    managedEnvironment
+    acr
+    managedIdentity
+    postgresServer
+    postgresDatabaseOnNewServer
+    postgresDatabaseOnExistingServer
+    storageContainerOnNewStorage
+    storageContainerOnExistingStorage
+  ]
+}
+
+resource documentProcessorJobExisting 'Microsoft.App/jobs@2024-03-01' existing = if (!createDocumentProcessorJob) {
+  name: documentProcessorJobName
+}
+
 module lawsCollectorContainerApp 'laws_collector.containerapp.bicep' = if (createLawsCollectorContainerApp) {
   name: 'lawsCollectorContainerApp'
   params: {
@@ -480,6 +526,9 @@ output frontendContainerAppFqdn string = createFrontendContainerApp
 output frontendContainerAppUrl string = createFrontendContainerApp
   ? frontendContainerApp.outputs.containerAppUrl
   : 'https://${frontendContainerAppExisting.properties.configuration.ingress.fqdn}'
+output documentProcessorJobName string = createDocumentProcessorJob
+  ? documentProcessorJob.outputs.jobName
+  : documentProcessorJobExisting.name
 output containerAppsEnvironmentName string = createManagedEnvironment
   ? managedEnvironment.name
   : managedEnvironmentExisting.name
