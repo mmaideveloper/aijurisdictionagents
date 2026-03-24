@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from services.laws_collector import LawsCollectorConfig, SlovakLawsCollectorService, SqliteLawStore
-from services.laws_collector.source_fixtures import baseline_snapshots, delta_snapshots
+from services.laws_collector import (
+    LawsCollectorConfig,
+    SqliteLawStore,
+    get_country_laws_collector_definition,
+)
+from services.laws_collector.slovak_laws_collector import SlovakLawsCollectorService
+from services.laws_collector.slovak_source_fixtures import baseline_snapshots, delta_snapshots
 
 
 def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorService]:
@@ -67,7 +72,7 @@ def test_laws_collector_delta_sync_adds_new_act_and_new_version(tmp_path: Path) 
 
 
 def test_laws_collector_config_resolves_relative_db_from_repo_root(monkeypatch) -> None:
-    monkeypatch.setenv("LAWS_DB_LOCAL", "./databases/laws-collector/sk_laws.sqlite3")
+    monkeypatch.delenv("LAWS_DB_LOCAL", raising=False)
 
     config = LawsCollectorConfig.from_env()
 
@@ -75,6 +80,7 @@ def test_laws_collector_config_resolves_relative_db_from_repo_root(monkeypatch) 
     assert config.db_path.parent.name == "laws-collector"
     assert config.db_path.parent.parent.name == "databases"
     assert config.db_path.parent.parent.parent == Path(__file__).resolve().parents[1]
+    assert config.country_db_name == "laws_sk"
 
 
 
@@ -86,3 +92,26 @@ def test_laws_collector_update_plan_detects_changes(tmp_path: Path) -> None:
     assert plan.checked_items == 2
     assert plan.items_with_updates == 2
     assert any(item.reason == "new_document_or_version" for item in plan.items)
+
+
+def test_country_definition_resolves_slovak_collector_and_db_name() -> None:
+    definition = get_country_laws_collector_definition("sk")
+
+    assert definition.collector_name == "slovak_laws_collector"
+    assert definition.country_code == "SK"
+    assert definition.cloud_database_name == "laws_sk"
+
+
+def test_country_db_name_uses_laws_prefix_for_future_countries() -> None:
+    config = LawsCollectorConfig(
+        country_code="CZ",
+        db_backend="sqlite",
+        db_local=LawsCollectorConfig.default_local_db_path_for("CZ"),
+        db_cloud="",
+        storage_local="",
+        storage_cloud="",
+        delta_poll_hours=3,
+    )
+
+    assert config.country_db_name == "laws_cz"
+    assert config.db_path.name == "cz_laws.sqlite3"

@@ -2,12 +2,13 @@
 
 ## Goal
 
-`laws_collector` is a new service under `src/services` that builds and updates a Slovak law corpus from official sources.
+`laws_collector` is a service under `src/services` that selects a country-specific collector implementation and stores the resulting law corpus in a country-specific database.
 
 Current scope:
 
-- country `SK` only,
-- canonical source model based on `Slov-Lex`,
+- pluggable collector selection by `LAWS_COUNTRY`,
+- `slovak_laws_collector` implemented now for country `SK`,
+- canonical Slovak source model based on `Slov-Lex`,
 - draft monitoring model for `NR SR`,
 - local runnable SQLite implementation with documents stored in the database,
 - schema that can move later to PostgreSQL on Azure.
@@ -206,9 +207,14 @@ Add these to `.env` when you start wiring the service into real runs:
 - `LAWS_STORAGE_LOCAL=./storage/laws/sk`
 - `LAWS_DELTA_POLL_HOURS=3`
 
-`LAWS_COUNTRY` is optional right now. The current implementation only imports Slovak laws, so the service already defaults to `SK` when the variable is unset.
+`LAWS_COUNTRY` selects the country-specific collector implementation. The current implementation supports only `SK`, so the service still defaults to `SK` when the variable is unset.
 
-For Azure deployments, keep the database mapping country-specific. The current Slovak collector uses `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, which feeds the `laws_sk` PostgreSQL database for the default Slovak run.
+For PostgreSQL naming, keep the database mapping country-specific:
+
+- Slovakia remains `laws_sk`
+- future countries should use `laws_<country_code_lower>`
+
+The current Azure deployment keeps the Slovak override variable `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, which feeds the `laws_sk` PostgreSQL database for the default Slovak run.
 
 Future cloud settings:
 
@@ -232,7 +238,7 @@ Implemented upgrades include:
 - PostgreSQL store support (`LAWS_DB_BACKEND=postgres`) plus migration project `databases/migrations/laws`.
 - per-country database provisioning helper:
   - `python databases/scripts/provision_country_laws_db.py --admin-uri <postgres-admin-uri> --country SK`
-  - database name format: `laws_<country_code_lower>`.
+  - database name format: `laws_<country_code_lower>` with Slovakia remaining `laws_sk`.
 
 ### PostgreSQL migration flow
 

@@ -481,7 +481,9 @@ Technical design details: `docs/MOBILE_TECHNICAL_DESIGN.md`.
 
 ## Laws collector
 
-The Slovak laws collector service lives in `src/services/laws_collector`.
+The laws collector package lives in `src/services/laws_collector`.
+It now selects a country-specific implementation by `LAWS_COUNTRY`.
+Only `slovak_laws_collector` is implemented today, and it keeps using PostgreSQL database `laws_sk`.
 
 Quick start:
 

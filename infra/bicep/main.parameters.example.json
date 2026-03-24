@@ -17,8 +17,14 @@
     "documentProcessorJobName": {
       "value": "document-processor"
     },
-    "lawsCollectorContainerAppName": {
+    "documentProcessorCronExpression": {
+      "value": "0 */15 * * * *"
+    },
+    "lawsCollectorJobName": {
       "value": "laws-collector"
+    },
+    "lawsCollectorCronExpression": {
+      "value": "0 0 * * * *"
     },
     "acrName": {
       "value": "aijurdevacr12345"

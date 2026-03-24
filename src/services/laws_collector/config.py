@@ -19,15 +19,35 @@ class LawsCollectorConfig:
 
     @classmethod
     def from_env(cls) -> "LawsCollectorConfig":
+        country_code = os.getenv("LAWS_COUNTRY", "SK").strip().upper()
+        db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
+        storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
+        if not db_local:
+            db_local = cls.default_local_db_path_for(country_code)
+        if not storage_local:
+            storage_local = cls.default_local_storage_path_for(country_code)
+
         return cls(
-            country_code=os.getenv("LAWS_COUNTRY", "SK").strip().upper(),
+            country_code=country_code,
             db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
-            db_local=os.getenv("LAWS_DB_LOCAL", "./databases/laws-collector/sk_laws.sqlite3").strip(),
+            db_local=db_local,
             db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
-            storage_local=os.getenv("LAWS_STORAGE_LOCAL", "./storage/laws/sk").strip(),
+            storage_local=storage_local,
             storage_cloud=os.getenv("LAWS_STORAGE_CLOUD", "").strip(),
             delta_poll_hours=int(os.getenv("LAWS_DELTA_POLL_HOURS", "3")),
         )
+
+    @staticmethod
+    def default_local_db_path_for(country_code: str) -> str:
+        normalized_country_code = country_code.strip().lower()
+        if normalized_country_code == "sk":
+            return "./databases/laws-collector/sk_laws.sqlite3"
+        return f"./databases/laws-collector/{normalized_country_code}_laws.sqlite3"
+
+    @staticmethod
+    def default_local_storage_path_for(country_code: str) -> str:
+        normalized_country_code = country_code.strip().lower()
+        return f"./storage/laws/{normalized_country_code}"
 
     def validate(self) -> None:
         if len(self.country_code) != 2 or not self.country_code.isalpha():

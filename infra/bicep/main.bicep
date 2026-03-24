@@ -3,6 +3,9 @@ param environmentName string
 param containerAppName string
 param frontendContainerAppName string
 param documentProcessorJobName string = 'document-processor'
+param documentProcessorCronExpression string = '0 */15 * * * *'
+param lawsCollectorJobName string = 'laws-collector'
+param lawsCollectorCronExpression string = '0 0 * * * *'
 param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'
@@ -12,7 +15,6 @@ param managedIdentityName string
 param postgresServerName string
 param postgresDatabaseName string = 'aijurisdiction'
 param lawsPostgresDatabaseName string = 'laws_sk'
-param lawsCollectorContainerAppName string = 'laws-collector'
 param postgresAdminUsername string
 @secure()
 param postgresAdminPassword string = ''
@@ -36,7 +38,7 @@ param createApplicationInsights bool = true
 param createContainerApp bool = true
 param createFrontendContainerApp bool = true
 param createDocumentProcessorJob bool = true
-param createLawsCollectorContainerApp bool = true
+param createLawsCollectorJob bool = true
 param createPostgresServer bool = true
 param tags object = {}
 
@@ -441,6 +443,7 @@ module documentProcessorJob 'document_processor.job.bicep' = if (createDocumentP
     location: location
     managedEnvironmentName: environmentName
     jobName: documentProcessorJobName
+    cronExpression: documentProcessorCronExpression
     acrName: acrName
     managedIdentityName: managedIdentityName
     image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
@@ -473,12 +476,12 @@ resource documentProcessorJobExisting 'Microsoft.App/jobs@2024-03-01' existing =
   name: documentProcessorJobName
 }
 
-module lawsCollectorContainerApp 'laws_collector.containerapp.bicep' = if (createLawsCollectorContainerApp) {
-  name: 'lawsCollectorContainerApp'
+module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob) {
+  name: 'lawsCollectorJob'
   params: {
     location: location
     managedEnvironmentName: environmentName
-    containerAppName: lawsCollectorContainerAppName
+    jobName: lawsCollectorJobName
     acrName: acrName
     managedIdentityName: managedIdentityName
     image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
@@ -486,6 +489,7 @@ module lawsCollectorContainerApp 'laws_collector.containerapp.bicep' = if (creat
     postgresDatabaseName: lawsPostgresDatabaseName
     postgresAdminUsername: postgresAdminUsername
     postgresAdminPassword: postgresAdminPassword
+    cronExpression: lawsCollectorCronExpression
     tags: tags
   }
   dependsOn: [
@@ -498,8 +502,8 @@ module lawsCollectorContainerApp 'laws_collector.containerapp.bicep' = if (creat
   ]
 }
 
-resource lawsCollectorContainerAppExisting 'Microsoft.App/containerApps@2024-03-01' existing = if (!createLawsCollectorContainerApp) {
-  name: lawsCollectorContainerAppName
+resource lawsCollectorJobExisting 'Microsoft.App/jobs@2024-03-01' existing = if (!createLawsCollectorJob) {
+  name: lawsCollectorJobName
 }
 
 output acrLoginServer string = acrLoginServer
@@ -535,9 +539,9 @@ output containerAppsEnvironmentName string = createManagedEnvironment
 output postgresServerName string = createPostgresServer ? postgresServer.name : postgresServerExisting.name
 output postgresDatabaseName string = postgresDatabaseName
 output lawsPostgresDatabaseName string = lawsPostgresDatabaseName
-output lawsCollectorContainerAppName string = createLawsCollectorContainerApp
-  ? lawsCollectorContainerApp.outputs.containerAppName
-  : lawsCollectorContainerAppExisting.name
+output lawsCollectorJobName string = createLawsCollectorJob
+  ? lawsCollectorJob.outputs.jobName
+  : lawsCollectorJobExisting.name
 output postgresHost string = createPostgresServer
   ? postgresServer.properties.fullyQualifiedDomainName
   : postgresServerExisting.properties.fullyQualifiedDomainName
