@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 
 from .country_registry import get_country_laws_collector_definition
 from .config import LawsCollectorConfig
+from .import_planner import SlovLexImportPlanner
 from .postgres_store import PostgresLawStore
 from .sqlite_store import SqliteLawStore
 
@@ -21,6 +23,16 @@ def main() -> None:
         action="store_true",
         help="Only run update-plan detection between baseline and selected fixture.",
     )
+    parser.add_argument(
+        "--plan-import",
+        action="store_true",
+        help="Print the SlovLex import window plan for the configured country.",
+    )
+    parser.add_argument(
+        "--initial-window-complete",
+        action="store_true",
+        help="Mark the 2025-to-today window as completed when printing the import plan.",
+    )
     args = parser.parse_args()
 
     config = LawsCollectorConfig.from_env()
@@ -31,6 +43,18 @@ def main() -> None:
 
     baseline = collector_definition.baseline_snapshots()
     snapshots = baseline if args.fixture == "baseline" else collector_definition.delta_snapshots()
+
+    if args.plan_import:
+        planner = SlovLexImportPlanner(config=config)
+        plan = planner.build_plan(today=date.today(), initial_window_complete=args.initial_window_complete)
+        print("country:", config.country_code)
+        print("database_name:", config.country_db_name)
+        for index, window in enumerate(plan.windows, start=1):
+            print(f"window_{index}_stage:", window.stage)
+            print(f"window_{index}_start:", window.start_date.isoformat())
+            print(f"window_{index}_end:", window.end_date.isoformat())
+            print(f"window_{index}_blocked_by:", window.blocked_by or "")
+        return
 
     if args.check_updates:
         plan = service.plan_updates(known_snapshots=baseline, latest_snapshots=snapshots)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 import os
 from pathlib import Path
 
@@ -16,25 +17,43 @@ class LawsCollectorConfig:
     storage_local: str
     storage_cloud: str
     delta_poll_hours: int
+    initial_import_from: date
+    historical_import_from: date
 
     @classmethod
     def from_env(cls) -> "LawsCollectorConfig":
         country_code = os.getenv("LAWS_COUNTRY", "SK").strip().upper()
-        db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
-        storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
-        if not db_local:
-            db_local = cls.default_local_db_path_for(country_code)
-        if not storage_local:
-            storage_local = cls.default_local_storage_path_for(country_code)
+        default_sqlite_path = f"./databases/laws-collector/{country_code.lower()}_laws.sqlite3"
+        
+        return cls(
+            country_code=country_code,
+            db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
+            db_local=os.getenv("LAWS_DB_LOCAL", default_sqlite_path).strip(),
+            db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
+            storage_local=os.getenv("LAWS_STORAGE_LOCAL", f"./storage/laws/{country_code.lower()}").strip(),
+            db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
+            storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
+            if not db_local:
+                db_local = cls.default_local_db_path_for(country_code)
+            if not storage_local:
+                storage_local = cls.default_local_storage_path_for(country_code)
 
         return cls(
             country_code=country_code,
             db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
-            db_local=db_local,
+            db_local=os.getenv("LAWS_DB_LOCAL", default_sqlite_path).strip(),
             db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
-            storage_local=storage_local,
+            storage_local=os.getenv("LAWS_STORAGE_LOCAL", f"./storage/laws/{country_code.lower()}").strip(),
+            db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
+            storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
+            if not db_local:
+                db_local = cls.default_local_db_path_for(country_code)
+            if not storage_local:
+                storage_local = cls.default_local_storage_path_for(country_code),
             storage_cloud=os.getenv("LAWS_STORAGE_CLOUD", "").strip(),
             delta_poll_hours=int(os.getenv("LAWS_DELTA_POLL_HOURS", "3")),
+            initial_import_from=_parse_iso_date(os.getenv("LAWS_INITIAL_IMPORT_FROM", "2025-01-01")),
+            historical_import_from=_parse_iso_date(os.getenv("LAWS_HISTORICAL_IMPORT_FROM", "1946-01-01")),
         )
 
     @staticmethod
@@ -58,6 +77,8 @@ class LawsCollectorConfig:
             raise ValueError("LAWS_DB_CLOUD must be set for postgres backend")
         if self.delta_poll_hours < 1:
             raise ValueError("LAWS_DELTA_POLL_HOURS must be >= 1")
+        if self.historical_import_from > self.initial_import_from:
+            raise ValueError("LAWS_HISTORICAL_IMPORT_FROM must be on or before LAWS_INITIAL_IMPORT_FROM")
 
     @property
     def db_path(self) -> Path:
@@ -65,11 +86,12 @@ class LawsCollectorConfig:
 
     @property
     def storage_root(self) -> Path:
-        return Path(self.storage_local)
+        return _resolve_repo_path(self.storage_local)
 
     @property
     def country_db_name(self) -> str:
         return f"laws_{self.country_code.lower()}"
+
 
 
 def _resolve_repo_path(value: str) -> Path:
@@ -77,3 +99,11 @@ def _resolve_repo_path(value: str) -> Path:
     if candidate.is_absolute():
         return candidate
     return _REPO_ROOT / candidate
+
+
+
+def _parse_iso_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"Invalid ISO date: {value}") from exc

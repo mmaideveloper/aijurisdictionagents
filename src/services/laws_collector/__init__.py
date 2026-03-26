@@ -2,7 +2,8 @@
 
 from .country_registry import CountryLawsCollectorDefinition, get_country_laws_collector_definition
 from .config import LawsCollectorConfig
-from .domain import LawSnapshot, SyncSummary, UpdateCheckPlan
+from .domain import SyncSummary, UpdateCheckPlan
+from .import_planner import ImportPlan, ImportWindow, SlovLexImportPlanner
 from .postgres_store import PostgresLawStore
 from .service import LawsCollectorService
 from .slovak_laws_collector import SlovakLawsCollectorService
@@ -18,5 +19,8 @@ __all__ = [
     "PostgresLawStore",
     "SyncSummary",
     "UpdateCheckPlan",
+    "ImportPlan",
+    "ImportWindow",
+    "SlovLexImportPlanner",
     "get_country_laws_collector_definition",
 ]
