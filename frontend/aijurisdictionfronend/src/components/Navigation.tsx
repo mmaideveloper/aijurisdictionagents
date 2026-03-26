@@ -1,11 +1,16 @@
 import React from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "./LanguageProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 
-export const Navigation: React.FC = () => {
+type NavigationProps = {
+  isSidebarCollapsed?: boolean;
+};
+
+export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = false }) => {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { t } = useLanguage();
   const { isAuthenticated, user, signOut } = useAuth();
   const [profileOpen, setProfileOpen] = React.useState(false);
@@ -30,7 +35,7 @@ export const Navigation: React.FC = () => {
         return;
       }
       if (action === "cases") {
-        navigate("/app/workspace");
+        navigate("/");
         return;
       }
       signOut();
@@ -142,11 +147,12 @@ export const Navigation: React.FC = () => {
   const profileName = user?.name ?? "User";
   const profileEmail = user?.email ?? "";
   const profileInitial = profileName.slice(0, 1).toUpperCase();
+  const showBrand = !isAuthenticated || pathname !== "/" || isSidebarCollapsed;
 
   return (
     <header className="site-header">
       <nav className="nav">
-        {!isAuthenticated ? (
+        {showBrand ? (
           <Link className="brand nav-brand" to="/">
             <div className="brand-mark" aria-hidden="true">
               AJ

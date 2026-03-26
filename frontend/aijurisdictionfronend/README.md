@@ -43,7 +43,9 @@ All `/app/*` routes and `/profile` are guarded by mock auth state.
 
 The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + app name/tagline).
 
-- The logo is rendered on the left side of the navbar only when the user is not signed in.
+- The logo is rendered on the left side of the navbar for signed-out views.
+- The logo is also rendered for signed-in views on non-home routes (for example `/app` and `/profile`).
+- On signed-in homepage (`/`), the navbar logo is shown when the workspace sidebar is collapsed.
 - The logo links to `/` (marketing homepage).
 - The navbar layout is responsive so brand, links, and actions do not overlap at mobile widths.
 
@@ -53,6 +55,7 @@ In signed-in state, the profile icon opens a click-triggered dropdown menu in th
 
 - Options: `My Profile`, `My Cases`, `Log Out`
 - `My Profile` navigates to `/profile`
+- `My Cases` currently navigates to `/` (homepage workspace)
 - Menu closes on outside click, on option click, and on `Escape`
 - Keyboard navigation is supported with `ArrowUp`, `ArrowDown`, `Home`, and `End`
 - Mobile layout keeps the dropdown anchored under the trigger with viewport-safe width
@@ -120,4 +123,10 @@ npm run preview
 
 ```bash
 python examples/minimal_demo.py
+```
+
+Task-specific frontend check:
+
+```bash
+python examples/frontend_navbar_task_211_minimal_demo.py
 ```
