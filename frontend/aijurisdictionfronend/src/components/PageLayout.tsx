@@ -30,7 +30,7 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
           </button>
         ) : null}
         <div className="app-shell__main">
-          <Navigation />
+          <Navigation isSidebarCollapsed={!sidebarOpen} />
           <main className="main-content">{children}</main>
           <Footer />
         </div>
@@ -40,7 +40,7 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
 
   return (
     <div className="app-shell">
-      <Navigation />
+      <Navigation isSidebarCollapsed={false} />
       <main className="main-content">{children}</main>
       <Footer />
     </div>

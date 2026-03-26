@@ -21,6 +21,8 @@ vi.mock("../auth/mockAuth", () => ({
 }));
 
 const labels: Record<string, string> = {
+  appName: "AI Jurisdiction",
+  tagline: "Agentic legal workspace",
   navHome: "Home",
   navPricing: "Pricing",
   navApp: "App",
@@ -41,15 +43,21 @@ vi.mock("../components/LanguageSwitcher", () => ({
   LanguageSwitcher: () => <div data-testid="language-switcher" />
 }));
 
-function renderNavigation() {
+function renderNavigation({
+  initialEntries = ["/"],
+  isSidebarCollapsed = false
+}: {
+  initialEntries?: string[];
+  isSidebarCollapsed?: boolean;
+} = {}) {
   const PathIndicator = () => {
     const location = useLocation();
     return <div data-testid="current-path">{location.pathname}</div>;
   };
 
   return render(
-    <MemoryRouter>
-      <Navigation />
+    <MemoryRouter initialEntries={initialEntries}>
+      <Navigation isSidebarCollapsed={isSidebarCollapsed} />
       <PathIndicator />
     </MemoryRouter>
   );
@@ -138,5 +146,36 @@ describe("Navigation profile dropdown", () => {
     await waitFor(() => {
       expect(screen.getByTestId("current-path").textContent).toBe("/profile");
     });
+  });
+
+  it("navigates to / when My Cases is clicked", async () => {
+    const user = userEvent.setup();
+    renderNavigation({ initialEntries: ["/profile"] });
+
+    expect(screen.getByTestId("current-path").textContent).toBe("/profile");
+    await user.click(screen.getByLabelText("Profile"));
+    await user.click(screen.getByRole("menuitem", { name: "My Cases" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("current-path").textContent).toBe("/");
+    });
+  });
+
+  it("shows navbar brand on non-home routes for signed-in users", () => {
+    renderNavigation({ initialEntries: ["/app"] });
+
+    expect(screen.getByText("AI Jurisdiction")).toBeDefined();
+  });
+
+  it("shows navbar brand on home when sidebar is collapsed", () => {
+    renderNavigation({ initialEntries: ["/"], isSidebarCollapsed: true });
+
+    expect(screen.getByText("AI Jurisdiction")).toBeDefined();
+  });
+
+  it("hides navbar brand on home when sidebar is expanded", () => {
+    renderNavigation({ initialEntries: ["/"], isSidebarCollapsed: false });
+
+    expect(screen.queryByText("AI Jurisdiction")).toBeNull();
   });
 });

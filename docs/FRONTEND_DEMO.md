@@ -54,6 +54,8 @@ npm run preview
   - Sign-in link when logged out
   - Profile trigger when logged in with dropdown options: `My Profile`, `My Cases`, `Log Out`
   - `My Profile` navigates to `/profile`
+  - `My Cases` currently navigates to `/` (homepage workspace)
+  - Brand/logo is shown for signed-in non-home routes and for signed-in home when the sidebar is collapsed
   - Dropdown closes on outside click, option click, and `Escape`
   - Keyboard support includes `ArrowUp`/`ArrowDown` navigation and `Home`/`End` shortcuts
 
