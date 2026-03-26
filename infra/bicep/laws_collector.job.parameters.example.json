@@ -5,7 +5,7 @@
     "managedEnvironmentName": {
       "value": "cae-juris-dev"
     },
-    "containerAppName": {
+    "jobName": {
       "value": "laws-collector"
     },
     "acrName": {
@@ -28,6 +28,9 @@
     },
     "postgresAdminPassword": {
       "value": "<set-secure-value>"
+    },
+    "cronExpression": {
+      "value": "0 0 * * * *"
     }
   }
 }

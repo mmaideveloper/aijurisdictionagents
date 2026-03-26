@@ -5,17 +5,17 @@ import json
 from typing import Protocol
 
 from .config import LawsCollectorConfig
-from .domain import SlovLexLawSnapshot, SyncSummary, UpdateCheckItem, UpdateCheckPlan
+from .domain import LawSnapshot, SyncSummary, UpdateCheckItem, UpdateCheckPlan
 
 
 class LawStore(Protocol):
-    def upsert_document(self, snapshot: SlovLexLawSnapshot) -> tuple[str, bool]: ...
+    def upsert_document(self, snapshot: LawSnapshot) -> tuple[str, bool]: ...
 
     def upsert_version(
         self,
         *,
         document_id: str,
-        snapshot: SlovLexLawSnapshot,
+        snapshot: LawSnapshot,
         version_checksum: str,
         html_checksum: str,
         pdf_checksum: str,
@@ -32,6 +32,7 @@ class LawStore(Protocol):
         *,
         document_id: str,
         version_id: str,
+        source_system: str,
         artifact_kind: str,
         source_url: str,
         checksum: str,
@@ -56,7 +57,7 @@ class LawStore(Protocol):
     ) -> None: ...
 
 
-class SlovakLawsCollectorService:
+class LawsCollectorService:
     """Ingest and monitor laws snapshots into a corpus store."""
 
     def __init__(self, *, config: LawsCollectorConfig, store: LawStore) -> None:
@@ -64,7 +65,7 @@ class SlovakLawsCollectorService:
         self.config = config
         self.store = store
 
-    def sync(self, snapshots: tuple[SlovLexLawSnapshot, ...]) -> SyncSummary:
+    def sync(self, snapshots: tuple[LawSnapshot, ...]) -> SyncSummary:
         summary = SyncSummary()
         for snapshot in snapshots:
             if snapshot.country_code != self.config.country_code:
@@ -93,6 +94,7 @@ class SlovakLawsCollectorService:
             self.store.upsert_artifact(
                 document_id=document_id,
                 version_id=stored_version.version_id,
+                source_system=snapshot.source_system,
                 artifact_kind="html",
                 source_url=snapshot.html_url,
                 checksum=html_checksum,
@@ -107,6 +109,7 @@ class SlovakLawsCollectorService:
             self.store.upsert_artifact(
                 document_id=document_id,
                 version_id=stored_version.version_id,
+                source_system=snapshot.source_system,
                 artifact_kind="pdf",
                 source_url=snapshot.pdf_url,
                 checksum=pdf_checksum,
@@ -150,8 +153,8 @@ class SlovakLawsCollectorService:
     def plan_updates(
         self,
         *,
-        known_snapshots: tuple[SlovLexLawSnapshot, ...],
-        latest_snapshots: tuple[SlovLexLawSnapshot, ...],
+        known_snapshots: tuple[LawSnapshot, ...],
+        latest_snapshots: tuple[LawSnapshot, ...],
     ) -> UpdateCheckPlan:
         known_by_key = {(item.document_key(), item.version_token): item for item in known_snapshots}
         results: list[UpdateCheckItem] = []
@@ -211,7 +214,7 @@ def _hash_bytes(value: bytes) -> str:
     return sha256(value).hexdigest()
 
 
-def _embed_law(snapshot: SlovLexLawSnapshot) -> str:
+def _embed_law(snapshot: LawSnapshot) -> str:
     """Deterministic pseudo-embedding; can be swapped with model embeddings later."""
     text = " ".join(
         [

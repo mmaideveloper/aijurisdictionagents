@@ -95,6 +95,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | Variable | Purpose |
 | --- | --- |
 | `AZURE_CONTAINER_APP_NAME` | API Azure Container App name |
+| `AZURE_FRONTEND_CONTAINER_APP_NAME` | Frontend Azure Container App name provisioned by `infra_deploy` and updated by `web_build_deploy` |
 | `AZURE_APPLICATION_INSIGHTS_NAME` | Application Insights resource name |
 | `LLM_PROVIDER` | Runtime LLM provider, keep `azurefoundry` for deployed Azure environments |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used by chat and document embeddings |
@@ -108,7 +109,11 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_STORAGE_CONTAINER_NAME` | Blob container name |
 | `AZURE_LOG_ANALYTICS_WORKSPACE_NAME` | Log Analytics workspace name |
 | `AZURE_MANAGED_IDENTITY_NAME` | Managed identity name |
-| `DOCUMENT_PROCESSOR` | API document-processing mode: use `azure` in deployed environments, `local` only for local/dev API runs without the ACA job |
+| `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional laws collector Azure Container App name, default `laws-collector` |
+| `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk` |
+| `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
+| `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `0 */15 * * * *` |
+| `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode: use `azure` in deployed environments, `local` only for local/dev API runs without the ACA job |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
 | `AZURE_POSTGRES_VERSION` | Optional PostgreSQL version |
@@ -136,13 +141,23 @@ These are used by the web frontend deployment workflow:
 | --- | --- |
 | `AZURE_FRONTEND_CONTAINER_APP_NAME` | Frontend Azure Container App name |
 
+The frontend workflow also reuses these shared Azure deployment variables:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `AZURE_RESOURCE_GROUP`
+- `AZURE_LOCATION`
+- `AZURE_CONTAINERAPPS_ENVIRONMENT`
+- `AZURE_CONTAINER_REGISTRY`
+- `AZURE_MANAGED_IDENTITY_NAME`
+
 ## 7. Configure Document Processor Variables
 
-These are used by the document processor deployment workflow:
+These are used by the document processor deployment workflow and by `infra_deploy` when it provisions the initial ACA job shell:
 
 | Variable | Purpose |
 | --- | --- |
-| `DOCUMENT_PROCESSOR` | Keep this as `azure` in deployed GitHub Environments so uploaded documents are processed by the ACA scheduled job |
 | `LLM_PROVIDER` | Runtime provider for the job, keep `azurefoundry` in Azure deployments |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used for embeddings |
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Embedding deployment name used by the job, recommended `text-embedding-3-large` |
@@ -153,7 +168,30 @@ These are used by the document processor deployment workflow:
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name |
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional schedule, default is every 15 minutes |
 
-## 8. Configure Mobile Build Variables
+## 8. Configure Laws Collector Variables
+
+These are used by the laws collector deployment workflow:
+
+| Variable | Purpose |
+| --- | --- |
+| `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional private ACA name for the laws collector, default `laws-collector` |
+| `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional PostgreSQL database name for the Slovak laws corpus, default `laws_sk` |
+
+The laws collector workflow reuses these shared Azure deployment variables:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `AZURE_RESOURCE_GROUP`
+- `AZURE_LOCATION`
+- `AZURE_CONTAINERAPPS_ENVIRONMENT`
+- `AZURE_CONTAINER_REGISTRY`
+- `AZURE_MANAGED_IDENTITY_NAME`
+- `AZURE_POSTGRES_SERVER_NAME`
+- `AZURE_POSTGRES_ADMIN_USERNAME`
+- secret `AZURE_POSTGRES_ADMIN_PASSWORD`
+
+## 9. Configure Mobile Build Variables
 
 The mobile workflow reads the API base URL from the selected GitHub Environment.
 
@@ -176,7 +214,7 @@ Paste those values without extra whitespace. The mobile workflow trims accidenta
 line breaks, validates the keystore and alias with `keytool`, and warns early if
 the selected GitHub Environment contains stale or mismatched signing secrets.
 
-## 9. Populate `test` and `prod`
+## 10. Populate `test` and `prod`
 
 The fastest approach is:
 
@@ -200,10 +238,12 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_STORAGE_ACCOUNT_NAME`
 - `AZURE_APPLICATION_INSIGHTS_NAME`
 - `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`
+- `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
+- `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
 - `API_BASE_URL`
 - `CORS_ALLOW_ORIGINS`
 
-## 10. Run the Workflows Against the New Environment
+## 11. Run the Workflows Against the New Environment
 
 Use manual workflow dispatch and set `github_environment` to `test` or `prod`.
 
@@ -213,24 +253,28 @@ Typical order:
 2. `Database Schema Upgrade` if needed
 3. `API Build and Deploy`
 4. `Document Processor Build and Deploy`
-5. `web_build_deploy`
-6. `mobile_flutter_build`
+5. `Laws Collector Build and Deploy`
+6. `web_build_deploy`
+7. `mobile_flutter_build`
 
 Recommended deployed value:
 
-- `DOCUMENT_PROCESSOR=azure` for `dev`, `test`, and `prod`
-- Keep `DOCUMENT_PROCESSOR=local` only in local workstation `.env` files when you want the API process to extract documents immediately without waiting for the ACA job
+- `DOCUMENT_PROCESSOR_OPTION=azure` for `dev`, `test`, and `prod`
+- Keep `DOCUMENT_PROCESSOR_OPTION=local` only in local workstation `.env` files when you want the API process to extract documents immediately without waiting for the ACA job
 
-## 11. Current Workflow Defaults
+## 12. Current Workflow Defaults
 
 Some workflows default to `dev` for push-based execution.
 
 That means:
 
 - `API Build and Deploy` now deploys automatically to `dev` on `push` to `main` after tests/build pass
+- `API Build and Deploy` waits for Azure Container App provisioning to settle before applying secret and environment updates, which reduces transient `ContainerAppOperationInProgress` failures during deployment
+- `API Build and Deploy` now fails during environment validation when `AZURE_OPENAI_API_KEY` is empty, because the deployed API always requires that secret for Azure OpenAI access
+- `Laws Collector Build and Deploy` now deploys automatically to `dev` on `push` to `main` after its tests/build pass
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 
-## 12. Quick Validation Checklist
+## 13. Quick Validation Checklist
 
 After setup, verify:
 

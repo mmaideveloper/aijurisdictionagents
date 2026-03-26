@@ -24,17 +24,49 @@ class LawsCollectorConfig:
     def from_env(cls) -> "LawsCollectorConfig":
         country_code = os.getenv("LAWS_COUNTRY", "SK").strip().upper()
         default_sqlite_path = f"./databases/laws-collector/{country_code.lower()}_laws.sqlite3"
+        
         return cls(
             country_code=country_code,
             db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
             db_local=os.getenv("LAWS_DB_LOCAL", default_sqlite_path).strip(),
             db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
             storage_local=os.getenv("LAWS_STORAGE_LOCAL", f"./storage/laws/{country_code.lower()}").strip(),
+            db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
+            storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
+            if not db_local:
+                db_local = cls.default_local_db_path_for(country_code)
+            if not storage_local:
+                storage_local = cls.default_local_storage_path_for(country_code)
+
+        return cls(
+            country_code=country_code,
+            db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
+            db_local=os.getenv("LAWS_DB_LOCAL", default_sqlite_path).strip(),
+            db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
+            storage_local=os.getenv("LAWS_STORAGE_LOCAL", f"./storage/laws/{country_code.lower()}").strip(),
+            db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
+            storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
+            if not db_local:
+                db_local = cls.default_local_db_path_for(country_code)
+            if not storage_local:
+                storage_local = cls.default_local_storage_path_for(country_code),
             storage_cloud=os.getenv("LAWS_STORAGE_CLOUD", "").strip(),
             delta_poll_hours=int(os.getenv("LAWS_DELTA_POLL_HOURS", "3")),
             initial_import_from=_parse_iso_date(os.getenv("LAWS_INITIAL_IMPORT_FROM", "2025-01-01")),
             historical_import_from=_parse_iso_date(os.getenv("LAWS_HISTORICAL_IMPORT_FROM", "1946-01-01")),
         )
+
+    @staticmethod
+    def default_local_db_path_for(country_code: str) -> str:
+        normalized_country_code = country_code.strip().lower()
+        if normalized_country_code == "sk":
+            return "./databases/laws-collector/sk_laws.sqlite3"
+        return f"./databases/laws-collector/{normalized_country_code}_laws.sqlite3"
+
+    @staticmethod
+    def default_local_storage_path_for(country_code: str) -> str:
+        normalized_country_code = country_code.strip().lower()
+        return f"./storage/laws/{normalized_country_code}"
 
     def validate(self) -> None:
         if len(self.country_code) != 2 or not self.country_code.isalpha():

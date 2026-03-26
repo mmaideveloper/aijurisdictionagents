@@ -46,7 +46,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' e
 }
 
 resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(acr.id, managedIdentity.id, 'AcrPull', jobName)
+  name: guid(acr.id, managedIdentity.id, 'AcrPull')
   scope: acr
   properties: {
     principalId: managedIdentity.properties.principalId
@@ -56,7 +56,7 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 }
 
 resource storageBlobDataRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, managedIdentity.id, 'StorageBlobDataContributor', jobName)
+  name: guid(storageAccount.id, managedIdentity.id, 'StorageBlobDataContributor')
   scope: storageAccount
   properties: {
     principalId: managedIdentity.properties.principalId
@@ -126,7 +126,7 @@ resource documentProcessorJob 'Microsoft.App/jobs@2024-03-01' = {
               value: 'azure'
             }
             {
-              name: 'DOCUMENT_PROCESSOR'
+              name: 'DOCUMENT_PROCESSOR_OPTION'
               value: 'azure'
             }
             {

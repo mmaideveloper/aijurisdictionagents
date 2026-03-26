@@ -53,6 +53,33 @@ function Require-Value {
     }
 }
 
+function Test-ResourceExistsInGroup {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceGroupName,
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceName,
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceType
+    )
+
+    az resource show `
+        --resource-group $ResourceGroupName `
+        --name $ResourceName `
+        --resource-type $ResourceType `
+        --query id `
+        --output tsv 2>$null | Out-Null
+
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Write-WorkflowSummary {
+    param([Parameter(Mandatory = $true)][string[]]$Lines)
+    if ([string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) { return }
+    (($Lines -join [Environment]::NewLine) + [Environment]::NewLine + [Environment]::NewLine) |
+        Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+}
+
 Assert-ToolInstalled -ToolName "az"
 
 $envSubscriptionId = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_SUBSCRIPTION_ID" }
@@ -62,7 +89,7 @@ $envContainerEnv = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $E
 $envAcr = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_CONTAINER_REGISTRY" }
 $envIdentity = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_MANAGED_IDENTITY_NAME" }
 $envPgServer = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_SERVER_NAME" }
-$envPgDb = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_POSTGRES_DATABASE_NAME" }
+$envPgDb = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_POSTGRES_DATABASE_NAME_SK" }
 $envPgUser = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_USERNAME" }
 $envPgPass = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_PASSWORD" }
 
@@ -73,7 +100,7 @@ $ContainerAppEnvironmentName = Resolve-InputValue -ExplicitValue $ContainerAppEn
 $AcrName = Resolve-InputValue -ExplicitValue $AcrName -EnvFileValue $envAcr -EnvironmentValue $env:AZURE_CONTAINER_REGISTRY
 $ManagedIdentityName = Resolve-InputValue -ExplicitValue $ManagedIdentityName -EnvFileValue $envIdentity -EnvironmentValue $env:AZURE_MANAGED_IDENTITY_NAME
 $PostgresServerName = Resolve-InputValue -ExplicitValue $PostgresServerName -EnvFileValue $envPgServer -EnvironmentValue $env:AZURE_POSTGRES_SERVER_NAME
-$PostgresDatabaseName = Resolve-InputValue -ExplicitValue $PostgresDatabaseName -EnvFileValue $envPgDb -EnvironmentValue $env:AZURE_LAWS_POSTGRES_DATABASE_NAME
+$PostgresDatabaseName = Resolve-InputValue -ExplicitValue $PostgresDatabaseName -EnvFileValue $envPgDb -EnvironmentValue $env:AZURE_LAWS_POSTGRES_DATABASE_NAME_SK
 $PostgresAdminUsername = Resolve-InputValue -ExplicitValue $PostgresAdminUsername -EnvFileValue $envPgUser -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_USERNAME
 $PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPassword -EnvFileValue $envPgPass -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_PASSWORD
 
@@ -90,6 +117,11 @@ Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
 
 az account set --subscription $SubscriptionId | Out-Null
 az group create --name $ResourceGroupName --location $Location | Out-Null
+
+$containerAppExistedBeforeDeployment = Test-ResourceExistsInGroup `
+    -ResourceGroupName $ResourceGroupName `
+    -ResourceName $ContainerAppName `
+    -ResourceType "Microsoft.App/containerApps"
 
 $imageRepository = "laws-collector"
 $image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
@@ -112,4 +144,18 @@ az deployment group create `
       postgresAdminUsername=$PostgresAdminUsername `
       postgresAdminPassword=$PostgresAdminPassword | Out-Null
 
+$containerAppDisposition = if ($containerAppExistedBeforeDeployment) { "updated" } else { "created" }
+
 Write-Host "Laws collector deployment complete."
+Write-Host "ACA resources:"
+Write-Host " - Managed environment (reused): $ContainerAppEnvironmentName"
+Write-Host " - Laws collector container app ($containerAppDisposition): $ContainerAppName"
+
+Write-WorkflowSummary -Lines @(
+    "## ACA deployment summary",
+    "",
+    "| Resource | Name | Result | Endpoint |",
+    "| --- | --- | --- | --- |",
+    "| Managed environment | $ContainerAppEnvironmentName | reused | n/a |",
+    "| Laws collector container app | $ContainerAppName | $containerAppDisposition | internal ingress |"
+)

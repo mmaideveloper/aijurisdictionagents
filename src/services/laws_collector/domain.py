@@ -13,7 +13,8 @@ class ProvisionRecord:
 
 
 @dataclass(frozen=True)
-class SlovLexLawSnapshot:
+class LawSnapshot:
+    source_system: str
     country_code: str
     collection_code: str
     year: int
@@ -66,6 +67,9 @@ class SlovLexLawSnapshot:
     def version_checksum(self) -> str:
         payload = json.dumps(self.normalized_payload(), ensure_ascii=True, sort_keys=True)
         return sha256(payload.encode("utf-8")).hexdigest()
+
+
+SlovLexLawSnapshot = LawSnapshot
 
 
 @dataclass(frozen=True)

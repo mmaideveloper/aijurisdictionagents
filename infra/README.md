@@ -26,6 +26,14 @@ This keeps deployment simple while matching the existing API container workflow.
 - User-assigned Managed Identity with `Storage Blob Data Contributor` on Storage Account
 - Azure Container App (public ingress on port `8080`)
 
+ACA resources created by repository deployments:
+
+- Managed Environment: `AZURE_CONTAINERAPPS_ENVIRONMENT`
+- API Container App: `AZURE_CONTAINER_APP_NAME`
+- Frontend Container App: `AZURE_FRONTEND_CONTAINER_APP_NAME`
+- Laws Collector Container App: `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
+- Document Processor ACA Job: `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`
+
 ## Prerequisites
 
 - Azure subscription with permission to create resources
@@ -151,13 +159,18 @@ The Bicep deployment provisions or reuses:
 
 - Azure Database for PostgreSQL Flexible Server (`AZURE_POSTGRES_SERVER_NAME`, default `db-juris-dev`)
 - PostgreSQL database (`AZURE_POSTGRES_DATABASE_NAME`, default `aijurisdiction`)
+- PostgreSQL database for the Slovak laws corpus (`AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, default `laws_sk`)
 - firewall rule for Azure services
 - `azure.extensions=vector`
+- Public frontend Azure Container App (`AZURE_FRONTEND_CONTAINER_APP_NAME`)
+- Document processor ACA Job (`AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, default `document-processor`)
+- Private Azure Container App for the laws collector (`AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, default `laws-collector`)
 
 Existing-resource behavior:
 
 - If a named resource already exists in the target resource group, deployment reuses it instead of creating it again.
 - The deploy script requires existing named resources to already be in the requested location. If a resource with the same name exists in a different region, deployment fails with a location mismatch instead of silently switching regions.
+- Shared RBAC assignments for the user-assigned managed identity are intentionally keyed only by `scope + principal + role`. This keeps `AcrPull` and `Storage Blob Data Contributor` idempotent across `infra_deploy`, laws collector, frontend, and document processor workflows.
 
 Parameter resolution priority in `deploy_api.ps1`:
 
@@ -262,7 +275,7 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_OPENAI_EMBEDDINGS_MODEL` = `text-embedding-3-large` (or your embedding deployment name)
 - `AZURE_OPENAI_API_VERSION` = `2024-12-01-preview`
 - GitHub secret `AZURE_OPENAI_API_KEY` = `<AZURE_OPENAI_KEY>`
-- `DOCUMENT_PROCESSOR` = `azure` for deployed environments so the API leaves uploads pending for the ACA document-processor job
+- `DOCUMENT_PROCESSOR_OPTION` = `azure` for deployed environments so the API leaves uploads pending for the ACA document-processor job
 - `CORS_ALLOW_ORIGINS` = comma-separated deployed browser origins allowed to call the API (optional)
   - Example: `https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io`
   - Do not set this for native Android/iOS-only clients unless you also have a browser-hosted build.
@@ -273,6 +286,8 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - Push to `main`: automatically deploys to the `dev` GitHub Environment after tests/build pass
 - Inputs: `deploy=true`, `github_environment=<environment>`
   - Manual `workflow_dispatch` is still the path for non-`dev` environments such as `test` and `prod`
+- After the image deploy step, the workflow now waits for the Container App provisioning state to return to `Succeeded` before applying secrets and environment variables.
+- If Azure still reports `ContainerAppOperationInProgress`, the workflow retries the secret/env update commands automatically instead of failing on the first race.
 
 ## GitHub workflow for database schema upgrades only
 
@@ -405,9 +420,14 @@ New frontend deployment assets:
 - `.github/workflows/web_build_deploy.yml`: frontend CI/CD workflow
 - `.github/workflows/infra_deploy.yml`: infrastructure provisioning workflow (Bicep)
 
-Required GitHub Environment variable for frontend deployment:
+Required GitHub Environment variables for frontend deployment:
 
 - `AZURE_FRONTEND_CONTAINER_APP_NAME`
+- `AZURE_LOCATION`
+- `AZURE_MANAGED_IDENTITY_NAME`
+
+`infra_deploy` now provisions or reuses the frontend Container App shell using `AZURE_FRONTEND_CONTAINER_APP_NAME`.
+`web_build_deploy` updates that app with the built frontend image and can also bootstrap it directly if the shell was not provisioned yet.
 
 For a repo-level checklist to create additional GitHub Environments such as `test`
 and `prod`, see `docs/GITHUB_ENVIRONMENTS.md`.
@@ -440,6 +460,24 @@ Run from repository root:
 
 The script builds the laws collector image in ACR using `src/services/laws_collector/Dockerfile` and deploys the Container App with the image tag you provide.
 
+GitHub Actions workflow:
+
+- Workflow file: `.github/workflows/laws_collector_build_deploy.yml`
+- Push to `main` for laws collector changes: runs `tests/test_laws_collector.py`, validates the Docker image build, and deploys to the `dev` GitHub Environment
+- Pull requests: run tests and Docker build only
+- Manual run: supports `deploy=true|false`, custom GitHub Environment, and optional image tag override
+
+Required GitHub Environment variables/secrets for deployment:
+
+- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`
+- Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`
+- Optional variables: `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
+
+Recommended GitHub Environment values:
+
+- `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME=laws-collector`
+- `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
+
 
 ## Deploy document processor ACA job
 
@@ -450,8 +488,10 @@ A dedicated deployment script and Bicep template are available for the document 
 
 The deployment builds `src/services/document_processor/Dockerfile`, publishes the image to ACR, and creates or updates a scheduled Azure Container Apps Job that processes uploaded case documents into text/vector records.
 
-Use `DOCUMENT_PROCESSOR=azure` on the deployed API Container App together with this ACA job.
-For local development only, you can set `DOCUMENT_PROCESSOR=local` so uploads are processed immediately inside the API process.
+Use `DOCUMENT_PROCESSOR_OPTION=azure` on the deployed API Container App together with this ACA job.
+For local development only, you can set `DOCUMENT_PROCESSOR_OPTION=local` so uploads are processed immediately inside the API process.
+All Azure deployment workflows now append an `ACA deployment summary` table to the GitHub Actions run summary so you can see which ACA resources were created, reused, or updated without scanning the raw logs.
+`infra_deploy` also provisions or reuses the initial document processor ACA job shell so the later document processor workflow can focus on publishing the service image and job configuration updates.
 
 ```powershell
 ./infra/scripts/deploy_document_processor.ps1 \
@@ -480,11 +520,10 @@ GitHub Actions workflow:
 
 Required GitHub Environment variables/secrets for deployment:
 
-- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_DATABASE_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`, `AZURE_STORAGE_ACCOUNT_NAME`, `LLM_PROVIDER`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, `DOCUMENT_PROCESSOR`
+- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_DATABASE_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`, `AZURE_STORAGE_ACCOUNT_NAME`, `LLM_PROVIDER`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`
 - Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`, `AZURE_OPENAI_API_KEY`
 - Optional variables: `AZURE_STORAGE_CONTAINER_NAME`, `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION`
 
 Recommended GitHub Environment values:
 
-- `DOCUMENT_PROCESSOR=azure`
 - `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION=0 */15 * * * *` unless you need a different schedule

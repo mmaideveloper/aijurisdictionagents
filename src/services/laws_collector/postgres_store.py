@@ -9,7 +9,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .config import LawsCollectorConfig
-from .domain import ProvisionRecord, SlovLexLawSnapshot, StoredVersion
+from .domain import LawSnapshot, ProvisionRecord, StoredVersion
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ class PostgresLawStore:
     def initialize(self) -> None:
         return
 
-    def upsert_document(self, snapshot: SlovLexLawSnapshot) -> tuple[str, bool]:
+    def upsert_document(self, snapshot: LawSnapshot) -> tuple[str, bool]:
         now = _now_iso()
         with self._connect() as conn:
             row = conn.execute(
@@ -122,7 +122,7 @@ class PostgresLawStore:
             conn.commit()
             return document_id, False
 
-    def upsert_version(self, *, document_id: str, snapshot: SlovLexLawSnapshot, version_checksum: str, html_checksum: str, pdf_checksum: str, html_bytes: int, pdf_bytes: int, normalized_json: str, embedding_vector: str) -> StoredVersion:
+    def upsert_version(self, *, document_id: str, snapshot: LawSnapshot, version_checksum: str, html_checksum: str, pdf_checksum: str, html_bytes: int, pdf_bytes: int, normalized_json: str, embedding_vector: str) -> StoredVersion:
         now = _now_iso()
         with self._connect() as conn:
             row = conn.execute(
@@ -233,7 +233,7 @@ class PostgresLawStore:
                 )
             conn.commit()
 
-    def upsert_artifact(self, *, document_id: str, version_id: str, artifact_kind: str, source_url: str, checksum: str, content_text: str, content_blob: bytes | None, content_bytes: int, http_etag: str, http_last_modified: str, should_redownload: bool, verification_status: str, download_error: str = "") -> None:
+    def upsert_artifact(self, *, document_id: str, version_id: str, source_system: str, artifact_kind: str, source_url: str, checksum: str, content_text: str, content_blob: bytes | None, content_bytes: int, http_etag: str, http_last_modified: str, should_redownload: bool, verification_status: str, download_error: str = "") -> None:
         now = _now_iso()
         with self._connect() as conn:
             row = conn.execute(
@@ -251,7 +251,7 @@ class PostgresLawStore:
                         checksum, content_text, content_blob, content_bytes, http_etag, http_last_modified,
                         should_redownload, verification_status, download_error, fetched_at, last_checked_at
                     ) VALUES (
-                        %(artifact_id)s, %(document_id)s, %(version_id)s, 'slov-lex', %(artifact_kind)s,
+                        %(artifact_id)s, %(document_id)s, %(version_id)s, %(source_system)s, %(artifact_kind)s,
                         %(source_url)s, %(checksum)s, %(content_text)s, %(content_blob)s, %(content_bytes)s,
                         %(http_etag)s, %(http_last_modified)s, %(should_redownload)s,
                         %(verification_status)s, %(download_error)s, %(now)s, %(now)s
@@ -261,6 +261,7 @@ class PostgresLawStore:
                         "artifact_id": str(uuid.uuid4()),
                         "document_id": document_id,
                         "version_id": version_id,
+                        "source_system": source_system,
                         "artifact_kind": artifact_kind,
                         "source_url": source_url,
                         "checksum": checksum,

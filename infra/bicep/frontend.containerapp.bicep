@@ -19,7 +19,7 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 }
 
 resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(acr.id, managedIdentity.id, 'AcrPull', containerAppName)
+  name: guid(acr.id, managedIdentity.id, 'AcrPull')
   scope: acr
   properties: {
     principalId: managedIdentity.properties.principalId

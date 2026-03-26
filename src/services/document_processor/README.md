@@ -7,11 +7,12 @@ Current extraction behavior:
 - Plain-text formats are decoded directly.
 - PDFs first use embedded text extraction (`pypdf`).
 - If a PDF appears scanned/image-only, the service falls back to OCR using `RapidOCR` over rendered PDF pages.
+- Optional OCR libraries are loaded dynamically at runtime so API `mypy` checks do not require third-party type stubs for `fitz`, `numpy`, or `rapidocr_onnxruntime`.
 
 Current runtime modes:
 
-- `DOCUMENT_PROCESSOR=local`: the API processes uploads immediately inside the API request after the file is stored.
-- `DOCUMENT_PROCESSOR=azure`: the API leaves uploads pending and this ACA scheduled job processes them asynchronously.
+- `DOCUMENT_PROCESSOR_OPTION=local`: the API processes uploads immediately inside the API request after the file is stored.
+- `DOCUMENT_PROCESSOR_OPTION=azure`: the API leaves uploads pending and this ACA scheduled job processes them asynchronously.
 
 Embedding model env vars:
 

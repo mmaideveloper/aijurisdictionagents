@@ -6,6 +6,7 @@ import tempfile
 
 from services.laws_collector import LawsCollectorConfig, SlovLexImportPlanner, SlovakLawsCollectorService, SqliteLawStore
 from services.laws_collector.source_fixtures import baseline_snapshots, delta_snapshots
+from services.laws_collector import  get_country_laws_collector_definition
 
 
 def main() -> None:
@@ -22,19 +23,25 @@ def main() -> None:
             initial_import_from=date(2025, 1, 1),
             historical_import_from=date(1946, 1, 1),
         )
+        collector_definition = get_country_laws_collector_definition(config.country_code)
         store = SqliteLawStore.from_config(config)
         store.initialize()
         service = SlovakLawsCollectorService(config=config, store=store)
         planner = SlovLexImportPlanner(config=config)
 
-        baseline = service.sync(baseline_snapshots())
-        delta = service.sync(delta_snapshots())
-        plan = service.plan_updates(known_snapshots=baseline_snapshots(), latest_snapshots=delta_snapshots())
+        baseline_snapshots = collector_definition.baseline_snapshots()
+        delta_snapshots = collector_definition.delta_snapshots()
+        baseline = service.sync(baseline_snapshots)
+        delta = service.sync(delta_snapshots)
+        plan = service.plan_updates(known_snapshots=baseline_snapshots, latest_snapshots=delta_snapshots)
         counts = store.get_counts()
         overview = store.list_document_overview()
 
         print("Country DB name:", config.country_db_name)
         print("Import plan:", planner.build_plan(initial_window_complete=False))
+        print("Collector:", collector_definition.collector_name)
+        print("Country:", config.country_code)
+        print("Cloud DB name:", collector_definition.cloud_database_name)
         print("Baseline sync:", baseline)
         print("Delta sync:", delta)
         print("Planned updates:", plan.items_with_updates)

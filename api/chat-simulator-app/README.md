@@ -17,7 +17,7 @@ For local development, the simulator now defaults to `http://127.0.0.1:8080` and
 For local PostgreSQL validation, run the API with a persisted case backend:
 
 ```bash
-DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR=local LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR_OPTION=local LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
 ```
 
 The simulator now supports:

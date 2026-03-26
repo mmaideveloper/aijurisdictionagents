@@ -1,6 +1,11 @@
 param location string = resourceGroup().location
 param environmentName string
 param containerAppName string
+param frontendContainerAppName string
+param documentProcessorJobName string = 'document-processor'
+param documentProcessorCronExpression string = '0 */15 * * * *'
+param lawsCollectorJobName string = 'laws-collector'
+param lawsCollectorCronExpression string = '0 0 * * * *'
 param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'
@@ -9,6 +14,7 @@ param applicationInsightsName string
 param managedIdentityName string
 param postgresServerName string
 param postgresDatabaseName string = 'aijurisdiction'
+param lawsPostgresDatabaseName string = 'laws_sk'
 param postgresAdminUsername string
 @secure()
 param postgresAdminPassword string = ''
@@ -17,6 +23,12 @@ param postgresSkuTier string = 'Burstable'
 param postgresVersion string = '17'
 param postgresStorageSizeGb int = 32
 param postgresClientIp string = ''
+param llmProvider string = 'azurefoundry'
+param azureOpenAIEndpoint string
+param azureOpenAIEmbeddingsModel string = 'text-embedding-3-large'
+param azureOpenAIApiVersion string = '2024-12-01-preview'
+@secure()
+param azureOpenAIApiKey string
 param createLogAnalyticsWorkspace bool = true
 param createManagedEnvironment bool = true
 param createAcr bool = true
@@ -24,6 +36,9 @@ param createStorageAccount bool = true
 param createManagedIdentity bool = true
 param createApplicationInsights bool = true
 param createContainerApp bool = true
+param createFrontendContainerApp bool = true
+param createDocumentProcessorJob bool = true
+param createLawsCollectorJob bool = true
 param createPostgresServer bool = true
 param tags object = {}
 
@@ -268,6 +283,24 @@ resource postgresDatabaseOnExistingServer 'Microsoft.DBforPostgreSQL/flexibleSer
   }
 }
 
+resource lawsPostgresDatabaseOnNewServer 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-12-01' = if (createPostgresServer) {
+  name: lawsPostgresDatabaseName
+  parent: postgresServer
+  properties: {
+    charset: 'UTF8'
+    collation: 'en_US.utf8'
+  }
+}
+
+resource lawsPostgresDatabaseOnExistingServer 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-12-01' = if (!createPostgresServer) {
+  name: lawsPostgresDatabaseName
+  parent: postgresServerExisting
+  properties: {
+    charset: 'UTF8'
+    collation: 'en_US.utf8'
+  }
+}
+
 var managedIdentityId = createManagedIdentity ? managedIdentity.id : managedIdentityExisting.id
 var managedIdentityPrincipalId = createManagedIdentity
   ? managedIdentity.properties.principalId
@@ -382,6 +415,97 @@ resource containerAppExisting 'Microsoft.App/containerApps@2024-03-01' existing 
   name: containerAppName
 }
 
+module frontendContainerApp 'frontend.containerapp.bicep' = if (createFrontendContainerApp) {
+  name: 'frontendContainerApp'
+  params: {
+    location: location
+    managedEnvironmentName: environmentName
+    containerAppName: frontendContainerAppName
+    acrName: acrName
+    managedIdentityName: managedIdentityName
+    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    tags: tags
+  }
+  dependsOn: [
+    managedEnvironment
+    acr
+    managedIdentity
+  ]
+}
+
+resource frontendContainerAppExisting 'Microsoft.App/containerApps@2024-03-01' existing = if (!createFrontendContainerApp) {
+  name: frontendContainerAppName
+}
+
+module documentProcessorJob 'document_processor.job.bicep' = if (createDocumentProcessorJob) {
+  name: 'documentProcessorJob'
+  params: {
+    location: location
+    managedEnvironmentName: environmentName
+    jobName: documentProcessorJobName
+    cronExpression: documentProcessorCronExpression
+    acrName: acrName
+    managedIdentityName: managedIdentityName
+    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    postgresServerName: postgresServerName
+    postgresDatabaseName: postgresDatabaseName
+    postgresAdminUsername: postgresAdminUsername
+    postgresAdminPassword: postgresAdminPassword
+    storageAccountName: storageAccountName
+    storageContainerName: storageContainerName
+    llmProvider: llmProvider
+    azureOpenAIEndpoint: azureOpenAIEndpoint
+    azureOpenAIEmbeddingsModel: azureOpenAIEmbeddingsModel
+    azureOpenAIApiVersion: azureOpenAIApiVersion
+    azureOpenAIApiKey: azureOpenAIApiKey
+    tags: tags
+  }
+  dependsOn: [
+    managedEnvironment
+    acr
+    managedIdentity
+    postgresServer
+    postgresDatabaseOnNewServer
+    postgresDatabaseOnExistingServer
+    storageContainerOnNewStorage
+    storageContainerOnExistingStorage
+  ]
+}
+
+resource documentProcessorJobExisting 'Microsoft.App/jobs@2024-03-01' existing = if (!createDocumentProcessorJob) {
+  name: documentProcessorJobName
+}
+
+module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob) {
+  name: 'lawsCollectorJob'
+  params: {
+    location: location
+    managedEnvironmentName: environmentName
+    jobName: lawsCollectorJobName
+    acrName: acrName
+    managedIdentityName: managedIdentityName
+    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    postgresServerName: postgresServerName
+    postgresDatabaseName: lawsPostgresDatabaseName
+    postgresAdminUsername: postgresAdminUsername
+    postgresAdminPassword: postgresAdminPassword
+    cronExpression: lawsCollectorCronExpression
+    tags: tags
+  }
+  dependsOn: [
+    managedEnvironment
+    acr
+    managedIdentity
+    postgresServer
+    lawsPostgresDatabaseOnNewServer
+    lawsPostgresDatabaseOnExistingServer
+  ]
+}
+
+resource lawsCollectorJobExisting 'Microsoft.App/jobs@2024-03-01' existing = if (!createLawsCollectorJob) {
+  name: lawsCollectorJobName
+}
+
 output acrLoginServer string = acrLoginServer
 output storageAccountName string = createStorageAccount ? storageAccount.name : storageAccountExisting.name
 output storageContainerName string = storageContainerName
@@ -397,11 +521,27 @@ output containerAppFqdn string = createContainerApp
 output containerAppUrl string = createContainerApp
   ? 'https://${containerApp.properties.configuration.ingress.fqdn}'
   : 'https://${containerAppExisting.properties.configuration.ingress.fqdn}'
+output frontendContainerAppName string = createFrontendContainerApp
+  ? frontendContainerApp.outputs.containerAppName
+  : frontendContainerAppExisting.name
+output frontendContainerAppFqdn string = createFrontendContainerApp
+  ? frontendContainerApp.outputs.containerAppFqdn
+  : frontendContainerAppExisting.properties.configuration.ingress.fqdn
+output frontendContainerAppUrl string = createFrontendContainerApp
+  ? frontendContainerApp.outputs.containerAppUrl
+  : 'https://${frontendContainerAppExisting.properties.configuration.ingress.fqdn}'
+output documentProcessorJobName string = createDocumentProcessorJob
+  ? documentProcessorJob.outputs.jobName
+  : documentProcessorJobExisting.name
 output containerAppsEnvironmentName string = createManagedEnvironment
   ? managedEnvironment.name
   : managedEnvironmentExisting.name
 output postgresServerName string = createPostgresServer ? postgresServer.name : postgresServerExisting.name
 output postgresDatabaseName string = postgresDatabaseName
+output lawsPostgresDatabaseName string = lawsPostgresDatabaseName
+output lawsCollectorJobName string = createLawsCollectorJob
+  ? lawsCollectorJob.outputs.jobName
+  : lawsCollectorJobExisting.name
 output postgresHost string = createPostgresServer
   ? postgresServer.properties.fullyQualifiedDomainName
   : postgresServerExisting.properties.fullyQualifiedDomainName

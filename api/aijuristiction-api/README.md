@@ -62,9 +62,9 @@ Local API startup loads the repository root `.env` automatically. If you overrid
 
 Document processing mode:
 
-- `DOCUMENT_PROCESSOR=local`: uploaded case documents are processed immediately inside the API and stored with extracted text plus vector data.
-- `DOCUMENT_PROCESSOR=azure`: uploads stay pending until the Azure Container Apps document-processor job runs.
-- Recommended deployed value: `DOCUMENT_PROCESSOR=azure`
+- `DOCUMENT_PROCESSOR_OPTION=local`: uploaded case documents are processed immediately inside the API and stored with extracted text plus vector data.
+- `DOCUMENT_PROCESSOR_OPTION=azure`: uploads stay pending until the Azure Container Apps document-processor job runs.
+- Recommended deployed value: `DOCUMENT_PROCESSOR_OPTION=azure`
 
 ### Policy-driven multi-intent document task planning
 
@@ -392,7 +392,7 @@ Run it independently to test chat flows before frontend deployment.
 For persisted-case debugging with local PostgreSQL, start the API with:
 
 ```bash
-DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR=local LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR_OPTION=local LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
 ```
 
 The simulator can then call `GET /v1/cases/{case_id}/documents/debug?user_id=...&query=...` to show:
@@ -512,6 +512,7 @@ git merge origin/main
 ```
 
 - CI checks: install deps, lint (`ruff`), type-check (`mypy`), tests (`pytest`), and Docker build.
+- GitHub Actions installs both the repo root package (`pip install -e ../..`) and the API package (`pip install -e .[dev]`) so tests can import `../../src/aijurisdictionagents` with its runtime dependencies.
 - Local pre-flight command to mirror CI from this folder:
 
 ```bash

@@ -3,16 +3,15 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
+from .country_registry import get_country_laws_collector_definition
 from .config import LawsCollectorConfig
 from .import_planner import SlovLexImportPlanner
 from .postgres_store import PostgresLawStore
-from .service import SlovakLawsCollectorService
-from .source_fixtures import baseline_snapshots, delta_snapshots
 from .sqlite_store import SqliteLawStore
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed or update the Slovak laws collector store.")
+    parser = argparse.ArgumentParser(description="Seed or update the selected country laws collector store.")
     parser.add_argument(
         "--fixture",
         choices=("baseline", "delta"),
@@ -37,12 +36,13 @@ def main() -> None:
     args = parser.parse_args()
 
     config = LawsCollectorConfig.from_env()
+    collector_definition = get_country_laws_collector_definition(config.country_code)
     store = SqliteLawStore.from_config(config) if config.db_backend == "sqlite" else PostgresLawStore.from_config(config)
     store.initialize()
-    service = SlovakLawsCollectorService(config=config, store=store)
+    service = collector_definition.create_service(config=config, store=store)
 
-    baseline = baseline_snapshots()
-    snapshots = baseline if args.fixture == "baseline" else delta_snapshots()
+    baseline = collector_definition.baseline_snapshots()
+    snapshots = baseline if args.fixture == "baseline" else collector_definition.delta_snapshots()
 
     if args.plan_import:
         planner = SlovLexImportPlanner(config=config)
@@ -68,6 +68,8 @@ def main() -> None:
     counts = store.get_counts()
 
     print("country:", config.country_code)
+    print("collector:", collector_definition.collector_name)
+    print("cloud_database_name:", collector_definition.cloud_database_name)
     print("fixture:", args.fixture)
     print("processed:", summary.processed)
     print("new_documents:", summary.new_documents)

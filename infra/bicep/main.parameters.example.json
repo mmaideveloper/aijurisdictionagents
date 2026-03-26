@@ -11,6 +11,21 @@
     "containerAppName": {
       "value": "ca-aijuristiction-api-dev"
     },
+    "frontendContainerAppName": {
+      "value": "ca-aijurisdiction-frontend-dev"
+    },
+    "documentProcessorJobName": {
+      "value": "document-processor"
+    },
+    "documentProcessorCronExpression": {
+      "value": "0 */15 * * * *"
+    },
+    "lawsCollectorJobName": {
+      "value": "laws-collector"
+    },
+    "lawsCollectorCronExpression": {
+      "value": "0 0 * * * *"
+    },
     "acrName": {
       "value": "aijurdevacr12345"
     },
@@ -28,6 +43,21 @@
     },
     "managedIdentityName": {
       "value": "id-aijurisdiction-api-dev"
+    },
+    "llmProvider": {
+      "value": "azurefoundry"
+    },
+    "azureOpenAIEndpoint": {
+      "value": "https://example-foundry.openai.azure.com/"
+    },
+    "azureOpenAIEmbeddingsModel": {
+      "value": "text-embedding-3-large"
+    },
+    "azureOpenAIApiVersion": {
+      "value": "2024-12-01-preview"
+    },
+    "lawsPostgresDatabaseName": {
+      "value": "laws_sk"
     },
     "tags": {
       "value": {

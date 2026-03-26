@@ -8,7 +8,7 @@ import sqlite3
 import uuid
 
 from .config import LawsCollectorConfig
-from .domain import ProvisionRecord, SlovLexLawSnapshot, StoredVersion
+from .domain import LawSnapshot, ProvisionRecord, StoredVersion
 
 
 @dataclass(frozen=True)
@@ -148,7 +148,7 @@ class SqliteLawStore:
                 """
             )
 
-    def upsert_document(self, snapshot: SlovLexLawSnapshot) -> tuple[str, bool]:
+    def upsert_document(self, snapshot: LawSnapshot) -> tuple[str, bool]:
         now = _now_iso()
         with self._connect() as conn:
             row = conn.execute(
@@ -234,7 +234,7 @@ class SqliteLawStore:
         self,
         *,
         document_id: str,
-        snapshot: SlovLexLawSnapshot,
+        snapshot: LawSnapshot,
         version_checksum: str,
         html_checksum: str,
         pdf_checksum: str,
@@ -355,6 +355,7 @@ class SqliteLawStore:
         *,
         document_id: str,
         version_id: str,
+        source_system: str,
         artifact_kind: str,
         source_url: str,
         checksum: str,
@@ -386,12 +387,13 @@ class SqliteLawStore:
                         http_last_modified, should_redownload, verification_status,
                         download_error, fetched_at, last_checked_at
                     )
-                    VALUES (?, ?, ?, 'slov-lex', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(uuid.uuid4()),
                         document_id,
                         version_id,
+                        source_system,
                         artifact_kind,
                         source_url,
                         checksum,

@@ -267,6 +267,20 @@ function Restore-EnvVar {
     Set-Item -Path "Env:$Name" -Value $PreviousValue
 }
 
+function Write-WorkflowSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Lines
+    )
+
+    if ([string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
+        return
+    }
+
+    (($Lines -join [Environment]::NewLine) + [Environment]::NewLine + [Environment]::NewLine) |
+        Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+}
+
 function Get-JsonPayloadFromCliOutput {
     param(
         [Parameter(Mandatory = $true)]
@@ -1091,3 +1105,19 @@ Write-Host "Storage container:  $storageContainerNameOutput"
 if (-not [string]::IsNullOrWhiteSpace($storageBlobEndpointOutput)) {
     Write-Host "Storage blob endpoint: $storageBlobEndpointOutput"
 }
+
+$managedEnvironmentDisposition = if ($createManagedEnvironment) { "created" } else { "reused" }
+$containerAppDisposition = if ($createContainerApp) { "created" } else { "updated" }
+
+Write-Host "ACA resources:"
+Write-Host " - Managed environment ($managedEnvironmentDisposition): $EnvironmentName"
+Write-Host " - API container app ($containerAppDisposition): $ContainerAppName"
+
+Write-WorkflowSummary -Lines @(
+    "## ACA deployment summary",
+    "",
+    "| Resource | Name | Result | Endpoint |",
+    "| --- | --- | --- | --- |",
+    "| Managed environment | $EnvironmentName | $managedEnvironmentDisposition | n/a |",
+    "| API container app | $ContainerAppName | $containerAppDisposition | https://$fqdn |"
+)

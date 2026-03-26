@@ -2,12 +2,13 @@
 
 ## Goal
 
-`laws_collector` is a new service under `src/services` that builds and updates a Slovak law corpus from official sources.
+`laws_collector` is a service under `src/services` that selects a country-specific collector implementation and stores the resulting law corpus in a country-specific database.
 
 Current scope:
 
-- country `SK` only,
-- canonical source model based on `Slov-Lex`,
+- pluggable collector selection by `LAWS_COUNTRY`,
+- `slovak_laws_collector` implemented now for country `SK`,
+- canonical Slovak source model based on `Slov-Lex`,
 - draft monitoring model for `NR SR`,
 - local runnable SQLite implementation with documents stored in the database,
 - schema that can move later to PostgreSQL on Azure.
@@ -201,13 +202,21 @@ python -m services.laws_collector --fixture delta
 
 Add these to `.env` when you start wiring the service into real runs:
 
-- `LAWS_COUNTRY=SK`
 - `LAWS_DB_BACKEND=sqlite`
 - `LAWS_DB_LOCAL=./databases/laws-collector/sk_laws.sqlite3`
 - `LAWS_STORAGE_LOCAL=./storage/laws/sk`
 - `LAWS_DELTA_POLL_HOURS=3`
 - `LAWS_INITIAL_IMPORT_FROM=2025-01-01`
 - `LAWS_HISTORICAL_IMPORT_FROM=1946-01-01`
+
+`LAWS_COUNTRY` selects the country-specific collector implementation. The current implementation supports only `SK`, so the service still defaults to `SK` when the variable is unset.
+
+For PostgreSQL naming, keep the database mapping country-specific:
+
+- Slovakia remains `laws_sk`
+- future countries should use `laws_<country_code_lower>`
+
+The current Azure deployment keeps the Slovak override variable `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, which feeds the `laws_sk` PostgreSQL database for the default Slovak run.
 
 Future cloud settings:
 
@@ -231,7 +240,7 @@ Implemented upgrades include:
 - PostgreSQL store support (`LAWS_DB_BACKEND=postgres`) plus migration project `databases/migrations/laws`.
 - per-country database provisioning helper:
   - `python databases/scripts/provision_country_laws_db.py --admin-uri <postgres-admin-uri> --country SK`
-  - database name format: `laws_<country_code_lower>`.
+  - database name format: `laws_<country_code_lower>` with Slovakia remaining `laws_sk`.
 
 ### PostgreSQL migration flow
 
@@ -254,7 +263,6 @@ PYTHONPATH=src python databases/scripts/apply_db_migrations.py --project laws
 3) Run collector against PostgreSQL:
 
 ```bash
-LAWS_COUNTRY=SK \
 LAWS_DB_BACKEND=postgres \
 LAWS_DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/laws_sk \
 PYTHONPATH=src python -m services.laws_collector --fixture baseline
@@ -278,6 +286,7 @@ Deployment assets for a dedicated Azure Container App named `laws-collector` are
 - `infra/scripts/deploy_laws_collector.ps1`
 - `infra/bicep/laws_collector.containerapp.parameters.example.json`
 - container image definition: `src/services/laws_collector/Dockerfile`
+- GitHub Actions workflow: `.github/workflows/laws_collector_build_deploy.yml`
 
 The deploy script builds the image in ACR and deploys it to Azure Container Apps with PostgreSQL env configuration.
 
@@ -300,3 +309,4 @@ Preview the planned windows with:
 PYTHONPATH=src python -m services.laws_collector --plan-import
 PYTHONPATH=src python -m services.laws_collector --plan-import --initial-window-complete
 ```
+The shared `infra_deploy` workflow now also provisions the `laws_sk` PostgreSQL database and a placeholder private Container App for `laws-collector`, which the dedicated laws collector workflow later updates with the real image.
