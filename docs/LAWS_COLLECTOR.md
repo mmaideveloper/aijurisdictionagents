@@ -75,7 +75,11 @@ These are the most important columns now:
 - `official_name`: the official law name as published
 - `lawyer_title`: the practical title lawyers are likely to search for
 - `publication_date`
+- `law_year`
+- `law_number`
 - `first_effective_date`
+- `parent_law_year` (optional amendment target reference)
+- `parent_law_number` (optional amendment target reference)
 - `first_stored_at`
 - `last_stored_at`
 - `last_checked_at`
@@ -235,6 +239,7 @@ Implemented upgrades include:
 - richer law metadata stored with each document:
   - `applicable_to`,
   - `superseded_by_url` (link to newer law),
+  - `parent_law_year` / `parent_law_number` for Slovak amendment acts that update another law,
   - existing lifecycle timestamps and status fields.
 - deterministic vector generation per law version (`embedding_vector`) for semantic retrieval bootstrap.
 - PostgreSQL store support (`LAWS_DB_BACKEND=postgres`) plus migration project `databases/migrations/laws`.

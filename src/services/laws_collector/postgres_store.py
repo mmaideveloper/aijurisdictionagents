@@ -59,12 +59,14 @@ class PostgresLawStore:
                     INSERT INTO law_documents(
                         document_id, country_code, collection_code, law_year, law_number, official_name,
                         lawyer_title, source_url, publication_date, current_status, first_effective_date,
-                        applicable_to, superseded_by_url, first_stored_at, last_stored_at, last_checked_at,
+                        applicable_to, superseded_by_url, parent_law_year, parent_law_number,
+                        first_stored_at, last_stored_at, last_checked_at,
                         last_download_status, last_download_error, download_attempt_count, created_at, updated_at
                     ) VALUES (
                         %(document_id)s, %(country)s, %(collection)s, %(year)s, %(number)s, %(official_name)s,
                         %(lawyer_title)s, %(source_url)s, %(publication_date)s, %(status)s, %(effective_from)s,
-                        %(applicable_to)s, %(superseded_by_url)s, %(now)s, %(now)s, %(now)s, 'stored', '', 1,
+                        %(applicable_to)s, %(superseded_by_url)s, %(parent_law_year)s, %(parent_law_number)s,
+                        %(now)s, %(now)s, %(now)s, 'stored', '', 1,
                         %(now)s, %(now)s
                     )
                     """,
@@ -82,6 +84,8 @@ class PostgresLawStore:
                         "effective_from": snapshot.effective_from,
                         "applicable_to": snapshot.applicable_to,
                         "superseded_by_url": snapshot.superseded_by_url,
+                        "parent_law_year": snapshot.parent_law_year,
+                        "parent_law_number": snapshot.parent_law_number,
                         "now": now,
                     },
                 )
@@ -99,6 +103,8 @@ class PostgresLawStore:
                     current_status = %(status)s,
                     applicable_to = %(applicable_to)s,
                     superseded_by_url = %(superseded_by_url)s,
+                    parent_law_year = %(parent_law_year)s,
+                    parent_law_number = %(parent_law_number)s,
                     last_stored_at = %(now)s,
                     last_checked_at = %(now)s,
                     last_download_status = 'stored',
@@ -116,6 +122,8 @@ class PostgresLawStore:
                     "status": snapshot.status,
                     "applicable_to": snapshot.applicable_to,
                     "superseded_by_url": snapshot.superseded_by_url,
+                    "parent_law_year": snapshot.parent_law_year,
+                    "parent_law_number": snapshot.parent_law_number,
                     "now": now,
                 },
             )

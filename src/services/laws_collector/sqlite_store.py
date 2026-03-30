@@ -29,6 +29,8 @@ class LawDocumentOverview:
     first_effective_date: str
     applicable_to: str | None
     superseded_by_url: str
+    parent_law_year: int | None
+    parent_law_number: int | None
     last_stored_at: str
     last_checked_at: str
     last_download_status: str
@@ -69,6 +71,8 @@ class SqliteLawStore:
                     first_effective_date TEXT NOT NULL,
                     applicable_to TEXT,
                     superseded_by_url TEXT NOT NULL,
+                    parent_law_year INTEGER,
+                    parent_law_number INTEGER,
                     first_stored_at TEXT NOT NULL,
                     last_stored_at TEXT NOT NULL,
                     last_checked_at TEXT NOT NULL,
@@ -171,10 +175,11 @@ class SqliteLawStore:
                     INSERT INTO law_documents(
                         document_id, country_code, collection_code, law_year, law_number, official_name,
                         lawyer_title, source_url, publication_date, current_status, first_effective_date,
-                        applicable_to, superseded_by_url, first_stored_at, last_stored_at, last_checked_at,
+                        applicable_to, superseded_by_url, parent_law_year, parent_law_number,
+                        first_stored_at, last_stored_at, last_checked_at,
                         last_download_status, last_download_error, download_attempt_count, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         document_id,
@@ -190,6 +195,8 @@ class SqliteLawStore:
                         snapshot.effective_from,
                         snapshot.applicable_to,
                         snapshot.superseded_by_url,
+                        snapshot.parent_law_year,
+                        snapshot.parent_law_number,
                         now,
                         now,
                         now,
@@ -208,6 +215,7 @@ class SqliteLawStore:
                 UPDATE law_documents
                 SET official_name = ?, lawyer_title = ?, source_url = ?, publication_date = ?,
                     current_status = ?, applicable_to = ?, superseded_by_url = ?,
+                    parent_law_year = ?, parent_law_number = ?,
                     last_stored_at = ?, last_checked_at = ?,
                     last_download_status = ?, last_download_error = '',
                     download_attempt_count = download_attempt_count + 1, updated_at = ?
@@ -221,6 +229,8 @@ class SqliteLawStore:
                     snapshot.status,
                     snapshot.applicable_to,
                     snapshot.superseded_by_url,
+                    snapshot.parent_law_year,
+                    snapshot.parent_law_number,
                     now,
                     now,
                     "stored",
@@ -472,6 +482,7 @@ class SqliteLawStore:
                 """
                 SELECT law_year, law_number, official_name, lawyer_title, publication_date,
                        first_effective_date, applicable_to, superseded_by_url,
+                       parent_law_year, parent_law_number,
                        last_stored_at, last_checked_at, last_download_status, download_attempt_count
                 FROM law_documents
                 ORDER BY law_year, law_number
@@ -488,6 +499,8 @@ class SqliteLawStore:
                 first_effective_date=str(row["first_effective_date"]),
                 applicable_to=(str(row["applicable_to"]) if row["applicable_to"] else None),
                 superseded_by_url=str(row["superseded_by_url"]),
+                parent_law_year=(int(row["parent_law_year"]) if row["parent_law_year"] is not None else None),
+                parent_law_number=(int(row["parent_law_number"]) if row["parent_law_number"] is not None else None),
                 last_stored_at=str(row["last_stored_at"]),
                 last_checked_at=str(row["last_checked_at"]),
                 last_download_status=str(row["last_download_status"]),
