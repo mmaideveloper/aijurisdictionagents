@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
-from datetime import date
-
-from services.laws_collector import LawsCollectorConfig, SlovLexImportPlanner, SlovakLawsCollectorService, SqliteLawStore
-from services.laws_collector.source_fixtures import baseline_snapshots, delta_snapshots
 from services.laws_collector import (
+    LawsCollectorConfig,
+    SlovLexImportPlanner,
+    SlovakLawsCollectorService,
+    SqliteLawStore,
     get_country_laws_collector_definition,
 )
-from services.laws_collector.slovak_laws_collector import SlovakLawsCollectorService
 from services.laws_collector.slovak_source_fixtures import baseline_snapshots, delta_snapshots
 
 
@@ -128,6 +128,8 @@ def test_slovlex_import_planner_starts_with_2025_then_unblocks_1946_history(tmp_
     assert blocked_plan.windows[1].end_date.isoformat() == "2024-12-31"
     assert blocked_plan.windows[1].blocked_by == "initial_2025_to_today"
     assert unblocked_plan.windows[1].blocked_by is None
+
+
 def test_country_definition_resolves_slovak_collector_and_db_name() -> None:
     definition = get_country_laws_collector_definition("sk")
 
@@ -145,6 +147,8 @@ def test_country_db_name_uses_laws_prefix_for_future_countries() -> None:
         storage_local="",
         storage_cloud="",
         delta_poll_hours=3,
+        initial_import_from=date(2025, 1, 1),
+        historical_import_from=date(1946, 1, 1),
     )
 
     assert config.country_db_name == "laws_cz"

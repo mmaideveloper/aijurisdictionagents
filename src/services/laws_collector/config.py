@@ -23,33 +23,20 @@ class LawsCollectorConfig:
     @classmethod
     def from_env(cls) -> "LawsCollectorConfig":
         country_code = os.getenv("LAWS_COUNTRY", "SK").strip().upper()
-        default_sqlite_path = f"./databases/laws-collector/{country_code.lower()}_laws.sqlite3"
-        
-        return cls(
-            country_code=country_code,
-            db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
-            db_local=os.getenv("LAWS_DB_LOCAL", default_sqlite_path).strip(),
-            db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
-            storage_local=os.getenv("LAWS_STORAGE_LOCAL", f"./storage/laws/{country_code.lower()}").strip(),
-            db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
-            storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
-            if not db_local:
-                db_local = cls.default_local_db_path_for(country_code)
-            if not storage_local:
-                storage_local = cls.default_local_storage_path_for(country_code)
+        db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
+        storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
+
+        if not db_local:
+            db_local = cls.default_local_db_path_for(country_code)
+        if not storage_local:
+            storage_local = cls.default_local_storage_path_for(country_code)
 
         return cls(
             country_code=country_code,
             db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
-            db_local=os.getenv("LAWS_DB_LOCAL", default_sqlite_path).strip(),
+            db_local=db_local,
             db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
-            storage_local=os.getenv("LAWS_STORAGE_LOCAL", f"./storage/laws/{country_code.lower()}").strip(),
-            db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
-            storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
-            if not db_local:
-                db_local = cls.default_local_db_path_for(country_code)
-            if not storage_local:
-                storage_local = cls.default_local_storage_path_for(country_code),
+            storage_local=storage_local,
             storage_cloud=os.getenv("LAWS_STORAGE_CLOUD", "").strip(),
             delta_poll_hours=int(os.getenv("LAWS_DELTA_POLL_HOURS", "3")),
             initial_import_from=_parse_iso_date(os.getenv("LAWS_INITIAL_IMPORT_FROM", "2025-01-01")),

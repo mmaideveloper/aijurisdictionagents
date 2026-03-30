@@ -4,9 +4,12 @@ from datetime import date
 from pathlib import Path
 import tempfile
 
-from services.laws_collector import LawsCollectorConfig, SlovLexImportPlanner, SlovakLawsCollectorService, SqliteLawStore
-from services.laws_collector.source_fixtures import baseline_snapshots, delta_snapshots
-from services.laws_collector import  get_country_laws_collector_definition
+from services.laws_collector import (
+    LawsCollectorConfig,
+    SlovLexImportPlanner,
+    SqliteLawStore,
+    get_country_laws_collector_definition,
+)
 
 
 def main() -> None:
@@ -26,14 +29,14 @@ def main() -> None:
         collector_definition = get_country_laws_collector_definition(config.country_code)
         store = SqliteLawStore.from_config(config)
         store.initialize()
-        service = SlovakLawsCollectorService(config=config, store=store)
+        service = collector_definition.create_service(config=config, store=store)
         planner = SlovLexImportPlanner(config=config)
 
-        baseline_snapshots = collector_definition.baseline_snapshots()
-        delta_snapshots = collector_definition.delta_snapshots()
-        baseline = service.sync(baseline_snapshots)
-        delta = service.sync(delta_snapshots)
-        plan = service.plan_updates(known_snapshots=baseline_snapshots, latest_snapshots=delta_snapshots)
+        baseline = collector_definition.baseline_snapshots()
+        delta = collector_definition.delta_snapshots()
+        baseline_summary = service.sync(baseline)
+        delta_summary = service.sync(delta)
+        plan = service.plan_updates(known_snapshots=baseline, latest_snapshots=delta)
         counts = store.get_counts()
         overview = store.list_document_overview()
 
@@ -42,8 +45,8 @@ def main() -> None:
         print("Collector:", collector_definition.collector_name)
         print("Country:", config.country_code)
         print("Cloud DB name:", collector_definition.cloud_database_name)
-        print("Baseline sync:", baseline)
-        print("Delta sync:", delta)
+        print("Baseline sync:", baseline_summary)
+        print("Delta sync:", delta_summary)
         print("Planned updates:", plan.items_with_updates)
         print("Documents in DB:", counts.documents)
         print("Versions in DB:", counts.versions)

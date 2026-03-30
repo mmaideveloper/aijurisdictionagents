@@ -214,6 +214,7 @@ Add these to `.env` when you start wiring the service into real runs:
 - `LAWS_HISTORICAL_IMPORT_FROM=1946-01-01`
 
 `LAWS_COUNTRY` selects the country-specific collector implementation. The current implementation supports only `SK`, so the service still defaults to `SK` when the variable is unset.
+If `LAWS_DB_LOCAL` or `LAWS_STORAGE_LOCAL` are unset, the service now falls back to country-specific defaults automatically.
 
 For PostgreSQL naming, keep the database mapping country-specific:
 
@@ -283,17 +284,17 @@ Start the local worker loop with the new project skill:
 
 This runs the collector worker (`services.laws_collector.worker`) with local SQLite defaults and is useful for repeatable smoke tests.
 
-## Azure Container App deployment (laws-collector)
+## Azure Container Apps Job deployment (laws-collector)
 
-Deployment assets for a dedicated Azure Container App named `laws-collector` are now included:
+Deployment assets for a dedicated Azure Container Apps Job named `laws-collector` are now included:
 
-- `infra/bicep/laws_collector.containerapp.bicep`
+- `infra/bicep/laws_collector.job.bicep`
 - `infra/scripts/deploy_laws_collector.ps1`
-- `infra/bicep/laws_collector.containerapp.parameters.example.json`
+- `infra/bicep/laws_collector.job.parameters.example.json`
 - container image definition: `src/services/laws_collector/Dockerfile`
 - GitHub Actions workflow: `.github/workflows/laws_collector_build_deploy.yml`
 
-The deploy script builds the image in ACR and deploys it to Azure Container Apps with PostgreSQL env configuration.
+The deploy script builds the image in ACR and deploys it to Azure Container Apps Jobs with PostgreSQL env configuration.
 
 
 ## SlovLex import order for Slovakia
@@ -314,4 +315,4 @@ Preview the planned windows with:
 PYTHONPATH=src python -m services.laws_collector --plan-import
 PYTHONPATH=src python -m services.laws_collector --plan-import --initial-window-complete
 ```
-The shared `infra_deploy` workflow now also provisions the `laws_sk` PostgreSQL database and a placeholder private Container App for `laws-collector`, which the dedicated laws collector workflow later updates with the real image.
+The shared `infra_deploy` workflow now also provisions the `laws_sk` PostgreSQL database and a placeholder private ACA Job for `laws-collector`, which the dedicated laws collector workflow later updates with the real image.
