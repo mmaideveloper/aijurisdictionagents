@@ -50,6 +50,7 @@ def main() -> None:
         print("Provisions in DB:", counts.provisions)
         print("Update events in DB:", counts.update_events)
         print("First document:", overview[0])
+        print("Amendment sample parent law:", (overview[2].law_year, overview[2].law_number), "->", (overview[2].parent_law_year, overview[2].parent_law_number))
         print("SQLite path:", store.db_path)
 
 

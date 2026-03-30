@@ -154,6 +154,8 @@ def delta_snapshots() -> tuple[LawSnapshot, ...]:
             ),
             status="published",
             applicable_to="digital public services",
+            parent_law_year=2025,
+            parent_law_number=25,
             http_etag="sk-421-v20251215",
             http_last_modified="2025-12-10T15:45:00Z",
         ),

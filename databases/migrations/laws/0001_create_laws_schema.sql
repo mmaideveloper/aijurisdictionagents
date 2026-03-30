@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS law_documents (
     first_effective_date DATE NOT NULL,
     applicable_to TEXT,
     superseded_by_url TEXT NOT NULL DEFAULT '',
+    parent_law_year INTEGER,
+    parent_law_number INTEGER,
     first_stored_at TIMESTAMPTZ NOT NULL,
     last_stored_at TIMESTAMPTZ NOT NULL,
     last_checked_at TIMESTAMPTZ NOT NULL,

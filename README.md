@@ -484,6 +484,7 @@ Technical design details: `docs/MOBILE_TECHNICAL_DESIGN.md`.
 The laws collector package lives in `src/services/laws_collector`.
 It now selects a country-specific implementation by `LAWS_COUNTRY`.
 Only `slovak_laws_collector` is implemented today, and it keeps using PostgreSQL database `laws_sk`.
+For Slovak records, the collector persists law year/number and also stores an optional parent law year/number when the imported act is an amendment of another law.
 
 Quick start:
 

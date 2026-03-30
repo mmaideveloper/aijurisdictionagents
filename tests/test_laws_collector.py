@@ -51,6 +51,8 @@ def test_laws_collector_baseline_sync_creates_documents_and_versions(tmp_path: P
     assert overview[0].download_attempt_count == 1
     assert overview[0].applicable_to == "all construction permits"
     assert overview[0].superseded_by_url == ""
+    assert overview[0].parent_law_year is None
+    assert overview[0].parent_law_number is None
 
 
 def test_laws_collector_delta_sync_adds_new_act_and_new_version(tmp_path: Path) -> None:
@@ -73,6 +75,9 @@ def test_laws_collector_delta_sync_adds_new_act_and_new_version(tmp_path: Path) 
     assert overview[0].download_attempt_count == 2
     assert overview[0].last_download_status == "stored"
     assert overview[0].superseded_by_url == "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/11/"
+    assert overview[2].law_number == 421
+    assert overview[2].parent_law_year == 2025
+    assert overview[2].parent_law_number == 25
 
 
 def test_laws_collector_config_resolves_relative_db_from_repo_root(monkeypatch) -> None:

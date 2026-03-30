@@ -33,6 +33,8 @@ class LawSnapshot:
     status: str = "published"
     applicable_to: str | None = None
     superseded_by_url: str = ""
+    parent_law_year: int | None = None
+    parent_law_number: int | None = None
     http_etag: str = ""
     http_last_modified: str = ""
 
@@ -53,6 +55,8 @@ class LawSnapshot:
             "status": self.status,
             "applicable_to": self.applicable_to,
             "superseded_by_url": self.superseded_by_url,
+            "parent_law_year": self.parent_law_year,
+            "parent_law_number": self.parent_law_number,
             "source_url": self.source_url,
             "provisions": [
                 {
