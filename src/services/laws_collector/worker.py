@@ -7,6 +7,7 @@ import time
 from .country_registry import get_country_laws_collector_definition
 from .config import LawsCollectorConfig
 from .postgres_store import PostgresLawStore
+from .slovlex_process import SlovLexSequentialImportRunner
 from .sqlite_store import SqliteLawStore
 
 
@@ -19,8 +20,8 @@ class WorkerOptions:
     @classmethod
     def from_env(cls) -> "WorkerOptions":
         fixture = os.getenv("LAWS_WORKER_FIXTURE", "baseline").strip().lower()
-        if fixture not in {"baseline", "delta"}:
-            raise ValueError("LAWS_WORKER_FIXTURE must be baseline or delta")
+        if fixture not in {"baseline", "delta", "live"}:
+            raise ValueError("LAWS_WORKER_FIXTURE must be baseline, delta, or live")
 
         poll_seconds = int(os.getenv("LAWS_WORKER_POLL_SECONDS", "3600"))
         if poll_seconds < 1:
@@ -45,20 +46,31 @@ def run_worker() -> None:
 
     while True:
         cycle += 1
-        snapshots = (
-            collector_definition.baseline_snapshots()
-            if options.fixture == "baseline"
-            else collector_definition.delta_snapshots()
-        )
-        summary = service.sync(snapshots)
-
-        print(
-            f"[laws-collector] collector={collector_definition.collector_name} "
-            f"country={config.country_code} cycle={cycle} fixture={options.fixture} "
-            f"processed={summary.processed} new_documents={summary.new_documents} "
-            f"new_versions={summary.new_versions} metadata_updates={summary.metadata_updates} "
-            f"skipped={summary.skipped}"
-        )
+        if options.fixture == "live":
+            summary = SlovLexSequentialImportRunner(config=config, store=store).run(max_probes=25)
+            print(
+                f"[laws-collector] collector={collector_definition.collector_name} "
+                f"country={config.country_code} cycle={cycle} fixture=live "
+                f"probes={summary.probes} laws_found={summary.laws_found} "
+                f"years_advanced={summary.years_advanced} "
+                f"stopped_on_current_year_gap={str(summary.stopped_on_current_year_gap).lower()} "
+                f"last_processed_law={summary.last_processed_law or ''} "
+                f"next_law_to_check={summary.next_law_to_check}"
+            )
+        else:
+            snapshots = (
+                collector_definition.baseline_snapshots()
+                if options.fixture == "baseline"
+                else collector_definition.delta_snapshots()
+            )
+            summary = service.sync(snapshots)
+            print(
+                f"[laws-collector] collector={collector_definition.collector_name} "
+                f"country={config.country_code} cycle={cycle} fixture={options.fixture} "
+                f"processed={summary.processed} new_documents={summary.new_documents} "
+                f"new_versions={summary.new_versions} metadata_updates={summary.metadata_updates} "
+                f"skipped={summary.skipped}"
+            )
 
         if options.max_cycles > 0 and cycle >= options.max_cycles:
             print("[laws-collector] worker stopped after max cycles")

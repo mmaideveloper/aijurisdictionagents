@@ -89,6 +89,8 @@ class LawKnowledgeSnapshot:
     last_law_update_source: str
     model_knowledge_cutoff_date: str | None
     model_knowledge_cutoff_source: str
+    last_collector_run_at: str | None = None
+    last_processed_law: str | None = None
     reference_links: tuple[str, ...] = ()
 
 
@@ -154,6 +156,8 @@ def build_session_result_metadata(
             ),
             "last_law_update_date": knowledge_snapshot.last_law_update_date,
             "last_law_update_source": knowledge_snapshot.last_law_update_source,
+            "last_collector_run_at": knowledge_snapshot.last_collector_run_at,
+            "last_processed_law": knowledge_snapshot.last_processed_law,
             "model_knowledge_cutoff_date": knowledge_snapshot.model_knowledge_cutoff_date,
             "model_knowledge_cutoff_source": knowledge_snapshot.model_knowledge_cutoff_source,
             "law_reference_links": list(knowledge_snapshot.reference_links),
@@ -245,9 +249,15 @@ def get_law_knowledge_snapshot(country_code: str | None) -> LawKnowledgeSnapshot
                     ).fetchone()
                 else:
                     row = conn.execute(_law_snapshot_sqlite_query(filtered=False)).fetchone()
+                progress_row = _collector_progress_sqlite_row(conn=conn, country_code=normalized_country)
         except sqlite3.Error:
             return _law_snapshot_without_db(model_cutoff=model_cutoff)
-        snapshot = _law_snapshot_from_row(row, scope=scope, model_cutoff=model_cutoff)
+        snapshot = _law_snapshot_from_row(
+            row,
+            scope=scope,
+            model_cutoff=model_cutoff,
+            progress_row=progress_row,
+        )
         if snapshot.last_law_update_date is not None:
             return snapshot
         return _law_snapshot_without_db(model_cutoff=model_cutoff)
@@ -264,9 +274,15 @@ def get_law_knowledge_snapshot(country_code: str | None) -> LawKnowledgeSnapshot
                     ).fetchone()
                 else:
                     row = conn.execute(_law_snapshot_postgres_query(filtered=False)).fetchone()
+                progress_row = _collector_progress_postgres_row(conn=conn, country_code=normalized_country)
         except Exception:
             return _law_snapshot_without_db(model_cutoff=model_cutoff)
-        snapshot = _law_snapshot_from_row(row, scope=scope, model_cutoff=model_cutoff)
+        snapshot = _law_snapshot_from_row(
+            row,
+            scope=scope,
+            model_cutoff=model_cutoff,
+            progress_row=progress_row,
+        )
         if snapshot.last_law_update_date is not None:
             return snapshot
         return _law_snapshot_without_db(model_cutoff=model_cutoff)
@@ -311,10 +327,14 @@ def _law_snapshot_from_row(
     *,
     scope: str,
     model_cutoff: tuple[str | None, str],
+    progress_row: Sequence[Any] | None,
 ) -> LawKnowledgeSnapshot:
+    collector_run_at, last_processed_law = _collector_progress_values(progress_row)
     if row is None:
         return _law_snapshot_without_db(
             model_cutoff=model_cutoff,
+            last_collector_run_at=collector_run_at,
+            last_processed_law=last_processed_law,
             reference_links=(),
         )
     latest_update = row[0]
@@ -323,6 +343,8 @@ def _law_snapshot_from_row(
     if latest_update is None:
         return _law_snapshot_without_db(
             model_cutoff=model_cutoff,
+            last_collector_run_at=collector_run_at,
+            last_processed_law=last_processed_law,
             reference_links=links,
         )
     return LawKnowledgeSnapshot(
@@ -330,6 +352,8 @@ def _law_snapshot_from_row(
         last_law_update_source=f"law_documents_{scope}",
         model_knowledge_cutoff_date=model_cutoff[0],
         model_knowledge_cutoff_source=model_cutoff[1],
+        last_collector_run_at=collector_run_at,
+        last_processed_law=last_processed_law,
         reference_links=links,
     )
 
@@ -349,6 +373,8 @@ def _parse_reference_links(raw_links: Any) -> tuple[str, ...]:
 def _law_snapshot_without_db(
     *,
     model_cutoff: tuple[str | None, str],
+    last_collector_run_at: str | None = None,
+    last_processed_law: str | None = None,
     reference_links: tuple[str, ...] = (),
 ) -> LawKnowledgeSnapshot:
     return LawKnowledgeSnapshot(
@@ -356,6 +382,8 @@ def _law_snapshot_without_db(
         last_law_update_source="unavailable",
         model_knowledge_cutoff_date=model_cutoff[0],
         model_knowledge_cutoff_source=model_cutoff[1],
+        last_collector_run_at=last_collector_run_at,
+        last_processed_law=last_processed_law,
         reference_links=reference_links,
     )
 
@@ -424,3 +452,74 @@ def _resolve_repo_path(value: str) -> Path:
     if candidate.is_absolute():
         return candidate
     return _REPO_ROOT / candidate
+
+
+def _collector_progress_sqlite_row(
+    *,
+    conn: sqlite3.Connection,
+    country_code: str,
+) -> Sequence[Any] | None:
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'collector_progress'"
+    ).fetchone()
+    if exists is None:
+        return None
+    if country_code:
+        return conn.execute(
+            """
+            SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+            FROM collector_progress
+            WHERE UPPER(country_code) = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (country_code,),
+        ).fetchone()
+    return conn.execute(
+        """
+        SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+        FROM collector_progress
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """
+    ).fetchone()
+
+
+def _collector_progress_postgres_row(
+    *,
+    conn: Any,
+    country_code: str,
+) -> Sequence[Any] | None:
+    relation = conn.execute("SELECT to_regclass(%s)", ("public.collector_progress",)).fetchone()
+    if not relation or relation[0] is None:
+        return None
+    if country_code:
+        return conn.execute(
+            """
+            SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+            FROM collector_progress
+            WHERE UPPER(country_code) = %s
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (country_code,),
+        ).fetchone()
+    return conn.execute(
+        """
+        SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+        FROM collector_progress
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """
+    ).fetchone()
+
+
+def _collector_progress_values(progress_row: Sequence[Any] | None) -> tuple[str | None, str | None]:
+    if progress_row is None:
+        return None, None
+    last_collector_run_at = str(progress_row[0]) if progress_row[0] is not None else None
+    year = progress_row[1] if len(progress_row) > 1 else None
+    number = progress_row[2] if len(progress_row) > 2 else None
+    if year is None or number is None:
+        return last_collector_run_at, None
+    return last_collector_run_at, f"{int(number)}/{int(year)}"

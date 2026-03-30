@@ -154,6 +154,8 @@ If the database is unreachable or misconfigured, the endpoint returns `503` with
 - `core_version`: core system version from installed `aijurisdictionagents` package or local `src/aijurisdictionagents/__init__.py` during monorepo development.
 - `last_law_update_date`: latest law-ingestion timestamp available to the system from the laws database. This reflects the newest law content collected by the law processor, even when the underlying LLM was trained earlier.
 - `last_law_update_source`: whether that timestamp comes from country-specific or global `law_documents` data.
+- `last_collector_run_at`: latest sequential laws collector run timestamp stored in `collector_progress`.
+- `last_processed_law`: latest successfully processed law identifier in `number/year` format, for example `234/2026`.
 - `model_knowledge_cutoff_date`: cached fallback date used when `last_law_update_date` is not available yet.
 - `model_knowledge_cutoff_source`: source of that fallback date, currently the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value.
 - `law_reference_links`: recent official law links available in the system knowledge store.
@@ -178,6 +180,8 @@ Example:
   "core_version": "0.1.0",
   "last_law_update_date": "2026-03-20T00:00:00Z",
   "last_law_update_source": "law_documents_global",
+  "last_collector_run_at": "2026-03-30T12:30:00Z",
+  "last_processed_law": "234/2026",
   "model_knowledge_cutoff_date": "2020-12-31",
   "model_knowledge_cutoff_source": "model_knowledge_cutoff_cache",
   "law_reference_links": [

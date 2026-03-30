@@ -9,7 +9,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .config import LawsCollectorConfig
-from .domain import LawSnapshot, ProvisionRecord, StoredVersion
+from .domain import CollectorProgress, LawSnapshot, ProvisionRecord, StoredVersion
 
 
 @dataclass(frozen=True)
@@ -324,6 +324,88 @@ class PostgresLawStore:
             )
             conn.commit()
 
+    def get_or_create_collector_progress(
+        self,
+        *,
+        country_code: str,
+        source_system: str,
+        initial_year: int,
+    ) -> CollectorProgress:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT country_code, source_system, last_collector_run_at, last_processed_at,
+                       last_processed_law_year, last_processed_law_number,
+                       next_probe_law_year, next_probe_law_number
+                FROM collector_progress
+                WHERE country_code = %(country_code)s
+                """,
+                {"country_code": country_code},
+            ).fetchone()
+            if row is not None:
+                return _collector_progress_from_row(row)
+
+            now = _now_iso()
+            conn.execute(
+                """
+                INSERT INTO collector_progress(
+                    country_code, source_system, last_collector_run_at, last_processed_at,
+                    last_processed_law_year, last_processed_law_number,
+                    next_probe_law_year, next_probe_law_number, created_at, updated_at
+                ) VALUES (
+                    %(country_code)s, %(source_system)s, NULL, NULL, NULL, NULL,
+                    %(next_probe_law_year)s, %(next_probe_law_number)s, %(now)s, %(now)s
+                )
+                """,
+                {
+                    "country_code": country_code,
+                    "source_system": source_system,
+                    "next_probe_law_year": initial_year,
+                    "next_probe_law_number": 1,
+                    "now": now,
+                },
+            )
+            conn.commit()
+            return CollectorProgress(
+                country_code=country_code,
+                source_system=source_system,
+                last_collector_run_at=None,
+                last_processed_at=None,
+                last_processed_law_year=None,
+                last_processed_law_number=None,
+                next_probe_law_year=initial_year,
+                next_probe_law_number=1,
+            )
+
+    def save_collector_progress(self, progress: CollectorProgress) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE collector_progress
+                SET source_system = %(source_system)s,
+                    last_collector_run_at = %(last_collector_run_at)s,
+                    last_processed_at = %(last_processed_at)s,
+                    last_processed_law_year = %(last_processed_law_year)s,
+                    last_processed_law_number = %(last_processed_law_number)s,
+                    next_probe_law_year = %(next_probe_law_year)s,
+                    next_probe_law_number = %(next_probe_law_number)s,
+                    updated_at = %(updated_at)s
+                WHERE country_code = %(country_code)s
+                """,
+                {
+                    "source_system": progress.source_system,
+                    "last_collector_run_at": progress.last_collector_run_at,
+                    "last_processed_at": progress.last_processed_at,
+                    "last_processed_law_year": progress.last_processed_law_year,
+                    "last_processed_law_number": progress.last_processed_law_number,
+                    "next_probe_law_year": progress.next_probe_law_year,
+                    "next_probe_law_number": progress.next_probe_law_number,
+                    "updated_at": _now_iso(),
+                    "country_code": progress.country_code,
+                },
+            )
+            conn.commit()
+
     def get_counts(self) -> CollectorCounts:
         with self._connect() as conn:
             return CollectorCounts(
@@ -344,3 +426,22 @@ def _count(conn: psycopg.Connection, table_name: str) -> int:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _collector_progress_from_row(row: dict[str, object]) -> CollectorProgress:
+    return CollectorProgress(
+        country_code=str(row["country_code"]),
+        source_system=str(row["source_system"]),
+        last_collector_run_at=(str(row["last_collector_run_at"]) if row["last_collector_run_at"] else None),
+        last_processed_at=(str(row["last_processed_at"]) if row["last_processed_at"] else None),
+        last_processed_law_year=(
+            int(row["last_processed_law_year"]) if row["last_processed_law_year"] is not None else None
+        ),
+        last_processed_law_number=(
+            int(row["last_processed_law_number"])
+            if row["last_processed_law_number"] is not None
+            else None
+        ),
+        next_probe_law_year=int(row["next_probe_law_year"]),
+        next_probe_law_number=int(row["next_probe_law_number"]),
+    )

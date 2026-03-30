@@ -761,6 +761,17 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
         )
         conn.execute(
             """
+            CREATE TABLE collector_progress (
+                country_code TEXT PRIMARY KEY,
+                last_collector_run_at TEXT,
+                last_processed_law_year INTEGER,
+                last_processed_law_number INTEGER,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
             INSERT INTO law_documents(document_id, country_code, last_stored_at, source_url)
             VALUES ('doc-1', 'SK', '2026-02-10T12:30:00Z', 'https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/2/')
             """
@@ -769,6 +780,14 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
             """
             INSERT INTO law_documents(document_id, country_code, last_stored_at, source_url)
             VALUES ('doc-2', 'SK', '2026-03-11T08:15:00Z', 'https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/11/')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO collector_progress(
+                country_code, last_collector_run_at, last_processed_law_year, last_processed_law_number, updated_at
+            )
+            VALUES ('SK', '2026-03-30T14:00:00Z', 2026, 234, '2026-03-30T14:00:00Z')
             """
         )
         conn.commit()
@@ -803,6 +822,8 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
     assert result.metadata["knowledge_last_updated_at"] == "2026-03-11T08:15:00Z"
     assert result.metadata["last_law_update_date"] == "2026-03-11T08:15:00Z"
     assert result.metadata["last_law_update_source"] == "law_documents_country"
+    assert result.metadata["last_collector_run_at"] == "2026-03-30T14:00:00Z"
+    assert result.metadata["last_processed_law"] == "234/2026"
     assert result.metadata["model_knowledge_cutoff_date"] == "2020-12-31"
     assert result.metadata["model_knowledge_cutoff_source"] == "model_knowledge_cutoff_cache"
     assert result.metadata["law_reference_links"] == [
@@ -827,6 +848,8 @@ def test_law_snapshot_falls_back_to_model_cutoff_and_writes_cache(monkeypatch, t
 
     assert snapshot.last_law_update_date is None
     assert snapshot.last_law_update_source == "unavailable"
+    assert snapshot.last_collector_run_at is None
+    assert snapshot.last_processed_law is None
     assert snapshot.model_knowledge_cutoff_date == "2024-12-31"
     assert snapshot.model_knowledge_cutoff_source == "model_knowledge_cutoff_cache"
     assert snapshot.reference_links == ()
@@ -854,6 +877,8 @@ def test_law_snapshot_reuses_cached_model_cutoff_without_expiration(monkeypatch,
     second_snapshot = get_law_knowledge_snapshot("SK")
 
     assert second_snapshot.last_law_update_date is None
+    assert second_snapshot.last_collector_run_at is None
+    assert second_snapshot.last_processed_law is None
     assert second_snapshot.model_knowledge_cutoff_date == "2024-12-31"
     assert second_snapshot.model_knowledge_cutoff_source == "model_knowledge_cutoff_cache"
 

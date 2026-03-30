@@ -485,12 +485,34 @@ The laws collector package lives in `src/services/laws_collector`.
 It now selects a country-specific implementation by `LAWS_COUNTRY`.
 Only `slovak_laws_collector` is implemented today, and it keeps using PostgreSQL database `laws_sk`.
 For Slovak records, the collector persists law year/number and also stores an optional parent law year/number when the imported act is an amendment of another law.
+The Slovak sequential crawl now starts hardcoded at `1/1993`, persists the last collector run timestamp, and remembers the last processed law plus the next `number/year` probe target.
 
 Quick start:
 
 ```powershell
 conda activate .\.conda
 python examples/laws_collector_minimal_demo.py
+```
+
+Inspect the persisted sequential import state:
+
+```powershell
+conda activate .\.conda
+python -m services.laws_collector --plan-import
+```
+
+Run a live Slov-Lex sequential probe loop:
+
+```powershell
+conda activate .\.conda
+python -m services.laws_collector --run-sequential-import --max-probes 25
+```
+
+Local PostgreSQL debug example:
+
+```powershell
+conda activate .\.conda
+python examples/laws_collector_postgres_debug_demo.py
 ```
 
 For database, scheduling, and Azure migration guidance, see `docs/LAWS_COLLECTOR.md`.

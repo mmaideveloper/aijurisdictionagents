@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date
 
 from .country_registry import get_country_laws_collector_definition
 from .config import LawsCollectorConfig
 from .import_planner import SlovLexImportPlanner
 from .postgres_store import PostgresLawStore
+from .slovlex_process import SlovLexSequentialImportRunner
 from .sqlite_store import SqliteLawStore
 
 
@@ -26,12 +26,24 @@ def main() -> None:
     parser.add_argument(
         "--plan-import",
         action="store_true",
-        help="Print the SlovLex import window plan for the configured country.",
+        help="Print the persisted SlovLex sequential import plan for the configured country.",
     )
     parser.add_argument(
-        "--initial-window-complete",
+        "--run-sequential-import",
         action="store_true",
-        help="Mark the 2025-to-today window as completed when printing the import plan.",
+        help="Probe SlovLex sequentially by law number/year and persist collector progress.",
+    )
+    parser.add_argument(
+        "--max-probes",
+        type=int,
+        default=25,
+        help="Maximum SlovLex sequential probes to execute in one run.",
+    )
+    parser.add_argument(
+        "--probe-timeout-seconds",
+        type=float,
+        default=12.0,
+        help="Timeout for each SlovLex HTTP probe.",
     )
     args = parser.parse_args()
 
@@ -46,14 +58,41 @@ def main() -> None:
 
     if args.plan_import:
         planner = SlovLexImportPlanner(config=config)
-        plan = planner.build_plan(today=date.today(), initial_window_complete=args.initial_window_complete)
+        progress = store.get_or_create_collector_progress(
+            country_code=config.country_code,
+            source_system="slov-lex",
+            initial_year=planner.initial_year,
+        )
+        plan = planner.build_plan(progress=progress)
         print("country:", config.country_code)
         print("database_name:", config.country_db_name)
-        for index, window in enumerate(plan.windows, start=1):
-            print(f"window_{index}_stage:", window.stage)
-            print(f"window_{index}_start:", window.start_date.isoformat())
-            print(f"window_{index}_end:", window.end_date.isoformat())
-            print(f"window_{index}_blocked_by:", window.blocked_by or "")
+        print("initial_year:", plan.initial_year)
+        print("current_year:", plan.current_year)
+        print("last_collector_run_at:", plan.last_collector_run_at or "")
+        print("last_processed_at:", plan.last_processed_at or "")
+        print("last_processed_law:", plan.last_processed_law or "")
+        print("next_law_to_check:", plan.next_target.law_id)
+        print("next_law_url:", plan.next_target.url)
+        print("stop_when_missing_current_year:", str(plan.stop_when_missing_current_year).lower())
+        return
+
+    if args.run_sequential_import:
+        runner = SlovLexSequentialImportRunner(config=config, store=store)
+        summary = runner.run(
+            max_probes=args.max_probes,
+            timeout_seconds=args.probe_timeout_seconds,
+        )
+        print("country:", config.country_code)
+        print("database_name:", config.country_db_name)
+        print("probes:", summary.probes)
+        print("laws_found:", summary.laws_found)
+        print("years_advanced:", summary.years_advanced)
+        print("stopped_on_current_year_gap:", str(summary.stopped_on_current_year_gap).lower())
+        print("last_checked_law:", summary.last_checked_law or "")
+        print("last_processed_law:", summary.last_processed_law or "")
+        print("next_law_to_check:", summary.next_law_to_check)
+        print("last_collector_run_at:", summary.last_collector_run_at or "")
+        print("first_found_url:", summary.first_found_url or "")
         return
 
     if args.check_updates:
