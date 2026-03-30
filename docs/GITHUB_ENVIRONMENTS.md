@@ -269,6 +269,7 @@ Some workflows default to `dev` for push-based execution.
 That means:
 
 - `API Build and Deploy` now deploys automatically to `dev` on `push` to `main` after tests/build pass
+- `API Build and Deploy` does not deploy on `pull_request`; PR runs validate build, lint, type checks, and tests only
 - `API Build and Deploy` waits for Azure Container App provisioning to settle before applying secret and environment updates, which reduces transient `ContainerAppOperationInProgress` failures during deployment
 - `API Build and Deploy` now fails during environment validation when `AZURE_OPENAI_API_KEY` is empty, because the deployed API always requires that secret for Azure OpenAI access
 - `Laws Collector Build and Deploy` now deploys automatically to `dev` on `push` to `main` after its tests/build pass
