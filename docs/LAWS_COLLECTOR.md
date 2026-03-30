@@ -198,6 +198,25 @@ python -m services.laws_collector --fixture baseline
 python -m services.laws_collector --fixture delta
 ```
 
+
+## Live SlovLex probe test (year/number)
+
+To prove the collector can resolve SlovLex entries by legal act **number/year** starting at **1/2025** and probing forward up to the current date, run:
+
+```bash
+RUN_SLOVLEX_LIVE_TEST=1 python -m pytest tests/test_slovlex_live_probe.py -q
+```
+
+Optional tuning:
+
+- `SLOVLEX_MAX_NUMBER_PER_YEAR` (default `80`) limits probing depth per year.
+
+A minimal runnable probe example is also available:
+
+```bash
+python examples/slovlex_live_probe_demo.py
+```
+
 ## Environment variables
 
 Add these to `.env` when you start wiring the service into real runs:
