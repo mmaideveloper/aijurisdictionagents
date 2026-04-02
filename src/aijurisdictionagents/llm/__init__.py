@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from importlib import import_module
 import os
+from typing import Any
 
 from .base import LLMClient
 from .mock import MockLLMClient
@@ -14,40 +16,35 @@ from .embeddings import (
     load_openai_embedding_config_from_env,
 )
 
-try:
-    from .openai_client import OpenAIClient, load_openai_config_from_env
-except ImportError:  # pragma: no cover - only triggers when OpenAI deps are missing.
-    OpenAIClient = None  # type: ignore[assignment]
-    load_openai_config_from_env = None  # type: ignore[assignment]
-
-try:
-    from .azure_foundry_client import (
-        AzureFoundryClient,
-        load_azure_foundry_config_from_env,
-    )
-except ImportError:  # pragma: no cover - only triggers when OpenAI deps are missing.
-    AzureFoundryClient = None  # type: ignore[assignment]
-    load_azure_foundry_config_from_env = None  # type: ignore[assignment]
-
 
 def get_llm_client() -> LLMClient:
     provider = os.getenv("LLM_PROVIDER", "azurefoundry").lower()
     if provider == "mock":
         return MockLLMClient()
     if provider == "openai":
-        if OpenAIClient is None or load_openai_config_from_env is None:
-            raise ImportError("OpenAI dependencies not installed. Run: pip install openai")
-        config = load_openai_config_from_env()
-        return OpenAIClient(config)
+        openai_client_type = __getattr__("OpenAIClient")
+        load_openai_config = __getattr__("load_openai_config_from_env")
+        config = load_openai_config()
+        return openai_client_type(config)
     if provider in {"azurefoundry", "azure"}:
-        if AzureFoundryClient is None or load_azure_foundry_config_from_env is None:
-            raise ImportError("OpenAI dependencies not installed. Run: pip install openai")
-        config = load_azure_foundry_config_from_env()
-        return AzureFoundryClient(config)
+        azure_foundry_client_type = __getattr__("AzureFoundryClient")
+        load_azure_foundry_config = __getattr__("load_azure_foundry_config_from_env")
+        config = load_azure_foundry_config()
+        return azure_foundry_client_type(config)
 
     raise ValueError(
         f"Unsupported LLM_PROVIDER '{provider}'. Implement a client in aijurisdictionagents.llm."
     )
+
+
+def __getattr__(name: str) -> Any:
+    if name in {"OpenAIClient", "load_openai_config_from_env"}:
+        module = import_module(".openai_client", __name__)
+        return getattr(module, name)
+    if name in {"AzureFoundryClient", "load_azure_foundry_config_from_env"}:
+        module = import_module(".azure_foundry_client", __name__)
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [

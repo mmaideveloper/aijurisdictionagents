@@ -77,7 +77,7 @@ def main() -> None:
         return
 
     if args.run_sequential_import:
-        runner = SlovLexSequentialImportRunner(config=config, store=store)
+        runner = SlovLexSequentialImportRunner(config=config, store=store, service=service)
         summary = runner.run(
             max_probes=args.max_probes,
             timeout_seconds=args.probe_timeout_seconds,
@@ -92,6 +92,7 @@ def main() -> None:
         print("last_processed_law:", summary.last_processed_law or "")
         print("next_law_to_check:", summary.next_law_to_check)
         print("last_collector_run_at:", summary.last_collector_run_at or "")
+        print("last_processed_at:", summary.last_processed_at or "")
         print("first_found_url:", summary.first_found_url or "")
         return
 

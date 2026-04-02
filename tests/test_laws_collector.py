@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
+import json
 from pathlib import Path
 
+from aijurisdictionagents.llm.embeddings import EmbeddingBatchResult, MockEmbeddingClient
 from services.laws_collector import (
     LawsCollectorConfig,
+    LawSnapshot,
     SlovLexImportPlanner,
     SlovLexSequentialImportRunner,
     SlovakLawsCollectorService,
@@ -13,6 +17,7 @@ from services.laws_collector import (
 )
 from services.laws_collector.import_planner import ImportTarget
 from services.laws_collector.slovak_source_fixtures import baseline_snapshots, delta_snapshots
+from services.laws_collector.worker import WorkerOptions
 
 
 def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorService]:
@@ -29,8 +34,33 @@ def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorS
     )
     store = SqliteLawStore.from_config(config)
     store.initialize()
-    service = SlovakLawsCollectorService(config=config, store=store)
+    service = SlovakLawsCollectorService(
+        config=config,
+        store=store,
+        embedding_client=MockEmbeddingClient(),
+    )
     return store, service
+
+
+def _get_embedding_metadata(store: SqliteLawStore, *, law_year: int, law_number: int) -> tuple[str, int, list[float]]:
+    with store._connect() as conn:  # noqa: SLF001 - test-only verification of persisted values
+        row = conn.execute(
+            """
+            SELECT v.embedding_model, v.embedding_dimensions, v.embedding_vector
+            FROM law_versions AS v
+            JOIN law_documents AS d ON d.document_id = v.document_id
+            WHERE d.law_year = ? AND d.law_number = ?
+            ORDER BY v.created_at
+            LIMIT 1
+            """,
+            (law_year, law_number),
+        ).fetchone()
+    assert row is not None
+    return (
+        str(row["embedding_model"]),
+        int(row["embedding_dimensions"]),
+        json.loads(str(row["embedding_vector"])),
+    )
 
 
 def test_laws_collector_baseline_sync_creates_documents_and_versions(tmp_path: Path) -> None:
@@ -38,6 +68,11 @@ def test_laws_collector_baseline_sync_creates_documents_and_versions(tmp_path: P
 
     summary = service.sync(baseline_snapshots())
     counts = store.get_counts()
+    embedding_model, embedding_dimensions, embedding_vector = _get_embedding_metadata(
+        store,
+        law_year=2025,
+        law_number=25,
+    )
 
     assert summary.processed == 2
     assert summary.new_documents == 2
@@ -55,6 +90,9 @@ def test_laws_collector_baseline_sync_creates_documents_and_versions(tmp_path: P
     assert overview[0].superseded_by_url == ""
     assert overview[0].parent_law_year is None
     assert overview[0].parent_law_number is None
+    assert embedding_model == "mock-embedding-32d"
+    assert embedding_dimensions == 32
+    assert len(embedding_vector) == 32
 
 
 def test_laws_collector_delta_sync_adds_new_act_and_new_version(tmp_path: Path) -> None:
@@ -116,6 +154,14 @@ def test_laws_collector_config_defaults_to_country_specific_sqlite_db(monkeypatc
 
     assert config.db_path.name == "sk_laws.sqlite3"
     assert config.country_db_name == "laws_sk"
+
+
+def test_laws_collector_worker_options_default_to_single_live_probe(monkeypatch) -> None:
+    monkeypatch.delenv("LAWS_WORKER_MAX_PROBES", raising=False)
+
+    options = WorkerOptions.from_env()
+
+    assert options.max_probes == 1
 
 
 def test_slovlex_import_planner_starts_from_1_1993_without_progress(tmp_path: Path) -> None:
@@ -257,6 +303,201 @@ def test_slovlex_sequential_import_runner_updates_progress_until_current_year_ga
     assert summary.stopped_on_current_year_gap is True
     assert summary.next_law_to_check == "2/1994"
     assert reloaded.next_probe_law == "2/1994"
+
+
+def test_sqlite_store_initialize_backfills_embedding_metadata_columns(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.sqlite3"
+    store = SqliteLawStore(db_path=db_path)
+    with store._connect() as conn:  # noqa: SLF001 - constructing a legacy schema fixture
+        conn.executescript(
+            """
+            CREATE TABLE law_documents (
+                document_id TEXT PRIMARY KEY,
+                country_code TEXT NOT NULL,
+                collection_code TEXT NOT NULL,
+                law_year INTEGER NOT NULL,
+                law_number INTEGER NOT NULL,
+                official_name TEXT NOT NULL,
+                lawyer_title TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                publication_date TEXT NOT NULL,
+                current_status TEXT NOT NULL,
+                first_effective_date TEXT NOT NULL,
+                applicable_to TEXT,
+                superseded_by_url TEXT NOT NULL,
+                parent_law_year INTEGER,
+                parent_law_number INTEGER,
+                first_stored_at TEXT NOT NULL,
+                last_stored_at TEXT NOT NULL,
+                last_checked_at TEXT NOT NULL,
+                last_download_status TEXT NOT NULL,
+                last_download_error TEXT NOT NULL,
+                download_attempt_count INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE law_versions (
+                version_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                version_token TEXT NOT NULL,
+                effective_from TEXT NOT NULL,
+                version_checksum TEXT NOT NULL,
+                status TEXT NOT NULL,
+                html_checksum TEXT NOT NULL,
+                pdf_checksum TEXT NOT NULL,
+                html_bytes INTEGER NOT NULL,
+                pdf_bytes INTEGER NOT NULL,
+                normalized_json TEXT NOT NULL,
+                embedding_vector TEXT NOT NULL,
+                stored_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+
+    store.initialize()
+
+    with store._connect() as conn:  # noqa: SLF001 - test-only schema inspection
+        columns = {
+            str(row["name"]): str(row["type"])
+            for row in conn.execute("PRAGMA table_info(law_versions)").fetchall()
+        }
+
+    assert columns["embedding_model"] == "TEXT"
+    assert columns["embedding_dimensions"] == "INTEGER"
+
+
+def test_laws_collector_logs_embedding_pipeline_steps(tmp_path: Path, capsys) -> None:
+    _, service = _build_service(tmp_path)
+
+    service.sync((baseline_snapshots()[0],))
+
+    output = capsys.readouterr().out
+
+    assert "start law country=SK law=25/2025" in output
+    assert "database upload law=25/2025 document_status=created" in output
+    assert "vector start law=25/2025" in output
+    assert "vector done law=25/2025" in output
+    assert "embedding_model=mock-embedding-32d" in output
+    assert "embedding_dimensions=32" in output
+
+
+def test_laws_collector_splits_large_laws_into_multiple_embedding_chunks(tmp_path: Path) -> None:
+    store, base_service = _build_service(tmp_path)
+    captured_batches: list[tuple[str, ...]] = []
+
+    class RecordingEmbeddingClient:
+        @property
+        def model_name(self) -> str:
+            return "recording-embedding-3d"
+
+        def embed_texts(self, texts: tuple[str, ...]) -> EmbeddingBatchResult:
+            captured_batches.append(tuple(texts))
+            return EmbeddingBatchResult(
+                model_name=self.model_name,
+                vectors=[[1.0, 2.0, 3.0] for _ in texts],
+            )
+
+    snapshot = replace(
+        baseline_snapshots()[0],
+        html_content=("Dlhy text o zakone. " * 1200).strip(),
+    )
+    service = SlovakLawsCollectorService(
+        config=base_service.config,
+        store=store,
+        embedding_client=RecordingEmbeddingClient(),
+    )
+
+    service.sync((snapshot,))
+    embedding_model, embedding_dimensions, embedding_vector = _get_embedding_metadata(
+        store,
+        law_year=snapshot.year,
+        law_number=snapshot.number,
+    )
+
+    assert len(captured_batches) == 1
+    assert len(captured_batches[0]) > 1
+    assert embedding_model == "recording-embedding-3d"
+    assert embedding_dimensions == 3
+    assert embedding_vector == [1.0, 2.0, 3.0]
+
+
+def test_slovlex_sequential_import_runner_logs_when_no_new_laws(tmp_path: Path, capsys) -> None:
+    store, service = _build_service(tmp_path)
+    runner = SlovLexSequentialImportRunner(config=service.config, store=store, service=service)
+
+    def fake_probe(*, target: ImportTarget, timeout_seconds: float) -> object:
+        return type(
+            "Probe",
+            (),
+            {
+                "target": target,
+                "exists": False,
+                "status_code": 404,
+                "url": target.url,
+            },
+        )()
+
+    runner._probe_target = fake_probe  # type: ignore[method-assign]
+    runner.run(max_probes=1, today=date(1993, 1, 2))
+
+    output = capsys.readouterr().out
+
+    assert "No new laws for SK, last processed law none at n/a" in output
+
+
+def test_slovlex_sequential_import_runner_ingests_before_advancing_progress(tmp_path: Path) -> None:
+    store, service = _build_service(tmp_path)
+    captured: list[LawSnapshot] = []
+    runner = SlovLexSequentialImportRunner(config=service.config, store=store, service=service)
+    snapshot = replace(
+        baseline_snapshots()[0],
+        year=1993,
+        number=1,
+        publication_date="1993-01-01",
+        effective_from="1993-01-01",
+        version_token="19930101",
+        source_url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1993/1/",
+        html_url="https://static.slov-lex.sk/static/SK/ZZ/1993/1/vyhlasene_znenie.html",
+        pdf_url="https://static.slov-lex.sk/pdf/SK/ZZ/1993/1/19930101.pdf",
+    )
+
+    def fake_probe(*, target: ImportTarget, timeout_seconds: float) -> object:
+        return type(
+            "Probe",
+            (),
+            {
+                "target": target,
+                "exists": True,
+                "status_code": 200,
+                "url": target.url,
+            },
+        )()
+
+    class RecordingLoader:
+        def load_snapshot(self, *, target: ImportTarget, timeout_seconds: float = 12.0) -> LawSnapshot:
+            captured.append(snapshot)
+            return snapshot
+
+    runner._probe_target = fake_probe  # type: ignore[method-assign]
+    runner.snapshot_loader = RecordingLoader()
+
+    summary = runner.run(max_probes=1, today=date(1993, 1, 2))
+    embedding_model, embedding_dimensions, embedding_vector = _get_embedding_metadata(
+        store,
+        law_year=snapshot.year,
+        law_number=snapshot.number,
+    )
+
+    assert len(captured) == 1
+    assert summary.laws_found == 1
+    assert summary.last_processed_law == "1/1993"
+    assert summary.next_law_to_check == "2/1993"
+    assert embedding_model == "mock-embedding-32d"
+    assert embedding_dimensions == 32
+    assert len(embedding_vector) == 32
 
 
 def test_country_definition_resolves_slovak_collector_and_db_name() -> None:

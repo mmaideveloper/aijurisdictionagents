@@ -130,13 +130,28 @@ class PostgresLawStore:
             conn.commit()
             return document_id, False
 
-    def upsert_version(self, *, document_id: str, snapshot: LawSnapshot, version_checksum: str, html_checksum: str, pdf_checksum: str, html_bytes: int, pdf_bytes: int, normalized_json: str, embedding_vector: str) -> StoredVersion:
+    def upsert_version(
+        self,
+        *,
+        document_id: str,
+        snapshot: LawSnapshot,
+        version_checksum: str,
+        html_checksum: str,
+        pdf_checksum: str,
+        html_bytes: int,
+        pdf_bytes: int,
+        normalized_json: str,
+        embedding_model: str,
+        embedding_dimensions: int,
+        embedding_vector: str,
+    ) -> StoredVersion:
         now = _now_iso()
         with self._connect() as conn:
             row = conn.execute(
                 """
                 SELECT version_id, version_checksum, effective_from, html_checksum, pdf_checksum,
-                       html_bytes, pdf_bytes, normalized_json, embedding_vector, status
+                       html_bytes, pdf_bytes, normalized_json, embedding_model,
+                       embedding_dimensions, embedding_vector, status
                 FROM law_versions
                 WHERE document_id = %(document_id)s AND version_token = %(version_token)s
                 """,
@@ -149,12 +164,13 @@ class PostgresLawStore:
                     INSERT INTO law_versions(
                         version_id, document_id, version_token, effective_from, version_checksum,
                         status, html_checksum, pdf_checksum, html_bytes, pdf_bytes,
-                        normalized_json, embedding_vector, stored_at, created_at, updated_at
+                        normalized_json, embedding_model, embedding_dimensions,
+                        embedding_vector, stored_at, created_at, updated_at
                     ) VALUES (
                         %(version_id)s, %(document_id)s, %(version_token)s, %(effective_from)s,
                         %(version_checksum)s, %(status)s, %(html_checksum)s, %(pdf_checksum)s,
-                        %(html_bytes)s, %(pdf_bytes)s, %(normalized_json)s, %(embedding_vector)s,
-                        %(now)s, %(now)s, %(now)s
+                        %(html_bytes)s, %(pdf_bytes)s, %(normalized_json)s, %(embedding_model)s,
+                        %(embedding_dimensions)s, %(embedding_vector)s, %(now)s, %(now)s, %(now)s
                     )
                     """,
                     {
@@ -169,6 +185,8 @@ class PostgresLawStore:
                         "html_bytes": html_bytes,
                         "pdf_bytes": pdf_bytes,
                         "normalized_json": normalized_json,
+                        "embedding_model": embedding_model,
+                        "embedding_dimensions": embedding_dimensions,
                         "embedding_vector": embedding_vector,
                         "now": now,
                     },
@@ -186,6 +204,8 @@ class PostgresLawStore:
                     row["html_bytes"] != html_bytes,
                     row["pdf_bytes"] != pdf_bytes,
                     row["normalized_json"] != normalized_json,
+                    row["embedding_model"] != embedding_model,
+                    row["embedding_dimensions"] != embedding_dimensions,
                     row["embedding_vector"] != embedding_vector,
                     row["status"] != snapshot.status,
                 )
@@ -198,6 +218,8 @@ class PostgresLawStore:
                         status = %(status)s, html_checksum = %(html_checksum)s,
                         pdf_checksum = %(pdf_checksum)s, html_bytes = %(html_bytes)s,
                         pdf_bytes = %(pdf_bytes)s, normalized_json = %(normalized_json)s,
+                        embedding_model = %(embedding_model)s,
+                        embedding_dimensions = %(embedding_dimensions)s,
                         embedding_vector = %(embedding_vector)s, stored_at = %(now)s, updated_at = %(now)s
                     WHERE version_id = %(version_id)s
                     """,
@@ -210,6 +232,8 @@ class PostgresLawStore:
                         "html_bytes": html_bytes,
                         "pdf_bytes": pdf_bytes,
                         "normalized_json": normalized_json,
+                        "embedding_model": embedding_model,
+                        "embedding_dimensions": embedding_dimensions,
                         "embedding_vector": embedding_vector,
                         "now": now,
                         "version_id": version_id,

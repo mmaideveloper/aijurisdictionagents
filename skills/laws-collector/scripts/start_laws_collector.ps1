@@ -3,6 +3,7 @@ param(
     [string]$Fixture = "baseline",
     [int]$PollSeconds = 30,
     [int]$MaxCycles = 1,
+    [int]$MaxProbes = 1,
     [ValidateSet("postgres", "sqlite")]
     [string]$DatabaseOption = "postgres",
     [string]$DbLocal = "",
@@ -12,6 +13,51 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Import-DotEnvDefaults {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    foreach ($rawLine in Get-Content -LiteralPath $Path) {
+        $line = [string]$rawLine
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $trimmed = $line.Trim()
+        if ($trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $parts = $trimmed.Split("=", 2)
+        if ($parts.Count -ne 2) {
+            continue
+        }
+
+        $name = $parts[0].Trim()
+        if (-not $name) {
+            continue
+        }
+
+        $existing = [Environment]::GetEnvironmentVariable($name)
+        if (-not [string]::IsNullOrWhiteSpace($existing)) {
+            continue
+        }
+
+        $value = $parts[1].Trim()
+        if (
+            ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+            ($value.StartsWith("'") -and $value.EndsWith("'"))
+        ) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+
+        Set-Item -Path "Env:$name" -Value $value
+    }
+}
 
 function Resolve-PythonPath {
     param([string]$RepoRoot)
@@ -183,12 +229,15 @@ $python = Resolve-PythonPath -RepoRoot $repoRoot
 $shellPath = Resolve-PowerShellPath
 $workerCommand = 'from services.laws_collector.worker import run_worker; run_worker()'
 
+Import-DotEnvDefaults -Path (Join-Path $repoRoot ".env")
+
 $env:PYTHONPATH = Join-Path $repoRoot "src"
 $env:PYTHONUNBUFFERED = "1"
 $env:LAWS_COUNTRY = "SK"
 $env:LAWS_WORKER_FIXTURE = $Fixture
 $env:LAWS_WORKER_POLL_SECONDS = "$PollSeconds"
 $env:LAWS_WORKER_MAX_CYCLES = "$MaxCycles"
+$env:LAWS_WORKER_MAX_PROBES = "$MaxProbes"
 $env:LAWS_STORAGE_LOCAL = "./runs/storage/laws-collector/files/sk"
 
 if ($DatabaseOption -eq "sqlite") {
@@ -214,6 +263,8 @@ if ($ConsoleWindow) {
         "$PollSeconds",
         "-MaxCycles",
         "$MaxCycles",
+        "-MaxProbes",
+        "$MaxProbes",
         "-DatabaseOption",
         $DatabaseOption
     )
@@ -268,6 +319,7 @@ if ($Background) {
         Write-Output "DB_CLOUD: $($env:LAWS_DB_CLOUD)"
     }
     Write-Output "Fixture: $Fixture"
+    Write-Output "Max probes per cycle: $MaxProbes"
     Write-Output "Stop: Stop-Process -Id (Get-Content `"$pidFile`") -Force"
     $openedLogs = Open-LogTailWindow `
         -ShellPath $shellPath `
@@ -280,7 +332,7 @@ if ($Background) {
     exit 0
 }
 
-Write-Output "Starting laws collector in foreground (fixture=$Fixture, DB=$($env:LAWS_DB_BACKEND))"
+Write-Output "Starting laws collector in foreground (fixture=$Fixture, DB=$($env:LAWS_DB_BACKEND), max_probes=$MaxProbes)"
 if ($env:LAWS_DB_CLOUD) {
     Write-Output "DB_CLOUD: $($env:LAWS_DB_CLOUD)"
 }

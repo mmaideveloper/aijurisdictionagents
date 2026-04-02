@@ -16,6 +16,7 @@ class WorkerOptions:
     fixture: str
     poll_seconds: int
     max_cycles: int
+    max_probes: int
 
     @classmethod
     def from_env(cls) -> "WorkerOptions":
@@ -31,7 +32,16 @@ class WorkerOptions:
         if max_cycles < 0:
             raise ValueError("LAWS_WORKER_MAX_CYCLES must be >= 0")
 
-        return cls(fixture=fixture, poll_seconds=poll_seconds, max_cycles=max_cycles)
+        max_probes = int(os.getenv("LAWS_WORKER_MAX_PROBES", "1"))
+        if max_probes < 1:
+            raise ValueError("LAWS_WORKER_MAX_PROBES must be >= 1")
+
+        return cls(
+            fixture=fixture,
+            poll_seconds=poll_seconds,
+            max_cycles=max_cycles,
+            max_probes=max_probes,
+        )
 
 
 def run_worker() -> None:
@@ -47,14 +57,19 @@ def run_worker() -> None:
     while True:
         cycle += 1
         if options.fixture == "live":
-            summary = SlovLexSequentialImportRunner(config=config, store=store).run(max_probes=25)
+            summary = SlovLexSequentialImportRunner(
+                config=config,
+                store=store,
+                service=service,
+            ).run(max_probes=options.max_probes)
             print(
                 f"[laws-collector] collector={collector_definition.collector_name} "
                 f"country={config.country_code} cycle={cycle} fixture=live "
-                f"probes={summary.probes} laws_found={summary.laws_found} "
+                f"probes={summary.probes} max_probes={options.max_probes} laws_found={summary.laws_found} "
                 f"years_advanced={summary.years_advanced} "
                 f"stopped_on_current_year_gap={str(summary.stopped_on_current_year_gap).lower()} "
                 f"last_processed_law={summary.last_processed_law or ''} "
+                f"last_processed_at={summary.last_processed_at or ''} "
                 f"next_law_to_check={summary.next_law_to_check}"
             )
         else:

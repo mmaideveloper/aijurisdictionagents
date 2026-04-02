@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from typing import Callable, Protocol
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .config import LawsCollectorConfig
 from .domain import CollectorProgress
+from .domain import LawSnapshot
 from .import_planner import ImportTarget, SlovLexImportPlanner
+from .slovlex_live_source import SlovLexLiveSnapshotLoader
 
 
 class CollectorProgressStore(Protocol):
@@ -21,6 +24,14 @@ class CollectorProgressStore(Protocol):
     ) -> CollectorProgress: ...
 
     def save_collector_progress(self, progress: CollectorProgress) -> None: ...
+
+
+class LiveSnapshotLoader(Protocol):
+    def load_snapshot(self, *, target: ImportTarget, timeout_seconds: float = 12.0) -> LawSnapshot: ...
+
+
+class LiveIngestService(Protocol):
+    def sync(self, snapshots: tuple[LawSnapshot, ...]): ...
 
 
 @dataclass(frozen=True)
@@ -41,6 +52,7 @@ class SequentialImportSummary:
     last_processed_law: str | None
     next_law_to_check: str
     last_collector_run_at: str | None
+    last_processed_at: str | None
     first_found_url: str | None = None
 
 
@@ -51,10 +63,14 @@ class SlovLexSequentialImportRunner:
         config: LawsCollectorConfig,
         store: CollectorProgressStore,
         planner: SlovLexImportPlanner | None = None,
+        service: LiveIngestService | None = None,
+        snapshot_loader: LiveSnapshotLoader | None = None,
     ) -> None:
         self.config = config
         self.store = store
         self.planner = planner or SlovLexImportPlanner(config=config)
+        self.service = service
+        self.snapshot_loader = snapshot_loader or SlovLexLiveSnapshotLoader()
 
     def get_progress(self) -> CollectorProgress:
         return self.store.get_or_create_collector_progress(
@@ -91,6 +107,16 @@ class SlovLexSequentialImportRunner:
             observed_at = _now_iso()
 
             if probe.exists:
+                _log(
+                    f"start processing country={self.config.country_code} "
+                    f"law={target.law_id} source={probe.url}"
+                )
+                if self.service is not None:
+                    snapshot = self.snapshot_loader.load_snapshot(
+                        target=target,
+                        timeout_seconds=timeout_seconds,
+                    )
+                    self.service.sync((snapshot,))
                 progress = self.planner.mark_processed(
                     progress,
                     target=target,
@@ -116,6 +142,12 @@ class SlovLexSequentialImportRunner:
                 break
 
         final_plan = self.planner.build_plan(progress=progress, today=current_day)
+        if laws_found == 0:
+            _log(
+                f"No new laws for {self.config.country_code}, "
+                f"last processed law {progress.last_processed_law or 'none'} "
+                f"at {progress.last_processed_at or 'n/a'}"
+            )
         return SequentialImportSummary(
             probes=probes,
             laws_found=laws_found,
@@ -125,6 +157,7 @@ class SlovLexSequentialImportRunner:
             last_processed_law=progress.last_processed_law,
             next_law_to_check=final_plan.next_target.law_id,
             last_collector_run_at=progress.last_collector_run_at,
+            last_processed_at=progress.last_processed_at,
             first_found_url=first_found_url,
         )
 
@@ -155,3 +188,7 @@ class SlovLexSequentialImportRunner:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _log(message: str) -> None:
+    print(f"[laws-collector] {message}", flush=True)

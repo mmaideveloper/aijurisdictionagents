@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+from math import fsum
+from time import perf_counter
 from typing import Protocol
 
+from aijurisdictionagents.llm.embeddings import EmbeddingClient, get_embedding_client
+from services.document_processor.runtime import chunk_document_text, serialize_embedding_vector
+
 from .config import LawsCollectorConfig
-from .domain import LawSnapshot, SyncSummary, UpdateCheckItem, UpdateCheckPlan
+from .domain import LawSnapshot, SyncSummary, UpdateCheckItem, UpdateCheckPlan, format_law_identifier
 
 
 class LawStore(Protocol):
@@ -22,6 +27,8 @@ class LawStore(Protocol):
         html_bytes: int,
         pdf_bytes: int,
         normalized_json: str,
+        embedding_model: str,
+        embedding_dimensions: int,
         embedding_vector: str,
     ): ...
 
@@ -60,10 +67,17 @@ class LawStore(Protocol):
 class LawsCollectorService:
     """Ingest and monitor laws snapshots into a corpus store."""
 
-    def __init__(self, *, config: LawsCollectorConfig, store: LawStore) -> None:
+    def __init__(
+        self,
+        *,
+        config: LawsCollectorConfig,
+        store: LawStore,
+        embedding_client: EmbeddingClient | None = None,
+    ) -> None:
         config.validate()
         self.config = config
         self.store = store
+        self.embedding_client = embedding_client or get_embedding_client()
 
     def sync(self, snapshots: tuple[LawSnapshot, ...]) -> SyncSummary:
         summary = SyncSummary()
@@ -73,12 +87,24 @@ class LawsCollectorService:
                     f"Snapshot country {snapshot.country_code} does not match {self.config.country_code}"
                 )
 
+            started_at = perf_counter()
+            law_id = format_law_identifier(year=snapshot.year, number=snapshot.number)
+            _log(
+                f"start law country={snapshot.country_code} law={law_id} source={snapshot.source_url}"
+            )
             html_checksum = _hash_text(snapshot.html_content)
             pdf_checksum = _hash_bytes(snapshot.pdf_content)
             normalized_json = json.dumps(snapshot.normalized_payload(), ensure_ascii=True, sort_keys=True)
-            embedding_vector = _embed_law(snapshot)
 
             document_id, document_created = self.store.upsert_document(snapshot)
+            document_status = "created" if document_created else "updated"
+            _log(f"database upload law={law_id} document_status={document_status}")
+
+            _log(f"vector start law={law_id}")
+            embedding_model, embedding_dimensions, embedding_vector = _embed_snapshot(
+                snapshot=snapshot,
+                embedding_client=self.embedding_client,
+            )
             stored_version = self.store.upsert_version(
                 document_id=document_id,
                 snapshot=snapshot,
@@ -88,6 +114,8 @@ class LawsCollectorService:
                 html_bytes=len(snapshot.html_content.encode("utf-8")),
                 pdf_bytes=len(snapshot.pdf_content),
                 normalized_json=normalized_json,
+                embedding_model=embedding_model,
+                embedding_dimensions=embedding_dimensions,
                 embedding_vector=embedding_vector,
             )
             self.store.replace_provisions(version_id=stored_version.version_id, provisions=snapshot.provisions)
@@ -147,6 +175,12 @@ class LawsCollectorService:
                     metadata_updates=1 if event_type == "metadata_change" else 0,
                     skipped=1 if event_type == "no_change" else 0,
                 )
+            )
+            elapsed_seconds = perf_counter() - started_at
+            _log(
+                f"vector done law={law_id} version_status={stored_version.state} "
+                f"final_status={event_type} embedding_model={embedding_model} "
+                f"embedding_dimensions={embedding_dimensions} total_seconds={elapsed_seconds:.3f}"
             )
         return summary
 
@@ -214,9 +248,8 @@ def _hash_bytes(value: bytes) -> str:
     return sha256(value).hexdigest()
 
 
-def _embed_law(snapshot: LawSnapshot) -> str:
-    """Deterministic pseudo-embedding; can be swapped with model embeddings later."""
-    text = " ".join(
+def _build_embedding_input(snapshot: LawSnapshot) -> str:
+    return " ".join(
         [
             snapshot.official_name,
             snapshot.lawyer_title,
@@ -224,11 +257,53 @@ def _embed_law(snapshot: LawSnapshot) -> str:
             " ".join(item.text for item in snapshot.provisions),
         ]
     )
-    digest = sha256(text.encode("utf-8")).digest()
-    dims = 8
-    values = []
-    for index in range(dims):
-        raw = int.from_bytes(digest[index * 4 : (index + 1) * 4], byteorder="big", signed=False)
-        normalized = (raw / 2**32) * 2 - 1
-        values.append(f"{normalized:.6f}")
-    return "[" + ",".join(values) + "]"
+
+
+def _embed_snapshot(
+    *,
+    snapshot: LawSnapshot,
+    embedding_client: EmbeddingClient,
+) -> tuple[str, int, str]:
+    chunks = _build_embedding_chunks(snapshot)
+    embedding_result = embedding_client.embed_texts(chunks)
+    if not embedding_result.vectors:
+        raise ValueError("Embedding provider returned no vectors for laws collector snapshot.")
+    averaged = _average_vectors(embedding_result.vectors)
+    return (
+        embedding_result.model_name,
+        len(averaged),
+        serialize_embedding_vector(averaged),
+    )
+
+
+def _build_embedding_chunks(snapshot: LawSnapshot) -> tuple[str, ...]:
+    base_text = _build_embedding_input(snapshot)
+    chunks = chunk_document_text(
+        base_text,
+        target_chars=4000,
+        overlap_chars=250,
+        min_chunk_chars=300,
+    )
+    if not chunks:
+        return (base_text or snapshot.official_name or snapshot.lawyer_title or " ",)
+    return tuple(chunk.text for chunk in chunks)
+
+
+def _average_vectors(vectors: list[list[float]]) -> list[float]:
+    if not vectors:
+        return []
+    dimensions = len(vectors[0])
+    if dimensions == 0:
+        return []
+    for vector in vectors[1:]:
+        if len(vector) != dimensions:
+            raise ValueError("Embedding provider returned inconsistent vector dimensions.")
+    scale = float(len(vectors))
+    return [
+        fsum(vector[index] for vector in vectors) / scale
+        for index in range(dimensions)
+    ]
+
+
+def _log(message: str) -> None:
+    print(f"[laws-collector] {message}", flush=True)

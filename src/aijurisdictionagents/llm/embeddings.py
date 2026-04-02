@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import os
-from typing import Protocol, Sequence
-
-from openai import AzureOpenAI, OpenAI
+import re
+import time
+from typing import Any, Callable, Protocol, Sequence
 
 
 @dataclass(frozen=True)
@@ -31,8 +31,9 @@ class OpenAIEmbeddingConfig:
 
 class OpenAIEmbeddingClient:
     def __init__(self, config: OpenAIEmbeddingConfig) -> None:
+        openai_client_type = _load_openai_client_type()
         self._config = config
-        self._client = OpenAI(api_key=config.api_key)
+        self._client = openai_client_type(api_key=config.api_key)
 
     @property
     def model_name(self) -> str:
@@ -40,9 +41,11 @@ class OpenAIEmbeddingClient:
 
     def embed_texts(self, texts: Sequence[str]) -> EmbeddingBatchResult:
         normalized_inputs = [_normalize_embedding_input(text) for text in texts]
-        response = self._client.embeddings.create(
-            model=self._config.model,
-            input=normalized_inputs,
+        response = _request_embeddings_with_retry(
+            lambda: self._client.embeddings.create(
+                model=self._config.model,
+                input=normalized_inputs,
+            )
         )
         vectors = [list(item.embedding) for item in response.data]
         return EmbeddingBatchResult(model_name=self.model_name, vectors=vectors)
@@ -59,16 +62,17 @@ class AzureFoundryEmbeddingConfig:
 
 class AzureFoundryEmbeddingClient:
     def __init__(self, config: AzureFoundryEmbeddingConfig) -> None:
+        azure_openai_client_type = _load_azure_openai_client_type()
         self._config = config
         _clear_blank_azure_openai_auth_env()
         if config.azure_ad_token:
-            self._client = AzureOpenAI(
+            self._client = azure_openai_client_type(
                 azure_endpoint=config.endpoint,
                 api_version=config.api_version,
                 azure_ad_token=config.azure_ad_token,
             )
         else:
-            self._client = AzureOpenAI(
+            self._client = azure_openai_client_type(
                 azure_endpoint=config.endpoint,
                 api_version=config.api_version,
                 api_key=config.api_key,
@@ -80,9 +84,11 @@ class AzureFoundryEmbeddingClient:
 
     def embed_texts(self, texts: Sequence[str]) -> EmbeddingBatchResult:
         normalized_inputs = [_normalize_embedding_input(text) for text in texts]
-        response = self._client.embeddings.create(
-            model=self._config.deployment,
-            input=normalized_inputs,
+        response = _request_embeddings_with_retry(
+            lambda: self._client.embeddings.create(
+                model=self._config.deployment,
+                input=normalized_inputs,
+            )
         )
         vectors = [list(item.embedding) for item in response.data]
         return EmbeddingBatchResult(model_name=self.model_name, vectors=vectors)
@@ -183,3 +189,69 @@ def _build_mock_embedding(text: str, *, dimensions: int = 32) -> list[float]:
         integer = int.from_bytes(chunk, "big", signed=False)
         values.append(round((integer / 2**32) * 2 - 1, 6))
     return values
+
+
+def _request_embeddings_with_retry(
+    request: Callable[[], object],
+    *,
+    max_attempts: int = 4,
+) -> object:
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return request()
+        except Exception as exc:
+            if not _is_rate_limit_error(exc) or attempt >= max_attempts:
+                raise
+            time.sleep(_retry_delay_seconds(exc, attempt=attempt))
+
+
+def _retry_delay_seconds(error: Exception, *, attempt: int) -> float:
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        retry_after = headers.get("retry-after")
+        if retry_after:
+            try:
+                return max(float(retry_after), 1.0)
+            except ValueError:
+                pass
+        retry_after_ms = headers.get("x-ms-retry-after-ms")
+        if retry_after_ms:
+            try:
+                return max(float(retry_after_ms) / 1000.0, 1.0)
+            except ValueError:
+                pass
+
+    match = re.search(r"retry after (\d+) seconds", str(error), flags=re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+
+    return float(min(60, 5 * (2 ** (attempt - 1))))
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    try:
+        rate_limit_error_type = _load_rate_limit_error_type()
+    except ImportError:
+        return False
+    return isinstance(error, rate_limit_error_type)
+
+
+def _load_openai_client_type() -> type[Any]:
+    from openai import OpenAI
+
+    return OpenAI
+
+
+def _load_azure_openai_client_type() -> type[Any]:
+    from openai import AzureOpenAI
+
+    return AzureOpenAI
+
+
+def _load_rate_limit_error_type() -> type[Exception]:
+    from openai import RateLimitError
+
+    return RateLimitError

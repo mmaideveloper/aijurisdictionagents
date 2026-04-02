@@ -15,6 +15,10 @@ class ImportTarget:
     number: int
 
     @property
+    def target_country_code(self) -> str:
+        return "SK"
+
+    @property
     def law_id(self) -> str:
         return f"{self.number}/{self.year}"
 
