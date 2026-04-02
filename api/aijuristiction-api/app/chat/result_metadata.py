@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import sqlite3
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Sequence, cast
 
 from app.chat.models import Message, MessageRole, Session
 from app.versioning import get_api_version, get_core_version
@@ -239,12 +239,16 @@ def get_law_knowledge_snapshot(country_code: str | None) -> LawKnowledgeSnapshot
         try:
             with sqlite3.connect(db_path) as conn:
                 if normalized_country:
-                    row = conn.execute(
-                        _law_snapshot_sqlite_query(filtered=True),
-                        (normalized_country,),
-                    ).fetchone()
+                    row = _fetchone_sqlite(
+                        conn=conn,
+                        query=_law_snapshot_sqlite_query(filtered=True),
+                        params=(normalized_country,),
+                    )
                 else:
-                    row = conn.execute(_law_snapshot_sqlite_query(filtered=False)).fetchone()
+                    row = _fetchone_sqlite(
+                        conn=conn,
+                        query=_law_snapshot_sqlite_query(filtered=False),
+                    )
         except sqlite3.Error:
             return _law_snapshot_without_db(model_cutoff=model_cutoff)
         snapshot = _law_snapshot_from_row(row, scope=scope, model_cutoff=model_cutoff)
@@ -258,12 +262,16 @@ def get_law_knowledge_snapshot(country_code: str | None) -> LawKnowledgeSnapshot
 
             with psycopg.connect(db_cloud) as conn:
                 if normalized_country:
-                    row = conn.execute(
-                        _law_snapshot_postgres_query(filtered=True),
-                        (normalized_country,),
-                    ).fetchone()
+                    row = _fetchone_postgres(
+                        conn=conn,
+                        query=_law_snapshot_postgres_query(filtered=True),
+                        params=(normalized_country,),
+                    )
                 else:
-                    row = conn.execute(_law_snapshot_postgres_query(filtered=False)).fetchone()
+                    row = _fetchone_postgres(
+                        conn=conn,
+                        query=_law_snapshot_postgres_query(filtered=False),
+                    )
         except Exception:
             return _law_snapshot_without_db(model_cutoff=model_cutoff)
         snapshot = _law_snapshot_from_row(row, scope=scope, model_cutoff=model_cutoff)
@@ -272,6 +280,24 @@ def get_law_knowledge_snapshot(country_code: str | None) -> LawKnowledgeSnapshot
         return _law_snapshot_without_db(model_cutoff=model_cutoff)
 
     return _law_snapshot_without_db(model_cutoff=model_cutoff)
+
+
+def _fetchone_sqlite(
+    *,
+    conn: sqlite3.Connection,
+    query: str,
+    params: Sequence[Any] = (),
+) -> Sequence[Any] | None:
+    return cast(Sequence[Any] | None, conn.execute(query, params).fetchone())
+
+
+def _fetchone_postgres(
+    *,
+    conn: Any,
+    query: str,
+    params: Sequence[Any] = (),
+) -> Sequence[Any] | None:
+    return cast(Sequence[Any] | None, conn.execute(query, params).fetchone())
 
 
 def _law_snapshot_sqlite_query(*, filtered: bool) -> str:

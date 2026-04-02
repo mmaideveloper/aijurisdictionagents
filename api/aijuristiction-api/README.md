@@ -521,6 +521,7 @@ ruff check . && mypy app && pytest -q
 
 Typing note: keep `UserResponseProvider` and `MessageCallback` imports in `app/chat/core_runtime.py`
 inside the `TYPE_CHECKING` block so both `ruff` and `mypy --strict` stay green.
+Database cursor reads in `app/chat/result_metadata.py` intentionally go through typed helper wrappers so strict `mypy` does not treat `fetchone()` results as implicit `Any`.
 
 Telemetry processor selection (OTLP vs console) is covered by unit tests in `tests/test_telemetry.py`.
 
