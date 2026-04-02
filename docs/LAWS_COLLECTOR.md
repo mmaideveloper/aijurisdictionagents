@@ -253,8 +253,8 @@ python examples/slovlex_live_probe_demo.py
 Add these to `.env` when you start wiring the service into real runs:
 
 - `LAWS_DB_BACKEND=sqlite`
-- `LAWS_DB_LOCAL=./databases/laws-collector/sk_laws.sqlite3`
-- `LAWS_STORAGE_LOCAL=./storage/laws/sk`
+- `LAWS_DB_LOCAL=./runs/storage/laws-collector/sqlite/sk_laws.sqlite3`
+- `LAWS_STORAGE_LOCAL=./runs/storage/laws-collector/files/sk`
 - `LAWS_DELTA_POLL_HOURS=3`
 
 `LAWS_COUNTRY` selects the country-specific collector implementation. The current implementation supports only `SK`, so the service still defaults to `SK` when the variable is unset.
@@ -288,9 +288,9 @@ Implemented upgrades include:
   - `parent_law_year` / `parent_law_number` for Slovak amendment acts that update another law,
   - existing lifecycle timestamps and status fields.
 - deterministic vector generation per law version (`embedding_vector`) for semantic retrieval bootstrap.
-- PostgreSQL store support (`LAWS_DB_BACKEND=postgres`) plus migration project `databases/migrations/laws`.
+- PostgreSQL store support (`LAWS_DB_BACKEND=postgres`) plus migration project `databases/laws-collector/migrations`.
 - per-country database provisioning helper:
-  - `python databases/scripts/provision_country_laws_db.py --admin-uri <postgres-admin-uri> --country SK`
+  - `python scripts/databases/provision_country_laws_db.py --admin-uri <postgres-admin-uri> --country SK`
   - database name format: `laws_<country_code_lower>` with Slovakia remaining `laws_sk`.
 
 ### PostgreSQL migration flow
@@ -298,8 +298,8 @@ Implemented upgrades include:
 1) Provision country DB:
 
 ```bash
-python databases/scripts/provision_country_laws_db.py \
-  --admin-uri postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+python scripts/databases/provision_country_laws_db.py \
+  --admin-uri postgresql://postgres:postgres@127.0.0.1:5433/postgres \
   --country SK
 ```
 
@@ -307,15 +307,15 @@ python databases/scripts/provision_country_laws_db.py \
 
 ```bash
 DB_OPTION=postgres \
-DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/laws_sk \
-PYTHONPATH=src python databases/scripts/apply_db_migrations.py --project laws
+DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5433/laws_sk \
+PYTHONPATH=src python scripts/databases/apply_db_migrations.py --project laws
 ```
 
 3) Run collector against PostgreSQL:
 
 ```bash
 LAWS_DB_BACKEND=postgres \
-LAWS_DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/laws_sk \
+LAWS_DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5433/laws_sk \
 PYTHONPATH=src python -m services.laws_collector --fixture baseline
 ```
 
@@ -327,13 +327,31 @@ Start the local worker loop with the new project skill:
 ./skills/laws-collector/scripts/start_laws_collector.ps1 -Fixture baseline -MaxCycles 1
 ```
 
-This runs the collector worker (`services.laws_collector.worker`) with local SQLite defaults and is useful for repeatable smoke tests.
+This now runs the collector worker (`services.laws_collector.worker`) with local PostgreSQL by default and is useful for repeatable smoke tests against the same local database layout used by the rest of the repo.
 
 For live Slov-Lex sequential probing, set:
 
 ```powershell
 $env:LAWS_WORKER_FIXTURE = "live"
 ./skills/laws-collector/scripts/start_laws_collector.ps1 -Fixture live -MaxCycles 1
+```
+
+Start it in the background and keep logs visible in a separate console window:
+
+```powershell
+./skills/laws-collector/scripts/start_laws_collector.ps1 -Background -Fixture live -MaxCycles 0
+```
+
+Open a dedicated foreground console window for collector logs:
+
+```powershell
+./skills/laws-collector/scripts/start_laws_collector.ps1 -ConsoleWindow -Fixture live -MaxCycles 0
+```
+
+Use SQLite explicitly only when needed:
+
+```powershell
+./skills/laws-collector/scripts/start_laws_collector.ps1 -DatabaseOption sqlite -Fixture baseline -MaxCycles 1
 ```
 
 ## Azure Container App deployment (laws-collector)
@@ -354,7 +372,7 @@ The deploy script builds the image in ACR and deploys it to Azure Container Apps
 Start the shared local PostgreSQL Docker container:
 
 ```powershell
-./skills/start-postgress/scripts/start_postgress.ps1 -SkipSchemaUpdate
+./skills/start-postgres/scripts/start_postgres.ps1 -ProjectName laws-collector -SkipSchemaUpdate
 ```
 
 This requires the local Docker daemon to be running.
@@ -362,15 +380,24 @@ This requires the local Docker daemon to be running.
 Provision the dedicated laws schema locally:
 
 ```powershell
-.\.conda\python.exe databases/scripts/provision_country_laws_db.py --admin-uri postgresql://postgres:postgres@127.0.0.1:5432/postgres --country SK
+.\.conda\python.exe scripts/databases/provision_country_laws_db.py --admin-uri postgresql://postgres:postgres@127.0.0.1:5433/postgres --country SK
 $env:DB_OPTION = "postgres"
-$env:DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5432/laws_sk"
-.\.conda\python.exe databases/scripts/apply_db_migrations.py --project laws
+$env:DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"
+.\.conda\python.exe scripts/databases/apply_db_migrations.py --project laws
 ```
 
 Then run the PostgreSQL debug example:
 
 ```powershell
-$env:LAWS_DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5432/laws_sk"
+$env:LAWS_DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"
 .\.conda\python.exe examples/laws_collector_postgres_debug_demo.py
 ```
+
+For interactive debugging of the real sequential collector with logs visible in VS Code, use the workspace launch profiles in [`.vscode/launch.json`](/c:/Projects/aijuristiction/aijurisdictionagents/.vscode/launch.json):
+
+- `Launch Laws Collector (Postgres, Stop On Entry)`:
+  starts `python -m services.laws_collector --run-sequential-import` against `laws_sk`, stops on the first executable line, and prints collector output in the integrated terminal.
+- `Launch Laws Collector (Postgres, Console Logs)`:
+  runs the same Postgres-backed sequential import path without forcing the initial stop, while keeping collector logs in the integrated terminal.
+- `Attach Laws Collector`:
+  attaches to an already running `debugpy` listener on `127.0.0.1:5678`; logs stay in whichever terminal launched that process.

@@ -232,7 +232,7 @@ def get_law_knowledge_snapshot(country_code: str | None) -> LawKnowledgeSnapshot
     db_backend = os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower()
     db_local = os.getenv(
         "LAWS_DB_LOCAL",
-        "./databases/laws-collector/sk_laws.sqlite3",
+        "./runs/storage/laws-collector/sqlite/sk_laws.sqlite3",
     ).strip()
     db_cloud = os.getenv("LAWS_DB_CLOUD", "").strip()
 
@@ -392,7 +392,7 @@ def _read_or_create_model_knowledge_cutoff_snapshot() -> tuple[str | None, str]:
     cache_path = _resolve_repo_path(
         os.getenv(
             "MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE",
-            "./databases/model_knowledge_cutoff_cache.json",
+            "./runs/storage/api/cache/model_knowledge_cutoff_cache.json",
         ).strip()
     )
     cached_snapshot = _read_model_knowledge_cutoff_cache(cache_path)

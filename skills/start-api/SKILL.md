@@ -11,7 +11,7 @@ description: Start and verify the local `aijuristiction-api` service in this mon
    `.\skills\start-api\scripts\start_api.ps1`
 2. Keep default provider (`azurefoundry`) unless deterministic offline testing is needed.
 3. Choose database mode (`local`, `postgres`, `azure`) and storage mode (`local`, `azure`) when the API should not use the default local SQLite + local storage setup.
-4. When `DatabaseOption=postgres`, the launcher reuses or starts the local Docker PostgreSQL instance through `start-postgress` and upgrades the database schema before starting the API.
+4. When `DatabaseOption=postgres`, the launcher reuses or starts the local Docker PostgreSQL instance through `start-postgres` and upgrades the database schema before starting the API.
 5. Verify `GET /health` is reachable at `http://127.0.0.1:8080/health`.
 6. Run the minimal example:
    `python examples/minimal_demo.py`
@@ -46,12 +46,14 @@ If started with `-Background`, stop via:
 - Local starts now enable `LOCAL_LLM_IO_LOGGING=1` by default, so the API logs the exact model request payload and raw model answer in local runs only.
 - Default database mode is `local`.
 - Default storage mode is `local`.
-- `-DatabaseOption postgress` is accepted and normalized to `postgres`.
+- Legacy `-DatabaseOption postgress` is still accepted and normalized to `postgres`.
 - For Azure Foundry requests, set:
   `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, and either `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`.
 - For `DatabaseOption=postgres|azure`, set `DB_CLOUD` or pass `-DbCloud`.
 - For `DatabaseOption=postgres`, the launcher prefers the local Docker PostgreSQL skill and resolves `DB_CLOUD` from that running instance automatically.
-- The PostgreSQL handoff calls `start_postgress.ps1` with explicit named parameters when reusing local connection metadata, so database name/user/password/port are not mis-bound positionally.
+- The PostgreSQL handoff calls `start_postgres.ps1` with explicit named parameters when reusing local connection metadata, so database name/user/password/port are not mis-bound positionally.
+- Default local SQLite metadata path is `./runs/storage/api/sqlite/api.sqlite3`.
+- Default local file storage path is `./runs/storage/api/files`.
 - For `StorageOption=azure`, set `STORE_CLOUD` or pass `-StoreCloud`.
 - Use `-LlmProvider mock` for local smoke checks without cloud credentials.
 - `-Background` now also opens a live API log tail window automatically, so request/model logs remain visible even when the server is not attached to the current terminal.

@@ -13,7 +13,7 @@ def main() -> None:
     parser.add_argument(
         "--project",
         default="api",
-        help="Migration project under databases/migrations (default: api).",
+        help="Migration project identifier (default: api). SQL assets live under databases/<project>.",
     )
     parser.add_argument(
         "--dry-run",

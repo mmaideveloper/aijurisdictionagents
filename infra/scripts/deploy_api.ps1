@@ -1083,7 +1083,7 @@ $previousDbCloud = $env:DB_CLOUD
 try {
     $env:DB_OPTION = "azure"
     $env:DB_CLOUD = $dbCloud
-    python (Join-Path $repoRoot "databases/scripts/apply_api_db_schema.py")
+    python (Join-Path $repoRoot "scripts/databases/apply_api_db_schema.py")
     if ($LASTEXITCODE -ne 0) {
         throw "Schema migration command failed."
     }

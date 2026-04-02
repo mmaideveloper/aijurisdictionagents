@@ -88,9 +88,11 @@ def test_laws_collector_config_resolves_relative_db_from_repo_root(monkeypatch) 
     config = LawsCollectorConfig.from_env()
 
     assert config.db_path.name == "sk_laws.sqlite3"
-    assert config.db_path.parent.name == "laws-collector"
-    assert config.db_path.parent.parent.name == "databases"
-    assert config.db_path.parent.parent.parent == Path(__file__).resolve().parents[1]
+    assert config.db_path.parent.name == "sqlite"
+    assert config.db_path.parent.parent.name == "laws-collector"
+    assert config.db_path.parent.parent.parent.name == "storage"
+    assert config.db_path.parent.parent.parent.parent.name == "runs"
+    assert config.db_path.parent.parent.parent.parent.parent == Path(__file__).resolve().parents[1]
     assert config.country_db_name == "laws_sk"
     assert config.initial_import_from == date(1993, 1, 1)
     assert config.historical_import_from == date(1993, 1, 1)

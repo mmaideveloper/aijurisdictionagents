@@ -7,6 +7,14 @@ Coding standards: typing, linting, tests, error handling
 Output requirements: always create/update docs, add minimal runnable example
 Minimal runnable example (default): `python examples/minimal_demo.py`
 
+Database layout rule:
+
+- Keep only SQL assets under `databases/<projectname>/` such as migrations, init SQL, and seed data.
+- Keep all local runtime database files under `runs/storage/<projectname>/`.
+- For local PostgreSQL, use `runs/storage/<projectname>/postgres/data`.
+- For local SQLite, use `runs/storage/<projectname>/sqlite/`.
+- For any new project, create database SQL assets in `databases/<projectname>/` and local runtime database data in `runs/storage/<projectname>/`.
+
 Environment variable rule:
 
 - Whenever you add a new environment variable to the project, add a documented example entry to `.env.example` in the same change.
@@ -73,9 +81,9 @@ Custom project skills:
 - `start-api` at `skills/start-api/SKILL.md`
   - Purpose: start and health-check local `aijuristiction-api`.
   - Script: `.\skills\start-api\scripts\start_api.ps1`
-- `start-postgress` at `skills/start-postgress/SKILL.md`
+- `start-postgres` at `skills/start-postgres/SKILL.md`
   - Purpose: start or reuse the local PostgreSQL Docker instance and apply schema updates.
-  - Script: `.\skills\start-postgress\scripts\start_postgress.ps1`
+  - Script: `.\skills\start-postgres\scripts\start_postgres.ps1`
 - `start-mobile` at `skills/start-mobile/SKILL.md`
   - Purpose: start and verify the local Flutter mobile app using the same skill name available on this machine.
   - Script: `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`

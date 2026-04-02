@@ -13,9 +13,9 @@ Use these environment variables in local `.env`, Docker, and GitHub environment 
 
 - `DB_OPTION`: `local`, `postgres`, or `azure`
 - `STORAGE_OPTION`: `local` or `azure`
-- `DB_LOCAL`: local SQLite path relative to the repo root (example: `./databases/api.sqlite3`)
+- `DB_LOCAL`: local SQLite path relative to the repo root (example: `./runs/storage/api/sqlite/api.sqlite3`)
 - `DB_CLOUD`: cloud database connection string (PostgreSQL in Azure)
-- `STORE_LOCAL`: local storage root path (example: `./storage`)
+- `STORE_LOCAL`: local storage root path (example: `./runs/storage/api/files`)
 - `STORE_CLOUD`: Azure Blob URL prefix for case artifacts (example: `https://<storage-account>.blob.core.windows.net/<container-name>`)
 
 If you set:
@@ -40,7 +40,7 @@ postgresql://jurisadmin:<password>@db-juris-dev.postgres.database.azure.com:5432
 
 ### Phase 1 (now): local + Docker + basic cloud portability
 
-- **SQLite** for metadata (`databases/api.sqlite3`) when `DB_OPTION=local`.
+- **SQLite** for metadata (`runs/storage/api/sqlite/api.sqlite3`) when `DB_OPTION=local`.
 - **PostgreSQL** for metadata when `DB_OPTION=postgres` (recommended via Docker locally).
 - Filesystem blob folder for stored assets.
 
@@ -82,22 +82,17 @@ PYTHONPATH=src python examples/azure_api_postgres_config_demo.py
 
 ## Docker notes
 
-Run local PostgreSQL stack:
-```bash
-cd databases
-docker compose up -d
-```
-
-Or from repository root:
+Run local PostgreSQL stack from repository root:
 
 ```powershell
-.\skills\start-postgress\scripts\start_postgress.ps1
+.\skills\start-postgres\scripts\start_postgres.ps1
 ```
 
 Mount volumes for local mode:
-- repo `databases/` for SQLite fallback and PostgreSQL data
-- API-local `storage/` for `STORE_LOCAL`
-- Docker PostgreSQL persistence root: `databases/postgress/data`
+- repo `runs/storage/api/sqlite` for API SQLite metadata
+- repo `runs/storage/api/files` for `STORE_LOCAL`
+- Docker PostgreSQL persistence root: `runs/storage/api/postgres/data`
+- Legacy local PostgreSQL data is migrated into `runs/storage/api/postgres` on first managed startup.
 
 Run the full local Docker stack (API + PostgreSQL):
 
@@ -106,8 +101,8 @@ cd api/aijuristiction-api
 docker compose up --build
 ```
 
-The API compose build now uses the repository root as context so the container includes the shared `src/aijurisdictionagents` package plus SQL migrations under `databases/migrations/`.
-Do not run the API compose stack and the dedicated `databases/` stack at the same time because both use the same PostgreSQL data directory.
+The API compose build now uses the repository root as context so the container includes the shared `src/aijurisdictionagents` package plus SQL assets under `databases/api/` and `databases/laws-collector/`.
+Do not run the API compose stack and the standalone `start-postgres` API instance at the same time because both use the same PostgreSQL data directory.
 
 
 ## Schema update workflow
@@ -117,17 +112,15 @@ Do not run the API compose stack and the dedicated `databases/` stack at the sam
 Run migrations explicitly before testing/deploying:
 
 ```bash
-PYTHONPATH=src python databases/scripts/apply_api_db_schema.py --dry-run
-PYTHONPATH=src python databases/scripts/apply_api_db_schema.py
+PYTHONPATH=src python scripts/databases/apply_api_db_schema.py --dry-run
+PYTHONPATH=src python scripts/databases/apply_api_db_schema.py
 ```
 
 ### Local PostgreSQL + Docker
 
 ```bash
-cd databases
-docker compose up -d
-cd ../..
-DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python databases/scripts/apply_api_db_schema.py
+.\skills\start-postgres\scripts\start_postgres.ps1 -SkipSchemaUpdate
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python scripts/databases/apply_api_db_schema.py
 ```
 
 ### Cloud rollout checklist (Azure)

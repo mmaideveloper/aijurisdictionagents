@@ -225,14 +225,14 @@ function Ensure-LocalPostgresReady {
         [string]$ExistingDbCloud
     )
 
-    $skillScript = Join-Path $RepoRoot "skills\start-postgress\scripts\start_postgress.ps1"
+    $skillScript = Join-Path $RepoRoot "skills\start-postgres\scripts\start_postgres.ps1"
     if (-not (Test-Path $skillScript)) {
         throw "PostgreSQL start skill not found: $skillScript"
     }
     $shellPath = Resolve-PowerShellPath
 
     $parsed = Get-LocalPostgresSettingsFromConnectionString -ConnectionString $ExistingDbCloud
-    $shellArgs = @("-NoProfile", "-File", $skillScript)
+    $shellArgs = @("-NoProfile", "-File", $skillScript, "-ProjectName", "api")
     if ($parsed) {
         $shellArgs += @(
             "-DatabaseName", $parsed.DatabaseName,

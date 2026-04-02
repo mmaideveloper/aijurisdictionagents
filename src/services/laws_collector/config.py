@@ -48,13 +48,13 @@ class LawsCollectorConfig:
     def default_local_db_path_for(country_code: str) -> str:
         normalized_country_code = country_code.strip().lower()
         if normalized_country_code == "sk":
-            return "./databases/laws-collector/sk_laws.sqlite3"
-        return f"./databases/laws-collector/{normalized_country_code}_laws.sqlite3"
+            return "./runs/storage/laws-collector/sqlite/sk_laws.sqlite3"
+        return f"./runs/storage/laws-collector/sqlite/{normalized_country_code}_laws.sqlite3"
 
     @staticmethod
     def default_local_storage_path_for(country_code: str) -> str:
         normalized_country_code = country_code.strip().lower()
-        return f"./storage/laws/{normalized_country_code}"
+        return f"./runs/storage/laws-collector/files/{normalized_country_code}"
 
     def validate(self) -> None:
         if len(self.country_code) != 2 or not self.country_code.isalpha():

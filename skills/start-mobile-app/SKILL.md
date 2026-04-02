@@ -58,7 +58,7 @@ If started with `-Background`, stop via:
 - For reliability, background web starts now use Flutter's `web-server` device under the hood even when `-Device chrome` is requested, and then open the app URL in the browser.
 - For `localApi`, default API URL is `http://127.0.0.1:8080`.
 - For `localApi`, the launcher now also asks for database mode (`local`, `postgres`, `azure`) and storage mode (`local`, `azure`) unless they are passed as parameters.
-- `-DatabaseOption postgress` is accepted and normalized to `postgres`.
+- Legacy `-DatabaseOption postgress` is still accepted and normalized to `postgres`.
 - If `DatabaseOption` is `postgres` or `azure`, the launcher requires `DB_CLOUD` or `-DbCloud`.
 - If `StorageOption` is `azure`, the launcher requires `STORE_CLOUD` or `-StoreCloud`.
 - For `publicDevApi`, the launcher uses `-PublicDevApiBaseUrl`, `PUBLIC_DEV_API_BASE_URL`, or `AIJ_PUBLIC_DEV_API_URL`. If none are set, it prompts for the URL.
