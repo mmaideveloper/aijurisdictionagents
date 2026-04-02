@@ -299,7 +299,7 @@ if ($Background) {
 
     $process = Start-Process `
         -FilePath $python `
-        -ArgumentList @("-c", $workerCommand) `
+        -ArgumentList ('-c "{0}"' -f $workerCommand.Replace('"', '\"')) `
         -WorkingDirectory $repoRoot `
         -RedirectStandardOutput $stdoutLog `
         -RedirectStandardError $stderrLog `

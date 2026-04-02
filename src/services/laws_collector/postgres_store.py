@@ -9,13 +9,22 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .config import LawsCollectorConfig
-from .domain import CollectorProgress, LawSnapshot, ProvisionRecord, StoredVersion
+from .domain import (
+    CollectorProgress,
+    LawMetadataRecord,
+    LawRelationRecord,
+    LawSnapshot,
+    ProvisionRecord,
+    StoredVersion,
+)
 
 
 @dataclass(frozen=True)
 class CollectorCounts:
     documents: int
     versions: int
+    metadata: int
+    relations: int
     provisions: int
     update_events: int
 
@@ -265,6 +274,162 @@ class PostgresLawStore:
                 )
             conn.commit()
 
+    def upsert_law_metadata(
+        self,
+        *,
+        document_id: str,
+        version_id: str,
+        metadata: LawMetadataRecord,
+    ) -> str:
+        now = _now_iso()
+        legal_areas_json = json.dumps(list(metadata.legal_areas), ensure_ascii=True)
+        metadata_json = json.dumps(metadata.normalized_payload(), ensure_ascii=True, sort_keys=True)
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT law_metadata_id, law_identifier_text, title, law_type, approval_date,
+                       publication_date, effective_from, effective_to, author,
+                       issue_reference, legal_areas_json, metadata_json
+                FROM law_metadata
+                WHERE version_id = %(version_id)s
+                """,
+                {"version_id": version_id},
+            ).fetchone()
+            if row is None:
+                law_metadata_id = str(uuid.uuid4())
+                conn.execute(
+                    """
+                    INSERT INTO law_metadata(
+                        law_metadata_id, document_id, version_id, law_identifier_text,
+                        title, law_type, approval_date, publication_date, effective_from,
+                        effective_to, author, issue_reference, legal_areas_json,
+                        metadata_json, created_at, updated_at
+                    ) VALUES (
+                        %(law_metadata_id)s, %(document_id)s, %(version_id)s, %(law_identifier_text)s,
+                        %(title)s, %(law_type)s, %(approval_date)s, %(publication_date)s, %(effective_from)s,
+                        %(effective_to)s, %(author)s, %(issue_reference)s, %(legal_areas_json)s,
+                        %(metadata_json)s, %(now)s, %(now)s
+                    )
+                    """,
+                    {
+                        "law_metadata_id": law_metadata_id,
+                        "document_id": document_id,
+                        "version_id": version_id,
+                        "law_identifier_text": metadata.law_identifier_text,
+                        "title": metadata.title,
+                        "law_type": metadata.law_type,
+                        "approval_date": metadata.approval_date,
+                        "publication_date": metadata.publication_date,
+                        "effective_from": metadata.effective_from,
+                        "effective_to": metadata.effective_to,
+                        "author": metadata.author,
+                        "issue_reference": metadata.issue_reference,
+                        "legal_areas_json": legal_areas_json,
+                        "metadata_json": metadata_json,
+                        "now": now,
+                    },
+                )
+                conn.commit()
+                return law_metadata_id
+
+            law_metadata_id = str(row["law_metadata_id"])
+            changed = any(
+                (
+                    row["law_identifier_text"] != metadata.law_identifier_text,
+                    row["title"] != metadata.title,
+                    row["law_type"] != metadata.law_type,
+                    _as_nullable_text(row["approval_date"]) != metadata.approval_date,
+                    _as_nullable_text(row["publication_date"]) != metadata.publication_date,
+                    _as_nullable_text(row["effective_from"]) != metadata.effective_from,
+                    _as_nullable_text(row["effective_to"]) != metadata.effective_to,
+                    _as_nullable_text(row["author"]) != metadata.author,
+                    _as_nullable_text(row["issue_reference"]) != metadata.issue_reference,
+                    _json_text(row["legal_areas_json"]) != legal_areas_json,
+                    _json_text(row["metadata_json"]) != metadata_json,
+                )
+            )
+            if changed:
+                conn.execute(
+                    """
+                    UPDATE law_metadata
+                    SET law_identifier_text = %(law_identifier_text)s,
+                        title = %(title)s,
+                        law_type = %(law_type)s,
+                        approval_date = %(approval_date)s,
+                        publication_date = %(publication_date)s,
+                        effective_from = %(effective_from)s,
+                        effective_to = %(effective_to)s,
+                        author = %(author)s,
+                        issue_reference = %(issue_reference)s,
+                        legal_areas_json = %(legal_areas_json)s,
+                        metadata_json = %(metadata_json)s,
+                        updated_at = %(now)s
+                    WHERE law_metadata_id = %(law_metadata_id)s
+                    """,
+                    {
+                        "law_metadata_id": law_metadata_id,
+                        "law_identifier_text": metadata.law_identifier_text,
+                        "title": metadata.title,
+                        "law_type": metadata.law_type,
+                        "approval_date": metadata.approval_date,
+                        "publication_date": metadata.publication_date,
+                        "effective_from": metadata.effective_from,
+                        "effective_to": metadata.effective_to,
+                        "author": metadata.author,
+                        "issue_reference": metadata.issue_reference,
+                        "legal_areas_json": legal_areas_json,
+                        "metadata_json": metadata_json,
+                        "now": now,
+                    },
+                )
+                conn.commit()
+            return law_metadata_id
+
+    def replace_law_relations(
+        self,
+        *,
+        law_metadata_id: str,
+        relations: tuple[LawRelationRecord, ...],
+    ) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM law_metadata_relations WHERE law_metadata_id = %(law_metadata_id)s",
+                {"law_metadata_id": law_metadata_id},
+            )
+            for ordinal, relation in enumerate(relations, start=1):
+                conn.execute(
+                    """
+                    INSERT INTO law_metadata_relations(
+                        law_metadata_relation_id, law_metadata_id, relation_type,
+                        relation_label, target_country_code, target_collection_code,
+                        target_law_year, target_law_number, target_law_identifier_text,
+                        target_title, target_url, ordinal, created_at
+                    ) VALUES (
+                        %(law_metadata_relation_id)s, %(law_metadata_id)s, %(relation_type)s,
+                        %(relation_label)s, %(target_country_code)s, %(target_collection_code)s,
+                        %(target_law_year)s, %(target_law_number)s, %(target_law_identifier_text)s,
+                        %(target_title)s, %(target_url)s, %(ordinal)s, %(created_at)s
+                    )
+                    """,
+                    {
+                        "law_metadata_relation_id": str(uuid.uuid4()),
+                        "law_metadata_id": law_metadata_id,
+                        "relation_type": relation.relation_type,
+                        "relation_label": relation.relation_label,
+                        "target_country_code": relation.target_country_code,
+                        "target_collection_code": relation.target_collection_code,
+                        "target_law_year": relation.target_law_year,
+                        "target_law_number": relation.target_law_number,
+                        "target_law_identifier_text": relation.target_law_identifier_text,
+                        "target_title": relation.target_title,
+                        "target_url": relation.target_url,
+                        "ordinal": ordinal,
+                        "created_at": now,
+                    },
+                )
+            conn.commit()
+
     def upsert_artifact(self, *, document_id: str, version_id: str, source_system: str, artifact_kind: str, source_url: str, checksum: str, content_text: str, content_blob: bytes | None, content_bytes: int, http_etag: str, http_last_modified: str, should_redownload: bool, verification_status: str, download_error: str = "") -> None:
         now = _now_iso()
         with self._connect() as conn:
@@ -435,6 +600,8 @@ class PostgresLawStore:
             return CollectorCounts(
                 documents=_count(conn, "law_documents"),
                 versions=_count(conn, "law_versions"),
+                metadata=_count(conn, "law_metadata"),
+                relations=_count(conn, "law_metadata_relations"),
                 provisions=_count(conn, "law_provisions"),
                 update_events=_count(conn, "update_events"),
             )
@@ -446,6 +613,20 @@ class PostgresLawStore:
 def _count(conn: psycopg.Connection, table_name: str) -> int:
     row = conn.execute(f"SELECT COUNT(*) AS value FROM {table_name}").fetchone()
     return int(row["value"]) if row is not None else 0
+
+
+def _as_nullable_text(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _json_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=True, sort_keys=True)
 
 
 def _now_iso() -> str:

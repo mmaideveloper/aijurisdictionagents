@@ -10,7 +10,15 @@ from aijurisdictionagents.llm.embeddings import EmbeddingClient, get_embedding_c
 from services.document_processor.runtime import chunk_document_text, serialize_embedding_vector
 
 from .config import LawsCollectorConfig
-from .domain import LawSnapshot, SyncSummary, UpdateCheckItem, UpdateCheckPlan, format_law_identifier
+from .domain import (
+    LawMetadataRecord,
+    LawRelationRecord,
+    LawSnapshot,
+    SyncSummary,
+    UpdateCheckItem,
+    UpdateCheckPlan,
+    format_law_identifier,
+)
 
 
 class LawStore(Protocol):
@@ -33,6 +41,21 @@ class LawStore(Protocol):
     ): ...
 
     def replace_provisions(self, *, version_id: str, provisions: tuple): ...
+
+    def upsert_law_metadata(
+        self,
+        *,
+        document_id: str,
+        version_id: str,
+        metadata: LawMetadataRecord,
+    ) -> str: ...
+
+    def replace_law_relations(
+        self,
+        *,
+        law_metadata_id: str,
+        relations: tuple[LawRelationRecord, ...],
+    ) -> None: ...
 
     def upsert_artifact(
         self,
@@ -118,6 +141,16 @@ class LawsCollectorService:
                 embedding_dimensions=embedding_dimensions,
                 embedding_vector=embedding_vector,
             )
+            if snapshot.metadata is not None:
+                law_metadata_id = self.store.upsert_law_metadata(
+                    document_id=document_id,
+                    version_id=stored_version.version_id,
+                    metadata=snapshot.metadata,
+                )
+                self.store.replace_law_relations(
+                    law_metadata_id=law_metadata_id,
+                    relations=snapshot.relations,
+                )
             self.store.replace_provisions(version_id=stored_version.version_id, provisions=snapshot.provisions)
             self.store.upsert_artifact(
                 document_id=document_id,

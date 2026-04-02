@@ -118,6 +118,8 @@ def main() -> None:
     print("skipped:", summary.skipped)
     print("documents_in_db:", counts.documents)
     print("versions_in_db:", counts.versions)
+    print("metadata_in_db:", counts.metadata)
+    print("relations_in_db:", counts.relations)
     print("provisions_in_db:", counts.provisions)
     print("update_events_in_db:", counts.update_events)
     if hasattr(store, "list_document_overview"):

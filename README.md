@@ -502,6 +502,7 @@ Only `slovak_laws_collector` is implemented today, and it keeps using PostgreSQL
 For Slovak records, the collector persists law year/number and also stores an optional parent law year/number when the imported act is an amendment of another law.
 The Slovak sequential crawl now starts hardcoded at `1/1993`, persists the last collector run timestamp, and remembers the last processed law plus the next `number/year` probe target.
 The live ingest path downloads the law from SlovLex, stores the text in the local database, computes a real embedding vector through the shared embedding client, chunk-embeds long laws to stay within model limits, and logs each processing step in the console.
+The live SlovLex ingest also stores normalized law metadata in `law_metadata` and dependency links in `law_metadata_relations`, including `Predpis mení`, `Predpis je menený`, `Vykonávacie predpisy`, and `Predpis ruší`.
 For debugger use, the VS Code laws-collector launch profiles now load `.env`, target the correct local Postgres port `5433`, limit each run to one live probe, and include a mock-embeddings option that avoids stepping into the OpenAI SDK.
 
 Quick start:
@@ -523,6 +524,12 @@ Run a live Slov-Lex sequential probe loop:
 ```powershell
 conda activate .\.conda
 python -m services.laws_collector --run-sequential-import --max-probes 25
+```
+
+Inspect parsed metadata/relations for the canonical `461/2003` Slovak law:
+
+```powershell
+.\.conda\python.exe examples/laws_collector_metadata_demo.py
 ```
 
 Local PostgreSQL debug example:

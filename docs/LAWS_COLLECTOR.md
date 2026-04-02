@@ -230,6 +230,15 @@ python -m services.laws_collector --run-sequential-import --max-probes 25
 ```
 
 The live sequential import now downloads the law text from the Slov-Lex static HTML and PDF endpoints, stores that text in the local database, persists `collector_progress`, and computes a real embedding vector through the shared `aijurisdictionagents.llm.embeddings` client before moving to the next law number/year. Large laws are embedded in multiple chunks and averaged into one stored law vector so local runs do not fail on model input limits.
+The same live HTML source now also persists structured metadata from the `Informácie o predpise` panel into `law_metadata` and stores dependency edges from the `Vzťahy predpisu` panel in `law_metadata_relations`. That includes:
+
+- law identifier, title, type, approval/publication/effective dates, author, issue reference, legal areas
+- `Predpis mení`
+- `Predpis je menený`
+- `Vykonávacie predpisy`
+- `Predpis ruší`
+
+The normalized relation table is intended for later graph traversal, chain visualization, and reconstructing dependencies between final law versions.
 
 Local startup through `.\skills\laws-collector\scripts\start_laws_collector.ps1` also imports defaults from the repository `.env`, so the visible-console path can reuse the configured embedding provider for local PostgreSQL runs.
 For local debugging, the worker now defaults to `LAWS_WORKER_MAX_PROBES=1` so a single visible run processes one live SlovLex law instead of exhausting the embedding rate limit with a long batch.
@@ -260,6 +269,12 @@ A minimal runnable probe example is also available:
 
 ```bash
 python examples/slovlex_live_probe_demo.py
+```
+
+A minimal metadata/relations parsing example is also available:
+
+```powershell
+.\.conda\python.exe examples/laws_collector_metadata_demo.py
 ```
 
 ## Environment variables
@@ -301,6 +316,9 @@ Implemented upgrades include:
   - `superseded_by_url` (link to newer law),
   - `parent_law_year` / `parent_law_number` for Slovak amendment acts that update another law,
   - existing lifecycle timestamps and status fields.
+- normalized SlovLex law metadata and dependency storage:
+  - `law_metadata` stores the `Informácie o predpise` panel for each stored version,
+  - `law_metadata_relations` stores parsed relation edges for `amends`, `amended_by`, `implements`, and `repeals`.
 - deterministic vector generation per law version (`embedding_vector`) for semantic retrieval bootstrap.
 - PostgreSQL store support (`LAWS_DB_BACKEND=postgres`) plus migration project `databases/laws-collector/migrations`.
 - per-country database provisioning helper:

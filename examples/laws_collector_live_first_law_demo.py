@@ -39,13 +39,20 @@ def main() -> None:
             """
             SELECT d.law_year, d.law_number, d.official_name, d.last_download_status,
                    v.version_token, v.embedding_model, v.embedding_dimensions, v.embedding_vector,
+                   m.law_type, m.author, m.legal_areas_json,
+                   COUNT(r.law_metadata_relation_id) AS relation_count,
                    LENGTH(a.content_text) AS html_text_length
             FROM law_documents AS d
             JOIN law_versions AS v ON v.document_id = d.document_id
+            LEFT JOIN law_metadata AS m ON m.version_id = v.version_id
+            LEFT JOIN law_metadata_relations AS r ON r.law_metadata_id = m.law_metadata_id
             JOIN source_artifacts AS a
               ON a.version_id = v.version_id AND a.artifact_kind = 'html'
             WHERE d.country_code = 'SK' AND d.collection_code = 'ZZ'
               AND d.law_year = 1993 AND d.law_number = 1
+            GROUP BY d.law_year, d.law_number, d.official_name, d.last_download_status,
+                     v.version_token, v.embedding_model, v.embedding_dimensions, v.embedding_vector,
+                     m.law_type, m.author, m.legal_areas_json, a.content_text, v.created_at
             ORDER BY v.created_at
             LIMIT 1
             """
@@ -73,7 +80,11 @@ def main() -> None:
         print("Embedding model:", law_row[5])
         print("Embedding dimensions:", law_row[6])
         print("Vector stored:", bool(law_row[7]))
-        print("Stored text length:", law_row[8])
+        print("Law type:", law_row[8] or "")
+        print("Author:", law_row[9] or "")
+        print("Legal areas:", law_row[10] or "[]")
+        print("Relation count:", law_row[11])
+        print("Stored text length:", law_row[12])
     if progress_row is None:
         print("Collector progress: missing")
     else:

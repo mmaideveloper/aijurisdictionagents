@@ -13,6 +13,71 @@ class ProvisionRecord:
 
 
 @dataclass(frozen=True)
+class LawInformationField:
+    label: str
+    value: str
+
+
+@dataclass(frozen=True)
+class LawMetadataRecord:
+    law_identifier_text: str
+    title: str
+    law_type: str
+    approval_date: str | None
+    publication_date: str
+    effective_from: str
+    effective_to: str | None
+    author: str | None
+    legal_areas: tuple[str, ...]
+    issue_reference: str | None
+    fields: tuple[LawInformationField, ...] = ()
+
+    def normalized_payload(self) -> dict[str, object]:
+        return {
+            "law_identifier_text": self.law_identifier_text,
+            "title": self.title,
+            "law_type": self.law_type,
+            "approval_date": self.approval_date,
+            "publication_date": self.publication_date,
+            "effective_from": self.effective_from,
+            "effective_to": self.effective_to,
+            "author": self.author,
+            "legal_areas": list(self.legal_areas),
+            "issue_reference": self.issue_reference,
+            "fields": [
+                {"label": field.label, "value": field.value}
+                for field in self.fields
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class LawRelationRecord:
+    relation_type: str
+    relation_label: str
+    target_law_identifier_text: str
+    target_title: str
+    target_url: str
+    target_country_code: str = "SK"
+    target_collection_code: str = "ZZ"
+    target_law_year: int | None = None
+    target_law_number: int | None = None
+
+    def normalized_payload(self) -> dict[str, object]:
+        return {
+            "relation_type": self.relation_type,
+            "relation_label": self.relation_label,
+            "target_law_identifier_text": self.target_law_identifier_text,
+            "target_title": self.target_title,
+            "target_url": self.target_url,
+            "target_country_code": self.target_country_code,
+            "target_collection_code": self.target_collection_code,
+            "target_law_year": self.target_law_year,
+            "target_law_number": self.target_law_number,
+        }
+
+
+@dataclass(frozen=True)
 class LawSnapshot:
     source_system: str
     country_code: str
@@ -35,6 +100,8 @@ class LawSnapshot:
     superseded_by_url: str = ""
     parent_law_year: int | None = None
     parent_law_number: int | None = None
+    metadata: LawMetadataRecord | None = None
+    relations: tuple[LawRelationRecord, ...] = ()
     http_etag: str = ""
     http_last_modified: str = ""
 
@@ -58,6 +125,12 @@ class LawSnapshot:
             "parent_law_year": self.parent_law_year,
             "parent_law_number": self.parent_law_number,
             "source_url": self.source_url,
+            "metadata": (
+                self.metadata.normalized_payload()
+                if self.metadata is not None
+                else None
+            ),
+            "relations": [relation.normalized_payload() for relation in self.relations],
             "provisions": [
                 {
                     "anchor": provision.anchor,
