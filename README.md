@@ -474,10 +474,24 @@ Technical design details: `docs/MOBILE_TECHNICAL_DESIGN.md`.
 ## Examples
 
 - API database minimal demo: `python examples/api_database_minimal_demo.py`
+- Database layout minimal demo: `python examples/database_layout_minimal_demo.py`
+- Laws collector Postgres launcher demo: `powershell -ExecutionPolicy Bypass -File examples/start_laws_collector_postgres_demo.ps1`
 - Slovak law corpus solution note: `docs/SLOVAK_LAW_DATA_PLATFORM.md`
 - Slovak law corpus mockup preview: `powershell -ExecutionPolicy Bypass -File examples/preview_slovak_law_mockup.ps1`
 - Laws collector minimal demo: `python examples/laws_collector_minimal_demo.py`
 - Project skills demo: `python examples/project_skills_demo.py`
+
+## Database layout
+
+Database SQL assets now live only under `databases/<project>/`.
+Local runtime database files now live only under `runs/storage/<project>/`.
+
+Current database projects:
+
+- `databases/api`
+- `databases/laws-collector`
+
+For the full layout and the rule for adding a new project database, see `docs/DATABASE_LAYOUT.md`.
 
 ## Laws collector
 
@@ -485,12 +499,34 @@ The laws collector package lives in `src/services/laws_collector`.
 It now selects a country-specific implementation by `LAWS_COUNTRY`.
 Only `slovak_laws_collector` is implemented today, and it keeps using PostgreSQL database `laws_sk`.
 For Slovak records, the collector persists law year/number and also stores an optional parent law year/number when the imported act is an amendment of another law.
+The Slovak sequential crawl now starts hardcoded at `1/1993`, persists the last collector run timestamp, and remembers the last processed law plus the next `number/year` probe target.
 
 Quick start:
 
 ```powershell
 conda activate .\.conda
 python examples/laws_collector_minimal_demo.py
+```
+
+Inspect the persisted sequential import state:
+
+```powershell
+conda activate .\.conda
+python -m services.laws_collector --plan-import
+```
+
+Run a live Slov-Lex sequential probe loop:
+
+```powershell
+conda activate .\.conda
+python -m services.laws_collector --run-sequential-import --max-probes 25
+```
+
+Local PostgreSQL debug example:
+
+```powershell
+conda activate .\.conda
+python examples/laws_collector_postgres_debug_demo.py
 ```
 
 For database, scheduling, and Azure migration guidance, see `docs/LAWS_COLLECTOR.md`.

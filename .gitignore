@@ -31,13 +31,6 @@ api/aijuristiction-api/e2e-playwright/test-results/
 api/aijuristiction-api/e2e-playwright/playwright-report/
 api/aijuristiction-api/data/
 infra/bicep/main.json
-databases/**/*.db
-databases/**/*.sqlite
-databases/**/*.sqlite3
-databases/postgres/data/**
-databases/postgress/data/**
-!databases/postgress/data/.gitkeep
 .codex/runlogs/**
 api/aijuristiction-api/storage/**
 .playwright-cli/**
-

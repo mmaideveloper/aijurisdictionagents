@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
-from datetime import date
-
-from services.laws_collector import LawsCollectorConfig, SlovLexImportPlanner, SlovakLawsCollectorService, SqliteLawStore
-from services.laws_collector.source_fixtures import baseline_snapshots, delta_snapshots
 from services.laws_collector import (
+    LawsCollectorConfig,
+    SlovLexImportPlanner,
+    SlovLexSequentialImportRunner,
+    SlovakLawsCollectorService,
+    SqliteLawStore,
     get_country_laws_collector_definition,
 )
-from services.laws_collector.slovak_laws_collector import SlovakLawsCollectorService
+from services.laws_collector.import_planner import ImportTarget
 from services.laws_collector.slovak_source_fixtures import baseline_snapshots, delta_snapshots
 
 
@@ -22,8 +24,8 @@ def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorS
         storage_local="",
         storage_cloud="",
         delta_poll_hours=3,
-        initial_import_from=date(2025, 1, 1),
-        historical_import_from=date(1946, 1, 1),
+        initial_import_from=date(1993, 1, 1),
+        historical_import_from=date(1993, 1, 1),
     )
     store = SqliteLawStore.from_config(config)
     store.initialize()
@@ -86,15 +88,18 @@ def test_laws_collector_config_resolves_relative_db_from_repo_root(monkeypatch) 
     config = LawsCollectorConfig.from_env()
 
     assert config.db_path.name == "sk_laws.sqlite3"
-    assert config.db_path.parent.name == "laws-collector"
-    assert config.db_path.parent.parent.name == "databases"
-    assert config.db_path.parent.parent.parent == Path(__file__).resolve().parents[1]
+    assert config.db_path.parent.name == "sqlite"
+    assert config.db_path.parent.parent.name == "laws-collector"
+    assert config.db_path.parent.parent.parent.name == "storage"
+    assert config.db_path.parent.parent.parent.parent.name == "runs"
+    assert config.db_path.parent.parent.parent.parent.parent == Path(__file__).resolve().parents[1]
     assert config.country_db_name == "laws_sk"
-
+    assert config.initial_import_from == date(1993, 1, 1)
+    assert config.historical_import_from == date(1993, 1, 1)
 
 
 def test_laws_collector_update_plan_detects_changes(tmp_path: Path) -> None:
-    store, service = _build_service(tmp_path)
+    _, service = _build_service(tmp_path)
 
     plan = service.plan_updates(known_snapshots=baseline_snapshots(), latest_snapshots=delta_snapshots())
 
@@ -113,21 +118,147 @@ def test_laws_collector_config_defaults_to_country_specific_sqlite_db(monkeypatc
     assert config.country_db_name == "laws_sk"
 
 
-def test_slovlex_import_planner_starts_with_2025_then_unblocks_1946_history(tmp_path: Path) -> None:
+def test_slovlex_import_planner_starts_from_1_1993_without_progress(tmp_path: Path) -> None:
     store, service = _build_service(tmp_path)
     planner = SlovLexImportPlanner(config=service.config)
+    progress = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=planner.initial_year,
+    )
 
-    blocked_plan = planner.build_plan(today=date(2026, 3, 23), initial_window_complete=False)
-    unblocked_plan = planner.build_plan(today=date(2026, 3, 23), initial_window_complete=True)
+    plan = planner.build_plan(progress=progress, today=date(2026, 3, 30))
 
-    assert blocked_plan.windows[0].stage == "initial_2025_to_today"
-    assert blocked_plan.windows[0].start_date.isoformat() == "2025-01-01"
-    assert blocked_plan.windows[0].end_date.isoformat() == "2026-03-23"
-    assert blocked_plan.windows[1].stage == "historical_1946_to_2024"
-    assert blocked_plan.windows[1].start_date.isoformat() == "1946-01-01"
-    assert blocked_plan.windows[1].end_date.isoformat() == "2024-12-31"
-    assert blocked_plan.windows[1].blocked_by == "initial_2025_to_today"
-    assert unblocked_plan.windows[1].blocked_by is None
+    assert plan.initial_year == 1993
+    assert plan.next_target == ImportTarget(year=1993, number=1)
+    assert plan.last_processed_law is None
+    assert plan.stop_when_missing_current_year is False
+
+
+def test_slovlex_import_planner_persists_next_law_after_processed_probe(tmp_path: Path) -> None:
+    store, service = _build_service(tmp_path)
+    planner = SlovLexImportPlanner(config=service.config)
+    progress = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=planner.initial_year,
+    )
+
+    updated = planner.mark_processed(
+        progress,
+        target=ImportTarget(year=1993, number=1),
+        processed_at="2026-03-30T12:00:00Z",
+    )
+    store.save_collector_progress(updated)
+    reloaded = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=planner.initial_year,
+    )
+
+    assert reloaded.last_processed_law == "1/1993"
+    assert reloaded.next_probe_law == "2/1993"
+    assert reloaded.last_collector_run_at == "2026-03-30T12:00:00Z"
+
+
+def test_slovlex_import_planner_jumps_to_next_year_on_missing_past_year(tmp_path: Path) -> None:
+    _, service = _build_service(tmp_path)
+    planner = SlovLexImportPlanner(config=service.config)
+    progress = planner.initial_progress().evolve(
+        last_processed_at="2026-03-30T12:00:00Z",
+        last_processed_law_year=1993,
+        last_processed_law_number=234,
+        next_probe_law_year=1993,
+        next_probe_law_number=235,
+    )
+
+    updated, stopped = planner.mark_missing(
+        progress,
+        target=ImportTarget(year=1993, number=235),
+        observed_at="2026-03-30T13:00:00Z",
+        today=date(2026, 3, 30),
+    )
+
+    assert stopped is False
+    assert updated.next_probe_law == "1/1994"
+    assert updated.last_processed_law == "234/1993"
+    assert updated.last_collector_run_at == "2026-03-30T13:00:00Z"
+
+
+def test_slovlex_import_planner_stops_on_missing_current_year_and_retries_same_law(tmp_path: Path) -> None:
+    _, service = _build_service(tmp_path)
+    planner = SlovLexImportPlanner(config=service.config)
+    progress = planner.initial_progress().evolve(
+        last_processed_at="2026-03-30T12:00:00Z",
+        last_processed_law_year=2026,
+        last_processed_law_number=234,
+        next_probe_law_year=2026,
+        next_probe_law_number=235,
+    )
+
+    updated, stopped = planner.mark_missing(
+        progress,
+        target=ImportTarget(year=2026, number=235),
+        observed_at="2026-03-30T13:00:00Z",
+        today=date(2026, 3, 30),
+    )
+
+    assert stopped is True
+    assert updated.next_probe_law == "235/2026"
+    assert updated.last_processed_law == "234/2026"
+    assert updated.last_collector_run_at == "2026-03-30T13:00:00Z"
+
+
+def test_slovlex_sequential_import_runner_updates_progress_until_current_year_gap(tmp_path: Path) -> None:
+    store, service = _build_service(tmp_path)
+    runner = SlovLexSequentialImportRunner(config=service.config, store=store)
+
+    def fake_probe(*, target: ImportTarget, timeout_seconds: float) -> object:
+        outcomes = {
+            (1993, 1): True,
+            (1993, 2): False,
+            (1994, 1): True,
+            (1994, 2): False,
+        }
+        exists = outcomes[(target.year, target.number)]
+        return type(
+            "Probe",
+            (),
+            {
+                "target": target,
+                "exists": exists,
+                "status_code": 200 if exists else 404,
+                "url": target.url,
+            },
+        )()
+
+    progress = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=1993,
+    )
+    progress = progress.evolve(
+        next_probe_law_year=1993,
+        next_probe_law_number=1,
+    )
+    store.save_collector_progress(progress)
+    runner._probe_target = fake_probe  # type: ignore[method-assign]
+
+    summary = runner.run(max_probes=4, today=date(1994, 3, 30))
+    reloaded = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=1993,
+    )
+
+    assert summary.probes == 4
+    assert summary.laws_found == 2
+    assert summary.years_advanced == 1
+    assert summary.stopped_on_current_year_gap is True
+    assert summary.next_law_to_check == "2/1994"
+    assert reloaded.next_probe_law == "2/1994"
+
+
 def test_country_definition_resolves_slovak_collector_and_db_name() -> None:
     definition = get_country_laws_collector_definition("sk")
 
@@ -145,6 +276,8 @@ def test_country_db_name_uses_laws_prefix_for_future_countries() -> None:
         storage_local="",
         storage_cloud="",
         delta_poll_hours=3,
+        initial_import_from=date(1993, 1, 1),
+        historical_import_from=date(1993, 1, 1),
     )
 
     assert config.country_db_name == "laws_cz"

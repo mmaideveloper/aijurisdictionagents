@@ -10,11 +10,19 @@ except ImportError:  # pragma: no cover - optional dependency for local sqlite-o
     psycopg = None
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_MIGRATIONS_ROOT = _REPO_ROOT / "databases" / "migrations"
+_DATABASES_ROOT = _REPO_ROOT / "databases"
+_MIGRATION_PROJECT_PATHS = {
+    "api": _DATABASES_ROOT / "api" / "migrations",
+    "email": _DATABASES_ROOT / "api" / "email",
+    "laws": _DATABASES_ROOT / "laws-collector" / "migrations",
+}
 
 
 def list_migration_files(project: str) -> list[Path]:
-    project_root = _MIGRATIONS_ROOT / project
+    project_root = _MIGRATION_PROJECT_PATHS.get(
+        project,
+        _DATABASES_ROOT / project / "migrations",
+    )
     if not project_root.exists():
         raise FileNotFoundError(f"Migration project '{project}' not found at {project_root}")
     return sorted(path for path in project_root.glob("*.sql") if path.is_file())

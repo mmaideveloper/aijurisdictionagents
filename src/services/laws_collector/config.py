@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+_SLOVAK_INITIAL_IMPORT_DATE = date(1993, 1, 1)
 
 
 @dataclass(frozen=True)
@@ -23,50 +24,37 @@ class LawsCollectorConfig:
     @classmethod
     def from_env(cls) -> "LawsCollectorConfig":
         country_code = os.getenv("LAWS_COUNTRY", "SK").strip().upper()
-        default_sqlite_path = f"./databases/laws-collector/{country_code.lower()}_laws.sqlite3"
-        
-        return cls(
-            country_code=country_code,
-            db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
-            db_local=os.getenv("LAWS_DB_LOCAL", default_sqlite_path).strip(),
-            db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
-            storage_local=os.getenv("LAWS_STORAGE_LOCAL", f"./storage/laws/{country_code.lower()}").strip(),
-            db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
-            storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
-            if not db_local:
-                db_local = cls.default_local_db_path_for(country_code)
-            if not storage_local:
-                storage_local = cls.default_local_storage_path_for(country_code)
+        db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
+        storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
+
+        if not db_local:
+            db_local = cls.default_local_db_path_for(country_code)
+        if not storage_local:
+            storage_local = cls.default_local_storage_path_for(country_code)
 
         return cls(
             country_code=country_code,
             db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
-            db_local=os.getenv("LAWS_DB_LOCAL", default_sqlite_path).strip(),
+            db_local=db_local,
             db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
-            storage_local=os.getenv("LAWS_STORAGE_LOCAL", f"./storage/laws/{country_code.lower()}").strip(),
-            db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
-            storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
-            if not db_local:
-                db_local = cls.default_local_db_path_for(country_code)
-            if not storage_local:
-                storage_local = cls.default_local_storage_path_for(country_code),
+            storage_local=storage_local,
             storage_cloud=os.getenv("LAWS_STORAGE_CLOUD", "").strip(),
             delta_poll_hours=int(os.getenv("LAWS_DELTA_POLL_HOURS", "3")),
-            initial_import_from=_parse_iso_date(os.getenv("LAWS_INITIAL_IMPORT_FROM", "2025-01-01")),
-            historical_import_from=_parse_iso_date(os.getenv("LAWS_HISTORICAL_IMPORT_FROM", "1946-01-01")),
+            initial_import_from=_SLOVAK_INITIAL_IMPORT_DATE,
+            historical_import_from=_SLOVAK_INITIAL_IMPORT_DATE,
         )
 
     @staticmethod
     def default_local_db_path_for(country_code: str) -> str:
         normalized_country_code = country_code.strip().lower()
         if normalized_country_code == "sk":
-            return "./databases/laws-collector/sk_laws.sqlite3"
-        return f"./databases/laws-collector/{normalized_country_code}_laws.sqlite3"
+            return "./runs/storage/laws-collector/sqlite/sk_laws.sqlite3"
+        return f"./runs/storage/laws-collector/sqlite/{normalized_country_code}_laws.sqlite3"
 
     @staticmethod
     def default_local_storage_path_for(country_code: str) -> str:
         normalized_country_code = country_code.strip().lower()
-        return f"./storage/laws/{normalized_country_code}"
+        return f"./runs/storage/laws-collector/files/{normalized_country_code}"
 
     def validate(self) -> None:
         if len(self.country_code) != 2 or not self.country_code.isalpha():
@@ -77,8 +65,11 @@ class LawsCollectorConfig:
             raise ValueError("LAWS_DB_CLOUD must be set for postgres backend")
         if self.delta_poll_hours < 1:
             raise ValueError("LAWS_DELTA_POLL_HOURS must be >= 1")
-        if self.historical_import_from > self.initial_import_from:
-            raise ValueError("LAWS_HISTORICAL_IMPORT_FROM must be on or before LAWS_INITIAL_IMPORT_FROM")
+        if self.country_code == "SK":
+            if self.initial_import_from != _SLOVAK_INITIAL_IMPORT_DATE:
+                raise ValueError("Slovak laws collector initial import date is fixed at 1993-01-01")
+            if self.historical_import_from != _SLOVAK_INITIAL_IMPORT_DATE:
+                raise ValueError("Slovak laws collector historical import date is fixed at 1993-01-01")
 
     @property
     def db_path(self) -> Path:
@@ -93,17 +84,8 @@ class LawsCollectorConfig:
         return f"laws_{self.country_code.lower()}"
 
 
-
 def _resolve_repo_path(value: str) -> Path:
     candidate = Path(value)
     if candidate.is_absolute():
         return candidate
     return _REPO_ROOT / candidate
-
-
-
-def _parse_iso_date(value: str) -> date:
-    try:
-        return date.fromisoformat(value.strip())
-    except ValueError as exc:
-        raise ValueError(f"Invalid ISO date: {value}") from exc

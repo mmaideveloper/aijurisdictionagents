@@ -34,17 +34,15 @@ The script verifies required tools, local ports, API health, and required Azure 
 Preferred path (PowerShell skill scripts):
 
 ```powershell
-.\skills\start-postgress\scripts\start_postgress.ps1
+.\skills\start-postgres\scripts\start_postgres.ps1
 .\skills\start-api\scripts\start_api.ps1 -Background -LlmProvider mock -DatabaseOption postgres
 ```
 
 Manual Linux fallback:
 
 ```bash
-cd databases
-docker compose up -d postgres
-cd ..
 cd api/aijuristiction-api
+docker compose up -d postgres
 DB_OPTION=postgres \
 DB_CLOUD="postgresql://postgres:postgres@localhost:5432/aijurisdiction" \
 STORAGE_OPTION=local \
@@ -117,11 +115,11 @@ Run DB bootstrap/migrations against Azure DB before or during startup:
 ```bash
 DB_OPTION=azure \
 DB_CLOUD="postgresql://...sslmode=require" \
-PYTHONPATH=src python databases/scripts/apply_db_migrations.py --project api
+PYTHONPATH=src python scripts/databases/apply_db_migrations.py --project api
 
 DB_OPTION=azure \
 DB_CLOUD="postgresql://...sslmode=require" \
-PYTHONPATH=src python databases/scripts/apply_api_db_schema.py
+PYTHONPATH=src python scripts/databases/apply_api_db_schema.py
 ```
 
 Validate deployed API:

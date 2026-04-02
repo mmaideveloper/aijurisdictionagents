@@ -28,7 +28,7 @@ class EmailQueueConfig:
     def from_env(cls) -> "EmailQueueConfig":
         raw_option = os.getenv("EMAIL_DB_OPTION", os.getenv("DB_OPTION", "local")).strip().lower()
         db_option = "postgres" if raw_option == "postgress" else raw_option
-        local_value = os.getenv("EMAIL_DB_LOCAL", "./databases/email.sqlite3").strip()
+        local_value = os.getenv("EMAIL_DB_LOCAL", "./runs/storage/api/sqlite/email.sqlite3").strip()
         local_path = _resolve_repo_path(local_value)
         db_cloud = os.getenv("EMAIL_DB_CLOUD", os.getenv("DB_CLOUD", "")).strip()
         return cls(db_option=db_option, db_local=local_path, db_cloud=db_cloud)

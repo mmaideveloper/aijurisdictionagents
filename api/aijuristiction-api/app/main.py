@@ -110,7 +110,8 @@ async def startup_log() -> None:
     logger.info(
         (
             "API Starting | api_version=%s | core_version=%s | log_level=%s "
-            "| llm_provider=%s | db_option=%s | document_processor=%s | last_law_update_date=%s | law_source=%s"
+            "| llm_provider=%s | db_option=%s | document_processor=%s | last_law_update_date=%s "
+            "| law_source=%s | last_collector_run_at=%s | last_processed_law=%s"
         ),
         app.version,
         get_core_version(),
@@ -120,6 +121,8 @@ async def startup_log() -> None:
         DOCUMENT_PROCESSOR_MODE,
         law_snapshot.last_law_update_date,
         law_snapshot.last_law_update_source,
+        law_snapshot.last_collector_run_at,
+        law_snapshot.last_processed_law,
     )
 
 
@@ -218,6 +221,8 @@ def version() -> JSONResponse:
             "core_version": get_core_version(),
             "last_law_update_date": law_snapshot.last_law_update_date,
             "last_law_update_source": law_snapshot.last_law_update_source,
+            "last_collector_run_at": law_snapshot.last_collector_run_at,
+            "last_processed_law": law_snapshot.last_processed_law,
             "model_knowledge_cutoff_date": law_snapshot.model_knowledge_cutoff_date,
             "model_knowledge_cutoff_source": law_snapshot.model_knowledge_cutoff_source,
             "law_reference_links": list(law_snapshot.reference_links),

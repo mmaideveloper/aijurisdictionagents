@@ -131,10 +131,11 @@ The compose file stores database files under the shared repository `databases/` 
 - `DB_CLOUD=postgresql://postgres:postgres@postgres:5432/aijurisdiction`
 - `STORAGE_OPTION=local`
 
-Do not run this stack at the same time as `cd databases && docker compose up -d` because both use the same PostgreSQL data directory.
-That shared database directory is now `databases/postgress/data`.
+Do not run this stack at the same time as the standalone `start-postgres` API instance because both use the same PostgreSQL data directory.
+That shared database directory is now `runs/storage/api/postgres/data`.
+If you still have legacy local data under earlier local PostgreSQL paths, the managed PostgreSQL startup path migrates it into `runs/storage/api/postgres`.
 
-If you want only the database container, use the dedicated project in `databases/README.md`.
+If you want only the database container or the repository database rules, use `docs/DATABASE_LAYOUT.md`.
 
 ## Endpoints scaffolded
 
@@ -154,6 +155,8 @@ If the database is unreachable or misconfigured, the endpoint returns `503` with
 - `core_version`: core system version from installed `aijurisdictionagents` package or local `src/aijurisdictionagents/__init__.py` during monorepo development.
 - `last_law_update_date`: latest law-ingestion timestamp available to the system from the laws database. This reflects the newest law content collected by the law processor, even when the underlying LLM was trained earlier.
 - `last_law_update_source`: whether that timestamp comes from country-specific or global `law_documents` data.
+- `last_collector_run_at`: latest sequential laws collector run timestamp stored in `collector_progress`.
+- `last_processed_law`: latest successfully processed law identifier in `number/year` format, for example `234/2026`.
 - `model_knowledge_cutoff_date`: cached fallback date used when `last_law_update_date` is not available yet.
 - `model_knowledge_cutoff_source`: source of that fallback date, currently the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value.
 - `law_reference_links`: recent official law links available in the system knowledge store.
@@ -178,6 +181,8 @@ Example:
   "core_version": "0.1.0",
   "last_law_update_date": "2026-03-20T00:00:00Z",
   "last_law_update_source": "law_documents_global",
+  "last_collector_run_at": "2026-03-30T12:30:00Z",
+  "last_processed_law": "234/2026",
   "model_knowledge_cutoff_date": "2020-12-31",
   "model_knowledge_cutoff_source": "model_knowledge_cutoff_cache",
   "law_reference_links": [
@@ -228,11 +233,11 @@ Emails are first persisted into a dedicated email database (`email_outbox`) and 
 Email DB configuration (separate from API metadata DB):
 
 - `EMAIL_DB_OPTION` (`local`/`postgres`/`azure`, default inherits `DB_OPTION`)
-- `EMAIL_DB_LOCAL` (default `./databases/email.sqlite3`)
+- `EMAIL_DB_LOCAL` (default `./runs/storage/api/sqlite/email.sqlite3`)
 - `EMAIL_DB_CLOUD` (required for postgres/azure, default inherits `DB_CLOUD`)
 - `EMAIL_SCHEDULER_ENABLED` (default `true`)
 
-Postgres/Azure email schema migrations are stored under `databases/migrations/email`.
+Postgres/Azure email schema migrations are stored under `databases/api/email`.
 
 Run scheduler as a separate process (recommended for ACA split deployment):
 
@@ -296,12 +301,12 @@ curl -X POST "http://localhost:8080/v1/users/subscriptions/<SUBSCRIPTION_ID>/con
 These endpoints persist users through `aijurisdictionagents.api_db.ApiDatabaseStore`
 and support three database modes:
 
-- `DB_OPTION=local`: local SQLite metadata (`DB_LOCAL`, default `./databases/api.sqlite3`)
+- `DB_OPTION=local`: local SQLite metadata (`DB_LOCAL`, default `./runs/storage/api/sqlite/api.sqlite3`)
 - `DB_OPTION=postgres`: local PostgreSQL for Docker-based development (`DB_CLOUD=postgresql://...`)
 - `DB_OPTION=azure`: Azure Database for PostgreSQL Flexible Server (`DB_CLOUD=postgresql://...sslmode=require`)
   - Use the exact Flexible Server administrator login as the username.
 
-The dedicated local PostgreSQL project now lives under `databases/README.md`.
+The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.md`.
 
 ## Case history + documents
 
@@ -433,19 +438,17 @@ The API now applies SQL migrations during app startup for PostgreSQL/Azure, then
 For pre-deploy validation, run from repository root:
 
 ```bash
-PYTHONPATH=src python databases/scripts/apply_db_migrations.py --project api --dry-run
-PYTHONPATH=src python databases/scripts/apply_api_db_schema.py --dry-run
-PYTHONPATH=src python databases/scripts/apply_db_migrations.py --project api
-PYTHONPATH=src python databases/scripts/apply_api_db_schema.py
+PYTHONPATH=src python scripts/databases/apply_db_migrations.py --project api --dry-run
+PYTHONPATH=src python scripts/databases/apply_api_db_schema.py --dry-run
+PYTHONPATH=src python scripts/databases/apply_db_migrations.py --project api
+PYTHONPATH=src python scripts/databases/apply_api_db_schema.py
 ```
 
 Local PostgreSQL example:
 
 ```bash
-cd databases
-docker compose up -d
-cd ..
-DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python databases/scripts/apply_api_db_schema.py
+.\skills\start-postgres\scripts\start_postgres.ps1 -SkipSchemaUpdate
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python scripts/databases/apply_api_db_schema.py
 ```
 
 Cloud rollout:

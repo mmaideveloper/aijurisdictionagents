@@ -302,7 +302,7 @@ This workflow:
 
 1. Logs into Azure with OIDC
 2. Opens a temporary firewall rule for the GitHub runner IP
-3. Runs `python databases/scripts/apply_api_db_schema.py` against the existing Azure PostgreSQL server
+3. Runs `python scripts/databases/apply_api_db_schema.py` against the existing Azure PostgreSQL server
 4. Removes the temporary firewall rule
 
 ## ACA API logs

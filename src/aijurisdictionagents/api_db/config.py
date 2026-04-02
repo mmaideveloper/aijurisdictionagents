@@ -25,9 +25,9 @@ class ApiDataConfig:
         return cls(
             db_option=normalized_db_option,
             storage_option=os.getenv("STORAGE_OPTION", "local").strip().lower(),
-            db_local=os.getenv("DB_LOCAL", "./databases/api.sqlite3").strip(),
+            db_local=os.getenv("DB_LOCAL", "./runs/storage/api/sqlite/api.sqlite3").strip(),
             db_cloud=os.getenv("DB_CLOUD", "").strip(),
-            store_local=os.getenv("STORE_LOCAL", "./storage").strip(),
+            store_local=os.getenv("STORE_LOCAL", "./runs/storage/api/files").strip(),
             store_cloud=os.getenv("STORE_CLOUD", "").strip(),
         )
 

@@ -57,6 +57,8 @@ def test_version_endpoint(monkeypatch) -> None:
         lambda _country: SimpleNamespace(
             last_law_update_date="2026-03-20T00:00:00Z",
             last_law_update_source="law_documents_global",
+            last_collector_run_at="2026-03-30T12:30:00Z",
+            last_processed_law="234/2026",
             model_knowledge_cutoff_date="2020-12-31",
             model_knowledge_cutoff_source="model_knowledge_cutoff_cache",
             reference_links=(
@@ -73,6 +75,8 @@ def test_version_endpoint(monkeypatch) -> None:
     assert isinstance(payload["core_version"], str)
     assert payload["last_law_update_date"] == "2026-03-20T00:00:00Z"
     assert payload["last_law_update_source"] == "law_documents_global"
+    assert payload["last_collector_run_at"] == "2026-03-30T12:30:00Z"
+    assert payload["last_processed_law"] == "234/2026"
     assert payload["model_knowledge_cutoff_date"] == "2020-12-31"
     assert payload["model_knowledge_cutoff_source"] == "model_knowledge_cutoff_cache"
     assert payload["law_reference_links"] == [

@@ -10,8 +10,8 @@ services:
     ports:
       - "${LOCAL_POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ../../databases/postgress/data:/var/lib/postgresql/data
-      - ../../databases/postgress/initdb:/docker-entrypoint-initdb.d
+      - ../../runs/storage/api/postgres/data:/var/lib/postgresql/data
+      - ../../databases/api/initdb:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-postgres} -d ${LOCAL_POSTGRES_DB:-aijurisdiction}"]
       interval: 10s
@@ -30,12 +30,11 @@ services:
       DB_OPTION: postgres
       DB_CLOUD: postgresql://${LOCAL_POSTGRES_USER:-postgres}:${LOCAL_POSTGRES_PASSWORD:-postgres}@postgres:5432/${LOCAL_POSTGRES_DB:-aijurisdiction}
       STORAGE_OPTION: local
-      DB_LOCAL: /workspace/databases/api.sqlite3
-      STORE_LOCAL: /workspace/api/aijuristiction-api/storage
+      DB_LOCAL: /workspace/runs/storage/api/sqlite/api.sqlite3
+      STORE_LOCAL: /workspace/runs/storage/api/files
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - ../../databases:/workspace/databases
-      - ./storage:/workspace/api/aijuristiction-api/storage
+      - ../../runs:/workspace/runs

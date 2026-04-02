@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 import json
 
@@ -101,6 +101,37 @@ class SyncSummary:
 
 
 @dataclass(frozen=True)
+class CollectorProgress:
+    country_code: str
+    source_system: str
+    last_collector_run_at: str | None
+    last_processed_at: str | None
+    last_processed_law_year: int | None
+    last_processed_law_number: int | None
+    next_probe_law_year: int
+    next_probe_law_number: int
+
+    @property
+    def last_processed_law(self) -> str | None:
+        if self.last_processed_law_year is None or self.last_processed_law_number is None:
+            return None
+        return format_law_identifier(
+            year=self.last_processed_law_year,
+            number=self.last_processed_law_number,
+        )
+
+    @property
+    def next_probe_law(self) -> str:
+        return format_law_identifier(
+            year=self.next_probe_law_year,
+            number=self.next_probe_law_number,
+        )
+
+    def evolve(self, **changes: object) -> "CollectorProgress":
+        return replace(self, **changes)
+
+
+@dataclass(frozen=True)
 class UpdateCheckItem:
     document_key: str
     country_code: str
@@ -117,3 +148,7 @@ class UpdateCheckPlan:
     checked_items: int
     items_with_updates: int
     items: tuple[UpdateCheckItem, ...]
+
+
+def format_law_identifier(*, year: int, number: int) -> str:
+    return f"{number}/{year}"

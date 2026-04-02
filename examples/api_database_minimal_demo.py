@@ -47,7 +47,7 @@ def main() -> None:
         print(f"SQLite file: {store.db_path}")
         print(f"Blob root: {store.blob_root}")
         print(
-            "Tip: set DB_OPTION=local|postgres|azure (postgress alias supported), and for postgres/azure provide DB_CLOUD. STORAGE_OPTION remains local|azure."
+            "Tip: local runtime data belongs under runs/storage/api/{sqlite,files,postgres}; SQL assets belong under databases/api/."
         )
 
 

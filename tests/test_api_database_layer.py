@@ -80,13 +80,16 @@ def test_api_database_config_from_env_local(monkeypatch, tmp_path: Path) -> None
 def test_api_database_config_resolves_relative_db_from_repo_root(monkeypatch) -> None:
     monkeypatch.setenv("DB_OPTION", "local")
     monkeypatch.setenv("STORAGE_OPTION", "local")
-    monkeypatch.setenv("DB_LOCAL", "./databases/api.sqlite3")
+    monkeypatch.setenv("DB_LOCAL", "./runs/storage/api/sqlite/api.sqlite3")
 
     store = ApiDatabaseStore.from_env()
 
     assert store.db_path.name == "api.sqlite3"
-    assert store.db_path.parent.name == "databases"
-    assert store.db_path.parent.parent == Path(__file__).resolve().parents[1]
+    assert store.db_path.parent.name == "sqlite"
+    assert store.db_path.parent.parent.name == "api"
+    assert store.db_path.parent.parent.parent.name == "storage"
+    assert store.db_path.parent.parent.parent.parent.name == "runs"
+    assert store.db_path.parent.parent.parent.parent.parent == Path(__file__).resolve().parents[1]
 
 
 def test_api_database_config_requires_cloud_values(monkeypatch) -> None:
