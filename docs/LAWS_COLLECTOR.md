@@ -229,10 +229,24 @@ conda activate .\.conda
 python -m services.laws_collector --run-sequential-import --max-probes 25
 ```
 
+The live sequential import now downloads the law text from the Slov-Lex static HTML and PDF endpoints, stores that text in the local database, persists `collector_progress`, and computes a real embedding vector through the shared `aijurisdictionagents.llm.embeddings` client before moving to the next law number/year. Large laws are embedded in multiple chunks and averaged into one stored law vector so local runs do not fail on model input limits.
+
+Local startup through `.\skills\laws-collector\scripts\start_laws_collector.ps1` also imports defaults from the repository `.env`, so the visible-console path can reuse the configured embedding provider for local PostgreSQL runs.
+For local debugging, the worker now defaults to `LAWS_WORKER_MAX_PROBES=1` so a single visible run processes one live SlovLex law instead of exhausting the embedding rate limit with a long batch.
+
+Local execution logs now show:
+
+- when a law starts processing
+- when the document upload reaches the database and its status
+- when vectorization starts
+- when vectorization finishes with final status
+- the total per-law processing time
+- an explicit `No new laws for <country>...` message when the run finds nothing new
+
 
 ## Live SlovLex probe test (year/number)
 
-To prove the collector can resolve SlovLex entries by legal act **number/year** starting at **1/2025** and probing forward up to the current date, run:
+To prove the collector can resolve SlovLex entries by legal act **number/year** starting at **1/1993** and probing forward up to the current date, run:
 
 ```bash
 RUN_SLOVLEX_LIVE_TEST=1 python -m pytest tests/test_slovlex_live_probe.py -q
@@ -393,11 +407,20 @@ $env:LAWS_DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"
 .\.conda\python.exe examples/laws_collector_postgres_debug_demo.py
 ```
 
+To verify the very first Slovak law (`1/1993`) is downloaded, stored as text, embedded, and reflected in `collector_progress`, run:
+
+```powershell
+$env:LAWS_DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"
+.\.conda\python.exe examples/laws_collector_live_first_law_demo.py
+```
+
 For interactive debugging of the real sequential collector with logs visible in VS Code, use the workspace launch profiles in [`.vscode/launch.json`](/c:/Projects/aijuristiction/aijurisdictionagents/.vscode/launch.json):
 
 - `Launch Laws Collector (Postgres, Stop On Entry)`:
-  starts `python -m services.laws_collector --run-sequential-import` against `laws_sk`, stops on the first executable line, and prints collector output in the integrated terminal.
+  starts `python -m services.laws_collector --run-sequential-import --max-probes 1` against `laws_sk` on `127.0.0.1:5433`, stops on the first executable line, loads `.env`, keeps `justMyCode` enabled, and prints collector output in the integrated terminal.
 - `Launch Laws Collector (Postgres, Console Logs)`:
   runs the same Postgres-backed sequential import path without forcing the initial stop, while keeping collector logs in the integrated terminal.
+- `Launch Laws Collector (Postgres, Mock Embeddings)`:
+  runs the same local PostgreSQL ingest path with `LLM_PROVIDER=mock`, which is the easiest way to debug collector flow without stepping into the OpenAI SDK or waiting on provider limits.
 - `Attach Laws Collector`:
   attaches to an already running `debugpy` listener on `127.0.0.1:5678`; logs stay in whichever terminal launched that process.

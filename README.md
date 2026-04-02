@@ -476,6 +476,7 @@ Technical design details: `docs/MOBILE_TECHNICAL_DESIGN.md`.
 - API database minimal demo: `python examples/api_database_minimal_demo.py`
 - Database layout minimal demo: `python examples/database_layout_minimal_demo.py`
 - Laws collector Postgres launcher demo: `powershell -ExecutionPolicy Bypass -File examples/start_laws_collector_postgres_demo.ps1`
+- Laws collector live first-law demo: `python examples/laws_collector_live_first_law_demo.py`
 - Slovak law corpus solution note: `docs/SLOVAK_LAW_DATA_PLATFORM.md`
 - Slovak law corpus mockup preview: `powershell -ExecutionPolicy Bypass -File examples/preview_slovak_law_mockup.ps1`
 - Laws collector minimal demo: `python examples/laws_collector_minimal_demo.py`
@@ -500,6 +501,8 @@ It now selects a country-specific implementation by `LAWS_COUNTRY`.
 Only `slovak_laws_collector` is implemented today, and it keeps using PostgreSQL database `laws_sk`.
 For Slovak records, the collector persists law year/number and also stores an optional parent law year/number when the imported act is an amendment of another law.
 The Slovak sequential crawl now starts hardcoded at `1/1993`, persists the last collector run timestamp, and remembers the last processed law plus the next `number/year` probe target.
+The live ingest path downloads the law from SlovLex, stores the text in the local database, computes a real embedding vector through the shared embedding client, chunk-embeds long laws to stay within model limits, and logs each processing step in the console.
+For debugger use, the VS Code laws-collector launch profiles now load `.env`, target the correct local Postgres port `5433`, limit each run to one live probe, and include a mock-embeddings option that avoids stepping into the OpenAI SDK.
 
 Quick start:
 
@@ -527,6 +530,13 @@ Local PostgreSQL debug example:
 ```powershell
 conda activate .\.conda
 python examples/laws_collector_postgres_debug_demo.py
+```
+
+Live first-law verification example:
+
+```powershell
+conda activate .\.conda
+python examples/laws_collector_live_first_law_demo.py
 ```
 
 For database, scheduling, and Azure migration guidance, see `docs/LAWS_COLLECTOR.md`.

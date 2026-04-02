@@ -96,6 +96,8 @@ class SqliteLawStore:
                     html_bytes INTEGER NOT NULL,
                     pdf_bytes INTEGER NOT NULL,
                     normalized_json TEXT NOT NULL,
+                    embedding_model TEXT NOT NULL,
+                    embedding_dimensions INTEGER NOT NULL,
                     embedding_vector TEXT NOT NULL,
                     stored_at TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -164,6 +166,7 @@ class SqliteLawStore:
                 );
                 """
             )
+            _ensure_law_versions_columns(conn)
 
     def upsert_document(self, snapshot: LawSnapshot) -> tuple[str, bool]:
         now = _now_iso()
@@ -264,6 +267,8 @@ class SqliteLawStore:
         html_bytes: int,
         pdf_bytes: int,
         normalized_json: str,
+        embedding_model: str,
+        embedding_dimensions: int,
         embedding_vector: str,
     ) -> StoredVersion:
         now = _now_iso()
@@ -271,7 +276,8 @@ class SqliteLawStore:
             row = conn.execute(
                 """
                 SELECT version_id, version_checksum, effective_from, html_checksum, pdf_checksum,
-                       html_bytes, pdf_bytes, normalized_json, embedding_vector, status
+                       html_bytes, pdf_bytes, normalized_json, embedding_model,
+                       embedding_dimensions, embedding_vector, status
                 FROM law_versions
                 WHERE document_id = ? AND version_token = ?
                 """,
@@ -285,9 +291,10 @@ class SqliteLawStore:
                     INSERT INTO law_versions(
                         version_id, document_id, version_token, effective_from, version_checksum,
                         status, html_checksum, pdf_checksum, html_bytes, pdf_bytes, normalized_json,
-                        embedding_vector, stored_at, created_at, updated_at
+                        embedding_model, embedding_dimensions, embedding_vector,
+                        stored_at, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         version_id,
@@ -301,6 +308,8 @@ class SqliteLawStore:
                         html_bytes,
                         pdf_bytes,
                         normalized_json,
+                        embedding_model,
+                        embedding_dimensions,
                         embedding_vector,
                         now,
                         now,
@@ -319,6 +328,8 @@ class SqliteLawStore:
                     row["html_bytes"] != html_bytes,
                     row["pdf_bytes"] != pdf_bytes,
                     row["normalized_json"] != normalized_json,
+                    row["embedding_model"] != embedding_model,
+                    row["embedding_dimensions"] != embedding_dimensions,
                     row["embedding_vector"] != embedding_vector,
                     row["status"] != snapshot.status,
                 )
@@ -329,7 +340,8 @@ class SqliteLawStore:
                     UPDATE law_versions
                     SET effective_from = ?, version_checksum = ?, status = ?, html_checksum = ?,
                         pdf_checksum = ?, html_bytes = ?, pdf_bytes = ?, normalized_json = ?,
-                        embedding_vector = ?, stored_at = ?, updated_at = ?
+                        embedding_model = ?, embedding_dimensions = ?, embedding_vector = ?,
+                        stored_at = ?, updated_at = ?
                     WHERE version_id = ?
                     """,
                     (
@@ -341,6 +353,8 @@ class SqliteLawStore:
                         html_bytes,
                         pdf_bytes,
                         normalized_json,
+                        embedding_model,
+                        embedding_dimensions,
                         embedding_vector,
                         now,
                         now,
@@ -600,6 +614,19 @@ class SqliteLawStore:
 def _count(conn: sqlite3.Connection, table_name: str) -> int:
     row = conn.execute(f"SELECT COUNT(*) AS value FROM {table_name}").fetchone()
     return int(row["value"]) if row is not None else 0
+
+
+def _ensure_law_versions_columns(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("PRAGMA table_info(law_versions)").fetchall()
+    existing = {str(row["name"]) for row in rows}
+    if "embedding_model" not in existing:
+        conn.execute(
+            "ALTER TABLE law_versions ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''"
+        )
+    if "embedding_dimensions" not in existing:
+        conn.execute(
+            "ALTER TABLE law_versions ADD COLUMN embedding_dimensions INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def _now_iso() -> str:

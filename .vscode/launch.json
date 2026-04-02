@@ -1,0 +1,95 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run aijurisdictionagents",
+      "type": "python",
+      "request": "launch",
+      "module": "aijurisdictionagents",
+      "args": [
+        "--instruction",
+        "We believe the contract was breached due to late delivery."
+      ],
+      "justMyCode": false
+    },
+    {
+      "name": "Run minimal_demo.py",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/minimal_demo.py",
+      "justMyCode": false
+    },
+    {
+      "name": "Launch Laws Collector (Postgres, Stop On Entry)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "services.laws_collector",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "LAWS_DB_BACKEND": "postgres",
+        "LAWS_DB_CLOUD": "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"
+      },
+      "args": [
+        "--run-sequential-import",
+        "--max-probes",
+        "1"
+      ],
+      "justMyCode": true,
+      "stopOnEntry": true,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Launch Laws Collector (Postgres, Console Logs)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "services.laws_collector",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "LAWS_DB_BACKEND": "postgres",
+        "LAWS_DB_CLOUD": "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"
+      },
+      "args": [
+        "--run-sequential-import",
+        "--max-probes",
+        "1"
+      ],
+      "justMyCode": true,
+      "subProcess": false,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Launch Laws Collector (Postgres, Mock Embeddings)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "services.laws_collector",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "LAWS_DB_BACKEND": "postgres",
+        "LAWS_DB_CLOUD": "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk",
+        "LLM_PROVIDER": "mock"
+      },
+      "args": [
+        "--run-sequential-import",
+        "--max-probes",
+        "1"
+      ],
+      "justMyCode": true,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Attach Laws Collector",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "127.0.0.1",
+        "port": 5678
+      }
+    }
+  ]
+}
