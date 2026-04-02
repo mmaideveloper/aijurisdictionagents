@@ -2,7 +2,15 @@
 
 from .country_registry import CountryLawsCollectorDefinition, get_country_laws_collector_definition
 from .config import LawsCollectorConfig
-from .domain import CollectorProgress, LawSnapshot, SyncSummary, UpdateCheckPlan
+from .domain import (
+    CollectorProgress,
+    LawInformationField,
+    LawMetadataRecord,
+    LawRelationRecord,
+    LawSnapshot,
+    SyncSummary,
+    UpdateCheckPlan,
+)
 from .import_planner import ImportPlan, ImportTarget, SlovLexImportPlanner
 from .postgres_store import PostgresLawStore
 from .service import LawsCollectorService
@@ -14,6 +22,9 @@ from .sqlite_store import SqliteLawStore
 __all__ = [
     "CountryLawsCollectorDefinition",
     "CollectorProgress",
+    "LawInformationField",
+    "LawMetadataRecord",
+    "LawRelationRecord",
     "LawsCollectorConfig",
     "LawSnapshot",
     "LawsCollectorService",

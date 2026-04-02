@@ -8,13 +8,22 @@ import sqlite3
 import uuid
 
 from .config import LawsCollectorConfig
-from .domain import CollectorProgress, LawSnapshot, ProvisionRecord, StoredVersion
+from .domain import (
+    CollectorProgress,
+    LawMetadataRecord,
+    LawRelationRecord,
+    LawSnapshot,
+    ProvisionRecord,
+    StoredVersion,
+)
 
 
 @dataclass(frozen=True)
 class CollectorCounts:
     documents: int
     versions: int
+    metadata: int
+    relations: int
     provisions: int
     update_events: int
 
@@ -138,6 +147,45 @@ class SqliteLawStore:
                     UNIQUE(version_id, artifact_kind, checksum),
                     FOREIGN KEY(document_id) REFERENCES law_documents(document_id) ON DELETE CASCADE,
                     FOREIGN KEY(version_id) REFERENCES law_versions(version_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS law_metadata (
+                    law_metadata_id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    version_id TEXT NOT NULL,
+                    law_identifier_text TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    law_type TEXT NOT NULL,
+                    approval_date TEXT,
+                    publication_date TEXT NOT NULL,
+                    effective_from TEXT NOT NULL,
+                    effective_to TEXT,
+                    author TEXT,
+                    issue_reference TEXT,
+                    legal_areas_json TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(version_id),
+                    FOREIGN KEY(document_id) REFERENCES law_documents(document_id) ON DELETE CASCADE,
+                    FOREIGN KEY(version_id) REFERENCES law_versions(version_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS law_metadata_relations (
+                    law_metadata_relation_id TEXT PRIMARY KEY,
+                    law_metadata_id TEXT NOT NULL,
+                    relation_type TEXT NOT NULL,
+                    relation_label TEXT NOT NULL,
+                    target_country_code TEXT NOT NULL,
+                    target_collection_code TEXT NOT NULL,
+                    target_law_year INTEGER,
+                    target_law_number INTEGER,
+                    target_law_identifier_text TEXT NOT NULL,
+                    target_title TEXT NOT NULL,
+                    target_url TEXT NOT NULL,
+                    ordinal INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(law_metadata_id) REFERENCES law_metadata(law_metadata_id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS update_events (
@@ -387,6 +435,137 @@ class SqliteLawStore:
                     ),
                 )
 
+    def upsert_law_metadata(
+        self,
+        *,
+        document_id: str,
+        version_id: str,
+        metadata: LawMetadataRecord,
+    ) -> str:
+        now = _now_iso()
+        legal_areas_json = json.dumps(list(metadata.legal_areas), ensure_ascii=True)
+        metadata_json = json.dumps(metadata.normalized_payload(), ensure_ascii=True, sort_keys=True)
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT law_metadata_id, law_identifier_text, title, law_type, approval_date,
+                       publication_date, effective_from, effective_to, author,
+                       issue_reference, legal_areas_json, metadata_json
+                FROM law_metadata
+                WHERE version_id = ?
+                """,
+                (version_id,),
+            ).fetchone()
+            if row is None:
+                law_metadata_id = str(uuid.uuid4())
+                conn.execute(
+                    """
+                    INSERT INTO law_metadata(
+                        law_metadata_id, document_id, version_id, law_identifier_text,
+                        title, law_type, approval_date, publication_date, effective_from,
+                        effective_to, author, issue_reference, legal_areas_json,
+                        metadata_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        law_metadata_id,
+                        document_id,
+                        version_id,
+                        metadata.law_identifier_text,
+                        metadata.title,
+                        metadata.law_type,
+                        metadata.approval_date,
+                        metadata.publication_date,
+                        metadata.effective_from,
+                        metadata.effective_to,
+                        metadata.author,
+                        metadata.issue_reference,
+                        legal_areas_json,
+                        metadata_json,
+                        now,
+                        now,
+                    ),
+                )
+                return law_metadata_id
+
+            law_metadata_id = str(row["law_metadata_id"])
+            changed = any(
+                (
+                    row["law_identifier_text"] != metadata.law_identifier_text,
+                    row["title"] != metadata.title,
+                    row["law_type"] != metadata.law_type,
+                    _as_nullable_text(row["approval_date"]) != metadata.approval_date,
+                    _as_nullable_text(row["publication_date"]) != metadata.publication_date,
+                    _as_nullable_text(row["effective_from"]) != metadata.effective_from,
+                    _as_nullable_text(row["effective_to"]) != metadata.effective_to,
+                    _as_nullable_text(row["author"]) != metadata.author,
+                    _as_nullable_text(row["issue_reference"]) != metadata.issue_reference,
+                    _json_text(row["legal_areas_json"]) != legal_areas_json,
+                    _json_text(row["metadata_json"]) != metadata_json,
+                )
+            )
+            if changed:
+                conn.execute(
+                    """
+                    UPDATE law_metadata
+                    SET law_identifier_text = ?, title = ?, law_type = ?, approval_date = ?,
+                        publication_date = ?, effective_from = ?, effective_to = ?, author = ?,
+                        issue_reference = ?, legal_areas_json = ?, metadata_json = ?, updated_at = ?
+                    WHERE law_metadata_id = ?
+                    """,
+                    (
+                        metadata.law_identifier_text,
+                        metadata.title,
+                        metadata.law_type,
+                        metadata.approval_date,
+                        metadata.publication_date,
+                        metadata.effective_from,
+                        metadata.effective_to,
+                        metadata.author,
+                        metadata.issue_reference,
+                        legal_areas_json,
+                        metadata_json,
+                        now,
+                        law_metadata_id,
+                    ),
+                )
+            return law_metadata_id
+
+    def replace_law_relations(
+        self,
+        *,
+        law_metadata_id: str,
+        relations: tuple[LawRelationRecord, ...],
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM law_metadata_relations WHERE law_metadata_id = ?", (law_metadata_id,))
+            for ordinal, relation in enumerate(relations, start=1):
+                conn.execute(
+                    """
+                    INSERT INTO law_metadata_relations(
+                        law_metadata_relation_id, law_metadata_id, relation_type,
+                        relation_label, target_country_code, target_collection_code,
+                        target_law_year, target_law_number, target_law_identifier_text,
+                        target_title, target_url, ordinal, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(uuid.uuid4()),
+                        law_metadata_id,
+                        relation.relation_type,
+                        relation.relation_label,
+                        relation.target_country_code,
+                        relation.target_collection_code,
+                        relation.target_law_year,
+                        relation.target_law_number,
+                        relation.target_law_identifier_text,
+                        relation.target_title,
+                        relation.target_url,
+                        ordinal,
+                        _now_iso(),
+                    ),
+                )
+
     def upsert_artifact(
         self,
         *,
@@ -567,6 +746,8 @@ class SqliteLawStore:
             return CollectorCounts(
                 documents=_count(conn, "law_documents"),
                 versions=_count(conn, "law_versions"),
+                metadata=_count(conn, "law_metadata"),
+                relations=_count(conn, "law_metadata_relations"),
                 provisions=_count(conn, "law_provisions"),
                 update_events=_count(conn, "update_events"),
             )
@@ -627,6 +808,18 @@ def _ensure_law_versions_columns(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE law_versions ADD COLUMN embedding_dimensions INTEGER NOT NULL DEFAULT 0"
         )
+
+
+def _as_nullable_text(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _json_text(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value)
 
 
 def _now_iso() -> str:

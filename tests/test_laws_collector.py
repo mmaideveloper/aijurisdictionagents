@@ -4,10 +4,13 @@ from dataclasses import replace
 from datetime import date
 import json
 from pathlib import Path
+import sqlite3
 
 from aijurisdictionagents.llm.embeddings import EmbeddingBatchResult, MockEmbeddingClient
 from services.laws_collector import (
     LawsCollectorConfig,
+    LawMetadataRecord,
+    LawRelationRecord,
     LawSnapshot,
     SlovLexImportPlanner,
     SlovLexSequentialImportRunner,
@@ -16,8 +19,10 @@ from services.laws_collector import (
     get_country_laws_collector_definition,
 )
 from services.laws_collector.import_planner import ImportTarget
+from services.laws_collector.slovlex_live_source import FetchedResource, SlovLexLiveSnapshotLoader
 from services.laws_collector.slovak_source_fixtures import baseline_snapshots, delta_snapshots
 from services.laws_collector.worker import WorkerOptions
+import services.laws_collector.slovlex_live_source as slovlex_live_source
 
 
 def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorService]:
@@ -63,6 +68,37 @@ def _get_embedding_metadata(store: SqliteLawStore, *, law_year: int, law_number:
     )
 
 
+def _get_law_metadata(
+    store: SqliteLawStore,
+    *,
+    law_year: int,
+    law_number: int,
+) -> tuple[sqlite3.Row | None, list[sqlite3.Row]]:
+    with store._connect() as conn:  # noqa: SLF001 - test-only verification of persisted values
+        metadata_row = conn.execute(
+            """
+            SELECT m.*
+            FROM law_metadata AS m
+            JOIN law_documents AS d ON d.document_id = m.document_id
+            WHERE d.law_year = ? AND d.law_number = ?
+            LIMIT 1
+            """,
+            (law_year, law_number),
+        ).fetchone()
+        if metadata_row is None:
+            return None, []
+        relation_rows = conn.execute(
+            """
+            SELECT relation_type, relation_label, target_law_identifier_text, target_title, ordinal
+            FROM law_metadata_relations
+            WHERE law_metadata_id = ?
+            ORDER BY ordinal
+            """,
+            (metadata_row["law_metadata_id"],),
+        ).fetchall()
+    return metadata_row, list(relation_rows)
+
+
 def test_laws_collector_baseline_sync_creates_documents_and_versions(tmp_path: Path) -> None:
     store, service = _build_service(tmp_path)
 
@@ -80,6 +116,8 @@ def test_laws_collector_baseline_sync_creates_documents_and_versions(tmp_path: P
     assert summary.skipped == 0
     assert counts.documents == 2
     assert counts.versions == 2
+    assert counts.metadata == 0
+    assert counts.relations == 0
     assert counts.provisions == 3
     assert counts.update_events == 2
     overview = store.list_document_overview()
@@ -109,6 +147,8 @@ def test_laws_collector_delta_sync_adds_new_act_and_new_version(tmp_path: Path) 
     assert summary.skipped == 0
     assert counts.documents == 3
     assert counts.versions == 4
+    assert counts.metadata == 0
+    assert counts.relations == 0
     assert counts.provisions == 6
     assert counts.update_events == 4
     overview = store.list_document_overview()
@@ -422,6 +462,156 @@ def test_laws_collector_splits_large_laws_into_multiple_embedding_chunks(tmp_pat
     assert embedding_model == "recording-embedding-3d"
     assert embedding_dimensions == 3
     assert embedding_vector == [1.0, 2.0, 3.0]
+
+
+def test_laws_collector_persists_metadata_and_relations(tmp_path: Path) -> None:
+    store, service = _build_service(tmp_path)
+    snapshot = replace(
+        baseline_snapshots()[0],
+        metadata=LawMetadataRecord(
+            law_identifier_text="25/2025 Z. z.",
+            title="Stavebny zakon",
+            law_type="Zakon",
+            approval_date="2025-01-02",
+            publication_date="2025-01-10",
+            effective_from="2025-02-01",
+            effective_to="2025-12-31",
+            author="Narodna rada Slovenskej republiky",
+            legal_areas=("Stat", "Stavebne pravo"),
+            issue_reference="12/2025",
+        ),
+        relations=(
+            LawRelationRecord(
+                relation_type="amends",
+                relation_label="Predpis meni",
+                target_law_identifier_text="50/2001 Z. z.",
+                target_title="Povodny zakon",
+                target_url="https://www.slov-lex.sk/ezbierky/pravne-predpisy/SK/ZZ/2001/50",
+                target_law_year=2001,
+                target_law_number=50,
+            ),
+            LawRelationRecord(
+                relation_type="implements",
+                relation_label="Vykonavacie predpisy",
+                target_law_identifier_text="12/2026 Z. z.",
+                target_title="Vykonavaci predpis",
+                target_url="https://www.slov-lex.sk/ezbierky/pravne-predpisy/SK/ZZ/2026/12",
+                target_law_year=2026,
+                target_law_number=12,
+            ),
+        ),
+    )
+
+    service.sync((snapshot,))
+    counts = store.get_counts()
+    metadata_row, relation_rows = _get_law_metadata(store, law_year=snapshot.year, law_number=snapshot.number)
+
+    assert counts.metadata == 1
+    assert counts.relations == 2
+    assert metadata_row is not None
+    assert metadata_row["law_identifier_text"] == "25/2025 Z. z."
+    assert metadata_row["law_type"] == "Zakon"
+    assert json.loads(str(metadata_row["legal_areas_json"])) == ["Stat", "Stavebne pravo"]
+    assert [row["relation_type"] for row in relation_rows] == ["amends", "implements"]
+    assert relation_rows[0]["target_law_identifier_text"] == "50/2001 Z. z."
+
+
+def test_slovlex_live_snapshot_loader_parses_metadata_and_relations(monkeypatch) -> None:
+    html = """
+    <h1>Zakon o testovani</h1>
+    <table id="InfoTable">
+      <tr><td class="title">Číslo predpisu:</td><td class="value_bold">461/2003 Z. z.</td></tr>
+      <tr><td class="title">Názov:</td><td class="value">Zákon o sociálnom poistení</td></tr>
+      <tr><td class="title">Typ:</td><td class="value_bold">Zákon</td></tr>
+      <tr><td class="title">Dátum schválenia:</td><td class="value">30.10.2003</td></tr>
+      <tr><td class="title">Dátum vyhlásenia:</td><td class="value_bold">27.11.2003</td></tr>
+      <tr><td class="title">Dátum účinnosti od:</td><td class="value">01.09.2023</td></tr>
+      <tr><td class="title">Dátum účinnosti do:</td><td class="value">30.09.2023</td></tr>
+      <tr><td class="title">Autor:</td><td class="value">Národná rada Slovenskej republiky</td></tr>
+      <tr><td class="title_po">Právna oblasť:</td><td class="value"><ul><li>Štát</li><li>Trestné právo hmotné</li></ul></td></tr>
+      <tr><td class="title">Nachádza sa v čiastke: </td><td class="value"><p><a href="/static/pdf/SK/ZZ/2003/2003c200.pdf">200/2003</a></p></td></tr>
+    </table>
+    <div class="accordion_section_relations">
+      <button class="accordion_relations" aria-expanded="false">Vykonávacie predpisy</button>
+      <div class="panel_relations">
+        <h4></h4><table class="InfoTable"><tbody>
+          <tr>
+            <td class="infoTable-nadpis"><a href="/ezbierky-fe/pravne-predpisy/SK/ZZ/2004/157/">157/2004&nbsp;Z.&nbsp;z. </a></td>
+            <td>Opatrenie vykonávacie</td>
+          </tr>
+        </tbody></table>
+      </div>
+    </div>
+    <div class="accordion_section_relations">
+      <button class="accordion_relations" aria-expanded="false">Predpis mení</button>
+      <div class="panel_relations">
+        <h4></h4><table class="InfoTable"><tbody>
+          <tr>
+            <td class="infoTable-nadpis"><a href="/ezbierky-fe/pravne-predpisy/SK/ZZ/1993/120/">120/1993&nbsp;Z.&nbsp;z. </a></td>
+            <td>Zákon Národnej rady Slovenskej republiky</td>
+          </tr>
+        </tbody></table>
+      </div>
+    </div>
+    <div class="accordion_section_relations">
+      <button class="accordion_relations" aria-expanded="false">Predpis je menený</button>
+      <div class="panel_relations">
+        <h4></h4><table class="InfoTable"><tbody>
+          <tr>
+            <td class="infoTable-nadpis"><a href="/ezbierky-fe/pravne-predpisy/SK/ZZ/2026/44/">44/2026&nbsp;Z.&nbsp;z. </a></td>
+            <td>Zákon, ktorým sa mení a dopĺňa Trestný zákon</td>
+          </tr>
+        </tbody></table>
+      </div>
+    </div>
+    <div class="accordion_section_relations">
+      <button class="accordion_relations" aria-expanded="false">Predpis ruší</button>
+      <div class="panel_relations">
+        <h4></h4><table class="InfoTable"><tbody>
+          <tr>
+            <td class="infoTable-nadpis"><a href="/ezbierky-fe/pravne-predpisy/SK/ZZ/1956/54/">54/1956&nbsp;Zb. </a></td>
+            <td>Zákon o nemocenskom poistení zamestnancov</td>
+          </tr>
+        </tbody></table>
+      </div>
+    </div>
+    <tr class="effectivenessHistoryItem" data-iri="/static/SK/ZZ/2003/461/20230901" data-vyhlasene="0" data-ucinnostod="2023-09-01" data-ucinnostdo="2023-09-30"></tr>
+    <div class="text" id="par1">Prva cast zakona</div>
+    <a href="/static/pdf/SK/ZZ/2003/461/ZZ_2003_461.pdf">PDF</a>
+    """
+    pdf_bytes = (
+        b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
+    )
+
+    def fake_fetch_resource(*, url: str, timeout_seconds: float) -> FetchedResource:
+        if url.endswith(".html"):
+            return FetchedResource(url=url, body=html.encode("utf-8"), etag="etag-1", last_modified="Mon")
+        return FetchedResource(url=url, body=pdf_bytes, etag="etag-pdf", last_modified="Tue")
+
+    monkeypatch.setattr(slovlex_live_source, "_fetch_resource", fake_fetch_resource)
+    monkeypatch.setattr(slovlex_live_source, "_extract_pdf_text", lambda _payload: "Prva cast zakona")
+    loader = SlovLexLiveSnapshotLoader()
+
+    snapshot = loader.load_snapshot(
+        target=ImportTarget(year=2003, number=461),
+        timeout_seconds=1.0,
+    )
+
+    assert snapshot.metadata is not None
+    assert snapshot.metadata.law_identifier_text == "461/2003 Z. z."
+    assert snapshot.metadata.law_type == "Zákon"
+    assert snapshot.metadata.approval_date == "2003-10-30"
+    assert snapshot.metadata.legal_areas == ("Štát", "Trestné právo hmotné")
+    assert snapshot.metadata.issue_reference == "200/2003"
+    assert [relation.relation_type for relation in snapshot.relations] == [
+        "implements",
+        "amends",
+        "amended_by",
+        "repeals",
+    ]
+    assert snapshot.relations[2].target_law_identifier_text == "44/2026 Z. z."
+    assert snapshot.relations[2].target_law_year == 2026
+    assert snapshot.relations[3].target_law_number == 54
 
 
 def test_slovlex_sequential_import_runner_logs_when_no_new_laws(tmp_path: Path, capsys) -> None:
