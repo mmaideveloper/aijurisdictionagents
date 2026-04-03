@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import os
 import time
 
+from aijurisdictionagents.llm import load_embedding_runtime_summary_from_env
+
 from .country_registry import get_country_laws_collector_definition
 from .config import LawsCollectorConfig
 from .postgres_store import PostgresLawStore
@@ -46,6 +48,7 @@ class WorkerOptions:
 
 def run_worker() -> None:
     config = LawsCollectorConfig.from_env()
+    embedding_runtime = load_embedding_runtime_summary_from_env()
     collector_definition = get_country_laws_collector_definition(config.country_code)
     store = SqliteLawStore.from_config(config) if config.db_backend == "sqlite" else PostgresLawStore.from_config(config)
     store.initialize()
@@ -53,6 +56,12 @@ def run_worker() -> None:
 
     options = WorkerOptions.from_env()
     cycle = 0
+    print(
+        "[laws-collector] startup "
+        f"country={config.country_code} db_backend={config.db_backend} "
+        f"embedding_option={embedding_runtime.option} "
+        f"embedding_model={embedding_runtime.model}"
+    )
 
     while True:
         cycle += 1

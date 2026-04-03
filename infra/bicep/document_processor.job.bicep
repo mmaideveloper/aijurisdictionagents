@@ -12,6 +12,8 @@ param postgresAdminPassword string
 param storageAccountName string
 param storageContainerName string = 'documents'
 param llmProvider string = 'azurefoundry'
+param systemEmbeddingModelOption string = 'cloud'
+param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
 param azureOpenAIEndpoint string
 param azureOpenAIEmbeddingsModel string = 'text-embedding-3-large'
 param azureOpenAIApiVersion string = '2024-12-01-preview'
@@ -132,6 +134,14 @@ resource documentProcessorJob 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'LLM_PROVIDER'
               value: llmProvider
+            }
+            {
+              name: 'SYSTEM_EMBEDDING_MODEL_OPTION'
+              value: systemEmbeddingModelOption
+            }
+            {
+              name: 'SYSTEM_EMBEDDING_MODEL'
+              value: systemEmbeddingModel
             }
             {
               name: 'AZURE_OPENAI_ENDPOINT'

@@ -10,6 +10,7 @@ import uuid
 from .config import LawsCollectorConfig
 from .domain import (
     CollectorProgress,
+    LawSemanticCandidate,
     LawMetadataRecord,
     LawRelationRecord,
     LawSnapshot,
@@ -781,6 +782,39 @@ class SqliteLawStore:
                 last_checked_at=str(row["last_checked_at"]),
                 last_download_status=str(row["last_download_status"]),
                 download_attempt_count=int(row["download_attempt_count"]),
+            )
+            for row in rows
+        ]
+
+    def list_semantic_candidates(self) -> list[LawSemanticCandidate]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT d.document_id, d.country_code, d.collection_code, d.law_year, d.law_number,
+                       d.official_name, d.lawyer_title,
+                       v.version_id, v.version_token, v.effective_from,
+                       v.embedding_model, v.embedding_dimensions, v.embedding_vector
+                FROM law_versions AS v
+                JOIN law_documents AS d ON d.document_id = v.document_id
+                ORDER BY d.law_year DESC, d.law_number DESC, v.effective_from DESC
+                """
+            ).fetchall()
+
+        return [
+            LawSemanticCandidate(
+                document_id=str(row["document_id"]),
+                version_id=str(row["version_id"]),
+                country_code=str(row["country_code"]),
+                collection_code=str(row["collection_code"]),
+                law_year=int(row["law_year"]),
+                law_number=int(row["law_number"]),
+                official_name=str(row["official_name"]),
+                lawyer_title=str(row["lawyer_title"]),
+                version_token=str(row["version_token"]),
+                effective_from=str(row["effective_from"]),
+                embedding_model=str(row["embedding_model"]),
+                embedding_dimensions=int(row["embedding_dimensions"]),
+                embedding_vector=str(row["embedding_vector"]),
             )
             for row in rows
         ]

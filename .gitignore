@@ -34,3 +34,5 @@ infra/bicep/main.json
 .codex/runlogs/**
 api/aijuristiction-api/storage/**
 .playwright-cli/**
+aimodels/*
+!aimodels/README.md

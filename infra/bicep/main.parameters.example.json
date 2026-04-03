@@ -47,6 +47,12 @@
     "llmProvider": {
       "value": "azurefoundry"
     },
+    "systemEmbeddingModelOption": {
+      "value": "cloud"
+    },
+    "systemEmbeddingModel": {
+      "value": "all-MiniLM-L6-v2"
+    },
     "azureOpenAIEndpoint": {
       "value": "https://example-foundry.openai.azure.com/"
     },

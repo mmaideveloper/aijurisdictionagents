@@ -1,5 +1,7 @@
 # Laws Collector
 
+Architecture diagrams and component-level design are documented in `docs/LAWS_COLLECTOR_ARCHITECTURE.md`.
+
 ## Goal
 
 `laws_collector` is a service under `src/services` that selects a country-specific collector implementation and stores the resulting law corpus in a country-specific database.
@@ -230,6 +232,12 @@ python -m services.laws_collector --run-sequential-import --max-probes 25
 ```
 
 The live sequential import now downloads the law text from the Slov-Lex static HTML and PDF endpoints, stores that text in the local database, persists `collector_progress`, and computes a real embedding vector through the shared `aijurisdictionagents.llm.embeddings` client before moving to the next law number/year. Large laws are embedded in multiple chunks and averaged into one stored law vector so local runs do not fail on model input limits.
+The shared embedding switch now supports:
+
+- `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default runtime mode
+- `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2` as the default local sentence-transformer model
+- repo-local model caching under `aimodels/`
+- `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` for Azure deployments that should keep the existing OpenAI/Azure embedding flow
 The same live HTML source now also persists structured metadata from the `Informácie o predpise` panel into `law_metadata` and stores dependency edges from the `Vzťahy predpisu` panel in `law_metadata_relations`. That includes:
 
 - law identifier, title, type, approval/publication/effective dates, author, issue reference, legal areas
@@ -242,15 +250,21 @@ The normalized relation table is intended for later graph traversal, chain visua
 
 Local startup through `.\skills\laws-collector\scripts\start_laws_collector.ps1` also imports defaults from the repository `.env`, so the visible-console path can reuse the configured embedding provider for local PostgreSQL runs.
 For local debugging, the worker now defaults to `LAWS_WORKER_MAX_PROBES=1` so a single visible run processes one live SlovLex law instead of exhausting the embedding rate limit with a long batch.
+The service also exposes semantic ranking over persisted law vectors through `LawsCollectorService.search_semantic(...)`, which is used by the local-mode tests to verify end-to-end retrieval.
 
 Local execution logs now show:
 
+- the startup embedding runtime line with `embedding_option` and `embedding_model`
 - when a law starts processing
 - when the document upload reaches the database and its status
 - when vectorization starts
 - when vectorization finishes with final status
 - the total per-law processing time
 - an explicit `No new laws for <country>...` message when the run finds nothing new
+
+Example startup log:
+
+- `[laws-collector] startup country=SK db_backend=postgres embedding_option=local embedding_model=all-MiniLM-L6-v2`
 
 
 ## Live SlovLex probe test (year/number)
@@ -390,9 +404,9 @@ Use SQLite explicitly only when needed:
 
 Deployment assets for a dedicated Azure Container App named `laws-collector` are now included:
 
-- `infra/bicep/laws_collector.containerapp.bicep`
+- `infra/bicep/laws_collector.job.bicep`
 - `infra/scripts/deploy_laws_collector.ps1`
-- `infra/bicep/laws_collector.containerapp.parameters.example.json`
+- `infra/bicep/laws_collector.job.parameters.example.json`
 - container image definition: `src/services/laws_collector/Dockerfile`
 - GitHub Actions workflow: `.github/workflows/laws_collector_build_deploy.yml`
 
@@ -424,6 +438,25 @@ Then run the PostgreSQL debug example:
 $env:LAWS_DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"
 .\.conda\python.exe examples/laws_collector_postgres_debug_demo.py
 ```
+
+To search the local PostgreSQL `laws_sk` database for a Slovak phrase such as `nájomna zmluva`, run:
+
+```powershell
+$env:LAWS_DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"
+$env:LAWS_SEARCH_PHRASE = "nájomna zmluva"
+.\.conda\python.exe examples/laws_collector_postgres_phrase_search_demo.py
+```
+
+There is also a gated pytest integration test for the same query path:
+
+```powershell
+$env:RUN_LOCAL_POSTGRES_LAWS_SEARCH_TEST = "1"
+$env:LAWS_DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"
+$env:LAWS_SEARCH_PHRASE = "nájomna zmluva"
+.\.conda\python.exe -m pytest tests/test_laws_collector_postgres_phrase_search.py -s
+```
+
+The search normalizes Slovak diacritics before matching, so `nájomna zmluva` also matches stored text containing `nájomná zmluva`.
 
 To verify the very first Slovak law (`1/1993`) is downloaded, stored as text, embedded, and reflected in `collector_progress`, run:
 

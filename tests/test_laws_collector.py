@@ -5,8 +5,10 @@ from datetime import date
 import json
 from pathlib import Path
 import sqlite3
+import unicodedata
 
 from aijurisdictionagents.llm.embeddings import EmbeddingBatchResult, MockEmbeddingClient
+import aijurisdictionagents.llm.embeddings as embedding_module
 from services.laws_collector import (
     LawsCollectorConfig,
     LawMetadataRecord,
@@ -22,7 +24,13 @@ from services.laws_collector.import_planner import ImportTarget
 from services.laws_collector.slovlex_live_source import FetchedResource, SlovLexLiveSnapshotLoader
 from services.laws_collector.slovak_source_fixtures import baseline_snapshots, delta_snapshots
 from services.laws_collector.worker import WorkerOptions
+import services.laws_collector.worker as laws_collector_worker
 import services.laws_collector.slovlex_live_source as slovlex_live_source
+
+
+def _normalize_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.lower())
+    return " ".join(normalized.encode("ascii", "ignore").decode("ascii").split())
 
 
 def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorService]:
@@ -424,6 +432,59 @@ def test_laws_collector_logs_embedding_pipeline_steps(tmp_path: Path, capsys) ->
     assert "embedding_dimensions=32" in output
 
 
+def test_laws_collector_logs_embedding_runtime_on_startup(monkeypatch, capsys) -> None:
+    class FakeStore:
+        def initialize(self) -> None:
+            return None
+
+    class FakeService:
+        def sync(self, snapshots: tuple[object, ...]) -> object:
+            return type(
+                "Summary",
+                (),
+                {
+                    "processed": len(snapshots),
+                    "new_documents": 0,
+                    "new_versions": 0,
+                    "metadata_updates": 0,
+                    "skipped": 0,
+                },
+            )()
+
+    class FakeDefinition:
+        collector_name = "fake_collector"
+
+        def create_service(self, *, config: object, store: object) -> FakeService:
+            return FakeService()
+
+        def baseline_snapshots(self) -> tuple[object, ...]:
+            return (object(),)
+
+        def delta_snapshots(self) -> tuple[object, ...]:
+            return ()
+
+    class FakeConfig:
+        country_code = "SK"
+        db_backend = "sqlite"
+
+    fake_store = FakeStore()
+    monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL_OPTION", "local")
+    monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    monkeypatch.setenv("LAWS_WORKER_FIXTURE", "baseline")
+    monkeypatch.setenv("LAWS_WORKER_MAX_CYCLES", "1")
+    monkeypatch.setattr(laws_collector_worker.LawsCollectorConfig, "from_env", lambda: FakeConfig())
+    monkeypatch.setattr(laws_collector_worker, "get_country_laws_collector_definition", lambda _code: FakeDefinition())
+    monkeypatch.setattr(laws_collector_worker.SqliteLawStore, "from_config", lambda _config: fake_store)
+
+    laws_collector_worker.run_worker()
+
+    output = capsys.readouterr().out
+
+    assert "[laws-collector] startup" in output
+    assert "embedding_option=local" in output
+    assert "embedding_model=all-MiniLM-L6-v2" in output
+
+
 def test_laws_collector_splits_large_laws_into_multiple_embedding_chunks(tmp_path: Path) -> None:
     store, base_service = _build_service(tmp_path)
     captured_batches: list[tuple[str, ...]] = []
@@ -713,3 +774,57 @@ def test_country_db_name_uses_laws_prefix_for_future_countries() -> None:
 
     assert config.country_db_name == "laws_cz"
     assert config.db_path.name == "cz_laws.sqlite3"
+
+
+def test_laws_collector_local_embedding_mode_supports_semantic_search(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    class LocalSemanticBackend:
+        def encode_texts(self, texts: tuple[str, ...] | list[str]) -> list[list[float]]:
+            return [self._vector_for(text) for text in texts]
+
+        def _vector_for(self, text: str) -> list[float]:
+            normalized = _normalize_text(text)
+            if "stavebn" in normalized or "permit" in normalized or "construction" in normalized:
+                return [1.0, 0.0, 0.0]
+            if "social" in normalized or "poisten" in normalized:
+                return [0.0, 1.0, 0.0]
+            return [0.0, 0.0, 1.0]
+
+    monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL_OPTION", "local")
+    monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    monkeypatch.setattr(embedding_module, "_default_local_embedding_root", lambda: tmp_path / "aimodels")
+    monkeypatch.setattr(embedding_module, "_load_local_embedding_backend", lambda _config: LocalSemanticBackend())
+
+    config = LawsCollectorConfig(
+        country_code="SK",
+        db_backend="sqlite",
+        db_local=str(tmp_path / "laws.sqlite3"),
+        db_cloud="",
+        storage_local="",
+        storage_cloud="",
+        delta_poll_hours=3,
+        initial_import_from=date(1993, 1, 1),
+        historical_import_from=date(1993, 1, 1),
+    )
+    store = SqliteLawStore.from_config(config)
+    store.initialize()
+    service = SlovakLawsCollectorService(config=config, store=store)
+
+    service.sync(baseline_snapshots())
+    results = service.search_semantic("construction permit requirements", limit=2)
+    embedding_model, embedding_dimensions, embedding_vector = _get_embedding_metadata(
+        store,
+        law_year=2025,
+        law_number=25,
+    )
+
+    assert results
+    assert results[0].law_year == 2025
+    assert results[0].law_number == 25
+    assert results[0].official_name == "Stavebny zakon"
+    assert results[0].score > 0.99
+    assert embedding_model == "all-MiniLM-L6-v2"
+    assert embedding_dimensions == 3
+    assert embedding_vector == [1.0, 0.0, 0.0]

@@ -1,6 +1,6 @@
 # Document Processor Service
 
-This service scans uploaded case documents, extracts best-effort text, creates real embeddings through the configured provider, stores the full document text/vector plus chunk text/vector records, and marks each document as `processed` or `failed`.
+This service scans uploaded case documents, extracts best-effort text, creates embeddings through the shared system embedding configuration, stores the full document text/vector plus chunk text/vector records, and marks each document as `processed` or `failed`.
 
 Current extraction behavior:
 
@@ -16,9 +16,12 @@ Current runtime modes:
 
 Embedding model env vars:
 
+- `SYSTEM_EMBEDDING_MODEL_OPTION`: shared embedding mode switch. Use `local` for the built-in local sentence-transformer path, `cloud` to keep Azure/OpenAI embeddings.
+- `SYSTEM_EMBEDDING_MODEL`: shared local embedding model name. Default: `all-MiniLM-L6-v2`. Local models are cached under the repo `aimodels/` folder.
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`: Azure OpenAI embedding deployment name. Recommended for Jurisdicta: `text-embedding-3-large`.
 - `OPENAI_EMBEDDINGS_MODEL`: OpenAI embedding model name. Recommended default: `text-embedding-3-large`.
 - Local tests and the minimal demo use `LLM_PROVIDER=mock`, which keeps embeddings deterministic and offline.
+- Deployed Azure jobs should set `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` so they keep the current cloud embedding behavior.
 
 ## Run locally
 
@@ -31,6 +34,17 @@ PYTHONPATH=src python -m services.document_processor --limit 20
 ```bash
 python examples/document_processor_minimal_demo.py
 ```
+
+Local embedding similarity demo:
+
+```bash
+python examples/local_embedding_semantic_search_demo.py
+```
+
+Startup logs now print the resolved embedding runtime before processing begins, for example:
+
+- `[document-processor] startup embedding_option=local embedding_model=all-MiniLM-L6-v2`
+- `[document-processor] startup embedding_option=cloud embedding_model=text-embedding-3-large`
 
 ## Azure Container Apps
 

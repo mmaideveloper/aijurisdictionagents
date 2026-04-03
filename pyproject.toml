@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aijurisdictionagents"
-version = "1.0.260334"
+version = "1.0.260336"
 description = "Multi-agent legal discussion scaffold."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,6 +17,7 @@ dependencies = [
   "python-dotenv>=1.0",
   "psycopg[binary]>=3.2",
   "rapidocr-onnxruntime>=1.4.4",
+  "sentence-transformers>=3.0",
 ]
 
 [project.optional-dependencies]

@@ -55,6 +55,8 @@ jobs:
       AZURE_DOCUMENT_PROCESSOR_JOB_NAME: ${{ vars.AZURE_DOCUMENT_PROCESSOR_JOB_NAME }}
       AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION: ${{ vars.AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION }}
       LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+      SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'cloud' }}
+      SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
       AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       AZURE_OPENAI_EMBEDDINGS_MODEL: ${{ vars.AZURE_OPENAI_EMBEDDINGS_MODEL }}
       AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
@@ -159,12 +161,16 @@ jobs:
           document_processor_job="${AZURE_DOCUMENT_PROCESSOR_JOB_NAME:-document-processor}"
           document_processor_cron="${AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION:-0 */15 * * * *}"
           llm_provider="${LLM_PROVIDER:-azurefoundry}"
+          system_embedding_model_option="${SYSTEM_EMBEDDING_MODEL_OPTION:-cloud}"
+          system_embedding_model="${SYSTEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}"
           azure_openai_embeddings_model="${AZURE_OPENAI_EMBEDDINGS_MODEL:-text-embedding-3-large}"
           azure_openai_api_version="${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}"
 
           echo "document_processor_job_name=$document_processor_job" >> "$GITHUB_OUTPUT"
           echo "document_processor_cron_expression=$document_processor_cron" >> "$GITHUB_OUTPUT"
           echo "llm_provider=$llm_provider" >> "$GITHUB_OUTPUT"
+          echo "system_embedding_model_option=$system_embedding_model_option" >> "$GITHUB_OUTPUT"
+          echo "system_embedding_model=$system_embedding_model" >> "$GITHUB_OUTPUT"
           echo "azure_openai_embeddings_model=$azure_openai_embeddings_model" >> "$GITHUB_OUTPUT"
           echo "azure_openai_api_version=$azure_openai_api_version" >> "$GITHUB_OUTPUT"
 
@@ -256,6 +262,8 @@ jobs:
               postgresVersion="${AZURE_POSTGRES_VERSION:-16}" \
               postgresStorageSizeGb="${AZURE_POSTGRES_STORAGE_SIZE_GB:-32}" \
               llmProvider="${{ steps.documentprocessor.outputs.llm_provider }}" \
+              systemEmbeddingModelOption="${{ steps.documentprocessor.outputs.system_embedding_model_option }}" \
+              systemEmbeddingModel="${{ steps.documentprocessor.outputs.system_embedding_model }}" \
               azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" \
               azureOpenAIEmbeddingsModel="${{ steps.documentprocessor.outputs.azure_openai_embeddings_model }}" \
               azureOpenAIApiVersion="${{ steps.documentprocessor.outputs.azure_openai_api_version }}" \

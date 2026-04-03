@@ -89,6 +89,8 @@ jobs:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
       LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+      SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'cloud' }}
+      SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
       AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       AZURE_OPENAI_EMBEDDINGS_MODEL: ${{ vars.AZURE_OPENAI_EMBEDDINGS_MODEL }}
       AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
@@ -212,6 +214,8 @@ jobs:
             -StorageAccountName $env:AZURE_STORAGE_ACCOUNT_NAME `
             -StorageContainerName $storageContainerName `
             -LlmProvider $env:LLM_PROVIDER `
+            -SystemEmbeddingModelOption $env:SYSTEM_EMBEDDING_MODEL_OPTION `
+            -SystemEmbeddingModel $env:SYSTEM_EMBEDDING_MODEL `
             -AzureOpenAIEndpoint $env:AZURE_OPENAI_ENDPOINT `
             -AzureOpenAIEmbeddingsModel $env:AZURE_OPENAI_EMBEDDINGS_MODEL `
             -AzureOpenAIApiVersion $env:AZURE_OPENAI_API_VERSION `

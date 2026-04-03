@@ -11,6 +11,8 @@ param(
     [string]$PostgresDatabaseName = "laws_sk",
     [string]$PostgresAdminUsername,
     [string]$PostgresAdminPassword,
+    [string]$SystemEmbeddingModelOption = "cloud",
+    [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
     [string]$ImageTag = "latest",
     [string]$EnvFilePath = ".env",
     [switch]$SkipEnvFile
@@ -92,6 +94,8 @@ $envPgServer = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFi
 $envPgDb = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_POSTGRES_DATABASE_NAME_SK" }
 $envPgUser = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_USERNAME" }
 $envPgPass = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_PASSWORD" }
+$envSystemEmbeddingModelOption = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL_OPTION" }
+$envSystemEmbeddingModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL" }
 
 $SubscriptionId = Resolve-InputValue -ExplicitValue $SubscriptionId -EnvFileValue $envSubscriptionId -EnvironmentValue $env:AZURE_SUBSCRIPTION_ID
 $ResourceGroupName = Resolve-InputValue -ExplicitValue $ResourceGroupName -EnvFileValue $envResourceGroup -EnvironmentValue $env:AZURE_RESOURCE_GROUP
@@ -103,6 +107,8 @@ $PostgresServerName = Resolve-InputValue -ExplicitValue $PostgresServerName -Env
 $PostgresDatabaseName = Resolve-InputValue -ExplicitValue $PostgresDatabaseName -EnvFileValue $envPgDb -EnvironmentValue $env:AZURE_LAWS_POSTGRES_DATABASE_NAME_SK
 $PostgresAdminUsername = Resolve-InputValue -ExplicitValue $PostgresAdminUsername -EnvFileValue $envPgUser -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_USERNAME
 $PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPassword -EnvFileValue $envPgPass -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_PASSWORD
+$SystemEmbeddingModelOption = Resolve-InputValue -ExplicitValue $SystemEmbeddingModelOption -EnvFileValue $envSystemEmbeddingModelOption -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL_OPTION
+$SystemEmbeddingModel = Resolve-InputValue -ExplicitValue $SystemEmbeddingModel -EnvFileValue $envSystemEmbeddingModel -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId
 Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName
@@ -114,6 +120,8 @@ Require-Value -Name "PostgresServerName" -Value $PostgresServerName
 Require-Value -Name "PostgresDatabaseName" -Value $PostgresDatabaseName
 Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
 Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
+if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddingModelOption = "cloud" }
+if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel = "all-MiniLM-L6-v2" }
 
 az account set --subscription $SubscriptionId | Out-Null
 az group create --name $ResourceGroupName --location $Location | Out-Null
@@ -121,7 +129,7 @@ az group create --name $ResourceGroupName --location $Location | Out-Null
 $containerAppExistedBeforeDeployment = Test-ResourceExistsInGroup `
     -ResourceGroupName $ResourceGroupName `
     -ResourceName $ContainerAppName `
-    -ResourceType "Microsoft.App/containerApps"
+    -ResourceType "Microsoft.App/jobs"
 
 $imageRepository = "laws-collector"
 $image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
@@ -129,27 +137,29 @@ $image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
 Write-Host "Building laws collector image in ACR: $image"
 az acr build --registry $AcrName --image "$imageRepository`:$ImageTag" --file "src/services/laws_collector/Dockerfile" .
 
-Write-Host "Deploying laws collector Container App: $ContainerAppName"
+Write-Host "Deploying laws collector ACA job: $ContainerAppName"
 az deployment group create `
   --resource-group $ResourceGroupName `
-  --template-file "infra/bicep/laws_collector.containerapp.bicep" `
+  --template-file "infra/bicep/laws_collector.job.bicep" `
   --parameters `
       managedEnvironmentName=$ContainerAppEnvironmentName `
-      containerAppName=$ContainerAppName `
+      jobName=$ContainerAppName `
       acrName=$AcrName `
       managedIdentityName=$ManagedIdentityName `
       image=$image `
       postgresServerName=$PostgresServerName `
       postgresDatabaseName=$PostgresDatabaseName `
       postgresAdminUsername=$PostgresAdminUsername `
-      postgresAdminPassword=$PostgresAdminPassword | Out-Null
+      postgresAdminPassword=$PostgresAdminPassword `
+      systemEmbeddingModelOption=$SystemEmbeddingModelOption `
+      systemEmbeddingModel=$SystemEmbeddingModel | Out-Null
 
 $containerAppDisposition = if ($containerAppExistedBeforeDeployment) { "updated" } else { "created" }
 
 Write-Host "Laws collector deployment complete."
 Write-Host "ACA resources:"
 Write-Host " - Managed environment (reused): $ContainerAppEnvironmentName"
-Write-Host " - Laws collector container app ($containerAppDisposition): $ContainerAppName"
+Write-Host " - Laws collector ACA job ($containerAppDisposition): $ContainerAppName"
 
 Write-WorkflowSummary -Lines @(
     "## ACA deployment summary",
@@ -157,5 +167,5 @@ Write-WorkflowSummary -Lines @(
     "| Resource | Name | Result | Endpoint |",
     "| --- | --- | --- | --- |",
     "| Managed environment | $ContainerAppEnvironmentName | reused | n/a |",
-    "| Laws collector container app | $ContainerAppName | $containerAppDisposition | internal ingress |"
+    "| Laws collector ACA job | $ContainerAppName | $containerAppDisposition | schedule-driven |"
 )

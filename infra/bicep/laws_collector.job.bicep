@@ -9,6 +9,8 @@ param postgresDatabaseName string = 'laws_sk'
 param postgresAdminUsername string
 @secure()
 param postgresAdminPassword string
+param systemEmbeddingModelOption string = 'cloud'
+param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
 param cronExpression string = '0 0 * * * *'
 param replicaTimeout int = 3600
 param replicaRetryLimit int = 1
@@ -108,6 +110,14 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'LAWS_WORKER_MAX_CYCLES'
               value: '1'
+            }
+            {
+              name: 'SYSTEM_EMBEDDING_MODEL_OPTION'
+              value: systemEmbeddingModelOption
+            }
+            {
+              name: 'SYSTEM_EMBEDDING_MODEL'
+              value: systemEmbeddingModel
             }
           ]
         }

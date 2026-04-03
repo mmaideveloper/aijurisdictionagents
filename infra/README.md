@@ -270,6 +270,8 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_STORAGE_ACCOUNT_NAME` = `<STORAGE_ACCOUNT_NAME>` (optional; auto-derived if omitted)
 - `AZURE_STORAGE_CONTAINER_NAME` = `<STORAGE_CONTAINER_NAME>` (optional; defaults to `case-documents`)
 - `LLM_PROVIDER` = `azurefoundry`
+- `SYSTEM_EMBEDDING_MODEL_OPTION` = `cloud` for deployed Azure environments
+- `SYSTEM_EMBEDDING_MODEL` = `all-MiniLM-L6-v2`
 - `AZURE_OPENAI_ENDPOINT` = `https://<resource>.openai.azure.com/`
 - `AZURE_OPENAI_DEPLOYMENT` = `<chat_deployment_name>`
 - `AZURE_OPENAI_EMBEDDINGS_MODEL` = `text-embedding-3-large` (or your embedding deployment name)
@@ -432,14 +434,14 @@ Required GitHub Environment variables for frontend deployment:
 For a repo-level checklist to create additional GitHub Environments such as `test`
 and `prod`, see `docs/GITHUB_ENVIRONMENTS.md`.
 
-## Deploy laws collector Container App
+## Deploy laws collector ACA job
 
 A dedicated deployment script and Bicep template are available for the laws collector worker:
 
 - Script: `infra/scripts/deploy_laws_collector.ps1`
-- Template: `infra/bicep/laws_collector.containerapp.bicep`
+- Template: `infra/bicep/laws_collector.job.bicep`
 
-The deployment creates/updates a private Container App named `laws-collector` (by default), assigns ACR pull identity, and configures runtime environment variables for PostgreSQL-backed ingestion.
+The deployment creates/updates a scheduled ACA Job named `laws-collector` (by default), assigns ACR pull identity, and configures runtime environment variables for PostgreSQL-backed ingestion.
 
 Run from repository root:
 
@@ -458,7 +460,7 @@ Run from repository root:
   -ImageTag "latest"
 ```
 
-The script builds the laws collector image in ACR using `src/services/laws_collector/Dockerfile` and deploys the Container App with the image tag you provide.
+The script builds the laws collector image in ACR using `src/services/laws_collector/Dockerfile` and deploys the ACA Job with the image tag you provide.
 
 GitHub Actions workflow:
 
@@ -471,12 +473,14 @@ Required GitHub Environment variables/secrets for deployment:
 
 - Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`
 - Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`
-- Optional variables: `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
+- Optional variables: `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, `SYSTEM_EMBEDDING_MODEL_OPTION`, `SYSTEM_EMBEDDING_MODEL`
 
 Recommended GitHub Environment values:
 
 - `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME=laws-collector`
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
+- `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
+- `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 
 
 ## Deploy document processor ACA job
@@ -521,6 +525,7 @@ GitHub Actions workflow:
 Required GitHub Environment variables/secrets for deployment:
 
 - Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_DATABASE_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`, `AZURE_STORAGE_ACCOUNT_NAME`, `LLM_PROVIDER`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`
+- Variables: `SYSTEM_EMBEDDING_MODEL_OPTION`, `SYSTEM_EMBEDDING_MODEL`
 - Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`, `AZURE_OPENAI_API_KEY`
 - Optional variables: `AZURE_STORAGE_CONTAINER_NAME`, `AZURE_DOCUMENT_PROCESSOR_LOCATION`, `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION`
 
@@ -528,3 +533,5 @@ Recommended GitHub Environment values:
 
 - `AZURE_DOCUMENT_PROCESSOR_LOCATION=westeurope` unless your shared ACA environment is in a different region
 - `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION=0 */15 * * * *` unless you need a different schedule
+- `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
+- `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`

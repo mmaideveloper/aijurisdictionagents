@@ -8,6 +8,7 @@ import unicodedata
 from fastapi.testclient import TestClient
 
 from app.main import app
+import aijurisdictionagents.llm.embeddings as embedding_module
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from services.document_processor.service import DocumentProcessor
 from services.document_processor.worker import run_document_processor
@@ -86,6 +87,19 @@ class RecordingLLMClient:
             f"Summary: {snippet}. "
             "Cerpal som zo zakona c. 67/2000 Z.z. o najme bytov."
         )
+
+
+class LocalSemanticEmbeddingBackend:
+    def encode_texts(self, texts: list[str]) -> list[list[float]]:
+        return [self._vector_for(text) for text in texts]
+
+    def _vector_for(self, text: str) -> list[float]:
+        normalized = _normalize_text(text)
+        if "termination" in normalized or "notice" in normalized or "lease" in normalized:
+            return [1.0, 0.0, 0.0]
+        if "deposit" in normalized or "refund" in normalized:
+            return [0.0, 1.0, 0.0]
+        return [0.0, 0.0, 1.0]
 
 
 def test_case_document_upload_limit_and_processing_context(monkeypatch, tmp_path) -> None:
@@ -408,3 +422,72 @@ def test_uploaded_pdf_is_stored_vectorized_and_used_for_vector_prompt_context(
     assert llm_documents
     assert any("#chunk-" in document.path for document in llm_documents)
     assert any("67/2000" in _normalize_text(document.content) for document in llm_documents)
+
+
+def test_local_embedding_mode_vectorizes_documents_and_supports_semantic_chunk_search(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "local")
+    monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL_OPTION", "local")
+    monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+
+    from app.chat import api as chat_api
+
+    monkeypatch.setattr(embedding_module, "_default_local_embedding_root", lambda: tmp_path / "aimodels")
+    monkeypatch.setattr(
+        embedding_module,
+        "_load_local_embedding_backend",
+        lambda _config: LocalSemanticEmbeddingBackend(),
+    )
+    monkeypatch.setattr(chat_api, "lexical_overlap_score", lambda _query, _text: 0)
+
+    client = TestClient(app)
+    user_id = _create_user(client, "+421900222116", "docs-local-model@example.com")
+    case_id = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Local semantic retrieval"},
+    ).json()["case_id"]
+
+    upload = client.post(
+        f"/v1/cases/{case_id}/documents?user_id={user_id}",
+        headers=_headers(),
+        files=[
+            (
+                "files",
+                (
+                    "lease.txt",
+                    (
+                        "General background.\n\n"
+                        "Lease termination notice must be delivered 30 days before the move-out date.\n\n"
+                        "Deposit refund follows after final inspection."
+                    ).encode("utf-8"),
+                    "text/plain",
+                ),
+            )
+        ],
+    )
+    assert upload.status_code == 201
+    assert upload.json()["uploaded"][0]["processing_status"] == "processed"
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    contents = store.list_case_document_contents(case_id=case_id)
+    assert len(contents) == 1
+    chunks = store.list_case_document_chunks(case_id=case_id)
+    assert chunks
+    assert all(chunk.embedding_model == "all-MiniLM-L6-v2" for chunk in chunks)
+    assert all(len(json.loads(chunk.embedding_vector)) == 3 for chunk in chunks)
+
+    debug_response = client.get(
+        f"/v1/cases/{case_id}/documents/debug",
+        headers=_headers(),
+        params={"user_id": user_id, "query": "How much notice is required to terminate the lease?"},
+    )
+    assert debug_response.status_code == 200
+    payload = debug_response.json()
+    assert payload["selected_prompt_chunks"]
+    assert payload["stored_documents"][0]["embedding_model"] == "all-MiniLM-L6-v2"
+    assert "30 days before the move-out date" in payload["prompt_preview"]

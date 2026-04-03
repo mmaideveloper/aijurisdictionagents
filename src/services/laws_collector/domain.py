@@ -156,6 +156,38 @@ class StoredVersion:
 
 
 @dataclass(frozen=True)
+class LawSemanticCandidate:
+    document_id: str
+    version_id: str
+    country_code: str
+    collection_code: str
+    law_year: int
+    law_number: int
+    official_name: str
+    lawyer_title: str
+    version_token: str
+    effective_from: str
+    embedding_model: str
+    embedding_dimensions: int
+    embedding_vector: str
+
+
+@dataclass(frozen=True)
+class LawSemanticSearchResult:
+    document_id: str
+    version_id: str
+    country_code: str
+    collection_code: str
+    law_year: int
+    law_number: int
+    official_name: str
+    lawyer_title: str
+    version_token: str
+    effective_from: str
+    score: float
+
+
+@dataclass(frozen=True)
 class SyncSummary:
     processed: int = 0
     new_documents: int = 0

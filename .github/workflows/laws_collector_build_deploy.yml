@@ -8,7 +8,7 @@ on:
       - "tests/test_laws_collector.py"
       - "pyproject.toml"
       - "infra/scripts/deploy_laws_collector.ps1"
-      - "infra/bicep/laws_collector.containerapp.bicep"
+      - "infra/bicep/laws_collector.job.bicep"
       - ".github/workflows/laws_collector_build_deploy.yml"
   pull_request:
     paths:
@@ -16,12 +16,12 @@ on:
       - "tests/test_laws_collector.py"
       - "pyproject.toml"
       - "infra/scripts/deploy_laws_collector.ps1"
-      - "infra/bicep/laws_collector.containerapp.bicep"
+      - "infra/bicep/laws_collector.job.bicep"
       - ".github/workflows/laws_collector_build_deploy.yml"
   workflow_dispatch:
     inputs:
       deploy:
-        description: "Deploy the laws collector Container App"
+        description: "Deploy the laws collector ACA job"
         required: false
         type: boolean
         default: true
@@ -77,6 +77,8 @@ jobs:
       AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
       AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME: ${{ vars.AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME }}
       AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
+      SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'cloud' }}
+      SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -175,4 +177,6 @@ jobs:
             -PostgresDatabaseName $postgresDatabaseName `
             -PostgresAdminUsername $env:AZURE_POSTGRES_ADMIN_USERNAME `
             -PostgresAdminPassword $env:AZURE_POSTGRES_ADMIN_PASSWORD `
+            -SystemEmbeddingModelOption $env:SYSTEM_EMBEDDING_MODEL_OPTION `
+            -SystemEmbeddingModel $env:SYSTEM_EMBEDDING_MODEL `
             -ImageTag $imageTag

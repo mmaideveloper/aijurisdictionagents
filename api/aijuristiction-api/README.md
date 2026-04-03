@@ -52,6 +52,13 @@ Required env vars for default Azure Foundry provider:
 - `AZURE_OPENAI_EMBEDDINGS_MODEL` (embedding deployment name, recommended: `text-embedding-3-large`)
 - one of: `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`
 
+Shared embedding selection:
+
+- `SYSTEM_EMBEDDING_MODEL_OPTION=local|cloud`
+- `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2` for the local sentence-transformer path
+- local model files are cached under the repo `aimodels/` directory
+- deployed Azure environments should keep `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
+
 Optional env vars for the OpenAI provider:
 
 - `OPENAI_KEY`
@@ -97,6 +104,12 @@ Minimal runnable example:
 
 ```bash
 python examples/document_task_plan_demo.py
+```
+
+Local embedding similarity demo:
+
+```bash
+python examples/local_embedding_semantic_search_demo.py
 ```
 
 When using API key auth, leave `AZURE_OPENAI_AD_TOKEN` unset instead of setting it to an empty string. Likewise, leave `AZURE_OPENAI_API_KEY` unset when using Entra ID auth. The shared Azure Foundry loader strips blank auth values, but direct SDK smoke scripts can fail with an invalid `Authorization: Bearer ` header when an empty token variable is present.

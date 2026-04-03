@@ -91,6 +91,8 @@ jobs:
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
       CORS_ALLOW_ORIGINS: ${{ vars.CORS_ALLOW_ORIGINS }}
       DOCUMENT_PROCESSOR_OPTION: ${{ vars.DOCUMENT_PROCESSOR_OPTION }}
+      SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'cloud' }}
+      SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -308,6 +310,8 @@ jobs:
             STORE_LOCAL=/tmp/storage
             LLM_PROVIDER=${LLM_PROVIDER:-azurefoundry}
             DOCUMENT_PROCESSOR_OPTION=${DOCUMENT_PROCESSOR_OPTION:-azure}
+            SYSTEM_EMBEDDING_MODEL_OPTION=${SYSTEM_EMBEDDING_MODEL_OPTION:-cloud}
+            SYSTEM_EMBEDDING_MODEL=${SYSTEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}
             OTEL_SERVICE_NAME=aijuristiction-api
           )
           if [ -n "${AZURE_OPENAI_ENDPOINT:-}" ]; then

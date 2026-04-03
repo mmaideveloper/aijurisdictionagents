@@ -7,10 +7,17 @@ from time import perf_counter
 from typing import Protocol
 
 from aijurisdictionagents.llm.embeddings import EmbeddingClient, get_embedding_client
-from services.document_processor.runtime import chunk_document_text, serialize_embedding_vector
+from services.document_processor.runtime import (
+    chunk_document_text,
+    cosine_similarity,
+    parse_embedding_vector,
+    serialize_embedding_vector,
+)
 
 from .config import LawsCollectorConfig
 from .domain import (
+    LawSemanticCandidate,
+    LawSemanticSearchResult,
     LawMetadataRecord,
     LawRelationRecord,
     LawSnapshot,
@@ -85,6 +92,8 @@ class LawStore(Protocol):
         event_status: str,
         payload: dict[str, object],
     ) -> None: ...
+
+    def list_semantic_candidates(self) -> list[LawSemanticCandidate]: ...
 
 
 class LawsCollectorService:
@@ -261,6 +270,45 @@ class LawsCollectorService:
             items_with_updates=updates,
             items=tuple(results),
         )
+
+    def search_semantic(self, query: str, *, limit: int = 5) -> list[LawSemanticSearchResult]:
+        normalized_query = query.strip()
+        if not normalized_query or limit < 1:
+            return []
+
+        query_batch = self.embedding_client.embed_texts([normalized_query])
+        query_vector = query_batch.vectors[0]
+        query_model_name = query_batch.model_name
+        query_dimensions = len(query_vector)
+
+        results: list[LawSemanticSearchResult] = []
+        for candidate in self.store.list_semantic_candidates():
+            if (
+                candidate.embedding_model != query_model_name
+                or candidate.embedding_dimensions != query_dimensions
+            ):
+                continue
+            score = cosine_similarity(
+                query_vector,
+                parse_embedding_vector(candidate.embedding_vector),
+            )
+            results.append(
+                LawSemanticSearchResult(
+                    document_id=candidate.document_id,
+                    version_id=candidate.version_id,
+                    country_code=candidate.country_code,
+                    collection_code=candidate.collection_code,
+                    law_year=candidate.law_year,
+                    law_number=candidate.law_number,
+                    official_name=candidate.official_name,
+                    lawyer_title=candidate.lawyer_title,
+                    version_token=candidate.version_token,
+                    effective_from=candidate.effective_from,
+                    score=score,
+                )
+            )
+
+        return sorted(results, key=lambda item: item.score, reverse=True)[:limit]
 
 
 def _event_type(*, document_created: bool, version_state: str) -> str:

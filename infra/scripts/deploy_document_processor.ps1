@@ -14,6 +14,8 @@ param(
     [string]$StorageAccountName,
     [string]$StorageContainerName = "documents",
     [string]$LlmProvider,
+    [string]$SystemEmbeddingModelOption = "cloud",
+    [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
     [string]$AzureOpenAIEndpoint,
     [string]$AzureOpenAIEmbeddingsModel = "text-embedding-3-large",
     [string]$AzureOpenAIApiVersion = "2024-12-01-preview",
@@ -104,6 +106,8 @@ $envPgPass = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFile
 $envStorage = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_STORAGE_ACCOUNT_NAME" }
 $envStorageContainer = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_STORAGE_CONTAINER_NAME" }
 $envLlmProvider = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "LLM_PROVIDER" }
+$envSystemEmbeddingModelOption = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL_OPTION" }
+$envSystemEmbeddingModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL" }
 $envAzureOpenAIEndpoint = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_OPENAI_ENDPOINT" }
 $envAzureOpenAIEmbeddingsModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_OPENAI_EMBEDDINGS_MODEL" }
 $envAzureOpenAIApiVersion = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_OPENAI_API_VERSION" }
@@ -128,6 +132,8 @@ $PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPasswor
 $StorageAccountName = Resolve-InputValue -ExplicitValue $StorageAccountName -EnvFileValue $envStorage -EnvironmentValue $env:AZURE_STORAGE_ACCOUNT_NAME
 $StorageContainerName = Resolve-InputValue -ExplicitValue $StorageContainerName -EnvFileValue $envStorageContainer -EnvironmentValue $env:AZURE_STORAGE_CONTAINER_NAME
 $LlmProvider = Resolve-InputValue -ExplicitValue $LlmProvider -EnvFileValue $envLlmProvider -EnvironmentValue $env:LLM_PROVIDER
+$SystemEmbeddingModelOption = Resolve-InputValue -ExplicitValue $SystemEmbeddingModelOption -EnvFileValue $envSystemEmbeddingModelOption -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL_OPTION
+$SystemEmbeddingModel = Resolve-InputValue -ExplicitValue $SystemEmbeddingModel -EnvFileValue $envSystemEmbeddingModel -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL
 $AzureOpenAIEndpoint = Resolve-InputValue -ExplicitValue $AzureOpenAIEndpoint -EnvFileValue $envAzureOpenAIEndpoint -EnvironmentValue $env:AZURE_OPENAI_ENDPOINT
 $AzureOpenAIEmbeddingsModel = Resolve-InputValue -ExplicitValue $AzureOpenAIEmbeddingsModel -EnvFileValue $envAzureOpenAIEmbeddingsModel -EnvironmentValue $env:AZURE_OPENAI_EMBEDDINGS_MODEL
 $AzureOpenAIApiVersion = Resolve-InputValue -ExplicitValue $AzureOpenAIApiVersion -EnvFileValue $envAzureOpenAIApiVersion -EnvironmentValue $env:AZURE_OPENAI_API_VERSION
@@ -135,6 +141,12 @@ $AzureOpenAIApiKey = Resolve-InputValue -ExplicitValue $AzureOpenAIApiKey -EnvFi
 
 if ([string]::IsNullOrWhiteSpace($LlmProvider)) {
     $LlmProvider = "azurefoundry"
+}
+if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) {
+    $SystemEmbeddingModelOption = "cloud"
+}
+if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) {
+    $SystemEmbeddingModel = "all-MiniLM-L6-v2"
 }
 if ([string]::IsNullOrWhiteSpace($AzureOpenAIEmbeddingsModel)) {
     $AzureOpenAIEmbeddingsModel = "text-embedding-3-large"
@@ -190,6 +202,8 @@ az deployment group create `
       storageAccountName=$StorageAccountName `
       storageContainerName=$StorageContainerName `
       llmProvider=$LlmProvider `
+      systemEmbeddingModelOption=$SystemEmbeddingModelOption `
+      systemEmbeddingModel=$SystemEmbeddingModel `
       azureOpenAIEndpoint=$AzureOpenAIEndpoint `
       azureOpenAIEmbeddingsModel=$AzureOpenAIEmbeddingsModel `
       azureOpenAIApiVersion=$AzureOpenAIApiVersion `
