@@ -492,6 +492,7 @@ A dedicated deployment script and Bicep template are available for the document 
 - Template: `infra/bicep/document_processor.job.bicep`
 
 The deployment builds `src/services/document_processor/Dockerfile`, publishes the image to ACR, and creates or updates a scheduled Azure Container Apps Job that processes uploaded case documents into text/vector records.
+The deploy script passes the resolved `AZURE_DOCUMENT_PROCESSOR_LOCATION` or `AZURE_LOCATION` into the ACA Job Bicep deployment, so the requested job region no longer falls back to the resource group location.
 
 Use `DOCUMENT_PROCESSOR_OPTION=azure` on the deployed API Container App together with this ACA job.
 For local development only, you can set `DOCUMENT_PROCESSOR_OPTION=local` so uploads are processed immediately inside the API process.

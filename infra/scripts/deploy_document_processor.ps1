@@ -86,7 +86,8 @@ function Test-ResourceExistsInGroup {
 function Write-WorkflowSummary {
     param([Parameter(Mandatory = $true)][string[]]$Lines)
     if ([string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) { return }
-    (($Lines -join [Environment]::NewLine) + [Environment]::NewLine + [Environment]::NewLine) |
+    $nonEmptyLines = @($Lines | Where-Object { $_ -ne $null })
+    (($nonEmptyLines -join [Environment]::NewLine) + [Environment]::NewLine + [Environment]::NewLine) |
         Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 }
 
@@ -182,7 +183,17 @@ $imageRepository = "document-processor"
 $image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
 
 Write-Host "Building document processor image in ACR: $image"
-az acr build --registry $AcrName --image "$imageRepository`:$ImageTag" --file "src/services/document_processor/Dockerfile" .
+az acr build `
+  --registry $AcrName `
+  --image "$imageRepository`:$ImageTag" `
+  --file "src/services/document_processor/Dockerfile" `
+  . `
+  --no-logs `
+  --only-show-errors `
+  --output none
+if ($LASTEXITCODE -ne 0) {
+    throw "ACR build failed for document processor image '$image'."
+}
 
 Write-Host "Deploying document processor ACA job: $JobName"
 Write-Host "Using Azure location: $Location"
@@ -190,6 +201,7 @@ az deployment group create `
   --resource-group $ResourceGroupName `
   --template-file "infra/bicep/document_processor.job.bicep" `
   --parameters `
+      location=$Location `
       managedEnvironmentName=$ContainerAppEnvironmentName `
       jobName=$JobName `
       acrName=$AcrName `
@@ -209,6 +221,9 @@ az deployment group create `
       azureOpenAIApiVersion=$AzureOpenAIApiVersion `
       azureOpenAIApiKey=$AzureOpenAIApiKey `
       cronExpression=$CronExpression | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "Document processor ACA job deployment failed."
+}
 
 $jobDisposition = if ($jobExistedBeforeDeployment) { "updated" } else { "created" }
 
@@ -219,7 +234,6 @@ Write-Host " - Document processor ACA job ($jobDisposition): $JobName"
 
 Write-WorkflowSummary -Lines @(
     "## ACA deployment summary",
-    "",
     "| Resource | Name | Result | Endpoint |",
     "| --- | --- | --- | --- |",
     "| Managed environment | $ContainerAppEnvironmentName | reused | n/a |",
