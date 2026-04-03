@@ -55,7 +55,7 @@ jobs:
       AZURE_DOCUMENT_PROCESSOR_JOB_NAME: ${{ vars.AZURE_DOCUMENT_PROCESSOR_JOB_NAME }}
       AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION: ${{ vars.AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION }}
       LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
-      SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'cloud' }}
+      SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'local' }}
       SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
       AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       AZURE_OPENAI_EMBEDDINGS_MODEL: ${{ vars.AZURE_OPENAI_EMBEDDINGS_MODEL }}
@@ -220,7 +220,7 @@ jobs:
           document_processor_job="${AZURE_DOCUMENT_PROCESSOR_JOB_NAME:-document-processor}"
           document_processor_cron="$(normalize_aca_cron "${AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION:-}" "*/15 * * * *")"
           llm_provider="${LLM_PROVIDER:-azurefoundry}"
-          system_embedding_model_option="${SYSTEM_EMBEDDING_MODEL_OPTION:-cloud}"
+          system_embedding_model_option="${SYSTEM_EMBEDDING_MODEL_OPTION:-local}"
           system_embedding_model="${SYSTEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}"
           azure_openai_embeddings_model="${AZURE_OPENAI_EMBEDDINGS_MODEL:-text-embedding-3-large}"
           azure_openai_api_version="${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}"
@@ -298,6 +298,26 @@ jobs:
 
       - name: Deploy infrastructure from Bicep
         run: |
+          postgres_connection_string="$(python - <<'PY'
+          import os
+          from urllib.parse import quote
+          user = quote(os.environ["AZURE_POSTGRES_ADMIN_USERNAME"], safe="")
+          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
+          server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
+          database = os.environ["AZURE_POSTGRES_DATABASE_NAME"]
+          print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
+          PY
+          )"
+          laws_postgres_connection_string="$(python - <<'PY'
+          import os
+          from urllib.parse import quote
+          user = quote(os.environ["AZURE_POSTGRES_ADMIN_USERNAME"], safe="")
+          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
+          server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
+          database = os.environ.get("AZURE_LAWS_POSTGRES_DATABASE_NAME_SK") or "laws_sk"
+          print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
+          PY
+          )"
           az deployment group create \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "infra-${{ github.run_id }}-${{ github.run_attempt }}" \
@@ -317,6 +337,8 @@ jobs:
               lawsPostgresDatabaseName="${{ steps.laws.outputs.laws_postgres_database_name }}" \
               postgresAdminUsername="$AZURE_POSTGRES_ADMIN_USERNAME" \
               postgresAdminPassword="$AZURE_POSTGRES_ADMIN_PASSWORD" \
+              postgresConnectionString="$postgres_connection_string" \
+              lawsPostgresConnectionString="$laws_postgres_connection_string" \
               postgresSkuName="${AZURE_POSTGRES_SKU_NAME:-Standard_B1ms}" \
               postgresSkuTier="${AZURE_POSTGRES_SKU_TIER:-Burstable}" \
               postgresVersion="${AZURE_POSTGRES_VERSION:-16}" \

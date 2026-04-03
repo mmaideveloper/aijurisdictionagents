@@ -9,7 +9,9 @@ param postgresDatabaseName string = 'laws_sk'
 param postgresAdminUsername string
 @secure()
 param postgresAdminPassword string
-param systemEmbeddingModelOption string = 'cloud'
+@secure()
+param postgresConnectionString string = ''
+param systemEmbeddingModelOption string = 'local'
 param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
 param cronExpression string = '0 0 * * *'
 param workerMaxProbes int = 1
@@ -78,7 +80,9 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
       secrets: [
         {
           name: 'laws-db-cloud'
-          value: 'postgresql://${postgresAdminUsername}:${postgresAdminPassword}@${postgresServer.name}.postgres.database.azure.com:5432/${postgresDatabaseName}?sslmode=require'
+          value: empty(postgresConnectionString)
+            ? 'postgresql://${postgresAdminUsername}:${postgresAdminPassword}@${postgresServer.name}.postgres.database.azure.com:5432/${postgresDatabaseName}?sslmode=require'
+            : postgresConnectionString
         }
       ]
     }

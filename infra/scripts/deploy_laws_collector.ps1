@@ -11,7 +11,7 @@ param(
     [string]$PostgresDatabaseName = "laws_sk",
     [string]$PostgresAdminUsername,
     [string]$PostgresAdminPassword,
-    [string]$SystemEmbeddingModelOption = "cloud",
+    [string]$SystemEmbeddingModelOption = "local",
     [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
     [string]$CronExpression = "0 0 * * *",
     [string]$WorkerMaxProbes = "",
@@ -214,7 +214,7 @@ Require-Value -Name "PostgresServerName" -Value $PostgresServerName
 Require-Value -Name "PostgresDatabaseName" -Value $PostgresDatabaseName
 Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
 Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
-if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddingModelOption = "cloud" }
+if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddingModelOption = "local" }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel = "all-MiniLM-L6-v2" }
 $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "0 0 * * *"
 $WorkerMaxProbes = Resolve-PositiveInteger -Name "WorkerMaxProbes" -Value $WorkerMaxProbes -DefaultValue 1
@@ -286,6 +286,7 @@ az deployment group create `
       postgresDatabaseName=$PostgresDatabaseName `
       postgresAdminUsername=$PostgresAdminUsername `
       postgresAdminPassword=$PostgresAdminPassword `
+      postgresConnectionString=$dbCloud `
       systemEmbeddingModelOption=$SystemEmbeddingModelOption `
       systemEmbeddingModel=$SystemEmbeddingModel `
       cronExpression=$CronExpression `

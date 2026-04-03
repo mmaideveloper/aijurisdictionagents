@@ -270,14 +270,14 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 - `AZURE_STORAGE_ACCOUNT_NAME` = `<STORAGE_ACCOUNT_NAME>` (optional; auto-derived if omitted)
 - `AZURE_STORAGE_CONTAINER_NAME` = `<STORAGE_CONTAINER_NAME>` (optional; defaults to `case-documents`)
 - `LLM_PROVIDER` = `azurefoundry`
-- `SYSTEM_EMBEDDING_MODEL_OPTION` = `cloud` for deployed Azure environments
+- `SYSTEM_EMBEDDING_MODEL_OPTION` = `local` by default for deployed worker environments
 - `SYSTEM_EMBEDDING_MODEL` = `all-MiniLM-L6-v2`
 - `AZURE_OPENAI_ENDPOINT` = `https://<resource>.openai.azure.com/`
 - `AZURE_OPENAI_DEPLOYMENT` = `<chat_deployment_name>`
 - `AZURE_OPENAI_EMBEDDINGS_MODEL` = `text-embedding-3-large` (or your embedding deployment name)
 - `AZURE_OPENAI_API_VERSION` = `2024-12-01-preview`
 - GitHub secret `AZURE_OPENAI_API_KEY` = `<AZURE_OPENAI_KEY>`
-- `DOCUMENT_PROCESSOR_OPTION` = `azure` for deployed environments so the API leaves uploads pending for the ACA document-processor job
+- `DOCUMENT_PROCESSOR_OPTION` = `azure` for deployed environments so the API leaves uploads pending for the ACA document-processor job. The Azure API deploy paths now force this value instead of inheriting `local` from workstation `.env` files.
 - `CORS_ALLOW_ORIGINS` = comma-separated deployed browser origins allowed to call the API (optional)
   - Example: `https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io`
   - Do not set this for native Android/iOS-only clients unless you also have a browser-hosted build.
@@ -484,7 +484,7 @@ Recommended GitHub Environment values:
 - `AZURE_LAWS_COLLECTOR_CRON_EXPRESSION=0 0 * * *`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES=1`
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
-- `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
+- `SYSTEM_EMBEDDING_MODEL_OPTION=local` by default, or `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` if you want Azure/OpenAI embeddings
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 
 Azure Container Apps Jobs use 5-field cron expressions. The deploy paths also accept legacy 6-field values with a leading `0` seconds field and normalize them automatically.
@@ -547,7 +547,9 @@ Recommended GitHub Environment values:
 
 - `AZURE_DOCUMENT_PROCESSOR_LOCATION=westeurope` unless your shared ACA environment is in a different region
 - `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION=*/15 * * * *` unless you need a different schedule
-- `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
+- `SYSTEM_EMBEDDING_MODEL_OPTION=local` by default, or `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` if you want Azure/OpenAI embeddings
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
+
+For the document processor Azure job, `SYSTEM_EMBEDDING_MODEL_OPTION=local` is supported directly from GitHub Environment variables. In that mode the deployment no longer requires Azure OpenAI embedding settings for the worker, and the container downloads/caches the local sentence-transformer model under `/app/aimodels`.
 
 Azure Container Apps Jobs use 5-field cron expressions. The deploy paths also accept legacy 6-field values with a leading `0` seconds field and normalize them automatically.

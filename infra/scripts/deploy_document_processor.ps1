@@ -14,7 +14,7 @@ param(
     [string]$StorageAccountName,
     [string]$StorageContainerName = "documents",
     [string]$LlmProvider,
-    [string]$SystemEmbeddingModelOption = "cloud",
+    [string]$SystemEmbeddingModelOption = "local",
     [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
     [string]$AzureOpenAIEndpoint,
     [string]$AzureOpenAIEmbeddingsModel = "text-embedding-3-large",
@@ -61,6 +61,28 @@ function Require-Value {
     if ([string]::IsNullOrWhiteSpace($Value)) {
         throw "$Name is required. Pass parameter, set in .env, or export env var."
     }
+}
+
+function Convert-ToPostgresConnectionString {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$HostName,
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+        [Parameter(Mandatory = $true)]
+        [string]$AdminUsername,
+        [Parameter(Mandatory = $true)]
+        [string]$AdminPassword
+    )
+
+    $normalizedHostName = $HostName.Trim().ToLowerInvariant()
+    if (-not $normalizedHostName.EndsWith(".postgres.database.azure.com")) {
+        $normalizedHostName = "${normalizedHostName}.postgres.database.azure.com"
+    }
+
+    $encodedUser = [System.Uri]::EscapeDataString($AdminUsername)
+    $encodedPassword = [System.Uri]::EscapeDataString($AdminPassword)
+    return "postgresql://${encodedUser}:${encodedPassword}@${normalizedHostName}:5432/${DatabaseName}?sslmode=require"
 }
 
 function Resolve-AcaCronExpression {
@@ -174,7 +196,7 @@ if ([string]::IsNullOrWhiteSpace($LlmProvider)) {
     $LlmProvider = "azurefoundry"
 }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) {
-    $SystemEmbeddingModelOption = "cloud"
+    $SystemEmbeddingModelOption = "local"
 }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) {
     $SystemEmbeddingModel = "all-MiniLM-L6-v2"
@@ -199,8 +221,10 @@ Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
 Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
 Require-Value -Name "StorageAccountName" -Value $StorageAccountName
 Require-Value -Name "StorageContainerName" -Value $StorageContainerName
-Require-Value -Name "AzureOpenAIEndpoint" -Value $AzureOpenAIEndpoint
-Require-Value -Name "AzureOpenAIApiKey" -Value $AzureOpenAIApiKey
+if ($SystemEmbeddingModelOption -ne "local") {
+    Require-Value -Name "AzureOpenAIEndpoint" -Value $AzureOpenAIEndpoint
+    Require-Value -Name "AzureOpenAIApiKey" -Value $AzureOpenAIApiKey
+}
 
 az account set --subscription $SubscriptionId | Out-Null
 $resourceGroupExists = az group exists --name $ResourceGroupName --output tsv
@@ -219,6 +243,11 @@ $jobExistedBeforeDeployment = Test-ResourceExistsInGroup `
 
 $imageRepository = "document-processor"
 $image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
+$dbCloud = Convert-ToPostgresConnectionString `
+    -HostName $PostgresServerName `
+    -DatabaseName $PostgresDatabaseName `
+    -AdminUsername $PostgresAdminUsername `
+    -AdminPassword $PostgresAdminPassword
 
 Write-Host "Building document processor image in ACR: $image"
 az acr build `
@@ -249,6 +278,7 @@ az deployment group create `
       postgresDatabaseName=$PostgresDatabaseName `
       postgresAdminUsername=$PostgresAdminUsername `
       postgresAdminPassword=$PostgresAdminPassword `
+      postgresConnectionString=$dbCloud `
       storageAccountName=$StorageAccountName `
       storageContainerName=$StorageContainerName `
       llmProvider=$LlmProvider `

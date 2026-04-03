@@ -237,7 +237,7 @@ The shared embedding switch now supports:
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default runtime mode
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2` as the default local sentence-transformer model
 - repo-local model caching under `aimodels/`
-- `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` for Azure deployments that should keep the existing OpenAI/Azure embedding flow
+- `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default for Azure worker deployments
 The same live HTML source now also persists structured metadata from the `Informácie o predpise` panel into `law_metadata` and stores dependency edges from the `Vzťahy predpisu` panel in `law_metadata_relations`. That includes:
 
 - law identifier, title, type, approval/publication/effective dates, author, issue reference, legal areas
@@ -311,6 +311,10 @@ For PostgreSQL naming, keep the database mapping country-specific:
 
 The current Azure deployment keeps the Slovak override variable `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, which feeds the PostgreSQL database used by the Slovak run. It still defaults to `laws_sk`, but you can override it, for example to `laws_collector_sk`.
 The laws collector deployment now applies the SQL migrations under `databases/laws-collector/migrations` to that database before updating the Azure Container Apps job.
+Azure deployments default the worker embeddings to the local sentence-transformer path through GitHub Environment variables:
+
+- `SYSTEM_EMBEDDING_MODEL_OPTION=local`
+- `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 
 Future cloud settings:
 

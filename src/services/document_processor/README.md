@@ -21,7 +21,11 @@ Embedding model env vars:
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`: Azure OpenAI embedding deployment name. Recommended for Jurisdicta: `text-embedding-3-large`.
 - `OPENAI_EMBEDDINGS_MODEL`: OpenAI embedding model name. Recommended default: `text-embedding-3-large`.
 - Local tests and the minimal demo use `LLM_PROVIDER=mock`, which keeps embeddings deterministic and offline.
-- Deployed Azure jobs should set `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` so they keep the current cloud embedding behavior.
+- Deployed Azure jobs default to:
+- `SYSTEM_EMBEDDING_MODEL_OPTION=local`
+- `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
+- You can still set `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` explicitly to keep Azure/OpenAI embeddings
+- When the Azure job runs in `local` mode, the worker no longer requires Azure OpenAI embedding settings.
 
 ## Run locally
 

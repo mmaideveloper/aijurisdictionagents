@@ -9,16 +9,18 @@ param postgresDatabaseName string = 'api'
 param postgresAdminUsername string
 @secure()
 param postgresAdminPassword string
+@secure()
+param postgresConnectionString string = ''
 param storageAccountName string
 param storageContainerName string = 'documents'
 param llmProvider string = 'azurefoundry'
-param systemEmbeddingModelOption string = 'cloud'
+param systemEmbeddingModelOption string = 'local'
 param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
-param azureOpenAIEndpoint string
+param azureOpenAIEndpoint string = ''
 param azureOpenAIEmbeddingsModel string = 'text-embedding-3-large'
 param azureOpenAIApiVersion string = '2024-12-01-preview'
 @secure()
-param azureOpenAIApiKey string
+param azureOpenAIApiKey string = ''
 param triggerType string = 'Schedule'
 param cronExpression string = '*/15 * * * *'
 param replicaTimeout int = 1800
@@ -46,6 +48,86 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing 
 resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' existing = {
   name: postgresServerName
 }
+
+var documentProcessorSecrets = concat(
+  [
+    {
+      name: 'processor-db-cloud'
+      value: empty(postgresConnectionString)
+        ? 'postgresql://${postgresAdminUsername}:${postgresAdminPassword}@${postgresServer.name}.postgres.database.azure.com:5432/${postgresDatabaseName}?sslmode=require'
+        : postgresConnectionString
+    }
+  ],
+  systemEmbeddingModelOption == 'cloud' && !empty(azureOpenAIApiKey)
+    ? [
+        {
+          name: 'azure-openai-api-key'
+          value: azureOpenAIApiKey
+        }
+      ]
+    : []
+)
+
+var documentProcessorEnv = concat(
+  [
+    {
+      name: 'DB_OPTION'
+      value: 'azure'
+    }
+    {
+      name: 'DB_CLOUD'
+      secretRef: 'processor-db-cloud'
+    }
+    {
+      name: 'STORAGE_OPTION'
+      value: 'azure'
+    }
+    {
+      name: 'DOCUMENT_PROCESSOR_OPTION'
+      value: 'azure'
+    }
+    {
+      name: 'LLM_PROVIDER'
+      value: llmProvider
+    }
+    {
+      name: 'SYSTEM_EMBEDDING_MODEL_OPTION'
+      value: systemEmbeddingModelOption
+    }
+    {
+      name: 'SYSTEM_EMBEDDING_MODEL'
+      value: systemEmbeddingModel
+    }
+    {
+      name: 'STORE_CLOUD'
+      value: 'https://${storageAccount.name}.blob.core.windows.net/${storageContainerName}'
+    }
+  ],
+  systemEmbeddingModelOption == 'cloud'
+    ? [
+        {
+          name: 'AZURE_OPENAI_ENDPOINT'
+          value: azureOpenAIEndpoint
+        }
+        {
+          name: 'AZURE_OPENAI_EMBEDDINGS_MODEL'
+          value: azureOpenAIEmbeddingsModel
+        }
+        {
+          name: 'AZURE_OPENAI_API_VERSION'
+          value: azureOpenAIApiVersion
+        }
+      ]
+    : [],
+  systemEmbeddingModelOption == 'cloud' && !empty(azureOpenAIApiKey)
+    ? [
+        {
+          name: 'AZURE_OPENAI_API_KEY'
+          secretRef: 'azure-openai-api-key'
+        }
+      ]
+    : []
+)
 
 resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(acr.id, managedIdentity.id, 'AcrPull')
@@ -94,16 +176,7 @@ resource documentProcessorJob 'Microsoft.App/jobs@2024-03-01' = {
           identity: managedIdentity.id
         }
       ]
-      secrets: [
-        {
-          name: 'processor-db-cloud'
-          value: 'postgresql://${postgresAdminUsername}:${postgresAdminPassword}@${postgresServer.name}.postgres.database.azure.com:5432/${postgresDatabaseName}?sslmode=require'
-        }
-        {
-          name: 'azure-openai-api-key'
-          value: azureOpenAIApiKey
-        }
-      ]
+      secrets: documentProcessorSecrets
     }
     template: {
       containers: [
@@ -114,56 +187,7 @@ resource documentProcessorJob 'Microsoft.App/jobs@2024-03-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
-            {
-              name: 'DB_OPTION'
-              value: 'azure'
-            }
-            {
-              name: 'DB_CLOUD'
-              secretRef: 'processor-db-cloud'
-            }
-            {
-              name: 'STORAGE_OPTION'
-              value: 'azure'
-            }
-            {
-              name: 'DOCUMENT_PROCESSOR_OPTION'
-              value: 'azure'
-            }
-            {
-              name: 'LLM_PROVIDER'
-              value: llmProvider
-            }
-            {
-              name: 'SYSTEM_EMBEDDING_MODEL_OPTION'
-              value: systemEmbeddingModelOption
-            }
-            {
-              name: 'SYSTEM_EMBEDDING_MODEL'
-              value: systemEmbeddingModel
-            }
-            {
-              name: 'AZURE_OPENAI_ENDPOINT'
-              value: azureOpenAIEndpoint
-            }
-            {
-              name: 'AZURE_OPENAI_EMBEDDINGS_MODEL'
-              value: azureOpenAIEmbeddingsModel
-            }
-            {
-              name: 'AZURE_OPENAI_API_VERSION'
-              value: azureOpenAIApiVersion
-            }
-            {
-              name: 'AZURE_OPENAI_API_KEY'
-              secretRef: 'azure-openai-api-key'
-            }
-            {
-              name: 'STORE_CLOUD'
-              value: 'https://${storageAccount.name}.blob.core.windows.net/${storageContainerName}'
-            }
-          ]
+          env: documentProcessorEnv
         }
       ]
     }

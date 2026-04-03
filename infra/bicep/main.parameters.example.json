@@ -51,7 +51,7 @@
       "value": "azurefoundry"
     },
     "systemEmbeddingModelOption": {
-      "value": "cloud"
+      "value": "local"
     },
     "systemEmbeddingModel": {
       "value": "all-MiniLM-L6-v2"

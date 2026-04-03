@@ -391,7 +391,7 @@ Shared embedding runtime:
 - default runtime mode is `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 - default local model is `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 - local model files are cached in `aimodels/`
-- Azure deployments should set `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
+- Azure worker deployments default `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 
 ## Extension Points
 

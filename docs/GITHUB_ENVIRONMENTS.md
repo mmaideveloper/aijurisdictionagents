@@ -98,7 +98,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_FRONTEND_CONTAINER_APP_NAME` | Frontend Azure Container App name provisioned by `infra_deploy` and updated by `web_build_deploy` |
 | `AZURE_APPLICATION_INSIGHTS_NAME` | Application Insights resource name |
 | `LLM_PROVIDER` | Runtime LLM provider, keep `azurefoundry` for deployed Azure environments |
-| `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for API + workers; set `cloud` in deployed Azure environments to preserve Azure/OpenAI embeddings |
+| `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for API + workers; worker deployments now default to `local`, while `cloud` remains available when you want Azure/OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, recommended default `all-MiniLM-L6-v2` |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used by chat and document embeddings |
 | `AZURE_OPENAI_DEPLOYMENT` | Azure OpenAI chat deployment name used by the API |
@@ -116,7 +116,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk` |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `*/15 * * * *` |
-| `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode: use `azure` in deployed environments, `local` only for local/dev API runs without the ACA job |
+| `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode; Azure API deployments default to `azure`, while `local` is only for local/dev API runs without the ACA job |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
 | `AZURE_POSTGRES_VERSION` | Optional PostgreSQL version |
@@ -162,7 +162,7 @@ These are used by the document processor deployment workflow and by `infra_deplo
 | Variable | Purpose |
 | --- | --- |
 | `LLM_PROVIDER` | Runtime provider for the job, keep `azurefoundry` in Azure deployments |
-| `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; use `cloud` in Azure deployments |
+| `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; default `local`, or set `cloud` for Azure OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name; keep default `all-MiniLM-L6-v2` unless you intentionally switch models |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used for embeddings |
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Embedding deployment name used by the job, recommended `text-embedding-3-large` |
@@ -184,7 +184,7 @@ These are used by the laws collector deployment workflow:
 | `AZURE_LAWS_COLLECTOR_CRON_EXPRESSION` | Optional 5-field cron schedule, default `0 0 * * *`; legacy `0 0 * * * *` values are normalized during deployment |
 | `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional live probe count per scheduled job execution, default `1` |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional PostgreSQL database name for the Slovak laws corpus, default `laws_sk`; the laws deployment applies schema migrations to this database before updating the ACA job |
-| `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; use `cloud` in Azure deployments |
+| `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; default `local`, or set `cloud` for Azure OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, default `all-MiniLM-L6-v2` |
 
 The laws collector workflow reuses these shared Azure deployment variables:
@@ -244,7 +244,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_OPENAI_ENDPOINT`
 - `AZURE_OPENAI_DEPLOYMENT`
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`
-- `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
+- `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 - `AZURE_POSTGRES_SERVER_NAME`
 - `AZURE_STORAGE_ACCOUNT_NAME`
@@ -273,7 +273,7 @@ Typical order:
 Recommended deployed value:
 
 - `DOCUMENT_PROCESSOR_OPTION=azure` for `dev`, `test`, and `prod`
-- `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` for `dev`, `test`, and `prod`
+- `SYSTEM_EMBEDDING_MODEL_OPTION=local` for `dev`, `test`, and `prod` unless you explicitly want Azure/OpenAI embeddings
 - Keep `DOCUMENT_PROCESSOR_OPTION=local` only in local workstation `.env` files when you want the API process to extract documents immediately without waiting for the ACA job
 
 ## 12. Current Workflow Defaults

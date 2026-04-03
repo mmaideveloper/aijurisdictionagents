@@ -19,13 +19,17 @@ param lawsPostgresDatabaseName string = 'laws_sk'
 param postgresAdminUsername string
 @secure()
 param postgresAdminPassword string = ''
+@secure()
+param postgresConnectionString string = ''
+@secure()
+param lawsPostgresConnectionString string = ''
 param postgresSkuName string = 'Standard_B1ms'
 param postgresSkuTier string = 'Burstable'
 param postgresVersion string = '17'
 param postgresStorageSizeGb int = 32
 param postgresClientIp string = ''
 param llmProvider string = 'azurefoundry'
-param systemEmbeddingModelOption string = 'cloud'
+param systemEmbeddingModelOption string = 'local'
 param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
 param azureOpenAIEndpoint string
 param azureOpenAIEmbeddingsModel string = 'text-embedding-3-large'
@@ -454,6 +458,7 @@ module documentProcessorJob 'document_processor.job.bicep' = if (createDocumentP
     postgresDatabaseName: postgresDatabaseName
     postgresAdminUsername: postgresAdminUsername
     postgresAdminPassword: postgresAdminPassword
+    postgresConnectionString: postgresConnectionString
     storageAccountName: storageAccountName
     storageContainerName: storageContainerName
     llmProvider: llmProvider
@@ -494,6 +499,7 @@ module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob)
     postgresDatabaseName: lawsPostgresDatabaseName
     postgresAdminUsername: postgresAdminUsername
     postgresAdminPassword: postgresAdminPassword
+    postgresConnectionString: lawsPostgresConnectionString
     systemEmbeddingModelOption: systemEmbeddingModelOption
     systemEmbeddingModel: systemEmbeddingModel
     cronExpression: lawsCollectorCronExpression

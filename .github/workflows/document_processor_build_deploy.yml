@@ -89,7 +89,7 @@ jobs:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
       LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
-      SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'cloud' }}
+      SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'local' }}
       SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
       AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       AZURE_OPENAI_EMBEDDINGS_MODEL: ${{ vars.AZURE_OPENAI_EMBEDDINGS_MODEL }}
@@ -103,6 +103,12 @@ jobs:
       - name: Validate required environment variables
         shell: pwsh
         run: |
+          $embeddingOption = if ([string]::IsNullOrWhiteSpace($env:SYSTEM_EMBEDDING_MODEL_OPTION)) {
+            "cloud"
+          } else {
+            $env:SYSTEM_EMBEDDING_MODEL_OPTION.Trim().ToLowerInvariant()
+          }
+
           $required = @(
             "AZURE_CLIENT_ID",
             "AZURE_TENANT_ID",
@@ -114,10 +120,15 @@ jobs:
             "AZURE_POSTGRES_SERVER_NAME",
             "AZURE_POSTGRES_ADMIN_USERNAME",
             "AZURE_POSTGRES_ADMIN_PASSWORD",
-            "AZURE_STORAGE_ACCOUNT_NAME",
-            "AZURE_OPENAI_ENDPOINT",
-            "AZURE_OPENAI_API_KEY"
+            "AZURE_STORAGE_ACCOUNT_NAME"
           )
+
+          if ($embeddingOption -ne "local") {
+            $required += @(
+              "AZURE_OPENAI_ENDPOINT",
+              "AZURE_OPENAI_API_KEY"
+            )
+          }
 
           $missing = @()
           foreach ($name in $required) {
