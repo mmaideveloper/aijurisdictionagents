@@ -63,6 +63,36 @@ function Require-Value {
     }
 }
 
+function Resolve-AcaCronExpression {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$Value,
+        [Parameter(Mandatory = $true)]
+        [string]$DefaultValue
+    )
+
+    $resolved = if ([string]::IsNullOrWhiteSpace($Value)) { $DefaultValue } else { $Value.Trim() }
+    $parts = @($resolved -split '\s+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+    if ($parts.Count -eq 6) {
+        if ($parts[0] -ne "0") {
+            throw "$Name must use a 5-field ACA cron expression. If a 6-field value is provided, the first field must be 0 seconds."
+        }
+
+        $resolved = ($parts[1..5] -join ' ')
+        Write-Host "Normalized $Name from 6 fields to ACA 5-field cron: $resolved"
+        $parts = @($resolved -split '\s+')
+    }
+
+    if ($parts.Count -ne 5) {
+        throw "$Name must be a 5-field ACA cron expression, for example '*/15 * * * *'."
+    }
+
+    return ($parts -join ' ')
+}
+
 function Test-ResourceExistsInGroup {
     param(
         [Parameter(Mandatory = $true)]
@@ -155,6 +185,7 @@ if ([string]::IsNullOrWhiteSpace($AzureOpenAIEmbeddingsModel)) {
 if ([string]::IsNullOrWhiteSpace($AzureOpenAIApiVersion)) {
     $AzureOpenAIApiVersion = "2024-12-01-preview"
 }
+$CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "*/15 * * * *"
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId
 Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName

@@ -485,6 +485,8 @@ Recommended GitHub Environment values:
 - `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 
+Azure Container Apps Jobs use 5-field cron expressions. The deploy paths also accept legacy 6-field values with a leading `0` seconds field and normalize them automatically.
+
 
 ## Deploy document processor ACA job
 
@@ -539,3 +541,5 @@ Recommended GitHub Environment values:
 - `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION=*/15 * * * *` unless you need a different schedule
 - `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
+
+Azure Container Apps Jobs use 5-field cron expressions. The deploy paths also accept legacy 6-field values with a leading `0` seconds field and normalize them automatically.

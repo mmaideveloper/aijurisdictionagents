@@ -148,8 +148,36 @@ jobs:
       - name: Resolve laws collector settings
         id: laws
         run: |
+          normalize_aca_cron() {
+            local value="$1"
+            local default_value="$2"
+            local resolved="$value"
+
+            if [ -z "$resolved" ]; then
+              resolved="$default_value"
+            fi
+
+            read -r -a parts <<< "$resolved"
+            if [ "${#parts[@]}" -eq 6 ]; then
+              if [ "${parts[0]}" != "0" ]; then
+                echo "::error::ACA Jobs require a 5-field cron expression. If a legacy 6-field value is used, the first field must be 0 seconds."
+                exit 1
+              fi
+              resolved="${parts[1]} ${parts[2]} ${parts[3]} ${parts[4]} ${parts[5]}"
+              echo "Normalized ACA cron expression from 6 fields to 5 fields: $resolved"
+              read -r -a parts <<< "$resolved"
+            fi
+
+            if [ "${#parts[@]}" -ne 5 ]; then
+              echo "::error::ACA Jobs require a 5-field cron expression. Received: $resolved"
+              exit 1
+            fi
+
+            printf '%s\n' "$resolved"
+          }
+
           laws_job_name="${AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME:-laws-collector}"
-          laws_cron_expression="${AZURE_LAWS_COLLECTOR_CRON_EXPRESSION:-0 0 * * *}"
+          laws_cron_expression="$(normalize_aca_cron "${AZURE_LAWS_COLLECTOR_CRON_EXPRESSION:-}" "0 0 * * *")"
           laws_max_probes="${AZURE_LAWS_COLLECTOR_MAX_PROBES:-1}"
           laws_postgres_database="${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}"
 
@@ -161,8 +189,36 @@ jobs:
       - name: Resolve document processor settings
         id: documentprocessor
         run: |
+          normalize_aca_cron() {
+            local value="$1"
+            local default_value="$2"
+            local resolved="$value"
+
+            if [ -z "$resolved" ]; then
+              resolved="$default_value"
+            fi
+
+            read -r -a parts <<< "$resolved"
+            if [ "${#parts[@]}" -eq 6 ]; then
+              if [ "${parts[0]}" != "0" ]; then
+                echo "::error::ACA Jobs require a 5-field cron expression. If a legacy 6-field value is used, the first field must be 0 seconds."
+                exit 1
+              fi
+              resolved="${parts[1]} ${parts[2]} ${parts[3]} ${parts[4]} ${parts[5]}"
+              echo "Normalized ACA cron expression from 6 fields to 5 fields: $resolved"
+              read -r -a parts <<< "$resolved"
+            fi
+
+            if [ "${#parts[@]}" -ne 5 ]; then
+              echo "::error::ACA Jobs require a 5-field cron expression. Received: $resolved"
+              exit 1
+            fi
+
+            printf '%s\n' "$resolved"
+          }
+
           document_processor_job="${AZURE_DOCUMENT_PROCESSOR_JOB_NAME:-document-processor}"
-          document_processor_cron="${AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION:-*/15 * * * *}"
+          document_processor_cron="$(normalize_aca_cron "${AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION:-}" "*/15 * * * *")"
           llm_provider="${LLM_PROVIDER:-azurefoundry}"
           system_embedding_model_option="${SYSTEM_EMBEDDING_MODEL_OPTION:-cloud}"
           system_embedding_model="${SYSTEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}"

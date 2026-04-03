@@ -57,6 +57,36 @@ function Require-Value {
     }
 }
 
+function Resolve-AcaCronExpression {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$Value,
+        [Parameter(Mandatory = $true)]
+        [string]$DefaultValue
+    )
+
+    $resolved = if ([string]::IsNullOrWhiteSpace($Value)) { $DefaultValue } else { $Value.Trim() }
+    $parts = @($resolved -split '\s+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+    if ($parts.Count -eq 6) {
+        if ($parts[0] -ne "0") {
+            throw "$Name must use a 5-field ACA cron expression. If a 6-field value is provided, the first field must be 0 seconds."
+        }
+
+        $resolved = ($parts[1..5] -join ' ')
+        Write-Host "Normalized $Name from 6 fields to ACA 5-field cron: $resolved"
+        $parts = @($resolved -split '\s+')
+    }
+
+    if ($parts.Count -ne 5) {
+        throw "$Name must be a 5-field ACA cron expression, for example '0 0 * * *'."
+    }
+
+    return ($parts -join ' ')
+}
+
 function Resolve-PositiveInteger {
     param(
         [Parameter(Mandatory = $true)]
@@ -147,6 +177,7 @@ Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
 Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddingModelOption = "cloud" }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel = "all-MiniLM-L6-v2" }
+$CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "0 0 * * *"
 $WorkerMaxProbes = Resolve-PositiveInteger -Name "WorkerMaxProbes" -Value $WorkerMaxProbes -DefaultValue 1
 
 az account set --subscription $SubscriptionId | Out-Null
