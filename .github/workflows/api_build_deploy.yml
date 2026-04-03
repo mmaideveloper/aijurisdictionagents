@@ -428,7 +428,7 @@ jobs:
           print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
           PY
           )"
-          python databases/scripts/apply_api_db_schema.py
+          python scripts/databases/apply_api_db_schema.py
 
       - name: Summarize ACA deployment
         shell: bash
