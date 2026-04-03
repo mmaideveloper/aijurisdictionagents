@@ -92,6 +92,7 @@ Assert-ToolInstalled -ToolName "az"
 
 $envSubscriptionId = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_SUBSCRIPTION_ID" }
 $envResourceGroup = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_RESOURCE_GROUP" }
+$envDocumentProcessorLocation = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_DOCUMENT_PROCESSOR_LOCATION" }
 $envLocation = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LOCATION" }
 $envContainerEnv = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_CONTAINERAPPS_ENVIRONMENT" }
 $envAcr = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_CONTAINER_REGISTRY" }
@@ -110,7 +111,13 @@ $envAzureOpenAIApiKey = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Pa
 
 $SubscriptionId = Resolve-InputValue -ExplicitValue $SubscriptionId -EnvFileValue $envSubscriptionId -EnvironmentValue $env:AZURE_SUBSCRIPTION_ID
 $ResourceGroupName = Resolve-InputValue -ExplicitValue $ResourceGroupName -EnvFileValue $envResourceGroup -EnvironmentValue $env:AZURE_RESOURCE_GROUP
-$Location = Resolve-InputValue -ExplicitValue $Location -EnvFileValue $envLocation -EnvironmentValue $env:AZURE_LOCATION
+$Location = Resolve-InputValue -ExplicitValue $Location -EnvFileValue $envDocumentProcessorLocation -EnvironmentValue $env:AZURE_DOCUMENT_PROCESSOR_LOCATION
+if ([string]::IsNullOrWhiteSpace($Location)) {
+    $Location = Resolve-InputValue -ExplicitValue "" -EnvFileValue $envLocation -EnvironmentValue $env:AZURE_LOCATION
+}
+if ([string]::IsNullOrWhiteSpace($Location)) {
+    $Location = "westeurope"
+}
 $ContainerAppEnvironmentName = Resolve-InputValue -ExplicitValue $ContainerAppEnvironmentName -EnvFileValue $envContainerEnv -EnvironmentValue $env:AZURE_CONTAINERAPPS_ENVIRONMENT
 $AcrName = Resolve-InputValue -ExplicitValue $AcrName -EnvFileValue $envAcr -EnvironmentValue $env:AZURE_CONTAINER_REGISTRY
 $ManagedIdentityName = Resolve-InputValue -ExplicitValue $ManagedIdentityName -EnvFileValue $envIdentity -EnvironmentValue $env:AZURE_MANAGED_IDENTITY_NAME
@@ -166,6 +173,7 @@ Write-Host "Building document processor image in ACR: $image"
 az acr build --registry $AcrName --image "$imageRepository`:$ImageTag" --file "src/services/document_processor/Dockerfile" .
 
 Write-Host "Deploying document processor ACA job: $JobName"
+Write-Host "Using Azure location: $Location"
 az deployment group create `
   --resource-group $ResourceGroupName `
   --template-file "infra/bicep/document_processor.job.bicep" `

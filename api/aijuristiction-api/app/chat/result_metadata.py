@@ -485,24 +485,30 @@ def _collector_progress_sqlite_row(
     if exists is None:
         return None
     if country_code:
-        return conn.execute(
+        return cast(
+            Sequence[Any] | None,
+            conn.execute(
+                """
+                SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+                FROM collector_progress
+                WHERE UPPER(country_code) = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (country_code,),
+            ).fetchone(),
+        )
+    return cast(
+        Sequence[Any] | None,
+        conn.execute(
             """
             SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
             FROM collector_progress
-            WHERE UPPER(country_code) = ?
             ORDER BY updated_at DESC
             LIMIT 1
-            """,
-            (country_code,),
-        ).fetchone()
-    return conn.execute(
-        """
-        SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
-        FROM collector_progress
-        ORDER BY updated_at DESC
-        LIMIT 1
-        """
-    ).fetchone()
+            """
+        ).fetchone(),
+    )
 
 
 def _collector_progress_postgres_row(
@@ -514,24 +520,30 @@ def _collector_progress_postgres_row(
     if not relation or relation[0] is None:
         return None
     if country_code:
-        return conn.execute(
+        return cast(
+            Sequence[Any] | None,
+            conn.execute(
+                """
+                SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+                FROM collector_progress
+                WHERE UPPER(country_code) = %s
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (country_code,),
+            ).fetchone(),
+        )
+    return cast(
+        Sequence[Any] | None,
+        conn.execute(
             """
             SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
             FROM collector_progress
-            WHERE UPPER(country_code) = %s
             ORDER BY updated_at DESC
             LIMIT 1
-            """,
-            (country_code,),
-        ).fetchone()
-    return conn.execute(
-        """
-        SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
-        FROM collector_progress
-        ORDER BY updated_at DESC
-        LIMIT 1
-        """
-    ).fetchone()
+            """
+        ).fetchone(),
+    )
 
 
 def _collector_progress_values(progress_row: Sequence[Any] | None) -> tuple[str | None, str | None]:
