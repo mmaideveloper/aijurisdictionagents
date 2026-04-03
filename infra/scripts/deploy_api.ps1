@@ -965,6 +965,15 @@ $applicationInsightsNameOutput = if ($outputs.PSObject.Properties.Name -contains
 else {
     $ApplicationInsightsName
 }
+$managedIdentityClientIdOutput = az identity show `
+    --resource-group $ResourceGroupName `
+    --name $ManagedIdentityName `
+    --query clientId `
+    --output tsv 2>$null
+
+if ($LASTEXITCODE -ne 0) {
+    $managedIdentityClientIdOutput = ""
+}
 $postgresHostOutput = if ($outputs.PSObject.Properties.Name -contains "postgresHost") {
     [string]$outputs.postgresHost.value
 }
@@ -1056,6 +1065,13 @@ if (-not [string]::IsNullOrWhiteSpace($storeCloud)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
     $envPairsList.Add("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string")
+}
+$envPairsList.Add("AZURE_LOG_ANALYTICS_WORKSPACE_NAME=$LogAnalyticsWorkspaceName")
+$envPairsList.Add("AZURE_MANAGED_IDENTITY_NAME=$ManagedIdentityName")
+$envPairsList.Add("AZURE_RESOURCE_GROUP=$ResourceGroupName")
+$envPairsList.Add("AZURE_SUBSCRIPTION_ID=$SubscriptionId")
+if (-not [string]::IsNullOrWhiteSpace($managedIdentityClientIdOutput)) {
+    $envPairsList.Add("AZURE_CLIENT_ID=$managedIdentityClientIdOutput")
 }
 $envPairs = $envPairsList.ToArray()
 

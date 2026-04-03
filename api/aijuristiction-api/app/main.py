@@ -16,6 +16,7 @@ from app.cases_api import router as cases_router
 from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.chat.api import router as chat_router
 from app.logging_config import configure_logging
+from app.observability_api import router as observability_router
 from app.telemetry import configure_telemetry, instrument_fastapi
 from app.users.api import router as users_router
 from app.versioning import (
@@ -92,6 +93,7 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(users_router)
 app.include_router(cases_router)
+app.include_router(observability_router)
 instrument_fastapi(app)
 
 

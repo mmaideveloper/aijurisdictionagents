@@ -78,6 +78,7 @@ jobs:
       AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
       AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
       AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
+      AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
       AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
       AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
       AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
@@ -216,6 +217,7 @@ jobs:
             -ContainerAppName $containerAppName `
             -AcrName "${{ steps.acr.outputs.acr_name }}" `
             -ManagedIdentityName $env:AZURE_MANAGED_IDENTITY_NAME `
+            -ApplicationInsightsName $env:AZURE_APPLICATION_INSIGHTS_NAME `
             -PostgresServerName $env:AZURE_POSTGRES_SERVER_NAME `
             -PostgresDatabaseName $postgresDatabaseName `
             -PostgresAdminUsername $env:AZURE_POSTGRES_ADMIN_USERNAME `

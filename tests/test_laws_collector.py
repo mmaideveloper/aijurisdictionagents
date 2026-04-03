@@ -432,7 +432,7 @@ def test_laws_collector_logs_embedding_pipeline_steps(tmp_path: Path, capsys) ->
     assert "embedding_dimensions=32" in output
 
 
-def test_laws_collector_logs_embedding_runtime_on_startup(monkeypatch, capsys) -> None:
+def test_laws_collector_logs_embedding_runtime_on_startup(monkeypatch, caplog) -> None:
     class FakeStore:
         def initialize(self) -> None:
             return None
@@ -478,7 +478,7 @@ def test_laws_collector_logs_embedding_runtime_on_startup(monkeypatch, capsys) -
 
     laws_collector_worker.run_worker()
 
-    output = capsys.readouterr().out
+    output = caplog.text
 
     assert "[laws-collector] startup" in output
     assert "embedding_option=local" in output

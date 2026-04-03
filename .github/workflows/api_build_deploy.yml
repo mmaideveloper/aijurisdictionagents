@@ -80,7 +80,9 @@ jobs:
       AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
+      AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
       AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
+      AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
       LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
       AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
@@ -102,7 +104,7 @@ jobs:
       - name: Validate required environment variables
         run: |
           missing=0
-          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_CONTAINERAPPS_ENVIRONMENT AZURE_CONTAINER_APP_NAME AZURE_CONTAINER_REGISTRY AZURE_POSTGRES_SERVER_NAME AZURE_POSTGRES_DATABASE_NAME AZURE_POSTGRES_ADMIN_USERNAME AZURE_POSTGRES_ADMIN_PASSWORD AZURE_OPENAI_API_KEY; do
+          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_CONTAINERAPPS_ENVIRONMENT AZURE_CONTAINER_APP_NAME AZURE_CONTAINER_REGISTRY AZURE_LOG_ANALYTICS_WORKSPACE_NAME AZURE_MANAGED_IDENTITY_NAME AZURE_POSTGRES_SERVER_NAME AZURE_POSTGRES_DATABASE_NAME AZURE_POSTGRES_ADMIN_USERNAME AZURE_POSTGRES_ADMIN_PASSWORD AZURE_OPENAI_API_KEY; do
             if [ -z "${!key}" ]; then
               echo "Missing GitHub Environment variable: $key"
               missing=1
@@ -338,6 +340,11 @@ jobs:
               --query connectionString \
               --output tsv 2>/dev/null || true)"
           fi
+          app_insights_query_client_id="$(az identity show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_MANAGED_IDENTITY_NAME" \
+            --query clientId \
+            --output tsv 2>/dev/null || true)"
           secret_values=("db-cloud=$db_cloud")
           if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
             secret_values+=("applicationinsights-connection-string=$APPLICATIONINSIGHTS_CONNECTION_STRING")
@@ -382,6 +389,13 @@ jobs:
           fi
           if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
             env_vars+=(APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string)
+          fi
+          env_vars+=(AZURE_LOG_ANALYTICS_WORKSPACE_NAME="${AZURE_LOG_ANALYTICS_WORKSPACE_NAME:-}")
+          env_vars+=(AZURE_MANAGED_IDENTITY_NAME="${AZURE_MANAGED_IDENTITY_NAME:-}")
+          env_vars+=(AZURE_RESOURCE_GROUP="$AZURE_RESOURCE_GROUP")
+          env_vars+=(AZURE_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID")
+          if [ -n "$app_insights_query_client_id" ]; then
+            env_vars+=(AZURE_CLIENT_ID="$app_insights_query_client_id")
           fi
           if [ -n "$store_cloud" ]; then
             env_vars+=(STORE_CLOUD="$store_cloud")

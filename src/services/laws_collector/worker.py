@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import os
 import time
 
+from aijurisdictionagents import __version__
 from aijurisdictionagents.llm import load_embedding_runtime_summary_from_env
+from aijurisdictionagents.telemetry import configure_worker_telemetry
 
 from .country_registry import get_country_laws_collector_definition
 from .config import LawsCollectorConfig
 from .postgres_store import PostgresLawStore
 from .slovlex_process import SlovLexSequentialImportRunner
 from .sqlite_store import SqliteLawStore
+
+logger = logging.getLogger("laws-collector")
 
 
 @dataclass(frozen=True)
@@ -47,6 +52,11 @@ class WorkerOptions:
 
 
 def run_worker() -> None:
+    telemetry_mode = configure_worker_telemetry(
+        service_name="laws-collector",
+        service_version=__version__,
+        logger_name="laws-collector",
+    )
     config = LawsCollectorConfig.from_env()
     embedding_runtime = load_embedding_runtime_summary_from_env()
     collector_definition = get_country_laws_collector_definition(config.country_code)
@@ -56,48 +66,53 @@ def run_worker() -> None:
 
     options = WorkerOptions.from_env()
     cycle = 0
-    print(
+    logger.info(
         "[laws-collector] startup "
+        f"telemetry_mode={telemetry_mode} "
         f"country={config.country_code} db_backend={config.db_backend} "
         f"embedding_option={embedding_runtime.option} "
         f"embedding_model={embedding_runtime.model}"
     )
 
-    while True:
-        cycle += 1
-        if options.fixture == "live":
-            summary = SlovLexSequentialImportRunner(
-                config=config,
-                store=store,
-                service=service,
-            ).run(max_probes=options.max_probes)
-            print(
-                f"[laws-collector] collector={collector_definition.collector_name} "
-                f"country={config.country_code} cycle={cycle} fixture=live "
-                f"probes={summary.probes} max_probes={options.max_probes} laws_found={summary.laws_found} "
-                f"years_advanced={summary.years_advanced} "
-                f"stopped_on_current_year_gap={str(summary.stopped_on_current_year_gap).lower()} "
-                f"last_processed_law={summary.last_processed_law or ''} "
-                f"last_processed_at={summary.last_processed_at or ''} "
-                f"next_law_to_check={summary.next_law_to_check}"
-            )
-        else:
-            snapshots = (
-                collector_definition.baseline_snapshots()
-                if options.fixture == "baseline"
-                else collector_definition.delta_snapshots()
-            )
-            summary = service.sync(snapshots)
-            print(
-                f"[laws-collector] collector={collector_definition.collector_name} "
-                f"country={config.country_code} cycle={cycle} fixture={options.fixture} "
-                f"processed={summary.processed} new_documents={summary.new_documents} "
-                f"new_versions={summary.new_versions} metadata_updates={summary.metadata_updates} "
-                f"skipped={summary.skipped}"
-            )
+    try:
+        while True:
+            cycle += 1
+            if options.fixture == "live":
+                summary = SlovLexSequentialImportRunner(
+                    config=config,
+                    store=store,
+                    service=service,
+                ).run(max_probes=options.max_probes)
+                logger.info(
+                    f"[laws-collector] collector={collector_definition.collector_name} "
+                    f"country={config.country_code} cycle={cycle} fixture=live "
+                    f"probes={summary.probes} max_probes={options.max_probes} laws_found={summary.laws_found} "
+                    f"years_advanced={summary.years_advanced} "
+                    f"stopped_on_current_year_gap={str(summary.stopped_on_current_year_gap).lower()} "
+                    f"last_processed_law={summary.last_processed_law or ''} "
+                    f"last_processed_at={summary.last_processed_at or ''} "
+                    f"next_law_to_check={summary.next_law_to_check}"
+                )
+            else:
+                snapshots = (
+                    collector_definition.baseline_snapshots()
+                    if options.fixture == "baseline"
+                    else collector_definition.delta_snapshots()
+                )
+                summary = service.sync(snapshots)
+                logger.info(
+                    f"[laws-collector] collector={collector_definition.collector_name} "
+                    f"country={config.country_code} cycle={cycle} fixture={options.fixture} "
+                    f"processed={summary.processed} new_documents={summary.new_documents} "
+                    f"new_versions={summary.new_versions} metadata_updates={summary.metadata_updates} "
+                    f"skipped={summary.skipped}"
+                )
 
-        if options.max_cycles > 0 and cycle >= options.max_cycles:
-            print("[laws-collector] worker stopped after max cycles")
-            return
+            if options.max_cycles > 0 and cycle >= options.max_cycles:
+                logger.info("[laws-collector] worker stopped after max cycles")
+                return
 
-        time.sleep(options.poll_seconds)
+            time.sleep(options.poll_seconds)
+    except Exception:
+        logger.exception("[laws-collector] worker failed")
+        raise

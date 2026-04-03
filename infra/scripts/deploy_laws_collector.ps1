@@ -11,6 +11,7 @@ param(
     [string]$PostgresDatabaseName = "laws_sk",
     [string]$PostgresAdminUsername,
     [string]$PostgresAdminPassword,
+    [string]$ApplicationInsightsName,
     [string]$SystemEmbeddingModelOption = "local",
     [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
     [string]$CronExpression = "0 0 * * *",
@@ -186,6 +187,7 @@ $envPgServer = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFi
 $envPgDb = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_POSTGRES_DATABASE_NAME_SK" }
 $envPgUser = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_USERNAME" }
 $envPgPass = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_PASSWORD" }
+$envApplicationInsightsName = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_APPLICATION_INSIGHTS_NAME" }
 $envSystemEmbeddingModelOption = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL_OPTION" }
 $envSystemEmbeddingModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL" }
 $envWorkerMaxProbes = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_COLLECTOR_MAX_PROBES" }
@@ -200,6 +202,7 @@ $PostgresServerName = Resolve-InputValue -ExplicitValue $PostgresServerName -Env
 $PostgresDatabaseName = Resolve-InputValue -ExplicitValue $PostgresDatabaseName -EnvFileValue $envPgDb -EnvironmentValue $env:AZURE_LAWS_POSTGRES_DATABASE_NAME_SK
 $PostgresAdminUsername = Resolve-InputValue -ExplicitValue $PostgresAdminUsername -EnvFileValue $envPgUser -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_USERNAME
 $PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPassword -EnvFileValue $envPgPass -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_PASSWORD
+$ApplicationInsightsName = Resolve-InputValue -ExplicitValue $ApplicationInsightsName -EnvFileValue $envApplicationInsightsName -EnvironmentValue $env:AZURE_APPLICATION_INSIGHTS_NAME
 $SystemEmbeddingModelOption = Resolve-InputValue -ExplicitValue $SystemEmbeddingModelOption -EnvFileValue $envSystemEmbeddingModelOption -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL_OPTION
 $SystemEmbeddingModel = Resolve-InputValue -ExplicitValue $SystemEmbeddingModel -EnvFileValue $envSystemEmbeddingModel -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL
 $WorkerMaxProbes = Resolve-InputValue -ExplicitValue $WorkerMaxProbes -EnvFileValue $envWorkerMaxProbes -EnvironmentValue $env:AZURE_LAWS_COLLECTOR_MAX_PROBES
@@ -241,6 +244,17 @@ $dbCloud = Convert-ToPostgresConnectionString `
     -DatabaseName $PostgresDatabaseName `
     -AdminUsername $PostgresAdminUsername `
     -AdminPassword $PostgresAdminPassword
+$applicationInsightsConnectionString = ""
+if (-not [string]::IsNullOrWhiteSpace($ApplicationInsightsName)) {
+    $applicationInsightsConnectionString = az monitor app-insights component show `
+      --app $ApplicationInsightsName `
+      --resource-group $ResourceGroupName `
+      --query connectionString `
+      --output tsv 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $applicationInsightsConnectionString = ""
+    }
+}
 
 Write-Host "Applying laws schema migrations to Azure PostgreSQL..."
 $previousLawsDbBackend = $env:LAWS_DB_BACKEND
@@ -287,6 +301,7 @@ az deployment group create `
       postgresAdminUsername=$PostgresAdminUsername `
       postgresAdminPassword=$PostgresAdminPassword `
       postgresConnectionString=$dbCloud `
+      applicationInsightsConnectionString=$applicationInsightsConnectionString `
       systemEmbeddingModelOption=$SystemEmbeddingModelOption `
       systemEmbeddingModel=$SystemEmbeddingModel `
       cronExpression=$CronExpression `

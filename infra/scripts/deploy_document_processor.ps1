@@ -13,6 +13,7 @@ param(
     [string]$PostgresAdminPassword,
     [string]$StorageAccountName,
     [string]$StorageContainerName = "documents",
+    [string]$ApplicationInsightsName,
     [string]$LlmProvider,
     [string]$SystemEmbeddingModelOption = "local",
     [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
@@ -158,6 +159,7 @@ $envPgUser = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFile
 $envPgPass = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_PASSWORD" }
 $envStorage = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_STORAGE_ACCOUNT_NAME" }
 $envStorageContainer = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_STORAGE_CONTAINER_NAME" }
+$envApplicationInsightsName = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_APPLICATION_INSIGHTS_NAME" }
 $envLlmProvider = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "LLM_PROVIDER" }
 $envSystemEmbeddingModelOption = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL_OPTION" }
 $envSystemEmbeddingModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL" }
@@ -184,6 +186,7 @@ $PostgresAdminUsername = Resolve-InputValue -ExplicitValue $PostgresAdminUsernam
 $PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPassword -EnvFileValue $envPgPass -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_PASSWORD
 $StorageAccountName = Resolve-InputValue -ExplicitValue $StorageAccountName -EnvFileValue $envStorage -EnvironmentValue $env:AZURE_STORAGE_ACCOUNT_NAME
 $StorageContainerName = Resolve-InputValue -ExplicitValue $StorageContainerName -EnvFileValue $envStorageContainer -EnvironmentValue $env:AZURE_STORAGE_CONTAINER_NAME
+$ApplicationInsightsName = Resolve-InputValue -ExplicitValue $ApplicationInsightsName -EnvFileValue $envApplicationInsightsName -EnvironmentValue $env:AZURE_APPLICATION_INSIGHTS_NAME
 $LlmProvider = Resolve-InputValue -ExplicitValue $LlmProvider -EnvFileValue $envLlmProvider -EnvironmentValue $env:LLM_PROVIDER
 $SystemEmbeddingModelOption = Resolve-InputValue -ExplicitValue $SystemEmbeddingModelOption -EnvFileValue $envSystemEmbeddingModelOption -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL_OPTION
 $SystemEmbeddingModel = Resolve-InputValue -ExplicitValue $SystemEmbeddingModel -EnvFileValue $envSystemEmbeddingModel -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL
@@ -248,6 +251,17 @@ $dbCloud = Convert-ToPostgresConnectionString `
     -DatabaseName $PostgresDatabaseName `
     -AdminUsername $PostgresAdminUsername `
     -AdminPassword $PostgresAdminPassword
+$applicationInsightsConnectionString = ""
+if (-not [string]::IsNullOrWhiteSpace($ApplicationInsightsName)) {
+    $applicationInsightsConnectionString = az monitor app-insights component show `
+      --app $ApplicationInsightsName `
+      --resource-group $ResourceGroupName `
+      --query connectionString `
+      --output tsv 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $applicationInsightsConnectionString = ""
+    }
+}
 
 Write-Host "Building document processor image in ACR: $image"
 az acr build `
@@ -279,6 +293,7 @@ az deployment group create `
       postgresAdminUsername=$PostgresAdminUsername `
       postgresAdminPassword=$PostgresAdminPassword `
       postgresConnectionString=$dbCloud `
+      applicationInsightsConnectionString=$applicationInsightsConnectionString `
       storageAccountName=$StorageAccountName `
       storageContainerName=$StorageContainerName `
       llmProvider=$LlmProvider `

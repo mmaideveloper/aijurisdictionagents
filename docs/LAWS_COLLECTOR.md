@@ -265,6 +265,7 @@ Local execution logs now show:
 Example startup log:
 
 - `[laws-collector] startup country=SK db_backend=postgres embedding_option=local embedding_model=all-MiniLM-L6-v2`
+- When the Azure ACA job receives `APPLICATIONINSIGHTS_CONNECTION_STRING`, the same worker logs are exported to Application Insights under application name `laws_collector`, which lets the API observability endpoint filter them separately from `api` and `document_processor`.
 
 
 ## Live SlovLex probe test (year/number)

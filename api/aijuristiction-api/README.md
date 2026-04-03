@@ -154,6 +154,7 @@ If you want only the database container or the repository database rules, use `d
 
 - `GET /health`
 - `GET /version`
+- `GET /v1/observability/logs`
 - `POST /v1/users/sign-up`
 - `POST /v1/users/sign-in`
 - `POST /v1/users/sign-in/phone`
@@ -205,6 +206,29 @@ Example:
   "mobile_app_release_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest",
   "mobile_app_apk_download_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest/download/app-release.apk"
 }
+```
+
+`GET /v1/observability/logs` returns recent Azure Application Insights / Log Analytics records for the deployed API and Azure workers.
+
+Query params:
+
+- `minutes`: lookback window in minutes, default `60`
+- `limit`: max records to return, default `100`
+- `application`: optional `api`, `document_processor`, or `laws_collector`
+- `level`: optional `debug`, `info`, `warning`, `error`, or `critical`
+- `source`: optional `trace`, `exception`, or `request`
+
+Example:
+
+```bash
+curl "http://localhost:8080/v1/observability/logs?minutes=30&application=api&source=exception" \
+  -H "x-api-key: aijuris"
+```
+
+Minimal runnable example:
+
+```bash
+python examples/application_insights_logs_demo.py
 ```
 
 ## User profile endpoints
@@ -424,6 +448,13 @@ For Slovak simulated discussions, the AI user now ends the conversation with `To
 
 - Recommended production path: set `APPLICATIONINSIGHTS_CONNECTION_STRING` and the API will export requests, traces, logs, and unhandled exceptions to Azure Monitor / Application Insights.
 - The API keeps writing structured request logs to console, so ACA log streaming and Log Analytics remain available even when Application Insights is enabled.
+- To enable the `/v1/observability/logs` API in Azure, the deployed Container App also needs:
+  - `AZURE_LOG_ANALYTICS_WORKSPACE_NAME`
+  - `AZURE_MANAGED_IDENTITY_NAME`
+  - `AZURE_RESOURCE_GROUP`
+  - `AZURE_SUBSCRIPTION_ID`
+- Repository Azure deploys populate those values automatically from the shared Log Analytics workspace and the configured user-assigned managed identity. They also set the standard `AZURE_CLIENT_ID` environment variable on the Container App so Azure SDK auth selects the intended user-assigned identity.
+- The user-assigned managed identity should have `Log Analytics Data Reader` on the target Log Analytics workspace.
 - Fallback behavior:
   - If `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, Azure Monitor OpenTelemetry is used.
   - Else if `OTEL_EXPORTER_OTLP_ENDPOINT` is set, traces are exported to that OTLP endpoint.

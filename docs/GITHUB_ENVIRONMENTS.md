@@ -134,7 +134,7 @@ Optional GitHub Environment secret:
 
 | Secret | Purpose |
 | --- | --- |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | API telemetry connection string when used |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional override for Application Insights connection string; API and Azure workers otherwise resolve it from `AZURE_APPLICATION_INSIGHTS_NAME` during deployment |
 
 ## 6. Configure Frontend Variables
 
@@ -275,6 +275,10 @@ Recommended deployed value:
 - `DOCUMENT_PROCESSOR_OPTION=azure` for `dev`, `test`, and `prod`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` for `dev`, `test`, and `prod` unless you explicitly want Azure/OpenAI embeddings
 - Keep `DOCUMENT_PROCESSOR_OPTION=local` only in local workstation `.env` files when you want the API process to extract documents immediately without waiting for the ACA job
+
+Observability note:
+
+- The API observability endpoint reuses `AZURE_LOG_ANALYTICS_WORKSPACE_NAME` and `AZURE_MANAGED_IDENTITY_NAME` directly. Do not add separate `APPLICATIONINSIGHTS_*` runtime variables for that feature.
 
 ## 12. Current Workflow Defaults
 

@@ -49,6 +49,7 @@ Startup logs now print the resolved embedding runtime before processing begins, 
 
 - `[document-processor] startup embedding_option=local embedding_model=all-MiniLM-L6-v2`
 - `[document-processor] startup embedding_option=cloud embedding_model=text-embedding-3-large`
+- When `APPLICATIONINSIGHTS_CONNECTION_STRING` is present on the Azure ACA job, those startup and processing logs are also exported to Application Insights under application name `document_processor`.
 
 ## Azure Container Apps
 

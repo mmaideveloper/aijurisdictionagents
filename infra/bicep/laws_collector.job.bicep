@@ -11,6 +11,8 @@ param postgresAdminUsername string
 param postgresAdminPassword string
 @secure()
 param postgresConnectionString string = ''
+@secure()
+param applicationInsightsConnectionString string = ''
 param systemEmbeddingModelOption string = 'local'
 param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
 param cronExpression string = '0 0 * * *'
@@ -77,14 +79,24 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
           identity: managedIdentity.id
         }
       ]
-      secrets: [
-        {
-          name: 'laws-db-cloud'
-          value: empty(postgresConnectionString)
-            ? 'postgresql://${postgresAdminUsername}:${postgresAdminPassword}@${postgresServer.name}.postgres.database.azure.com:5432/${postgresDatabaseName}?sslmode=require'
-            : postgresConnectionString
-        }
-      ]
+      secrets: concat(
+        [
+          {
+            name: 'laws-db-cloud'
+            value: empty(postgresConnectionString)
+              ? 'postgresql://${postgresAdminUsername}:${postgresAdminPassword}@${postgresServer.name}.postgres.database.azure.com:5432/${postgresDatabaseName}?sslmode=require'
+              : postgresConnectionString
+          }
+        ],
+        !empty(applicationInsightsConnectionString)
+          ? [
+              {
+                name: 'applicationinsights-connection-string'
+                value: applicationInsightsConnectionString
+              }
+            ]
+          : []
+      )
     }
     template: {
       containers: [
@@ -95,40 +107,50 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
-            {
-              name: 'LAWS_COUNTRY'
-              value: 'SK'
-            }
-            {
-              name: 'LAWS_DB_BACKEND'
-              value: 'postgres'
-            }
-            {
-              name: 'LAWS_DB_CLOUD'
-              secretRef: 'laws-db-cloud'
-            }
-            {
-              name: 'LAWS_WORKER_FIXTURE'
-              value: 'live'
-            }
-            {
-              name: 'LAWS_WORKER_MAX_CYCLES'
-              value: '1'
-            }
-            {
-              name: 'LAWS_WORKER_MAX_PROBES'
-              value: string(workerMaxProbes)
-            }
-            {
-              name: 'SYSTEM_EMBEDDING_MODEL_OPTION'
-              value: systemEmbeddingModelOption
-            }
-            {
-              name: 'SYSTEM_EMBEDDING_MODEL'
-              value: systemEmbeddingModel
-            }
-          ]
+          env: concat(
+            [
+              {
+                name: 'LAWS_COUNTRY'
+                value: 'SK'
+              }
+              {
+                name: 'LAWS_DB_BACKEND'
+                value: 'postgres'
+              }
+              {
+                name: 'LAWS_DB_CLOUD'
+                secretRef: 'laws-db-cloud'
+              }
+              {
+                name: 'LAWS_WORKER_FIXTURE'
+                value: 'live'
+              }
+              {
+                name: 'LAWS_WORKER_MAX_CYCLES'
+                value: '1'
+              }
+              {
+                name: 'LAWS_WORKER_MAX_PROBES'
+                value: string(workerMaxProbes)
+              }
+              {
+                name: 'SYSTEM_EMBEDDING_MODEL_OPTION'
+                value: systemEmbeddingModelOption
+              }
+              {
+                name: 'SYSTEM_EMBEDDING_MODEL'
+                value: systemEmbeddingModel
+              }
+            ],
+            !empty(applicationInsightsConnectionString)
+              ? [
+                  {
+                    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+                    secretRef: 'applicationinsights-connection-string'
+                  }
+                ]
+              : []
+          )
         }
       ]
     }

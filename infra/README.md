@@ -24,6 +24,7 @@ This keeps deployment simple while matching the existing API container workflow.
 - Private blob container (`case-documents` by default)
 - User-assigned Managed Identity with `AcrPull` on ACR
 - User-assigned Managed Identity with `Storage Blob Data Contributor` on Storage Account
+- User-assigned Managed Identity with `Log Analytics Data Reader` on the shared workspace
 - Azure Container App (public ingress on port `8080`)
 
 ACA resources created by repository deployments:
@@ -187,6 +188,11 @@ stores that value in a Container Apps secret, and sets
 `DB_CLOUD=secretref:db-cloud` on the API container.
 If Application Insights exists or is provisioned by the same deployment, the script reads the connection string and sets
 `APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string` on the API container automatically.
+The API deploy sets `AZURE_LOG_ANALYTICS_WORKSPACE_NAME` and
+`AZURE_MANAGED_IDENTITY_NAME` on the API container so
+`/v1/observability/logs` can resolve and query Azure telemetry. The deploy also sets
+the standard Azure identity selector `AZURE_CLIENT_ID` on the container to the chosen
+user-assigned managed identity client ID.
 `STORE_CLOUD` is set as a blob URL prefix, not as a secret.
 If `CORS_ALLOW_ORIGINS` is present in `.env`, the script passes it through to the API container unchanged.
 Use that only for deployed browser clients such as Flutter web. Native Android/iOS builds do not require CORS configuration.
@@ -343,6 +349,9 @@ Deployment behavior:
 
 - `infra/scripts/deploy_api.ps1` now provisions or reuses Application Insights and applies its connection string to ACA automatically. Explicit env input still overrides the deployment output if needed.
 - `.github/workflows/api_build_deploy.yml` now queries the configured Application Insights resource and applies its connection string to ACA automatically.
+- Azure API deploys inject `AZURE_LOG_ANALYTICS_WORKSPACE_NAME`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_RESOURCE_GROUP`, `AZURE_SUBSCRIPTION_ID`, and the standard `AZURE_CLIENT_ID` selector so the API can query recent telemetry through `GET /v1/observability/logs`.
+- Azure document processor and laws collector deployments now apply the same Application Insights connection string to their ACA jobs, so the observability endpoint can filter `api`, `document_processor`, and `laws_collector` in one place.
+- Least-privilege workspace access for that managed identity is `Log Analytics Data Reader` on the Log Analytics workspace scope.
 
 Recommended GitHub Environment additions:
 

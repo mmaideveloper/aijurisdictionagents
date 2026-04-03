@@ -367,6 +367,32 @@ resource storageBlobDataRoleAssignmentOnExistingStorage 'Microsoft.Authorization
   }
 }
 
+resource logAnalyticsDataReaderRoleAssignmentOnNewWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createLogAnalyticsWorkspace) {
+  name: guid(logAnalyticsWorkspace.id, managedIdentityId, 'LogAnalyticsDataReader')
+  scope: logAnalyticsWorkspace
+  properties: {
+    principalId: managedIdentityPrincipalId
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '3b03c2da-16b3-4a49-8834-0f8130efdd3b'
+    )
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource logAnalyticsDataReaderRoleAssignmentOnExistingWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!createLogAnalyticsWorkspace) {
+  name: guid(logAnalyticsWorkspaceExisting.id, managedIdentityId, 'LogAnalyticsDataReader')
+  scope: logAnalyticsWorkspaceExisting
+  properties: {
+    principalId: managedIdentityPrincipalId
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '3b03c2da-16b3-4a49-8834-0f8130efdd3b'
+    )
+    principalType: 'ServicePrincipal'
+  }
+}
+
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = if (createContainerApp) {
   name: containerAppName
   location: location
@@ -413,6 +439,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = if (createConta
   dependsOn: [
     acrPullRoleAssignmentOnNewAcr
     acrPullRoleAssignmentOnExistingAcr
+    logAnalyticsDataReaderRoleAssignmentOnNewWorkspace
+    logAnalyticsDataReaderRoleAssignmentOnExistingWorkspace
     storageBlobDataRoleAssignmentOnNewStorage
     storageBlobDataRoleAssignmentOnExistingStorage
   ]
@@ -459,6 +487,9 @@ module documentProcessorJob 'document_processor.job.bicep' = if (createDocumentP
     postgresAdminUsername: postgresAdminUsername
     postgresAdminPassword: postgresAdminPassword
     postgresConnectionString: postgresConnectionString
+    applicationInsightsConnectionString: createApplicationInsights
+      ? applicationInsights.properties.ConnectionString
+      : applicationInsightsExisting.properties.ConnectionString
     storageAccountName: storageAccountName
     storageContainerName: storageContainerName
     llmProvider: llmProvider
@@ -500,6 +531,9 @@ module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob)
     postgresAdminUsername: postgresAdminUsername
     postgresAdminPassword: postgresAdminPassword
     postgresConnectionString: lawsPostgresConnectionString
+    applicationInsightsConnectionString: createApplicationInsights
+      ? applicationInsights.properties.ConnectionString
+      : applicationInsightsExisting.properties.ConnectionString
     systemEmbeddingModelOption: systemEmbeddingModelOption
     systemEmbeddingModel: systemEmbeddingModel
     cronExpression: lawsCollectorCronExpression
@@ -524,6 +558,7 @@ output acrLoginServer string = acrLoginServer
 output storageAccountName string = createStorageAccount ? storageAccount.name : storageAccountExisting.name
 output storageContainerName string = storageContainerName
 output storageBlobEndpoint string = storageBlobEndpoint
+output logAnalyticsWorkspaceCustomerId string = logAnalyticsCustomerId
 output applicationInsightsName string = createApplicationInsights ? applicationInsights.name : applicationInsightsExisting.name
 output applicationInsightsConnectionString string = createApplicationInsights
   ? applicationInsights.properties.ConnectionString

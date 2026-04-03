@@ -11,6 +11,8 @@ param postgresAdminUsername string
 param postgresAdminPassword string
 @secure()
 param postgresConnectionString string = ''
+@secure()
+param applicationInsightsConnectionString string = ''
 param storageAccountName string
 param storageContainerName string = 'documents'
 param llmProvider string = 'azurefoundry'
@@ -65,6 +67,14 @@ var documentProcessorSecrets = concat(
           value: azureOpenAIApiKey
         }
       ]
+    : [],
+  !empty(applicationInsightsConnectionString)
+    ? [
+        {
+          name: 'applicationinsights-connection-string'
+          value: applicationInsightsConnectionString
+        }
+      ]
     : []
 )
 
@@ -103,6 +113,14 @@ var documentProcessorEnv = concat(
       value: 'https://${storageAccount.name}.blob.core.windows.net/${storageContainerName}'
     }
   ],
+  !empty(applicationInsightsConnectionString)
+    ? [
+        {
+          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+          secretRef: 'applicationinsights-connection-string'
+        }
+      ]
+    : [],
   systemEmbeddingModelOption == 'cloud'
     ? [
         {
