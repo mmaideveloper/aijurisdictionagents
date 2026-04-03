@@ -11,7 +11,7 @@ param postgresAdminUsername string
 param postgresAdminPassword string
 param systemEmbeddingModelOption string = 'cloud'
 param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
-param cronExpression string = '0 0 * * * *'
+param cronExpression string = '0 0 * * *'
 param workerMaxProbes int = 1
 param replicaTimeout int = 3600
 param replicaRetryLimit int = 1

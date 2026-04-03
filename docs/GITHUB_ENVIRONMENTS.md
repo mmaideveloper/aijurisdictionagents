@@ -115,7 +115,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional laws collector live probe count per Azure job execution, default `1` |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk` |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
-| `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `0 */15 * * * *` |
+| `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `*/15 * * * *` |
 | `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode: use `azure` in deployed environments, `local` only for local/dev API runs without the ACA job |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
@@ -172,7 +172,7 @@ These are used by the document processor deployment workflow and by `infra_deplo
 | `AZURE_STORAGE_CONTAINER_NAME` | Storage container name |
 | `AZURE_DOCUMENT_PROCESSOR_LOCATION` | Optional document processor deployment region override, default `westeurope`; keep it aligned with the ACA managed environment region |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name |
-| `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional schedule, default is every 15 minutes |
+| `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional 5-field cron schedule, default `*/15 * * * *` |
 
 ## 8. Configure Laws Collector Variables
 
@@ -181,6 +181,7 @@ These are used by the laws collector deployment workflow:
 | Variable | Purpose |
 | --- | --- |
 | `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional private ACA name for the laws collector, default `laws-collector` |
+| `AZURE_LAWS_COLLECTOR_CRON_EXPRESSION` | Optional 5-field cron schedule, default `0 0 * * *` |
 | `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional live probe count per scheduled job execution, default `1` |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional PostgreSQL database name for the Slovak laws corpus, default `laws_sk` |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; use `cloud` in Azure deployments |

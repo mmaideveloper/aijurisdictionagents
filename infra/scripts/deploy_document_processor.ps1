@@ -20,7 +20,7 @@ param(
     [string]$AzureOpenAIEmbeddingsModel = "text-embedding-3-large",
     [string]$AzureOpenAIApiVersion = "2024-12-01-preview",
     [string]$AzureOpenAIApiKey,
-    [string]$CronExpression = "0 */15 * * * *",
+    [string]$CronExpression = "*/15 * * * *",
     [string]$ImageTag = "latest",
     [string]$EnvFilePath = ".env",
     [switch]$SkipEnvFile
@@ -172,7 +172,14 @@ Require-Value -Name "AzureOpenAIEndpoint" -Value $AzureOpenAIEndpoint
 Require-Value -Name "AzureOpenAIApiKey" -Value $AzureOpenAIApiKey
 
 az account set --subscription $SubscriptionId | Out-Null
-az group create --name $ResourceGroupName --location $Location | Out-Null
+$resourceGroupExists = az group exists --name $ResourceGroupName --output tsv
+if ($resourceGroupExists -eq "true") {
+    Write-Host "Resource group '$ResourceGroupName' already exists. Skipping creation."
+}
+else {
+    Write-Host "Creating resource group '$ResourceGroupName' in '$Location'..."
+    az group create --name $ResourceGroupName --location $Location --only-show-errors --output none
+}
 
 $jobExistedBeforeDeployment = Test-ResourceExistsInGroup `
     -ResourceGroupName $ResourceGroupName `

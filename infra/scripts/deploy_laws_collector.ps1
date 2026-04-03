@@ -13,6 +13,7 @@ param(
     [string]$PostgresAdminPassword,
     [string]$SystemEmbeddingModelOption = "cloud",
     [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
+    [string]$CronExpression = "0 0 * * *",
     [string]$WorkerMaxProbes = "",
     [string]$ImageTag = "latest",
     [string]$EnvFilePath = ".env",
@@ -149,7 +150,14 @@ if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel
 $WorkerMaxProbes = Resolve-PositiveInteger -Name "WorkerMaxProbes" -Value $WorkerMaxProbes -DefaultValue 1
 
 az account set --subscription $SubscriptionId | Out-Null
-az group create --name $ResourceGroupName --location $Location | Out-Null
+$resourceGroupExists = az group exists --name $ResourceGroupName --output tsv
+if ($resourceGroupExists -eq "true") {
+    Write-Host "Resource group '$ResourceGroupName' already exists. Skipping creation."
+}
+else {
+    Write-Host "Creating resource group '$ResourceGroupName' in '$Location'..."
+    az group create --name $ResourceGroupName --location $Location --only-show-errors --output none
+}
 
 $containerAppExistedBeforeDeployment = Test-ResourceExistsInGroup `
     -ResourceGroupName $ResourceGroupName `
@@ -189,6 +197,7 @@ az deployment group create `
       postgresAdminPassword=$PostgresAdminPassword `
       systemEmbeddingModelOption=$SystemEmbeddingModelOption `
       systemEmbeddingModel=$SystemEmbeddingModel `
+      cronExpression=$CronExpression `
       workerMaxProbes=$WorkerMaxProbes | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "Laws collector ACA job deployment failed."

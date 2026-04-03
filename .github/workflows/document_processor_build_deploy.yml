@@ -174,7 +174,7 @@ jobs:
           }
 
           $cronExpression = if ([string]::IsNullOrWhiteSpace($env:AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION)) {
-            "0 */15 * * * *"
+            "*/15 * * * *"
           } else {
             $env:AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION
           }

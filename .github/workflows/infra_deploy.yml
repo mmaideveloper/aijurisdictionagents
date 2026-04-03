@@ -149,7 +149,7 @@ jobs:
         id: laws
         run: |
           laws_job_name="${AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME:-laws-collector}"
-          laws_cron_expression="${AZURE_LAWS_COLLECTOR_CRON_EXPRESSION:-0 0 * * * *}"
+          laws_cron_expression="${AZURE_LAWS_COLLECTOR_CRON_EXPRESSION:-0 0 * * *}"
           laws_max_probes="${AZURE_LAWS_COLLECTOR_MAX_PROBES:-1}"
           laws_postgres_database="${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}"
 
@@ -162,7 +162,7 @@ jobs:
         id: documentprocessor
         run: |
           document_processor_job="${AZURE_DOCUMENT_PROCESSOR_JOB_NAME:-document-processor}"
-          document_processor_cron="${AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION:-0 */15 * * * *}"
+          document_processor_cron="${AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION:-*/15 * * * *}"
           llm_provider="${LLM_PROVIDER:-azurefoundry}"
           system_embedding_model_option="${SYSTEM_EMBEDDING_MODEL_OPTION:-cloud}"
           system_embedding_model="${SYSTEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}"

@@ -18,13 +18,13 @@
       "value": "document-processor"
     },
     "documentProcessorCronExpression": {
-      "value": "0 */15 * * * *"
+      "value": "*/15 * * * *"
     },
     "lawsCollectorJobName": {
       "value": "laws-collector"
     },
     "lawsCollectorCronExpression": {
-      "value": "0 0 * * * *"
+      "value": "0 0 * * *"
     },
     "lawsCollectorMaxProbes": {
       "value": 1

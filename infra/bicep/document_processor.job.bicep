@@ -20,7 +20,7 @@ param azureOpenAIApiVersion string = '2024-12-01-preview'
 @secure()
 param azureOpenAIApiKey string
 param triggerType string = 'Schedule'
-param cronExpression string = '0 */15 * * * *'
+param cronExpression string = '*/15 * * * *'
 param replicaTimeout int = 1800
 param replicaRetryLimit int = 1
 param parallelism int = 1

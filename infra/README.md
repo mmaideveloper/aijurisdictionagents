@@ -474,10 +474,12 @@ Required GitHub Environment variables/secrets for deployment:
 - Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`
 - Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`
 - Optional variables: `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, `AZURE_LAWS_COLLECTOR_MAX_PROBES`, `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, `SYSTEM_EMBEDDING_MODEL_OPTION`, `SYSTEM_EMBEDDING_MODEL`
+- Optional schedule variable: `AZURE_LAWS_COLLECTOR_CRON_EXPRESSION` with default `0 0 * * *`
 
 Recommended GitHub Environment values:
 
 - `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME=laws-collector`
+- `AZURE_LAWS_COLLECTOR_CRON_EXPRESSION=0 0 * * *`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES=1`
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
@@ -513,7 +515,7 @@ All Azure deployment workflows now append an `ACA deployment summary` table to t
   -PostgresAdminPassword "<postgres-admin-password>" \
   -StorageAccountName "<storage-account-name>" \
   -StorageContainerName "documents" \
-  -CronExpression "0 */15 * * * *" \
+  -CronExpression "*/15 * * * *" \
   -ImageTag "latest"
 ```
 
@@ -534,6 +536,6 @@ Required GitHub Environment variables/secrets for deployment:
 Recommended GitHub Environment values:
 
 - `AZURE_DOCUMENT_PROCESSOR_LOCATION=westeurope` unless your shared ACA environment is in a different region
-- `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION=0 */15 * * * *` unless you need a different schedule
+- `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION=*/15 * * * *` unless you need a different schedule
 - `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`

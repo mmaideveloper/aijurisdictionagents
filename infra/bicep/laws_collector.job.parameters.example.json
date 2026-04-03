@@ -30,7 +30,7 @@
       "value": "<set-secure-value>"
     },
     "cronExpression": {
-      "value": "0 0 * * * *"
+      "value": "0 0 * * *"
     },
     "workerMaxProbes": {
       "value": 1

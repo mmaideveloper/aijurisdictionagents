@@ -13,6 +13,6 @@
     "postgresAdminPassword": { "value": "<set-secure-value>" },
     "storageAccountName": { "value": "stjurisdev12345" },
     "storageContainerName": { "value": "documents" },
-    "cronExpression": { "value": "0 */15 * * * *" }
+    "cronExpression": { "value": "*/15 * * * *" }
   }
 }

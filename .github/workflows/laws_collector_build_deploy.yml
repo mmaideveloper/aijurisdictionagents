@@ -76,6 +76,7 @@ jobs:
       AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
       AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
       AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME: ${{ vars.AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME }}
+      AZURE_LAWS_COLLECTOR_CRON_EXPRESSION: ${{ vars.AZURE_LAWS_COLLECTOR_CRON_EXPRESSION }}
       AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
       AZURE_LAWS_COLLECTOR_MAX_PROBES: ${{ vars.AZURE_LAWS_COLLECTOR_MAX_PROBES }}
       SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'cloud' }}
@@ -164,6 +165,12 @@ jobs:
             $env:AZURE_LAWS_COLLECTOR_MAX_PROBES
           }
 
+          $cronExpression = if ([string]::IsNullOrWhiteSpace($env:AZURE_LAWS_COLLECTOR_CRON_EXPRESSION)) {
+            "0 0 * * *"
+          } else {
+            $env:AZURE_LAWS_COLLECTOR_CRON_EXPRESSION
+          }
+
           $imageTagInput = "${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}"
           $imageTag = if ([string]::IsNullOrWhiteSpace($imageTagInput)) {
             "${{ github.sha }}"
@@ -186,5 +193,6 @@ jobs:
             -PostgresAdminPassword $env:AZURE_POSTGRES_ADMIN_PASSWORD `
             -SystemEmbeddingModelOption $env:SYSTEM_EMBEDDING_MODEL_OPTION `
             -SystemEmbeddingModel $env:SYSTEM_EMBEDDING_MODEL `
+            -CronExpression $cronExpression `
             -WorkerMaxProbes $workerMaxProbes `
             -ImageTag $imageTag
