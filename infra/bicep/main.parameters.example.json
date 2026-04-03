@@ -26,6 +26,9 @@
     "lawsCollectorCronExpression": {
       "value": "0 0 * * * *"
     },
+    "lawsCollectorMaxProbes": {
+      "value": 1
+    },
     "acrName": {
       "value": "aijurdevacr12345"
     },

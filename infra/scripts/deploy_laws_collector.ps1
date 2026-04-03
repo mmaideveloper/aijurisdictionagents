@@ -13,6 +13,7 @@ param(
     [string]$PostgresAdminPassword,
     [string]$SystemEmbeddingModelOption = "cloud",
     [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
+    [string]$WorkerMaxProbes = "",
     [string]$ImageTag = "latest",
     [string]$EnvFilePath = ".env",
     [switch]$SkipEnvFile
@@ -53,6 +54,26 @@ function Require-Value {
     if ([string]::IsNullOrWhiteSpace($Value)) {
         throw "$Name is required. Pass parameter, set in .env, or export env var."
     }
+}
+
+function Resolve-PositiveInteger {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [string]$Value,
+        [int]$DefaultValue = 1
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $DefaultValue
+    }
+
+    $parsed = 0
+    if (-not [int]::TryParse($Value, [ref]$parsed) -or $parsed -lt 1) {
+        throw "$Name must be an integer >= 1."
+    }
+
+    return $parsed
 }
 
 function Test-ResourceExistsInGroup {
@@ -96,6 +117,7 @@ $envPgUser = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFile
 $envPgPass = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_PASSWORD" }
 $envSystemEmbeddingModelOption = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL_OPTION" }
 $envSystemEmbeddingModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL" }
+$envWorkerMaxProbes = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_COLLECTOR_MAX_PROBES" }
 
 $SubscriptionId = Resolve-InputValue -ExplicitValue $SubscriptionId -EnvFileValue $envSubscriptionId -EnvironmentValue $env:AZURE_SUBSCRIPTION_ID
 $ResourceGroupName = Resolve-InputValue -ExplicitValue $ResourceGroupName -EnvFileValue $envResourceGroup -EnvironmentValue $env:AZURE_RESOURCE_GROUP
@@ -109,6 +131,7 @@ $PostgresAdminUsername = Resolve-InputValue -ExplicitValue $PostgresAdminUsernam
 $PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPassword -EnvFileValue $envPgPass -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_PASSWORD
 $SystemEmbeddingModelOption = Resolve-InputValue -ExplicitValue $SystemEmbeddingModelOption -EnvFileValue $envSystemEmbeddingModelOption -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL_OPTION
 $SystemEmbeddingModel = Resolve-InputValue -ExplicitValue $SystemEmbeddingModel -EnvFileValue $envSystemEmbeddingModel -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL
+$WorkerMaxProbes = Resolve-InputValue -ExplicitValue $WorkerMaxProbes -EnvFileValue $envWorkerMaxProbes -EnvironmentValue $env:AZURE_LAWS_COLLECTOR_MAX_PROBES
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId
 Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName
@@ -122,6 +145,7 @@ Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
 Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddingModelOption = "cloud" }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel = "all-MiniLM-L6-v2" }
+$WorkerMaxProbes = Resolve-PositiveInteger -Name "WorkerMaxProbes" -Value $WorkerMaxProbes -DefaultValue 1
 
 az account set --subscription $SubscriptionId | Out-Null
 az group create --name $ResourceGroupName --location $Location | Out-Null
@@ -152,7 +176,8 @@ az deployment group create `
       postgresAdminUsername=$PostgresAdminUsername `
       postgresAdminPassword=$PostgresAdminPassword `
       systemEmbeddingModelOption=$SystemEmbeddingModelOption `
-      systemEmbeddingModel=$SystemEmbeddingModel | Out-Null
+      systemEmbeddingModel=$SystemEmbeddingModel `
+      workerMaxProbes=$WorkerMaxProbes | Out-Null
 
 $containerAppDisposition = if ($containerAppExistedBeforeDeployment) { "updated" } else { "created" }
 

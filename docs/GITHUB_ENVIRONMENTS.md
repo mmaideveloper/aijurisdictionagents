@@ -112,6 +112,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_LOG_ANALYTICS_WORKSPACE_NAME` | Log Analytics workspace name |
 | `AZURE_MANAGED_IDENTITY_NAME` | Managed identity name |
 | `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional laws collector Azure Container App name, default `laws-collector` |
+| `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional laws collector live probe count per Azure job execution, default `1` |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk` |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `0 */15 * * * *` |
@@ -180,6 +181,7 @@ These are used by the laws collector deployment workflow:
 | Variable | Purpose |
 | --- | --- |
 | `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional private ACA name for the laws collector, default `laws-collector` |
+| `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional live probe count per scheduled job execution, default `1` |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional PostgreSQL database name for the Slovak laws corpus, default `laws_sk` |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; use `cloud` in Azure deployments |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, default `all-MiniLM-L6-v2` |
@@ -248,6 +250,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_APPLICATION_INSIGHTS_NAME`
 - `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`
 - `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
+- `AZURE_LAWS_COLLECTOR_MAX_PROBES`
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
 - `API_BASE_URL`
 - `CORS_ALLOW_ORIGINS`

@@ -12,6 +12,7 @@ param postgresAdminPassword string
 param systemEmbeddingModelOption string = 'cloud'
 param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
 param cronExpression string = '0 0 * * * *'
+param workerMaxProbes int = 1
 param replicaTimeout int = 3600
 param replicaRetryLimit int = 1
 param parallelism int = 1
@@ -105,11 +106,15 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
             }
             {
               name: 'LAWS_WORKER_FIXTURE'
-              value: 'baseline'
+              value: 'live'
             }
             {
               name: 'LAWS_WORKER_MAX_CYCLES'
               value: '1'
+            }
+            {
+              name: 'LAWS_WORKER_MAX_PROBES'
+              value: string(workerMaxProbes)
             }
             {
               name: 'SYSTEM_EMBEDDING_MODEL_OPTION'

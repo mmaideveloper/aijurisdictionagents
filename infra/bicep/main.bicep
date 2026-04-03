@@ -6,6 +6,7 @@ param documentProcessorJobName string = 'document-processor'
 param documentProcessorCronExpression string = '0 */15 * * * *'
 param lawsCollectorJobName string = 'laws-collector'
 param lawsCollectorCronExpression string = '0 0 * * * *'
+param lawsCollectorMaxProbes int = 1
 param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'
@@ -496,6 +497,7 @@ module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob)
     systemEmbeddingModelOption: systemEmbeddingModelOption
     systemEmbeddingModel: systemEmbeddingModel
     cronExpression: lawsCollectorCronExpression
+    workerMaxProbes: lawsCollectorMaxProbes
     tags: tags
   }
   dependsOn: [

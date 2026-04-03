@@ -411,6 +411,7 @@ Deployment assets for a dedicated Azure Container App named `laws-collector` are
 - GitHub Actions workflow: `.github/workflows/laws_collector_build_deploy.yml`
 
 The deploy script builds the image in ACR and deploys it to Azure Container Apps with PostgreSQL env configuration.
+The Azure job now runs the real sequential live collector path (`LAWS_WORKER_FIXTURE=live`) and uses `AZURE_LAWS_COLLECTOR_MAX_PROBES` to control how many Slov-Lex probes execute in each scheduled run. The deployment default is `1`.
 
 
 ## Local PostgreSQL debugging

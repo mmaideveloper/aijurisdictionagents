@@ -63,6 +63,7 @@ jobs:
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME: ${{ vars.AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME }}
       AZURE_LAWS_COLLECTOR_CRON_EXPRESSION: ${{ vars.AZURE_LAWS_COLLECTOR_CRON_EXPRESSION }}
+      AZURE_LAWS_COLLECTOR_MAX_PROBES: ${{ vars.AZURE_LAWS_COLLECTOR_MAX_PROBES }}
       AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
     steps:
       - uses: actions/checkout@v4
@@ -149,10 +150,12 @@ jobs:
         run: |
           laws_job_name="${AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME:-laws-collector}"
           laws_cron_expression="${AZURE_LAWS_COLLECTOR_CRON_EXPRESSION:-0 0 * * * *}"
+          laws_max_probes="${AZURE_LAWS_COLLECTOR_MAX_PROBES:-1}"
           laws_postgres_database="${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}"
 
           echo "laws_job_name=$laws_job_name" >> "$GITHUB_OUTPUT"
           echo "laws_cron_expression=$laws_cron_expression" >> "$GITHUB_OUTPUT"
+          echo "laws_max_probes=$laws_max_probes" >> "$GITHUB_OUTPUT"
           echo "laws_postgres_database_name=$laws_postgres_database" >> "$GITHUB_OUTPUT"
 
       - name: Resolve document processor settings
@@ -252,6 +255,7 @@ jobs:
               documentProcessorCronExpression="${{ steps.documentprocessor.outputs.document_processor_cron_expression }}" \
               lawsCollectorJobName="${{ steps.laws.outputs.laws_job_name }}" \
               lawsCollectorCronExpression="${{ steps.laws.outputs.laws_cron_expression }}" \
+              lawsCollectorMaxProbes="${{ steps.laws.outputs.laws_max_probes }}" \
               postgresServerName="$AZURE_POSTGRES_SERVER_NAME" \
               postgresDatabaseName="$AZURE_POSTGRES_DATABASE_NAME" \
               lawsPostgresDatabaseName="${{ steps.laws.outputs.laws_postgres_database_name }}" \
@@ -339,5 +343,5 @@ jobs:
             echo "| API container app | $AZURE_CONTAINER_APP_NAME | $api_result | $api_endpoint |"
             echo "| Frontend container app | $AZURE_FRONTEND_CONTAINER_APP_NAME | $frontend_result | $frontend_endpoint |"
             echo "| Document processor ACA job | ${{ steps.documentprocessor.outputs.document_processor_job_name }} | $document_processor_result | schedule: ${{ steps.documentprocessor.outputs.document_processor_cron_expression }} |"
-            echo "| Laws collector ACA job | ${{ steps.laws.outputs.laws_job_name }} | $laws_result | schedule: ${{ steps.laws.outputs.laws_cron_expression }} |"
+            echo "| Laws collector ACA job | ${{ steps.laws.outputs.laws_job_name }} | $laws_result | schedule: ${{ steps.laws.outputs.laws_cron_expression }}, max probes: ${{ steps.laws.outputs.laws_max_probes }} |"
           } >> "$GITHUB_STEP_SUMMARY"
