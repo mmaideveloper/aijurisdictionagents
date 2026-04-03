@@ -442,6 +442,7 @@ A dedicated deployment script and Bicep template are available for the laws coll
 - Template: `infra/bicep/laws_collector.job.bicep`
 
 The deployment creates/updates a scheduled ACA Job named `laws-collector` (by default), assigns ACR pull identity, and configures runtime environment variables for PostgreSQL-backed ingestion.
+Before updating the ACA job, the deploy path applies the laws collector PostgreSQL schema migrations to `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` or the explicit `-PostgresDatabaseName` override.
 
 Run from repository root:
 
@@ -465,9 +466,10 @@ The script builds the laws collector image in ACR using `src/services/laws_colle
 GitHub Actions workflow:
 
 - Workflow file: `.github/workflows/laws_collector_build_deploy.yml`
-- Push to `main` for laws collector changes: runs `tests/test_laws_collector.py`, validates the Docker image build, and deploys to the `dev` GitHub Environment
+- Push to `main` for laws collector changes: runs `tests/test_laws_collector.py` and `tests/test_db_migration_safety.py`, validates the Docker image build, and deploys to the `dev` GitHub Environment
 - Pull requests: run tests and Docker build only
 - Manual run: supports `deploy=true|false`, custom GitHub Environment, and optional image tag override
+- The deploy job temporarily opens the GitHub runner IP on Azure PostgreSQL, installs Python dependencies, applies `python scripts/databases/apply_laws_db_schema.py`, and then deploys the ACA job
 
 Required GitHub Environment variables/secrets for deployment:
 
@@ -486,6 +488,12 @@ Recommended GitHub Environment values:
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 
 Azure Container Apps Jobs use 5-field cron expressions. The deploy paths also accept legacy 6-field values with a leading `0` seconds field and normalize them automatically.
+
+Database migration rule:
+
+- PostgreSQL migrations must be backward-compatible with the currently deployed API, document processor, and laws collector.
+- Do not add destructive SQL such as `DROP TABLE`, `DROP COLUMN`, `DROP CONSTRAINT`, `RENAME COLUMN`, `ALTER COLUMN TYPE`, or `SET NOT NULL` in migration files.
+- Expand first: add new tables or nullable/defaulted columns, deploy application changes, then clean up in a later coordinated release if needed.
 
 
 ## Deploy document processor ACA job

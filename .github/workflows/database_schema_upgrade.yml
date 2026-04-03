@@ -89,9 +89,9 @@ jobs:
           PY
           )"
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            python databases/scripts/apply_api_db_schema.py --dry-run
+            python scripts/databases/apply_api_db_schema.py --dry-run
           else
-            python databases/scripts/apply_api_db_schema.py
+            python scripts/databases/apply_api_db_schema.py
           fi
 
       - name: Remove GitHub runner firewall rule

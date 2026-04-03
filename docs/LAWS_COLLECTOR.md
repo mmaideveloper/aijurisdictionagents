@@ -309,7 +309,8 @@ For PostgreSQL naming, keep the database mapping country-specific:
 - Slovakia remains `laws_sk`
 - future countries should use `laws_<country_code_lower>`
 
-The current Azure deployment keeps the Slovak override variable `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, which feeds the `laws_sk` PostgreSQL database for the default Slovak run.
+The current Azure deployment keeps the Slovak override variable `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, which feeds the PostgreSQL database used by the Slovak run. It still defaults to `laws_sk`, but you can override it, for example to `laws_collector_sk`.
+The laws collector deployment now applies the SQL migrations under `databases/laws-collector/migrations` to that database before updating the Azure Container Apps job.
 
 Future cloud settings:
 
@@ -335,6 +336,7 @@ Implemented upgrades include:
   - `law_metadata_relations` stores parsed relation edges for `amends`, `amended_by`, `implements`, and `repeals`.
 - deterministic vector generation per law version (`embedding_vector`) for semantic retrieval bootstrap.
 - PostgreSQL store support (`LAWS_DB_BACKEND=postgres`) plus migration project `databases/laws-collector/migrations`.
+- Azure laws deployment now applies those PostgreSQL migrations automatically before the ACA job update.
 - per-country database provisioning helper:
   - `python scripts/databases/provision_country_laws_db.py --admin-uri <postgres-admin-uri> --country SK`
   - database name format: `laws_<country_code_lower>` with Slovakia remaining `laws_sk`.

@@ -183,7 +183,7 @@ These are used by the laws collector deployment workflow:
 | `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional private ACA name for the laws collector, default `laws-collector` |
 | `AZURE_LAWS_COLLECTOR_CRON_EXPRESSION` | Optional 5-field cron schedule, default `0 0 * * *`; legacy `0 0 * * * *` values are normalized during deployment |
 | `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional live probe count per scheduled job execution, default `1` |
-| `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional PostgreSQL database name for the Slovak laws corpus, default `laws_sk` |
+| `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional PostgreSQL database name for the Slovak laws corpus, default `laws_sk`; the laws deployment applies schema migrations to this database before updating the ACA job |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; use `cloud` in Azure deployments |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, default `all-MiniLM-L6-v2` |
 

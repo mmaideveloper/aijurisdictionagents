@@ -57,6 +57,44 @@ function Require-Value {
     }
 }
 
+function Restore-EnvVar {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [AllowNull()]
+        [string]$PreviousValue
+    )
+
+    if ($null -eq $PreviousValue) {
+        Remove-Item "Env:$Name" -ErrorAction SilentlyContinue
+        return
+    }
+
+    Set-Item -Path "Env:$Name" -Value $PreviousValue
+}
+
+function Convert-ToPostgresConnectionString {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$HostName,
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+        [Parameter(Mandatory = $true)]
+        [string]$AdminUsername,
+        [Parameter(Mandatory = $true)]
+        [string]$AdminPassword
+    )
+
+    $normalizedHostName = $HostName.Trim().ToLowerInvariant()
+    if (-not $normalizedHostName.EndsWith(".postgres.database.azure.com")) {
+        $normalizedHostName = "${normalizedHostName}.postgres.database.azure.com"
+    }
+
+    $encodedUser = [System.Uri]::EscapeDataString($AdminUsername)
+    $encodedPassword = [System.Uri]::EscapeDataString($AdminPassword)
+    return "postgresql://${encodedUser}:${encodedPassword}@${normalizedHostName}:5432/${DatabaseName}?sslmode=require"
+}
+
 function Resolve-AcaCronExpression {
     param(
         [Parameter(Mandatory = $true)]
@@ -136,6 +174,7 @@ function Write-WorkflowSummary {
 }
 
 Assert-ToolInstalled -ToolName "az"
+Assert-ToolInstalled -ToolName "python"
 
 $envSubscriptionId = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_SUBSCRIPTION_ID" }
 $envResourceGroup = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_RESOURCE_GROUP" }
@@ -197,6 +236,27 @@ $containerAppExistedBeforeDeployment = Test-ResourceExistsInGroup `
 
 $imageRepository = "laws-collector"
 $image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
+$dbCloud = Convert-ToPostgresConnectionString `
+    -HostName $PostgresServerName `
+    -DatabaseName $PostgresDatabaseName `
+    -AdminUsername $PostgresAdminUsername `
+    -AdminPassword $PostgresAdminPassword
+
+Write-Host "Applying laws schema migrations to Azure PostgreSQL..."
+$previousLawsDbBackend = $env:LAWS_DB_BACKEND
+$previousLawsDbCloud = $env:LAWS_DB_CLOUD
+try {
+    $env:LAWS_DB_BACKEND = "postgres"
+    $env:LAWS_DB_CLOUD = $dbCloud
+    python "scripts/databases/apply_laws_db_schema.py"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Laws schema migration failed for database '$PostgresDatabaseName'."
+    }
+}
+finally {
+    Restore-EnvVar -Name "LAWS_DB_BACKEND" -PreviousValue $previousLawsDbBackend
+    Restore-EnvVar -Name "LAWS_DB_CLOUD" -PreviousValue $previousLawsDbCloud
+}
 
 Write-Host "Building laws collector image in ACR: $image"
 az acr build `

@@ -56,6 +56,9 @@ jobs:
         working-directory: api/aijuristiction-api
         run: pytest
 
+      - name: Migration safety tests
+        run: pytest tests/test_db_migration_safety.py
+
       - name: Build Docker image
         run: docker build -f api/aijuristiction-api/Dockerfile -t aijuristiction-api:${{ github.sha }} .
 

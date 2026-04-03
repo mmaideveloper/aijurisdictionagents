@@ -6,7 +6,10 @@ on:
     paths:
       - "src/services/laws_collector/**"
       - "tests/test_laws_collector.py"
+      - "tests/test_db_migration_safety.py"
       - "pyproject.toml"
+      - "databases/laws-collector/**"
+      - "scripts/databases/apply_laws_db_schema.py"
       - "infra/scripts/deploy_laws_collector.ps1"
       - "infra/bicep/laws_collector.job.bicep"
       - ".github/workflows/laws_collector_build_deploy.yml"
@@ -14,7 +17,10 @@ on:
     paths:
       - "src/services/laws_collector/**"
       - "tests/test_laws_collector.py"
+      - "tests/test_db_migration_safety.py"
       - "pyproject.toml"
+      - "databases/laws-collector/**"
+      - "scripts/databases/apply_laws_db_schema.py"
       - "infra/scripts/deploy_laws_collector.ps1"
       - "infra/bicep/laws_collector.job.bicep"
       - ".github/workflows/laws_collector_build_deploy.yml"
@@ -50,7 +56,7 @@ jobs:
           pip install -e .[dev]
 
       - name: Run laws collector unit tests
-        run: pytest tests/test_laws_collector.py
+        run: pytest tests/test_laws_collector.py tests/test_db_migration_safety.py
 
       - name: Build laws collector Docker image
         run: docker build -f src/services/laws_collector/Dockerfile -t laws-collector:${{ github.sha }} .
@@ -140,9 +146,32 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
       - name: Ensure Azure Container Apps extension
         shell: pwsh
         run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Allow GitHub runner IP on PostgreSQL firewall
+        shell: pwsh
+        run: |
+          $runnerIp = (Invoke-RestMethod -Uri "https://api.ipify.org").Trim()
+          az postgres flexible-server firewall-rule create `
+            --resource-group $env:AZURE_RESOURCE_GROUP `
+            --name $env:AZURE_POSTGRES_SERVER_NAME `
+            --rule-name "github-runner-${{ github.run_id }}" `
+            --start-ip-address $runnerIp `
+            --end-ip-address $runnerIp `
+            --only-show-errors `
+            --output none
+
+      - name: Install migration dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
 
       - name: Deploy laws collector app
         shell: pwsh
@@ -196,3 +225,15 @@ jobs:
             -CronExpression $cronExpression `
             -WorkerMaxProbes $workerMaxProbes `
             -ImageTag $imageTag
+
+      - name: Remove GitHub runner firewall rule
+        if: always()
+        shell: pwsh
+        run: |
+          az postgres flexible-server firewall-rule delete `
+            --resource-group $env:AZURE_RESOURCE_GROUP `
+            --name $env:AZURE_POSTGRES_SERVER_NAME `
+            --rule-name "github-runner-${{ github.run_id }}" `
+            --yes `
+            --only-show-errors `
+            --output none
