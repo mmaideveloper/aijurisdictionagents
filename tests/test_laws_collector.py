@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date
 import json
+import logging
 from pathlib import Path
 import sqlite3
 import unicodedata
@@ -472,6 +473,7 @@ def test_laws_collector_logs_embedding_runtime_on_startup(monkeypatch, caplog) -
     monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
     monkeypatch.setenv("LAWS_WORKER_FIXTURE", "baseline")
     monkeypatch.setenv("LAWS_WORKER_MAX_CYCLES", "1")
+    caplog.set_level(logging.INFO, logger="laws-collector")
     monkeypatch.setattr(laws_collector_worker.LawsCollectorConfig, "from_env", lambda: FakeConfig())
     monkeypatch.setattr(laws_collector_worker, "get_country_laws_collector_definition", lambda _code: FakeDefinition())
     monkeypatch.setattr(laws_collector_worker.SqliteLawStore, "from_config", lambda _config: fake_store)

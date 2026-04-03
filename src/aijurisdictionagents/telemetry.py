@@ -48,7 +48,11 @@ def configure_worker_telemetry(
 
     _set_default_resource_attributes(service_name, service_version)
 
-    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout, force=True)
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        root_logger.setLevel(logging.INFO)
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
     connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "").strip()
     if connection_string:
