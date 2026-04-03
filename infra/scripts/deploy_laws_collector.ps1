@@ -99,7 +99,8 @@ function Test-ResourceExistsInGroup {
 function Write-WorkflowSummary {
     param([Parameter(Mandatory = $true)][string[]]$Lines)
     if ([string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) { return }
-    (($Lines -join [Environment]::NewLine) + [Environment]::NewLine + [Environment]::NewLine) |
+    $nonEmptyLines = @($Lines | Where-Object { $_ -ne $null })
+    (($nonEmptyLines -join [Environment]::NewLine) + [Environment]::NewLine + [Environment]::NewLine) |
         Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 }
 
@@ -159,13 +160,24 @@ $imageRepository = "laws-collector"
 $image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
 
 Write-Host "Building laws collector image in ACR: $image"
-az acr build --registry $AcrName --image "$imageRepository`:$ImageTag" --file "src/services/laws_collector/Dockerfile" .
+az acr build `
+  --registry $AcrName `
+  --image "$imageRepository`:$ImageTag" `
+  --file "src/services/laws_collector/Dockerfile" `
+  . `
+  --no-logs `
+  --only-show-errors `
+  --output none
+if ($LASTEXITCODE -ne 0) {
+    throw "ACR build failed for laws collector image '$image'."
+}
 
 Write-Host "Deploying laws collector ACA job: $ContainerAppName"
 az deployment group create `
   --resource-group $ResourceGroupName `
   --template-file "infra/bicep/laws_collector.job.bicep" `
   --parameters `
+      location=$Location `
       managedEnvironmentName=$ContainerAppEnvironmentName `
       jobName=$ContainerAppName `
       acrName=$AcrName `
@@ -178,6 +190,9 @@ az deployment group create `
       systemEmbeddingModelOption=$SystemEmbeddingModelOption `
       systemEmbeddingModel=$SystemEmbeddingModel `
       workerMaxProbes=$WorkerMaxProbes | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "Laws collector ACA job deployment failed."
+}
 
 $containerAppDisposition = if ($containerAppExistedBeforeDeployment) { "updated" } else { "created" }
 
@@ -188,7 +203,6 @@ Write-Host " - Laws collector ACA job ($containerAppDisposition): $ContainerAppN
 
 Write-WorkflowSummary -Lines @(
     "## ACA deployment summary",
-    "",
     "| Resource | Name | Result | Endpoint |",
     "| --- | --- | --- | --- |",
     "| Managed environment | $ContainerAppEnvironmentName | reused | n/a |",
