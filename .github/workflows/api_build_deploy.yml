@@ -145,6 +145,54 @@ jobs:
           docker build -f api/aijuristiction-api/Dockerfile -t ${{ steps.acr.outputs.acr_login_server }}/aijuristiction-api:${{ github.sha }} .
           docker push ${{ steps.acr.outputs.acr_login_server }}/aijuristiction-api:${{ github.sha }}
 
+      - name: Preconfigure API secrets for existing Container App
+        shell: bash
+        run: |
+          if ! az containerapp show \
+            --name "$AZURE_CONTAINER_APP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --output none 2>/dev/null; then
+            echo "Container App '$AZURE_CONTAINER_APP_NAME' does not exist yet; skipping secret preconfiguration."
+            exit 0
+          fi
+
+          db_cloud="$(python - <<'PY'
+          import os
+          from urllib.parse import quote
+          server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
+          admin_username = os.environ["AZURE_POSTGRES_ADMIN_USERNAME"]
+          user = quote(admin_username, safe="")
+          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
+          database = os.environ["AZURE_POSTGRES_DATABASE_NAME"]
+          print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
+          PY
+          )"
+
+          resolved_app_insights="${APPLICATIONINSIGHTS_CONNECTION_STRING:-}"
+          if [ -z "$resolved_app_insights" ]; then
+            app_insights_name="${AZURE_APPLICATION_INSIGHTS_NAME:-ai-juris-dev}"
+            resolved_app_insights="$(az monitor app-insights component show \
+              --app "$app_insights_name" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --query connectionString \
+              --output tsv 2>/dev/null || true)"
+          fi
+
+          secret_values=("db-cloud=$db_cloud")
+          if [ -n "$resolved_app_insights" ]; then
+            secret_values+=("applicationinsights-connection-string=$resolved_app_insights")
+          fi
+          if [ -n "${AZURE_OPENAI_API_KEY:-}" ]; then
+            secret_values+=("azure-openai-api-key=$AZURE_OPENAI_API_KEY")
+          fi
+
+          az containerapp secret set \
+            --name "$AZURE_CONTAINER_APP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --secrets "${secret_values[@]}" \
+            --only-show-errors \
+            --output none
+
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:

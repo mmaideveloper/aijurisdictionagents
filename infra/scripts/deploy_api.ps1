@@ -1008,6 +1008,32 @@ if (-not $imageReady) {
     throw "Image manifest not found in ACR after build: $imageRef"
 }
 
+Write-Host "Ensuring Container App secrets exist before image update..."
+$applicationInsightsConnectionStringFromEnvFile = if ($resolvedEnvFilePath) {
+    Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "APPLICATIONINSIGHTS_CONNECTION_STRING"
+}
+else {
+    ""
+}
+$applicationInsightsConnectionString = Resolve-InputValue `
+    -ExplicitValue "" `
+    -EnvFileValue $applicationInsightsConnectionStringFromEnvFile `
+    -EnvironmentValue $env:APPLICATIONINSIGHTS_CONNECTION_STRING
+if ([string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
+    $applicationInsightsConnectionString = $applicationInsightsConnectionStringOutput
+}
+$secretPairs = New-Object System.Collections.Generic.List[string]
+$secretPairs.Add("db-cloud=$dbCloud")
+if (-not [string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
+    $secretPairs.Add("applicationinsights-connection-string=$applicationInsightsConnectionString")
+}
+az containerapp secret set `
+    --name $ContainerAppName `
+    --resource-group $ResourceGroupName `
+    --secrets $secretPairs.ToArray() `
+    --only-show-errors `
+    --output none
+
 Write-Host "Updating Container App image: $imageRef"
 
 $envPairs = Convert-EnvFileToPairs -Path $resolvedEnvFilePath
@@ -1027,33 +1053,10 @@ $envPairsList.Add("STORE_LOCAL=/tmp/storage")
 if (-not [string]::IsNullOrWhiteSpace($storeCloud)) {
     $envPairsList.Add("STORE_CLOUD=$storeCloud")
 }
-Write-Host "Updating Container App secret for Azure PostgreSQL connection..."
-$applicationInsightsConnectionStringFromEnvFile = if ($resolvedEnvFilePath) {
-    Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "APPLICATIONINSIGHTS_CONNECTION_STRING"
-}
-else {
-    ""
-}
-$applicationInsightsConnectionString = Resolve-InputValue `
-    -ExplicitValue "" `
-    -EnvFileValue $applicationInsightsConnectionStringFromEnvFile `
-    -EnvironmentValue $env:APPLICATIONINSIGHTS_CONNECTION_STRING
-if ([string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
-    $applicationInsightsConnectionString = $applicationInsightsConnectionStringOutput
-}
-$secretPairs = New-Object System.Collections.Generic.List[string]
-$secretPairs.Add("db-cloud=$dbCloud")
 if (-not [string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
-    $secretPairs.Add("applicationinsights-connection-string=$applicationInsightsConnectionString")
     $envPairsList.Add("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string")
 }
 $envPairs = $envPairsList.ToArray()
-az containerapp secret set `
-    --name $ContainerAppName `
-    --resource-group $ResourceGroupName `
-    --secrets $secretPairs.ToArray() `
-    --only-show-errors `
-    --output none
 
 if ($envPairs.Count -gt 0) {
     az containerapp update `
