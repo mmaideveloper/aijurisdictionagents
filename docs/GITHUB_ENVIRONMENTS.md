@@ -165,6 +165,7 @@ These are used by the document processor deployment workflow and by `infra_deplo
 | `AZURE_MANAGED_IDENTITY_NAME` | Identity used by the job |
 | `AZURE_STORAGE_ACCOUNT_NAME` | Storage account with uploaded documents |
 | `AZURE_STORAGE_CONTAINER_NAME` | Storage container name |
+| `AZURE_DOCUMENT_PROCESSOR_LOCATION` | Optional document processor deployment region override, default `westeurope`; keep it aligned with the ACA managed environment region |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name |
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional schedule, default is every 15 minutes |
 

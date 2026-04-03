@@ -78,7 +78,7 @@ jobs:
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_DOCUMENT_PROCESSOR_LOCATION: ${{ vars.AZURE_DOCUMENT_PROCESSOR_LOCATION || 'westeurope' }}
       AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
       AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
       AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
@@ -106,7 +106,6 @@ jobs:
             "AZURE_TENANT_ID",
             "AZURE_SUBSCRIPTION_ID",
             "AZURE_RESOURCE_GROUP",
-            "AZURE_LOCATION",
             "AZURE_CONTAINERAPPS_ENVIRONMENT",
             "AZURE_CONTAINER_REGISTRY",
             "AZURE_MANAGED_IDENTITY_NAME",
@@ -164,6 +163,8 @@ jobs:
       - name: Deploy document processor job
         shell: pwsh
         run: |
+          Write-Host "Document processor deploy location: $env:AZURE_DOCUMENT_PROCESSOR_LOCATION"
+
           $jobName = if ([string]::IsNullOrWhiteSpace($env:AZURE_DOCUMENT_PROCESSOR_JOB_NAME)) {
             "document-processor"
           } else {
@@ -199,7 +200,7 @@ jobs:
             -SkipEnvFile `
             -SubscriptionId $env:AZURE_SUBSCRIPTION_ID `
             -ResourceGroupName $env:AZURE_RESOURCE_GROUP `
-            -Location $env:AZURE_LOCATION `
+            -Location $env:AZURE_DOCUMENT_PROCESSOR_LOCATION `
             -ContainerAppEnvironmentName $env:AZURE_CONTAINERAPPS_ENVIRONMENT `
             -JobName $jobName `
             -AcrName "${{ steps.acr.outputs.acr_name }}" `
