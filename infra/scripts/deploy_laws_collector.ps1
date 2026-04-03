@@ -256,6 +256,24 @@ if (-not [string]::IsNullOrWhiteSpace($ApplicationInsightsName)) {
     }
 }
 
+if ($SystemEmbeddingModelOption -eq "local") {
+    Write-Host "Prefetching local embedding model into build context: $SystemEmbeddingModel"
+    $previousEmbeddingModelOption = $env:SYSTEM_EMBEDDING_MODEL_OPTION
+    $previousEmbeddingModel = $env:SYSTEM_EMBEDDING_MODEL
+    try {
+        $env:SYSTEM_EMBEDDING_MODEL_OPTION = "local"
+        $env:SYSTEM_EMBEDDING_MODEL = $SystemEmbeddingModel
+        python "scripts/models/prefetch_local_embedding_model.py"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Local embedding model prefetch failed for '$SystemEmbeddingModel'."
+        }
+    }
+    finally {
+        Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL_OPTION" -PreviousValue $previousEmbeddingModelOption
+        Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL" -PreviousValue $previousEmbeddingModel
+    }
+}
+
 Write-Host "Applying laws schema migrations to Azure PostgreSQL..."
 $previousLawsDbBackend = $env:LAWS_DB_BACKEND
 $previousLawsDbCloud = $env:LAWS_DB_CLOUD

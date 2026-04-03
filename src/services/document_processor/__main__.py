@@ -18,7 +18,14 @@ def main() -> int:
         logger.exception("[document-processor] worker failed")
         raise
 
-    logger.info(json.dumps([result.__dict__ for result in results], indent=2))
+    payload = {
+        "processed_documents": len(results),
+        "results": [result.__dict__ for result in results],
+    }
+    logger.info(
+        "[document-processor] batch_results=%s",
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+    )
     return 0
 
 

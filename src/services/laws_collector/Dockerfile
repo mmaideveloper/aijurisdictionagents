@@ -3,10 +3,10 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY pyproject.toml README.md /app/
+COPY aimodels /app/aimodels
 COPY src /app/src
 
 RUN pip install --no-cache-dir .
-RUN mkdir -p /app/aimodels
 
 ENV PYTHONUNBUFFERED=1
 ENV LAWS_WORKER_FIXTURE=baseline

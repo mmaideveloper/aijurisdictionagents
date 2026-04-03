@@ -17,7 +17,7 @@ Current runtime modes:
 Embedding model env vars:
 
 - `SYSTEM_EMBEDDING_MODEL_OPTION`: shared embedding mode switch. Use `local` for the built-in local sentence-transformer path, `cloud` to keep Azure/OpenAI embeddings.
-- `SYSTEM_EMBEDDING_MODEL`: shared local embedding model name. Default: `all-MiniLM-L6-v2`. Local models are cached under the repo `aimodels/` folder.
+- `SYSTEM_EMBEDDING_MODEL`: shared local embedding model name. Default: `all-MiniLM-L6-v2`. Local models are cached under `aimodels/` locally and baked into Azure worker images under `/app/aimodels` during deployment.
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`: Azure OpenAI embedding deployment name. Recommended for Jurisdicta: `text-embedding-3-large`.
 - `OPENAI_EMBEDDINGS_MODEL`: OpenAI embedding model name. Recommended default: `text-embedding-3-large`.
 - Local tests and the minimal demo use `LLM_PROVIDER=mock`, which keeps embeddings deterministic and offline.
@@ -45,11 +45,19 @@ Local embedding similarity demo:
 python examples/local_embedding_semantic_search_demo.py
 ```
 
+Local embedding cache demo:
+
+```bash
+python examples/local_embedding_cache_demo.py
+```
+
 Startup logs now print the resolved embedding runtime before processing begins, for example:
 
 - `[document-processor] startup embedding_option=local embedding_model=all-MiniLM-L6-v2`
 - `[document-processor] startup embedding_option=cloud embedding_model=text-embedding-3-large`
+- `[document-processor] batch_results={...}` is emitted as a single-line JSON payload so Azure Container Apps does not split one batch summary into many log rows.
 - When `APPLICATIONINSIGHTS_CONNECTION_STRING` is present on the Azure ACA job, those startup and processing logs are also exported to Application Insights under application name `document_processor`.
+- Failed documents now also emit a compact per-document error line with `doc_id`, `case_id`, `original_filename`, and `error`.
 
 ## Azure Container Apps
 

@@ -96,3 +96,14 @@ def test_get_embedding_client_uses_local_embedding_mode(monkeypatch, tmp_path) -
     assert client.model_name == "all-MiniLM-L6-v2"
     assert result.model_name == "all-MiniLM-L6-v2"
     assert result.vectors == [[0.1, 0.2, 0.3]]
+
+
+def test_default_local_embedding_root_prefers_current_working_directory(monkeypatch, tmp_path) -> None:
+    working_directory = tmp_path / "workspace"
+    expected_root = working_directory / "aimodels"
+    expected_root.mkdir(parents=True)
+    monkeypatch.chdir(working_directory)
+
+    resolved = embeddings._default_local_embedding_root()
+
+    assert resolved == expected_root

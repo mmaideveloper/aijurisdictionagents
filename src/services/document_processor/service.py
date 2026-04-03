@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import uuid
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument, CaseDocumentChunk
@@ -11,6 +12,8 @@ from .runtime import (
     extract_document_text,
     serialize_embedding_vector,
 )
+
+logger = logging.getLogger("document-processor")
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,14 @@ class DocumentProcessor:
                 )
             except Exception as exc:  # noqa: BLE001
                 self.store.mark_document_processing(doc_id=document.doc_id, status='failed', error=str(exc)[:500])
+                logger.warning(
+                    "[document-processor] document failed "
+                    "doc_id=%s case_id=%s original_filename=%s error=%s",
+                    document.doc_id,
+                    document.case_id,
+                    document.original_filename,
+                    str(exc)[:500],
+                )
                 results.append(
                     ProcessedDocumentResult(
                         doc_id=document.doc_id,

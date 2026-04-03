@@ -64,6 +64,22 @@ function Require-Value {
     }
 }
 
+function Restore-EnvVar {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [AllowNull()]
+        [string]$PreviousValue
+    )
+
+    if ($null -eq $PreviousValue) {
+        Remove-Item "Env:$Name" -ErrorAction SilentlyContinue
+        return
+    }
+
+    Set-Item -Path "Env:$Name" -Value $PreviousValue
+}
+
 function Convert-ToPostgresConnectionString {
     param(
         [Parameter(Mandatory = $true)]
@@ -145,6 +161,7 @@ function Write-WorkflowSummary {
 }
 
 Assert-ToolInstalled -ToolName "az"
+Assert-ToolInstalled -ToolName "python"
 
 $envSubscriptionId = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_SUBSCRIPTION_ID" }
 $envResourceGroup = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_RESOURCE_GROUP" }
@@ -260,6 +277,24 @@ if (-not [string]::IsNullOrWhiteSpace($ApplicationInsightsName)) {
       --output tsv 2>$null
     if ($LASTEXITCODE -ne 0) {
         $applicationInsightsConnectionString = ""
+    }
+}
+
+if ($SystemEmbeddingModelOption -eq "local") {
+    Write-Host "Prefetching local embedding model into build context: $SystemEmbeddingModel"
+    $previousEmbeddingModelOption = $env:SYSTEM_EMBEDDING_MODEL_OPTION
+    $previousEmbeddingModel = $env:SYSTEM_EMBEDDING_MODEL
+    try {
+        $env:SYSTEM_EMBEDDING_MODEL_OPTION = "local"
+        $env:SYSTEM_EMBEDDING_MODEL = $SystemEmbeddingModel
+        python "scripts/models/prefetch_local_embedding_model.py"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Local embedding model prefetch failed for '$SystemEmbeddingModel'."
+        }
+    }
+    finally {
+        Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL_OPTION" -PreviousValue $previousEmbeddingModelOption
+        Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL" -PreviousValue $previousEmbeddingModel
     }
 }
 

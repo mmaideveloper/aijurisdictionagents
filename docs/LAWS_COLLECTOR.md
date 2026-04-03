@@ -237,6 +237,7 @@ The shared embedding switch now supports:
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default runtime mode
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2` as the default local sentence-transformer model
 - repo-local model caching under `aimodels/`
+- Azure deployment prefetches the configured local model into `aimodels/` before the ACR build and bakes it into the worker image under `/app/aimodels`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default for Azure worker deployments
 The same live HTML source now also persists structured metadata from the `Informácie o predpise` panel into `law_metadata` and stores dependency edges from the `Vzťahy predpisu` panel in `law_metadata_relations`. That includes:
 

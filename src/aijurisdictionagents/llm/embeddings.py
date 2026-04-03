@@ -270,9 +270,35 @@ def _normalize_embedding_input(text: str) -> str:
 
 
 def _default_local_embedding_root() -> Path:
-    root = Path(__file__).resolve().parents[3] / "aimodels"
+    root = _resolve_local_embedding_root()
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _resolve_local_embedding_root() -> Path:
+    candidates = _iter_local_embedding_root_candidates()
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return candidates[0]
+
+
+def _iter_local_embedding_root_candidates() -> list[Path]:
+    candidates = [
+        Path.cwd() / "aimodels",
+        Path("/app/aimodels"),
+        Path(__file__).resolve().parents[3] / "aimodels",
+    ]
+    deduplicated: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate.resolve(strict=False))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduplicated.append(candidate)
+    return deduplicated
 
 
 def _sanitize_model_directory_name(model_name: str) -> str:
