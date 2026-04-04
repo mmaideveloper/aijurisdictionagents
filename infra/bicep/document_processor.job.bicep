@@ -25,6 +25,7 @@ param azureOpenAIApiVersion string = '2024-12-01-preview'
 param azureOpenAIApiKey string = ''
 param triggerType string = 'Schedule'
 param cronExpression string = '*/15 * * * *'
+param documentProcessorMaxRunningTime int = 0
 param replicaTimeout int = 1800
 param replicaRetryLimit int = 1
 param parallelism int = 1
@@ -111,6 +112,10 @@ var documentProcessorEnv = concat(
     {
       name: 'STORE_CLOUD'
       value: 'https://${storageAccount.name}.blob.core.windows.net/${storageContainerName}'
+    }
+    {
+      name: 'DOCUMENT_PROCESSOR_MAX_RUNNING_TIME'
+      value: string(documentProcessorMaxRunningTime)
     }
   ],
   !empty(applicationInsightsConnectionString)

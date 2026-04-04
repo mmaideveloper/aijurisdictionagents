@@ -98,6 +98,7 @@ jobs:
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       AZURE_DOCUMENT_PROCESSOR_JOB_NAME: ${{ vars.AZURE_DOCUMENT_PROCESSOR_JOB_NAME }}
       AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION: ${{ vars.AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION }}
+      DOCUMENT_PROCESSOR_MAX_RUNNING_TIME: ${{ vars.DOCUMENT_PROCESSOR_MAX_RUNNING_TIME }}
     steps:
       - uses: actions/checkout@v5
 
@@ -234,4 +235,5 @@ jobs:
             -AzureOpenAIApiVersion $env:AZURE_OPENAI_API_VERSION `
             -AzureOpenAIApiKey $env:AZURE_OPENAI_API_KEY `
             -CronExpression $cronExpression `
+            -DocumentProcessorMaxRunningTime $env:DOCUMENT_PROCESSOR_MAX_RUNNING_TIME `
             -ImageTag $imageTag

@@ -22,6 +22,7 @@ param(
     [string]$AzureOpenAIApiVersion = "2024-12-01-preview",
     [string]$AzureOpenAIApiKey,
     [string]$CronExpression = "*/15 * * * *",
+    [string]$DocumentProcessorMaxRunningTime = "",
     [string]$ImageTag = "latest",
     [string]$EnvFilePath = ".env",
     [switch]$SkipEnvFile
@@ -132,6 +133,26 @@ function Resolve-AcaCronExpression {
     return ($parts -join ' ')
 }
 
+function Resolve-NonNegativeInteger {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [string]$Value,
+        [int]$DefaultValue = 0
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $DefaultValue
+    }
+
+    $parsed = 0
+    if (-not [int]::TryParse($Value, [ref]$parsed) -or $parsed -lt 0) {
+        throw "$Name must be an integer >= 0."
+    }
+
+    return $parsed
+}
+
 function Test-ResourceExistsInGroup {
     param(
         [Parameter(Mandatory = $true)]
@@ -184,6 +205,7 @@ $envAzureOpenAIEndpoint = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -
 $envAzureOpenAIEmbeddingsModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_OPENAI_EMBEDDINGS_MODEL" }
 $envAzureOpenAIApiVersion = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_OPENAI_API_VERSION" }
 $envAzureOpenAIApiKey = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_OPENAI_API_KEY" }
+$envDocumentProcessorMaxRunningTime = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "DOCUMENT_PROCESSOR_MAX_RUNNING_TIME" }
 
 $SubscriptionId = Resolve-InputValue -ExplicitValue $SubscriptionId -EnvFileValue $envSubscriptionId -EnvironmentValue $env:AZURE_SUBSCRIPTION_ID
 $ResourceGroupName = Resolve-InputValue -ExplicitValue $ResourceGroupName -EnvFileValue $envResourceGroup -EnvironmentValue $env:AZURE_RESOURCE_GROUP
@@ -211,6 +233,7 @@ $AzureOpenAIEndpoint = Resolve-InputValue -ExplicitValue $AzureOpenAIEndpoint -E
 $AzureOpenAIEmbeddingsModel = Resolve-InputValue -ExplicitValue $AzureOpenAIEmbeddingsModel -EnvFileValue $envAzureOpenAIEmbeddingsModel -EnvironmentValue $env:AZURE_OPENAI_EMBEDDINGS_MODEL
 $AzureOpenAIApiVersion = Resolve-InputValue -ExplicitValue $AzureOpenAIApiVersion -EnvFileValue $envAzureOpenAIApiVersion -EnvironmentValue $env:AZURE_OPENAI_API_VERSION
 $AzureOpenAIApiKey = Resolve-InputValue -ExplicitValue $AzureOpenAIApiKey -EnvFileValue $envAzureOpenAIApiKey -EnvironmentValue $env:AZURE_OPENAI_API_KEY
+$DocumentProcessorMaxRunningTime = Resolve-InputValue -ExplicitValue $DocumentProcessorMaxRunningTime -EnvFileValue $envDocumentProcessorMaxRunningTime -EnvironmentValue $env:DOCUMENT_PROCESSOR_MAX_RUNNING_TIME
 
 if ([string]::IsNullOrWhiteSpace($LlmProvider)) {
     $LlmProvider = "azurefoundry"
@@ -228,6 +251,7 @@ if ([string]::IsNullOrWhiteSpace($AzureOpenAIApiVersion)) {
     $AzureOpenAIApiVersion = "2024-12-01-preview"
 }
 $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "*/15 * * * *"
+$DocumentProcessorMaxRunningTime = Resolve-NonNegativeInteger -Name "DocumentProcessorMaxRunningTime" -Value $DocumentProcessorMaxRunningTime -DefaultValue 0
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId
 Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName
@@ -338,7 +362,8 @@ az deployment group create `
       azureOpenAIEmbeddingsModel=$AzureOpenAIEmbeddingsModel `
       azureOpenAIApiVersion=$AzureOpenAIApiVersion `
       azureOpenAIApiKey=$AzureOpenAIApiKey `
-      cronExpression=$CronExpression | Out-Null
+      cronExpression=$CronExpression `
+      documentProcessorMaxRunningTime=$DocumentProcessorMaxRunningTime | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "Document processor ACA job deployment failed."
 }

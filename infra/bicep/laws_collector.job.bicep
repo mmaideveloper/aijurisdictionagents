@@ -17,6 +17,7 @@ param systemEmbeddingModelOption string = 'local'
 param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
 param cronExpression string = '0 0 * * *'
 param workerMaxProbes int = 1
+param lawsCollectorMaxRunningTime int = 0
 param replicaTimeout int = 3600
 param replicaRetryLimit int = 1
 param parallelism int = 1
@@ -132,6 +133,10 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
               {
                 name: 'LAWS_WORKER_MAX_PROBES'
                 value: string(workerMaxProbes)
+              }
+              {
+                name: 'LAWS_COLLECTOR_MAX_RUNNING_TIME'
+                value: string(lawsCollectorMaxRunningTime)
               }
               {
                 name: 'SYSTEM_EMBEDDING_MODEL_OPTION'
