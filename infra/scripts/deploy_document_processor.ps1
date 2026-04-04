@@ -138,7 +138,7 @@ function Resolve-NonNegativeInteger {
         [Parameter(Mandatory = $true)]
         [string]$Name,
         [string]$Value,
-        [int]$DefaultValue = 0
+        [int]$DefaultValue = 15
     )
 
     if ([string]::IsNullOrWhiteSpace($Value)) {
@@ -251,7 +251,7 @@ if ([string]::IsNullOrWhiteSpace($AzureOpenAIApiVersion)) {
     $AzureOpenAIApiVersion = "2024-12-01-preview"
 }
 $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "*/15 * * * *"
-$DocumentProcessorMaxRunningTime = Resolve-NonNegativeInteger -Name "DocumentProcessorMaxRunningTime" -Value $DocumentProcessorMaxRunningTime -DefaultValue 0
+$DocumentProcessorMaxRunningTime = Resolve-NonNegativeInteger -Name "DocumentProcessorMaxRunningTime" -Value $DocumentProcessorMaxRunningTime -DefaultValue 15
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId
 Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName

@@ -44,7 +44,7 @@ class WorkerOptions:
         if max_probes < 1:
             raise ValueError("LAWS_WORKER_MAX_PROBES must be >= 1")
 
-        max_running_minutes = int(os.getenv("LAWS_COLLECTOR_MAX_RUNNING_TIME", "0"))
+        max_running_minutes = int(os.getenv("LAWS_COLLECTOR_MAX_RUNNING_TIME", "60"))
         if max_running_minutes < 0:
             raise ValueError("LAWS_COLLECTOR_MAX_RUNNING_TIME must be >= 0")
 

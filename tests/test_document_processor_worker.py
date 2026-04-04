@@ -74,6 +74,12 @@ def test_document_processor_reads_azure_max_running_time(monkeypatch) -> None:
     assert observed_max_running_seconds == [3600]
 
 
+def test_document_processor_default_max_running_time_is_15(monkeypatch) -> None:
+    monkeypatch.delenv("DOCUMENT_PROCESSOR_MAX_RUNNING_TIME", raising=False)
+
+    assert worker._load_max_running_minutes() == 15
+
+
 def test_document_processor_logs_failure_reason(monkeypatch, caplog) -> None:
     class FakeStore:
         def __init__(self, document: _FakeCaseDocument) -> None:

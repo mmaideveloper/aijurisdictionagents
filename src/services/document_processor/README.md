@@ -13,7 +13,7 @@ Current runtime modes:
 
 - `DOCUMENT_PROCESSOR_OPTION=local`: the API processes uploads immediately inside the API request after the file is stored.
 - `DOCUMENT_PROCESSOR_OPTION=azure`: the API leaves uploads pending and this ACA scheduled job processes them asynchronously.
-- `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=<minutes>`: optional runtime cap for Azure job executions. Use `0` (default) for unlimited runtime.
+- `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=<minutes>`: optional runtime cap for Azure job executions. Default is `15`; set `0` for unlimited runtime.
 
 Embedding model env vars:
 

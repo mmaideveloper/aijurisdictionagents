@@ -152,7 +152,7 @@ function Resolve-NonNegativeInteger {
         [Parameter(Mandatory = $true)]
         [string]$Name,
         [string]$Value,
-        [int]$DefaultValue = 0
+        [int]$DefaultValue = 60
     )
 
     if ([string]::IsNullOrWhiteSpace($Value)) {
@@ -244,7 +244,7 @@ if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddin
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel = "all-MiniLM-L6-v2" }
 $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "0 0 * * *"
 $WorkerMaxProbes = Resolve-PositiveInteger -Name "WorkerMaxProbes" -Value $WorkerMaxProbes -DefaultValue 1
-$LawsCollectorMaxRunningTime = Resolve-NonNegativeInteger -Name "LawsCollectorMaxRunningTime" -Value $LawsCollectorMaxRunningTime -DefaultValue 0
+$LawsCollectorMaxRunningTime = Resolve-NonNegativeInteger -Name "LawsCollectorMaxRunningTime" -Value $LawsCollectorMaxRunningTime -DefaultValue 60
 
 az account set --subscription $SubscriptionId | Out-Null
 $resourceGroupExists = az group exists --name $ResourceGroupName --output tsv

@@ -4,11 +4,11 @@ param containerAppName string
 param frontendContainerAppName string
 param documentProcessorJobName string = 'document-processor'
 param documentProcessorCronExpression string = '*/15 * * * *'
-param documentProcessorMaxRunningTime int = 0
+param documentProcessorMaxRunningTime int = 15
 param lawsCollectorJobName string = 'laws-collector'
 param lawsCollectorCronExpression string = '0 0 * * *'
 param lawsCollectorMaxProbes int = 1
-param lawsCollectorMaxRunningTime int = 0
+param lawsCollectorMaxRunningTime int = 60
 param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'

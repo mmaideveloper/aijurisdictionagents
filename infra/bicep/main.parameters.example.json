@@ -20,6 +20,9 @@
     "documentProcessorCronExpression": {
       "value": "*/15 * * * *"
     },
+    "documentProcessorMaxRunningTime": {
+      "value": 15
+    },
     "lawsCollectorJobName": {
       "value": "laws-collector"
     },
@@ -28,6 +31,9 @@
     },
     "lawsCollectorMaxProbes": {
       "value": 1
+    },
+    "lawsCollectorMaxRunningTime": {
+      "value": 60
     },
     "acrName": {
       "value": "aijurdevacr12345"

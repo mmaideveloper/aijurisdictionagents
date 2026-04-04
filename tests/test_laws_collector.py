@@ -212,7 +212,7 @@ def test_laws_collector_worker_options_default_to_single_live_probe(monkeypatch)
     options = WorkerOptions.from_env()
 
     assert options.max_probes == 1
-    assert options.max_running_minutes == 0
+    assert options.max_running_minutes == 60
 
 
 def test_slovlex_import_planner_starts_from_1_1993_without_progress(tmp_path: Path) -> None:

@@ -4,7 +4,8 @@ import os
 
 
 def _read_minutes(name: str) -> int:
-    value = int(os.getenv(name, "0"))
+    default_minutes = "60" if name == "LAWS_COLLECTOR_MAX_RUNNING_TIME" else "15"
+    value = int(os.getenv(name, default_minutes))
     if value < 0:
         raise ValueError(f"{name} must be >= 0")
     return value
