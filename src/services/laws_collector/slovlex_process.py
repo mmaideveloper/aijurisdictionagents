@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from typing import Protocol
+import time
+from typing import Callable, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -53,6 +54,7 @@ class SequentialImportSummary:
     last_collector_run_at: str | None
     last_processed_at: str | None
     first_found_url: str | None = None
+    stopped_due_to_max_running_time: bool = False
 
 
 class SlovLexSequentialImportRunner:
@@ -64,12 +66,14 @@ class SlovLexSequentialImportRunner:
         planner: SlovLexImportPlanner | None = None,
         service: LiveIngestService | None = None,
         snapshot_loader: LiveSnapshotLoader | None = None,
+        monotonic_time_provider: Callable[[], float] = time.monotonic,
     ) -> None:
         self.config = config
         self.store = store
         self.planner = planner or SlovLexImportPlanner(config=config)
         self.service = service
         self.snapshot_loader = snapshot_loader or SlovLexLiveSnapshotLoader()
+        self._monotonic_time = monotonic_time_provider
 
     def get_progress(self) -> CollectorProgress:
         return self.store.get_or_create_collector_progress(
@@ -84,9 +88,12 @@ class SlovLexSequentialImportRunner:
         max_probes: int = 25,
         today: date | None = None,
         timeout_seconds: float = 12.0,
+        max_running_seconds: float = 0,
     ) -> SequentialImportSummary:
         if max_probes < 1:
             raise ValueError("max_probes must be >= 1")
+        if max_running_seconds < 0:
+            raise ValueError("max_running_seconds must be >= 0")
 
         current_day = today or date.today()
         progress = self.get_progress()
@@ -94,10 +101,20 @@ class SlovLexSequentialImportRunner:
         laws_found = 0
         years_advanced = 0
         stopped_on_current_year_gap = False
+        stopped_due_to_max_running_time = False
         last_checked_law: str | None = None
         first_found_url: str | None = None
+        started_at = self._monotonic_time()
 
         while probes < max_probes:
+            if max_running_seconds > 0 and (self._monotonic_time() - started_at) >= max_running_seconds:
+                stopped_due_to_max_running_time = True
+                _log(
+                    f"stopped due to max running time country={self.config.country_code} "
+                    f"elapsed_seconds={self._monotonic_time() - started_at:.1f} "
+                    f"max_running_seconds={max_running_seconds:.1f}"
+                )
+                break
             plan = self.planner.build_plan(progress=progress, today=current_day)
             target = plan.next_target
             probe = self._probe_target(target=target, timeout_seconds=timeout_seconds)
@@ -106,6 +123,14 @@ class SlovLexSequentialImportRunner:
             observed_at = _now_iso()
 
             if probe.exists:
+                if max_running_seconds > 0 and (self._monotonic_time() - started_at) >= max_running_seconds:
+                    stopped_due_to_max_running_time = True
+                    _log(
+                        f"stopped before ingest due to max running time country={self.config.country_code} "
+                        f"law={target.law_id} elapsed_seconds={self._monotonic_time() - started_at:.1f} "
+                        f"max_running_seconds={max_running_seconds:.1f}"
+                    )
+                    break
                 _log(
                     f"start processing country={self.config.country_code} "
                     f"law={target.law_id} source={probe.url}"
@@ -158,6 +183,7 @@ class SlovLexSequentialImportRunner:
             last_collector_run_at=progress.last_collector_run_at,
             last_processed_at=progress.last_processed_at,
             first_found_url=first_found_url,
+            stopped_due_to_max_running_time=stopped_due_to_max_running_time,
         )
 
     def _probe_target(self, *, target: ImportTarget, timeout_seconds: float) -> SlovLexProbeResult:

@@ -85,11 +85,22 @@ def run_worker() -> None:
         while True:
             cycle += 1
             if options.fixture == "live":
+                max_running_seconds = 0.0
+                if _is_azure_runtime() and options.max_running_minutes > 0:
+                    max_running_seconds = max(0.0, (options.max_running_minutes * 60) - (time.monotonic() - started_at))
+                    if max_running_seconds <= 0:
+                        logger.info(
+                            "[laws-collector] worker stopped after max running time "
+                            "max_running_minutes=%s elapsed_seconds=%.1f",
+                            options.max_running_minutes,
+                            time.monotonic() - started_at,
+                        )
+                        return
                 summary = SlovLexSequentialImportRunner(
                     config=config,
                     store=store,
                     service=service,
-                ).run(max_probes=options.max_probes)
+                ).run(max_probes=options.max_probes, max_running_seconds=max_running_seconds)
                 logger.info(
                     f"[laws-collector] collector={collector_definition.collector_name} "
                     f"country={config.country_code} cycle={cycle} fixture=live "
@@ -100,6 +111,14 @@ def run_worker() -> None:
                     f"last_processed_at={summary.last_processed_at or ''} "
                     f"next_law_to_check={summary.next_law_to_check}"
                 )
+                if summary.stopped_due_to_max_running_time:
+                    logger.info(
+                        "[laws-collector] worker stopped during live probing after max running time "
+                        "max_running_minutes=%s elapsed_seconds=%.1f",
+                        options.max_running_minutes,
+                        time.monotonic() - started_at,
+                    )
+                    return
             else:
                 snapshots = (
                     collector_definition.baseline_snapshots()
