@@ -25,8 +25,9 @@ def test_document_processor_logs_embedding_runtime_on_startup(monkeypatch, caplo
         def __init__(self, store: FakeStore) -> None:
             self._store = store
 
-        def run_once(self, *, limit: int) -> list[object]:
+        def run_once(self, *, limit: int, max_running_seconds: float = 0) -> list[object]:
             assert limit == 3
+            assert max_running_seconds == 0
             return []
 
     fake_store = FakeStore()
@@ -43,6 +44,40 @@ def test_document_processor_logs_embedding_runtime_on_startup(monkeypatch, caplo
     assert "[document-processor] startup" in output
     assert "embedding_option=local" in output
     assert "embedding_model=all-MiniLM-L6-v2" in output
+
+
+def test_document_processor_reads_azure_max_running_time(monkeypatch) -> None:
+    class FakeStore:
+        def initialize(self) -> None:
+            return None
+
+    observed_max_running_seconds: list[float] = []
+
+    class FakeProcessor:
+        def __init__(self, store: FakeStore) -> None:
+            self._store = store
+
+        def run_once(self, *, limit: int, max_running_seconds: float = 0) -> list[object]:
+            observed_max_running_seconds.append(max_running_seconds)
+            assert limit == 2
+            return []
+
+    fake_store = FakeStore()
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setenv("DB_OPTION", "azure")
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_MAX_RUNNING_TIME", "60")
+    monkeypatch.setattr(worker.ApiDatabaseStore, "from_env", lambda: fake_store)
+    monkeypatch.setattr(worker, "DocumentProcessor", FakeProcessor)
+
+    worker.run_document_processor(limit=2)
+
+    assert observed_max_running_seconds == [3600]
+
+
+def test_document_processor_default_max_running_time_is_15(monkeypatch) -> None:
+    monkeypatch.delenv("DOCUMENT_PROCESSOR_MAX_RUNNING_TIME", raising=False)
+
+    assert worker._load_max_running_minutes() == 15
 
 
 def test_document_processor_logs_failure_reason(monkeypatch, caplog) -> None:

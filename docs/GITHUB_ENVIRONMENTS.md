@@ -116,6 +116,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk` |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `*/15 * * * *` |
+| `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME` | Optional max runtime per document-processor Azure run in minutes; default `15`, set `0` for unlimited |
 | `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode; Azure API deployments default to `azure`, while `local` is only for local/dev API runs without the ACA job |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
@@ -173,6 +174,7 @@ These are used by the document processor deployment workflow and by `infra_deplo
 | `AZURE_DOCUMENT_PROCESSOR_LOCATION` | Optional document processor deployment region override, default `westeurope`; keep it aligned with the ACA managed environment region |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name |
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional 5-field cron schedule, default `*/15 * * * *`; legacy `0 */15 * * * *` values are normalized during deployment |
+| `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME` | Optional max runtime per Azure job execution in minutes; default `15`, set `0` for unlimited |
 
 ## 8. Configure Laws Collector Variables
 
@@ -183,6 +185,7 @@ These are used by the laws collector deployment workflow:
 | `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional private ACA name for the laws collector, default `laws-collector` |
 | `AZURE_LAWS_COLLECTOR_CRON_EXPRESSION` | Optional 5-field cron schedule, default `0 0 * * *`; legacy `0 0 * * * *` values are normalized during deployment |
 | `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional live probe count per scheduled job execution, default `1` |
+| `LAWS_COLLECTOR_MAX_RUNNING_TIME` | Optional max runtime per laws collector Azure job execution in minutes; default `60`, set `0` for unlimited |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional PostgreSQL database name for the Slovak laws corpus, default `laws_sk`; the laws deployment applies schema migrations to this database before updating the ACA job |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; default `local`, or set `cloud` for Azure OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, default `all-MiniLM-L6-v2`. In `local` mode the deploy prefetches that model into the worker image before `az acr build` |
@@ -250,8 +253,10 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_STORAGE_ACCOUNT_NAME`
 - `AZURE_APPLICATION_INSIGHTS_NAME`
 - `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`
+- `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME`
 - `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES`
+- `LAWS_COLLECTOR_MAX_RUNNING_TIME`
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
 - `API_BASE_URL`
 - `CORS_ALLOW_ORIGINS`

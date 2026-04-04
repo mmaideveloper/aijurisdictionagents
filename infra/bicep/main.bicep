@@ -4,9 +4,11 @@ param containerAppName string
 param frontendContainerAppName string
 param documentProcessorJobName string = 'document-processor'
 param documentProcessorCronExpression string = '*/15 * * * *'
+param documentProcessorMaxRunningTime int = 15
 param lawsCollectorJobName string = 'laws-collector'
 param lawsCollectorCronExpression string = '0 0 * * *'
 param lawsCollectorMaxProbes int = 1
+param lawsCollectorMaxRunningTime int = 60
 param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'
@@ -479,6 +481,7 @@ module documentProcessorJob 'document_processor.job.bicep' = if (createDocumentP
     managedEnvironmentName: environmentName
     jobName: documentProcessorJobName
     cronExpression: documentProcessorCronExpression
+    documentProcessorMaxRunningTime: documentProcessorMaxRunningTime
     acrName: acrName
     managedIdentityName: managedIdentityName
     image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
@@ -538,6 +541,7 @@ module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob)
     systemEmbeddingModel: systemEmbeddingModel
     cronExpression: lawsCollectorCronExpression
     workerMaxProbes: lawsCollectorMaxProbes
+    lawsCollectorMaxRunningTime: lawsCollectorMaxRunningTime
     tags: tags
   }
   dependsOn: [

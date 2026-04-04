@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import time
 import uuid
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument, CaseDocumentChunk
@@ -33,13 +34,27 @@ class DocumentProcessor:
         self.store = store
         self.embedding_client = embedding_client or get_embedding_client()
 
-    def run_once(self, *, limit: int = 20) -> list[ProcessedDocumentResult]:
+    def run_once(self, *, limit: int = 20, max_running_seconds: float = 0) -> list[ProcessedDocumentResult]:
         documents = self.store.list_unprocessed_case_documents(limit=limit)
-        return self.process_documents(documents)
+        return self.process_documents(documents, max_running_seconds=max_running_seconds)
 
-    def process_documents(self, documents: list[CaseDocument]) -> list[ProcessedDocumentResult]:
+    def process_documents(
+        self,
+        documents: list[CaseDocument],
+        *,
+        max_running_seconds: float = 0,
+    ) -> list[ProcessedDocumentResult]:
         results: list[ProcessedDocumentResult] = []
+        started_at = time.monotonic()
         for document in documents:
+            if max_running_seconds > 0 and (time.monotonic() - started_at) >= max_running_seconds:
+                logger.info(
+                    "[document-processor] worker stopped after max running time "
+                    "max_running_seconds=%.1f processed_documents=%s",
+                    max_running_seconds,
+                    len(results),
+                )
+                break
             self.store.mark_document_processing(doc_id=document.doc_id, status='processing', error=None)
             try:
                 payload = self.store.read_storage_bytes(storage_uri=document.storage_uri)

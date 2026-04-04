@@ -16,6 +16,7 @@ param(
     [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
     [string]$CronExpression = "0 0 * * *",
     [string]$WorkerMaxProbes = "",
+    [string]$LawsCollectorMaxRunningTime = "",
     [string]$ImageTag = "latest",
     [string]$EnvFilePath = ".env",
     [switch]$SkipEnvFile
@@ -146,6 +147,26 @@ function Resolve-PositiveInteger {
     return $parsed
 }
 
+function Resolve-NonNegativeInteger {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [string]$Value,
+        [int]$DefaultValue = 60
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $DefaultValue
+    }
+
+    $parsed = 0
+    if (-not [int]::TryParse($Value, [ref]$parsed) -or $parsed -lt 0) {
+        throw "$Name must be an integer >= 0."
+    }
+
+    return $parsed
+}
+
 function Test-ResourceExistsInGroup {
     param(
         [Parameter(Mandatory = $true)]
@@ -191,6 +212,7 @@ $envApplicationInsightsName = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFi
 $envSystemEmbeddingModelOption = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL_OPTION" }
 $envSystemEmbeddingModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL" }
 $envWorkerMaxProbes = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_COLLECTOR_MAX_PROBES" }
+$envLawsCollectorMaxRunningTime = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "LAWS_COLLECTOR_MAX_RUNNING_TIME" }
 
 $SubscriptionId = Resolve-InputValue -ExplicitValue $SubscriptionId -EnvFileValue $envSubscriptionId -EnvironmentValue $env:AZURE_SUBSCRIPTION_ID
 $ResourceGroupName = Resolve-InputValue -ExplicitValue $ResourceGroupName -EnvFileValue $envResourceGroup -EnvironmentValue $env:AZURE_RESOURCE_GROUP
@@ -206,6 +228,7 @@ $ApplicationInsightsName = Resolve-InputValue -ExplicitValue $ApplicationInsight
 $SystemEmbeddingModelOption = Resolve-InputValue -ExplicitValue $SystemEmbeddingModelOption -EnvFileValue $envSystemEmbeddingModelOption -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL_OPTION
 $SystemEmbeddingModel = Resolve-InputValue -ExplicitValue $SystemEmbeddingModel -EnvFileValue $envSystemEmbeddingModel -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL
 $WorkerMaxProbes = Resolve-InputValue -ExplicitValue $WorkerMaxProbes -EnvFileValue $envWorkerMaxProbes -EnvironmentValue $env:AZURE_LAWS_COLLECTOR_MAX_PROBES
+$LawsCollectorMaxRunningTime = Resolve-InputValue -ExplicitValue $LawsCollectorMaxRunningTime -EnvFileValue $envLawsCollectorMaxRunningTime -EnvironmentValue $env:LAWS_COLLECTOR_MAX_RUNNING_TIME
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId
 Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName
@@ -221,6 +244,7 @@ if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddin
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel = "all-MiniLM-L6-v2" }
 $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "0 0 * * *"
 $WorkerMaxProbes = Resolve-PositiveInteger -Name "WorkerMaxProbes" -Value $WorkerMaxProbes -DefaultValue 1
+$LawsCollectorMaxRunningTime = Resolve-NonNegativeInteger -Name "LawsCollectorMaxRunningTime" -Value $LawsCollectorMaxRunningTime -DefaultValue 60
 
 az account set --subscription $SubscriptionId | Out-Null
 $resourceGroupExists = az group exists --name $ResourceGroupName --output tsv
@@ -323,7 +347,8 @@ az deployment group create `
       systemEmbeddingModelOption=$SystemEmbeddingModelOption `
       systemEmbeddingModel=$SystemEmbeddingModel `
       cronExpression=$CronExpression `
-      workerMaxProbes=$WorkerMaxProbes | Out-Null
+      workerMaxProbes=$WorkerMaxProbes `
+      lawsCollectorMaxRunningTime=$LawsCollectorMaxRunningTime | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "Laws collector ACA job deployment failed."
 }

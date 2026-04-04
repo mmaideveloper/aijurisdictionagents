@@ -86,6 +86,7 @@ jobs:
       AZURE_LAWS_COLLECTOR_CRON_EXPRESSION: ${{ vars.AZURE_LAWS_COLLECTOR_CRON_EXPRESSION }}
       AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
       AZURE_LAWS_COLLECTOR_MAX_PROBES: ${{ vars.AZURE_LAWS_COLLECTOR_MAX_PROBES }}
+      LAWS_COLLECTOR_MAX_RUNNING_TIME: ${{ vars.LAWS_COLLECTOR_MAX_RUNNING_TIME }}
       SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'local' }}
       SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
     steps:
@@ -226,6 +227,7 @@ jobs:
             -SystemEmbeddingModel $env:SYSTEM_EMBEDDING_MODEL `
             -CronExpression $cronExpression `
             -WorkerMaxProbes $workerMaxProbes `
+            -LawsCollectorMaxRunningTime $env:LAWS_COLLECTOR_MAX_RUNNING_TIME `
             -ImageTag $imageTag
 
       - name: Remove GitHub runner firewall rule

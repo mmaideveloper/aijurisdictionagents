@@ -13,6 +13,7 @@
     "postgresAdminPassword": { "value": "<set-secure-value>" },
     "storageAccountName": { "value": "stjurisdev12345" },
     "storageContainerName": { "value": "documents" },
-    "cronExpression": { "value": "*/15 * * * *" }
+    "cronExpression": { "value": "*/15 * * * *" },
+    "documentProcessorMaxRunningTime": { "value": 15 }
   }
 }

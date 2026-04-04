@@ -54,6 +54,7 @@ jobs:
       AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
       AZURE_DOCUMENT_PROCESSOR_JOB_NAME: ${{ vars.AZURE_DOCUMENT_PROCESSOR_JOB_NAME }}
       AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION: ${{ vars.AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION }}
+      DOCUMENT_PROCESSOR_MAX_RUNNING_TIME: ${{ vars.DOCUMENT_PROCESSOR_MAX_RUNNING_TIME }}
       LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
       SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'local' }}
       SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
@@ -64,6 +65,7 @@ jobs:
       AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME: ${{ vars.AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME }}
       AZURE_LAWS_COLLECTOR_CRON_EXPRESSION: ${{ vars.AZURE_LAWS_COLLECTOR_CRON_EXPRESSION }}
       AZURE_LAWS_COLLECTOR_MAX_PROBES: ${{ vars.AZURE_LAWS_COLLECTOR_MAX_PROBES }}
+      LAWS_COLLECTOR_MAX_RUNNING_TIME: ${{ vars.LAWS_COLLECTOR_MAX_RUNNING_TIME }}
       AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
     steps:
       - uses: actions/checkout@v4
@@ -179,11 +181,13 @@ jobs:
           laws_job_name="${AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME:-laws-collector}"
           laws_cron_expression="$(normalize_aca_cron "${AZURE_LAWS_COLLECTOR_CRON_EXPRESSION:-}" "0 0 * * *")"
           laws_max_probes="${AZURE_LAWS_COLLECTOR_MAX_PROBES:-1}"
+          laws_max_running_time="${LAWS_COLLECTOR_MAX_RUNNING_TIME:-60}"
           laws_postgres_database="${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}"
 
           echo "laws_job_name=$laws_job_name" >> "$GITHUB_OUTPUT"
           echo "laws_cron_expression=$laws_cron_expression" >> "$GITHUB_OUTPUT"
           echo "laws_max_probes=$laws_max_probes" >> "$GITHUB_OUTPUT"
+          echo "laws_max_running_time=$laws_max_running_time" >> "$GITHUB_OUTPUT"
           echo "laws_postgres_database_name=$laws_postgres_database" >> "$GITHUB_OUTPUT"
 
       - name: Resolve document processor settings
@@ -219,6 +223,7 @@ jobs:
 
           document_processor_job="${AZURE_DOCUMENT_PROCESSOR_JOB_NAME:-document-processor}"
           document_processor_cron="$(normalize_aca_cron "${AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION:-}" "*/15 * * * *")"
+          document_processor_max_running_time="${DOCUMENT_PROCESSOR_MAX_RUNNING_TIME:-15}"
           llm_provider="${LLM_PROVIDER:-azurefoundry}"
           system_embedding_model_option="${SYSTEM_EMBEDDING_MODEL_OPTION:-local}"
           system_embedding_model="${SYSTEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}"
@@ -227,6 +232,7 @@ jobs:
 
           echo "document_processor_job_name=$document_processor_job" >> "$GITHUB_OUTPUT"
           echo "document_processor_cron_expression=$document_processor_cron" >> "$GITHUB_OUTPUT"
+          echo "document_processor_max_running_time=$document_processor_max_running_time" >> "$GITHUB_OUTPUT"
           echo "llm_provider=$llm_provider" >> "$GITHUB_OUTPUT"
           echo "system_embedding_model_option=$system_embedding_model_option" >> "$GITHUB_OUTPUT"
           echo "system_embedding_model=$system_embedding_model" >> "$GITHUB_OUTPUT"
@@ -329,9 +335,11 @@ jobs:
               frontendContainerAppName="$AZURE_FRONTEND_CONTAINER_APP_NAME" \
               documentProcessorJobName="${{ steps.documentprocessor.outputs.document_processor_job_name }}" \
               documentProcessorCronExpression="${{ steps.documentprocessor.outputs.document_processor_cron_expression }}" \
+              documentProcessorMaxRunningTime="${{ steps.documentprocessor.outputs.document_processor_max_running_time }}" \
               lawsCollectorJobName="${{ steps.laws.outputs.laws_job_name }}" \
               lawsCollectorCronExpression="${{ steps.laws.outputs.laws_cron_expression }}" \
               lawsCollectorMaxProbes="${{ steps.laws.outputs.laws_max_probes }}" \
+              lawsCollectorMaxRunningTime="${{ steps.laws.outputs.laws_max_running_time }}" \
               postgresServerName="$AZURE_POSTGRES_SERVER_NAME" \
               postgresDatabaseName="$AZURE_POSTGRES_DATABASE_NAME" \
               lawsPostgresDatabaseName="${{ steps.laws.outputs.laws_postgres_database_name }}" \
@@ -420,6 +428,6 @@ jobs:
             echo "| Managed environment | $AZURE_CONTAINERAPPS_ENVIRONMENT | $env_result | n/a |"
             echo "| API container app | $AZURE_CONTAINER_APP_NAME | $api_result | $api_endpoint |"
             echo "| Frontend container app | $AZURE_FRONTEND_CONTAINER_APP_NAME | $frontend_result | $frontend_endpoint |"
-            echo "| Document processor ACA job | ${{ steps.documentprocessor.outputs.document_processor_job_name }} | $document_processor_result | schedule: ${{ steps.documentprocessor.outputs.document_processor_cron_expression }} |"
-            echo "| Laws collector ACA job | ${{ steps.laws.outputs.laws_job_name }} | $laws_result | schedule: ${{ steps.laws.outputs.laws_cron_expression }}, max probes: ${{ steps.laws.outputs.laws_max_probes }} |"
+            echo "| Document processor ACA job | ${{ steps.documentprocessor.outputs.document_processor_job_name }} | $document_processor_result | schedule: ${{ steps.documentprocessor.outputs.document_processor_cron_expression }}, max runtime minutes: ${{ steps.documentprocessor.outputs.document_processor_max_running_time }} |"
+            echo "| Laws collector ACA job | ${{ steps.laws.outputs.laws_job_name }} | $laws_result | schedule: ${{ steps.laws.outputs.laws_cron_expression }}, max probes: ${{ steps.laws.outputs.laws_max_probes }}, max runtime minutes: ${{ steps.laws.outputs.laws_max_running_time }} |"
           } >> "$GITHUB_STEP_SUMMARY"

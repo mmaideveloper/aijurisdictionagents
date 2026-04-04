@@ -207,10 +207,12 @@ def test_laws_collector_config_defaults_to_country_specific_sqlite_db(monkeypatc
 
 def test_laws_collector_worker_options_default_to_single_live_probe(monkeypatch) -> None:
     monkeypatch.delenv("LAWS_WORKER_MAX_PROBES", raising=False)
+    monkeypatch.delenv("LAWS_COLLECTOR_MAX_RUNNING_TIME", raising=False)
 
     options = WorkerOptions.from_env()
 
     assert options.max_probes == 1
+    assert options.max_running_minutes == 60
 
 
 def test_slovlex_import_planner_starts_from_1_1993_without_progress(tmp_path: Path) -> None:
@@ -352,6 +354,35 @@ def test_slovlex_sequential_import_runner_updates_progress_until_current_year_ga
     assert summary.stopped_on_current_year_gap is True
     assert summary.next_law_to_check == "2/1994"
     assert reloaded.next_probe_law == "2/1994"
+
+
+def test_slovlex_sequential_import_runner_stops_mid_cycle_on_max_running_time(tmp_path: Path) -> None:
+    store, service = _build_service(tmp_path)
+    monotonic_values = iter([0.0, 1.0, 2.0, 3.0, 4.0, 40.0, 41.0, 42.0])
+    runner = SlovLexSequentialImportRunner(
+        config=service.config,
+        store=store,
+        monotonic_time_provider=lambda: next(monotonic_values),
+    )
+
+    def fake_probe(*, target: ImportTarget, timeout_seconds: float) -> object:
+        return type(
+            "Probe",
+            (),
+            {
+                "target": target,
+                "exists": True,
+                "status_code": 200,
+                "url": target.url,
+            },
+        )()
+
+    runner._probe_target = fake_probe  # type: ignore[method-assign]
+
+    summary = runner.run(max_probes=5, today=date(1993, 1, 2), max_running_seconds=30)
+
+    assert summary.probes == 2
+    assert summary.stopped_due_to_max_running_time is True
 
 
 def test_sqlite_store_initialize_backfills_embedding_metadata_columns(tmp_path: Path) -> None:
