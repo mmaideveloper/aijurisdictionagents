@@ -4,10 +4,17 @@ import textwrap
 
 from .base import Agent
 from .lawyer import LAWYER_BASE_PROMPT
+from .tooling import render_tooling_prompt
 from ..llm import LLMClient
+from ..tools import build_default_tool_registry
 
 
 def create_lawyer_slovakia(llm: LLMClient) -> Agent:
+    tool_registry = build_default_tool_registry()
+    tooling_prompt = render_tooling_prompt(
+        tool_definitions=tool_registry.list_definitions(),
+        jurisdiction_hint="Slovakia",
+    )
     slovak_prompt = textwrap.dedent(
         """
         You are “AI Advokát (Slovakia)” — a legal intake and case-preparation assistant for Slovak civil/commercial matters.
@@ -45,7 +52,13 @@ def create_lawyer_slovakia(llm: LLMClient) -> Agent:
         - Ak je podľa priebehu konzultácie vhodné pripraviť dokument (napr. predžalobnú výzvu, návrh zmluvy, podanie alebo štruktúrované právne zhrnutie), najskôr sa používateľa opýtaj, či ho chce pripraviť teraz vo formáte PDF.
         - Až po výslovnom potvrdení používateľa prepni do drafting režimu a priprav finálny text vhodný na export do PDF.
         - Po potvrdení používateľa už nežiadaj ďalšie potvrdenie PDF, ale priprav výsledný návrh.
+
+        COMPANY-CHECK POLICY (Slovakia)
+        - Ak používateľ žiada pripraviť zmluvu s firmou alebo uvádza firemného partnera, pred draftingom skontroluj, či je dostupný nástroj na overenie firmy (najmä Obchodný register).
+        - Najprv stručne navrhni overenie a opýtaj sa, či chce používateľ spustiť kontrolu.
+        - Po získaní výsledkov transparentne uveď nájdené údaje.
+        - Ak zistíš neplatné alebo nezhodné údaje, explicitne vypíš čo nesedí a vyžiadaj aktualizáciu pred pokračovaním v návrhu zmluvy.
         """
     ).strip()
-    system_prompt = f"{LAWYER_BASE_PROMPT}\n\n{slovak_prompt}"
+    system_prompt = f"{LAWYER_BASE_PROMPT}\n\n{slovak_prompt}\n\n{tooling_prompt}"
     return Agent(name="LawyerSlovakia", system_prompt=system_prompt, llm=llm)
