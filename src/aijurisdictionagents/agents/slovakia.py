@@ -4,36 +4,15 @@ import textwrap
 
 from .base import Agent
 from .lawyer import LAWYER_BASE_PROMPT
-from .tooling import ToolDefinition, render_tooling_prompt
+from .tooling import render_tooling_prompt
 from ..llm import LLMClient
+from ..tools import build_default_tool_registry
 
 
 def create_lawyer_slovakia(llm: LLMClient) -> Agent:
+    tool_registry = build_default_tool_registry()
     tooling_prompt = render_tooling_prompt(
-        tool_definitions=[
-            ToolDefinition(
-                name="obchodny_register_company_check",
-                purpose=(
-                    "Validate Slovak company identity in Obchodný register "
-                    "(business name, IČO, registered seat, legal status, statutory representatives)."
-                ),
-                input_fields=("company_name", "ico_or_registration_number"),
-            ),
-            ToolDefinition(
-                name="future_car_verification_check",
-                purpose=(
-                    "Reserved slot for vehicle-level verification checks requested by the user."
-                ),
-                input_fields=("plate_or_vin",),
-            ),
-            ToolDefinition(
-                name="future_person_screening_check",
-                purpose=(
-                    "Reserved slot for address/sanctions/person screening checks requested by the user."
-                ),
-                input_fields=("person_name", "date_of_birth_or_identifier"),
-            ),
-        ],
+        tool_definitions=tool_registry.list_definitions(),
         jurisdiction_hint="Slovakia",
     )
     slovak_prompt = textwrap.dedent(

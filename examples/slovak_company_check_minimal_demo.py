@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from aijurisdictionagents.agents import create_lawyer_agent
 from aijurisdictionagents.llm import MockLLMClient
+from aijurisdictionagents.tools.obchodnyregister import ObchodnyRegisterTool
 
 
 if __name__ == "__main__":
@@ -26,3 +27,15 @@ if __name__ == "__main__":
         print(prompt[marker_index:])
     else:
         print("Tooling section not found.")
+
+    print()
+    print("=== Obchodný register tool demo (offline fixture) ===")
+    sample_payload = (
+        '{\"items\":[{\"CorporateBodyFullName\":\"ESOLUTION s.r.o.\",'
+        '\"RegistrationNumber\":\"12345678\",\"RegisteredSeat\":\"Bratislava\",'
+        '\"Status\":\"Active\"}]}'
+    )
+    tool = ObchodnyRegisterTool(requester=lambda _url: (200, "application/json", sample_payload))
+    result = tool.run(company_name_or_registration="Esolution", person_name="Matonok")
+    print(result.message)
+    print(result.records)

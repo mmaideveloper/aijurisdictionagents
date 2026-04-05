@@ -145,6 +145,7 @@ python examples/slovak_company_check_minimal_demo.py
 ```
 
 See `docs/SLOVAK_COMPANY_CHECKS.md` for the workflow details.
+Tool implementations live under `src/aijurisdictionagents/tools/<toolname>/`.
 
 Run the end-to-end tests:
 

@@ -1,15 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Sequence
 
-
-@dataclass(frozen=True)
-class ToolDefinition:
-    name: str
-    purpose: str
-    input_fields: tuple[str, ...]
-    requires_explicit_user_confirmation: bool = True
+from ..tools.base import ToolDefinition
 
 
 def render_tooling_prompt(

@@ -139,3 +139,4 @@ def test_slovak_lawyer_prompt_includes_company_check_and_consent_policy() -> Non
     assert "obchodny_register_company_check" in prompt_lower
     assert "explicit_user_confirmation_required=yes" in prompt_lower
     assert "neplatné alebo nezhodné údaje" in prompt_lower
+    assert "future_car_verification_check" not in prompt_lower
