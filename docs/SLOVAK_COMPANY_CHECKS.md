@@ -16,6 +16,7 @@ Implementation modules:
 
 - `src/aijurisdictionagents/tools/registry.py` (tool registry and dispatch)
 - `src/aijurisdictionagents/tools/obchodnyregister/tool.py` (ORSR integration)
+- `src/aijurisdictionagents/tools/company_checks.py` (question recognition + tool execution for company seat checks)
 - `src/aijurisdictionagents/agents/tooling.py` (prompt rendering from registered tools)
 - `src/aijurisdictionagents/agents/slovakia.py` (Slovak lawyer policy using registry-defined tools)
 
@@ -34,3 +35,7 @@ python examples/slovak_company_check_minimal_demo.py
 ```
 
 The example prints the generated Slovak lawyer prompt snippet including available verification checks and required user-consent behavior.
+
+It also demonstrates recognition + execution for this style of user question:
+
+`Zisti mi ci spolocnost Esolution SK s.r.o. sidli v Poprade?`
