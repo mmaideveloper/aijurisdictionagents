@@ -129,3 +129,13 @@ def test_mock_lawyer_updates_document_for_slovak_revision_request() -> None:
     assert "Aby som mohol pripravit presny navrh" not in reply.content
     assert "Pripravil som aktualizovane znenie dokumentu" in reply.content
     assert "PDF" in reply.content
+
+
+def test_slovak_lawyer_prompt_includes_company_check_and_consent_policy() -> None:
+    llm = MockLLMClient()
+    lawyer = create_lawyer_agent(llm, "SK")
+    prompt_lower = lawyer.system_prompt.lower()
+
+    assert "obchodny_register_company_check" in prompt_lower
+    assert "explicit_user_confirmation_required=yes" in prompt_lower
+    assert "neplatné alebo nezhodné údaje" in prompt_lower

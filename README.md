@@ -138,6 +138,14 @@ Run the minimal example:
 python examples/minimal_demo.py
 ```
 
+Slovak company verification prompt demo (Obchodný register-first flow):
+
+```bash
+python examples/slovak_company_check_minimal_demo.py
+```
+
+See `docs/SLOVAK_COMPANY_CHECKS.md` for the workflow details.
+
 Run the end-to-end tests:
 
 ```bash

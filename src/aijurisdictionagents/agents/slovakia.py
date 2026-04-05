@@ -4,10 +4,38 @@ import textwrap
 
 from .base import Agent
 from .lawyer import LAWYER_BASE_PROMPT
+from .tooling import ToolDefinition, render_tooling_prompt
 from ..llm import LLMClient
 
 
 def create_lawyer_slovakia(llm: LLMClient) -> Agent:
+    tooling_prompt = render_tooling_prompt(
+        tool_definitions=[
+            ToolDefinition(
+                name="obchodny_register_company_check",
+                purpose=(
+                    "Validate Slovak company identity in Obchodný register "
+                    "(business name, IČO, registered seat, legal status, statutory representatives)."
+                ),
+                input_fields=("company_name", "ico_or_registration_number"),
+            ),
+            ToolDefinition(
+                name="future_car_verification_check",
+                purpose=(
+                    "Reserved slot for vehicle-level verification checks requested by the user."
+                ),
+                input_fields=("plate_or_vin",),
+            ),
+            ToolDefinition(
+                name="future_person_screening_check",
+                purpose=(
+                    "Reserved slot for address/sanctions/person screening checks requested by the user."
+                ),
+                input_fields=("person_name", "date_of_birth_or_identifier"),
+            ),
+        ],
+        jurisdiction_hint="Slovakia",
+    )
     slovak_prompt = textwrap.dedent(
         """
         You are “AI Advokát (Slovakia)” — a legal intake and case-preparation assistant for Slovak civil/commercial matters.
@@ -45,7 +73,13 @@ def create_lawyer_slovakia(llm: LLMClient) -> Agent:
         - Ak je podľa priebehu konzultácie vhodné pripraviť dokument (napr. predžalobnú výzvu, návrh zmluvy, podanie alebo štruktúrované právne zhrnutie), najskôr sa používateľa opýtaj, či ho chce pripraviť teraz vo formáte PDF.
         - Až po výslovnom potvrdení používateľa prepni do drafting režimu a priprav finálny text vhodný na export do PDF.
         - Po potvrdení používateľa už nežiadaj ďalšie potvrdenie PDF, ale priprav výsledný návrh.
+
+        COMPANY-CHECK POLICY (Slovakia)
+        - Ak používateľ žiada pripraviť zmluvu s firmou alebo uvádza firemného partnera, pred draftingom skontroluj, či je dostupný nástroj na overenie firmy (najmä Obchodný register).
+        - Najprv stručne navrhni overenie a opýtaj sa, či chce používateľ spustiť kontrolu.
+        - Po získaní výsledkov transparentne uveď nájdené údaje.
+        - Ak zistíš neplatné alebo nezhodné údaje, explicitne vypíš čo nesedí a vyžiadaj aktualizáciu pred pokračovaním v návrhu zmluvy.
         """
     ).strip()
-    system_prompt = f"{LAWYER_BASE_PROMPT}\n\n{slovak_prompt}"
+    system_prompt = f"{LAWYER_BASE_PROMPT}\n\n{slovak_prompt}\n\n{tooling_prompt}"
     return Agent(name="LawyerSlovakia", system_prompt=system_prompt, llm=llm)
