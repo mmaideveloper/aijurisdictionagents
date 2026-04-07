@@ -1,7 +1,10 @@
 from io import BytesIO
 import re
 
-from aijurisdictionagents.agents.ai_web_search import AIWebSearchAgent, _parse_duckduckgo_html_results
+from aijurisdictionagents.agents.ai_web_search import (
+    AIWebSearchAgent,
+    _parse_duckduckgo_html_results,
+)
 from aijurisdictionagents.agents import AIUserSimulatorAgent, create_lawyer_agent
 from aijurisdictionagents.llm import MockLLMClient
 from aijurisdictionagents.schemas import Document, Message
@@ -162,6 +165,22 @@ def test_parse_duckduckgo_html_results_extracts_title_url_and_snippet() -> None:
     assert records[0].url == "https://platform.openai.com/docs/models/gpt-4o-mini"
     assert records[0].title == "gpt-4o-mini Model"
     assert "knowledge cutoff" in records[0].snippet
+
+
+def test_parse_duckduckgo_html_results_normalizes_duckduckgo_redirect_url() -> None:
+    payload = """
+    <html>
+      <body>
+        <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fplatform.openai.com%2Fdocs%2Fmodels%2Fgpt-4o-mini">gpt-4o-mini Model</a>
+        <div class="result__snippet">GPT-4o mini model page. Oct 01, 2023 knowledge cutoff.</div>
+      </body>
+    </html>
+    """
+
+    records = _parse_duckduckgo_html_results(payload=payload, max_results=5)
+
+    assert len(records) == 1
+    assert records[0].url == "https://platform.openai.com/docs/models/gpt-4o-mini"
 
 
 def test_ai_web_search_agent_falls_back_to_duckduckgo_html(monkeypatch) -> None:

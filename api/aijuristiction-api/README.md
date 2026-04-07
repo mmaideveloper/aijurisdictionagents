@@ -202,6 +202,9 @@ Additionally, the API persists `permanent_memory.key=llm_model_setup` with
 the API uses `AIWebSearchAgent` to find an official OpenAI model page, extracts the
 knowledge cutoff, and stores it for reuse. If search returns no hits, it falls back
 to a direct official model-page lookup under `https://platform.openai.com/docs/models/<model>`.
+For Azure deployments that use custom deployment aliases, the resolver also matches
+known official model slugs embedded in the deployment name, for example
+`juris-gpt-4o-mini-dev -> gpt-4o-mini`.
 
 Example:
 

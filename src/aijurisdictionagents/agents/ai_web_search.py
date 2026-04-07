@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import html
 import json
 import re
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -115,7 +115,7 @@ def _parse_duckduckgo_html_results(*, payload: str, max_results: int) -> list[We
     for match in matches:
         if len(records) >= max_results:
             break
-        url = html.unescape(match.group("url")).strip()
+        url = _normalize_search_result_url(match.group("url"))
         title = _strip_html(match.group("title"))
         snippet_match = re.search(
             r'<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(?P<snippet>.*?)</a>|'
@@ -141,3 +141,15 @@ def _parse_duckduckgo_html_results(*, payload: str, max_results: int) -> list[We
 
 def _strip_html(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value))).strip()
+
+
+def _normalize_search_result_url(value: str) -> str:
+    normalized = html.unescape(value).strip()
+    if normalized.startswith("//"):
+        normalized = f"https:{normalized}"
+    parsed = urlparse(normalized)
+    if parsed.netloc.endswith("duckduckgo.com") and parsed.path == "/l/":
+        encoded_target = parse_qs(parsed.query).get("uddg", [""])[0]
+        if encoded_target:
+            return unquote(encoded_target).strip()
+    return normalized

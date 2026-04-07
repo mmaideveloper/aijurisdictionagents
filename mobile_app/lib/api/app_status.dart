@@ -32,6 +32,7 @@ class ApiHealthCheckResult {
     required this.isHealthy,
     this.errorMessage,
     this.isNetworkError = false,
+    this.isOfflineError = false,
   });
 
   const ApiHealthCheckResult.healthy()
@@ -42,11 +43,23 @@ class ApiHealthCheckResult {
   const ApiHealthCheckResult.unhealthy({
     required this.errorMessage,
     required this.isNetworkError,
+    this.isOfflineError = false,
   }) : isHealthy = false;
 
   final bool isHealthy;
   final String? errorMessage;
   final bool isNetworkError;
+  final bool isOfflineError;
+}
+
+bool isLikelyOfflineError(Object? error) {
+  final normalized = '${error ?? ''}'.toLowerCase();
+  return normalized.contains('socketexception') ||
+      normalized.contains('failed host lookup') ||
+      normalized.contains('network is unreachable') ||
+      normalized.contains('network is down') ||
+      normalized.contains('temporary failure in name resolution') ||
+      normalized.contains('no address associated with hostname');
 }
 
 ApiHealthCheckResult parseApiHealthCheckResult({
@@ -76,17 +89,20 @@ ApiHealthCheckResult parseApiHealthCheckResult({
       return ApiHealthCheckResult.unhealthy(
         errorMessage: message,
         isNetworkError: false,
+        isOfflineError: false,
       );
     }
     if (error.isNotEmpty) {
       return ApiHealthCheckResult.unhealthy(
         errorMessage: 'Health check failed: $error.',
         isNetworkError: false,
+        isOfflineError: false,
       );
     }
     return ApiHealthCheckResult.unhealthy(
       errorMessage: 'Health check failed with status $statusCode.',
       isNetworkError: false,
+      isOfflineError: false,
     );
   }
 
@@ -96,6 +112,7 @@ ApiHealthCheckResult parseApiHealthCheckResult({
           ? message
           : 'Health endpoint returned status "$status".',
       isNetworkError: false,
+      isOfflineError: false,
     );
   }
 
@@ -105,6 +122,7 @@ ApiHealthCheckResult parseApiHealthCheckResult({
           ? message
           : 'Database health check reported status "$databaseStatus".',
       isNetworkError: false,
+      isOfflineError: false,
     );
   }
 

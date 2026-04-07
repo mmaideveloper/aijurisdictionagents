@@ -82,6 +82,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - The footer now also shows `Law Date:` in the bottom-right corner using the backend `/version` fields for the currently selected locale country. It prefers `laws_by_country.<country>.last_law_update_date`, and if that is empty it falls back to `laws_by_country.<country>.model_knowledge_cutoff_date`. When the nested country payload is missing, it falls back to the legacy flat `/version` fields.
 - On startup, app blocks the auth flow until `GET /health` returns healthy.
   - failed health checks show the current API error on screen
+  - if the device has no internet connection, the app shows a dedicated offline message instead of the generic API error
   - if the API is reachable but its database is not, the app shows the DB health error returned by `/health`
   - startup retry uses exponential backoff: `2s`, `4s`, `8s`, `16s`, then stays capped at `16s`
 - After startup, the app checks for updates through the API every 1 minute, but only when `GET /health` is healthy.

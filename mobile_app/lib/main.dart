@@ -31,6 +31,10 @@ import 'platform/device_phone_number.dart';
 import 'platform/file_saver.dart';
 import 'update/github_release.dart';
 
+bool _isOfflineError(Object? error) {
+  return isLikelyOfflineError(error);
+}
+
 const String _apiBaseUrlOverride = String.fromEnvironment(
   'AIJ_API_BASE_URL',
   defaultValue: '',
@@ -226,6 +230,8 @@ class AppStrings {
           'Pred odoslaním správy vytvorte alebo vyberte prípad. Môžete povedať napríklad: Vytvor mi nový prípad s názvom splnomocnenie.',
       'failed_to_reach_api':
           'Nepodarilo sa spojiť s API na adrese {{url}}: {{error}}',
+      'no_internet_connection':
+          'Nie je internetové pripojenie. Skontrolujte pripojenie a skúste znova.',
       'api_health_failed': 'API hlási chybu: {{error}}',
       'failed_to_reach_api_with_correlation':
           'Nepodarilo sa spojiť s API na adrese {{url}}: {{error}} (ID: {{id}})',
@@ -437,6 +443,8 @@ class AppStrings {
       'create_or_select_case_message':
           'Create or select a case before sending messages. For example, you can say: Create a new case with name power of attorney.',
       'failed_to_reach_api': 'Failed to reach API at {{url}}: {{error}}',
+      'no_internet_connection':
+          'No internet connection. Check your connection and try again.',
       'api_health_failed': 'API reported an unhealthy state: {{error}}',
       'failed_to_reach_api_with_correlation':
           'Failed to reach API at {{url}}: {{error}} (ID: {{id}})',
@@ -651,6 +659,8 @@ class AppStrings {
           'Erstellen oder wählen Sie zuerst einen Fall aus. Sie können zum Beispiel sagen: Erstelle einen neuen Fall mit dem Namen Vollmacht.',
       'failed_to_reach_api':
           'API unter {{url}} konnte nicht erreicht werden: {{error}}',
+      'no_internet_connection':
+          'Keine Internetverbindung. Prüfen Sie die Verbindung und versuchen Sie es erneut.',
       'api_health_failed': 'API meldet einen ungesunden Status: {{error}}',
       'failed_to_reach_api_with_correlation':
           'API unter {{url}} konnte nicht erreicht werden: {{error}} (ID: {{id}})',
@@ -1594,6 +1604,7 @@ class ApiClient {
       return ApiHealthCheckResult.unhealthy(
         errorMessage: '$error',
         isNetworkError: true,
+        isOfflineError: _isOfflineError(error),
       );
     }
   }
@@ -2464,6 +2475,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
   bool _checkingApi = true;
   String? _apiHealthError;
   bool _apiHealthIsNetworkError = false;
+  bool _apiHealthIsOfflineError = false;
   int? _apiHealthRetrySeconds;
   int _apiHealthFailureCount = 0;
   Timer? _apiHealthRetryTimer;
@@ -2522,6 +2534,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
         _checkingApi = false;
         _apiHealthError = null;
         _apiHealthIsNetworkError = false;
+        _apiHealthIsOfflineError = false;
         _apiHealthRetrySeconds = null;
       });
       _apiHealthFailureCount = 0;
@@ -2535,6 +2548,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
       _checkingApi = false;
       _apiHealthError = healthResult.errorMessage;
       _apiHealthIsNetworkError = healthResult.isNetworkError;
+      _apiHealthIsOfflineError = healthResult.isOfflineError;
       _apiHealthRetrySeconds = retrySeconds;
     });
     await widget.logger.info(
@@ -2543,6 +2557,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
         'api_base_url': widget.apiBaseUrl,
         'error': healthResult.errorMessage,
         'is_network_error': healthResult.isNetworkError,
+        'is_offline_error': healthResult.isOfflineError,
         'retry_seconds': retrySeconds,
       },
     );
@@ -2571,14 +2586,16 @@ class _AuthGatePageState extends State<AuthGatePage> {
   Widget _buildApiUnavailableScaffold() {
     final errorMessage = _apiHealthError == null
         ? _strings.t('checking_api')
-        : _apiHealthIsNetworkError
-            ? _strings.t('failed_to_reach_api', <String, String>{
-                'url': widget.apiBaseUrl,
-                'error': _apiHealthError!,
-              })
-            : _strings.t('api_health_failed', <String, String>{
-                'error': _apiHealthError!,
-              });
+        : _apiHealthIsOfflineError
+            ? _strings.t('no_internet_connection')
+            : _apiHealthIsNetworkError
+                ? _strings.t('failed_to_reach_api', <String, String>{
+                    'url': widget.apiBaseUrl,
+                    'error': _apiHealthError!,
+                  })
+                : _strings.t('api_health_failed', <String, String>{
+                    'error': _apiHealthError!,
+                  });
     return Scaffold(
       body: Center(
         child: Padding(
@@ -6892,6 +6909,17 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   void _showApiError(Object error, {required String apiBaseUrl}) {
+    if (_isOfflineError(error)) {
+      if (mounted) {
+        setState(() {
+          _lastErrorCorrelationId = null;
+        });
+      } else {
+        _lastErrorCorrelationId = null;
+      }
+      _showSnackbar(_strings.t('no_internet_connection'));
+      return;
+    }
     final String correlationId =
         _apiClient.lastCorrelationId ?? _apiClient.flowCorrelationId;
     if (mounted) {

@@ -28,6 +28,10 @@ _MONTH_NAME_FORMATS = (
     "%b %d, %Y",
     "%B %d, %Y",
 )
+_KNOWN_MODEL_KNOWLEDGE_CUTOFFS: dict[str, tuple[str, str]] = {
+    "gpt-4o-mini": ("2023-10-01", "https://platform.openai.com/docs/models/gpt-4o-mini"),
+    "gpt-4.1": ("2024-06-01", "https://platform.openai.com/docs/models/gpt-4.1"),
+}
 
 _SESSION_VALIDATION_CRITERIA: tuple[EvaluationCriterion, ...] = (
     EvaluationCriterion(
@@ -628,33 +632,38 @@ def _resolve_model_knowledge_cutoff_via_web_search(model_name: str) -> tuple[str
     if not model_name or model_name == "unknown":
         return None
     agent = AIWebSearchAgent()
-    try:
-        records = agent.search(
-            query=f'site:platform.openai.com/docs/models "{model_name}" "knowledge cutoff"',
-            max_results=5,
-        )
-    except Exception:
-        return None
-    for record in records:
-        source_url = str(record.url).strip()
-        if not _is_official_model_source_url(source_url):
-            continue
-        snippet_date = _extract_knowledge_cutoff_date(record.snippet)
-        if snippet_date is not None:
-            return (snippet_date, source_url)
-        page_text = _fetch_text_from_url(source_url)
-        if not page_text:
-            continue
-        page_date = _extract_knowledge_cutoff_date(page_text)
-        if page_date is not None:
-            return (page_date, source_url)
-    for source_url in _candidate_openai_model_source_urls(model_name):
-        page_text = _fetch_text_from_url(source_url)
-        if not page_text:
-            continue
-        page_date = _extract_knowledge_cutoff_date(page_text)
-        if page_date is not None:
-            return (page_date, source_url)
+    for lookup_candidate in _model_lookup_candidates(model_name):
+        try:
+            records = agent.search(
+                query=f'site:platform.openai.com/docs/models "{lookup_candidate}" "knowledge cutoff"',
+                max_results=5,
+            )
+        except Exception:
+            records = []
+        for record in records:
+            source_url = str(record.url).strip()
+            if not _is_official_model_source_url(source_url):
+                continue
+            snippet_date = _extract_knowledge_cutoff_date(record.snippet)
+            if snippet_date is not None:
+                return (snippet_date, source_url)
+            page_text = _fetch_text_from_url(source_url)
+            if not page_text:
+                continue
+            page_date = _extract_knowledge_cutoff_date(page_text)
+            if page_date is not None:
+                return (page_date, source_url)
+        for source_url in _candidate_openai_model_source_urls(lookup_candidate):
+            page_text = _fetch_text_from_url(source_url)
+            if not page_text:
+                continue
+            page_date = _extract_knowledge_cutoff_date(page_text)
+            if page_date is not None:
+                return (page_date, source_url)
+    for lookup_candidate in _model_lookup_candidates(model_name):
+        known_snapshot = _KNOWN_MODEL_KNOWLEDGE_CUTOFFS.get(lookup_candidate)
+        if known_snapshot is not None:
+            return known_snapshot
     return None
 
 
@@ -666,6 +675,17 @@ def _candidate_openai_model_source_urls(model_name: str) -> tuple[str, ...]:
         f"https://platform.openai.com/docs/models/{normalized}",
         f"https://platform.openai.com/docs/models/{normalized.lower()}",
     )
+
+
+def _model_lookup_candidates(model_name: str) -> tuple[str, ...]:
+    normalized = model_name.strip().lower()
+    if not normalized:
+        return ()
+    candidates: list[str] = [normalized]
+    for known_model in _KNOWN_MODEL_KNOWLEDGE_CUTOFFS:
+        if known_model not in candidates and known_model in normalized:
+            candidates.append(known_model)
+    return tuple(candidates)
 
 
 def _is_official_model_source_url(url: str) -> bool:
