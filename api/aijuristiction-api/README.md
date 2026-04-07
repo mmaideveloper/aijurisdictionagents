@@ -185,21 +185,17 @@ If the database is unreachable or misconfigured, the endpoint returns `503` with
 - `core_version`: core system version from installed `aijurisdictionagents` package or local `src/aijurisdictionagents/__init__.py` during monorepo development.
 - `last_law_update_date`: latest law-ingestion timestamp available to the system from the laws database. This reflects the newest law content collected by the law processor, even when the underlying LLM was trained earlier.
 - `last_law_update_source`: whether that timestamp comes from country-specific or global `law_documents` data.
-- `last_collector_run_at`: latest sequential laws collector run timestamp stored in `collector_progress`.
+- `last_collector_run_at`: latest sequential laws collector run timestamp from `collector_progress`, including country/source-system suffix when available.
 - `last_processed_law`: latest successfully processed law identifier in `number/year` format, for example `234/2026`.
-- `model_knowledge_cutoff_date`: cached fallback date used when `last_law_update_date` is not available yet.
-- `model_knowledge_cutoff_source`: source of that fallback date, currently the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value.
+- `model_knowledge_cutoff_date`: fixed fallback value (`2023-01-01`).
+- `model_knowledge_cutoff_source`: fixed fallback source marker (`2023-01-01`).
 - `law_reference_links`: recent official law links available in the system knowledge store.
 - `mobile_app_version`: latest mobile app version from `mobile_app/pubspec.yaml`.
 - `mobile_app_release_url`: release page used by the mobile app update flow.
 - `mobile_app_apk_download_url`: default APK asset URL used by Android in-app update flow.
 
-Fallback configuration:
-
-- `MODEL_KNOWLEDGE_CUTOFF_DATE`: manually configured cutoff date used only when `law_documents` has no imported records yet.
-- `MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE`: JSON cache file persisted on first startup/run so the fallback date remains stable without expiration until real law-import timestamps become available.
-
-The API warms this snapshot during startup, so the cached fallback file is created on the initial run when the laws database is empty and `MODEL_KNOWLEDGE_CUTOFF_DATE` is configured.
+Additionally, the API ensures `permanent_memory.key=llm_model_setup` exists with
+`llm_modelname`, `cutoff_date`, and `cutoff_source`.
 
 Example:
 
@@ -211,10 +207,10 @@ Example:
   "core_version": "0.1.0",
   "last_law_update_date": "2026-03-20T00:00:00Z",
   "last_law_update_source": "law_documents_global",
-  "last_collector_run_at": "2026-03-30T12:30:00Z",
+  "last_collector_run_at": "2026-03-30T12:30:00Z (SK:slovlex)",
   "last_processed_law": "234/2026",
-  "model_knowledge_cutoff_date": "2020-12-31",
-  "model_knowledge_cutoff_source": "model_knowledge_cutoff_cache",
+  "model_knowledge_cutoff_date": "2023-01-01",
+  "model_knowledge_cutoff_source": "2023-01-01",
   "law_reference_links": [
     "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
   ],

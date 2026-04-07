@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
+import json
 import os
 from pathlib import Path
 import sqlite3
@@ -108,6 +109,17 @@ class CaseDocumentChunk:
     embedding_dimensions: int
     start_offset: int
     end_offset: int
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class PermanentMemoryEntry:
+    key: str
+    value_json: str
+    value: dict[str, Any]
+    entry_type: str
+    source_url: str | None
     created_at: str
     updated_at: str
 
@@ -286,12 +298,74 @@ class ApiDatabaseStore:
                     FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE,
                     FOREIGN KEY(plan_code) REFERENCES subscription_plans(plan_code)
                 );
+
+                CREATE TABLE IF NOT EXISTS permanent_memory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT UNIQUE NOT NULL,
+                    value TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    source_url TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """,
             )
             self._ensure_user_schema(conn)
             self._ensure_case_document_schema(conn)
             self._ensure_subscription_schema(conn)
             self._seed_subscription_plans(conn)
+
+    def get_permanent_memory(self, key: str) -> PermanentMemoryEntry | None:
+        with self._connect() as conn:
+            row = self._execute(
+                conn,
+                """
+                SELECT key, value, type, source_url, created_at, updated_at
+                FROM permanent_memory
+                WHERE key = ?
+                """,
+                (key,),
+            ).fetchone()
+        if row is None:
+            return None
+        values = list(row)
+        payload_text = str(values[1])
+        payload = _safe_json_load(payload_text)
+        return PermanentMemoryEntry(
+            key=str(values[0]),
+            value_json=payload_text,
+            value=payload,
+            entry_type=str(values[2]),
+            source_url=str(values[3]) if values[3] is not None else None,
+            created_at=str(values[4]),
+            updated_at=str(values[5]),
+        )
+
+    def upsert_permanent_memory(
+        self,
+        *,
+        key: str,
+        value: dict[str, Any],
+        entry_type: str,
+        source_url: str | None = None,
+    ) -> None:
+        now = _now_iso()
+        payload_text = _to_json(value)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO permanent_memory(key, value, type, source_url, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    type = excluded.type,
+                    source_url = excluded.source_url,
+                    updated_at = excluded.updated_at
+                """,
+                (key, payload_text, entry_type, source_url, now, now),
+            )
+            conn.commit()
 
     def check_connection(self) -> None:
         with self._connect() as conn:
@@ -1495,3 +1569,17 @@ def _verify_password(password: str, encoded: str) -> bool:
     expected = bytes.fromhex(digest_hex)
     candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
     return hmac.compare_digest(candidate, expected)
+
+
+def _to_json(value: dict[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=True, sort_keys=True)
+
+
+def _safe_json_load(value: str) -> dict[str, Any]:
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(loaded, dict):
+        return loaded
+    return {}
