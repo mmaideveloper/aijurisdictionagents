@@ -49,7 +49,7 @@ class ObchodnyRegisterTool:
                 "(business name, IČO, registered seat, legal status, statutory representatives)."
             ),
             input_fields=("company_name_or_registration", "person_name", "include_terminated"),
-            requires_explicit_user_confirmation=True,
+            requires_explicit_user_confirmation=False,
         )
 
     def run(

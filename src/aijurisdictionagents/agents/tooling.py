@@ -21,7 +21,7 @@ def render_tooling_prompt(
         "TOOLING (dynamic checks)",
         f"- Jurisdiction hint: {jurisdiction_hint}",
         "- Before drafting contracts or formal filings, detect whether available tools can verify critical facts.",
-        "- Never execute any verification automatically. First ask the user for explicit consent.",
+        "- If a relevant tool can retrieve required facts, prefer using it first and only ask the user for data that the tool could not verify.",
         "- If a tool returns invalid/missing data, show the mismatch and ask the user to correct or update details.",
         "- If additional tools are added later (car verification, person address, sanctions/person screening), choose the most relevant checks based on the user request.",
         "- Available tools:",

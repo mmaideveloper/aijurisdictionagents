@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from io import BytesIO
 import json
 import logging
@@ -38,6 +39,7 @@ from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.llm import get_embedding_client
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
+from aijurisdictionagents.tools import build_default_tool_registry
 from services.document_processor.runtime import (
     cosine_similarity,
     lexical_overlap_score,
@@ -380,6 +382,303 @@ def _assistant_requests_user_reply(content: str) -> bool:
     return "?" in content
 
 
+@dataclass
+class _DirectReplyPreparation:
+    supplemental_documents: list[CoreDocument]
+    prompt_note: str = ""
+    direct_reply: str | None = None
+
+
+def _prepare_slovak_company_reply(
+    *,
+    session: Session,
+    messages: list[Message],
+    current_content: str,
+    prior_messages: list[Message],
+) -> _DirectReplyPreparation:
+    if session.country.strip().upper() != "SK":
+        return _DirectReplyPreparation(supplemental_documents=[])
+    if not _looks_like_company_document_matter(messages):
+        return _DirectReplyPreparation(supplemental_documents=[])
+
+    company_query = _extract_slovak_company_query(messages)
+    if not company_query:
+        return _DirectReplyPreparation(supplemental_documents=[])
+
+    company_record, registry_document = _load_slovak_company_registry_document(company_query)
+    supplemental_documents = [registry_document] if registry_document is not None else []
+    prompt_note = _build_slovak_company_prompt_note(
+        company_query=company_query,
+        company_record=company_record,
+    )
+
+    if not _looks_like_share_transfer_case(messages):
+        return _DirectReplyPreparation(
+            supplemental_documents=supplemental_documents,
+            prompt_note=prompt_note,
+        )
+
+    if _current_turn_confirms_document_generation(
+        content=current_content,
+        previous_messages=prior_messages,
+    ):
+        direct_reply = _build_slovak_share_transfer_direct_reply(
+            messages=messages,
+            company_record=company_record,
+        )
+        return _DirectReplyPreparation(
+            supplemental_documents=supplemental_documents,
+            prompt_note=prompt_note,
+            direct_reply=direct_reply,
+        )
+
+    direct_reply = _build_slovak_share_transfer_intake_reply(company_record=company_record)
+    return _DirectReplyPreparation(
+        supplemental_documents=supplemental_documents,
+        prompt_note=prompt_note,
+        direct_reply=direct_reply,
+    )
+
+
+def _looks_like_company_document_matter(messages: list[Message]) -> bool:
+    combined = " ".join(
+        message.content.lower()
+        for message in messages
+        if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
+    )
+    company_tokens = (
+        "s.r.o",
+        "s. r. o",
+        "a.s",
+        "a. s",
+        "firma",
+        "spolocnost",
+        "spoločnosť",
+        "ico",
+        "ičo",
+    )
+    document_tokens = (
+        "dokument",
+        "document",
+        "navrh",
+        "návrh",
+        "priprav",
+        "vygeneruj",
+        "zmluv",
+        "podanie",
+    )
+    return any(token in combined for token in company_tokens) and any(
+        token in combined for token in document_tokens
+    )
+
+
+def _looks_like_share_transfer_case(messages: list[Message]) -> bool:
+    combined = " ".join(
+        message.content.lower()
+        for message in messages
+        if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
+    )
+    share_transfer_tokens = (
+        "prevod podielu",
+        "obchodny podiel",
+        "obchodný podiel",
+        "spolocnik",
+        "spoločník",
+        "konatel",
+        "konateľ",
+        "novy vlastnik",
+        "nový vlastník",
+        "share transfer",
+        "owner",
+        "vlastnik",
+        "vlastník",
+    )
+    return any(token in combined for token in share_transfer_tokens)
+
+
+def _extract_slovak_company_query(messages: list[Message]) -> str | None:
+    registration_pattern = re.compile(r"(?:\bičo\b|\bico\b)\s*[:=]?\s*([0-9]{6,10})", re.IGNORECASE)
+    prefixed_company_pattern = re.compile(
+        r"(?:firma|fima|spoločnosť|spolocnost)\s+([^,;\n]+?(?:s\.?\s*r\.?\s*o\.?|a\.?\s*s\.?))",
+        re.IGNORECASE,
+    )
+    company_pattern = re.compile(
+        r"([A-Z0-9ÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ][^,;\n]{1,120}?(?:s\.?\s*r\.?\s*o\.?|a\.?\s*s\.?))",
+        re.IGNORECASE,
+    )
+    for message in reversed(messages):
+        if message.role != MessageRole.USER:
+            continue
+        registration_match = registration_pattern.search(message.content)
+        if registration_match is not None:
+            return registration_match.group(1).strip()
+        prefixed_match = prefixed_company_pattern.search(message.content)
+        if prefixed_match is not None:
+            return _normalize_company_query(prefixed_match.group(1))
+        company_matches = list(company_pattern.finditer(message.content))
+        if company_matches:
+            return _normalize_company_query(company_matches[-1].group(1))
+    return None
+
+
+def _normalize_company_query(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", value).strip(" ,.;")
+    cleaned = re.sub(r"^(?:firma|fima|spoločnosť|spolocnost)\s+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip(" ,.;")
+    if re.search(r"s\.?\s*r\.?\s*o$", cleaned, flags=re.IGNORECASE):
+        return re.sub(r"s\.?\s*r\.?\s*o$", "s.r.o.", cleaned, flags=re.IGNORECASE)
+    if re.search(r"a\.?\s*s$", cleaned, flags=re.IGNORECASE):
+        return re.sub(r"a\.?\s*s$", "a.s.", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
+def _load_slovak_company_registry_document(
+    company_query: str,
+) -> tuple[dict[str, str] | None, CoreDocument | None]:
+    registry = build_default_tool_registry()
+    result = registry.run(
+        "obchodny_register_company_check",
+        company_name_or_registration=company_query,
+    )
+    if not result.ok or not result.records:
+        return None, None
+
+    primary = result.records[0]
+    normalized_primary = {
+        "name": str(primary.get("name", "")).strip(),
+        "registration_number": str(primary.get("registration_number", "")).strip(),
+        "seat": str(primary.get("seat", "")).strip(),
+        "status": str(primary.get("status", "")).strip(),
+    }
+    lines = [
+        "Slovak business register lookup",
+        f"Query: {company_query}",
+        f"Result count: {len(result.records)}",
+        "",
+    ]
+    for index, record in enumerate(result.records[:3], start=1):
+        lines.extend(
+            [
+                f"Candidate {index}:",
+                f"Name: {str(record.get('name', '')).strip() or '[missing]'}",
+                f"Registration number: {str(record.get('registration_number', '')).strip() or '[missing]'}",
+                f"Seat: {str(record.get('seat', '')).strip() or '[missing]'}",
+                f"Status: {str(record.get('status', '')).strip() or '[missing]'}",
+                "",
+            ]
+        )
+    return normalized_primary, CoreDocument(
+        doc_id=f"orsr-{abs(hash(company_query))}",
+        path="registry/slovak_business_register.md",
+        content="\n".join(lines).strip(),
+    )
+
+
+def _build_slovak_company_prompt_note(
+    *,
+    company_query: str,
+    company_record: dict[str, str] | None,
+) -> str:
+    lines = [
+        "TOOL-FIRST COMPANY LOOKUP MODE:",
+        f"- The system already queried obchodny_register_company_check using: {company_query}",
+        "- Use the verified company data first instead of asking again for company name, IČO, seat, status, or statutory-register basics when they are already available.",
+        "- If some drafting inputs are still missing, ask only for those missing items.",
+        "- If the user asks to see the draft now, do not repeat prior intake questions. Produce the working draft with placeholders for any still-missing signature details.",
+    ]
+    if company_record:
+        lines.extend(
+            [
+                f"- Verified company name: {company_record.get('name') or '[missing]'}",
+                f"- Verified registration number: {company_record.get('registration_number') or '[missing]'}",
+                f"- Verified seat: {company_record.get('seat') or '[missing]'}",
+                f"- Verified status: {company_record.get('status') or '[missing]'}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _build_slovak_share_transfer_intake_reply(
+    *,
+    company_record: dict[str, str] | None,
+) -> str:
+    lines = [
+        "Najprv som overil firmu v Obchodnom registri, aby som sa nepýtal na údaje, ktoré viem získať automaticky.",
+        "",
+        "Overené firemné údaje:",
+        f"Obchodné meno: {(company_record or {}).get('name') or '[nepodarilo sa overiť]'}",
+        f"IČO: {(company_record or {}).get('registration_number') or '[nepodarilo sa overiť]'}",
+        f"Sídlo: {(company_record or {}).get('seat') or '[nepodarilo sa overiť]'}",
+        f"Stav: {(company_record or {}).get('status') or '[nepodarilo sa overiť]'}",
+        "",
+        "Na finálny návrh dokumentácie k prevodu obchodného podielu ešte potrebujem len tieto údaje:",
+        "1. Presné identifikačné údaje prevodcu a nadobúdateľa.",
+        "2. Potvrdenie, aký podiel sa prevádza a či je prevod odplatný alebo bezodplatný.",
+        "3. Potvrdenie, či sa mení iba spoločnícka štruktúra alebo aj konateľ / spôsob konania.",
+        "",
+        "Keď tieto údaje doplníte, pripravím návrh dokumentov a postup podania bez ďalšieho opakovania tých istých otázok.",
+    ]
+    return "\n".join(lines)
+
+
+def _build_slovak_share_transfer_direct_reply(
+    *,
+    messages: list[Message],
+    company_record: dict[str, str] | None,
+) -> str:
+    context_lines = _normalize_document_lines(
+        "\n".join(
+            message.content
+            for message in messages
+            if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
+        )
+    )
+    facts = _extract_document_facts(context_lines)
+    if company_record:
+        if company_record.get("name"):
+            facts["company_name"] = company_record["name"]
+        if company_record.get("registration_number"):
+            facts["company_identifier"] = company_record["registration_number"]
+        if company_record.get("seat"):
+            facts["company_seat"] = company_record["seat"]
+
+    verified_lines = [
+        "Pripravil som pracovný návrh dokumentácie k prevodu obchodného podielu.",
+        "Použil som údaje, ktoré sa dali overiť automaticky v Obchodnom registri. Miesta označené [doplnit] je ešte potrebné vyplniť pred podpisom alebo podaním.",
+        "",
+        "Overené firemné údaje:",
+        f"Obchodné meno: {facts['company_name']}",
+        f"IČO: {facts['company_identifier']}",
+        f"Sídlo: {facts['company_seat']}",
+        "",
+    ]
+    return "\n".join([*verified_lines, *_build_slovak_share_transfer_lines(facts)])
+
+
+def _persist_direct_assistant_message(
+    *,
+    session_id: UUID,
+    session: Session,
+    content: str,
+    agent_name: str,
+) -> Message:
+    persisted_lawyer = _repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content=content,
+            agent_name=agent_name,
+        )
+    )
+    _persist_case_message_if_needed(
+        session=session,
+        role="assistant",
+        content=content,
+        agent_name=agent_name,
+    )
+    return persisted_lawyer
+
+
 def _run_direct_lawyer_turn(
     *,
     session_id: UUID,
@@ -426,6 +725,22 @@ def _run_direct_lawyer_turn(
             "- Produce the finalized draft-oriented response for PDF export in this turn.\n"
             "- Include CASE_UPDATE_JSON after the user-facing content."
         )
+    preparation = _prepare_slovak_company_reply(
+        session=session,
+        messages=history,
+        current_content=content,
+        prior_messages=prior_messages,
+    )
+    if preparation.direct_reply is not None:
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id,
+            session=session,
+            content=preparation.direct_reply,
+            agent_name="LawyerSlovakia",
+        )
+        return persisted_user, persisted_lawyer, preparation.direct_reply
+    if preparation.prompt_note:
+        prompt_override = f"{prompt_override}\n\n{preparation.prompt_note}"
     case_documents: list[CoreDocument] = []
     processed_names: list[str] = []
     unprocessed_names: list[str] = []
@@ -444,12 +759,15 @@ def _run_direct_lawyer_turn(
             prompt_override = f"{prompt_override}{context_note}"
     task_plan_note = build_document_task_plan_note(
         query=content,
-        has_processed_documents=bool(case_documents or supplemental_documents),
+        has_processed_documents=bool(
+            case_documents or supplemental_documents or preparation.supplemental_documents
+        ),
     )
     if task_plan_note:
         prompt_override = f"{prompt_override}{task_plan_note}"
 
-    all_documents = list(supplemental_documents or [])
+    all_documents = list(preparation.supplemental_documents)
+    all_documents.extend(supplemental_documents or [])
     all_documents.extend(case_documents)
     lawyer_message = lawyer.respond(
         conversation=conversation,
@@ -462,17 +780,9 @@ def _run_direct_lawyer_turn(
         processed_names=processed_names,
         unprocessed_names=unprocessed_names,
     )
-    persisted_lawyer = _repository.add_message(
-        Message(
-            session_id=session_id,
-            role=MessageRole.ASSISTANT,
-            content=visible_lawyer_content,
-            agent_name=lawyer_message.agent_name,
-        )
-    )
-    _persist_case_message_if_needed(
+    persisted_lawyer = _persist_direct_assistant_message(
+        session_id=session_id,
         session=session,
-        role="assistant",
         content=visible_lawyer_content,
         agent_name=lawyer_message.agent_name,
     )
@@ -918,6 +1228,20 @@ def _assistant_requests_document_confirmation(content: str) -> bool:
         and "?" in content
         and any(marker in lowered for marker in confirmation_markers)
     )
+
+
+def _current_turn_confirms_document_generation(
+    *,
+    content: str,
+    previous_messages: list[Message],
+) -> bool:
+    normalized = " ".join(content.lower().split())
+    if not any(
+        message.role == MessageRole.ASSISTANT and _assistant_requests_document_confirmation(message.content)
+        for message in previous_messages
+    ):
+        return False
+    return _is_affirmative_reply(normalized) or _is_explicit_document_request(normalized)
 
 
 def _build_direct_reply_result(

@@ -106,6 +106,22 @@ Minimal runnable example:
 python examples/document_task_plan_demo.py
 ```
 
+### Tool-first Slovak company drafting
+
+For Slovak company-document workflows, the direct reply path now uses available registry tools before asking the user for data that can be verified automatically.
+
+Current behavior for `s.r.o.` / `a.s.` drafting flows:
+
+- if the user provides a Slovak company name or IČO, the API first runs `obchodny_register_company_check`
+- the assistant then uses verified company name, IČO, seat, and status instead of asking for those facts again
+- if the user later says `áno` / `show me the draft`, the API returns the working draft directly instead of looping back into the same intake questions
+
+Minimal runnable example:
+
+```bash
+python examples/share_transfer_tool_first_demo.py
+```
+
 Local embedding similarity demo:
 
 ```bash

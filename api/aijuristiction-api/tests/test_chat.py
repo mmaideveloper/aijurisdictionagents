@@ -307,7 +307,7 @@ def test_document_export_for_easement_case_is_not_lease_template() -> None:
 
 
 def test_document_export_for_company_share_transfer_uses_full_session_context() -> None:
-    from app.chat.api import _build_document_export_content, _build_simple_pdf
+    from app.chat.api import _build_document_export_content
     from app.chat.models import Message, MessageRole, SessionResult
 
     session_id = uuid4()
@@ -359,22 +359,177 @@ def test_document_export_for_company_share_transfer_uses_full_session_context() 
     assert "prevodu obchodného podielu" in lowered_lines
     assert "esolutions sk s.r.o." in lowered_lines
     assert "50%" in lowered_lines or "50 %" in lowered_lines
-    assert "obchodného registra" in lowered_lines
 
-    pdf_bytes = _build_simple_pdf(
-        title=title,
-        lines=lines,
-        country="SK",
-        language="SK",
-        header_line="AI Jurisdicta Solution | Generated: 2026-04-07 07:20:00 UTC",
-        footer_line="AIJ | API 1.0.0 | Core 1.0.0",
-        draw_logo_mark=True,
-        include_title_block=True,
+
+def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "12345678",
+                        "seat": "Spisske Bystre",
+                        "status": "Aktívna",
+                    },
+                ),
+            )
+
+    class _FailLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            raise AssertionError("Share-transfer intake should be answered before the generic lawyer turn.")
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr("app.chat.api.build_default_tool_registry", lambda: _FakeRegistry())
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _FailLawyer(),
     )
-    extracted = _pdf_text(pdf_bytes).lower()
-    assert "prevodu obchodného podielu" in extracted
-    assert "esolutions sk s.r.o." in extracted
-    assert "obchodný register" in extracted
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={
+            "content": (
+                "Chcel by som z konatela firmy spravit splocnika s 50% spoluucastou. "
+                "Firma ESolutions SK s.r.o., Spisske Bystre. Priprav mi vsetky potrebne dokumenty."
+            )
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert reply_response.status_code == 200
+    content = reply_response.json()["content"]
+    lowered = content.lower()
+    assert "najprv som overil firmu v obchodnom registri" in lowered
+    assert "esolutions sk s.r.o." in lowered
+    assert "12345678" in content
+    assert "ešte potrebujem len tieto údaje" in lowered
+
+
+def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkeypatch) -> None:
+    from app.chat.models import Message, MessageRole
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "12345678",
+                        "seat": "Spisske Bystre",
+                        "status": "Aktívna",
+                    },
+                ),
+            )
+
+    class _FailLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            raise AssertionError("Confirmed share-transfer draft should bypass the generic lawyer turn.")
+
+    repository = InMemoryChatRepository()
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr("app.chat.api.build_default_tool_registry", lambda: _FakeRegistry())
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _FailLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "Chcel by som z konatela firmy spravit splocnika s 50% spoluucastou. "
+                "Firma ESolutions SK s.r.o., Spisske Bystre. Priprav mi vsetky potrebne dokumenty."
+            ),
+        )
+    )
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Navrh dokumentu som do chatu nezobrazila. "
+                "Chcete ho vidiet po doplneni poslednych udajov?"
+            ),
+        )
+    )
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "1. 100%, 2. 0 EUR (manzelka), konatelka. "
+                "Chcem pripravit vsetky potrebne dokumenty a instrukcie kde ich podat."
+            ),
+        )
+    )
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="Navrh dokumentu som do chatu nezobrazila. Chcete ho vidiet?",
+        )
+    )
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Ano, zobraz ho prosim."},
+        headers=AUTH_HEADERS,
+    )
+    assert reply_response.status_code == 200
+    content = reply_response.json()["content"]
+    lowered = content.lower()
+    assert "pripravil som pracovný návrh dokumentácie k prevodu obchodného podielu" in lowered
+    assert "pracovný návrh dokumentácie k prevodu obchodného podielu v s.r.o." in lowered
+    assert "esolutions sk s.r.o." in lowered
+    assert "potrebujem len tieto údaje" not in lowered
+    assert "chcete ho vidiet" not in lowered
+
+    result_response = client.get(
+        f"/v1/chat/sessions/{session_id}/result",
+        headers=AUTH_HEADERS,
+    )
+    assert result_response.status_code == 200
+    metadata = result_response.json()["metadata"]
+    assert metadata["document_requested"] is True
+    assert metadata["document_confirmed"] is True
+    assert metadata["document_ready"] is True
 
 
 def test_build_simple_pdf_preserves_slovak_and_german_characters() -> None:

@@ -55,8 +55,8 @@ def create_lawyer_slovakia(llm: LLMClient) -> Agent:
 
         COMPANY-CHECK POLICY (Slovakia)
         - Ak používateľ žiada pripraviť zmluvu s firmou alebo uvádza firemného partnera, pred draftingom skontroluj, či je dostupný nástroj na overenie firmy (najmä Obchodný register).
-        - Najprv stručne navrhni overenie a opýtaj sa, či chce používateľ spustiť kontrolu.
-        - Po získaní výsledkov transparentne uveď nájdené údaje.
+        - Ak máš k dispozícii dostatok identifikačných údajov firmy, použi tento nástroj ako prvý krok a používateľa sa nepýtaj na údaje, ktoré vieš overiť automaticky.
+        - Po získaní výsledkov transparentne uveď nájdené údaje a pýtaj sa už len na zostávajúce chýbajúce draftingové fakty.
         - Ak zistíš neplatné alebo nezhodné údaje, explicitne vypíš čo nesedí a vyžiadaj aktualizáciu pred pokračovaním v návrhu zmluvy.
         """
     ).strip()
