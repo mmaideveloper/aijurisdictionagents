@@ -835,6 +835,7 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
             """
             CREATE TABLE collector_progress (
                 country_code TEXT PRIMARY KEY,
+                source_system TEXT,
                 last_collector_run_at TEXT,
                 last_processed_law_year INTEGER,
                 last_processed_law_number INTEGER,
@@ -857,16 +858,15 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
         conn.execute(
             """
             INSERT INTO collector_progress(
-                country_code, last_collector_run_at, last_processed_law_year, last_processed_law_number, updated_at
+                country_code, source_system, last_collector_run_at, last_processed_law_year, last_processed_law_number, updated_at
             )
-            VALUES ('SK', '2026-03-30T14:00:00Z', 2026, 234, '2026-03-30T14:00:00Z')
+            VALUES ('SK', 'slovlex', '2026-03-30T14:00:00Z', 2026, 234, '2026-03-30T14:00:00Z')
             """
         )
         conn.commit()
 
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(laws_db))
-    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "2020-12-31")
 
     session_id = uuid4()
     session = Session(id=session_id, country="SK", language="EN", discussion_type="court")
@@ -894,10 +894,10 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
     assert result.metadata["knowledge_last_updated_at"] == "2026-03-11T08:15:00Z"
     assert result.metadata["last_law_update_date"] == "2026-03-11T08:15:00Z"
     assert result.metadata["last_law_update_source"] == "law_documents_country"
-    assert result.metadata["last_collector_run_at"] == "2026-03-30T14:00:00Z"
+    assert result.metadata["last_collector_run_at"] == "2026-03-30T14:00:00Z (SK:slovlex)"
     assert result.metadata["last_processed_law"] == "234/2026"
-    assert result.metadata["model_knowledge_cutoff_date"] == "2020-12-31"
-    assert result.metadata["model_knowledge_cutoff_source"] == "model_knowledge_cutoff_cache"
+    assert result.metadata["model_knowledge_cutoff_date"] == "2023-01-01"
+    assert result.metadata["model_knowledge_cutoff_source"] == "2023-01-01"
     assert result.metadata["law_reference_links"] == [
         "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/11/",
         "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/2/",
@@ -912,7 +912,6 @@ def test_law_snapshot_falls_back_to_model_cutoff_and_writes_cache(monkeypatch, t
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
     monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", str(cache_path))
-    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "2024-12-31")
     monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
     monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1")
 
@@ -922,15 +921,11 @@ def test_law_snapshot_falls_back_to_model_cutoff_and_writes_cache(monkeypatch, t
     assert snapshot.last_law_update_source == "unavailable"
     assert snapshot.last_collector_run_at is None
     assert snapshot.last_processed_law is None
-    assert snapshot.model_knowledge_cutoff_date == "2024-12-31"
-    assert snapshot.model_knowledge_cutoff_source == "model_knowledge_cutoff_cache"
+    assert snapshot.model_knowledge_cutoff_date == "2023-01-01"
+    assert snapshot.model_knowledge_cutoff_source == "2023-01-01"
     assert snapshot.reference_links == ()
 
-    payload = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert payload["model_knowledge_cutoff_date"] == "2024-12-31"
-    assert payload["source"] == "model_knowledge_cutoff_cache"
-    assert payload["provider"] == "azurefoundry"
-    assert payload["deployment"] == "gpt-4.1"
+    assert not cache_path.exists()
 
 
 def test_law_snapshot_reuses_cached_model_cutoff_without_expiration(monkeypatch, tmp_path) -> None:
@@ -940,19 +935,17 @@ def test_law_snapshot_reuses_cached_model_cutoff_without_expiration(monkeypatch,
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
     monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", str(cache_path))
-    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "2024-12-31")
 
     first_snapshot = get_law_knowledge_snapshot("SK")
-    assert first_snapshot.model_knowledge_cutoff_date == "2024-12-31"
+    assert first_snapshot.model_knowledge_cutoff_date == "2023-01-01"
 
-    monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "2026-01-01")
     second_snapshot = get_law_knowledge_snapshot("SK")
 
     assert second_snapshot.last_law_update_date is None
     assert second_snapshot.last_collector_run_at is None
     assert second_snapshot.last_processed_law is None
-    assert second_snapshot.model_knowledge_cutoff_date == "2024-12-31"
-    assert second_snapshot.model_knowledge_cutoff_source == "model_knowledge_cutoff_cache"
+    assert second_snapshot.model_knowledge_cutoff_date == "2023-01-01"
+    assert second_snapshot.model_knowledge_cutoff_source == "2023-01-01"
 
 
 def test_summary_export_content_includes_system_versions_and_law_links() -> None:

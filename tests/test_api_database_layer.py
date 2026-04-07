@@ -159,3 +159,27 @@ def test_api_database_config_accepts_postgres_and_postgress_alias(monkeypatch) -
 
     assert config.db_option == "postgres"
     assert config.db_connection_uri.startswith("postgresql://")
+
+
+def test_permanent_memory_upsert_and_get(tmp_path: Path) -> None:
+    store = ApiDatabaseStore(
+        db_path=tmp_path / "api.sqlite3",
+        blob_root=tmp_path / "blob",
+    )
+    store.initialize()
+
+    store.upsert_permanent_memory(
+        key="llm_model_setup",
+        value={
+            "llm_modelname": "gpt-4.1",
+            "cutoff_date": "2023-01-01",
+            "cutoff_source": "https://platform.openai.com/docs/models",
+        },
+        entry_type="llm_model_metadata",
+        source_url="https://platform.openai.com/docs/models",
+    )
+    entry = store.get_permanent_memory("llm_model_setup")
+
+    assert entry is not None
+    assert entry.entry_type == "llm_model_metadata"
+    assert entry.value["cutoff_date"] == "2023-01-01"
