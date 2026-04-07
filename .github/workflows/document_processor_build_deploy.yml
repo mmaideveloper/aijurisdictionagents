@@ -171,6 +171,16 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install deploy-time Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
       - name: Ensure Azure Container Apps extension
         shell: pwsh
         run: az extension add --name containerapp --upgrade --only-show-errors
