@@ -1,25 +1,33 @@
 from __future__ import annotations
 
 import importlib
+import html
 import json
 import os
 from pathlib import Path
 import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Sequence, cast
+from urllib.request import Request, urlopen
 
 from app.chat.models import Message, MessageRole, Session
 from app.versioning import get_api_version, get_core_version
 
-from aijurisdictionagents.agents import AIAgentsValidator, ValidatorInputs
+from aijurisdictionagents.agents import AIWebSearchAgent, AIAgentsValidator, ValidatorInputs
 from aijurisdictionagents.agents.validator import EvaluationCriterion
 from aijurisdictionagents.api_db import ApiDatabaseStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_DEFAULT_MODEL_KNOWLEDGE_CUTOFF_DATE = "2023-01-01"
-_DEFAULT_MODEL_KNOWLEDGE_CUTOFF_SOURCE = "2023-01-01"
 _DEFAULT_MODEL_KNOWLEDGE_SOURCE_URL = "https://platform.openai.com/docs/models"
+_MODEL_KNOWLEDGE_MEMORY_KEY = "llm_model_setup"
+_UNAVAILABLE_MODEL_KNOWLEDGE_SOURCE = "unavailable"
+_OFFICIAL_MODEL_SOURCE_HOSTS = ("platform.openai.com", "openai.com")
+_MONTH_NAME_FORMATS = (
+    "%b %d, %Y",
+    "%B %d, %Y",
+)
 
 _SESSION_VALIDATION_CRITERIA: tuple[EvaluationCriterion, ...] = (
     EvaluationCriterion(
@@ -413,11 +421,73 @@ def _law_snapshot_without_db(
 
 
 def _read_or_create_model_knowledge_cutoff_snapshot() -> tuple[str | None, str]:
-    _ensure_model_knowledge_permanent_memory_entry()
-    return (_DEFAULT_MODEL_KNOWLEDGE_CUTOFF_DATE, _DEFAULT_MODEL_KNOWLEDGE_CUTOFF_SOURCE)
+    model_name = _resolve_llm_model_name()
+    manual_cutoff = str(os.getenv("MODEL_KNOWLEDGE_CUTOFF_DATE") or "").strip()
+    cache_path = _resolve_model_knowledge_cutoff_cache_path()
+
+    try:
+        store = ApiDatabaseStore.from_env()
+    except Exception:
+        store = None
+
+    if manual_cutoff:
+        snapshot = (manual_cutoff, "env:MODEL_KNOWLEDGE_CUTOFF_DATE")
+        _persist_model_knowledge_cutoff_snapshot(
+            store=store,
+            model_name=model_name,
+            snapshot=snapshot,
+            source_url=None,
+        )
+        if cache_path is not None:
+            _write_model_knowledge_cutoff_cache(cache_path=cache_path, model_name=model_name, snapshot=snapshot)
+        return snapshot
+
+    stored_snapshot = _read_model_knowledge_cutoff_from_permanent_memory(store=store, model_name=model_name)
+    if stored_snapshot is not None:
+        if cache_path is not None:
+            _write_model_knowledge_cutoff_cache(
+                cache_path=cache_path,
+                model_name=model_name,
+                snapshot=stored_snapshot,
+            )
+        return stored_snapshot
+
+    if cache_path is not None:
+        cached_snapshot = _read_model_knowledge_cutoff_cache(cache_path=cache_path, model_name=model_name)
+        if cached_snapshot is not None:
+            _persist_model_knowledge_cutoff_snapshot(
+                store=store,
+                model_name=model_name,
+                snapshot=cached_snapshot,
+                source_url=cached_snapshot[1] if cached_snapshot[1].startswith("http") else None,
+            )
+            return cached_snapshot
+
+    resolved_snapshot = _resolve_model_knowledge_cutoff_via_web_search(model_name=model_name)
+    if resolved_snapshot is not None:
+        _persist_model_knowledge_cutoff_snapshot(
+            store=store,
+            model_name=model_name,
+            snapshot=resolved_snapshot,
+            source_url=resolved_snapshot[1] if resolved_snapshot[1].startswith("http") else None,
+        )
+        if cache_path is not None:
+            _write_model_knowledge_cutoff_cache(
+                cache_path=cache_path,
+                model_name=model_name,
+                snapshot=resolved_snapshot,
+            )
+        return resolved_snapshot
+
+    _ensure_model_knowledge_permanent_memory_entry(store=store, model_name=model_name)
+    return (None, _UNAVAILABLE_MODEL_KNOWLEDGE_SOURCE)
 
 
-def _read_model_knowledge_cutoff_cache(cache_path: Path) -> tuple[str, str] | None:
+def _read_model_knowledge_cutoff_cache(
+    *,
+    cache_path: Path,
+    model_name: str,
+) -> tuple[str, str] | None:
     if not cache_path.exists():
         return None
     try:
@@ -426,22 +496,30 @@ def _read_model_knowledge_cutoff_cache(cache_path: Path) -> tuple[str, str] | No
         return None
     if not isinstance(payload, dict):
         return None
+    cached_model_name = str(payload.get("llm_modelname") or "").strip()
+    if cached_model_name and cached_model_name != model_name:
+        return None
     cutoff_date = str(payload.get("model_knowledge_cutoff_date") or "").strip()
     if not cutoff_date:
         return None
-    source = str(payload.get("source") or "model_knowledge_cutoff_cache").strip()
-    return (cutoff_date, source or "model_knowledge_cutoff_cache")
+    source = str(payload.get("source") or _UNAVAILABLE_MODEL_KNOWLEDGE_SOURCE).strip()
+    return (cutoff_date, source or _UNAVAILABLE_MODEL_KNOWLEDGE_SOURCE)
 
 
 def _write_model_knowledge_cutoff_cache(
+    *,
     cache_path: Path,
+    model_name: str,
     snapshot: tuple[str | None, str],
 ) -> None:
+    if snapshot[0] is None:
+        return
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(
             json.dumps(
                 {
+                    "llm_modelname": model_name,
                     "model_knowledge_cutoff_date": snapshot[0],
                     "source": snapshot[1],
                     "provider": os.getenv("LLM_PROVIDER", "").strip().lower(),
@@ -456,26 +534,170 @@ def _write_model_knowledge_cutoff_cache(
         return
 
 
-def _ensure_model_knowledge_permanent_memory_entry() -> None:
-    provider = os.getenv("LLM_PROVIDER", "").strip().lower() or "unknown"
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip() or "unknown"
-    model_name = deployment if provider in {"azurefoundry", "azureopenai"} else provider
+def _ensure_model_knowledge_permanent_memory_entry(
+    *,
+    store: ApiDatabaseStore | None,
+    model_name: str,
+) -> None:
     memory_payload = {
         "llm_modelname": model_name,
-        "cutoff_date": _DEFAULT_MODEL_KNOWLEDGE_CUTOFF_DATE,
+        "cutoff_date": None,
         "cutoff_source": _DEFAULT_MODEL_KNOWLEDGE_SOURCE_URL,
     }
+    if store is None:
+        return
     try:
-        store = ApiDatabaseStore.from_env()
-        if store.get_permanent_memory("llm_model_setup") is None:
+        existing_entry = store.get_permanent_memory(_MODEL_KNOWLEDGE_MEMORY_KEY)
+        if existing_entry is None:
             store.upsert_permanent_memory(
-                key="llm_model_setup",
+                key=_MODEL_KNOWLEDGE_MEMORY_KEY,
                 value=memory_payload,
                 entry_type="llm_model_metadata",
                 source_url=_DEFAULT_MODEL_KNOWLEDGE_SOURCE_URL,
             )
     except Exception:
         return
+
+
+def _resolve_llm_model_name() -> str:
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower() or "unknown"
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip()
+    configured_openai_model = str(os.getenv("OPENAI_MODEL") or "").strip()
+    if provider in {"azurefoundry", "azureopenai"} and deployment:
+        return deployment
+    if configured_openai_model:
+        return configured_openai_model
+    return provider
+
+
+def _resolve_model_knowledge_cutoff_cache_path() -> Path | None:
+    configured = str(os.getenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE") or "").strip()
+    if not configured:
+        return None
+    return _resolve_repo_path(configured)
+
+
+def _read_model_knowledge_cutoff_from_permanent_memory(
+    *,
+    store: ApiDatabaseStore | None,
+    model_name: str,
+) -> tuple[str, str] | None:
+    if store is None:
+        return None
+    try:
+        entry = store.get_permanent_memory(_MODEL_KNOWLEDGE_MEMORY_KEY)
+    except Exception:
+        return None
+    if entry is None:
+        return None
+    stored_model_name = str(entry.value.get("llm_modelname") or "").strip()
+    if stored_model_name and stored_model_name != model_name:
+        return None
+    cutoff_date = str(entry.value.get("cutoff_date") or "").strip()
+    if not cutoff_date:
+        return None
+    cutoff_source = str(entry.value.get("cutoff_source") or entry.source_url or "").strip()
+    return (cutoff_date, cutoff_source or _UNAVAILABLE_MODEL_KNOWLEDGE_SOURCE)
+
+
+def _persist_model_knowledge_cutoff_snapshot(
+    *,
+    store: ApiDatabaseStore | None,
+    model_name: str,
+    snapshot: tuple[str | None, str],
+    source_url: str | None,
+) -> None:
+    if store is None or snapshot[0] is None:
+        return
+    try:
+        store.upsert_permanent_memory(
+            key=_MODEL_KNOWLEDGE_MEMORY_KEY,
+            value={
+                "llm_modelname": model_name,
+                "cutoff_date": snapshot[0],
+                "cutoff_source": snapshot[1],
+            },
+            entry_type="llm_model_metadata",
+            source_url=source_url or (snapshot[1] if snapshot[1].startswith("http") else None),
+        )
+    except Exception:
+        return
+
+
+def _resolve_model_knowledge_cutoff_via_web_search(model_name: str) -> tuple[str, str] | None:
+    if not model_name or model_name == "unknown":
+        return None
+    agent = AIWebSearchAgent()
+    try:
+        records = agent.search(
+            query=f'site:platform.openai.com/docs/models "{model_name}" "knowledge cutoff"',
+            max_results=5,
+        )
+    except Exception:
+        return None
+    for record in records:
+        source_url = str(record.url).strip()
+        if not _is_official_model_source_url(source_url):
+            continue
+        snippet_date = _extract_knowledge_cutoff_date(record.snippet)
+        if snippet_date is not None:
+            return (snippet_date, source_url)
+        page_text = _fetch_text_from_url(source_url)
+        if not page_text:
+            continue
+        page_date = _extract_knowledge_cutoff_date(page_text)
+        if page_date is not None:
+            return (page_date, source_url)
+    return None
+
+
+def _is_official_model_source_url(url: str) -> bool:
+    normalized = url.strip().lower()
+    return any(host in normalized for host in _OFFICIAL_MODEL_SOURCE_HOSTS)
+
+
+def _fetch_text_from_url(url: str) -> str | None:
+    try:
+        request = Request(
+            url=url,
+            headers={"User-Agent": "aijurisdictionagents/model-knowledge-cutoff"},
+        )
+        with urlopen(request, timeout=15) as response:
+            payload = response.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+    text = html.unescape(re.sub(r"<[^>]+>", " ", payload))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _extract_knowledge_cutoff_date(text: str) -> str | None:
+    normalized_text = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not normalized_text:
+        return None
+    patterns = (
+        r"knowledge cutoff[:\s-]*([A-Z][a-z]{2,8}\s+\d{1,2},\s+\d{4})",
+        r"([A-Z][a-z]{2,8}\s+\d{1,2},\s+\d{4})\s+knowledge cutoff",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized_text, flags=re.IGNORECASE)
+        if match is None:
+            continue
+        parsed = _parse_knowledge_cutoff_date(match.group(1))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _parse_knowledge_cutoff_date(raw_value: str) -> str | None:
+    cleaned = str(raw_value or "").strip()
+    if not cleaned:
+        return None
+    for date_format in _MONTH_NAME_FORMATS:
+        try:
+            return datetime.strptime(cleaned, date_format).date().isoformat()
+        except ValueError:
+            continue
+    return None
 
 
 def _resolve_repo_path(value: str) -> Path:

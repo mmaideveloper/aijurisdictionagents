@@ -10,13 +10,15 @@
 
 ## Permanent memory model metadata
 
-When API metadata is requested, the system now ensures a permanent-memory key `llm_model_setup` exists with:
+When API metadata is requested and the current model cutoff is not cached yet, the
+system uses `AIWebSearchAgent` to discover the current model page and stores a
+permanent-memory key `llm_model_setup` with:
 
 - `llm_modelname`
 - `cutoff_date`
 - `cutoff_source`
 
-This is stored in the API `permanent_memory` table.
+This is stored in the API `permanent_memory` table and reused by `/version`.
 
 ## Minimal runnable example
 

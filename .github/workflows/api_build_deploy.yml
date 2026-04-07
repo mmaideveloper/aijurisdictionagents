@@ -90,6 +90,7 @@ jobs:
       AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
       AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
       AZURE_POSTGRES_DATABASE_NAME: ${{ vars.AZURE_POSTGRES_DATABASE_NAME }}
+      AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK || 'laws_sk' }}
       AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
       AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
@@ -172,6 +173,17 @@ jobs:
           print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
           PY
           )"
+          laws_db_cloud="$(python - <<'PY'
+          import os
+          from urllib.parse import quote
+          server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
+          admin_username = os.environ["AZURE_POSTGRES_ADMIN_USERNAME"]
+          user = quote(admin_username, safe="")
+          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
+          database = os.environ["AZURE_LAWS_POSTGRES_DATABASE_NAME_SK"]
+          print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
+          PY
+          )"
 
           resolved_app_insights="${APPLICATIONINSIGHTS_CONNECTION_STRING:-}"
           if [ -z "$resolved_app_insights" ]; then
@@ -183,7 +195,7 @@ jobs:
               --output tsv 2>/dev/null || true)"
           fi
 
-          secret_values=("db-cloud=$db_cloud")
+          secret_values=("db-cloud=$db_cloud" "laws-db-cloud=$laws_db_cloud")
           if [ -n "$resolved_app_insights" ]; then
             secret_values+=("applicationinsights-connection-string=$resolved_app_insights")
           fi
@@ -328,6 +340,17 @@ jobs:
           print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
           PY
           )"
+          laws_db_cloud="$(python - <<'PY'
+          import os
+          from urllib.parse import quote
+          server = os.environ["AZURE_POSTGRES_SERVER_NAME"]
+          admin_username = os.environ["AZURE_POSTGRES_ADMIN_USERNAME"]
+          user = quote(admin_username, safe="")
+          password = quote(os.environ["AZURE_POSTGRES_ADMIN_PASSWORD"], safe="")
+          database = os.environ["AZURE_LAWS_POSTGRES_DATABASE_NAME_SK"]
+          print(f"postgresql://{user}:{password}@{server}.postgres.database.azure.com:5432/{database}?sslmode=require")
+          PY
+          )"
           store_cloud=""
           if [ -n "${AZURE_STORAGE_ACCOUNT_NAME:-}" ] && [ -n "${AZURE_STORAGE_CONTAINER_NAME:-}" ]; then
             store_cloud="https://${AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${AZURE_STORAGE_CONTAINER_NAME}"
@@ -345,7 +368,7 @@ jobs:
             --name "$AZURE_MANAGED_IDENTITY_NAME" \
             --query clientId \
             --output tsv 2>/dev/null || true)"
-          secret_values=("db-cloud=$db_cloud")
+          secret_values=("db-cloud=$db_cloud" "laws-db-cloud=$laws_db_cloud")
           if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
             secret_values+=("applicationinsights-connection-string=$APPLICATIONINSIGHTS_CONNECTION_STRING")
           fi
@@ -364,6 +387,9 @@ jobs:
             DB_OPTION=azure
             DB_CLOUD=secretref:db-cloud
             DB_LOCAL=/tmp/api.sqlite3
+            LAWS_COUNTRY=SK
+            LAWS_DB_BACKEND=postgres
+            LAWS_DB_CLOUD=secretref:laws-db-cloud
             STORAGE_OPTION=azure
             STORE_LOCAL=/tmp/storage
             LLM_PROVIDER=${LLM_PROVIDER:-azurefoundry}

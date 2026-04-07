@@ -189,15 +189,17 @@ If the database is unreachable or misconfigured, the endpoint returns `503` with
 - `last_law_update_source`: whether that timestamp comes from country-specific or global `law_documents` data.
 - `last_collector_run_at`: latest sequential laws collector run timestamp from `collector_progress`, including country/source-system suffix when available.
 - `last_processed_law`: latest successfully processed law identifier in `number/year` format, for example `234/2026`.
-- `model_knowledge_cutoff_date`: fixed fallback value (`2023-01-01`).
-- `model_knowledge_cutoff_source`: fixed fallback source marker (`2023-01-01`).
+- `model_knowledge_cutoff_date`: LLM cutoff date resolved from the current model metadata and cached in `permanent_memory`.
+- `model_knowledge_cutoff_source`: source URL used for the resolved cutoff date, typically an official OpenAI model page.
 - `law_reference_links`: recent official law links available in the system knowledge store.
 - `mobile_app_version`: latest mobile app version from `mobile_app/pubspec.yaml`.
 - `mobile_app_release_url`: release page used by the mobile app update flow.
 - `mobile_app_apk_download_url`: default APK asset URL used by Android in-app update flow.
 
-Additionally, the API ensures `permanent_memory.key=llm_model_setup` exists with
-`llm_modelname`, `cutoff_date`, and `cutoff_source`.
+Additionally, the API persists `permanent_memory.key=llm_model_setup` with
+`llm_modelname`, `cutoff_date`, and `cutoff_source`. When no cached value exists,
+the API uses `AIWebSearchAgent` to find an official OpenAI model page, extracts the
+knowledge cutoff, and stores it for reuse.
 
 Example:
 
@@ -211,8 +213,8 @@ Example:
   "last_law_update_source": "law_documents_global",
   "last_collector_run_at": "2026-03-30T12:30:00Z (SK:slovlex)",
   "last_processed_law": "234/2026",
-  "model_knowledge_cutoff_date": "2023-01-01",
-  "model_knowledge_cutoff_source": "2023-01-01",
+  "model_knowledge_cutoff_date": "2023-10-01",
+  "model_knowledge_cutoff_source": "https://platform.openai.com/docs/models/gpt-4o-mini",
   "law_reference_links": [
     "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
   ],
@@ -519,7 +521,17 @@ Cloud rollout:
    - `DB_CLOUD=secretref:db-cloud`
    - `STORAGE_OPTION=azure`
    - `STORE_CLOUD=https://<storage-account>.blob.core.windows.net/<container-name>`
-4. Roll out a new revision (or restart) and verify startup logs include selected `db_option`.
+4. Confirm the API revision also gets laws metadata access:
+   - `LAWS_COUNTRY=SK`
+   - `LAWS_DB_BACKEND=postgres`
+   - `LAWS_DB_CLOUD=secretref:laws-db-cloud`
+5. Roll out a new revision (or restart) and verify startup logs include selected `db_option`.
+
+Model metadata demo:
+
+```bash
+python examples/model_knowledge_cutoff_demo.py
+```
 
 ACA log access:
 

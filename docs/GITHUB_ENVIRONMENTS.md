@@ -113,7 +113,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_MANAGED_IDENTITY_NAME` | Managed identity name |
 | `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional laws collector Azure Container App name, default `laws-collector` |
 | `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional laws collector live probe count per Azure job execution, default `1` |
-| `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk` |
+| `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk`; the API deploy also uses it to inject `LAWS_DB_CLOUD` so `/version` can read the latest collector metadata |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `*/15 * * * *` |
 | `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME` | Optional max runtime per document-processor Azure run in minutes; default `15`, set `0` for unlimited |

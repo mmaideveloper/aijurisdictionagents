@@ -7,6 +7,7 @@ param(
     [string]$ContainerAppName,
     [string]$PostgresServerName,
     [string]$PostgresDatabaseName,
+    [string]$LawsPostgresDatabaseNameSk,
     [string]$PostgresAdminUsername,
     [string]$PostgresAdminPassword,
     [string]$PostgresSkuName,
@@ -610,6 +611,7 @@ $environmentNameFromEnvFile = ""
 $containerAppNameFromEnvFile = ""
 $postgresServerNameFromEnvFile = ""
 $postgresDatabaseNameFromEnvFile = ""
+$lawsPostgresDatabaseNameSkFromEnvFile = ""
 $postgresAdminUsernameFromEnvFile = ""
 $postgresAdminPasswordFromEnvFile = ""
 $postgresSkuNameFromEnvFile = ""
@@ -633,6 +635,7 @@ if (-not $SkipEnvFile -and (Test-Path -Path $resolvedEnvFilePath)) {
     $containerAppNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_CONTAINER_APP_NAME"
     $postgresServerNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_SERVER_NAME"
     $postgresDatabaseNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_DATABASE_NAME"
+    $lawsPostgresDatabaseNameSkFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_LAWS_POSTGRES_DATABASE_NAME_SK"
     $postgresAdminUsernameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_ADMIN_USERNAME"
     $postgresAdminPasswordFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_ADMIN_PASSWORD"
     $postgresSkuNameFromEnvFile = Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "AZURE_POSTGRES_SKU_NAME"
@@ -656,6 +659,7 @@ $EnvironmentName = Resolve-InputValue -ExplicitValue $EnvironmentName -EnvFileVa
 $ContainerAppName = Resolve-InputValue -ExplicitValue $ContainerAppName -EnvFileValue $containerAppNameFromEnvFile -EnvironmentValue $env:AZURE_CONTAINER_APP_NAME
 $PostgresServerName = Resolve-InputValue -ExplicitValue $PostgresServerName -EnvFileValue $postgresServerNameFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_SERVER_NAME
 $PostgresDatabaseName = Resolve-InputValue -ExplicitValue $PostgresDatabaseName -EnvFileValue $postgresDatabaseNameFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_DATABASE_NAME
+$LawsPostgresDatabaseNameSk = Resolve-InputValue -ExplicitValue $LawsPostgresDatabaseNameSk -EnvFileValue $lawsPostgresDatabaseNameSkFromEnvFile -EnvironmentValue $env:AZURE_LAWS_POSTGRES_DATABASE_NAME_SK
 $PostgresAdminUsername = Resolve-InputValue -ExplicitValue $PostgresAdminUsername -EnvFileValue $postgresAdminUsernameFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_USERNAME
 $PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPassword -EnvFileValue $postgresAdminPasswordFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_PASSWORD
 $PostgresSkuName = Resolve-InputValue -ExplicitValue $PostgresSkuName -EnvFileValue $postgresSkuNameFromEnvFile -EnvironmentValue $env:AZURE_POSTGRES_SKU_NAME
@@ -688,6 +692,9 @@ if ([string]::IsNullOrWhiteSpace($PostgresServerName)) {
 }
 if ([string]::IsNullOrWhiteSpace($PostgresDatabaseName)) {
     $PostgresDatabaseName = "aijurisdiction"
+}
+if ([string]::IsNullOrWhiteSpace($LawsPostgresDatabaseNameSk)) {
+    $LawsPostgresDatabaseNameSk = "laws_sk"
 }
 if ([string]::IsNullOrWhiteSpace($PostgresAdminUsername)) {
     $PostgresAdminUsername = "jurisadmin"
@@ -749,6 +756,7 @@ $StorageContainerName = Normalize-StorageContainerName -InputName $StorageContai
 Write-Host "Using ACR name: $AcrName"
 Write-Host "Using PostgreSQL server: $PostgresServerName"
 Write-Host "Using PostgreSQL database: $PostgresDatabaseName"
+Write-Host "Using laws PostgreSQL database (SK): $LawsPostgresDatabaseNameSk"
 Write-Host "Using Application Insights: $ApplicationInsightsName"
 Write-Host "Using storage account: $StorageAccountName"
 Write-Host "Using storage container: $StorageContainerName"
@@ -991,6 +999,11 @@ $dbCloud = Convert-ToPostgresConnectionString `
     -DatabaseName $postgresDatabaseNameOutput `
     -AdminUsername $PostgresAdminUsername `
     -AdminPassword $PostgresAdminPassword
+$lawsDbCloud = Convert-ToPostgresConnectionString `
+    -HostName $postgresHostOutput `
+    -DatabaseName $LawsPostgresDatabaseNameSk `
+    -AdminUsername $PostgresAdminUsername `
+    -AdminPassword $PostgresAdminPassword
 $storeCloud = if (-not [string]::IsNullOrWhiteSpace($storageBlobEndpointOutput)) {
     $storageBlobEndpointOutput.TrimEnd("/") + "/$storageContainerNameOutput"
 }
@@ -1033,6 +1046,7 @@ if ([string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
 }
 $secretPairs = New-Object System.Collections.Generic.List[string]
 $secretPairs.Add("db-cloud=$dbCloud")
+$secretPairs.Add("laws-db-cloud=$lawsDbCloud")
 if (-not [string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
     $secretPairs.Add("applicationinsights-connection-string=$applicationInsightsConnectionString")
 }
@@ -1049,7 +1063,7 @@ $envPairs = Convert-EnvFileToPairs -Path $resolvedEnvFilePath
 $envPairsList = New-Object System.Collections.Generic.List[string]
 foreach ($item in $envPairs) {
     $key = $item.Split("=", 2)[0]
-    if ($key -in @("DB_OPTION", "DB_CLOUD", "DB_LOCAL", "STORAGE_OPTION", "STORE_CLOUD", "STORE_LOCAL", "APPLICATIONINSIGHTS_CONNECTION_STRING", "DOCUMENT_PROCESSOR_OPTION")) {
+    if ($key -in @("DB_OPTION", "DB_CLOUD", "DB_LOCAL", "LAWS_COUNTRY", "LAWS_DB_BACKEND", "LAWS_DB_CLOUD", "STORAGE_OPTION", "STORE_CLOUD", "STORE_LOCAL", "APPLICATIONINSIGHTS_CONNECTION_STRING", "DOCUMENT_PROCESSOR_OPTION")) {
         continue
     }
     $envPairsList.Add($item)
@@ -1057,6 +1071,9 @@ foreach ($item in $envPairs) {
 $envPairsList.Add("DB_OPTION=azure")
 $envPairsList.Add("DB_CLOUD=secretref:db-cloud")
 $envPairsList.Add("DB_LOCAL=/tmp/api.sqlite3")
+$envPairsList.Add("LAWS_COUNTRY=SK")
+$envPairsList.Add("LAWS_DB_BACKEND=postgres")
+$envPairsList.Add("LAWS_DB_CLOUD=secretref:laws-db-cloud")
 $envPairsList.Add("STORAGE_OPTION=azure")
 $envPairsList.Add("STORE_LOCAL=/tmp/storage")
 $envPairsList.Add("DOCUMENT_PROCESSOR_OPTION=azure")

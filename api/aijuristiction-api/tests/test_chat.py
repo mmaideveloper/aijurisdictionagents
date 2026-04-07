@@ -973,6 +973,7 @@ def test_document_export_ready_after_confirmation_with_prior_case_update() -> No
 def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_path) -> None:
     from app.chat.api import _build_direct_reply_result
     from app.chat.models import Message, MessageRole, Session
+    import app.chat.result_metadata as result_metadata
 
     laws_db = tmp_path / "laws.sqlite3"
     with sqlite3.connect(laws_db) as conn:
@@ -1022,6 +1023,22 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
 
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(laws_db))
+    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    monkeypatch.setattr(
+        result_metadata.ApiDatabaseStore,
+        "from_env",
+        lambda: SimpleNamespace(
+            get_permanent_memory=lambda _key: SimpleNamespace(
+                value={
+                    "llm_modelname": "gpt-4o-mini",
+                    "cutoff_date": "2023-10-01",
+                    "cutoff_source": "https://platform.openai.com/docs/models/gpt-4o-mini",
+                },
+                source_url="https://platform.openai.com/docs/models/gpt-4o-mini",
+            )
+        ),
+    )
 
     session_id = uuid4()
     session = Session(id=session_id, country="SK", language="EN", discussion_type="court")
@@ -1051,8 +1068,11 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
     assert result.metadata["last_law_update_source"] == "law_documents_country"
     assert result.metadata["last_collector_run_at"] == "2026-03-30T14:00:00Z (SK:slovlex)"
     assert result.metadata["last_processed_law"] == "234/2026"
-    assert result.metadata["model_knowledge_cutoff_date"] == "2023-01-01"
-    assert result.metadata["model_knowledge_cutoff_source"] == "2023-01-01"
+    assert result.metadata["model_knowledge_cutoff_date"] == "2023-10-01"
+    assert (
+        result.metadata["model_knowledge_cutoff_source"]
+        == "https://platform.openai.com/docs/models/gpt-4o-mini"
+    )
     assert result.metadata["law_reference_links"] == [
         "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/11/",
         "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/2/",
@@ -1061,46 +1081,143 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
 
 
 def test_law_snapshot_falls_back_to_model_cutoff_and_writes_cache(monkeypatch, tmp_path) -> None:
-    from app.chat.result_metadata import get_law_knowledge_snapshot
+    import app.chat.result_metadata as result_metadata
+
+    class _FakeStore:
+        def __init__(self) -> None:
+            self.entry = None
+
+        def get_permanent_memory(self, key: str) -> SimpleNamespace | None:
+            assert key == "llm_model_setup"
+            return self.entry
+
+        def upsert_permanent_memory(
+            self,
+            *,
+            key: str,
+            value: dict[str, str],
+            entry_type: str,
+            source_url: str | None = None,
+        ) -> None:
+            assert key == "llm_model_setup"
+            assert entry_type == "llm_model_metadata"
+            self.entry = SimpleNamespace(value=value, source_url=source_url)
 
     cache_path = tmp_path / "model-knowledge-cutoff.json"
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
     monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", str(cache_path))
     monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
-    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    fake_store = _FakeStore()
+    monkeypatch.setattr(result_metadata.ApiDatabaseStore, "from_env", lambda: fake_store)
+    monkeypatch.setattr(
+        result_metadata,
+        "AIWebSearchAgent",
+        lambda: SimpleNamespace(
+            search=lambda **_kwargs: [
+                SimpleNamespace(
+                    title="GPT-4o mini",
+                    url="https://platform.openai.com/docs/models/gpt-4o-mini",
+                    snippet="GPT-4o mini model card. Oct 01, 2023 knowledge cutoff.",
+                )
+            ]
+        ),
+    )
 
-    snapshot = get_law_knowledge_snapshot("SK")
+    snapshot = result_metadata.get_law_knowledge_snapshot("SK")
 
     assert snapshot.last_law_update_date is None
     assert snapshot.last_law_update_source == "unavailable"
     assert snapshot.last_collector_run_at is None
     assert snapshot.last_processed_law is None
-    assert snapshot.model_knowledge_cutoff_date == "2023-01-01"
-    assert snapshot.model_knowledge_cutoff_source == "2023-01-01"
+    assert snapshot.model_knowledge_cutoff_date == "2023-10-01"
+    assert (
+        snapshot.model_knowledge_cutoff_source
+        == "https://platform.openai.com/docs/models/gpt-4o-mini"
+    )
     assert snapshot.reference_links == ()
-
-    assert not cache_path.exists()
+    assert fake_store.entry is not None
+    assert fake_store.entry.value["llm_modelname"] == "gpt-4o-mini"
+    assert fake_store.entry.value["cutoff_date"] == "2023-10-01"
+    assert cache_path.exists()
+    cache_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert cache_payload["llm_modelname"] == "gpt-4o-mini"
+    assert cache_payload["model_knowledge_cutoff_date"] == "2023-10-01"
 
 
 def test_law_snapshot_reuses_cached_model_cutoff_without_expiration(monkeypatch, tmp_path) -> None:
-    from app.chat.result_metadata import get_law_knowledge_snapshot
+    import app.chat.result_metadata as result_metadata
+
+    cached_store_entry = SimpleNamespace(
+        value={
+            "llm_modelname": "gpt-4o-mini",
+            "cutoff_date": "2023-10-01",
+            "cutoff_source": "https://platform.openai.com/docs/models/gpt-4o-mini",
+        },
+        source_url="https://platform.openai.com/docs/models/gpt-4o-mini",
+    )
 
     cache_path = tmp_path / "model-knowledge-cutoff.json"
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
     monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", str(cache_path))
+    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    monkeypatch.setattr(
+        result_metadata.ApiDatabaseStore,
+        "from_env",
+        lambda: SimpleNamespace(get_permanent_memory=lambda _key: cached_store_entry),
+    )
+    monkeypatch.setattr(
+        result_metadata,
+        "AIWebSearchAgent",
+        lambda: SimpleNamespace(search=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected web search"))),
+    )
 
-    first_snapshot = get_law_knowledge_snapshot("SK")
-    assert first_snapshot.model_knowledge_cutoff_date == "2023-01-01"
+    first_snapshot = result_metadata.get_law_knowledge_snapshot("SK")
+    assert first_snapshot.model_knowledge_cutoff_date == "2023-10-01"
 
-    second_snapshot = get_law_knowledge_snapshot("SK")
+    second_snapshot = result_metadata.get_law_knowledge_snapshot("SK")
 
     assert second_snapshot.last_law_update_date is None
     assert second_snapshot.last_collector_run_at is None
     assert second_snapshot.last_processed_law is None
-    assert second_snapshot.model_knowledge_cutoff_date == "2023-01-01"
-    assert second_snapshot.model_knowledge_cutoff_source == "2023-01-01"
+    assert second_snapshot.model_knowledge_cutoff_date == "2023-10-01"
+    assert (
+        second_snapshot.model_knowledge_cutoff_source
+        == "https://platform.openai.com/docs/models/gpt-4o-mini"
+    )
+
+
+def test_law_snapshot_returns_unavailable_model_cutoff_when_web_lookup_fails(
+    monkeypatch, tmp_path
+) -> None:
+    import app.chat.result_metadata as result_metadata
+
+    monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
+    monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
+    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1")
+    monkeypatch.delenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", raising=False)
+    monkeypatch.setattr(
+        result_metadata.ApiDatabaseStore,
+        "from_env",
+        lambda: SimpleNamespace(
+            get_permanent_memory=lambda _key: None,
+            upsert_permanent_memory=lambda **_kwargs: None,
+        ),
+    )
+    monkeypatch.setattr(
+        result_metadata,
+        "AIWebSearchAgent",
+        lambda: SimpleNamespace(search=lambda **_kwargs: []),
+    )
+
+    snapshot = result_metadata.get_law_knowledge_snapshot("SK")
+
+    assert snapshot.model_knowledge_cutoff_date is None
+    assert snapshot.model_knowledge_cutoff_source == "unavailable"
 
 
 def test_summary_export_content_includes_system_versions_and_law_links() -> None:
