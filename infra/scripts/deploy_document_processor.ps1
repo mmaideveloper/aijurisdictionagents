@@ -308,9 +308,17 @@ if ($SystemEmbeddingModelOption -eq "local") {
     Write-Host "Prefetching local embedding model into build context: $SystemEmbeddingModel"
     $previousEmbeddingModelOption = $env:SYSTEM_EMBEDDING_MODEL_OPTION
     $previousEmbeddingModel = $env:SYSTEM_EMBEDDING_MODEL
+    $previousPythonPath = $env:PYTHONPATH
     try {
         $env:SYSTEM_EMBEDDING_MODEL_OPTION = "local"
         $env:SYSTEM_EMBEDDING_MODEL = $SystemEmbeddingModel
+        $repoSrcPath = (Resolve-Path "src").Path
+        if ([string]::IsNullOrWhiteSpace($previousPythonPath)) {
+            $env:PYTHONPATH = $repoSrcPath
+        }
+        else {
+            $env:PYTHONPATH = "$repoSrcPath$([IO.Path]::PathSeparator)$previousPythonPath"
+        }
         python "scripts/models/prefetch_local_embedding_model.py"
         if ($LASTEXITCODE -ne 0) {
             throw "Local embedding model prefetch failed for '$SystemEmbeddingModel'."
@@ -319,6 +327,7 @@ if ($SystemEmbeddingModelOption -eq "local") {
     finally {
         Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL_OPTION" -PreviousValue $previousEmbeddingModelOption
         Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL" -PreviousValue $previousEmbeddingModel
+        Restore-EnvVar -Name "PYTHONPATH" -PreviousValue $previousPythonPath
     }
 }
 
