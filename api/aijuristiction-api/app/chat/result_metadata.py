@@ -14,8 +14,12 @@ from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.agents import AIAgentsValidator, ValidatorInputs
 from aijurisdictionagents.agents.validator import EvaluationCriterion
+from aijurisdictionagents.api_db import ApiDatabaseStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
+_DEFAULT_MODEL_KNOWLEDGE_CUTOFF_DATE = "2023-01-01"
+_DEFAULT_MODEL_KNOWLEDGE_CUTOFF_SOURCE = "2023-01-01"
+_DEFAULT_MODEL_KNOWLEDGE_SOURCE_URL = "https://platform.openai.com/docs/models"
 
 _SESSION_VALIDATION_CRITERIA: tuple[EvaluationCriterion, ...] = (
     EvaluationCriterion(
@@ -409,23 +413,8 @@ def _law_snapshot_without_db(
 
 
 def _read_or_create_model_knowledge_cutoff_snapshot() -> tuple[str | None, str]:
-    cache_path = _resolve_repo_path(
-        os.getenv(
-            "MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE",
-            "./runs/storage/api/cache/model_knowledge_cutoff_cache.json",
-        ).strip()
-    )
-    cached_snapshot = _read_model_knowledge_cutoff_cache(cache_path)
-    if cached_snapshot is not None:
-        return cached_snapshot
-
-    configured_cutoff = os.getenv("MODEL_KNOWLEDGE_CUTOFF_DATE", "").strip()
-    if not configured_cutoff:
-        return (None, "unavailable")
-
-    snapshot = (configured_cutoff, "model_knowledge_cutoff_cache")
-    _write_model_knowledge_cutoff_cache(cache_path, snapshot)
-    return snapshot
+    _ensure_model_knowledge_permanent_memory_entry()
+    return (_DEFAULT_MODEL_KNOWLEDGE_CUTOFF_DATE, _DEFAULT_MODEL_KNOWLEDGE_CUTOFF_SOURCE)
 
 
 def _read_model_knowledge_cutoff_cache(cache_path: Path) -> tuple[str, str] | None:
@@ -467,6 +456,28 @@ def _write_model_knowledge_cutoff_cache(
         return
 
 
+def _ensure_model_knowledge_permanent_memory_entry() -> None:
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower() or "unknown"
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip() or "unknown"
+    model_name = deployment if provider in {"azurefoundry", "azureopenai"} else provider
+    memory_payload = {
+        "llm_modelname": model_name,
+        "cutoff_date": _DEFAULT_MODEL_KNOWLEDGE_CUTOFF_DATE,
+        "cutoff_source": _DEFAULT_MODEL_KNOWLEDGE_SOURCE_URL,
+    }
+    try:
+        store = ApiDatabaseStore.from_env()
+        if store.get_permanent_memory("llm_model_setup") is None:
+            store.upsert_permanent_memory(
+                key="llm_model_setup",
+                value=memory_payload,
+                entry_type="llm_model_metadata",
+                source_url=_DEFAULT_MODEL_KNOWLEDGE_SOURCE_URL,
+            )
+    except Exception:
+        return
+
+
 def _resolve_repo_path(value: str) -> Path:
     candidate = Path(value)
     if candidate.is_absolute():
@@ -489,7 +500,7 @@ def _collector_progress_sqlite_row(
             Sequence[Any] | None,
             conn.execute(
                 """
-                SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+                SELECT country_code, source_system, last_collector_run_at, last_processed_law_year, last_processed_law_number
                 FROM collector_progress
                 WHERE UPPER(country_code) = ?
                 ORDER BY updated_at DESC
@@ -502,7 +513,7 @@ def _collector_progress_sqlite_row(
         Sequence[Any] | None,
         conn.execute(
             """
-            SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+            SELECT country_code, source_system, last_collector_run_at, last_processed_law_year, last_processed_law_number
             FROM collector_progress
             ORDER BY updated_at DESC
             LIMIT 1
@@ -524,7 +535,7 @@ def _collector_progress_postgres_row(
             Sequence[Any] | None,
             conn.execute(
                 """
-                SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+                SELECT country_code, source_system, last_collector_run_at, last_processed_law_year, last_processed_law_number
                 FROM collector_progress
                 WHERE UPPER(country_code) = %s
                 ORDER BY updated_at DESC
@@ -537,7 +548,7 @@ def _collector_progress_postgres_row(
         Sequence[Any] | None,
         conn.execute(
             """
-            SELECT last_collector_run_at, last_processed_law_year, last_processed_law_number
+            SELECT country_code, source_system, last_collector_run_at, last_processed_law_year, last_processed_law_number
             FROM collector_progress
             ORDER BY updated_at DESC
             LIMIT 1
@@ -549,9 +560,16 @@ def _collector_progress_postgres_row(
 def _collector_progress_values(progress_row: Sequence[Any] | None) -> tuple[str | None, str | None]:
     if progress_row is None:
         return None, None
-    last_collector_run_at = str(progress_row[0]) if progress_row[0] is not None else None
-    year = progress_row[1] if len(progress_row) > 1 else None
-    number = progress_row[2] if len(progress_row) > 2 else None
+    country_code = str(progress_row[0]) if progress_row[0] is not None else ""
+    source_system = str(progress_row[1]) if len(progress_row) > 1 and progress_row[1] is not None else ""
+    last_collector_run_at_raw = progress_row[2] if len(progress_row) > 2 else None
+    last_collector_run_at = (
+        f"{last_collector_run_at_raw} ({country_code}:{source_system})"
+        if last_collector_run_at_raw is not None and country_code and source_system
+        else (str(last_collector_run_at_raw) if last_collector_run_at_raw is not None else None)
+    )
+    year = progress_row[3] if len(progress_row) > 3 else None
+    number = progress_row[4] if len(progress_row) > 4 else None
     if year is None or number is None:
         return last_collector_run_at, None
     return last_collector_run_at, f"{int(number)}/{int(year)}"
