@@ -1,6 +1,7 @@
 .conda/**
 conda/**
 runs/
+/archivelaws/
 /cases/
 .pytest_cache/**
 .vscode/**
@@ -31,6 +32,7 @@ api/aijuristiction-api/e2e-playwright/test-results/
 api/aijuristiction-api/e2e-playwright/playwright-report/
 api/aijuristiction-api/data/
 infra/bicep/main.json
+infra/bicep/*.job.json
 .codex/runlogs/**
 api/aijuristiction-api/storage/**
 .playwright-cli/**

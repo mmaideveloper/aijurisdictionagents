@@ -13,6 +13,7 @@ from .country_registry import get_country_laws_collector_definition
 from .config import LawsCollectorConfig
 from .postgres_store import PostgresLawStore
 from .slovlex_process import SlovLexSequentialImportRunner
+from .slovlex_zip_import import SlovLexZipImportRunner
 from .sqlite_store import SqliteLawStore
 
 logger = logging.getLogger("laws-collector")
@@ -73,10 +74,12 @@ def run_worker() -> None:
     options = WorkerOptions.from_env()
     started_at = time.monotonic()
     cycle = 0
+    import_mode = getattr(config, "import_mode", "zip")
     logger.info(
         "[laws-collector] startup "
         f"telemetry_mode={telemetry_mode} "
         f"country={config.country_code} db_backend={config.db_backend} "
+        f"import_mode={import_mode} "
         f"embedding_option={embedding_runtime.option} "
         f"embedding_model={embedding_runtime.model}"
     )
@@ -96,29 +99,58 @@ def run_worker() -> None:
                             time.monotonic() - started_at,
                         )
                         return
-                summary = SlovLexSequentialImportRunner(
-                    config=config,
-                    store=store,
-                    service=service,
-                ).run(max_probes=options.max_probes, max_running_seconds=max_running_seconds)
-                logger.info(
-                    f"[laws-collector] collector={collector_definition.collector_name} "
-                    f"country={config.country_code} cycle={cycle} fixture=live "
-                    f"probes={summary.probes} max_probes={options.max_probes} laws_found={summary.laws_found} "
-                    f"years_advanced={summary.years_advanced} "
-                    f"stopped_on_current_year_gap={str(summary.stopped_on_current_year_gap).lower()} "
-                    f"last_processed_law={summary.last_processed_law or ''} "
-                    f"last_processed_at={summary.last_processed_at or ''} "
-                    f"next_law_to_check={summary.next_law_to_check}"
-                )
-                if summary.stopped_due_to_max_running_time:
+                if import_mode == "zip":
+                    summary = SlovLexZipImportRunner(
+                        config=config,
+                        store=store,
+                        service=service,
+                    ).run(max_running_seconds=max_running_seconds)
                     logger.info(
-                        "[laws-collector] worker stopped during live probing after max running time "
-                        "max_running_minutes=%s elapsed_seconds=%.1f",
-                        options.max_running_minutes,
-                        time.monotonic() - started_at,
+                        f"[laws-collector] collector={collector_definition.collector_name} "
+                        f"country={config.country_code} cycle={cycle} fixture=live import_mode=zip "
+                        f"phase={summary.phase} import_key={summary.import_key or ''} "
+                        f"entries_processed={summary.entries_processed} "
+                        f"processed={summary.sync_summary.processed} "
+                        f"new_documents={summary.sync_summary.new_documents} "
+                        f"new_versions={summary.sync_summary.new_versions} "
+                        f"metadata_updates={summary.sync_summary.metadata_updates} "
+                        f"skipped={summary.sync_summary.skipped} "
+                        f"archive_completed={str(summary.archive_completed).lower()} "
+                        f"monthly_completed={str(summary.monthly_completed).lower()} "
+                        f"last_processed_law={summary.last_processed_law or ''}"
                     )
-                    return
+                    if summary.stopped_due_to_max_running_time:
+                        logger.info(
+                            "[laws-collector] worker stopped during zip import after max running time "
+                            "max_running_minutes=%s elapsed_seconds=%.1f",
+                            options.max_running_minutes,
+                            time.monotonic() - started_at,
+                        )
+                        return
+                else:
+                    summary = SlovLexSequentialImportRunner(
+                        config=config,
+                        store=store,
+                        service=service,
+                    ).run(max_probes=options.max_probes, max_running_seconds=max_running_seconds)
+                    logger.info(
+                        f"[laws-collector] collector={collector_definition.collector_name} "
+                        f"country={config.country_code} cycle={cycle} fixture=live import_mode=one_law_url "
+                        f"probes={summary.probes} max_probes={options.max_probes} laws_found={summary.laws_found} "
+                        f"years_advanced={summary.years_advanced} "
+                        f"stopped_on_current_year_gap={str(summary.stopped_on_current_year_gap).lower()} "
+                        f"last_processed_law={summary.last_processed_law or ''} "
+                        f"last_processed_at={summary.last_processed_at or ''} "
+                        f"next_law_to_check={summary.next_law_to_check}"
+                    )
+                    if summary.stopped_due_to_max_running_time:
+                        logger.info(
+                            "[laws-collector] worker stopped during live probing after max running time "
+                            "max_running_minutes=%s elapsed_seconds=%.1f",
+                            options.max_running_minutes,
+                            time.monotonic() - started_at,
+                        )
+                        return
             else:
                 snapshots = (
                     collector_definition.baseline_snapshots()

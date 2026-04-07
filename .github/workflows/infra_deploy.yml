@@ -66,6 +66,7 @@ jobs:
       AZURE_LAWS_COLLECTOR_CRON_EXPRESSION: ${{ vars.AZURE_LAWS_COLLECTOR_CRON_EXPRESSION }}
       AZURE_LAWS_COLLECTOR_MAX_PROBES: ${{ vars.AZURE_LAWS_COLLECTOR_MAX_PROBES }}
       LAWS_COLLECTOR_MAX_RUNNING_TIME: ${{ vars.LAWS_COLLECTOR_MAX_RUNNING_TIME }}
+      LAWS_COLLECTOR_IMPORT: ${{ vars.LAWS_COLLECTOR_IMPORT || 'zip' }}
       AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
     steps:
       - uses: actions/checkout@v4
@@ -182,12 +183,14 @@ jobs:
           laws_cron_expression="$(normalize_aca_cron "${AZURE_LAWS_COLLECTOR_CRON_EXPRESSION:-}" "0 0 * * *")"
           laws_max_probes="${AZURE_LAWS_COLLECTOR_MAX_PROBES:-1}"
           laws_max_running_time="${LAWS_COLLECTOR_MAX_RUNNING_TIME:-60}"
+          laws_import="${LAWS_COLLECTOR_IMPORT:-zip}"
           laws_postgres_database="${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}"
 
           echo "laws_job_name=$laws_job_name" >> "$GITHUB_OUTPUT"
           echo "laws_cron_expression=$laws_cron_expression" >> "$GITHUB_OUTPUT"
           echo "laws_max_probes=$laws_max_probes" >> "$GITHUB_OUTPUT"
           echo "laws_max_running_time=$laws_max_running_time" >> "$GITHUB_OUTPUT"
+          echo "laws_import=$laws_import" >> "$GITHUB_OUTPUT"
           echo "laws_postgres_database_name=$laws_postgres_database" >> "$GITHUB_OUTPUT"
 
       - name: Resolve document processor settings
@@ -340,6 +343,7 @@ jobs:
               lawsCollectorCronExpression="${{ steps.laws.outputs.laws_cron_expression }}" \
               lawsCollectorMaxProbes="${{ steps.laws.outputs.laws_max_probes }}" \
               lawsCollectorMaxRunningTime="${{ steps.laws.outputs.laws_max_running_time }}" \
+              lawsCollectorImport="${{ steps.laws.outputs.laws_import }}" \
               postgresServerName="$AZURE_POSTGRES_SERVER_NAME" \
               postgresDatabaseName="$AZURE_POSTGRES_DATABASE_NAME" \
               lawsPostgresDatabaseName="${{ steps.laws.outputs.laws_postgres_database_name }}" \

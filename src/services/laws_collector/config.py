@@ -20,10 +20,12 @@ class LawsCollectorConfig:
     delta_poll_hours: int
     initial_import_from: date
     historical_import_from: date
+    import_mode: str = "zip"
 
     @classmethod
     def from_env(cls) -> "LawsCollectorConfig":
         country_code = os.getenv("LAWS_COUNTRY", "SK").strip().upper()
+        import_mode = os.getenv("LAWS_COLLECTOR_IMPORT", "zip").strip().lower()
         db_local = os.getenv("LAWS_DB_LOCAL", "").strip()
         storage_local = os.getenv("LAWS_STORAGE_LOCAL", "").strip()
 
@@ -34,6 +36,7 @@ class LawsCollectorConfig:
 
         return cls(
             country_code=country_code,
+            import_mode=import_mode,
             db_backend=os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower(),
             db_local=db_local,
             db_cloud=os.getenv("LAWS_DB_CLOUD", "").strip(),
@@ -59,6 +62,8 @@ class LawsCollectorConfig:
     def validate(self) -> None:
         if len(self.country_code) != 2 or not self.country_code.isalpha():
             raise ValueError("LAWS_COUNTRY must be a 2-letter ISO code")
+        if self.import_mode not in {"one_law_url", "zip"}:
+            raise ValueError("LAWS_COLLECTOR_IMPORT must be one of: one_law_url, zip")
         if self.db_backend not in {"sqlite", "postgres"}:
             raise ValueError("LAWS_DB_BACKEND must be one of: sqlite, postgres")
         if self.db_backend == "postgres" and not self.db_cloud:
@@ -78,6 +83,12 @@ class LawsCollectorConfig:
     @property
     def storage_root(self) -> Path:
         return _resolve_repo_path(self.storage_local)
+
+    @property
+    def archive_root(self) -> Path:
+        if self.country_code == "SK":
+            return _resolve_repo_path("./archivelaws/slovakia")
+        return _resolve_repo_path(f"./archivelaws/{self.country_code.lower()}")
 
     @property
     def country_db_name(self) -> str:

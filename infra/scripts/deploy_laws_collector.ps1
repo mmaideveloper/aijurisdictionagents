@@ -12,6 +12,7 @@ param(
     [string]$PostgresAdminUsername,
     [string]$PostgresAdminPassword,
     [string]$ApplicationInsightsName,
+    [string]$LawsCollectorImport = "zip",
     [string]$SystemEmbeddingModelOption = "local",
     [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
     [string]$CronExpression = "0 0 * * *",
@@ -209,6 +210,7 @@ $envPgDb = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePa
 $envPgUser = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_USERNAME" }
 $envPgPass = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_PASSWORD" }
 $envApplicationInsightsName = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_APPLICATION_INSIGHTS_NAME" }
+$envLawsCollectorImport = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "LAWS_COLLECTOR_IMPORT" }
 $envSystemEmbeddingModelOption = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL_OPTION" }
 $envSystemEmbeddingModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL" }
 $envWorkerMaxProbes = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_COLLECTOR_MAX_PROBES" }
@@ -225,6 +227,7 @@ $PostgresDatabaseName = Resolve-InputValue -ExplicitValue $PostgresDatabaseName 
 $PostgresAdminUsername = Resolve-InputValue -ExplicitValue $PostgresAdminUsername -EnvFileValue $envPgUser -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_USERNAME
 $PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPassword -EnvFileValue $envPgPass -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_PASSWORD
 $ApplicationInsightsName = Resolve-InputValue -ExplicitValue $ApplicationInsightsName -EnvFileValue $envApplicationInsightsName -EnvironmentValue $env:AZURE_APPLICATION_INSIGHTS_NAME
+$LawsCollectorImport = Resolve-InputValue -ExplicitValue $LawsCollectorImport -EnvFileValue $envLawsCollectorImport -EnvironmentValue $env:LAWS_COLLECTOR_IMPORT
 $SystemEmbeddingModelOption = Resolve-InputValue -ExplicitValue $SystemEmbeddingModelOption -EnvFileValue $envSystemEmbeddingModelOption -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL_OPTION
 $SystemEmbeddingModel = Resolve-InputValue -ExplicitValue $SystemEmbeddingModel -EnvFileValue $envSystemEmbeddingModel -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL
 $WorkerMaxProbes = Resolve-InputValue -ExplicitValue $WorkerMaxProbes -EnvFileValue $envWorkerMaxProbes -EnvironmentValue $env:AZURE_LAWS_COLLECTOR_MAX_PROBES
@@ -240,6 +243,10 @@ Require-Value -Name "PostgresServerName" -Value $PostgresServerName
 Require-Value -Name "PostgresDatabaseName" -Value $PostgresDatabaseName
 Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
 Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
+if ([string]::IsNullOrWhiteSpace($LawsCollectorImport)) { $LawsCollectorImport = "zip" }
+if ($LawsCollectorImport -notin @("one_law_url", "zip")) {
+    throw "LawsCollectorImport must be one of: one_law_url, zip."
+}
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddingModelOption = "local" }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel = "all-MiniLM-L6-v2" }
 $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "0 0 * * *"
@@ -353,6 +360,7 @@ az deployment group create `
       postgresAdminPassword=$PostgresAdminPassword `
       postgresConnectionString=$dbCloud `
       applicationInsightsConnectionString=$applicationInsightsConnectionString `
+      lawsCollectorImport=$LawsCollectorImport `
       systemEmbeddingModelOption=$SystemEmbeddingModelOption `
       systemEmbeddingModel=$SystemEmbeddingModel `
       cronExpression=$CronExpression `

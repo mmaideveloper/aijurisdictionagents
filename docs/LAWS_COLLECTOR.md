@@ -206,6 +206,11 @@ python -m services.laws_collector --fixture delta
 
 ## Sequential Slov-Lex process
 
+The live Slovak collector now supports two import modes through `LAWS_COLLECTOR_IMPORT`:
+
+- `zip` (default): bootstrap once from the full Slov-Lex archive, persist archive/monthly resume state in `collector_import_state`, then continue from monthly `exportZmeny.zip` bundles downloaded under `./archivelaws/slovakia`
+- `one_law_url`: keep the older sequential per-law HTTP probe flow backed by `collector_progress`
+
 The Slovak collector now keeps a persisted sequential crawl state in `collector_progress`.
 
 Rules:
@@ -232,6 +237,35 @@ python -m services.laws_collector --run-sequential-import --max-probes 25
 ```
 
 The live sequential import now downloads the law text from the Slov-Lex static HTML and PDF endpoints, stores that text in the local database, persists `collector_progress`, and computes a real embedding vector through the shared `aijurisdictionagents.llm.embeddings` client before moving to the next law number/year. Large laws are embedded in multiple chunks and averaged into one stored law vector so local runs do not fail on model input limits.
+
+## ZIP Slov-Lex process
+
+The default `zip` mode uses the Slov-Lex export index at `https://static.slov-lex.sk/static/exporty/index.portal`.
+
+Flow:
+
+1. Download the full archive parts (`export.z01` ... `export.zip`) into `./archivelaws/slovakia/archive/<archive-date>/download/`
+2. Extract the archive once and ingest every law version from local HTML files
+3. Persist archive cursor state in `collector_import_state` so interrupted runs continue from the last processed entry
+4. Mark the archive seed as completed and remember the archive snapshot date
+5. Download each monthly `exportZmeny.zip` into `./archivelaws/slovakia/monthly/<range-end>/download/`
+6. Extract and ingest only the changed law versions from that monthly ZIP
+7. Persist the monthly cursor and resume from the last processed entry on restart
+8. Skip archive bootstrap forever after the first completed archive seed, and only look for newer monthly bundles afterward
+
+Run the default ZIP importer locally:
+
+```powershell
+conda activate .\.conda
+python -m services.laws_collector --run-zip-import
+```
+
+Minimal local demo:
+
+```powershell
+conda activate .\.conda
+python examples/laws_collector_zip_import_demo.py
+```
 The shared embedding switch now supports:
 
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default runtime mode
@@ -297,6 +331,7 @@ A minimal metadata/relations parsing example is also available:
 
 Add these to `.env` when you start wiring the service into real runs:
 
+- `LAWS_COLLECTOR_IMPORT=zip`
 - `LAWS_DB_BACKEND=sqlite`
 - `LAWS_DB_LOCAL=./runs/storage/laws-collector/sqlite/sk_laws.sqlite3`
 - `LAWS_STORAGE_LOCAL=./runs/storage/laws-collector/files/sk`
@@ -304,7 +339,10 @@ Add these to `.env` when you start wiring the service into real runs:
 
 `LAWS_COUNTRY` selects the country-specific collector implementation. The current implementation supports only `SK`, so the service still defaults to `SK` when the variable is unset.
 
-For Slovakia, the sequential Slov-Lex crawl always starts from `1/1993`. That starting point is no longer environment-configurable.
+For Slovakia:
+
+- `zip` is the default import mode and stores downloaded bundles under `./archivelaws/slovakia`
+- `one_law_url` keeps the older sequential Slov-Lex crawl that always starts from `1/1993`
 
 For PostgreSQL naming, keep the database mapping country-specific:
 
@@ -421,6 +459,7 @@ Deployment assets for a dedicated Azure Container App named `laws-collector` are
 The deploy script builds the image in ACR and deploys it to Azure Container Apps with PostgreSQL env configuration.
 The Azure job now runs the real sequential live collector path (`LAWS_WORKER_FIXTURE=live`) and uses:
 
+- `LAWS_COLLECTOR_IMPORT` to choose the live ingestion path; default `zip`, optional `one_law_url`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES` to control how many Slov-Lex probes execute in each scheduled run (default `1`)
 - `LAWS_COLLECTOR_MAX_RUNNING_TIME` to cap a single Azure run in minutes (default `60`, set `0` for unlimited)
 

@@ -485,6 +485,7 @@ Required GitHub Environment variables/secrets for deployment:
 - Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`
 - Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`
 - Optional variables: `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, `AZURE_LAWS_COLLECTOR_MAX_PROBES`, `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`, `SYSTEM_EMBEDDING_MODEL_OPTION`, `SYSTEM_EMBEDDING_MODEL`
+- Optional variables: `LAWS_COLLECTOR_IMPORT` with default `zip` (`one_law_url` keeps the older sequential probe importer)
 - Optional schedule variable: `AZURE_LAWS_COLLECTOR_CRON_EXPRESSION` with default `0 0 * * *`
 
 Recommended GitHub Environment values:
@@ -493,9 +494,11 @@ Recommended GitHub Environment values:
 - `AZURE_LAWS_COLLECTOR_CRON_EXPRESSION=0 0 * * *`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES=1`
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
+- `LAWS_COLLECTOR_IMPORT=zip`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` by default, or `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` if you want Azure/OpenAI embeddings
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 - When `SYSTEM_EMBEDDING_MODEL_OPTION=local`, the deploy script prefetches the model into `aimodels/` before `az acr build`, and the Docker image bakes that cache into `/app/aimodels`.
+- `LAWS_COLLECTOR_IMPORT=zip` makes the Azure job bootstrap from the full Slov-Lex archive under `./archivelaws/slovakia`, mark that seed import complete once, and then continue only from monthly `exportZmeny.zip` bundles with resume support.
 - The GitHub runner must install the root package before that prefetch step so dependencies such as `sentence-transformers` are available.
 
 Azure Container Apps Jobs use 5-field cron expressions. The deploy paths also accept legacy 6-field values with a leading `0` seconds field and normalize them automatically.

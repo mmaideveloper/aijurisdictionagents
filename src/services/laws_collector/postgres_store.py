@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 
 from .config import LawsCollectorConfig
 from .domain import (
+    CollectorImportState,
     CollectorProgress,
     LawSemanticCandidate,
     LawMetadataRecord,
@@ -596,6 +597,70 @@ class PostgresLawStore:
             )
             conn.commit()
 
+    def get_import_state(self, *, country_code: str, import_key: str) -> CollectorImportState | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT country_code, source_system, import_key, import_label, source_url, status,
+                       started_at, last_processed_at, last_processed_entry,
+                       last_processed_law_year, last_processed_law_number, completed_at, metadata_json
+                FROM collector_import_state
+                WHERE country_code = %(country_code)s AND import_key = %(import_key)s
+                """,
+                {"country_code": country_code, "import_key": import_key},
+            ).fetchone()
+        if row is None:
+            return None
+        return _collector_import_state_from_row(row)
+
+    def upsert_import_state(self, state: CollectorImportState) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO collector_import_state(
+                    country_code, source_system, import_key, import_label, source_url, status,
+                    started_at, last_processed_at, last_processed_entry,
+                    last_processed_law_year, last_processed_law_number,
+                    completed_at, metadata_json, created_at, updated_at
+                ) VALUES (
+                    %(country_code)s, %(source_system)s, %(import_key)s, %(import_label)s,
+                    %(source_url)s, %(status)s, %(started_at)s, %(last_processed_at)s,
+                    %(last_processed_entry)s, %(last_processed_law_year)s, %(last_processed_law_number)s,
+                    %(completed_at)s, %(metadata_json)s::jsonb, %(now)s, %(now)s
+                )
+                ON CONFLICT(country_code, import_key) DO UPDATE SET
+                    source_system = EXCLUDED.source_system,
+                    import_label = EXCLUDED.import_label,
+                    source_url = EXCLUDED.source_url,
+                    status = EXCLUDED.status,
+                    started_at = EXCLUDED.started_at,
+                    last_processed_at = EXCLUDED.last_processed_at,
+                    last_processed_entry = EXCLUDED.last_processed_entry,
+                    last_processed_law_year = EXCLUDED.last_processed_law_year,
+                    last_processed_law_number = EXCLUDED.last_processed_law_number,
+                    completed_at = EXCLUDED.completed_at,
+                    metadata_json = EXCLUDED.metadata_json,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                {
+                    "country_code": state.country_code,
+                    "source_system": state.source_system,
+                    "import_key": state.import_key,
+                    "import_label": state.import_label,
+                    "source_url": state.source_url,
+                    "status": state.status,
+                    "started_at": state.started_at,
+                    "last_processed_at": state.last_processed_at,
+                    "last_processed_entry": state.last_processed_entry,
+                    "last_processed_law_year": state.last_processed_law_year,
+                    "last_processed_law_number": state.last_processed_law_number,
+                    "completed_at": state.completed_at,
+                    "metadata_json": json.dumps(state.metadata, ensure_ascii=True, sort_keys=True),
+                    "now": _now_iso(),
+                },
+            )
+            conn.commit()
+
     def get_counts(self) -> CollectorCounts:
         with self._connect() as conn:
             return CollectorCounts(
@@ -683,4 +748,32 @@ def _collector_progress_from_row(row: dict[str, object]) -> CollectorProgress:
         ),
         next_probe_law_year=int(row["next_probe_law_year"]),
         next_probe_law_number=int(row["next_probe_law_number"]),
+    )
+
+
+def _collector_import_state_from_row(row: dict[str, object]) -> CollectorImportState:
+    metadata_value = row["metadata_json"]
+    if isinstance(metadata_value, str):
+        metadata = json.loads(metadata_value)
+    else:
+        metadata = dict(metadata_value) if metadata_value is not None else {}
+
+    return CollectorImportState(
+        country_code=str(row["country_code"]),
+        source_system=str(row["source_system"]),
+        import_key=str(row["import_key"]),
+        import_label=str(row["import_label"]),
+        source_url=str(row["source_url"]),
+        status=str(row["status"]),
+        started_at=(str(row["started_at"]) if row["started_at"] is not None else None),
+        last_processed_at=(str(row["last_processed_at"]) if row["last_processed_at"] is not None else None),
+        last_processed_entry=(str(row["last_processed_entry"]) if row["last_processed_entry"] is not None else None),
+        last_processed_law_year=(
+            int(row["last_processed_law_year"]) if row["last_processed_law_year"] is not None else None
+        ),
+        last_processed_law_number=(
+            int(row["last_processed_law_number"]) if row["last_processed_law_number"] is not None else None
+        ),
+        completed_at=(str(row["completed_at"]) if row["completed_at"] is not None else None),
+        metadata=metadata,
     )

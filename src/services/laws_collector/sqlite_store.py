@@ -9,6 +9,7 @@ import uuid
 
 from .config import LawsCollectorConfig
 from .domain import (
+    CollectorImportState,
     CollectorProgress,
     LawSemanticCandidate,
     LawMetadataRecord,
@@ -212,6 +213,25 @@ class SqliteLawStore:
                     next_probe_law_number INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS collector_import_state (
+                    country_code TEXT NOT NULL,
+                    source_system TEXT NOT NULL,
+                    import_key TEXT NOT NULL,
+                    import_label TEXT NOT NULL,
+                    source_url TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    started_at TEXT,
+                    last_processed_at TEXT,
+                    last_processed_entry TEXT,
+                    last_processed_law_year INTEGER,
+                    last_processed_law_number INTEGER,
+                    completed_at TEXT,
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(country_code, import_key)
                 );
                 """
             )
@@ -742,6 +762,67 @@ class SqliteLawStore:
                 ),
             )
 
+    def get_import_state(self, *, country_code: str, import_key: str) -> CollectorImportState | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT country_code, source_system, import_key, import_label, source_url, status,
+                       started_at, last_processed_at, last_processed_entry,
+                       last_processed_law_year, last_processed_law_number, completed_at, metadata_json
+                FROM collector_import_state
+                WHERE country_code = ? AND import_key = ?
+                """,
+                (country_code, import_key),
+            ).fetchone()
+        if row is None:
+            return None
+        return _collector_import_state_from_row(row)
+
+    def upsert_import_state(self, state: CollectorImportState) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO collector_import_state(
+                    country_code, source_system, import_key, import_label, source_url, status,
+                    started_at, last_processed_at, last_processed_entry,
+                    last_processed_law_year, last_processed_law_number,
+                    completed_at, metadata_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(country_code, import_key) DO UPDATE SET
+                    source_system = excluded.source_system,
+                    import_label = excluded.import_label,
+                    source_url = excluded.source_url,
+                    status = excluded.status,
+                    started_at = excluded.started_at,
+                    last_processed_at = excluded.last_processed_at,
+                    last_processed_entry = excluded.last_processed_entry,
+                    last_processed_law_year = excluded.last_processed_law_year,
+                    last_processed_law_number = excluded.last_processed_law_number,
+                    completed_at = excluded.completed_at,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    state.country_code,
+                    state.source_system,
+                    state.import_key,
+                    state.import_label,
+                    state.source_url,
+                    state.status,
+                    state.started_at,
+                    state.last_processed_at,
+                    state.last_processed_entry,
+                    state.last_processed_law_year,
+                    state.last_processed_law_number,
+                    state.completed_at,
+                    json.dumps(state.metadata, ensure_ascii=True, sort_keys=True),
+                    now,
+                    now,
+                ),
+            )
+
     def get_counts(self) -> CollectorCounts:
         with self._connect() as conn:
             return CollectorCounts(
@@ -876,4 +957,26 @@ def _collector_progress_from_row(row: sqlite3.Row) -> CollectorProgress:
         ),
         next_probe_law_year=int(row["next_probe_law_year"]),
         next_probe_law_number=int(row["next_probe_law_number"]),
+    )
+
+
+def _collector_import_state_from_row(row: sqlite3.Row) -> CollectorImportState:
+    return CollectorImportState(
+        country_code=str(row["country_code"]),
+        source_system=str(row["source_system"]),
+        import_key=str(row["import_key"]),
+        import_label=str(row["import_label"]),
+        source_url=str(row["source_url"]),
+        status=str(row["status"]),
+        started_at=(str(row["started_at"]) if row["started_at"] is not None else None),
+        last_processed_at=(str(row["last_processed_at"]) if row["last_processed_at"] is not None else None),
+        last_processed_entry=(str(row["last_processed_entry"]) if row["last_processed_entry"] is not None else None),
+        last_processed_law_year=(
+            int(row["last_processed_law_year"]) if row["last_processed_law_year"] is not None else None
+        ),
+        last_processed_law_number=(
+            int(row["last_processed_law_number"]) if row["last_processed_law_number"] is not None else None
+        ),
+        completed_at=(str(row["completed_at"]) if row["completed_at"] is not None else None),
+        metadata=json.loads(str(row["metadata_json"])) if row["metadata_json"] else {},
     )

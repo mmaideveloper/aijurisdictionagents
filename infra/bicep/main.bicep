@@ -9,6 +9,7 @@ param lawsCollectorJobName string = 'laws-collector'
 param lawsCollectorCronExpression string = '0 0 * * *'
 param lawsCollectorMaxProbes int = 1
 param lawsCollectorMaxRunningTime int = 60
+param lawsCollectorImport string = 'zip'
 param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'
@@ -537,6 +538,7 @@ module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob)
     applicationInsightsConnectionString: createApplicationInsights
       ? applicationInsights.properties.ConnectionString
       : applicationInsightsExisting.properties.ConnectionString
+    lawsCollectorImport: lawsCollectorImport
     systemEmbeddingModelOption: systemEmbeddingModelOption
     systemEmbeddingModel: systemEmbeddingModel
     cronExpression: lawsCollectorCronExpression

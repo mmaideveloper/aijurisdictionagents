@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from hashlib import sha256
 import json
 
@@ -233,6 +233,35 @@ class CollectorProgress:
         )
 
     def evolve(self, **changes: object) -> "CollectorProgress":
+        return replace(self, **changes)
+
+
+@dataclass(frozen=True)
+class CollectorImportState:
+    country_code: str
+    source_system: str
+    import_key: str
+    import_label: str
+    source_url: str
+    status: str
+    started_at: str | None
+    last_processed_at: str | None
+    last_processed_entry: str | None
+    last_processed_law_year: int | None
+    last_processed_law_number: int | None
+    completed_at: str | None
+    metadata: dict[str, object] = field(default_factory=dict)
+
+    @property
+    def last_processed_law(self) -> str | None:
+        if self.last_processed_law_year is None or self.last_processed_law_number is None:
+            return None
+        return format_law_identifier(
+            year=self.last_processed_law_year,
+            number=self.last_processed_law_number,
+        )
+
+    def evolve(self, **changes: object) -> "CollectorImportState":
         return replace(self, **changes)
 
 

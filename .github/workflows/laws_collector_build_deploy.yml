@@ -6,6 +6,7 @@ on:
     paths:
       - "src/services/laws_collector/**"
       - "tests/test_laws_collector.py"
+      - "tests/test_laws_collector_zip_import.py"
       - "tests/test_db_migration_safety.py"
       - "pyproject.toml"
       - "databases/laws-collector/**"
@@ -17,6 +18,7 @@ on:
     paths:
       - "src/services/laws_collector/**"
       - "tests/test_laws_collector.py"
+      - "tests/test_laws_collector_zip_import.py"
       - "tests/test_db_migration_safety.py"
       - "pyproject.toml"
       - "databases/laws-collector/**"
@@ -56,7 +58,7 @@ jobs:
           pip install -e .[dev]
 
       - name: Run laws collector unit tests
-        run: pytest tests/test_laws_collector.py tests/test_db_migration_safety.py
+        run: pytest tests/test_laws_collector.py tests/test_laws_collector_zip_import.py tests/test_db_migration_safety.py
 
       - name: Build laws collector Docker image
         run: docker build -f src/services/laws_collector/Dockerfile -t laws-collector:${{ github.sha }} .
@@ -87,6 +89,7 @@ jobs:
       AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
       AZURE_LAWS_COLLECTOR_MAX_PROBES: ${{ vars.AZURE_LAWS_COLLECTOR_MAX_PROBES }}
       LAWS_COLLECTOR_MAX_RUNNING_TIME: ${{ vars.LAWS_COLLECTOR_MAX_RUNNING_TIME }}
+      LAWS_COLLECTOR_IMPORT: ${{ vars.LAWS_COLLECTOR_IMPORT || 'zip' }}
       SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'local' }}
       SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
     steps:
@@ -223,6 +226,7 @@ jobs:
             -PostgresDatabaseName $postgresDatabaseName `
             -PostgresAdminUsername $env:AZURE_POSTGRES_ADMIN_USERNAME `
             -PostgresAdminPassword $env:AZURE_POSTGRES_ADMIN_PASSWORD `
+            -LawsCollectorImport $env:LAWS_COLLECTOR_IMPORT `
             -SystemEmbeddingModelOption $env:SYSTEM_EMBEDDING_MODEL_OPTION `
             -SystemEmbeddingModel $env:SYSTEM_EMBEDDING_MODEL `
             -CronExpression $cronExpression `

@@ -7,6 +7,7 @@ from .config import LawsCollectorConfig
 from .import_planner import SlovLexImportPlanner
 from .postgres_store import PostgresLawStore
 from .slovlex_process import SlovLexSequentialImportRunner
+from .slovlex_zip_import import SlovLexZipImportRunner
 from .sqlite_store import SqliteLawStore
 
 
@@ -32,6 +33,11 @@ def main() -> None:
         "--run-sequential-import",
         action="store_true",
         help="Probe SlovLex sequentially by law number/year and persist collector progress.",
+    )
+    parser.add_argument(
+        "--run-zip-import",
+        action="store_true",
+        help="Download SlovLex archive/monthly ZIP exports and ingest them with resume support.",
     )
     parser.add_argument(
         "--max-probes",
@@ -94,6 +100,25 @@ def main() -> None:
         print("last_collector_run_at:", summary.last_collector_run_at or "")
         print("last_processed_at:", summary.last_processed_at or "")
         print("first_found_url:", summary.first_found_url or "")
+        return
+
+    if args.run_zip_import:
+        summary = SlovLexZipImportRunner(config=config, store=store, service=service).run()
+        print("country:", config.country_code)
+        print("database_name:", config.country_db_name)
+        print("import_mode:", config.import_mode)
+        print("phase:", summary.phase)
+        print("import_key:", summary.import_key or "")
+        print("entries_processed:", summary.entries_processed)
+        print("processed:", summary.sync_summary.processed)
+        print("new_documents:", summary.sync_summary.new_documents)
+        print("new_versions:", summary.sync_summary.new_versions)
+        print("metadata_updates:", summary.sync_summary.metadata_updates)
+        print("skipped:", summary.sync_summary.skipped)
+        print("archive_completed:", str(summary.archive_completed).lower())
+        print("monthly_completed:", str(summary.monthly_completed).lower())
+        print("last_processed_law:", summary.last_processed_law or "")
+        print("last_processed_entry:", summary.last_processed_entry or "")
         return
 
     if args.check_updates:

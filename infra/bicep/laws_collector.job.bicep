@@ -13,6 +13,7 @@ param postgresAdminPassword string
 param postgresConnectionString string = ''
 @secure()
 param applicationInsightsConnectionString string = ''
+param lawsCollectorImport string = 'zip'
 param systemEmbeddingModelOption string = 'local'
 param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
 param cronExpression string = '0 0 * * *'
@@ -137,6 +138,10 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
               {
                 name: 'LAWS_COLLECTOR_MAX_RUNNING_TIME'
                 value: string(lawsCollectorMaxRunningTime)
+              }
+              {
+                name: 'LAWS_COLLECTOR_IMPORT'
+                value: lawsCollectorImport
               }
               {
                 name: 'SYSTEM_EMBEDDING_MODEL_OPTION'

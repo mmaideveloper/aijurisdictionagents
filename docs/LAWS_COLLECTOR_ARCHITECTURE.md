@@ -95,7 +95,10 @@ The registry binds:
 
 ### 3. Sequential Live Import
 
-`SlovLexSequentialImportRunner` handles the live probe loop.
+The live Slovakia path now has two runners:
+
+- `SlovLexZipImportRunner` for the default archive + monthly ZIP flow
+- `SlovLexSequentialImportRunner` for the legacy `one_law_url` per-law probe flow
 
 Rules implemented today:
 
@@ -105,7 +108,10 @@ Rules implemented today:
 - if a gap is found in a past year, move to `1/<next year>`
 - if a gap is found in the current year, stop and persist that gap as the next target
 
-State is persisted in `collector_progress`.
+State is now persisted in two places:
+
+- `collector_progress` for the legacy sequential probe cursor
+- `collector_import_state` for ZIP archive/monthly resume state and archive completion tracking
 
 ### 4. Snapshot Loading
 
@@ -288,6 +294,7 @@ erDiagram
 Additional operational table:
 
 - `collector_progress`
+- `collector_import_state`
 
 That table stores:
 
@@ -307,7 +314,8 @@ flowchart TB
     REL["law_metadata_relations\ndependency graph edges"]
     ART["source_artifacts\nHTML/PDF raw provenance"]
     EVT["update_events\ningest audit trail"]
-    PROG["collector_progress\nsequential crawl cursor"]
+    PROG["collector_progress\nlegacy sequential cursor"]
+    ZIPPROG["collector_import_state\narchive/monthly ZIP cursors"]
 
     SNAP --> DOC
     SNAP --> VER
