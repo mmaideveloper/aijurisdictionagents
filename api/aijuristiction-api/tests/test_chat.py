@@ -1190,7 +1190,7 @@ def test_law_snapshot_reuses_cached_model_cutoff_without_expiration(monkeypatch,
     )
 
 
-def test_law_snapshot_returns_unavailable_model_cutoff_when_web_lookup_fails(
+def test_law_snapshot_uses_direct_openai_model_page_when_search_returns_no_results(
     monkeypatch, tmp_path
 ) -> None:
     import app.chat.result_metadata as result_metadata
@@ -1213,6 +1213,44 @@ def test_law_snapshot_returns_unavailable_model_cutoff_when_web_lookup_fails(
         "AIWebSearchAgent",
         lambda: SimpleNamespace(search=lambda **_kwargs: []),
     )
+    monkeypatch.setattr(
+        result_metadata,
+        "_fetch_text_from_url",
+        lambda url: "GPT-4.1 model page. Apr 14, 2025 knowledge cutoff."
+        if url == "https://platform.openai.com/docs/models/gpt-4.1"
+        else None,
+    )
+
+    snapshot = result_metadata.get_law_knowledge_snapshot("SK")
+
+    assert snapshot.model_knowledge_cutoff_date == "2025-04-14"
+    assert snapshot.model_knowledge_cutoff_source == "https://platform.openai.com/docs/models/gpt-4.1"
+
+
+def test_law_snapshot_returns_unavailable_model_cutoff_when_all_resolution_paths_fail(
+    monkeypatch, tmp_path
+) -> None:
+    import app.chat.result_metadata as result_metadata
+
+    monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
+    monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
+    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1")
+    monkeypatch.delenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", raising=False)
+    monkeypatch.setattr(
+        result_metadata.ApiDatabaseStore,
+        "from_env",
+        lambda: SimpleNamespace(
+            get_permanent_memory=lambda _key: None,
+            upsert_permanent_memory=lambda **_kwargs: None,
+        ),
+    )
+    monkeypatch.setattr(
+        result_metadata,
+        "AIWebSearchAgent",
+        lambda: SimpleNamespace(search=lambda **_kwargs: []),
+    )
+    monkeypatch.setattr(result_metadata, "_fetch_text_from_url", lambda _url: None)
 
     snapshot = result_metadata.get_law_knowledge_snapshot("SK")
 

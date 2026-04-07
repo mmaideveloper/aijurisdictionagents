@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import html
 import json
+import re
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
@@ -31,6 +33,17 @@ class AIWebSearchAgent:
         encoded_query = quote_plus(query.strip())
         if not encoded_query:
             return []
+        records = self._search_duckduckgo_instant_answer(encoded_query=encoded_query, max_results=max_results)
+        if records:
+            return records
+        return self._search_duckduckgo_html(encoded_query=encoded_query, max_results=max_results)
+
+    def _search_duckduckgo_instant_answer(
+        self,
+        *,
+        encoded_query: str,
+        max_results: int,
+    ) -> list[WebSearchRecord]:
         request = Request(
             url=f"https://duckduckgo.com/?q={encoded_query}&format=json&pretty=0",
             headers={"User-Agent": "aijurisdictionagents/ai-web-search-agent"},
@@ -73,3 +86,58 @@ class AIWebSearchAgent:
                 )
             )
         return records
+
+    def _search_duckduckgo_html(
+        self,
+        *,
+        encoded_query: str,
+        max_results: int,
+    ) -> list[WebSearchRecord]:
+        request = Request(
+            url=f"https://html.duckduckgo.com/html/?q={encoded_query}",
+            headers={"User-Agent": "Mozilla/5.0 (compatible; aijurisdictionagents/ai-web-search-agent)"},
+        )
+        with urlopen(request, timeout=15) as response:
+            payload = response.read().decode("utf-8", errors="ignore")
+        return _parse_duckduckgo_html_results(payload=payload, max_results=max_results)
+
+
+def _parse_duckduckgo_html_results(*, payload: str, max_results: int) -> list[WebSearchRecord]:
+    records: list[WebSearchRecord] = []
+    matches = re.finditer(
+        (
+            r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="(?P<url>[^"]+)"[^>]*>'
+            r'(?P<title>.*?)</a>(?P<tail>.*?)(?=<a[^>]*class="[^"]*result__a[^"]*"|$)'
+        ),
+        payload,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for match in matches:
+        if len(records) >= max_results:
+            break
+        url = html.unescape(match.group("url")).strip()
+        title = _strip_html(match.group("title"))
+        snippet_match = re.search(
+            r'<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(?P<snippet>.*?)</a>|'
+            r'<div[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(?P<snippet_div>.*?)</div>',
+            match.group("tail"),
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        snippet_raw = ""
+        if snippet_match is not None:
+            snippet_raw = snippet_match.group("snippet") or snippet_match.group("snippet_div") or ""
+        snippet = _strip_html(snippet_raw)
+        if not title or not url:
+            continue
+        records.append(
+            WebSearchRecord(
+                title=title,
+                url=url,
+                snippet=snippet or title,
+            )
+        )
+    return records
+
+
+def _strip_html(value: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value))).strip()

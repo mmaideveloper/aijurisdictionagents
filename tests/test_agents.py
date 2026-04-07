@@ -1,7 +1,10 @@
+from io import BytesIO
+import re
+
+from aijurisdictionagents.agents.ai_web_search import AIWebSearchAgent, _parse_duckduckgo_html_results
 from aijurisdictionagents.agents import AIUserSimulatorAgent, create_lawyer_agent
 from aijurisdictionagents.llm import MockLLMClient
 from aijurisdictionagents.schemas import Document, Message
-import re
 
 
 def test_lawyer_agent_routing() -> None:
@@ -141,3 +144,65 @@ def test_slovak_lawyer_prompt_includes_company_check_and_tool_first_policy() -> 
     assert "použi tento nástroj ako prvý krok" in prompt_lower
     assert "neplatné alebo nezhodné údaje" in prompt_lower
     assert "future_car_verification_check" not in prompt_lower
+
+
+def test_parse_duckduckgo_html_results_extracts_title_url_and_snippet() -> None:
+    payload = """
+    <html>
+      <body>
+        <a class="result__a" href="https://platform.openai.com/docs/models/gpt-4o-mini">gpt-4o-mini Model</a>
+        <div class="result__snippet">GPT-4o mini model page. Oct 01, 2023 knowledge cutoff.</div>
+      </body>
+    </html>
+    """
+
+    records = _parse_duckduckgo_html_results(payload=payload, max_results=5)
+
+    assert len(records) == 1
+    assert records[0].url == "https://platform.openai.com/docs/models/gpt-4o-mini"
+    assert records[0].title == "gpt-4o-mini Model"
+    assert "knowledge cutoff" in records[0].snippet
+
+
+def test_ai_web_search_agent_falls_back_to_duckduckgo_html(monkeypatch) -> None:
+    class _Response:
+        def __init__(self, body: str) -> None:
+            self._payload = BytesIO(body.encode("utf-8"))
+
+        def read(self) -> bytes:
+            return self._payload.read()
+
+        def __enter__(self) -> "_Response":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    responses = iter(
+        [
+            _Response('{"RelatedTopics":[],"Results":[]}'),
+            _Response(
+                """
+                <html>
+                  <body>
+                    <a class="result__a" href="https://platform.openai.com/docs/models/gpt-4o-mini">gpt-4o-mini Model</a>
+                    <div class="result__snippet">GPT-4o mini model page. Oct 01, 2023 knowledge cutoff.</div>
+                  </body>
+                </html>
+                """
+            ),
+        ]
+    )
+
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.ai_web_search.urlopen",
+        lambda *_args, **_kwargs: next(responses),
+    )
+
+    records = AIWebSearchAgent().search(
+        query='site:platform.openai.com/docs/models "gpt-4o-mini" "knowledge cutoff"',
+        max_results=5,
+    )
+
+    assert len(records) == 1
+    assert records[0].url == "https://platform.openai.com/docs/models/gpt-4o-mini"

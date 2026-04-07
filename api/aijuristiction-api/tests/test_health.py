@@ -54,13 +54,17 @@ def test_version_endpoint(monkeypatch) -> None:
     monkeypatch.setattr(
         app_main,
         "get_law_knowledge_snapshot",
-        lambda _country: SimpleNamespace(
-            last_law_update_date="2026-03-20T00:00:00Z",
-            last_law_update_source="law_documents_global",
+        lambda country: SimpleNamespace(
+            last_law_update_date="2026-03-21T00:00:00Z"
+            if country == "SK"
+            else "2026-03-20T00:00:00Z",
+            last_law_update_source="law_documents_country"
+            if country == "SK"
+            else "law_documents_global",
             last_collector_run_at="2026-03-30T12:30:00Z (SK:slovlex)",
             last_processed_law="234/2026",
-            model_knowledge_cutoff_date="2023-01-01",
-            model_knowledge_cutoff_source="2023-01-01",
+            model_knowledge_cutoff_date="2023-10-01",
+            model_knowledge_cutoff_source="https://platform.openai.com/docs/models/gpt-4o-mini",
             reference_links=(
                 "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/",
             ),
@@ -77,11 +81,26 @@ def test_version_endpoint(monkeypatch) -> None:
     assert payload["last_law_update_source"] == "law_documents_global"
     assert payload["last_collector_run_at"] == "2026-03-30T12:30:00Z (SK:slovlex)"
     assert payload["last_processed_law"] == "234/2026"
-    assert payload["model_knowledge_cutoff_date"] == "2023-01-01"
-    assert payload["model_knowledge_cutoff_source"] == "2023-01-01"
+    assert payload["model_knowledge_cutoff_date"] == "2023-10-01"
+    assert (
+        payload["model_knowledge_cutoff_source"]
+        == "https://platform.openai.com/docs/models/gpt-4o-mini"
+    )
     assert payload["law_reference_links"] == [
         "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
     ]
+    assert payload["laws_by_country"]["sk"] == {
+        "country_code": "SK",
+        "last_law_update_date": "2026-03-21T00:00:00Z",
+        "last_law_update_source": "law_documents_country",
+        "last_collector_run_at": "2026-03-30T12:30:00Z (SK:slovlex)",
+        "last_processed_law": "234/2026",
+        "model_knowledge_cutoff_date": "2023-10-01",
+        "model_knowledge_cutoff_source": "https://platform.openai.com/docs/models/gpt-4o-mini",
+        "law_reference_links": [
+            "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
+        ],
+    }
     assert payload["mobile_app_version"] == get_mobile_app_version()
     assert payload["mobile_app_release_url"] == (
         "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest"

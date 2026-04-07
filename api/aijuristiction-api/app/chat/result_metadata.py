@@ -648,7 +648,24 @@ def _resolve_model_knowledge_cutoff_via_web_search(model_name: str) -> tuple[str
         page_date = _extract_knowledge_cutoff_date(page_text)
         if page_date is not None:
             return (page_date, source_url)
+    for source_url in _candidate_openai_model_source_urls(model_name):
+        page_text = _fetch_text_from_url(source_url)
+        if not page_text:
+            continue
+        page_date = _extract_knowledge_cutoff_date(page_text)
+        if page_date is not None:
+            return (page_date, source_url)
     return None
+
+
+def _candidate_openai_model_source_urls(model_name: str) -> tuple[str, ...]:
+    normalized = model_name.strip().strip("/")
+    if not normalized:
+        return ()
+    return (
+        f"https://platform.openai.com/docs/models/{normalized}",
+        f"https://platform.openai.com/docs/models/{normalized.lower()}",
+    )
 
 
 def _is_official_model_source_url(url: str) -> bool:

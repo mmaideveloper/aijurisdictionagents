@@ -17,10 +17,12 @@ class MobileAppUpdateInfo {
 
 class ApiSystemVersionInfo {
   const ApiSystemVersionInfo({
+    required this.countryCode,
     required this.lastLawUpdateDate,
     required this.modelKnowledgeCutoffDate,
   });
 
+  final String countryCode;
   final String? lastLawUpdateDate;
   final String? modelKnowledgeCutoffDate;
 }

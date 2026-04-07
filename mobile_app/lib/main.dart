@@ -1598,13 +1598,23 @@ class ApiClient {
     }
   }
 
-  Future<ApiSystemVersionInfo> fetchApiSystemVersionInfo() async {
+  Future<ApiSystemVersionInfo> fetchApiSystemVersionInfo({
+    required String countryCode,
+  }) async {
     final payload = await _fetchVersionPayload();
-    final rawLastLawUpdateDate =
-        (payload['last_law_update_date'] as String?)?.trim();
-    final rawModelKnowledgeCutoffDate =
-        (payload['model_knowledge_cutoff_date'] as String?)?.trim();
+    final normalizedCountryCode = countryCode.trim().toLowerCase();
+    final countryPayload = _versionCountryPayload(
+      payload: payload,
+      countryCode: normalizedCountryCode,
+    );
+    final rawLastLawUpdateDate = _optionalTrimmedString(
+      countryPayload['last_law_update_date'],
+    );
+    final rawModelKnowledgeCutoffDate = _optionalTrimmedString(
+      countryPayload['model_knowledge_cutoff_date'],
+    );
     return ApiSystemVersionInfo(
+      countryCode: countryCode.trim().toUpperCase(),
       lastLawUpdateDate:
           rawLastLawUpdateDate == null || rawLastLawUpdateDate.isEmpty
               ? null
@@ -1666,6 +1676,31 @@ class ApiClient {
           'Version check failed with status ${response.statusCode}.');
     }
     return _decodeResponseBody(response, action: 'version_check');
+  }
+
+  Map<String, dynamic> _versionCountryPayload({
+    required Map<String, dynamic> payload,
+    required String countryCode,
+  }) {
+    final lawsByCountry = payload['laws_by_country'];
+    if (lawsByCountry is Map) {
+      final nested = lawsByCountry[countryCode];
+      if (nested is Map<String, dynamic>) {
+        return nested;
+      }
+      if (nested is Map) {
+        return Map<String, dynamic>.from(nested);
+      }
+    }
+    return payload;
+  }
+
+  String? _optionalTrimmedString(Object? value) {
+    final normalized = (value as String?)?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
   }
 
   Future<GithubReleaseInfo?> _fetchLatestGithubReleaseInfo({
@@ -3988,7 +4023,9 @@ class _ChatHomePageState extends State<ChatHomePage>
 
   Future<void> _refreshSystemLawDate() async {
     try {
-      final info = await _apiClient.fetchApiSystemVersionInfo();
+      final info = await _apiClient.fetchApiSystemVersionInfo(
+        countryCode: _selectedLocale.countryCode,
+      );
       if (!mounted) {
         return;
       }
@@ -4182,7 +4219,9 @@ class _ChatHomePageState extends State<ChatHomePage>
         );
         return;
       }
-      final systemVersionInfo = await _apiClient.fetchApiSystemVersionInfo();
+      final systemVersionInfo = await _apiClient.fetchApiSystemVersionInfo(
+        countryCode: _selectedLocale.countryCode,
+      );
       if (mounted) {
         setState(() {
           _systemLastLawUpdateDate = systemVersionInfo.lastLawUpdateDate;
@@ -6445,6 +6484,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       },
     );
     _apiClient.resetSession();
+    unawaited(_refreshSystemLawDate());
   }
 
   Future<void> _loadCases() async {

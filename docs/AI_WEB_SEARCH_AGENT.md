@@ -6,7 +6,8 @@
 
 - Requires user consent before searching (`build_screening_consent_prompt`).
 - Supports entity-level screening prompts (person, company, car, etc.).
-- Performs a simple web lookup and returns structured records (`title`, `url`, `snippet`).
+- Performs a web lookup and returns structured records (`title`, `url`, `snippet`).
+- Falls back to DuckDuckGo HTML results when the instant-answer JSON endpoint does not return search hits.
 
 ## Permanent memory model metadata
 

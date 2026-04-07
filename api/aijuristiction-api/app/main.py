@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from typing import Any
 from pathlib import Path
 from uuid import uuid4
 
@@ -51,6 +52,7 @@ TELEMETRY_MODE = configure_telemetry(
     service_version=API_VERSION,
 )
 logger = logging.getLogger("aijuristiction-api.http")
+_SUPPORTED_LAW_VERSION_COUNTRIES: tuple[str, ...] = ("SK",)
 
 
 def _cors_allow_origins() -> list[str]:
@@ -72,6 +74,20 @@ def _configured_db_backend() -> str:
     if raw_value == "postgress":
         return "postgres"
     return raw_value or "local"
+
+
+def _law_snapshot_payload(*, country_code: str | None) -> dict[str, Any]:
+    snapshot = get_law_knowledge_snapshot(country_code)
+    return {
+        "country_code": (country_code or "").strip().upper() or None,
+        "last_law_update_date": snapshot.last_law_update_date,
+        "last_law_update_source": snapshot.last_law_update_source,
+        "last_collector_run_at": snapshot.last_collector_run_at,
+        "last_processed_law": snapshot.last_processed_law,
+        "model_knowledge_cutoff_date": snapshot.model_knowledge_cutoff_date,
+        "model_knowledge_cutoff_source": snapshot.model_knowledge_cutoff_source,
+        "law_reference_links": list(snapshot.reference_links),
+    }
 
 app = fastapi.FastAPI(
     title="AI Juristiction API",
@@ -214,20 +230,25 @@ def health() -> JSONResponse:
 
 @app.get("/version")
 def version() -> JSONResponse:
-    law_snapshot = get_law_knowledge_snapshot(None)
+    law_payload = _law_snapshot_payload(country_code=None)
+    laws_by_country = {
+        country_code.lower(): _law_snapshot_payload(country_code=country_code)
+        for country_code in _SUPPORTED_LAW_VERSION_COUNTRIES
+    }
     return JSONResponse(
         {
             "service": "aijuristiction-api",
             "version": app.version,
             "api_version": app.version,
             "core_version": get_core_version(),
-            "last_law_update_date": law_snapshot.last_law_update_date,
-            "last_law_update_source": law_snapshot.last_law_update_source,
-            "last_collector_run_at": law_snapshot.last_collector_run_at,
-            "last_processed_law": law_snapshot.last_processed_law,
-            "model_knowledge_cutoff_date": law_snapshot.model_knowledge_cutoff_date,
-            "model_knowledge_cutoff_source": law_snapshot.model_knowledge_cutoff_source,
-            "law_reference_links": list(law_snapshot.reference_links),
+            "last_law_update_date": law_payload["last_law_update_date"],
+            "last_law_update_source": law_payload["last_law_update_source"],
+            "last_collector_run_at": law_payload["last_collector_run_at"],
+            "last_processed_law": law_payload["last_processed_law"],
+            "model_knowledge_cutoff_date": law_payload["model_knowledge_cutoff_date"],
+            "model_knowledge_cutoff_source": law_payload["model_knowledge_cutoff_source"],
+            "law_reference_links": law_payload["law_reference_links"],
+            "laws_by_country": laws_by_country,
             "mobile_app_version": get_mobile_app_version(),
             "mobile_app_release_url": get_mobile_app_release_url(),
             "mobile_app_apk_download_url": get_mobile_app_apk_download_url(),

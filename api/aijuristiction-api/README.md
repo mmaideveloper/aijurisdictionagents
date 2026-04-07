@@ -195,11 +195,13 @@ If the database is unreachable or misconfigured, the endpoint returns `503` with
 - `mobile_app_version`: latest mobile app version from `mobile_app/pubspec.yaml`.
 - `mobile_app_release_url`: release page used by the mobile app update flow.
 - `mobile_app_apk_download_url`: default APK asset URL used by Android in-app update flow.
+- `laws_by_country`: country-specific law metadata map keyed by lowercase ISO country code. Today it contains `sk`.
 
 Additionally, the API persists `permanent_memory.key=llm_model_setup` with
 `llm_modelname`, `cutoff_date`, and `cutoff_source`. When no cached value exists,
 the API uses `AIWebSearchAgent` to find an official OpenAI model page, extracts the
-knowledge cutoff, and stores it for reuse.
+knowledge cutoff, and stores it for reuse. If search returns no hits, it falls back
+to a direct official model-page lookup under `https://platform.openai.com/docs/models/<model>`.
 
 Example:
 
@@ -218,10 +220,30 @@ Example:
   "law_reference_links": [
     "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
   ],
+  "laws_by_country": {
+    "sk": {
+      "country_code": "SK",
+      "last_law_update_date": "2026-03-21T00:00:00Z",
+      "last_law_update_source": "law_documents_country",
+      "last_collector_run_at": "2026-03-30T12:30:00Z (SK:slovlex)",
+      "last_processed_law": "234/2026",
+      "model_knowledge_cutoff_date": "2023-10-01",
+      "model_knowledge_cutoff_source": "https://platform.openai.com/docs/models/gpt-4o-mini",
+      "law_reference_links": [
+        "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/"
+      ]
+    }
+  },
   "mobile_app_version": "0.1.5+18",
   "mobile_app_release_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest",
   "mobile_app_apk_download_url": "https://github.com/mmaideveloper/aijurisdictionagents/releases/latest/download/app-release.apk"
 }
+```
+
+Country payload demo:
+
+```bash
+python examples/version_country_payload_demo.py
 ```
 
 `GET /v1/observability/logs` returns recent Azure Application Insights / Log Analytics records for the deployed API and Azure workers.
