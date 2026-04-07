@@ -1,5 +1,6 @@
 from pathlib import Path
 import sqlite3
+from types import SimpleNamespace
 
 from aijurisdictionagents.api_db import ApiDataConfig, ApiDatabaseStore
 
@@ -183,3 +184,36 @@ def test_permanent_memory_upsert_and_get(tmp_path: Path) -> None:
     assert entry is not None
     assert entry.entry_type == "llm_model_metadata"
     assert entry.value["cutoff_date"] == "2023-01-01"
+
+
+def test_postgres_initialize_skips_sqlite_permanent_memory_bootstrap(tmp_path: Path) -> None:
+    store = ApiDatabaseStore(
+        db_path=tmp_path / "unused.sqlite3",
+        blob_root=tmp_path / "blob",
+        db_option="azure",
+        db_cloud="postgresql://example",
+    )
+    executed_queries: list[str] = []
+
+    class _FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query: str, params=()):
+            executed_queries.append(query)
+            lowered = query.lower()
+            if "information_schema.columns" in lowered:
+                return SimpleNamespace(fetchall=lambda: [])
+            return SimpleNamespace(fetchall=lambda: [], fetchone=lambda: None)
+
+    store._connect = lambda: _FakeConn()  # type: ignore[method-assign]
+    store._seed_subscription_plans = lambda conn: None  # type: ignore[method-assign]
+
+    store.initialize()
+
+    combined = "\n".join(executed_queries)
+    assert "create table if not exists permanent_memory" not in combined.lower()
+    assert "autoincrement" not in combined.lower()

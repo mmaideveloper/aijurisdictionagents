@@ -20,6 +20,8 @@ Use the root `infra/` folder to provision Azure resources and deploy from local 
 
 See `infra/README.md` for full setup.
 
+For Azure/PostgreSQL schema upgrades, SQL migrations in `databases/api/migrations/` own PostgreSQL-only tables such as `permanent_memory`. The runtime `ApiDatabaseStore.initialize()` path now keeps SQLite-only bootstrap SQL out of the PostgreSQL deployment path.
+
 ## Run locally (Conda)
 
 From the repository root:

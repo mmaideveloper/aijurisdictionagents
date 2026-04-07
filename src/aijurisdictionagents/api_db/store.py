@@ -298,21 +298,12 @@ class ApiDatabaseStore:
                     FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE,
                     FOREIGN KEY(plan_code) REFERENCES subscription_plans(plan_code)
                 );
-
-                CREATE TABLE IF NOT EXISTS permanent_memory (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    key TEXT UNIQUE NOT NULL,
-                    value TEXT NOT NULL,
-                    type TEXT NOT NULL,
-                    source_url TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
                 """,
             )
             self._ensure_user_schema(conn)
             self._ensure_case_document_schema(conn)
             self._ensure_subscription_schema(conn)
+            self._ensure_permanent_memory_schema(conn)
             self._seed_subscription_plans(conn)
 
     def get_permanent_memory(self, key: str) -> PermanentMemoryEntry | None:
@@ -1374,6 +1365,26 @@ class ApiDatabaseStore:
             columns = {row[1] for row in self._execute(conn, "PRAGMA table_info(subscription_plans)").fetchall()}
         if 'max_documents_per_case' not in columns:
             self._execute(conn, "ALTER TABLE subscription_plans ADD COLUMN max_documents_per_case INTEGER NOT NULL DEFAULT 2")
+
+    def _ensure_permanent_memory_schema(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            return
+        self._execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS permanent_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT UNIQUE NOT NULL,
+                value TEXT NOT NULL,
+                type TEXT NOT NULL,
+                source_url TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
 
     def _seed_subscription_plans(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
         now = _now_iso()
