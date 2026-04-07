@@ -1202,6 +1202,7 @@ def export_session_result(
         title, lines = _build_document_export_content(
             session_id=session_id,
             messages=messages,
+            result=result,
             country=session.country,
             language=session.language,
         )
@@ -1571,21 +1572,36 @@ def _build_document_export_content(
     *,
     session_id: UUID,
     messages: List[Message],
+    result: SessionResult | None,
     country: str,
     language: str | None,
 ) -> tuple[str, List[str]]:
+    discussion_messages = [
+        m.content
+        for m in messages
+        if m.role in {MessageRole.USER, MessageRole.ASSISTANT}
+    ]
     lawyer_messages = [
         m.content
         for m in messages
         if m.role == MessageRole.ASSISTANT and (m.agent_name or "").lower().startswith("lawyer")
     ]
-    source = _pick_document_message(lawyer_messages)
+    result_text = [result.final_recommendation] if result is not None else []
+    source = _pick_document_message(lawyer_messages) or _pick_document_message(discussion_messages)
     source_lines = _normalize_document_lines(source)
-    if not source_lines:
-        source_lines = ["No lawyer-generated document content found in this session."]
+    context_lines = _normalize_document_lines("\n".join([*discussion_messages, *result_text]))
+    if not context_lines:
+        context_lines = source_lines
+    if not context_lines:
+        context_lines = ["No lawyer-generated document content found in this session."]
     case_update = _extract_case_update(source)
-    document_kind = _detect_document_kind(source_lines, case_update)
-    facts = _extract_document_facts(source_lines, case_update)
+    if case_update is None:
+        for content in discussion_messages:
+            case_update = _extract_case_update(content)
+            if case_update is not None:
+                break
+    document_kind = _detect_document_kind(context_lines, case_update)
+    facts = _extract_document_facts(context_lines, case_update)
 
     if (language or "").strip().lower().startswith("sk"):
         title = f"Generovaný Dokument {session_id}"
@@ -1593,6 +1609,8 @@ def _build_document_export_content(
             return title, _build_standard_slovak_agreement_lines(facts)
         if document_kind == "easement_demand":
             return title, _build_slovak_easement_demand_lines(facts)
+        if document_kind == "share_transfer":
+            return title, _build_slovak_share_transfer_lines(facts)
         return title, _build_generic_slovak_case_document_lines(facts)
 
     title = f"Generated Document {session_id}"
@@ -1600,6 +1618,8 @@ def _build_document_export_content(
         return title, _build_standard_english_agreement_lines(facts)
     if document_kind == "easement_demand":
         return title, _build_english_easement_demand_lines(facts)
+    if document_kind == "share_transfer":
+        return title, _build_english_share_transfer_lines(facts)
     return title, _build_generic_english_case_document_lines(facts)
 
 
@@ -1610,7 +1630,23 @@ def _pick_document_message(candidates: List[str]) -> str:
     def _score(content: str) -> tuple[int, int]:
         lowered = content.lower()
         score = 0
-        if any(token in lowered for token in ("vzor", "zmluv", "template", "draft", "contract", "agreement")):
+        if any(
+            token in lowered
+            for token in (
+                "vzor",
+                "zmluv",
+                "template",
+                "draft",
+                "contract",
+                "agreement",
+                "podiel",
+                "spoločník",
+                "spolocnik",
+                "share transfer",
+                "obchodný podiel",
+                "obchodny podiel",
+            )
+        ):
             score += 2
         if any(token in lowered for token in ("1)", "2)", "3)", "clause", "article")):
             score += 2
@@ -1677,6 +1713,33 @@ def _extract_document_facts(
     scheduled_for = _case_text(("case", "next_discussion", "scheduled_for"), "")
     agenda_items = next_discussion.get("agenda", []) if isinstance(next_discussion, dict) else []
     agenda = ", ".join(str(item).strip() for item in agenda_items if str(item).strip())
+    company_name = _capture(
+        r"(?:firma|fima|spoločnosť|spolocnost)\s+([^,.;\n]+?(?:s\.r\.o\.|a\.s\.|s\. r\. o\.))",
+        "Spoločnosť [doplnit obchodné meno]",
+    )
+    company_seat = _capture(
+        r"(?:s\.r\.o\.|a\.s\.|s\. r\. o\.)\s*,\s*([^.;\n]+)",
+        "Sídlo spoločnosti [doplnit]",
+    )
+    company_identifier = _capture(r"ičo\s*[:=]?\s*([0-9]{6,10})", "[doplnit IČO]")
+    transfer_share = _capture(r"(\d{1,3}\s*%)", "50 %")
+    transfer_price = _capture(
+        r"(?:cena prevodu(?: podielu)?(?: je)?|kúpna cena|kupna cena|odplata(?: za prevod)?)\s*[:=]?\s*([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€))",
+        "",
+    )
+    if not transfer_price.strip():
+        transfer_price = _capture(r"\b([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€))\b", "0 EUR")
+    transferor_name = "Súčasný spoločník / prevodca [doplnit údaje]"
+    if "manželka" in text.lower() or "manzelka" in text.lower():
+        transferor_name = "Súčasný spoločník / prevodca (manželka) [doplnit údaje]"
+    transferee_name = client_name if client_name != "Klient" else "Nový spoločník / nadobúdateľ [doplnit údaje]"
+    if "konateľka" in text.lower() or "konatelka" in text.lower():
+        transferor_name = "Súčasný spoločník / konateľka [doplnit údaje]"
+    filing_authority = "Obchodný register / slovensko.sk"
+    estimated_timeline = _capture(
+        r"(niekoľko týždňov|niekolko tyzdnov|[0-9]+\s*(?:pracovných|pracovnych)\s+dní|[0-9]+\s*dní)",
+        "Spravidla niekoľko pracovných dní až týždňov po úplnom podaní.",
+    )
 
     return {
         "prenajimatel": prenajimatel,
@@ -1694,6 +1757,15 @@ def _extract_document_facts(
         "client_goal": client_goal,
         "scheduled_for": scheduled_for,
         "agenda": agenda or "Doplniť ďalší postup podľa vývoja komunikácie.",
+        "company_name": company_name,
+        "company_seat": company_seat,
+        "company_identifier": company_identifier,
+        "transfer_share": transfer_share,
+        "transfer_price": transfer_price,
+        "transferor_name": transferor_name,
+        "transferee_name": transferee_name,
+        "filing_authority": filing_authority,
+        "estimated_timeline": estimated_timeline,
     }
 
 
@@ -1844,6 +1916,99 @@ def _build_english_easement_demand_lines(facts: dict[str, str]) -> List[str]:
     ]
 
 
+def _build_slovak_share_transfer_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Pracovný návrh dokumentácie k prevodu obchodného podielu v s.r.o.",
+        "",
+        "Identifikácia spoločnosti",
+        f"Obchodné meno: {facts['company_name']}",
+        f"Sídlo: {facts['company_seat']}",
+        f"IČO: {facts['company_identifier']}",
+        "",
+        "Základné parametre prevodu",
+        f"Predmet prevodu: obchodný podiel vo výške {facts['transfer_share']}.",
+        f"Odplata za prevod: {_with_period(facts['transfer_price'])}",
+        f"Prevodca: {facts['transferor_name']}",
+        f"Nadobúdateľ: {facts['transferee_name']}",
+        "",
+        "1. Návrh zmluvy o prevode obchodného podielu",
+        "Článok I - Zmluvné strany",
+        f"Prevodca: {facts['transferor_name']}.",
+        f"Nadobúdateľ: {facts['transferee_name']}.",
+        "",
+        "Článok II - Predmet prevodu",
+        f"Prevodca prevádza na nadobúdateľa obchodný podiel v spoločnosti {facts['company_name']} vo výške {facts['transfer_share']}.",
+        "",
+        "Článok III - Odplata",
+        f"Zmluvné strany sa dohodli na odplate {_with_period(facts['transfer_price'])}",
+        "",
+        "Článok IV - Vyhlásenia strán",
+        "Prevodca vyhlasuje, že je oprávnený s obchodným podielom nakladať a že podiel nie je zaťažený právami tretích osôb, ak sa v prílohách neuvedie inak.",
+        "Nadobúdateľ vyhlasuje, že pristupuje k spoločenskej zmluve a preberá práva a povinnosti spoločníka v rozsahu prevádzaného podielu.",
+        "",
+        "2. Podklady, ktoré je potrebné pripraviť",
+        "1. Zmluva o prevode obchodného podielu s doplnenými identifikačnými údajmi strán.",
+        "2. Rozhodnutie jediného spoločníka alebo zápisnica z valného zhromaždenia, ak to vyžaduje spoločenská zmluva alebo sa mení štatutár / obchodné vedenie.",
+        "3. Úplné znenie spoločenskej zmluvy alebo zakladateľskej listiny po zapracovaní zmeny spoločníkov a podielov.",
+        "4. Návrh na zápis zmeny do obchodného registra vrátane príloh podľa typu zmeny.",
+        "",
+        "3. Praktický postup podania",
+        f"Podanie smeruje na: {facts['filing_authority']}.",
+        "Najprv doplňte identifikačné údaje strán, presný rozsah podielu a prípadné zmeny v konateľoch alebo spôsobe konania.",
+        "Následne pripravte podpisové verzie dokumentov a skontrolujte, či spoločenská zmluva nevyžaduje osobitný súhlas alebo predkupné pravidlá.",
+        "Po podpise podajte návrh na zápis zmeny do obchodného registra spolu so všetkými povinnými prílohami.",
+        "",
+        "4. Odhad trvania",
+        _with_period(facts["estimated_timeline"]),
+        "",
+        "Poznámka",
+        "Tento výstup je pracovný návrh. Pred podpisom a podaním je potrebné doplniť presné identifikačné údaje, preveriť spoločenskú zmluvu a zvoliť správny balík príloh podľa konkrétnej zmeny.",
+        "",
+        "Podpis právneho zástupcu / klienta: ____________________________",
+    ]
+
+
+def _build_english_share_transfer_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Working draft for a limited-liability company share transfer package",
+        "",
+        "Company identification",
+        f"Company name: {facts['company_name']}",
+        f"Registered seat: {facts['company_seat']}",
+        f"Company ID: {facts['company_identifier']}",
+        "",
+        "Core transfer terms",
+        f"Transferred share: {facts['transfer_share']}.",
+        f"Transfer price: {_with_period(facts['transfer_price'])}",
+        f"Transferor: {facts['transferor_name']}",
+        f"Transferee: {facts['transferee_name']}",
+        "",
+        "1. Draft share transfer agreement",
+        f"The transferor transfers a business share in {facts['company_name']} to the transferee in the amount of {facts['transfer_share']}.",
+        f"The agreed consideration is {_with_period(facts['transfer_price'])}",
+        "",
+        "2. Supporting filings and resolutions",
+        "1. Signed share transfer agreement with completed identification details.",
+        "2. Sole shareholder decision or shareholders' meeting minutes if required by the constitutional documents or if management details also change.",
+        "3. Updated articles / founding deed reflecting the new ownership structure.",
+        "4. Registry filing package with all required annexes.",
+        "",
+        "3. Filing steps",
+        f"Filing authority: {facts['filing_authority']}.",
+        "Complete the party details, exact transferred share, and any changes to managing directors or signing powers.",
+        "Check the company constitutional documents for consent or pre-emption requirements before signing.",
+        "After execution, file the registry update with the complete annex package.",
+        "",
+        "Estimated timing",
+        _with_period(facts["estimated_timeline"]),
+        "",
+        "Note",
+        "This output is a working draft and checklist. Complete legal details should be verified before signature and filing.",
+        "",
+        "Counsel / client signature: ____________________________",
+    ]
+
+
 def _build_generic_slovak_case_document_lines(facts: dict[str, str]) -> List[str]:
     return [
         "Právne zhrnutie a návrh ďalšieho postupu",
@@ -1942,7 +2107,7 @@ def _extract_json_object(content: str, start_index: int) -> str | None:
 def _detect_document_kind(
     source_lines: List[str],
     case_update: dict[str, Any] | None,
-) -> Literal["rental_agreement", "easement_demand", "generic_case_document"]:
+) -> Literal["rental_agreement", "easement_demand", "share_transfer", "generic_case_document"]:
     combined = " ".join(source_lines).lower()
     case = case_update.get("case", {}) if isinstance(case_update, dict) else {}
     matter = case.get("matter", {}) if isinstance(case, dict) else {}
@@ -1973,10 +2138,26 @@ def _detect_document_kind(
         "bránk",
         "brank",
     )
+    share_transfer_tokens = (
+        "prevod podielu",
+        "obchodný podiel",
+        "obchodny podiel",
+        "spoločník",
+        "spolocnik",
+        "konateľ",
+        "konatel",
+        "vlastníckych práv firmy",
+        "vlastnickych prav firmy",
+        "s.r.o.",
+        "share transfer",
+        "ownership transfer",
+    )
     if any(token in haystack for token in rental_tokens):
         return "rental_agreement"
     if any(token in haystack for token in easement_tokens):
         return "easement_demand"
+    if any(token in haystack for token in share_transfer_tokens):
+        return "share_transfer"
     return "generic_case_document"
 
 

@@ -281,6 +281,7 @@ def test_document_export_for_easement_case_is_not_lease_template() -> None:
     title, lines = _build_document_export_content(
         session_id=session_id,
         messages=[assistant_message],
+        result=None,
         country="SK",
         language="SK",
     )
@@ -303,6 +304,77 @@ def test_document_export_for_easement_case_is_not_lease_template() -> None:
     assert "vecného bremena" in lowered
     assert "plynovej prípojke" in lowered
     assert "nájomná zmluva" not in lowered
+
+
+def test_document_export_for_company_share_transfer_uses_full_session_context() -> None:
+    from app.chat.api import _build_document_export_content, _build_simple_pdf
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "Chcel by som z konatela firmy spravit splocnika s 50% spoluucastou. "
+                "Fima ESolutions SK s.r.o., Spisske Bystre. Priprav mi vsetky potrebne documenty."
+            ),
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="Najprv potrebujem doplnit niekolko udajov k prevodu podielu.",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "1. 100%, 2. 0 EUR (manzelka), konatelka. "
+                "Chcem pripravit vsetky potrebne documenty a instrukcie kde ich podat."
+            ),
+        ),
+    ]
+    result = SessionResult(
+        final_recommendation=(
+            "Pripravim navrh na prevod obchodneho podielu v spolocnosti ESolutions SK s.r.o. "
+            "vratane podkladov pre obchodny register."
+        ),
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+    )
+
+    lowered_lines = " ".join(lines).lower()
+    assert "nájomná zmluva" not in lowered_lines
+    assert "prevodu obchodného podielu" in lowered_lines
+    assert "esolutions sk s.r.o." in lowered_lines
+    assert "50%" in lowered_lines or "50 %" in lowered_lines
+    assert "obchodného registra" in lowered_lines
+
+    pdf_bytes = _build_simple_pdf(
+        title=title,
+        lines=lines,
+        country="SK",
+        language="SK",
+        header_line="AI Jurisdicta Solution | Generated: 2026-04-07 07:20:00 UTC",
+        footer_line="AIJ | API 1.0.0 | Core 1.0.0",
+        draw_logo_mark=True,
+        include_title_block=True,
+    )
+    extracted = _pdf_text(pdf_bytes).lower()
+    assert "prevodu obchodného podielu" in extracted
+    assert "esolutions sk s.r.o." in extracted
+    assert "obchodný register" in extracted
 
 
 def test_build_simple_pdf_preserves_slovak_and_german_characters() -> None:

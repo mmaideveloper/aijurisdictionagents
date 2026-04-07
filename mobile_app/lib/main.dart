@@ -5889,7 +5889,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
       setState(() {
         _latestSessionResult = details;
-        _hasExportReady = details?.documentReady ?? _hasExportReady;
+        _hasExportReady = details?.documentReady ?? false;
       });
       _syncValidationThreadMessage(scrollToEnd: true);
     } catch (error, stackTrace) {

@@ -199,6 +199,7 @@ Use the single `Documents` button above the message composer to download all use
 On Android, the app now immediately tries to open the saved file in an external PDF/document app after the download finishes.
 Buttons are enabled after AI stream emits `result`/`done` (PDF must be generated first).
 In `Real Agent` mode, when the lawyer decides a formal document is needed, the agent first asks for confirmation and the PDF buttons stay disabled until the follow-up reply actually prepares the document.
+The mobile app now also resets document-export readiness to `false` when a fresh session result is unavailable, so a previous case cannot leave the `Documents` button enabled for a new conversation.
 In `AI User Simulator` mode, submitting the instruction starts discussion streaming (SSE)
 the same way as the chat simulator by using `user_simulation_mode=AIUserSimulatorAgent`.
 The app also reads `GET /v1/chat/sessions/{session_id}/result` metadata to show validation accuracy and the latest known legal-data update timestamp for the selected country.
