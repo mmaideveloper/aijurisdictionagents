@@ -496,6 +496,7 @@ Recommended GitHub Environment values:
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` by default, or `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` if you want Azure/OpenAI embeddings
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 - When `SYSTEM_EMBEDDING_MODEL_OPTION=local`, the deploy script prefetches the model into `aimodels/` before `az acr build`, and the Docker image bakes that cache into `/app/aimodels`.
+- The prefetch helper runs directly from the checked-out repo source on the GitHub runner, so it does not require a separate `pip install -e .` step before deployment.
 
 Azure Container Apps Jobs use 5-field cron expressions. The deploy paths also accept legacy 6-field values with a leading `0` seconds field and normalize them automatically.
 
@@ -560,6 +561,7 @@ Recommended GitHub Environment values:
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` by default, or `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` if you want Azure/OpenAI embeddings
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 - When `SYSTEM_EMBEDDING_MODEL_OPTION=local`, the deploy script prefetches the model into `aimodels/` before `az acr build`, and the Docker image bakes that cache into `/app/aimodels`.
+- The prefetch helper runs directly from the checked-out repo source on the GitHub runner, so it does not require a separate `pip install -e .` step before deployment.
 
 For the document processor Azure job, `SYSTEM_EMBEDDING_MODEL_OPTION=local` is supported directly from GitHub Environment variables. In that mode the deployment no longer requires Azure OpenAI embedding settings for the worker, and the image carries the prefetched sentence-transformer model under `/app/aimodels`.
 
