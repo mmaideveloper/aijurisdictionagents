@@ -147,8 +147,10 @@ class ApiDatabaseStore:
         self.db_cloud = db_cloud
         self.storage_option = storage_option
         self.store_cloud = store_cloud
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.blob_root.mkdir(parents=True, exist_ok=True)
+        if self.db_option == "local":
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.storage_option == "local":
+            self.blob_root.mkdir(parents=True, exist_ok=True)
 
     @property
     def uses_postgres(self) -> bool:

@@ -349,7 +349,18 @@ def download_case_document(
         document = store.get_case_document(case_id=case_id, doc_id=doc_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    payload = store.read_storage_bytes(storage_uri=document.storage_uri)
+    try:
+        payload = store.read_storage_bytes(storage_uri=document.storage_uri)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stored payload is unavailable for document {doc_id}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Case storage backend is not reachable for this document",
+        ) from exc
     media_type = guess_type(document.original_filename)[0] or 'application/octet-stream'
     return Response(
         content=payload,
@@ -391,6 +402,16 @@ def _read_case_communication_content(
         return content
     try:
         return str(store.read_storage_text(storage_uri=transcript_uri))
+    except FileNotFoundError:
+        _LOGGER.info(
+            'Case communication transcript not found; using summary fallback',
+            extra={
+                'case_id': communication.case_id,
+                'communication_id': communication.communication_id,
+                'transcript_uri': transcript_uri,
+            },
+        )
+        return content
     except Exception:
         _LOGGER.warning(
             'Falling back to case communication summary because transcript could not be read',
