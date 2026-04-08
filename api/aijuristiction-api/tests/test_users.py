@@ -261,6 +261,20 @@ def test_claim_pending_prevents_double_pick(monkeypatch, tmp_path: Path) -> None
     assert second_batch == []
 
 
+def test_email_queue_postgres_config_does_not_create_local_sqlite_dirs(tmp_path: Path) -> None:
+    sqlite_parent = tmp_path / "missing" / "sqlite"
+    config = EmailQueueConfig(
+        db_option="postgres",
+        db_local=sqlite_parent / "email.sqlite3",
+        db_cloud="postgresql://example",
+    )
+    assert not sqlite_parent.exists()
+
+    EmailQueueStore(config)
+
+    assert not sqlite_parent.exists()
+
+
 def test_subscription_checkout_payment_failure_does_not_upgrade_for_non_whitelisted_phone(
     monkeypatch, tmp_path: Path
 ) -> None:

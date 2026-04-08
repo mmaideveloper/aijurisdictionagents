@@ -323,6 +323,7 @@ Email DB configuration (separate from API metadata DB):
 - `EMAIL_DB_LOCAL` (default `./runs/storage/api/sqlite/email.sqlite3`)
 - `EMAIL_DB_CLOUD` (required for postgres/azure, default inherits `DB_CLOUD`)
 - `EMAIL_SCHEDULER_ENABLED` (default `true`)
+- When `EMAIL_DB_OPTION` is `postgres` or `azure`, the API does not create local SQLite directories from `EMAIL_DB_LOCAL`.
 
 Postgres/Azure email schema migrations are stored under `databases/api/email`.
 
@@ -392,6 +393,7 @@ and support three database modes:
 - `DB_OPTION=postgres`: local PostgreSQL for Docker-based development (`DB_CLOUD=postgresql://...`)
 - `DB_OPTION=azure`: Azure Database for PostgreSQL Flexible Server (`DB_CLOUD=postgresql://...sslmode=require`)
   - Use the exact Flexible Server administrator login as the username.
+  - In `postgres`/`azure` modes, startup skips creating local SQLite/`runs` folders from `DB_LOCAL`.
 
 The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.md`.
 
@@ -399,6 +401,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
+- If a transcript or document payload is missing in local storage, history responses fall back to saved summaries and document download returns `404` instead of `500`.
 - Uploaded case documents are stored as `case -> many documents`. Each processed uploaded document keeps the extracted full text plus a real embedding in `case_document_contents`, and chunk-level text/embedding rows in `case_document_chunks`.
 - Direct `POST /v1/chat/sessions/{session_id}/reply` now loads the most relevant processed document chunks for the user query by combining lexical overlap with semantic similarity from real embeddings, then injects those chunks into the extra system-context document message.
 - Local API starts through [skills/start-api/scripts/start_api.ps1](/C:/Users/maton/Projects/aijurisdictionagents/skills/start-api/scripts/start_api.ps1) now enable `LOCAL_LLM_IO_LOGGING=1` by default, so local logs include the exact model payload and raw model response for debugging without changing deployed environments.
