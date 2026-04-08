@@ -176,3 +176,36 @@ def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:
     payload = response.json()
     assert payload["messages"][0]["content"] == "Summary fallback content"
     assert payload["messages"][0]["agent_name"] == "LawyerSlovakia"
+
+
+def test_download_case_document_returns_404_when_payload_missing() -> None:
+    import app.cases_api as cases_api
+
+    client = TestClient(app)
+
+    class _FakeStore:
+        def get_case(self, *, case_id: str):
+            return SimpleNamespace(case_id=case_id, user_id="user-1", status="active")
+
+        def get_case_document(self, *, case_id: str, doc_id: str):
+            return SimpleNamespace(
+                doc_id=doc_id,
+                case_id=case_id,
+                storage_uri=f"{case_id}/source/v1_missing.txt",
+                original_filename="missing.txt",
+            )
+
+        def read_storage_bytes(self, *, storage_uri: str) -> bytes:
+            raise FileNotFoundError(storage_uri)
+
+    app.dependency_overrides[cases_api.get_store] = lambda: _FakeStore()
+    try:
+        response = client.get(
+            "/v1/cases/case-1/documents/doc-1?user_id=user-1",
+            headers=_headers(),
+        )
+    finally:
+        app.dependency_overrides.pop(cases_api.get_store, None)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Stored payload is unavailable for document doc-1"

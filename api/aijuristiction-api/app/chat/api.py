@@ -108,6 +108,16 @@ def _read_case_communication_content(*, store: ApiDatabaseStore, communication: 
         return content
     try:
         return str(store.read_storage_text(storage_uri=transcript_uri))
+    except FileNotFoundError:
+        _LOGGER.info(
+            "Case communication transcript not found; using summary fallback",
+            extra={
+                "case_id": getattr(communication, "case_id", None),
+                "communication_id": getattr(communication, "communication_id", None),
+                "transcript_uri": transcript_uri,
+            },
+        )
+        return content
     except Exception:
         _LOGGER.warning(
             "Falling back to case communication summary because transcript could not be read",
