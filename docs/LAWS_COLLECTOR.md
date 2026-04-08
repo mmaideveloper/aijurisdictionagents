@@ -266,6 +266,19 @@ Minimal local demo:
 conda activate .\.conda
 python examples/laws_collector_zip_import_demo.py
 ```
+
+Local PostgreSQL state replay demo:
+
+```powershell
+.\skills\start-postgres\scripts\start_postgres.ps1 -ProjectName laws-collector
+.\.conda\python.exe examples/laws_collector_zip_postgres_state_demo.py
+```
+
+This PostgreSQL demo replays three ZIP-import states with visible logs:
+
+- fresh database imports archive first and then monthly update
+- completed archive skips directly to monthly update only
+- completed monthly state with no newer monthly bundle skips all import work
 The shared embedding switch now supports:
 
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default runtime mode

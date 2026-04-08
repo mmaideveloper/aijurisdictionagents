@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 import os
 import re
@@ -41,6 +42,7 @@ _ARCHIVE_DATE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _HREF_PATTERN = re.compile(r'href="([^"]+)"', re.IGNORECASE)
+_LOGGER = logging.getLogger("laws-collector")
 
 
 class ZipImportStateStore(Protocol):
@@ -131,27 +133,55 @@ class SlovLexZipImportRunner:
     def run(self, *, max_running_seconds: float = 0) -> SlovLexZipImportSummary:
         started_at = self._monotonic_time()
         index = self.export_index_loader.load()
+        _log_zip(
+            "index loaded "
+            f"archive_snapshot={index.archive_export.snapshot_date if index.archive_export else ''} "
+            f"monthly_range={_format_monthly_range(index.monthly_export)}"
+        )
         archive_completed_state = self.store.get_import_state(
             country_code=self.config.country_code,
             import_key="slov-lex:zip:archive-seed",
         )
         archive_completed = archive_completed_state is not None and archive_completed_state.status == "completed"
+        if archive_completed_state is not None:
+            _log_zip(
+                "archive state loaded "
+                f"status={archive_completed_state.status} "
+                f"last_processed_law={archive_completed_state.last_processed_law or ''} "
+                f"archive_snapshot_date={_archive_snapshot_date(archive_completed_state) or ''}"
+            )
 
         if not archive_completed and index.archive_export is not None:
+            _log_zip(
+                "archive import starting "
+                f"snapshot_date={index.archive_export.snapshot_date} "
+                f"parts={len(index.archive_export.part_urls)}"
+            )
             summary = self._process_archive(
                 export=index.archive_export,
                 max_running_seconds=max_running_seconds,
                 started_at=started_at,
             )
             if summary.stopped_due_to_max_running_time or not summary.archive_completed:
+                _log_zip(
+                    "archive import paused "
+                    f"entries_processed={summary.entries_processed} "
+                    f"last_processed_law={summary.last_processed_law or ''}"
+                )
                 return summary
             archive_completed_state = self.store.get_import_state(
                 country_code=self.config.country_code,
                 import_key=index.archive_export.import_key,
             )
             archive_completed = archive_completed_state is not None and archive_completed_state.status == "completed"
+            _log_zip(
+                "archive import completed "
+                f"entries_processed={summary.entries_processed} "
+                f"last_processed_law={summary.last_processed_law or ''}"
+            )
 
         if index.monthly_export is None:
+            _log_zip("no monthly export available")
             return SlovLexZipImportSummary(
                 phase="idle",
                 import_key=None,
@@ -166,6 +196,11 @@ class SlovLexZipImportRunner:
 
         archive_date = _archive_snapshot_date(archive_completed_state)
         if archive_date is not None and index.monthly_export.range_end <= archive_date:
+            _log_zip(
+                "monthly import skipped because archive already covers range "
+                f"archive_snapshot_date={archive_date} "
+                f"monthly_range={index.monthly_export.range_start}..{index.monthly_export.range_end}"
+            )
             return SlovLexZipImportSummary(
                 phase="monthly",
                 import_key=index.monthly_export.import_key,
@@ -179,6 +214,33 @@ class SlovLexZipImportRunner:
                 skipped_as_already_completed=True,
             )
 
+        monthly_state = self.store.get_import_state(
+            country_code=self.config.country_code,
+            import_key=index.monthly_export.import_key,
+        )
+        if monthly_state is not None and monthly_state.status == "completed":
+            _log_zip(
+                "monthly import skipped because the same monthly bundle was already completed "
+                f"range={index.monthly_export.range_start}..{index.monthly_export.range_end} "
+                f"last_processed_law={monthly_state.last_processed_law or ''}"
+            )
+            return SlovLexZipImportSummary(
+                phase="monthly",
+                import_key=index.monthly_export.import_key,
+                import_label=index.monthly_export.import_label,
+                entries_processed=0,
+                sync_summary=SyncSummary(),
+                archive_completed=archive_completed,
+                monthly_completed=True,
+                last_processed_entry=monthly_state.last_processed_entry,
+                last_processed_law=monthly_state.last_processed_law,
+                skipped_as_already_completed=True,
+            )
+
+        _log_zip(
+            "monthly import starting "
+            f"range={index.monthly_export.range_start}..{index.monthly_export.range_end}"
+        )
         return self._process_monthly(
             export=index.monthly_export,
             max_running_seconds=max_running_seconds,
@@ -198,6 +260,7 @@ class SlovLexZipImportRunner:
         extract_root = base_root / "extract"
         for url in export.part_urls:
             destination = download_root / Path(url).name
+            _log_zip(f"archive download source={url} destination={destination}")
             _download_file(url=url, destination=destination)
         _extract_archive_bundle(download_root=download_root, extract_root=extract_root)
         return self._process_extracted_entries(
@@ -224,6 +287,7 @@ class SlovLexZipImportRunner:
         download_root = base_root / "download"
         extract_root = base_root / "extract"
         destination = download_root / Path(export.zip_url).name
+        _log_zip(f"monthly download source={export.zip_url} destination={destination}")
         _download_file(url=export.zip_url, destination=destination)
         _extract_zip_archive(zip_path=destination, extract_root=extract_root)
         return self._process_extracted_entries(
@@ -274,7 +338,16 @@ class SlovLexZipImportRunner:
                 metadata=metadata,
             )
             self.store.upsert_import_state(state)
+            _log_zip(
+                "state initialized "
+                f"phase={metadata.get('phase', 'zip')} import_key={import_key}"
+            )
         elif state.status == "completed":
+            _log_zip(
+                "state already completed "
+                f"phase={metadata.get('phase', 'zip')} import_key={import_key} "
+                f"last_processed_law={state.last_processed_law or ''}"
+            )
             return SlovLexZipImportSummary(
                 phase=str(metadata.get("phase", "zip")),
                 import_key=import_key,
@@ -293,6 +366,12 @@ class SlovLexZipImportRunner:
         resume_entry = state.last_processed_entry
         resume_reached = resume_entry is None
         last_state = state
+        if resume_entry is not None:
+            _log_zip(
+                "resuming import "
+                f"phase={metadata.get('phase', 'zip')} import_key={import_key} "
+                f"resume_after={resume_entry}"
+            )
 
         for entry in entries:
             relative_entry = entry.relative_to(extract_root).as_posix()
@@ -301,6 +380,11 @@ class SlovLexZipImportRunner:
                     resume_reached = True
                 continue
             if max_running_seconds > 0 and (self._monotonic_time() - started_at) >= max_running_seconds:
+                _log_zip(
+                    "max running time reached "
+                    f"phase={metadata.get('phase', 'zip')} import_key={import_key} "
+                    f"last_processed_law={last_state.last_processed_law or ''}"
+                )
                 return SlovLexZipImportSummary(
                     phase=str(metadata.get("phase", "zip")),
                     import_key=import_key,
@@ -332,6 +416,12 @@ class SlovLexZipImportRunner:
             metadata=metadata,
         )
         self.store.upsert_import_state(completed_state)
+        _log_zip(
+            "state completed "
+            f"phase={metadata.get('phase', 'zip')} import_key={import_key} "
+            f"entries_processed={entries_processed} "
+            f"last_processed_law={completed_state.last_processed_law or ''}"
+        )
         return SlovLexZipImportSummary(
             phase=str(metadata.get("phase", "zip")),
             import_key=import_key,
@@ -505,12 +595,24 @@ def _extract_zip_archive(*, zip_path: Path, extract_root: Path) -> None:
 def _extract_archive_bundle(*, download_root: Path, extract_root: Path) -> None:
     marker = extract_root / ".extract.complete"
     if marker.exists():
+        _log_zip(f"extract skipped marker={marker}")
         return
     extract_root.mkdir(parents=True, exist_ok=True)
     final_zip = download_root / "export.zip"
+    split_parts = tuple(
+        path for path in sorted(download_root.glob("export.z*"))
+        if path.name.lower() != "export.zip"
+    )
+    if final_zip.exists() and not split_parts:
+        _log_zip(f"extract single zip source={final_zip} destination={extract_root}")
+        _extract_zip_archive(zip_path=final_zip, extract_root=extract_root)
+        return
     command = _resolve_7zip_command()
     if command is None:
         raise RuntimeError("7-Zip is required for split SlovLex archive extraction but was not found.")
+    _log_zip(
+        f"extract split archive source={final_zip} destination={extract_root} tool={command[0]}"
+    )
     completed = subprocess.run(
         [*command, "x", "-y", f"-o{extract_root}", str(final_zip)],
         check=False,
@@ -544,6 +646,16 @@ def _archive_snapshot_date(state: CollectorImportState | None) -> str | None:
     if isinstance(value, str):
         return value
     return None
+
+
+def _format_monthly_range(export: SlovLexMonthlyExport | None) -> str:
+    if export is None:
+        return ""
+    return f"{export.range_start}..{export.range_end}"
+
+
+def _log_zip(message: str) -> None:
+    _LOGGER.info("[laws-collector] zip-import %s", message)
 
 
 def _to_iso_date(value: str) -> str:

@@ -12,7 +12,6 @@ from services.laws_collector.slovlex_zip_import import (
     SlovLexExportIndex,
     SlovLexMonthlyExport,
     SlovLexZipImportRunner,
-    _extract_zip_archive,
     parse_export_index_html,
 )
 
@@ -240,7 +239,75 @@ def test_zip_import_runner_skips_monthly_export_covered_by_completed_archive(tmp
     assert summary.monthly_completed is True
 
 
-def test_zip_import_runner_processes_archive_seed(tmp_path: Path, monkeypatch) -> None:
+def test_zip_import_runner_skips_already_completed_monthly_export(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    store.upsert_import_state(
+        CollectorImportState(
+            country_code="SK",
+            source_system="slov-lex",
+            import_key="slov-lex:zip:archive-seed",
+            import_label="archive seed 2026-04-01",
+            source_url="https://static.slov-lex.sk/static/exporty/ZZ/export.zip",
+            status="completed",
+            started_at="2026-04-01T00:00:00Z",
+            last_processed_at="2026-04-01T00:00:00Z",
+            last_processed_entry="changed/SK/ZZ/1993/1/19930101.html",
+            last_processed_law_year=1993,
+            last_processed_law_number=1,
+            completed_at="2026-04-01T00:00:00Z",
+            metadata={"archive_snapshot_date": "2026-04-01", "phase": "archive"},
+        )
+    )
+    store.upsert_import_state(
+        CollectorImportState(
+            country_code="SK",
+            source_system="slov-lex",
+            import_key="slov-lex:zip:monthly:2026-04-02_2026-04-15",
+            import_label="monthly 2026-04-02..2026-04-15",
+            source_url="https://static.slov-lex.sk/static/exporty/ZZ/exportZmeny.zip",
+            status="completed",
+            started_at="2026-04-15T00:00:00Z",
+            last_processed_at="2026-04-15T00:00:00Z",
+            last_processed_entry="changed/SK/ZZ/1993/2/19930201.html",
+            last_processed_law_year=1993,
+            last_processed_law_number=2,
+            completed_at="2026-04-15T00:00:00Z",
+            metadata={
+                "monthly_range_start": "2026-04-02",
+                "monthly_range_end": "2026-04-15",
+                "phase": "monthly",
+            },
+        )
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-01",
+                    part_urls=("https://static.slov-lex.sk/static/exporty/ZZ/export.zip",),
+                ),
+                monthly_export=SlovLexMonthlyExport(
+                    range_start="2026-04-02",
+                    range_end="2026-04-15",
+                    zip_url="https://static.slov-lex.sk/static/exporty/ZZ/exportZmeny.zip",
+                ),
+            )
+
+    summary = SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    assert summary.phase == "monthly"
+    assert summary.skipped_as_already_completed is True
+    assert summary.entries_processed == 0
+    assert summary.monthly_completed is True
+
+
+def test_zip_import_runner_processes_archive_seed(tmp_path: Path) -> None:
     store, service, config = _build_service(tmp_path)
     archive_zip = tmp_path / "fixtures" / "export.zip"
     _create_monthly_zip(
@@ -250,9 +317,6 @@ def test_zip_import_runner_processes_archive_seed(tmp_path: Path, monkeypatch) -
             (1993, 2, "Druhy zakon", "1993-02-01"),
         ],
     )
-
-    def fake_extract_archive_bundle(*, download_root: Path, extract_root: Path) -> None:
-        _extract_zip_archive(zip_path=download_root / "export.zip", extract_root=extract_root)
 
     class FakeIndexLoader:
         def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
@@ -264,10 +328,6 @@ def test_zip_import_runner_processes_archive_seed(tmp_path: Path, monkeypatch) -
                 monthly_export=None,
             )
 
-    monkeypatch.setattr(
-        "services.laws_collector.slovlex_zip_import._extract_archive_bundle",
-        fake_extract_archive_bundle,
-    )
     summary = SlovLexZipImportRunner(
         config=config,
         store=store,
