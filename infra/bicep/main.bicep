@@ -13,6 +13,7 @@ param lawsCollectorImport string = 'zip'
 param acrName string
 param storageAccountName string = toLower('staijur${uniqueString(subscription().subscriptionId, resourceGroup().name)}')
 param storageContainerName string = 'case-documents'
+param lawsStorageContainerName string = 'laws-collection-sk'
 param logAnalyticsWorkspaceName string
 param applicationInsightsName string
 param managedIdentityName string
@@ -486,6 +487,8 @@ module documentProcessorJob 'document_processor.job.bicep' = if (createDocumentP
     acrName: acrName
     managedIdentityName: managedIdentityName
     image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    storageAccountName: storageAccountName
+    storageContainerName: storageContainerName
     postgresServerName: postgresServerName
     postgresDatabaseName: postgresDatabaseName
     postgresAdminUsername: postgresAdminUsername
@@ -494,8 +497,6 @@ module documentProcessorJob 'document_processor.job.bicep' = if (createDocumentP
     applicationInsightsConnectionString: createApplicationInsights
       ? applicationInsights.properties.ConnectionString
       : applicationInsightsExisting.properties.ConnectionString
-    storageAccountName: storageAccountName
-    storageContainerName: storageContainerName
     llmProvider: llmProvider
     systemEmbeddingModelOption: systemEmbeddingModelOption
     systemEmbeddingModel: systemEmbeddingModel
@@ -530,6 +531,8 @@ module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob)
     acrName: acrName
     managedIdentityName: managedIdentityName
     image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    storageAccountName: storageAccountName
+    storageContainerName: lawsStorageContainerName
     postgresServerName: postgresServerName
     postgresDatabaseName: lawsPostgresDatabaseName
     postgresAdminUsername: postgresAdminUsername
@@ -553,6 +556,8 @@ module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob)
     postgresServer
     lawsPostgresDatabaseOnNewServer
     lawsPostgresDatabaseOnExistingServer
+    storageContainerOnNewStorage
+    storageContainerOnExistingStorage
   ]
 }
 

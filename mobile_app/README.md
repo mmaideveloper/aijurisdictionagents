@@ -205,7 +205,8 @@ In `Real Agent` mode, when the lawyer decides a formal document is needed, the a
 The mobile app now also resets document-export readiness to `false` when a fresh session result is unavailable, so a previous case cannot leave the `Documents` button enabled for a new conversation.
 In `AI User Simulator` mode, submitting the instruction starts discussion streaming (SSE)
 the same way as the chat simulator by using `user_simulation_mode=AIUserSimulatorAgent`.
-The app also reads `GET /v1/chat/sessions/{session_id}/result` metadata to show validation accuracy and the latest known legal-data update timestamp for the selected country.
+The app also reads `GET /v1/chat/sessions/{session_id}/result` metadata to show validation accuracy, the latest known legal-data update timestamp for the selected country, and version-specific `law_citations`.
+When citations are present, the mobile UI renders a dedicated legal-citations card. Tapping a citation opens the stored full-law source through the API `GET /v1/laws/source?...` endpoint, which serves the file from local storage or Azure Blob depending on how the laws collector imported it.
 
 
 ## Debug mode and log sharing (Android)

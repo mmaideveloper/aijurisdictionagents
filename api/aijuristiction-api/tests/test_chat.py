@@ -1084,6 +1084,74 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
     assert result.metadata["api_version"]
 
 
+def test_direct_reply_result_includes_structured_law_citations(monkeypatch) -> None:
+    from app.chat.api import _build_direct_reply_result
+    from app.chat.models import Message, MessageRole, Session
+    import app.chat.result_metadata as result_metadata
+
+    monkeypatch.setattr(
+        result_metadata,
+        "resolve_session_law_citations",
+        lambda **_kwargs: [
+            {
+                "law_identifier": "1/1993 Z. z.",
+                "label": "1/1993 Z. z. - Prvy zakon",
+                "title": "Prvy zakon",
+                "version_token": "19930101",
+                "effective_from": "1993-01-01",
+                "open_url": "/v1/laws/source?country_code=SK&collection_code=ZZ&law_year=1993&law_number=1&version_token=19930101&artifact_kind=html",
+                "summary": "1/1993 Z. z. (Prvy zakon), version 19930101, effective from 1993-01-01",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        result_metadata,
+        "get_law_knowledge_snapshot",
+        lambda _country: result_metadata.LawKnowledgeSnapshot(
+            last_law_update_date="2026-04-01T00:00:00Z",
+            last_law_update_source="law_documents_country",
+            model_knowledge_cutoff_date="2023-10-01",
+            model_knowledge_cutoff_source="https://platform.openai.com/docs/models/gpt-4o-mini",
+        ),
+    )
+
+    class _FakeValidator:
+        def evaluate(self, **_kwargs):
+            return SimpleNamespace(
+                weighted_accuracy=92.5,
+                summary="Validated.",
+                scores=[],
+            )
+
+    monkeypatch.setattr(result_metadata, "AIAgentsValidator", lambda **_kwargs: _FakeValidator())
+
+    session_id = uuid4()
+    session = Session(id=session_id, country="SK", language="SK")
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Priprav mi dokument a odkaz na zakon 1/1993.",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Pripravil som navrh a doplnil pravny zaklad.",
+        ),
+    ]
+
+    result = _build_direct_reply_result(
+        session_id=session_id,
+        session=session,
+        messages=messages,
+        lawyer_message=messages[-1].content,
+    )
+
+    assert result.metadata["law_citations"][0]["law_identifier"] == "1/1993 Z. z."
+    assert result.citations[0]["filename"] == "1/1993 Z. z."
+    assert "effective from 1993-01-01" in result.citations[0]["snippet"]
+
+
 def test_law_snapshot_falls_back_to_model_cutoff_and_writes_cache(monkeypatch, tmp_path) -> None:
     import app.chat.result_metadata as result_metadata
 

@@ -12,7 +12,7 @@ Current scope:
 - `slovak_laws_collector` implemented now for country `SK`,
 - canonical Slovak source model based on `Slov-Lex`,
 - draft monitoring model for `NR SR`,
-- local runnable SQLite implementation with documents stored in the database,
+- local runnable SQLite implementation with searchable parsed text in the database,
 - schema that can move later to PostgreSQL on Azure.
 
 ## Project location
@@ -50,22 +50,22 @@ Pragmatic recommendation:
 
 Recommended production stack:
 
-- Azure Database for PostgreSQL Flexible Server for metadata, versions, and stored documents,
+- Azure Database for PostgreSQL Flexible Server for metadata, versions, and searchable parsed text,
 - `pgvector` in PostgreSQL for provision embeddings,
 - Azure Container Apps Jobs for scheduled syncs.
 
 ## Database storage model
 
-The current solution now stores the actual law documents in the database:
+The current solution keeps original source artifacts in persistent storage and keeps searchable/legal structure in the database:
 
-- HTML in `source_artifacts.content_text`
-- PDF in `source_artifacts.content_blob`
+- parsed searchable HTML text in `source_artifacts.content_text`
+- original HTML/PDF artifact references in `source_artifacts.storage_backend` and `source_artifacts.storage_path`
 - normalized structured JSON in `law_versions.normalized_json`
 
-That works in:
+Storage layout:
 
-- SQLite locally
-- PostgreSQL later in Azure using `TEXT` and `BYTEA`
+- local runs: `runs/storage/laws-collector/files/<country>/source-artifacts/...`
+- Azure: blob URLs under the configured `LAWS_STORAGE_CLOUD` container, by default `laws-collection-sk`
 
 ## Important columns
 
@@ -107,8 +107,9 @@ These are the most important columns now:
 - `artifact_kind`
 - `source_url`
 - `checksum`
+- `storage_backend`
+- `storage_path`
 - `content_text`
-- `content_blob`
 - `content_bytes`
 - `http_etag`
 - `http_last_modified`
@@ -186,7 +187,7 @@ This supports:
 
 - immutable version storage,
 - provision-level normalization,
-- raw artifact retention,
+- raw artifact retention by reference,
 - update event tracking.
 
 ## Minimal demo
@@ -194,6 +195,13 @@ This supports:
 ```powershell
 conda activate .\.conda
 python examples/laws_collector_minimal_demo.py
+```
+
+Artifact storage demo:
+
+```powershell
+conda activate .\.conda
+python examples/laws_collector_artifact_storage_demo.py
 ```
 
 ## CLI seed/update
@@ -208,8 +216,15 @@ python -m services.laws_collector --fixture delta
 
 The live Slovak collector now supports two import modes through `LAWS_COLLECTOR_IMPORT`:
 
-- `zip` (default): bootstrap once from the full Slov-Lex archive, persist archive/monthly resume state in `collector_import_state`, then continue from monthly `exportZmeny.zip` bundles downloaded under `./archivelaws/slovakia`
+- `zip` (default): bootstrap once from the full Slov-Lex archive, persist archive/monthly resume state in `collector_import_state`, then continue from monthly `exportZmeny.zip` bundles downloaded under `./archivelaws/laws-collection-sk`
 - `one_law_url`: keep the older sequential per-law HTTP probe flow backed by `collector_progress`
+
+Both modes use the same downstream laws schema. After a snapshot is built, they both:
+
+- vectorize through the same embedding pipeline
+- write into the same `law_documents`, `law_versions`, `law_provisions`, `law_metadata`, `law_metadata_relations`, and `update_events` tables
+- persist original HTML/PDF artifacts to local/blob storage
+- store the artifact reference in `source_artifacts`
 
 The Slovak collector now keeps a persisted sequential crawl state in `collector_progress`.
 
@@ -244,14 +259,28 @@ The default `zip` mode uses the Slov-Lex export index at `https://static.slov-le
 
 Flow:
 
-1. Download the full archive parts (`export.z01` ... `export.zip`) into `./archivelaws/slovakia/archive/<archive-date>/download/`
+1. Download the full archive parts (`export.z01` ... `export.zip`) into `./archivelaws/laws-collection-sk/archive/<archive-date>/download/`
 2. Extract the archive once and ingest every law version from local HTML files
 3. Persist archive cursor state in `collector_import_state` so interrupted runs continue from the last processed entry
 4. Mark the archive seed as completed and remember the archive snapshot date
-5. Download each monthly `exportZmeny.zip` into `./archivelaws/slovakia/monthly/<range-end>/download/`
+5. Download each monthly `exportZmeny.zip` into `./archivelaws/laws-collection-sk/monthly/<range-end>/download/`
 6. Extract and ingest only the changed law versions from that monthly ZIP
 7. Persist the monthly cursor and resume from the last processed entry on restart
 8. Skip archive bootstrap forever after the first completed archive seed, and only look for newer monthly bundles afterward
+
+The ZIP importer now also keeps immutable source-bundle inventory rows in `archive_import_assets`. Each downloaded archive part or monthly ZIP records:
+
+- archive/import key
+- checksum
+- file size
+- processing status (`downloaded`, `in_progress`, `processed`)
+- durable storage location
+
+Storage rules:
+
+- local dev/test keeps ZIPs under `./archivelaws/laws-collection-sk`
+- when `LAWS_STORAGE_CLOUD` is configured, the worker also persists those ZIPs to Azure Blob and records the blob URL in `archive_import_assets.storage_path`
+- Azure deployments now default that blob target to `https://<AZURE_STORAGE_ACCOUNT_NAME>.blob.core.windows.net/laws-collection-sk`
 
 Run the default ZIP importer locally:
 
@@ -266,6 +295,25 @@ Minimal local demo:
 conda activate .\.conda
 python examples/laws_collector_zip_import_demo.py
 ```
+
+Local PostgreSQL state replay demo:
+
+```powershell
+.\skills\start-postgres\scripts\start_postgres.ps1 -ProjectName laws-collector
+.\.conda\python.exe examples/laws_collector_zip_postgres_state_demo.py
+```
+
+Archive inventory demo:
+
+```powershell
+.\.conda\python.exe examples/laws_collector_archive_inventory_demo.py
+```
+
+This PostgreSQL demo replays three ZIP-import states with visible logs:
+
+- fresh database imports archive first and then monthly update
+- completed archive skips directly to monthly update only
+- completed monthly state with no newer monthly bundle skips all import work
 The shared embedding switch now supports:
 
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default runtime mode
@@ -332,6 +380,7 @@ A minimal metadata/relations parsing example is also available:
 Add these to `.env` when you start wiring the service into real runs:
 
 - `LAWS_COLLECTOR_IMPORT=zip`
+- `LAWS_STORAGE_CLOUD=https://<storage-account>.blob.core.windows.net/laws-collection-sk` for durable ZIP source storage on Azure
 - `LAWS_DB_BACKEND=sqlite`
 - `LAWS_DB_LOCAL=./runs/storage/laws-collector/sqlite/sk_laws.sqlite3`
 - `LAWS_STORAGE_LOCAL=./runs/storage/laws-collector/files/sk`
@@ -341,7 +390,7 @@ Add these to `.env` when you start wiring the service into real runs:
 
 For Slovakia:
 
-- `zip` is the default import mode and stores downloaded bundles under `./archivelaws/slovakia`
+- `zip` is the default import mode and stores downloaded bundles under `./archivelaws/laws-collection-sk`
 - `one_law_url` keeps the older sequential Slov-Lex crawl that always starts from `1/1993`
 
 For PostgreSQL naming, keep the database mapping country-specific:

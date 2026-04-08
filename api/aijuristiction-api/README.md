@@ -200,6 +200,7 @@ If the database is unreachable or misconfigured, the endpoint returns `503` with
 - `model_knowledge_cutoff_date`: LLM cutoff date resolved from the current model metadata and cached in `permanent_memory`.
 - `model_knowledge_cutoff_source`: source URL used for the resolved cutoff date, typically an official OpenAI model page.
 - `law_reference_links`: recent official law links available in the system knowledge store.
+- `law_citations`: structured version-specific legal citations resolved from the current answer/session context. Each item includes the law identifier, title, version token, effective date, and an `open_url` that can stream the stored full-law source from local storage or Azure Blob.
 - `mobile_app_version`: latest mobile app version from `mobile_app/pubspec.yaml`.
 - `mobile_app_release_url`: release page used by the mobile app update flow.
 - `mobile_app_apk_download_url`: default APK asset URL used by Android in-app update flow.
@@ -415,7 +416,14 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - Direct `POST /v1/chat/sessions/{session_id}/reply` sessions also persist a session result now, so the mobile `Real Agent` flow can download PDFs without going through the simulator stream.
 - In `Real Agent` mode, the lawyer can first ask whether a formal document should be prepared as PDF; once the user confirms, the next direct reply marks `metadata.document_ready=true` in `GET /v1/chat/sessions/{session_id}/result`.
 - Explicit document-revision requests that mention uploaded documents plus update/fix wording such as reviewing a contract against newer laws are also treated as document-preparation requests, so the API can prepare an updated export without waiting for a separate summary-only path.
-- `GET /v1/chat/sessions/{session_id}/result` metadata now also includes `last_law_update_date`, `last_law_update_source`, `model_knowledge_cutoff_date`, `model_knowledge_cutoff_source`, `law_reference_links`, `api_version`, and the backward-compatible `knowledge_last_updated_at` alias.
+- `GET /v1/chat/sessions/{session_id}/result` metadata now also includes `last_law_update_date`, `last_law_update_source`, `model_knowledge_cutoff_date`, `model_knowledge_cutoff_source`, `law_reference_links`, `law_citations`, `api_version`, and the backward-compatible `knowledge_last_updated_at` alias.
+- `GET /v1/laws/source?...` streams the stored full-law source for a resolved citation. For local imports it reads the persisted local file, and for Azure imports it reads the same artifact from Blob storage.
+
+Citation payload demo:
+
+```bash
+python examples/law_citation_resolution_demo.py
+```
 - When the laws database has no import timestamp yet, `knowledge_last_updated_at` falls back to the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value while `last_law_update_date` remains empty.
 - For Slovak and other Central European locales, the exporter uses a Unicode TrueType font when available so characters such as `á`, `č`, `ľ`, `ô`, and `ž` render correctly in the generated PDF.
 

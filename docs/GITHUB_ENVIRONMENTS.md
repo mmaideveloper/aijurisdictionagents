@@ -113,8 +113,10 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_MANAGED_IDENTITY_NAME` | Managed identity name |
 | `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME` | Optional laws collector Azure Container App name, default `laws-collector` |
 | `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional laws collector live probe count per Azure job execution, default `1` |
+| `AZURE_LAWS_STORAGE_CONTAINER_NAME` | Optional blob container for immutable Slov-Lex ZIP source bundles, default `laws-collection-sk` |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk`; the API deploy also uses it to inject `LAWS_DB_CLOUD` so `/version` can read the latest collector metadata |
 | `LAWS_COLLECTOR_IMPORT` | Laws collector import mode. Default `zip`; set `one_law_url` to keep the older sequential per-law probe importer |
+| `LAWS_STORAGE_CLOUD` | Optional explicit blob container URL override for laws source storage. When unset, the deploy derives `https://<AZURE_STORAGE_ACCOUNT_NAME>.blob.core.windows.net/<AZURE_LAWS_STORAGE_CONTAINER_NAME or laws-collection-sk>` |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `*/15 * * * *` |
 | `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME` | Optional max runtime per document-processor Azure run in minutes; default `15`, set `0` for unlimited |
@@ -188,7 +190,9 @@ These are used by the laws collector deployment workflow:
 | `AZURE_LAWS_COLLECTOR_MAX_PROBES` | Optional live probe count per scheduled job execution, default `1` |
 | `LAWS_COLLECTOR_MAX_RUNNING_TIME` | Optional max runtime per laws collector Azure job execution in minutes; default `60`, set `0` for unlimited |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional PostgreSQL database name for the Slovak laws corpus, default `laws_sk`; the laws deployment applies schema migrations to this database before updating the ACA job |
+| `AZURE_LAWS_STORAGE_CONTAINER_NAME` | Optional blob container that stores immutable Slov-Lex ZIP source bundles, default `laws-collection-sk` |
 | `LAWS_COLLECTOR_IMPORT` | Import mode for the live laws collector job. Default `zip`, which bootstraps from the full Slov-Lex archive and then continues from monthly `exportZmeny.zip` deltas |
+| `LAWS_STORAGE_CLOUD` | Optional explicit blob container URL override for laws source storage. Normally leave this unset and let the deploy derive it from `AZURE_STORAGE_ACCOUNT_NAME` plus `AZURE_LAWS_STORAGE_CONTAINER_NAME` |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; default `local`, or set `cloud` for Azure OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, default `all-MiniLM-L6-v2`. In `local` mode the deploy prefetches that model into the worker image before `az acr build` |
 
@@ -258,8 +262,10 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME`
 - `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES`
+- `AZURE_LAWS_STORAGE_CONTAINER_NAME=laws-collection-sk`
 - `LAWS_COLLECTOR_MAX_RUNNING_TIME`
 - `LAWS_COLLECTOR_IMPORT=zip`
+- `LAWS_STORAGE_CLOUD` if you need a non-default blob container URL
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
 - `API_BASE_URL`
 - `CORS_ALLOW_ORIGINS`
