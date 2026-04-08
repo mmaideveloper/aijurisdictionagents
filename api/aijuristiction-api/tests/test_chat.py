@@ -420,6 +420,8 @@ def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:
     assert "esolutions sk s.r.o." in lowered
     assert "12345678" in content
     assert "ešte potrebujem len tieto údaje" in lowered
+    assert "chcete, aby som spolu s hlavnou zmluvou pripravil aj tento zvyšný balík dokumentov" in lowered
+    assert "rozhodnutie jediného spoločníka" in lowered
 
 
 def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkeypatch) -> None:
@@ -518,6 +520,8 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
     assert "pripravil som pracovný návrh dokumentácie k prevodu obchodného podielu" in lowered
     assert "pracovný návrh dokumentácie k prevodu obchodného podielu v s.r.o." in lowered
     assert "esolutions sk s.r.o." in lowered
+    assert "rozhodnutie jediného spoločníka" in lowered
+    assert "úplné znenie spoločenskej zmluvy" in lowered
     assert "potrebujem len tieto údaje" not in lowered
     assert "chcete ho vidiet" not in lowered
 

@@ -116,9 +116,17 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 
 - if the user provides a Slovak company name or IČO, the API first runs `obchodny_register_company_check`
 - the assistant then uses verified company name, IČO, seat, and status instead of asking for those facts again
+- if the requested main document usually requires related resolutions, updated articles, or registry attachments, the assistant explicitly offers to prepare that fuller package too
 - if the user later says `áno` / `show me the draft`, the API returns the working draft directly instead of looping back into the same intake questions
 
 Minimal runnable example:
+
+```bash
+python examples/share_transfer_related_documents_demo.py
+python examples/share_transfer_tool_first_demo.py
+```
+
+Full draft package example:
 
 ```bash
 python examples/share_transfer_tool_first_demo.py

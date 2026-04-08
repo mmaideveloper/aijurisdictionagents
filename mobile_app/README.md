@@ -68,6 +68,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Assistant chat bubbles no longer show backend agent labels such as `LawyerSlovakia`; the UI shows the localized assistant label and strips any leading agent prefix from the message text.
 - The `Account` action now sits next to the PDF download buttons instead of the top header.
 - Download generated summary/document PDF files directly from the mobile app once a session exists.
+- The chat composer now expands into a multi-line editor that uses roughly half of the screen height when the user taps into the input field or starts the microphone flow, and it collapses back to the compact single-line composer after send or when the user taps away.
 - Selecting a case now loads the latest 5 persisted case messages, with a paging button to load 5 more older messages while keeping chronological order in the chat area and preserving scroll position when older messages are prepended.
 - The mobile app now remembers the last selected case per signed-in user and API base URL, so reopening the app returns to the same existing case instead of always jumping back to the first item in the case list.
 - The case edit dialog now also shows the current case documents. Tapping a listed document downloads it and opens it with the same file-view flow used from the main case screen.
@@ -197,7 +198,8 @@ PDF exports are downloaded through:
 - `GET /v1/chat/sessions/{session_id}/result`
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...`
 Use the single `Documents` button above the message composer to download all user-requested export documents (summary + document PDF).
-On Android, the app now immediately tries to open the saved file in an external PDF/document app after the download finishes.
+If multiple export files are downloaded, the app now shows a picker list of the saved files and opens the selected file after the user taps it.
+On Android, saved PDF/case-document files are now opened through the platform file-opening flow instead of a raw `file://` launcher call, which avoids the previous `Could not open the saved file` failure for locally saved documents.
 Buttons are enabled after AI stream emits `result`/`done` (PDF must be generated first).
 In `Real Agent` mode, when the lawyer decides a formal document is needed, the agent first asks for confirmation and the PDF buttons stay disabled until the follow-up reply actually prepares the document.
 The mobile app now also resets document-export readiness to `false` when a fresh session result is unavailable, so a previous case cannot leave the `Documents` button enabled for a new conversation.

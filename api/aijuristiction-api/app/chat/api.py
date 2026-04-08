@@ -616,6 +616,10 @@ def _build_slovak_share_transfer_intake_reply(
         "2. Potvrdenie, aký podiel sa prevádza a či je prevod odplatný alebo bezodplatný.",
         "3. Potvrdenie, či sa mení iba spoločnícka štruktúra alebo aj konateľ / spôsob konania.",
         "",
+        "Ak chcete, pripravím nielen samotnú zmluvu o prevode obchodného podielu, ale aj zvyšné súvisiace dokumenty, ktoré sa pri tejto zmene zvyčajne prikladajú.",
+        "Typicky ide najmä o rozhodnutie jediného spoločníka alebo zápisnicu z valného zhromaždenia, úplné znenie spoločenskej zmluvy alebo zakladateľskej listiny po zmene a checklist podania do obchodného registra.",
+        "",
+        "Chcete, aby som spolu s hlavnou zmluvou pripravil aj tento zvyšný balík dokumentov v jednom výstupe?",
         "Keď tieto údaje doplníte, pripravím návrh dokumentov a postup podania bez ďalšieho opakovania tých istých otázok.",
     ]
     return "\n".join(lines)

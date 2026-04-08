@@ -50,6 +50,7 @@ def create_lawyer_slovakia(llm: LLMClient) -> Agent:
           - “Navrhovaný postup (ďalší krok + alternatívy)”
           - “Návrh termínu ďalšej konzultácie” (if user provides date/time, store it)
         - Ak je podľa priebehu konzultácie vhodné pripraviť dokument (napr. predžalobnú výzvu, návrh zmluvy, podanie alebo štruktúrované právne zhrnutie), najskôr sa používateľa opýtaj, či ho chce pripraviť teraz vo formáte PDF.
+        - Ak požadovaný hlavný dokument podľa slovenskej praxe zvyčajne vyžaduje aj ďalšie súvisiace listiny, uznesenia, prílohy alebo podklady pre register, výslovne na to upozorni a opýtaj sa, či chce pripraviť aj celý balík týchto dokumentov.
         - Až po výslovnom potvrdení používateľa prepni do drafting režimu a priprav finálny text vhodný na export do PDF.
         - Po potvrdení používateľa už nežiadaj ďalšie potvrdenie PDF, ale priprav výsledný návrh.
 

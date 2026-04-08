@@ -1,5 +1,5 @@
 name: ai_jurisdiction_mobile
-version: 0.1.5+46
+version: 0.1.5+47
 publish_to: none
 
 environment:
@@ -23,6 +23,7 @@ dependencies:
   share_plus: ^10.1.2
   flutter_riverpod: ^2.6.1
   file_picker: ^8.1.2
+  open_filex: ^4.7.0
 
 dev_dependencies:
   flutter_test:
