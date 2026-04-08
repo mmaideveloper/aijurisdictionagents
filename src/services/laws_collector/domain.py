@@ -104,6 +104,7 @@ class LawSnapshot:
     relations: tuple[LawRelationRecord, ...] = ()
     http_etag: str = ""
     http_last_modified: str = ""
+    html_source_content: bytes | None = None
 
     def document_key(self) -> str:
         return f"{self.country_code}-{self.collection_code}-{self.year}-{self.number}"
@@ -263,6 +264,24 @@ class CollectorImportState:
 
     def evolve(self, **changes: object) -> "CollectorImportState":
         return replace(self, **changes)
+
+
+@dataclass(frozen=True)
+class ArchiveImportAsset:
+    country_code: str
+    source_system: str
+    import_key: str
+    import_label: str
+    phase: str
+    asset_name: str
+    source_url: str
+    storage_backend: str
+    storage_path: str
+    checksum: str
+    file_size_bytes: int
+    processing_status: str
+    downloaded_at: str
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

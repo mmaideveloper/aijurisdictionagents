@@ -1047,16 +1047,20 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 message_callback=message_callback,
             )
             persisted_messages = _repository.list_messages(session_id)
+            metadata = build_session_result_metadata(
+                session=session,
+                messages=persisted_messages,
+                final_recommendation=result.final_recommendation,
+                base_metadata={"message_count": len(result.messages), "mode": "discussion_stream"},
+            )
             session_result = SessionResult(
                 final_recommendation=result.final_recommendation,
                 judge_rationale=result.judge_rationale,
-                citations=[{"filename": c.filename, "snippet": c.snippet} for c in result.citations],
-                metadata=build_session_result_metadata(
-                    session=session,
-                    messages=persisted_messages,
-                    final_recommendation=result.final_recommendation,
-                    base_metadata={"message_count": len(result.messages), "mode": "discussion_stream"},
+                citations=_merge_session_citations(
+                    generic_citations=[{"filename": c.filename, "snippet": c.snippet} for c in result.citations],
+                    metadata=metadata,
                 ),
+                metadata=metadata,
             )
             _repository.set_result(session_id, session_result)
             event_queue.put(("result", session_result.model_dump(mode="json")))
@@ -1264,24 +1268,25 @@ def _build_direct_reply_result(
         if visible_text
         else "Direct lawyer reply stored for session export."
     )
+    metadata = build_session_result_metadata(
+        session=session,
+        messages=messages,
+        final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
+        base_metadata={
+            "message_count": len(messages),
+            "mode": "direct_reply",
+            "country": session.country,
+            "language": session.language or "",
+            "document_requested": document_requested,
+            "document_confirmed": document_confirmed,
+            "document_ready": document_ready,
+        },
+    )
     return SessionResult(
         final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
         judge_rationale=rationale,
-        citations=[],
-        metadata=build_session_result_metadata(
-            session=session,
-            messages=messages,
-            final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
-            base_metadata={
-                "message_count": len(messages),
-                "mode": "direct_reply",
-                "country": session.country,
-                "language": session.language or "",
-                "document_requested": document_requested,
-                "document_confirmed": document_confirmed,
-                "document_ready": document_ready,
-            },
-        ),
+        citations=_merge_session_citations(generic_citations=[], metadata=metadata),
+        metadata=metadata,
     )
 
 
@@ -1882,6 +1887,42 @@ def _format_validation_accuracy(value: object) -> str:
     return f"{numeric:.1f}%"
 
 
+def _merge_session_citations(
+    *,
+    generic_citations: list[dict[str, str]],
+    metadata: dict[str, object],
+) -> list[dict[str, str]]:
+    merged = list(generic_citations)
+    for citation in _law_citation_session_citations(metadata):
+        if citation not in merged:
+            merged.append(citation)
+    return merged
+
+
+def _law_citation_session_citations(metadata: dict[str, object]) -> list[dict[str, str]]:
+    citations: list[dict[str, str]] = []
+    raw_law_citations = metadata.get("law_citations")
+    if not isinstance(raw_law_citations, list):
+        return citations
+    for raw_item in raw_law_citations:
+        if not isinstance(raw_item, dict):
+            continue
+        label = str(raw_item.get("law_identifier") or raw_item.get("label") or "").strip()
+        title = str(raw_item.get("title") or "").strip()
+        version_token = str(raw_item.get("version_token") or "").strip()
+        effective_from = str(raw_item.get("effective_from") or "").strip()
+        summary_bits = [part for part in (title, f"version {version_token}" if version_token else "", f"effective from {effective_from}" if effective_from else "") if part]
+        if not label:
+            continue
+        citations.append(
+            {
+                "filename": label,
+                "snippet": ", ".join(summary_bits),
+            }
+        )
+    return citations
+
+
 def _summary_citation_lines(citations: list[dict[str, str]]) -> list[str]:
     lines: list[str] = []
     for citation in citations[:5]:
@@ -1893,6 +1934,41 @@ def _summary_citation_lines(citations: list[dict[str, str]]) -> list[str]:
             lines.append(f"- {filename}")
         elif snippet:
             lines.append(f"- {snippet}")
+    return lines
+
+
+def _law_citation_export_lines(*, metadata: dict[str, object], language: str | None) -> list[str]:
+    prefers_slovak = (language or "").strip().lower().startswith("sk")
+    lines: list[str] = []
+    raw_law_citations = metadata.get("law_citations")
+    if not isinstance(raw_law_citations, list):
+        return lines
+    for raw_item in raw_law_citations:
+        if not isinstance(raw_item, dict):
+            continue
+        identifier = str(raw_item.get("law_identifier") or raw_item.get("label") or "").strip()
+        title = str(raw_item.get("title") or "").strip()
+        version_token = str(raw_item.get("version_token") or "").strip()
+        effective_from = str(raw_item.get("effective_from") or "").strip()
+        if not identifier:
+            continue
+        if prefers_slovak:
+            detail = f"- {identifier}"
+            if title:
+                detail += f": {title}"
+            if version_token:
+                detail += f", verzia {version_token}"
+            if effective_from:
+                detail += f", účinná od {effective_from}"
+        else:
+            detail = f"- {identifier}"
+            if title:
+                detail += f": {title}"
+            if version_token:
+                detail += f", version {version_token}"
+            if effective_from:
+                detail += f", effective from {effective_from}"
+        lines.append(detail)
     return lines
 
 
@@ -1930,25 +2006,50 @@ def _build_document_export_content(
                 break
     document_kind = _detect_document_kind(context_lines, case_update)
     facts = _extract_document_facts(context_lines, case_update)
+    law_citation_lines = _law_citation_export_lines(
+        metadata=result.metadata if result is not None else {},
+        language=language,
+    )
 
     if (language or "").strip().lower().startswith("sk"):
         title = f"Generovaný Dokument {session_id}"
         if document_kind == "rental_agreement":
-            return title, _build_standard_slovak_agreement_lines(facts)
+            lines = _build_standard_slovak_agreement_lines(facts)
+            return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
         if document_kind == "easement_demand":
-            return title, _build_slovak_easement_demand_lines(facts)
+            lines = _build_slovak_easement_demand_lines(facts)
+            return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
         if document_kind == "share_transfer":
-            return title, _build_slovak_share_transfer_lines(facts)
-        return title, _build_generic_slovak_case_document_lines(facts)
+            lines = _build_slovak_share_transfer_lines(facts)
+            return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        lines = _build_generic_slovak_case_document_lines(facts)
+        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
 
     title = f"Generated Document {session_id}"
     if document_kind == "rental_agreement":
-        return title, _build_standard_english_agreement_lines(facts)
+        lines = _build_standard_english_agreement_lines(facts)
+        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
     if document_kind == "easement_demand":
-        return title, _build_english_easement_demand_lines(facts)
+        lines = _build_english_easement_demand_lines(facts)
+        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
     if document_kind == "share_transfer":
-        return title, _build_english_share_transfer_lines(facts)
-    return title, _build_generic_english_case_document_lines(facts)
+        lines = _build_english_share_transfer_lines(facts)
+        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+    lines = _build_generic_english_case_document_lines(facts)
+    return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+
+
+def _append_document_law_citations(
+    *,
+    lines: List[str],
+    citations: list[str],
+    language: str | None,
+) -> List[str]:
+    if not citations:
+        return lines
+    prefers_slovak = (language or "").strip().lower().startswith("sk")
+    heading = "Právne citácie" if prefers_slovak else "Legal citations"
+    return [*lines, "", heading, *citations]
 
 
 def _pick_document_message(candidates: List[str]) -> str:

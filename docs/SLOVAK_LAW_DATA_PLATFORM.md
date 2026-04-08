@@ -53,7 +53,7 @@ Recommended core tables:
 | `law_versions` | One row per published or effective-time version of an act. |
 | `law_provisions` | Normalized sections, paragraphs, letters, annexes. |
 | `law_relationships` | Amendment, repeal, reference, implementing-regulation links. |
-| `source_artifacts` | HTML/PDF payloads, checksum, fetch time, source URL, ETag, download state. |
+| `source_artifacts` | Searchable text plus HTML/PDF storage references, checksum, fetch time, source URL, ETag, download state. |
 | `update_events` | Discovered change, parser result, publish result, failure state. |
 | `legislative_proposals` | Draft-bill metadata from NR SR before publication in Slov-Lex. |
 
@@ -86,7 +86,7 @@ For each discovered act:
 1. Capture source URL, act number, publication date, effective date, and author.
 2. Download the informative HTML and the legally binding PDF.
 3. Normalize structure into sections, paragraphs, points, letters, and annexes.
-4. Persist the source artifact bodies, parsed structure, and search segments inside the database.
+4. Persist original source artifacts in storage, store their references in the database, and keep parsed structure and search segments in the database.
 5. Build citation anchors so agents can cite `act + paragraph + effective version + source URL`.
 
 ### 2. Incremental update job

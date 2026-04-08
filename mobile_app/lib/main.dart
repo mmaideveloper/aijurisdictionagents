@@ -305,6 +305,11 @@ class AppStrings {
       'case_validation_title': 'Validacia pripadu',
       'validation_accuracy_label': 'Presnost',
       'validation_summary_label': 'Zhrnutie validacie',
+      'law_citations_title': 'Relevantné právne citácie',
+      'law_citation_open': 'Otvoriť plné znenie',
+      'law_citation_effective_from': 'Účinné od',
+      'law_citation_version': 'Verzia',
+      'law_citation_open_failed': 'Súbor zákona sa nepodarilo otvoriť.',
       'knowledge_updated_label': 'Pravne data aktualizovane',
       'model_version_label': 'Verzia modelu',
       'law_date_label': 'Law Date',
@@ -519,6 +524,11 @@ class AppStrings {
       'case_validation_title': 'Case validation',
       'validation_accuracy_label': 'Accuracy',
       'validation_summary_label': 'Validation summary',
+      'law_citations_title': 'Relevant legal citations',
+      'law_citation_open': 'Open full law',
+      'law_citation_effective_from': 'Effective from',
+      'law_citation_version': 'Version',
+      'law_citation_open_failed': 'Could not open the law file.',
       'knowledge_updated_label': 'Legal data updated',
       'model_version_label': 'Model version',
       'law_date_label': 'Law Date',
@@ -741,6 +751,12 @@ class AppStrings {
       'case_validation_title': 'Fallvalidierung',
       'validation_accuracy_label': 'Genauigkeit',
       'validation_summary_label': 'Validierungszusammenfassung',
+      'law_citations_title': 'Relevante Gesetzeszitate',
+      'law_citation_open': 'Vollständiges Gesetz öffnen',
+      'law_citation_effective_from': 'Wirksam ab',
+      'law_citation_version': 'Version',
+      'law_citation_open_failed':
+          'Die Gesetzesdatei konnte nicht geöffnet werden.',
       'knowledge_updated_label': 'Rechtsdaten aktualisiert',
       'model_version_label': 'Modellversion',
       'law_date_label': 'Law Date',
@@ -1422,6 +1438,7 @@ class SessionResultDetails {
     required this.validationSummary,
     required this.knowledgeLastUpdatedAt,
     required this.coreVersion,
+    required this.lawCitations,
   });
 
   final String finalRecommendation;
@@ -1431,6 +1448,7 @@ class SessionResultDetails {
   final String? validationSummary;
   final String? knowledgeLastUpdatedAt;
   final String? coreVersion;
+  final List<LawCitationDetails> lawCitations;
 
   bool get hasValidationData =>
       validationAccuracy != null ||
@@ -1443,6 +1461,8 @@ class SessionResultDetails {
     final metadata = Map<String, dynamic>.from(
       json['metadata'] as Map? ?? const <String, dynamic>{},
     );
+    final rawLawCitations =
+        metadata['law_citations'] as List? ?? const <Object>[];
     return SessionResultDetails(
       finalRecommendation: json['final_recommendation'] as String? ?? '',
       judgeRationale: json['judge_rationale'] as String? ?? '',
@@ -1451,6 +1471,41 @@ class SessionResultDetails {
       validationSummary: metadata['validation_summary'] as String?,
       knowledgeLastUpdatedAt: metadata['knowledge_last_updated_at'] as String?,
       coreVersion: metadata['core_version'] as String?,
+      lawCitations: rawLawCitations
+          .whereType<Map>()
+          .map((item) => LawCitationDetails.fromJson(
+                Map<String, dynamic>.from(item.cast<String, dynamic>()),
+              ))
+          .toList(),
+    );
+  }
+}
+
+class LawCitationDetails {
+  const LawCitationDetails({
+    required this.label,
+    required this.summary,
+    required this.openUrl,
+    required this.officialSourceUrl,
+    required this.effectiveFrom,
+    required this.versionToken,
+  });
+
+  final String label;
+  final String summary;
+  final String openUrl;
+  final String officialSourceUrl;
+  final String effectiveFrom;
+  final String versionToken;
+
+  static LawCitationDetails fromJson(Map<String, dynamic> json) {
+    return LawCitationDetails(
+      label: json['label'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+      openUrl: json['open_url'] as String? ?? '',
+      officialSourceUrl: json['official_source_url'] as String? ?? '',
+      effectiveFrom: json['effective_from'] as String? ?? '',
+      versionToken: json['version_token'] as String? ?? '',
     );
   }
 }
@@ -7093,9 +7148,94 @@ class _ChatHomePageState extends State<ChatHomePage>
     }));
   }
 
+  Future<void> _openLawCitation(LawCitationDetails citation) async {
+    final rawUrl = citation.openUrl.trim().isNotEmpty
+        ? citation.openUrl.trim()
+        : citation.officialSourceUrl.trim();
+    if (rawUrl.isEmpty) {
+      _showSnackbar(_strings.t('law_citation_open_failed'));
+      return;
+    }
+    final uri = Uri.tryParse(rawUrl);
+    final resolvedUri = uri == null
+        ? null
+        : (uri.hasScheme ? uri : _apiClient.baseUri.resolveUri(uri));
+    if (resolvedUri == null) {
+      _showSnackbar(_strings.t('law_citation_open_failed'));
+      return;
+    }
+    final opened = await launchUrl(
+      resolvedUri,
+      mode: LaunchMode.platformDefault,
+    );
+    if (!opened) {
+      _showSnackbar(_strings.t('law_citation_open_failed'));
+    }
+  }
+
+  Widget _buildLawCitationsPanel({
+    required AppStrings strings,
+    required SessionResultDetails result,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            strings.t('law_citations_title'),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 8),
+          for (final citation in result.lawCitations)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: OutlinedButton(
+                onPressed: () => unawaited(_openLawCitation(citation)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.all(12),
+                  alignment: Alignment.centerLeft,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      citation.label,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    if (citation.effectiveFrom.trim().isNotEmpty)
+                      Text(
+                        '${strings.t('law_citation_effective_from')}: ${citation.effectiveFrom}',
+                      ),
+                    if (citation.versionToken.trim().isNotEmpty)
+                      Text(
+                        '${strings.t('law_citation_version')}: ${citation.versionToken}',
+                      ),
+                    if (citation.summary.trim().isNotEmpty)
+                      Text(citation.summary),
+                    const SizedBox(height: 4),
+                    Text(strings.t('law_citation_open')),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = _strings;
+    final lawCitations =
+        _latestSessionResult?.lawCitations ?? const <LawCitationDetails>[];
     return Scaffold(
       body: Stack(
         children: [
@@ -7433,6 +7573,14 @@ class _ChatHomePageState extends State<ChatHomePage>
                     ],
                   ),
                 ),
+                if (lawCitations.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: _buildLawCitationsPanel(
+                      strings: strings,
+                      result: _latestSessionResult!,
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
                   child: Column(

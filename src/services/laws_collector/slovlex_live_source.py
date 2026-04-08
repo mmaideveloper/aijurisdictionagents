@@ -145,6 +145,7 @@ class SlovLexLiveSnapshotLoader:
             html_url=html_url,
             pdf_url=pdf_url,
             html_content=text_content,
+            html_source_content=effective_html.body,
             pdf_content=pdf_resource.body,
             provisions=provisions,
             metadata=metadata_record,

@@ -40,7 +40,7 @@ def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorS
         db_backend="sqlite",
         db_local=str(tmp_path / "laws.sqlite3"),
         db_cloud="",
-        storage_local="",
+        storage_local=str(tmp_path / "files"),
         storage_cloud="",
         delta_poll_hours=3,
         initial_import_from=date(1993, 1, 1),
@@ -106,6 +106,27 @@ def _get_law_metadata(
             (metadata_row["law_metadata_id"],),
         ).fetchall()
     return metadata_row, list(relation_rows)
+
+
+def _get_source_artifacts(
+    store: SqliteLawStore,
+    *,
+    law_year: int,
+    law_number: int,
+) -> list[sqlite3.Row]:
+    with store._connect() as conn:  # noqa: SLF001 - test-only verification of persisted values
+        rows = conn.execute(
+            """
+            SELECT a.artifact_kind, a.storage_backend, a.storage_path, a.content_text, a.content_blob, a.content_bytes
+            FROM source_artifacts AS a
+            JOIN law_versions AS v ON v.version_id = a.version_id
+            JOIN law_documents AS d ON d.document_id = v.document_id
+            WHERE d.law_year = ? AND d.law_number = ?
+            ORDER BY a.artifact_kind
+            """,
+            (law_year, law_number),
+        ).fetchall()
+    return list(rows)
 
 
 def test_laws_collector_baseline_sync_creates_documents_and_versions(tmp_path: Path) -> None:
@@ -449,6 +470,46 @@ def test_sqlite_store_initialize_backfills_embedding_metadata_columns(tmp_path: 
     assert columns["embedding_dimensions"] == "INTEGER"
 
 
+def test_sqlite_store_initialize_backfills_source_artifact_storage_columns(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy-source-artifacts.sqlite3"
+    store = SqliteLawStore(db_path=db_path)
+    with store._connect() as conn:  # noqa: SLF001 - constructing a legacy schema fixture
+        conn.executescript(
+            """
+            CREATE TABLE source_artifacts (
+                artifact_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                version_id TEXT NOT NULL,
+                source_system TEXT NOT NULL,
+                artifact_kind TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                checksum TEXT NOT NULL,
+                content_text TEXT NOT NULL,
+                content_blob BLOB,
+                content_bytes INTEGER NOT NULL,
+                http_etag TEXT NOT NULL,
+                http_last_modified TEXT NOT NULL,
+                should_redownload INTEGER NOT NULL,
+                verification_status TEXT NOT NULL,
+                download_error TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                last_checked_at TEXT NOT NULL
+            );
+            """
+        )
+
+    store.initialize()
+
+    with store._connect() as conn:  # noqa: SLF001 - test-only schema inspection
+        columns = {
+            str(row["name"]): str(row["type"])
+            for row in conn.execute("PRAGMA table_info(source_artifacts)").fetchall()
+        }
+
+    assert columns["storage_backend"] == "TEXT"
+    assert columns["storage_path"] == "TEXT"
+
+
 def test_laws_collector_logs_embedding_pipeline_steps(tmp_path: Path, capsys) -> None:
     _, service = _build_service(tmp_path)
 
@@ -608,6 +669,62 @@ def test_laws_collector_persists_metadata_and_relations(tmp_path: Path) -> None:
     assert json.loads(str(metadata_row["legal_areas_json"])) == ["Stat", "Stavebne pravo"]
     assert [row["relation_type"] for row in relation_rows] == ["amends", "implements"]
     assert relation_rows[0]["target_law_identifier_text"] == "50/2001 Z. z."
+
+
+def test_laws_collector_persists_source_artifact_references_for_live_style_snapshots(
+    tmp_path: Path,
+) -> None:
+    store, service = _build_service(tmp_path)
+    snapshot = replace(
+        baseline_snapshots()[0],
+        html_content="Uplne znenie zakona.",
+        html_source_content=b"<html><body><p>Uplne znenie zakona.</p></body></html>",
+        pdf_content=b"%PDF-1.4 test-law",
+    )
+
+    service.sync((snapshot,))
+    artifacts = _get_source_artifacts(store, law_year=snapshot.year, law_number=snapshot.number)
+
+    assert [row["artifact_kind"] for row in artifacts] == ["html", "pdf"]
+    for row in artifacts:
+        assert row["storage_backend"] == "local_file"
+        assert Path(str(row["storage_path"])).exists()
+        assert row["content_blob"] is None
+    assert artifacts[0]["content_text"] == "Uplne znenie zakona."
+    assert Path(str(artifacts[0]["storage_path"])).read_text(encoding="utf-8").startswith("<html>")
+
+
+def test_laws_collector_resync_replaces_legacy_pdf_blob_with_storage_reference(
+    tmp_path: Path,
+) -> None:
+    store, service = _build_service(tmp_path)
+    snapshot = replace(
+        baseline_snapshots()[0],
+        html_content="Uplne znenie zakona.",
+        html_source_content=b"<html><body><p>Uplne znenie zakona.</p></body></html>",
+        pdf_content=b"%PDF-1.4 test-law",
+    )
+
+    service.sync((snapshot,))
+    with store._connect() as conn:  # noqa: SLF001 - mutate to simulate pre-migration rows
+        conn.execute(
+            """
+            UPDATE source_artifacts
+            SET storage_backend = '',
+                storage_path = '',
+                content_blob = ?
+            WHERE artifact_kind = 'pdf'
+            """,
+            (b"legacy-pdf-blob",),
+        )
+
+    service.sync((snapshot,))
+    artifacts = _get_source_artifacts(store, law_year=snapshot.year, law_number=snapshot.number)
+    pdf_artifact = next(row for row in artifacts if row["artifact_kind"] == "pdf")
+
+    assert pdf_artifact["storage_backend"] == "local_file"
+    assert Path(str(pdf_artifact["storage_path"])).exists()
+    assert pdf_artifact["content_blob"] is None
 
 
 def test_slovlex_live_snapshot_loader_parses_metadata_and_relations(monkeypatch) -> None:
@@ -835,7 +952,7 @@ def test_laws_collector_local_embedding_mode_supports_semantic_search(
         db_backend="sqlite",
         db_local=str(tmp_path / "laws.sqlite3"),
         db_cloud="",
-        storage_local="",
+        storage_local=str(tmp_path / "files"),
         storage_cloud="",
         delta_poll_hours=3,
         initial_import_from=date(1993, 1, 1),

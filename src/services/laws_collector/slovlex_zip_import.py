@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
+import json
 import logging
 from pathlib import Path
 import os
@@ -14,8 +16,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import zipfile
 
+from .archive_storage import ArchiveObjectStore, build_archive_object_store
 from .config import LawsCollectorConfig
-from .domain import CollectorImportState, LawSnapshot, SyncSummary
+from .domain import ArchiveImportAsset, CollectorImportState, CollectorProgress, LawSnapshot, SyncSummary
 from .service import LawsCollectorService
 from .slovlex_live_source import (
     _build_metadata_record,
@@ -49,6 +52,26 @@ class ZipImportStateStore(Protocol):
     def get_import_state(self, *, country_code: str, import_key: str) -> CollectorImportState | None: ...
 
     def upsert_import_state(self, state: CollectorImportState) -> None: ...
+
+    def upsert_archive_import_asset(self, asset: ArchiveImportAsset) -> None: ...
+
+    def update_archive_import_assets_status(
+        self,
+        *,
+        country_code: str,
+        import_key: str,
+        processing_status: str,
+    ) -> None: ...
+
+    def get_or_create_collector_progress(
+        self,
+        *,
+        country_code: str,
+        source_system: str,
+        initial_year: int,
+    ) -> CollectorProgress: ...
+
+    def save_collector_progress(self, progress: CollectorProgress) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -122,12 +145,14 @@ class SlovLexZipImportRunner:
         store: ZipImportStateStore,
         service: LawsCollectorService,
         export_index_loader: SlovLexExportIndexLoader | None = None,
+        archive_object_store: ArchiveObjectStore | None = None,
         monotonic_time_provider=time.monotonic,
     ) -> None:
         self.config = config
         self.store = store
         self.service = service
         self.export_index_loader = export_index_loader or SlovLexExportIndexLoader()
+        self.archive_object_store = archive_object_store or build_archive_object_store(config)
         self._monotonic_time = monotonic_time_provider
 
     def run(self, *, max_running_seconds: float = 0) -> SlovLexZipImportSummary:
@@ -262,6 +287,14 @@ class SlovLexZipImportRunner:
             destination = download_root / Path(url).name
             _log_zip(f"archive download source={url} destination={destination}")
             _download_file(url=url, destination=destination)
+            self._record_archive_asset(
+                import_key=export.import_key,
+                import_label=export.import_label,
+                phase="archive",
+                source_url=url,
+                source_file=destination,
+                metadata={"archive_snapshot_date": export.snapshot_date},
+            )
         _extract_archive_bundle(download_root=download_root, extract_root=extract_root)
         return self._process_extracted_entries(
             import_key=export.import_key,
@@ -289,6 +322,17 @@ class SlovLexZipImportRunner:
         destination = download_root / Path(export.zip_url).name
         _log_zip(f"monthly download source={export.zip_url} destination={destination}")
         _download_file(url=export.zip_url, destination=destination)
+        self._record_archive_asset(
+            import_key=export.import_key,
+            import_label=export.import_label,
+            phase="monthly",
+            source_url=export.zip_url,
+            source_file=destination,
+            metadata={
+                "monthly_range_start": export.range_start,
+                "monthly_range_end": export.range_end,
+            },
+        )
         _extract_zip_archive(zip_path=destination, extract_root=extract_root)
         return self._process_extracted_entries(
             import_key=export.import_key,
@@ -338,11 +382,21 @@ class SlovLexZipImportRunner:
                 metadata=metadata,
             )
             self.store.upsert_import_state(state)
+            self.store.update_archive_import_assets_status(
+                country_code=self.config.country_code,
+                import_key=import_key,
+                processing_status="in_progress",
+            )
             _log_zip(
                 "state initialized "
                 f"phase={metadata.get('phase', 'zip')} import_key={import_key}"
             )
         elif state.status == "completed":
+            self.store.update_archive_import_assets_status(
+                country_code=self.config.country_code,
+                import_key=import_key,
+                processing_status="processed",
+            )
             _log_zip(
                 "state already completed "
                 f"phase={metadata.get('phase', 'zip')} import_key={import_key} "
@@ -366,6 +420,11 @@ class SlovLexZipImportRunner:
         resume_entry = state.last_processed_entry
         resume_reached = resume_entry is None
         last_state = state
+        collector_progress = self.store.get_or_create_collector_progress(
+            country_code=self.config.country_code,
+            source_system="slov-lex",
+            initial_year=self.config.initial_import_from.year,
+        )
         if resume_entry is not None:
             _log_zip(
                 "resuming import "
@@ -409,6 +468,13 @@ class SlovLexZipImportRunner:
                 metadata=metadata,
             )
             self.store.upsert_import_state(last_state)
+            collector_progress = collector_progress.evolve(
+                last_collector_run_at=last_state.last_processed_at,
+                last_processed_at=last_state.last_processed_at,
+                last_processed_law_year=snapshot.year,
+                last_processed_law_number=snapshot.number,
+            )
+            self.store.save_collector_progress(collector_progress)
 
         completed_state = last_state.evolve(
             status="completed",
@@ -416,6 +482,11 @@ class SlovLexZipImportRunner:
             metadata=metadata,
         )
         self.store.upsert_import_state(completed_state)
+        self.store.update_archive_import_assets_status(
+            country_code=self.config.country_code,
+            import_key=import_key,
+            processing_status="processed",
+        )
         _log_zip(
             "state completed "
             f"phase={metadata.get('phase', 'zip')} import_key={import_key} "
@@ -432,6 +503,49 @@ class SlovLexZipImportRunner:
             monthly_completed=not archive_completed_on_success,
             last_processed_entry=completed_state.last_processed_entry,
             last_processed_law=completed_state.last_processed_law,
+        )
+
+    def _record_archive_asset(
+        self,
+        *,
+        import_key: str,
+        import_label: str,
+        phase: str,
+        source_url: str,
+        source_file: Path,
+        metadata: dict[str, object],
+    ) -> None:
+        relative_storage_path = _build_archive_storage_relative_path(
+            country_code=self.config.country_code,
+            archive_root=self.config.archive_root,
+            source_file=source_file,
+        )
+        stored_object = self.archive_object_store.persist_file(
+            source_path=source_file,
+            relative_path=relative_storage_path,
+        )
+        self.store.upsert_archive_import_asset(
+            ArchiveImportAsset(
+                country_code=self.config.country_code,
+                source_system="slov-lex",
+                import_key=import_key,
+                import_label=import_label,
+                phase=phase,
+                asset_name=source_file.name,
+                source_url=source_url,
+                storage_backend=stored_object.storage_backend,
+                storage_path=stored_object.storage_path,
+                checksum=_hash_file(source_file),
+                file_size_bytes=source_file.stat().st_size,
+                processing_status="downloaded",
+                downloaded_at=_now_iso(),
+                metadata=metadata,
+            )
+        )
+        _log_zip(
+            "asset stored "
+            f"phase={phase} import_key={import_key} asset_name={source_file.name} "
+            f"storage_backend={stored_object.storage_backend} storage_path={stored_object.storage_path}"
         )
 
 
@@ -485,7 +599,8 @@ def load_snapshot_from_entry_file(entry_file: Path) -> LawSnapshot:
     if parsed is None:
         raise ValueError(f"Unsupported SlovLex entry path: {entry_file}")
     year, number, version_token = parsed
-    html = entry_file.read_text(encoding="utf-8", errors="ignore")
+    html_bytes = entry_file.read_bytes()
+    html = html_bytes.decode("utf-8", errors="ignore")
     metadata_fields = _parse_metadata_fields(html)
     publication_date = _normalize_date_value(metadata_fields.get("datum vyhlasenia", ""))
     effective_from = _normalize_date_value(metadata_fields.get("datum ucinnosti od", "")) or _date_from_token(version_token)
@@ -522,6 +637,7 @@ def load_snapshot_from_entry_file(entry_file: Path) -> LawSnapshot:
         html_url=_build_html_url(year=year, number=number, version_token=version_token, suffix=entry_file.suffix),
         pdf_url=pdf_url,
         html_content=text_content,
+        html_source_content=html_bytes,
         pdf_content=b"",
         provisions=provisions,
         metadata=metadata_record,
@@ -582,27 +698,81 @@ def _download_file(*, url: str, destination: Path) -> None:
     temporary_path.replace(destination)
 
 
+def _build_archive_storage_relative_path(
+    *,
+    country_code: str,
+    archive_root: Path,
+    source_file: Path,
+) -> str:
+    relative_local_path = source_file.relative_to(archive_root).as_posix()
+    return f"{country_code.lower()}/{relative_local_path}"
+
+
+def _hash_file(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _reset_extract_root(extract_root: Path) -> None:
+    if extract_root.exists():
+        shutil.rmtree(extract_root)
+    extract_root.mkdir(parents=True, exist_ok=True)
+
+
+def _extract_marker_matches(*, marker: Path, expected_signature: dict[str, object]) -> bool:
+    if not marker.exists():
+        return False
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return payload.get("signature") == expected_signature
+
+
+def _write_extract_marker(*, marker: Path, signature: dict[str, object]) -> None:
+    marker.write_text(
+        json.dumps({"completed_at": _now_iso(), "signature": signature}, ensure_ascii=True, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def _extract_zip_archive(*, zip_path: Path, extract_root: Path) -> None:
     marker = extract_root / ".extract.complete"
-    if marker.exists():
+    signature = {"mode": "single", "files": [{"name": zip_path.name, "checksum": _hash_file(zip_path)}]}
+    if _extract_marker_matches(marker=marker, expected_signature=signature):
+        _log_zip(f"extract skipped marker={marker}")
         return
-    extract_root.mkdir(parents=True, exist_ok=True)
+    _reset_extract_root(extract_root)
     with zipfile.ZipFile(zip_path) as archive:
         archive.extractall(extract_root)
-    marker.write_text(_now_iso(), encoding="utf-8")
+    _write_extract_marker(marker=marker, signature=signature)
 
 
 def _extract_archive_bundle(*, download_root: Path, extract_root: Path) -> None:
     marker = extract_root / ".extract.complete"
-    if marker.exists():
-        _log_zip(f"extract skipped marker={marker}")
-        return
-    extract_root.mkdir(parents=True, exist_ok=True)
     final_zip = download_root / "export.zip"
     split_parts = tuple(
         path for path in sorted(download_root.glob("export.z*"))
         if path.name.lower() != "export.zip"
     )
+    signature = {
+        "mode": "split" if split_parts else "single",
+        "files": [
+            {"name": path.name, "checksum": _hash_file(path)}
+            for path in (*split_parts, final_zip)
+            if path.exists()
+        ],
+    }
+    if _extract_marker_matches(marker=marker, expected_signature=signature):
+        _log_zip(f"extract skipped marker={marker}")
+        return
+    _reset_extract_root(extract_root)
     if final_zip.exists() and not split_parts:
         _log_zip(f"extract single zip source={final_zip} destination={extract_root}")
         _extract_zip_archive(zip_path=final_zip, extract_root=extract_root)
@@ -624,7 +794,7 @@ def _extract_archive_bundle(*, download_root: Path, extract_root: Path) -> None:
             "Split SlovLex archive extraction failed: "
             f"{completed.stderr.strip() or completed.stdout.strip()}"
         )
-    marker.write_text(_now_iso(), encoding="utf-8")
+    _write_extract_marker(marker=marker, signature=signature)
 
 
 def _resolve_7zip_command() -> list[str] | None:
