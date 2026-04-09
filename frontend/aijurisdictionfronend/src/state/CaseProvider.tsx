@@ -1,9 +1,23 @@
 import React from "react";
+import { createChatSession, replyToSession } from "../api/chatClient";
+import { consoleLogger } from "../logging/consoleLogger";
 
 export type CaseStatus = "In progress" | "On hold" | "Scheduled" | "Completed";
 export type CaseMode = "Draft" | "Review" | "Live" | "Archive";
 export type CaseRole = "AI Lawyer" | "AI Judge" | "Opposing Counsel";
 export type CaseCommunicationMode = "Chat" | "Voice" | "Video";
+
+export type SendCaseMessageInput = {
+  caseId: string;
+  content: string;
+  communicationMode: CaseCommunicationMode;
+};
+
+export type SendCaseMessageResult = {
+  sessionId: string;
+  assistantActor: string;
+  assistantMessage: string;
+};
 
 export type CaseInteraction = {
   id: string;
@@ -44,6 +58,7 @@ type CaseContextValue = {
   selectCase: (caseId: string) => void;
   setContinueRequested: (value: boolean) => void;
   addInteraction: (caseId: string, actor: string, message: string) => void;
+  sendCaseMessage: (input: SendCaseMessageInput) => Promise<SendCaseMessageResult>;
   updateCase: (caseId: string, update: Partial<CaseRecord>) => void;
   setCaseRole: (caseId: string, role: CaseRole) => void;
   setCaseMode: (caseId: string, mode: CaseMode) => void;
@@ -239,11 +254,25 @@ const buildNewCase = (index: number): CaseRecord => {
   };
 };
 
+const toApiMessageContent = (
+  content: string,
+  communicationMode: CaseCommunicationMode
+): string => {
+  if (communicationMode === "Voice") {
+    return `Voice message transcript from the user:\n${content}`;
+  }
+  if (communicationMode === "Video") {
+    return `Video message transcript from the user:\n${content}`;
+  }
+  return content;
+};
+
 export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [cases, setCases] = React.useState<CaseRecord[]>(initialCases);
   const [activeCaseId, setActiveCaseId] = React.useState<string | null>(initialCases[0]?.id ?? null);
   const [hasSelectedCase, setHasSelectedCase] = React.useState(false);
   const [continueRequested, setContinueRequested] = React.useState(false);
+  const sessionIdsByCaseRef = React.useRef<Record<string, string>>({});
 
   const activeCase = React.useMemo(() => {
     return cases.find((caseItem) => caseItem.id === activeCaseId) ?? cases[0] ?? null;
@@ -294,6 +323,58 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     []
   );
 
+  const ensureCaseSessionId = React.useCallback(async (caseId: string): Promise<string> => {
+    const existingSessionId = sessionIdsByCaseRef.current[caseId];
+    if (existingSessionId) {
+      return existingSessionId;
+    }
+
+    // Frontend sidebar case ids are local-only (not persisted in API DB), so we open
+    // API chat sessions without case_id for stable chat simulation.
+    const session = await createChatSession();
+    sessionIdsByCaseRef.current[caseId] = session.id;
+
+    consoleLogger.info("Created API session for case", {
+      caseId,
+      sessionId: session.id
+    });
+
+    return session.id;
+  }, []);
+
+  const sendCaseMessage = React.useCallback(
+    async (input: SendCaseMessageInput): Promise<SendCaseMessageResult> => {
+      const caseExists = cases.some((caseItem) => caseItem.id === input.caseId);
+      if (!caseExists) {
+        throw new Error(`Case ${input.caseId} was not found.`);
+      }
+      const normalizedContent = input.content.trim();
+      if (!normalizedContent) {
+        throw new Error("Message content is required.");
+      }
+
+      const sessionId = await ensureCaseSessionId(input.caseId);
+      const apiContent = toApiMessageContent(normalizedContent, input.communicationMode);
+      consoleLogger.info("Sending case communication through API", {
+        caseId: input.caseId,
+        sessionId,
+        communicationMode: input.communicationMode
+      });
+
+      const assistantMessage = await replyToSession({
+        sessionId,
+        content: apiContent
+      });
+
+      return {
+        sessionId,
+        assistantActor: assistantMessage.agent_name?.trim() || "AI Assistant",
+        assistantMessage: assistantMessage.content
+      };
+    },
+    [cases, ensureCaseSessionId]
+  );
+
   const setCaseRole = React.useCallback((caseId: string, role: CaseRole) => {
     updateCase(caseId, { selectedRole: role });
   }, [updateCase]);
@@ -321,6 +402,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       selectCase,
       setContinueRequested,
       addInteraction,
+      sendCaseMessage,
       updateCase,
       setCaseRole,
       setCaseMode,
@@ -337,6 +419,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       selectCase,
       setContinueRequested,
       addInteraction,
+      sendCaseMessage,
       updateCase,
       setCaseRole,
       setCaseMode,

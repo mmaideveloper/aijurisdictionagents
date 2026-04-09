@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frontend API"
+  short_description: "Launch React app with dev API wiring"
+  default_prompt: "Use $frontend-api to run the local frontend connected to Azure dev API for chat simulation."
