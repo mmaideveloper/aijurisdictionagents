@@ -42,7 +42,7 @@ function Resolve-EffectiveLlmProvider {
 function Resolve-PythonPath {
     param([string]$RepoRoot)
 
-    foreach ($candidate in @(".conda\\python.exe", "conda\\python.exe")) {
+    foreach ($candidate in @(".conda\\Scripts\\python.exe", ".conda\\python.exe", "conda\\Scripts\\python.exe", "conda\\python.exe")) {
         $pythonPath = Join-Path $RepoRoot $candidate
         if (Test-Path $pythonPath) {
             return $pythonPath

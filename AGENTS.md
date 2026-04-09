@@ -90,3 +90,9 @@ Custom project skills:
 - `start-mobile-app` at `skills/start-mobile-app/SKILL.md`
   - Purpose: start and verify the local Flutter mobile app.
   - Script: `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`
+- `start-frontend-api` at `skills/start-frontend-api/SKILL.md`
+  - Purpose: start the local React frontend wired to the local API and verify readiness.
+  - Script: `.\skills\start-frontend-api\scripts\start_frontend_api.ps1`
+- `frontend-api` at `skills/frontend-api/SKILL.md`
+  - Purpose: alias skill to start frontend wired to API using the same launcher.
+  - Script: `.\skills\start-frontend-api\scripts\start_frontend_api.ps1`

@@ -1381,6 +1381,26 @@ textarea {
   gap: 0.9rem;
 }
 
+.workspace-mode-card__input-label {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.workspace-mode-card__textarea {
+  width: 100%;
+  min-height: 7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(31, 27, 22, 0.12);
+  padding: 0.75rem 0.9rem;
+  font: inherit;
+  resize: vertical;
+}
+
+.workspace-mode-card__textarea:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 35%, transparent);
+  outline-offset: 1px;
+}
+
 .workspace-chat__history {
   display: grid;
   gap: 1rem;
@@ -1416,5 +1436,15 @@ textarea {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.8rem;
   align-items: center;
+}
+
+.workspace-chat__status {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.workspace-chat__status--error {
+  color: #8d2b2b;
 }
 

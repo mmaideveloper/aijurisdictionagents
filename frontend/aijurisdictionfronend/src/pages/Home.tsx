@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
+import { ApiRequestError } from "../api/chatClient";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import WorkspaceWelcome from "../components/WorkspaceWelcome";
@@ -16,10 +17,14 @@ const Home: React.FC = () => {
     continueRequested,
     setContinueRequested,
     addInteraction,
+    sendCaseMessage,
     setCaseRole,
     setCaseCommunicationMode
   } = useCases();
   const [draftMessage, setDraftMessage] = React.useState("");
+  const [modeDraftMessage, setModeDraftMessage] = React.useState("");
+  const [isSendingMessage, setIsSendingMessage] = React.useState(false);
+  const [apiError, setApiError] = React.useState<string | null>(null);
   const roleOptions = React.useMemo(
     () => [
       {
@@ -69,13 +74,79 @@ const Home: React.FC = () => {
 
     const showWelcome = !hasSelectedCase;
 
-    const handleSendMessage = (event: React.FormEvent) => {
+    const submitMessageToApi = async (
+      communicationMode: CaseCommunicationMode,
+      content: string
+    ): Promise<boolean> => {
+      if (!activeCase) {
+        return false;
+      }
+
+      const normalized = content.trim();
+      if (!normalized) {
+        return false;
+      }
+
+      const userActor = communicationMode === "Chat" ? "You" : `You (${communicationMode})`;
+      addInteraction(activeCase.id, userActor, normalized);
+      setApiError(null);
+      setIsSendingMessage(true);
+
+      try {
+        const response = await sendCaseMessage({
+          caseId: activeCase.id,
+          content: normalized,
+          communicationMode
+        });
+        addInteraction(activeCase.id, response.assistantActor, response.assistantMessage);
+        return true;
+      } catch (error) {
+        const fallbackMessage = "Unknown API error.";
+        const apiErrorMessage = error instanceof Error ? error.message : fallbackMessage;
+
+        if (error instanceof ApiRequestError && error.kind === "network") {
+          setApiError(`Unable to reach API. ${apiErrorMessage}`);
+          addInteraction(activeCase.id, "System", `Unable to reach API. ${apiErrorMessage}`);
+          return false;
+        }
+
+        setApiError(`API request failed. ${apiErrorMessage}`);
+        addInteraction(activeCase.id, "System", `API request failed. ${apiErrorMessage}`);
+        return false;
+      } finally {
+        setIsSendingMessage(false);
+      }
+    };
+
+    const handleSendMessage = async (event: React.FormEvent) => {
       event.preventDefault();
-      if (!activeCase || !draftMessage.trim()) {
+      const sent = await submitMessageToApi("Chat", draftMessage);
+      if (sent) {
+        setDraftMessage("");
+      }
+    };
+
+    const handleModeMessageSend = async () => {
+      if (!activeCase) {
         return;
       }
-      addInteraction(activeCase.id, "You", draftMessage.trim());
-      setDraftMessage("");
+      const sent = await submitMessageToApi(activeCase.selectedCommunicationMode, modeDraftMessage);
+      if (sent) {
+        setModeDraftMessage("");
+      }
+    };
+
+    const handleNextAction = async () => {
+      if (!activeCase) {
+        return;
+      }
+      const defaultPrompt =
+        activeCase.selectedCommunicationMode === "Voice"
+          ? "Please run a voice-style legal briefing for the current case."
+          : activeCase.selectedCommunicationMode === "Video"
+            ? "Please run a video-style legal briefing for the current case."
+            : "Please continue the legal chat for the current case with next steps.";
+      await submitMessageToApi(activeCase.selectedCommunicationMode, defaultPrompt);
     };
 
     return (
@@ -120,7 +191,7 @@ const Home: React.FC = () => {
                         <div className="workspace-chat">
                           <div className="workspace-chat__history">
                             {activeCase?.interactionHistory.map((item) => {
-                              const isUser = item.actor === "You";
+                              const isUser = item.actor.startsWith("You");
                               return (
                                 <article
                                   key={item.id}
@@ -141,11 +212,24 @@ const Home: React.FC = () => {
                               value={draftMessage}
                               onChange={(event) => setDraftMessage(event.target.value)}
                               placeholder="Type your message..."
+                              disabled={isSendingMessage}
                             />
-                            <button type="submit" className="button primary">
-                              Send
+                            <button
+                              type="submit"
+                              className="button primary"
+                              disabled={isSendingMessage || !draftMessage.trim()}
+                            >
+                              {isSendingMessage ? "Sending..." : "Send"}
                             </button>
                           </form>
+                          <p className="workspace-chat__status">
+                            {isSendingMessage ? "Waiting for API response..." : "Connected through API chat."}
+                          </p>
+                          {apiError ? (
+                            <p className="workspace-chat__status workspace-chat__status--error">
+                              API error: {apiError}
+                            </p>
+                          ) : null}
                         </div>
                       ) : (
                         <article className="workspace-mode-card">
@@ -159,17 +243,49 @@ const Home: React.FC = () => {
                               ? t("commsVoiceBody")
                               : t("commsVideoBody")}
                           </p>
-                          <button type="button" className="button primary">
-                            {activeCase?.selectedCommunicationMode === "Voice"
-                              ? t("commsVoiceAction")
-                              : t("commsVideoAction")}
+                          <label className="workspace-mode-card__input-label" htmlFor="mode-transcript">
+                            Message transcript
+                          </label>
+                          <textarea
+                            id="mode-transcript"
+                            className="workspace-mode-card__textarea"
+                            value={modeDraftMessage}
+                            onChange={(event) => setModeDraftMessage(event.target.value)}
+                            placeholder={
+                              activeCase?.selectedCommunicationMode === "Voice"
+                                ? "Write a voice message transcript..."
+                                : "Write a video message transcript..."
+                            }
+                            disabled={isSendingMessage}
+                          />
+                          <button
+                            type="button"
+                            className="button primary"
+                            onClick={handleModeMessageSend}
+                            disabled={isSendingMessage || !modeDraftMessage.trim()}
+                          >
+                            {isSendingMessage
+                              ? "Sending..."
+                              : activeCase?.selectedCommunicationMode === "Voice"
+                                ? "Send voice transcript"
+                                : "Send video transcript"}
                           </button>
+                          {apiError ? (
+                            <p className="workspace-chat__status workspace-chat__status--error">
+                              API error: {apiError}
+                            </p>
+                          ) : null}
                         </article>
                       )}
                       <article className="workspace-callout">
                         <h3>Next recommended action</h3>
                         <p>{activeCase?.workspace.nextAction}</p>
-                        <button type="button" className="button primary">
+                        <button
+                          type="button"
+                          className="button primary"
+                          onClick={handleNextAction}
+                          disabled={isSendingMessage}
+                        >
                           {
                             communicationModeOptions.find(
                               (option) => option.mode === activeCase?.selectedCommunicationMode
