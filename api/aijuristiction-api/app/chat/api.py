@@ -976,7 +976,6 @@ def _assistant_requests_document_confirmation(content: str) -> bool:
 
 
 def _current_turn_confirms_document_generation(
-    *,
     content: str,
     previous_messages: list[Message],
 ) -> bool:

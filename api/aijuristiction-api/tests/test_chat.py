@@ -381,17 +381,20 @@ def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:
                 ),
             )
 
-    class _FailLawyer:
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            raise AssertionError("Share-transfer intake should be answered before the generic lawyer turn.")
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_SHARE_TRANSFER_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
     monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
     monkeypatch.setattr(
         "aijurisdictionagents.agents.create_lawyer_agent",
-        lambda llm, country: _FailLawyer(),
+        lambda llm, country: _SpyLawyer(),
     )
     monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
@@ -414,14 +417,162 @@ def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:
         headers=AUTH_HEADERS,
     )
     assert reply_response.status_code == 200
-    content = reply_response.json()["content"]
-    lowered = content.lower()
-    assert "najprv som overil firmu v obchodnom registri" in lowered
-    assert "esolutions sk s.r.o." in lowered
-    assert "12345678" in content
-    assert "ešte potrebujem doplniť len toto" in lowered
-    assert "chcete, aby som spolu s hlavnou zmluvou pripravil aj tento zvyšný balík dokumentov" in lowered
-    assert "rozhodnutie jediného spoločníka" in lowered
+    assert reply_response.json()["content"] == "MODEL_SHARE_TRANSFER_REPLY"
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt
+    assert "Verified company name: ESolutions SK s.r.o." in prompt
+    assert "Verified registration number: 12345678" in prompt
+    assert "Still missing inputs:" in prompt
+    assert "exact transferred share" in prompt
+
+
+def test_reply_endpoint_company_owner_question_uses_registry_summary(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizánska 665, 059 18 Spišské Bystré",
+                        "status": "Aktívna",
+                        "stakeholders": [
+                            {
+                                "name": "RNDr. Marek Matonok",
+                                "address": "Partizánska 665/101, Spišské Bystré",
+                            }
+                        ],
+                        "statutory_representatives": [
+                            {
+                                "name": "RNDr. Mária Matonoková",
+                                "address": "Partizánska 665, Spišské Bystré",
+                            }
+                        ],
+                    },
+                ),
+            )
+
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_OWNER_REPLY", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Kto je majitel firmy ESolutions SK s.r.o.?"},
+        headers=AUTH_HEADERS,
+    )
+    assert reply_response.status_code == 200
+    assert reply_response.json()["content"] == "MODEL_OWNER_REPLY"
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "SLOVAK ORSR REGISTRY ANSWER MODE" in prompt
+    assert "Verified company name: ESolutions SK s.r.o." in prompt
+    assert "Verified registration number: 46491261" in prompt
+    assert "Do not switch to share-transfer drafting flow" in prompt
+
+
+def test_reply_endpoint_company_owner_question_is_not_overridden_by_prior_share_transfer(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizánska 665, 059 18 Spišské Bystré",
+                        "status": "Aktívna",
+                        "stakeholders": [
+                            {
+                                "name": "RNDr. Marek Matonok",
+                                "address": "Partizánska 665/101, Spišské Bystré",
+                            }
+                        ],
+                    },
+                ),
+            )
+
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_GENERIC_REPLY", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    transfer_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={
+            "content": (
+                "Priprav mi postup a dokumentaciu pre pridanie noveho vlastnika firmy: "
+                "Nazov: ESolutions SK s.r.o. Dalsi vlastnik: Jano Hrasko."
+            )
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert transfer_response.status_code == 200
+
+    owner_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Kto je majitel firmy ESolutions SK s.r.o.?"},
+        headers=AUTH_HEADERS,
+    )
+    assert owner_response.status_code == 200
+    assert len(captured_prompts) >= 2
+    first_prompt = captured_prompts[-2]
+    second_prompt = captured_prompts[-1]
+    assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in first_prompt
+    assert "SLOVAK ORSR REGISTRY ANSWER MODE" in second_prompt
+    assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" not in second_prompt
 
 
 def test_stream_share_transfer_with_labeled_company_name_uses_registry_first(monkeypatch) -> None:
@@ -444,17 +595,20 @@ def test_stream_share_transfer_with_labeled_company_name_uses_registry_first(mon
                 ),
             )
 
-    class _FailLawyer:
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            raise AssertionError("Share-transfer intake should be answered before the generic lawyer turn.")
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_STREAM_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
     monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
     monkeypatch.setattr(
         "aijurisdictionagents.agents.create_lawyer_agent",
-        lambda llm, country: _FailLawyer(),
+        lambda llm, country: _SpyLawyer(),
     )
     monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
@@ -505,9 +659,10 @@ def test_stream_share_transfer_with_labeled_company_name_uses_registry_first(mon
         if payload.get("stage")
     ]
     lowered = assistant_content.lower()
-    assert "obchodné meno: esolutions sk s.r.o." in lowered
-    assert "ičo: 46491261" in lowered
-    assert "partizánska 665, 059 18 spišské bystré" in lowered
+    assert "model_stream_reply" in lowered
+    assert captured_prompts
+    assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in captured_prompts[-1]
+    assert "Verified registration number: 46491261" in captured_prompts[-1]
     assert any(payload.get("tool_name") == "obchodny_register_company_check" for payload in processing_payloads)
     assert any("running company verification" in str(payload.get("message", "")).lower() for payload in processing_payloads)
 
@@ -565,17 +720,20 @@ def test_reply_endpoint_share_transfer_asks_only_for_missing_items(monkeypatch) 
                 ),
             )
 
-    class _FailLawyer:
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            raise AssertionError("Share-transfer intake should be answered before the generic lawyer turn.")
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_MISSING_FIELDS_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
     monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
     monkeypatch.setattr(
         "aijurisdictionagents.agents.create_lawyer_agent",
-        lambda llm, country: _FailLawyer(),
+        lambda llm, country: _SpyLawyer(),
     )
     monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
@@ -604,17 +762,11 @@ def test_reply_endpoint_share_transfer_asks_only_for_missing_items(monkeypatch) 
         headers=AUTH_HEADERS,
     )
     assert reply_response.status_code == 200
-    content = reply_response.json()["content"]
-    lowered = content.lower()
-    assert "zo zadania už mám tieto údaje" in lowered
-    assert "nadobúdateľ: jano hrasko, rozpravkova 12, rozpravkovo, slovenska republika." in lowered
-    assert "odplata za prevod: bezodplatne." in lowered
-    assert "presné identifikačné údaje nadobúdateľa" not in lowered
-    assert "či je prevod odplatný alebo bezodplatný" not in lowered
-    assert "zmena v orgánoch/spôsobe konania: mení sa iba spoločnícka štruktúra; konateľ ani spôsob konania sa nemení." in lowered
-    assert "presné identifikačné údaje prevodcu" in lowered
-    assert "presný rozsah prevádzaného podielu" in lowered
-    assert "či sa mení iba spoločnícka štruktúra alebo aj konateľ / spôsob konania" not in lowered
+    assert reply_response.json()["content"] == "MODEL_MISSING_FIELDS_REPLY"
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "Already captured inputs: transferee identification, transfer price / gratuitous flag, management-change flag" in prompt
+    assert "Still missing inputs: transferor identification, exact transferred share" in prompt
 
 
 def test_reply_endpoint_share_transfer_inline_numbered_text_detects_transferee_and_management_flag(monkeypatch) -> None:
@@ -637,17 +789,20 @@ def test_reply_endpoint_share_transfer_inline_numbered_text_detects_transferee_a
                 ),
             )
 
-    class _FailLawyer:
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            raise AssertionError("Share-transfer intake should be answered before the generic lawyer turn.")
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_INLINE_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
     monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
     monkeypatch.setattr(
         "aijurisdictionagents.agents.create_lawyer_agent",
-        lambda llm, country: _FailLawyer(),
+        lambda llm, country: _SpyLawyer(),
     )
     monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
@@ -674,14 +829,11 @@ def test_reply_endpoint_share_transfer_inline_numbered_text_detects_transferee_a
         headers=AUTH_HEADERS,
     )
     assert reply_response.status_code == 200
-    lowered = reply_response.json()["content"].lower()
-    assert "nadobúdateľ: jano hrasko rozpravkova 12 rozpravkovo, slovenska republika." in lowered
-    assert "odplata za prevod: bezodplatne." in lowered
-    assert "zmena v orgánoch/spôsobe konania: mení sa iba spoločnícka štruktúra; konateľ ani spôsob konania sa nemení." in lowered
-    assert "presné identifikačné údaje nadobúdateľa" not in lowered
-    assert "či sa mení iba spoločnícka štruktúra alebo aj konateľ / spôsob konania" not in lowered
-    assert "presné identifikačné údaje prevodcu" in lowered
-    assert "presný rozsah prevádzaného podielu" in lowered
+    assert reply_response.json()["content"] == "MODEL_INLINE_REPLY"
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "Already captured inputs: transferee identification, transfer price / gratuitous flag, management-change flag" in prompt
+    assert "Still missing inputs: transferor identification, exact transferred share" in prompt
 
 
 def test_reply_endpoint_share_transfer_uses_single_current_stakeholder_as_transferor(monkeypatch) -> None:
@@ -711,17 +863,20 @@ def test_reply_endpoint_share_transfer_uses_single_current_stakeholder_as_transf
                 ),
             )
 
-    class _FailLawyer:
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            raise AssertionError("Share-transfer intake should be answered before the generic lawyer turn.")
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_TRANSFEROR_DEFAULT_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
     monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
     monkeypatch.setattr(
         "aijurisdictionagents.agents.create_lawyer_agent",
-        lambda llm, country: _FailLawyer(),
+        lambda llm, country: _SpyLawyer(),
     )
     monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
@@ -750,10 +905,83 @@ def test_reply_endpoint_share_transfer_uses_single_current_stakeholder_as_transf
         headers=AUTH_HEADERS,
     )
     assert reply_response.status_code == 200
-    lowered = reply_response.json()["content"].lower()
-    assert "prevodca: rndr. marek matonok, partizánska 665/101, 059 18 spišské bystré, slovenská republika." in lowered
-    assert "presné identifikačné údaje prevodcu" not in lowered
-    assert "presný rozsah prevádzaného podielu" in lowered
+    assert reply_response.json()["content"] == "MODEL_TRANSFEROR_DEFAULT_REPLY"
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "Already captured inputs: transferor identification" in prompt
+    assert "Still missing inputs: exact transferred share" in prompt
+
+
+def test_reply_endpoint_share_transfer_detects_owner_mismatch_and_requests_confirmation(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizánska 665, 059 18 Spišské Bystré",
+                        "status": "Aktívna",
+                        "stakeholders": [
+                            {
+                                "name": "RNDr. Marek Matonok",
+                                "address": "Partizánska 665/101, 059 18 Spišské Bystré, Slovenská republika",
+                            }
+                        ],
+                    },
+                ),
+            )
+
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_CONFLICT_REPLY", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={
+            "content": (
+                "Priprav mi postup a dokumentaciu pre pridanie noveho vlastnika firmy.\n"
+                "Nazov: ESolutions SK s.r.o.\n"
+                "Prevodca: Mar Mat, Testova 30, Poprad.\n"
+                "Dalsi vlastnik: Jano Hrasko, Rozpravkova 12, Rozpravkovo.\n"
+                "Podiel sa prevadza bezodplatne."
+            )
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert reply_response.status_code == 200
+    assert reply_response.json()["content"] == "MODEL_CONFLICT_REPLY"
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "Conflict checks:" in prompt
+    assert "does not match current ORSR stakeholders" in prompt
+    assert "Ask the user to confirm the authoritative transferor identity before producing final documents." in prompt
 
 
 def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkeypatch) -> None:
@@ -776,18 +1004,24 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
                 ),
             )
 
-    class _FailLawyer:
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            raise AssertionError("Confirmed share-transfer draft should bypass the generic lawyer turn.")
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(
+                content="Pripravil som finálny návrh dokumentácie.\nCASE_UPDATE_JSON:\n{}",
+                agent_name="LawyerSlovakia",
+            )
 
     repository = InMemoryChatRepository()
     monkeypatch.setattr(chat_api, "_repository", repository)
     monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
     monkeypatch.setattr(
         "aijurisdictionagents.agents.create_lawyer_agent",
-        lambda llm, country: _FailLawyer(),
+        lambda llm, country: _SpyLawyer(),
     )
     monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
@@ -849,13 +1083,13 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
     assert reply_response.status_code == 200
     content = reply_response.json()["content"]
     lowered = content.lower()
-    assert "pripravil som pracovný návrh dokumentácie k prevodu obchodného podielu" in lowered
-    assert "pracovný návrh dokumentácie k prevodu obchodného podielu v s.r.o." in lowered
-    assert "esolutions sk s.r.o." in lowered
-    assert "rozhodnutie jediného spoločníka" in lowered
-    assert "úplné znenie spoločenskej zmluvy" in lowered
-    assert "potrebujem len tieto údaje" not in lowered
-    assert "chcete ho vidiet" not in lowered
+    assert "pripravil som finálny návrh dokumentácie" in lowered
+    assert "case_update_json" in lowered
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt
+    assert "The user confirmed document generation in this turn" in prompt
+    assert "DOCUMENT GENERATION MODE" in prompt
 
     result_response = client.get(
         f"/v1/chat/sessions/{session_id}/result",

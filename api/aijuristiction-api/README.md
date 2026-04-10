@@ -111,7 +111,11 @@ python examples/document_task_plan_demo.py
 
 ### Tool-first Slovak company drafting
 
-For Slovak company-document workflows, the direct reply path now uses available registry tools before asking the user for data that can be verified automatically.
+For Slovak company-document workflows, the API now uses a hybrid model-driven tool orchestration:
+
+- backend performs deterministic intent/tool routing and executes available registry tools first,
+- verified tool output is injected into LLM prompt context,
+- LLM prepares the final user-facing answer (or clarification question when data conflicts are detected).
 
 Country-specific intake and tool-first shortcuts now live under `app/chat/country_services/`. The API endpoint layer dispatches by `session.country`, so new countries can add their own country module without expanding `app/chat/api.py` with more country-specific phrase matching.
 
@@ -123,6 +127,8 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 - if the register shows exactly one current stakeholder, the API can reuse that stakeholder as the likely transferor instead of asking for the transferor again
 - if the requested main document usually requires related resolutions, updated articles, or registry attachments, the assistant explicitly offers to prepare that fuller package too
 - if the user later says `áno` / `show me the draft`, the API returns the working draft directly instead of looping back into the same intake questions
+- for direct register-information questions like `kto je majiteľ firmy ...`, the API now returns ORSR-backed owner/statutory summary directly (without falling back to stale share-transfer prompts from earlier turns in the same session)
+- if user-provided transferor identity conflicts with ORSR stakeholders, the LLM prompt now enforces a confirmation step before final document generation.
 
 Minimal runnable example:
 
