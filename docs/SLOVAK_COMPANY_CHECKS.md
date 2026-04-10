@@ -26,7 +26,10 @@ Implementation modules:
 - Parsed company data is taken from the live `filteredCount` / `data` payload shape returned by ORSR.
 - The top ranked match is enriched through `/api/legal-person/extract-full`, so the tool can also return current stakeholders, statutory representatives, company-signing text, deposit data, and equity value.
 - Returned matches are ranked so an exact business-name or IČO match is preferred over fuzzy partial matches. This is important for names such as `ESolutions SK s.r.o.`, where generic substring search can otherwise surface unrelated companies first.
-- Company status is now normalized as `Aktívna` by default and switches to `v likvidácii` when the current ORSR detail indicates liquidation, for example in the current company name or current liquidator data.
+- Company status is normalized as `Aktívna` by default and switches to `v likvidácii` when current ORSR detail indicates liquidation/dissolution, for example:
+  - company name contains `v likvidácii`,
+  - current `legalStatusEvents` contains dissolution (`Zrušenie`),
+  - current liquidator fields are present (`liquidator`, `liquidatorAuthorizationToExecute`).
 
 ## Why this pattern
 

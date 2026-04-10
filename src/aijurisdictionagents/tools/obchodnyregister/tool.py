@@ -418,15 +418,114 @@ def _has_current_liquidation_marker(detail: dict[str, Any]) -> bool:
     corporate_body = legal_person.get("corporateBody")
     if not isinstance(corporate_body, dict):
         return False
-    for key in ("liquidator", "liquidatorAuthorizationToExecute"):
-        value = corporate_body.get(key)
-        if isinstance(value, list):
-            for item in value:
-                if isinstance(item, dict) and item.get("current") is True:
-                    return True
-                if item:
-                    return True
+    if _has_current_structural_entry(corporate_body.get("liquidator")):
+        return True
+    if _has_current_structural_entry(corporate_body.get("liquidatorAuthorizationToExecute")):
+        return True
+    if _has_current_liquidation_status_event(corporate_body.get("legalStatusEvents")):
+        return True
+    if _has_current_liquidation_text_marker(corporate_body.get("legalStatus")):
+        return True
+    if _has_current_liquidation_text_marker(corporate_body.get("otherLegalFacts")):
+        return True
+    if _has_current_termination_marker(corporate_body.get("termination")):
+        return True
     return False
+
+
+def _has_current_structural_entry(value: Any) -> bool:
+    if isinstance(value, list):
+        for item in value:
+            if not isinstance(item, dict):
+                if str(item or "").strip():
+                    return True
+                continue
+            if item.get("current") is True:
+                return True
+            if "current" not in item and any(str(v or "").strip() for v in item.values()):
+                return True
+        return False
+    if isinstance(value, dict):
+        if value.get("current") is True:
+            return True
+        if "current" not in value and any(str(v or "").strip() for v in value.values()):
+            return True
+        return False
+    return bool(str(value or "").strip())
+
+
+def _has_current_liquidation_status_event(value: Any) -> bool:
+    if not isinstance(value, list):
+        return False
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        if item.get("current") is False:
+            continue
+        event_type = str(item.get("type") or "").strip()
+        event_text = str(item.get("text") or "").strip()
+        if _contains_liquidation_or_dissolution_marker(event_type):
+            return True
+        if _contains_liquidation_or_dissolution_marker(event_text):
+            return True
+    return False
+
+
+def _has_current_liquidation_text_marker(value: Any) -> bool:
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                if item.get("current") is False:
+                    continue
+                for key in ("value", "text", "type", "item", "itemName"):
+                    if _contains_liquidation_or_dissolution_marker(str(item.get(key) or "")):
+                        return True
+                continue
+            if _contains_liquidation_or_dissolution_marker(str(item or "")):
+                return True
+        return False
+    if isinstance(value, dict):
+        if value.get("current") is False:
+            return False
+        for key in ("value", "text", "type", "item", "itemName"):
+            if _contains_liquidation_or_dissolution_marker(str(value.get(key) or "")):
+                return True
+        return False
+    return _contains_liquidation_or_dissolution_marker(str(value or ""))
+
+
+def _has_current_termination_marker(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                if item.get("current") is False:
+                    continue
+                if any(
+                    str(item.get(key) or "").strip()
+                    for key in ("value", "dateTime", "effectiveFrom", "terminationDate")
+                ):
+                    return True
+                continue
+            if str(item or "").strip():
+                return True
+        return False
+    if isinstance(value, dict):
+        if value.get("current") is False:
+            return False
+        return any(
+            str(value.get(key) or "").strip()
+            for key in ("value", "dateTime", "effectiveFrom", "terminationDate")
+        )
+    return bool(str(value).strip())
+
+
+def _contains_liquidation_or_dissolution_marker(value: str) -> bool:
+    normalized = _normalize_lookup_text(value)
+    if not normalized:
+        return False
+    return any(marker in normalized for marker in ("likvidac", "likvidator", "zrusen"))
 
 
 def _extract_stakeholders(detail: dict[str, Any]) -> tuple[dict[str, str], ...]:

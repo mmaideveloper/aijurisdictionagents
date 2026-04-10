@@ -99,6 +99,66 @@ def test_obchodnyregister_run_marks_company_in_liquidation_from_detail() -> None
     assert result.records[0]["status"] == "v likvidácii"
 
 
+def test_obchodnyregister_run_marks_company_in_liquidation_from_legal_status_events() -> None:
+    search_payload = (
+        '{"filteredCount":1,"data":['
+        '{"corporateBodyFullName":"Example s.r.o.",'
+        '"registrationNumber":"12345678",'
+        '"fileReference":{"section":"Sro","insertNumber":1,"court":"B"},'
+        '"physicalAddressLine1":"Main 1",'
+        '"physicalAddressLine2":"811 01 Bratislava"}'
+        ']}'
+    )
+    detail_payload = (
+        '{"legalPerson":{"corporateBody":{'
+        '"corporateBodyFullName":[{"current":true,"value":"Example s.r.o."}],'
+        '"legalStatusEvents":[{"type":"Zrusenie","current":true}]'
+        '}}}'
+    )
+
+    def _requester(url: str) -> tuple[int, str, str]:
+        if "extract-full" in url:
+            return 200, "application/json", detail_payload
+        return 200, "application/json", search_payload
+
+    tool = ObchodnyRegisterTool(requester=_requester)
+    result = tool.run(company_name_or_registration="Example s.r.o.")
+
+    assert result.ok
+    assert result.records[0]["status"] == "v likvidácii"
+
+
+def test_obchodnyregister_run_keeps_company_active_for_non_current_liquidation_history() -> None:
+    search_payload = (
+        '{"filteredCount":1,"data":['
+        '{"corporateBodyFullName":"Example s.r.o.",'
+        '"registrationNumber":"12345678",'
+        '"fileReference":{"section":"Sro","insertNumber":1,"court":"B"},'
+        '"physicalAddressLine1":"Main 1",'
+        '"physicalAddressLine2":"811 01 Bratislava"}'
+        ']}'
+    )
+    detail_payload = (
+        '{"legalPerson":{"corporateBody":{'
+        '"corporateBodyFullName":[{"current":true,"value":"Example s.r.o."}],'
+        '"legalStatusEvents":[{"type":"Zrusenie","current":false}],'
+        '"otherLegalFacts":[{"current":false,"value":"spolocnost vstupila do likvidacie"}],'
+        '"liquidatorAuthorizationToExecute":[{"current":false,"value":"konanie likvidatora"}]'
+        '}}}'
+    )
+
+    def _requester(url: str) -> tuple[int, str, str]:
+        if "extract-full" in url:
+            return 200, "application/json", detail_payload
+        return 200, "application/json", search_payload
+
+    tool = ObchodnyRegisterTool(requester=_requester)
+    result = tool.run(company_name_or_registration="Example s.r.o.")
+
+    assert result.ok
+    assert result.records[0]["status"] == "Aktívna"
+
+
 def test_obchodnyregister_run_rejects_non_json_payload() -> None:
     tool = ObchodnyRegisterTool(requester=lambda _url: (200, "text/html", "<html>maintenance</html>"))
 
