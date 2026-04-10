@@ -71,9 +71,10 @@ Local API startup loads the repository root `.env` automatically. If you overrid
 
 Document processing mode:
 
-- `DOCUMENT_PROCESSOR_OPTION=local`: uploaded case documents are processed immediately inside the API and stored with extracted text plus vector data.
+- `DOCUMENT_PROCESSOR_OPTION=api`: uploaded case documents are processed immediately inside the API and stored with extracted text plus vector data.
+- `DOCUMENT_PROCESSOR_OPTION=local`: legacy alias for `api`.
 - `DOCUMENT_PROCESSOR_OPTION=azure`: uploads stay pending until the Azure Container Apps document-processor job runs.
-- Recommended deployed value: `DOCUMENT_PROCESSOR_OPTION=azure`
+- Default and recommended value: `DOCUMENT_PROCESSOR_OPTION=api`
 
 ### Policy-driven multi-intent document task planning
 
@@ -112,10 +113,14 @@ python examples/document_task_plan_demo.py
 
 For Slovak company-document workflows, the direct reply path now uses available registry tools before asking the user for data that can be verified automatically.
 
+Country-specific intake and tool-first shortcuts now live under `app/chat/country_services/`. The API endpoint layer dispatches by `session.country`, so new countries can add their own country module without expanding `app/chat/api.py` with more country-specific phrase matching.
+
 Current behavior for `s.r.o.` / `a.s.` drafting flows:
 
 - if the user provides a Slovak company name or IČO, the API first runs `obchodny_register_company_check`
+- the ORSR lookup now enriches the top company match through the detail endpoint `/api/legal-person/extract-full`, so the API can also see current stakeholders, statutory representatives, company-signing rules, deposit values, and normalized status (`Aktívna` vs. `v likvidácii`)
 - the assistant then uses verified company name, IČO, seat, and status instead of asking for those facts again
+- if the register shows exactly one current stakeholder, the API can reuse that stakeholder as the likely transferor instead of asking for the transferor again
 - if the requested main document usually requires related resolutions, updated articles, or registry attachments, the assistant explicitly offers to prepare that fuller package too
 - if the user later says `áno` / `show me the draft`, the API returns the working draft directly instead of looping back into the same intake questions
 
@@ -404,6 +409,10 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - If a transcript or document payload is missing in local storage, history responses fall back to saved summaries and document download returns `404` instead of `500`.
 - Uploaded case documents are stored as `case -> many documents`. Each processed uploaded document keeps the extracted full text plus a real embedding in `case_document_contents`, and chunk-level text/embedding rows in `case_document_chunks`.
 - Direct `POST /v1/chat/sessions/{session_id}/reply` now loads the most relevant processed document chunks for the user query by combining lexical overlap with semantic similarity from real embeddings, then injects those chunks into the extra system-context document message.
+- Slovak share-transfer intake now prefers labeled company fields such as `Nazov:` / `Názov:` / `Obchodné meno:` when extracting the ORSR lookup query, so owner names in later lines do not override the company verification step.
+- `POST /v1/chat/sessions/{session_id}/stream` in `ReadUser` mode now emits intermediate `processing` SSE events for the company-verification path, including ORSR tool start/result and which drafting inputs were detected vs. still missing.
+- Slovak share-transfer intake is now selective: if the user already supplied the transferee details or said the transfer is `bezodplatne`, the assistant asks only for the remaining missing items instead of repeating the same checklist.
+- The Slovak share-transfer intake parser now also recognizes inline numbered one-line inputs such as `Dalsi vlastnik: ... 2. Podiel sa prevádza bezodplatne. 3. Nemení iba spoločnícka štruktúra ...`, so chatsimulator cases do not lose those facts just because the user typed everything in a single paragraph.
 - Local API starts through [skills/start-api/scripts/start_api.ps1](/C:/Users/maton/Projects/aijurisdictionagents/skills/start-api/scripts/start_api.ps1) now enable `LOCAL_LLM_IO_LOGGING=1` by default, so local logs include the exact model payload and raw model response for debugging without changing deployed environments.
 - The mobile app uses these endpoints to show the latest 5 saved case messages after case selection and to expose case-document download buttons.
 - If an older case-history transcript blob is missing or unreadable, the API now falls back to the stored communication summary instead of failing the history load or blocking new session creation for that case.
@@ -485,6 +494,12 @@ Example for a deployed browser build:
 
 ```bash
 CORS_ALLOW_ORIGINS=https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io uvicorn app.main:app --reload --port 8080
+
+## Local source precedence
+
+- The local startup script `skills/start-api/scripts/start_api.ps1` now prepends both `api/aijuristiction-api` and repo `src/` to `PYTHONPATH`.
+- This ensures local API runs use the current repository source code for `aijurisdictionagents` instead of an older installed site-packages build.
+- If local behavior does not match the checked-out repo code, restart the API through the startup script rather than reusing an older Python process.
 ```
 
 ## Chat simulator
@@ -496,7 +511,7 @@ Run it independently to test chat flows before frontend deployment.
 For persisted-case debugging with local PostgreSQL, start the API with:
 
 ```bash
-DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR_OPTION=local LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR_OPTION=api LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
 ```
 
 The simulator can then call `GET /v1/cases/{case_id}/documents/debug?user_id=...&query=...` to show:

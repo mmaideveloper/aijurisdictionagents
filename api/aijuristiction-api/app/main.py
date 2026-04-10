@@ -43,10 +43,14 @@ EFFECTIVE_LLM_PROVIDER = os.getenv("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER).str
 DOCUMENT_PROCESSOR_MODE = (
     os.getenv(
         "DOCUMENT_PROCESSOR_OPTION",
-        os.getenv("DOCUMENT_PROCESSOR", "local"),
+        os.getenv("DOCUMENT_PROCESSOR", "api"),
     ).strip().lower()
-    or "local"
+    or "api"
 )
+if DOCUMENT_PROCESSOR_MODE in {"local", "api"}:
+    DOCUMENT_PROCESSOR_MODE = "api"
+elif DOCUMENT_PROCESSOR_MODE != "azure":
+    DOCUMENT_PROCESSOR_MODE = "api"
 LOG_LEVEL = configure_logging()
 TELEMETRY_MODE = configure_telemetry(
     service_name="aijuristiction-api",

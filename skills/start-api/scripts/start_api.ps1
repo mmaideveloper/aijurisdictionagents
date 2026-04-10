@@ -257,10 +257,14 @@ function Ensure-LocalPostgresReady {
 $skillScriptsDir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $skillScriptsDir "..\\..\\..")
 $apiDir = Join-Path $repoRoot "api\\aijuristiction-api"
+$srcDir = Join-Path $repoRoot "src"
 $shellPath = Resolve-PowerShellPath
 
 if (-not (Test-Path $apiDir)) {
     throw "API project folder not found: $apiDir"
+}
+if (-not (Test-Path $srcDir)) {
+    throw "Core source folder not found: $srcDir"
 }
 
 $python = Resolve-PythonPath -RepoRoot $repoRoot
@@ -269,6 +273,11 @@ $env:LLM_PROVIDER = $LlmProvider
 if (-not $env:LOCAL_LLM_IO_LOGGING) {
     $env:LOCAL_LLM_IO_LOGGING = "1"
 }
+$pythonPathEntries = @($apiDir, $srcDir)
+if ($env:PYTHONPATH) {
+    $pythonPathEntries += $env:PYTHONPATH
+}
+$env:PYTHONPATH = ($pythonPathEntries -join [IO.Path]::PathSeparator)
 
 $DatabaseOption = Normalize-DatabaseOption -Value $DatabaseOption
 if ($DatabaseOption) {

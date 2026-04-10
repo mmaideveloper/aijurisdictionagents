@@ -1,0 +1,29 @@
+
+{
+   "CaseTitle":  "Novy vlastnik firmy",
+   "CaseDescription":"
+                Priprav mi postup a documentaciu pre pridanie noveho vlastnika firmy:
+
+info:
+0.Nazov: ESolutions SK s.r.o.
+  Prevodca = vlastnik firmy
+  Mar Mat 
+  Testova 30
+  Poprad
+  
+1. Presné identifikačné údaje adobúdateľa. 
+   
+   Dalsi vlastnik:
+Jano Hrasko
+Rozpravkova 12
+Rozpravkovo,
+Slovenska Republika
+
+2. Presný rozsah prevádzaného podielu -> Podiel sa prevádza bezodplatne. 
+3. Nemení iba spoločnícka štruktúra alebo aj konateľ / spôsob konania. 
+   ",
+   "Documents:":[]
+}  
+
+
+

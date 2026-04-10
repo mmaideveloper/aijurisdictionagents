@@ -44,6 +44,7 @@ If started with `-Background`, stop via:
 - Default provider is `azurefoundry`.
 - If local Azure Foundry settings are incomplete, the launcher automatically falls back to `mock` so local API smoke checks still work.
 - Local starts now enable `LOCAL_LLM_IO_LOGGING=1` by default, so the API logs the exact model request payload and raw model answer in local runs only.
+- Default document processing mode is direct in-API processing (`DOCUMENT_PROCESSOR_OPTION=api`, with `local` kept only as a legacy alias).
 - Default database mode is `local`.
 - Default storage mode is `local`.
 - Legacy `-DatabaseOption postgress` is still accepted and normalized to `postgres`.
