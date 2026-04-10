@@ -15,10 +15,18 @@ This repository now includes prompt + executable tooling for Slovak legal intake
 Implementation modules:
 
 - `src/aijurisdictionagents/tools/registry.py` (tool registry and dispatch)
-- `src/aijurisdictionagents/tools/obchodnyregister/tool.py` (ORSR integration)
+- `src/aijurisdictionagents/tools/obchodnyregister/tool.py` (ORSR integration via official `https://sluzby.orsr.sk/api/legal-person` search endpoint plus `https://sluzby.orsr.sk/api/legal-person/extract-full` detail endpoint)
 - `src/aijurisdictionagents/tools/company_checks.py` (question recognition + tool execution for company seat checks)
 - `src/aijurisdictionagents/agents/tooling.py` (prompt rendering from registered tools)
 - `src/aijurisdictionagents/agents/slovakia.py` (Slovak lawyer policy using registry-defined tools)
+
+## ORSR lookup behavior
+
+- The ORSR tool now queries the official JSON endpoint `/api/legal-person` instead of scraping the legacy HTML search page.
+- Parsed company data is taken from the live `filteredCount` / `data` payload shape returned by ORSR.
+- The top ranked match is enriched through `/api/legal-person/extract-full`, so the tool can also return current stakeholders, statutory representatives, company-signing text, deposit data, and equity value.
+- Returned matches are ranked so an exact business-name or IČO match is preferred over fuzzy partial matches. This is important for names such as `ESolutions SK s.r.o.`, where generic substring search can otherwise surface unrelated companies first.
+- Company status is now normalized as `Aktívna` by default and switches to `v likvidácii` when the current ORSR detail indicates liquidation, for example in the current company name or current liquidator data.
 
 ## Why this pattern
 

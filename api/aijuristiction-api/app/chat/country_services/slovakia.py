@@ -1,0 +1,688 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+import re
+
+from app.chat.country_services.base import DirectReplyPreparation, build_processing_event
+from app.chat.models import Message, MessageRole, Session
+
+from aijurisdictionagents.schemas import Document as CoreDocument
+from aijurisdictionagents.tools import build_default_tool_registry
+
+
+def prepare_slovakia_direct_reply(
+    *,
+    session: Session,
+    messages: list[Message],
+    current_content: str,
+    prior_messages: list[Message],
+    normalize_document_lines: Callable[[str], list[str]],
+    extract_document_facts: Callable[[list[str]], dict[str, str]],
+    current_turn_confirms_document_generation: Callable[[str, list[Message]], bool],
+    build_share_transfer_lines: Callable[[dict[str, str]], list[str]],
+) -> DirectReplyPreparation:
+    if session.country.strip().upper() != "SK":
+        return DirectReplyPreparation(supplemental_documents=[])
+    if not _looks_like_company_document_matter(messages):
+        return DirectReplyPreparation(supplemental_documents=[])
+
+    processing_events = [
+        build_processing_event(
+            stage="analysis",
+            message="Detected a Slovak company-document request and started intake analysis.",
+        )
+    ]
+
+    company_query = _extract_slovak_company_query(messages)
+    if not company_query:
+        return DirectReplyPreparation(supplemental_documents=[])
+
+    processing_events.append(
+        build_processing_event(
+            stage="tool_start",
+            tool_name="obchodny_register_company_check",
+            message=f"Running company verification in Obchodný register for '{company_query}'.",
+            details={"query": company_query},
+        )
+    )
+    company_record, registry_document = _load_slovak_company_registry_document(company_query)
+    supplemental_documents = [registry_document] if registry_document is not None else []
+    prompt_note = _build_slovak_company_prompt_note(
+        company_query=company_query,
+        company_record=company_record,
+    )
+    if company_record:
+        processing_events.append(
+            build_processing_event(
+                stage="tool_result",
+                tool_name="obchodny_register_company_check",
+                message=(
+                    "Company verification matched "
+                    f"{company_record.get('name') or company_query}"
+                    f" ({company_record.get('registration_number') or 'IČO unavailable'})."
+                ),
+                details=company_record,
+            )
+        )
+    else:
+        processing_events.append(
+            build_processing_event(
+                stage="tool_result",
+                tool_name="obchodny_register_company_check",
+                message=f"Company verification did not return a register match for '{company_query}'.",
+                details={"query": company_query},
+            )
+        )
+
+    if not _looks_like_share_transfer_case(messages):
+        return DirectReplyPreparation(
+            supplemental_documents=supplemental_documents,
+            prompt_note=prompt_note,
+            processing_events=processing_events,
+        )
+
+    intake_facts = _apply_company_record_share_transfer_defaults(
+        intake_facts=_extract_slovak_share_transfer_request_facts(messages),
+        company_record=company_record,
+    )
+    provided_labels = _share_transfer_provided_labels(intake_facts)
+    missing_labels = _share_transfer_missing_labels(intake_facts)
+    if provided_labels:
+        processing_events.append(
+            build_processing_event(
+                stage="intake",
+                message=f"Captured from user input: {', '.join(provided_labels)}.",
+                details={"provided": provided_labels},
+            )
+        )
+    if missing_labels:
+        processing_events.append(
+            build_processing_event(
+                stage="intake",
+                message=f"Still missing before final drafting: {', '.join(missing_labels)}.",
+                details={"missing": missing_labels},
+            )
+        )
+    else:
+        processing_events.append(
+            build_processing_event(
+                stage="intake",
+                message="All core share-transfer drafting inputs are already present in the user request.",
+            )
+        )
+
+    if current_turn_confirms_document_generation(
+        content=current_content,
+        previous_messages=prior_messages,
+    ):
+        direct_reply = _build_slovak_share_transfer_direct_reply(
+            messages=messages,
+            company_record=company_record,
+            normalize_document_lines=normalize_document_lines,
+            extract_document_facts=extract_document_facts,
+            build_share_transfer_lines=build_share_transfer_lines,
+        )
+        return DirectReplyPreparation(
+            supplemental_documents=supplemental_documents,
+            prompt_note=prompt_note,
+            direct_reply=direct_reply,
+            processing_events=processing_events,
+        )
+
+    direct_reply = _build_slovak_share_transfer_intake_reply(
+        company_record=company_record,
+        intake_facts=intake_facts,
+    )
+    return DirectReplyPreparation(
+        supplemental_documents=supplemental_documents,
+        prompt_note=prompt_note,
+        direct_reply=direct_reply,
+        processing_events=processing_events,
+    )
+
+
+def _looks_like_company_document_matter(messages: list[Message]) -> bool:
+    combined = " ".join(
+        message.content.lower()
+        for message in messages
+        if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
+    )
+    company_tokens = (
+        "s.r.o",
+        "s. r. o",
+        "a.s",
+        "a. s",
+        "firma",
+        "spolocnost",
+        "spoločnosť",
+        "ico",
+        "ičo",
+    )
+    document_tokens = (
+        "dokument",
+        "document",
+        "navrh",
+        "návrh",
+        "priprav",
+        "vygeneruj",
+        "zmluv",
+        "podanie",
+    )
+    return any(token in combined for token in company_tokens) and any(
+        token in combined for token in document_tokens
+    )
+
+
+def _looks_like_share_transfer_case(messages: list[Message]) -> bool:
+    combined = " ".join(
+        message.content.lower()
+        for message in messages
+        if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
+    )
+    share_transfer_tokens = (
+        "prevod podielu",
+        "obchodny podiel",
+        "obchodný podiel",
+        "spolocnik",
+        "spoločník",
+        "konatel",
+        "konateľ",
+        "novy vlastnik",
+        "nový vlastník",
+        "share transfer",
+        "owner",
+        "vlastnik",
+        "vlastník",
+    )
+    return any(token in combined for token in share_transfer_tokens)
+
+
+def _extract_slovak_company_query(messages: list[Message]) -> str | None:
+    company_suffix = r"(?:s\.?\s*r\.?\s*o\.?|a\.?\s*s\.?)"
+    registration_pattern = re.compile(r"(?:\bičo\b|\bico\b)\s*[:=]?\s*([0-9]{6,10})", re.IGNORECASE)
+    labeled_company_pattern = re.compile(
+        rf"(?:obchodné\s+meno|obchodne\s+meno|názov|nazov|firma|fima|spoločnosť|spolocnost)\s*[:=]\s*"
+        rf"([^,;\n]{{1,120}}?\b{company_suffix}(?=$|[\s,;\n]))",
+        re.IGNORECASE,
+    )
+    prefixed_company_pattern = re.compile(
+        rf"(?:firma|fima|spoločnosť|spolocnost)\s+"
+        rf"([^,;\n]{{1,120}}?\b{company_suffix}(?=$|[\s,;\n]))",
+        re.IGNORECASE,
+    )
+    company_pattern = re.compile(
+        rf"([A-Z0-9ÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ][^,;\n]{{1,120}}?\b{company_suffix}(?=$|[\s,;\n]))",
+        re.IGNORECASE,
+    )
+    for message in reversed(messages):
+        if message.role != MessageRole.USER:
+            continue
+        registration_match = registration_pattern.search(message.content)
+        if registration_match is not None:
+            return registration_match.group(1).strip()
+        labeled_match = labeled_company_pattern.search(message.content)
+        if labeled_match is not None:
+            return _normalize_company_query(labeled_match.group(1))
+        prefixed_match = prefixed_company_pattern.search(message.content)
+        if prefixed_match is not None:
+            return _normalize_company_query(prefixed_match.group(1))
+        company_matches = list(company_pattern.finditer(message.content))
+        if company_matches:
+            return _normalize_company_query(company_matches[0].group(1))
+    return None
+
+
+def _normalize_company_query(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", value).strip(" ,.;")
+    cleaned = re.sub(r"^(?:firma|fima|spoločnosť|spolocnost)\s+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip(" ,.;")
+    if re.search(r"s\.?\s*r\.?\s*o$", cleaned, flags=re.IGNORECASE):
+        return re.sub(r"s\.?\s*r\.?\s*o$", "s.r.o.", cleaned, flags=re.IGNORECASE)
+    if re.search(r"a\.?\s*s$", cleaned, flags=re.IGNORECASE):
+        return re.sub(r"a\.?\s*s$", "a.s.", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
+def _load_slovak_company_registry_document(
+    company_query: str,
+) -> tuple[dict[str, object] | None, CoreDocument | None]:
+    registry = build_default_tool_registry()
+    result = registry.run(
+        "obchodny_register_company_check",
+        company_name_or_registration=company_query,
+    )
+    if not result.ok or not result.records:
+        return None, None
+
+    primary = result.records[0]
+    normalized_primary = {
+        "name": str(primary.get("name", "")).strip(),
+        "registration_number": str(primary.get("registration_number", "")).strip(),
+        "seat": str(primary.get("seat", "")).strip(),
+        "status": str(primary.get("status", "")).strip(),
+        "stakeholders": list(primary.get("stakeholders", []) or []),
+        "statutory_representatives": list(primary.get("statutory_representatives", []) or []),
+        "authorization_to_execute": str(primary.get("authorization_to_execute", "")).strip(),
+        "deposits": list(primary.get("deposits", []) or []),
+        "equity_value": str(primary.get("equity_value", "")).strip(),
+    }
+    lines = [
+        "Slovak business register lookup",
+        f"Query: {company_query}",
+        f"Result count: {len(result.records)}",
+        "",
+    ]
+    for index, record in enumerate(result.records[:3], start=1):
+        lines.extend(
+            [
+                f"Candidate {index}:",
+                f"Name: {str(record.get('name', '')).strip() or '[missing]'}",
+                f"Registration number: {str(record.get('registration_number', '')).strip() or '[missing]'}",
+                f"Seat: {str(record.get('seat', '')).strip() or '[missing]'}",
+                f"Status: {str(record.get('status', '')).strip() or '[missing]'}",
+                "",
+            ]
+        )
+    if normalized_primary["stakeholders"]:
+        lines.append("Current stakeholders:")
+        for stakeholder in normalized_primary["stakeholders"]:
+            if not isinstance(stakeholder, dict):
+                continue
+            entry = ", ".join(
+                part
+                for part in (
+                    str(stakeholder.get("name", "")).strip(),
+                    str(stakeholder.get("address", "")).strip(),
+                )
+                if part
+            )
+            if entry:
+                lines.append(f"- {entry}")
+        lines.append("")
+    if normalized_primary["statutory_representatives"]:
+        lines.append("Current statutory representatives:")
+        for representative in normalized_primary["statutory_representatives"]:
+            if not isinstance(representative, dict):
+                continue
+            entry = ", ".join(
+                part
+                for part in (
+                    str(representative.get("name", "")).strip(),
+                    str(representative.get("address", "")).strip(),
+                )
+                if part
+            )
+            if entry:
+                lines.append(f"- {entry}")
+        lines.append("")
+    if normalized_primary["authorization_to_execute"]:
+        lines.extend(
+            [
+                "Authorization to execute in company name:",
+                normalized_primary["authorization_to_execute"],
+                "",
+            ]
+        )
+    return normalized_primary, CoreDocument(
+        doc_id=f"orsr-{abs(hash(company_query))}",
+        path="registry/slovak_business_register.md",
+        content="\n".join(lines).strip(),
+    )
+
+
+def _build_slovak_company_prompt_note(
+    *,
+    company_query: str,
+    company_record: dict[str, object] | None,
+) -> str:
+    lines = [
+        "TOOL-FIRST COMPANY LOOKUP MODE:",
+        f"- The system already queried obchodny_register_company_check using: {company_query}",
+        "- Use the verified company data first instead of asking again for company name, IČO, seat, status, or statutory-register basics when they are already available.",
+        "- If some drafting inputs are still missing, ask only for those missing items.",
+        "- If the user asks to see the draft now, do not repeat prior intake questions. Produce the working draft with placeholders for any still-missing signature details.",
+    ]
+    if company_record:
+        lines.extend(
+            [
+                f"- Verified company name: {company_record.get('name') or '[missing]'}",
+                f"- Verified registration number: {company_record.get('registration_number') or '[missing]'}",
+                f"- Verified seat: {company_record.get('seat') or '[missing]'}",
+                f"- Verified status: {company_record.get('status') or '[missing]'}",
+            ]
+        )
+        stakeholders = company_record.get("stakeholders") or []
+        if isinstance(stakeholders, list) and stakeholders:
+            stakeholder_entries = []
+            for stakeholder in stakeholders[:3]:
+                if not isinstance(stakeholder, dict):
+                    continue
+                entry = ", ".join(
+                    part
+                    for part in (
+                        str(stakeholder.get("name", "")).strip(),
+                        str(stakeholder.get("address", "")).strip(),
+                    )
+                    if part
+                )
+                if entry:
+                    stakeholder_entries.append(entry)
+            if stakeholder_entries:
+                lines.append(f"- Verified current stakeholders: {'; '.join(stakeholder_entries)}")
+    return "\n".join(lines)
+
+
+def _build_slovak_share_transfer_intake_reply(
+    *,
+    company_record: dict[str, object] | None,
+    intake_facts: dict[str, str],
+) -> str:
+    provided_lines = _share_transfer_provided_lines(intake_facts)
+    missing_lines = _share_transfer_missing_lines(intake_facts)
+    lines = [
+        "Najprv som overil firmu v Obchodnom registri, aby som sa nepýtal na údaje, ktoré viem získať automaticky.",
+        "",
+        "Overené firemné údaje:",
+        f"Obchodné meno: {(company_record or {}).get('name') or '[nepodarilo sa overiť]'}",
+        f"IČO: {(company_record or {}).get('registration_number') or '[nepodarilo sa overiť]'}",
+        f"Sídlo: {(company_record or {}).get('seat') or '[nepodarilo sa overiť]'}",
+        f"Stav: {(company_record or {}).get('status') or '[nepodarilo sa overiť]'}",
+        "",
+    ]
+    if provided_lines:
+        lines.extend(
+            [
+                "Zo zadania už mám tieto údaje:",
+                *provided_lines,
+                "",
+            ]
+        )
+    if missing_lines:
+        lines.extend(
+            [
+                "Na finálny návrh dokumentácie k prevodu obchodného podielu ešte potrebujem doplniť len toto:",
+                *missing_lines,
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "Na finálny návrh už mám všetky základné vstupy k prevodu obchodného podielu.",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "Ak chcete, pripravím nielen samotnú zmluvu o prevode obchodného podielu, ale aj zvyšné súvisiace dokumenty, ktoré sa pri tejto zmene zvyčajne prikladajú.",
+            "Typicky ide najmä o rozhodnutie jediného spoločníka alebo zápisnicu z valného zhromaždenia, úplné znenie spoločenskej zmluvy alebo zakladateľskej listiny po zmene a checklist podania do obchodného registra.",
+            "",
+            "Chcete, aby som spolu s hlavnou zmluvou pripravil aj tento zvyšný balík dokumentov v jednom výstupe?",
+            "Keď doplníte len chýbajúce údaje alebo rovno potvrdíte prípravu celého balíka, pripravím návrh dokumentov a postup bez ďalšieho opakovania tých istých otázok.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _build_slovak_share_transfer_direct_reply(
+    *,
+    messages: list[Message],
+    company_record: dict[str, object] | None,
+    normalize_document_lines: Callable[[str], list[str]],
+    extract_document_facts: Callable[[list[str]], dict[str, str]],
+    build_share_transfer_lines: Callable[[dict[str, str]], list[str]],
+) -> str:
+    context_lines = normalize_document_lines(
+        "\n".join(
+            message.content
+            for message in messages
+            if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
+        )
+    )
+    facts = extract_document_facts(context_lines)
+    intake_facts = _apply_company_record_share_transfer_defaults(
+        intake_facts=_extract_slovak_share_transfer_request_facts(messages),
+        company_record=company_record,
+    )
+    if company_record:
+        if company_record.get("name"):
+            facts["company_name"] = company_record["name"]
+        if company_record.get("registration_number"):
+            facts["company_identifier"] = company_record["registration_number"]
+        if company_record.get("seat"):
+            facts["company_seat"] = company_record["seat"]
+    if intake_facts["transferor_details"]:
+        facts["transferor_name"] = intake_facts["transferor_details"]
+    if intake_facts["transferee_details"]:
+        facts["transferee_name"] = intake_facts["transferee_details"]
+    if intake_facts["transfer_share"]:
+        facts["transfer_share"] = intake_facts["transfer_share"]
+    if intake_facts["transfer_price"]:
+        facts["transfer_price"] = intake_facts["transfer_price"]
+
+    verified_lines = [
+        "Pripravil som pracovný návrh dokumentácie k prevodu obchodného podielu.",
+        "Použil som údaje, ktoré sa dali overiť automaticky v Obchodnom registri. Miesta označené [doplnit] je ešte potrebné vyplniť pred podpisom alebo podaním.",
+        "",
+        "Overené firemné údaje:",
+        f"Obchodné meno: {facts['company_name']}",
+        f"IČO: {facts['company_identifier']}",
+        f"Sídlo: {facts['company_seat']}",
+        "",
+    ]
+    return "\n".join([*verified_lines, *build_share_transfer_lines(facts)])
+
+
+def _extract_slovak_share_transfer_request_facts(messages: list[Message]) -> dict[str, str]:
+    user_text = "\n".join(
+        message.content
+        for message in messages
+        if message.role == MessageRole.USER
+    )
+    normalized_text = " ".join(user_text.lower().split())
+
+    transferor_details = _extract_labeled_multiline_value(
+        user_text,
+        labels=(
+            "prevodca",
+            "súčasný vlastník",
+            "sucasny vlastnik",
+            "súčasný spoločník",
+            "sucasny spolocnik",
+        ),
+    )
+    transferee_details = _extract_labeled_multiline_value(
+        user_text,
+        labels=(
+            "nový vlastník",
+            "novy vlastnik",
+            "ďalší vlastník",
+            "dalsi vlastnik",
+            "nadobúdateľ",
+            "nadobudatel",
+            "nový spoločník",
+            "novy spolocnik",
+        ),
+    )
+    if not transferee_details:
+        inline_transferee_match = re.search(
+            r"(?:ďalší vlastník|dalsi vlastnik|nový vlastník|novy vlastnik|nadobúdateľ|nadobudatel)\s*:\s*(.+?)(?=\s+\d+[.)]\s+|$)",
+            user_text,
+            re.IGNORECASE,
+        )
+        if inline_transferee_match is not None:
+            transferee_details = " ".join(inline_transferee_match.group(1).strip(" ,;.").split())
+
+    transfer_share = ""
+    share_match = re.search(r"\b(\d{1,3}\s*%)\b", user_text)
+    if share_match is not None:
+        transfer_share = re.sub(r"\s+", " ", share_match.group(1)).strip()
+    elif re.search(r"(celý|cely)\s+(obchodný\s+podiel|obchodny\s+podiel)", normalized_text):
+        transfer_share = "100 %"
+
+    transfer_price = ""
+    price_match = re.search(
+        r"\b([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€))\b",
+        user_text,
+        re.IGNORECASE,
+    )
+    if re.search(r"bezodplatn", normalized_text):
+        transfer_price = "bezodplatne"
+    elif price_match is not None:
+        transfer_price = " ".join(price_match.group(1).split())
+    elif re.search(r"\bodplatn", normalized_text):
+        transfer_price = "odplatne [doplnit sumu]"
+
+    management_change = ""
+    if not (
+        "alebo aj" in normalized_text
+        and (
+            "konateľ" in normalized_text
+            or "konatel" in normalized_text
+            or "spôsob konania" in normalized_text
+            or "sposob konania" in normalized_text
+        )
+    ):
+        if re.search(
+            r"(mení sa iba spoločnícka štruktúra|meni sa iba spolocnicka struktura|nemení sa konateľ|nemeni sa konatel|nemení sa spôsob konania|nemeni sa sposob konania)",
+            normalized_text,
+        ):
+            management_change = "Mení sa iba spoločnícka štruktúra; konateľ ani spôsob konania sa nemení."
+        elif re.search(
+            r"(mení sa aj konateľ|meni sa aj konatel|mení sa aj spôsob konania|meni sa aj sposob konania|aj konateľ|aj konatel)",
+            normalized_text,
+        ):
+            management_change = "Mení sa aj konateľ alebo spôsob konania."
+    if not management_change and re.search(
+        r"(nemen[ií]\s+iba\s+spolo[cč]n[ií]cka\s+[šs]trukt[uú]ra|nemeni\s+iba\s+spolocnicka\s+struktura)",
+        normalized_text,
+    ):
+        management_change = "Mení sa iba spoločnícka štruktúra; konateľ ani spôsob konania sa nemení."
+
+    return {
+        "transferor_details": transferor_details,
+        "transferee_details": transferee_details,
+        "transfer_share": transfer_share,
+        "transfer_price": transfer_price,
+        "management_change": management_change,
+    }
+
+
+def _extract_labeled_multiline_value(text: str, *, labels: tuple[str, ...]) -> str:
+    lines = [line.strip() for line in text.splitlines()]
+    escaped_labels = "|".join(re.escape(label) for label in labels)
+    label_pattern = re.compile(rf"^(?:{escaped_labels})\s*[:=]\s*(.*)$", re.IGNORECASE)
+    boundary_pattern = re.compile(
+        r"^(?:\d+[.)]\s*|obchodné meno|obchodne meno|názov|nazov|firma|fima|spoločnosť|spolocnost|"
+        r"nový vlastník|novy vlastnik|ďalší vlastník|dalsi vlastnik|nadobúdateľ|nadobudatel|"
+        r"prevodca|súčasný vlastník|sucasny vlastnik|súčasný spoločník|sucasny spolocnik|"
+        r"podiel|odplata|odplatn|bezodplatn|konateľ|konatel|spoločnícka|spolocnicka)\b",
+        re.IGNORECASE,
+    )
+    for index, line in enumerate(lines):
+        match = label_pattern.match(line)
+        if match is None:
+            continue
+        values: list[str] = []
+        inline_value = match.group(1).strip(" ,;")
+        if inline_value:
+            values.append(inline_value)
+        cursor = index + 1
+        while cursor < len(lines):
+            candidate = lines[cursor].strip(" ,;")
+            if not candidate or boundary_pattern.match(candidate):
+                break
+            values.append(candidate)
+            cursor += 1
+        return ", ".join(value for value in values if value)
+    return ""
+
+
+def _apply_company_record_share_transfer_defaults(
+    *,
+    intake_facts: dict[str, str],
+    company_record: dict[str, object] | None,
+) -> dict[str, str]:
+    if not company_record:
+        return intake_facts
+    merged = dict(intake_facts)
+    if merged.get("transferor_details"):
+        return merged
+    stakeholders = company_record.get("stakeholders") or []
+    if not isinstance(stakeholders, list):
+        return merged
+    current_stakeholders = [
+        stakeholder for stakeholder in stakeholders if isinstance(stakeholder, dict) and stakeholder.get("name")
+    ]
+    if len(current_stakeholders) != 1:
+        return merged
+    stakeholder = current_stakeholders[0]
+    merged["transferor_details"] = ", ".join(
+        part
+        for part in (
+            str(stakeholder.get("name", "")).strip(),
+            str(stakeholder.get("address", "")).strip(),
+        )
+        if part
+    )
+    return merged
+
+
+def _share_transfer_provided_lines(intake_facts: dict[str, str]) -> list[str]:
+    raw_lines: list[str] = []
+    if intake_facts["transferor_details"]:
+        raw_lines.append(f"Prevodca: {intake_facts['transferor_details']}.")
+    if intake_facts["transferee_details"]:
+        raw_lines.append(f"Nadobúdateľ: {intake_facts['transferee_details']}.")
+    if intake_facts["transfer_share"]:
+        raw_lines.append(f"Rozsah prevodu: {intake_facts['transfer_share']}.")
+    if intake_facts["transfer_price"]:
+        raw_lines.append(f"Odplata za prevod: {intake_facts['transfer_price']}.")
+    if intake_facts["management_change"]:
+        raw_lines.append(f"Zmena v orgánoch/spôsobe konania: {intake_facts['management_change']}")
+    return [f"{index}. {line}" for index, line in enumerate(raw_lines, start=1)]
+
+
+def _share_transfer_missing_lines(intake_facts: dict[str, str]) -> list[str]:
+    raw_lines: list[str] = []
+    if not intake_facts["transferor_details"]:
+        raw_lines.append("Presné identifikačné údaje prevodcu.")
+    if not intake_facts["transferee_details"]:
+        raw_lines.append("Presné identifikačné údaje nadobúdateľa.")
+    if not intake_facts["transfer_share"]:
+        raw_lines.append("Presný rozsah prevádzaného podielu.")
+    if not intake_facts["transfer_price"]:
+        raw_lines.append("Potvrdenie, či je prevod odplatný alebo bezodplatný.")
+    if not intake_facts["management_change"]:
+        raw_lines.append("Potvrdenie, či sa mení iba spoločnícka štruktúra alebo aj konateľ / spôsob konania.")
+    return [f"{index}. {line}" for index, line in enumerate(raw_lines, start=1)]
+
+
+def _share_transfer_provided_labels(intake_facts: dict[str, str]) -> list[str]:
+    labels: list[str] = []
+    if intake_facts["transferor_details"]:
+        labels.append("transferor identification")
+    if intake_facts["transferee_details"]:
+        labels.append("transferee identification")
+    if intake_facts["transfer_share"]:
+        labels.append("share scope")
+    if intake_facts["transfer_price"]:
+        labels.append("transfer price / gratuitous flag")
+    if intake_facts["management_change"]:
+        labels.append("management-change flag")
+    return labels
+
+
+def _share_transfer_missing_labels(intake_facts: dict[str, str]) -> list[str]:
+    labels: list[str] = []
+    if not intake_facts["transferor_details"]:
+        labels.append("transferor identification")
+    if not intake_facts["transferee_details"]:
+        labels.append("transferee identification")
+    if not intake_facts["transfer_share"]:
+        labels.append("exact transferred share")
+    if not intake_facts["transfer_price"]:
+        labels.append("paid vs. gratuitous transfer")
+    if not intake_facts["management_change"]:
+        labels.append("management/signing change confirmation")
+    return labels

@@ -29,11 +29,13 @@ _LOGGER = logging.getLogger(__name__)
 def _document_processor_mode() -> str:
     value = os.getenv(
         "DOCUMENT_PROCESSOR_OPTION",
-        os.getenv("DOCUMENT_PROCESSOR", "local"),
+        os.getenv("DOCUMENT_PROCESSOR", "api"),
     ).strip().lower()
-    if value in {"local", "azure"}:
-        return value
-    return "local"
+    if value in {"", "api", "local"}:
+        return "api"
+    if value == "azure":
+        return "azure"
+    return "api"
 
 
 class CaseResponse(BaseModel):
@@ -228,7 +230,7 @@ async def upload_case_documents(
         uploaded_documents.append(stored_document)
         uploaded.append(_to_case_document_response(stored_document))
         next_version += 1
-    if _document_processor_mode() == "local" and uploaded_documents:
+    if _document_processor_mode() != "azure" and uploaded_documents:
         processor = DocumentProcessor(store)
         processor.process_documents(uploaded_documents)
         uploaded = [
