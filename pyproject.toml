@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aijurisdictionagents"
-version = "1.0.260349"
+version = "1.0.260350"
 description = "Multi-agent legal discussion scaffold."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,6 +33,7 @@ dev = [
 legal-discussion = "aijurisdictionagents.cli:main"
 laws-collector = "services.laws_collector.cli:main"
 document-processor = "services.document_processor.__main__:main"
+local-model-builder = "services.local_model_builder.__main__:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
