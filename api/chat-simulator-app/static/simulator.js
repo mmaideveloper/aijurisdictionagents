@@ -148,7 +148,7 @@ function defaultApiBaseUrl() {
   const protocol = window.location.protocol === "https:" ? "https:" : "http:";
   const hostname = window.location.hostname || "127.0.0.1";
   const resolvedHost = isLoopbackHostname(hostname) ? hostname : "127.0.0.1";
-  return `${protocol}//${resolvedHost}:8081`;
+  return `${protocol}//${resolvedHost}:8080`;
 }
 
 function normalizeApiBaseUrl(value) {

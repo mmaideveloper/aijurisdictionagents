@@ -20,22 +20,22 @@ def test_version() -> None:
     assert response.status_code == 200
     assert response.json() == {
         'service': 'chat-simulator-app',
-        'version': '0.1.16',
-        'simulator_version': '0.1.16',
+        'version': '0.1.17',
+        'simulator_version': '0.1.17',
     }
 
 
 def test_simulator_page_and_assets() -> None:
     page = client.get('/chat-simulator')
     assert page.status_code == 200
-    assert '/static/simulator.js?v=0.1.16' in page.text
-    assert '/static/simulator.css?v=0.1.16' in page.text
+    assert '/static/simulator.js?v=0.1.17' in page.text
+    assert '/static/simulator.css?v=0.1.17' in page.text
     assert 'Start Stream' in page.text
     assert 'Upload documents' in page.text
     assert 'Persisted Case Debug' in page.text
     assert 'Upload To Case' in page.text
     assert 'Workflow Warning' in page.text
-    assert 'http://127.0.0.1:8081' in page.text
+    assert 'http://127.0.0.1:8080' in page.text
     assert 'replyStatus' in page.text
     assert 'novalidate' in page.text
     assert 'id="preparedCase"' in page.text
