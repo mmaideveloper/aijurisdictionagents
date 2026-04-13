@@ -112,6 +112,23 @@ Conda notes:
   dependencies, and tooling (needed for `pip install -e .`).
 
 
+
+## Local model builder service
+
+Build a country-specific local model bundle (for Jan/Ollama style serving) from imported laws metadata:
+
+```bash
+PYTHONPATH=src python -m services.local_model_builder --country SK --laws-db ./runs/storage/laws-collector/sqlite/sk_laws.sqlite3
+```
+
+Minimal runnable demo:
+
+```bash
+python examples/local_model_builder_minimal_demo.py
+```
+
+For architecture and storage details, see `docs/LOCAL_MODEL_BUILDER.md`.
+
 ## Local Fake Payment Service
 
 A fake PayPal-compatible payment simulator is available in `service/` for local integrations and demos.
