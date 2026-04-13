@@ -1,10 +1,13 @@
 param(
     [string]$BindHost = "127.0.0.1",
     [int]$Port = 8090,
+    [string]$ApiHost = "127.0.0.1",
+    [int]$ApiPort = 8081,
     [switch]$Background,
     [switch]$ConsoleWindow,
     [switch]$Reload,
-    [switch]$Install
+    [switch]$Install,
+    [switch]$SkipApiBootstrap
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,6 +66,108 @@ function Test-SimulatorReady {
     return (Test-UrlReady -Url $healthUrl) -and (Test-UrlReady -Url $uiUrl)
 }
 
+function Stop-ProcessFromPidFile {
+    param(
+        [string]$PidFile,
+        [string]$ExpectedProcessName = ""
+    )
+
+    if (-not (Test-Path $PidFile)) {
+        return
+    }
+
+    $rawPid = (Get-Content -Path $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if (-not $rawPid) {
+        return
+    }
+
+    [int]$pidValue = 0
+    if (-not [int]::TryParse($rawPid.Trim(), [ref]$pidValue)) {
+        return
+    }
+
+    $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+    if (-not $process) {
+        return
+    }
+
+    if ($ExpectedProcessName -and ($process.ProcessName -ne $ExpectedProcessName)) {
+        return
+    }
+
+    Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
+}
+
+function Assert-AzureFoundryProvider {
+    param([string]$ApiErrLogPath)
+
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        if (Test-Path $ApiErrLogPath) {
+            $startupLine = Get-Content -Path $ApiErrLogPath -Tail 100 |
+                Where-Object { $_ -like "*API Starting |*" } |
+                Select-Object -Last 1
+            if ($startupLine) {
+                if ($startupLine -match "llm_provider=azurefoundry") {
+                    return
+                }
+                throw "Local API did not start with azurefoundry. Startup line: $startupLine"
+            }
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    throw "Could not verify API provider from $ApiErrLogPath"
+}
+
+function Ensure-LocalApiForSimulator {
+    param(
+        [string]$RepoRoot,
+        [string]$ShellPath,
+        [string]$TargetHost,
+        [int]$TargetPort
+    )
+
+    $apiLauncher = Join-Path $RepoRoot "skills\start-api\scripts\start_api.ps1"
+    if (-not (Test-Path $apiLauncher)) {
+        throw "API start skill script not found: $apiLauncher"
+    }
+
+    $apiPidFile = Join-Path $RepoRoot "runs\api-local.pid"
+    Stop-ProcessFromPidFile -PidFile $apiPidFile -ExpectedProcessName "python"
+
+    $apiArgs = @(
+        "-NoProfile",
+        "-File", $apiLauncher,
+        "-Background",
+        "-BindHost", $TargetHost,
+        "-Port", "$TargetPort",
+        "-DatabaseOption", "postgres",
+        "-LlmProvider", "azurefoundry"
+    )
+
+    $apiStartOutput = & $ShellPath @apiArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start local API for simulator.`n$($apiStartOutput -join [Environment]::NewLine)"
+    }
+
+    $apiHealthUrl = "http://$TargetHost`:$TargetPort/health"
+    $isHealthy = $false
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        if (Test-UrlReady -Url $apiHealthUrl) {
+            $isHealthy = $true
+            break
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    if (-not $isHealthy) {
+        throw "Local API health check failed: $apiHealthUrl"
+    }
+
+    $apiErrLogPath = Join-Path $RepoRoot "runs\api-local.err.log"
+    Assert-AzureFoundryProvider -ApiErrLogPath $apiErrLogPath
+}
+
 $skillScriptsDir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $skillScriptsDir "..\\..\\..")
 $appDir = Join-Path $repoRoot "api\\chat-simulator-app"
@@ -73,6 +178,10 @@ if (-not (Test-Path $appDir)) {
 }
 
 $python = Resolve-PythonPath -RepoRoot $repoRoot
+
+if (-not $SkipApiBootstrap) {
+    Ensure-LocalApiForSimulator -RepoRoot $repoRoot -ShellPath $shellPath -TargetHost $ApiHost -TargetPort $ApiPort
+}
 
 if ($Install) {
     Push-Location $appDir
@@ -90,7 +199,7 @@ if ($Reload) {
 
 if ($ConsoleWindow) {
     $scriptPath = Join-Path $repoRoot "skills\chatsimulatr\scripts\start_chat_simulator.ps1"
-    $command = "& '$scriptPath' -BindHost $BindHost -Port $Port"
+    $command = "& '$scriptPath' -BindHost $BindHost -Port $Port -ApiHost $ApiHost -ApiPort $ApiPort -SkipApiBootstrap"
     if ($Reload) {
         $command += " -Reload"
     }
@@ -101,6 +210,7 @@ if ($ConsoleWindow) {
     Start-Process -FilePath $shellPath -ArgumentList @("-NoExit", "-Command", $command) -WorkingDirectory $repoRoot | Out-Null
     Write-Output "Chat simulator console window started."
     Write-Output "URL: http://$BindHost`:$Port/chat-simulator"
+    Write-Output "Local API: http://$ApiHost`:$ApiPort (postgres + azurefoundry)"
     exit 0
 }
 
@@ -113,6 +223,8 @@ if ($Background) {
     $stdoutLog = Join-Path $runsDir "chat-simulator.log"
     $stderrLog = Join-Path $runsDir "chat-simulator.err.log"
     $pidFile = Join-Path $runsDir "chat-simulator.pid"
+
+    Stop-ProcessFromPidFile -PidFile $pidFile -ExpectedProcessName "python"
 
     if (Test-Path $stdoutLog) { Remove-Item $stdoutLog -Force }
     if (Test-Path $stderrLog) { Remove-Item $stderrLog -Force }
@@ -136,6 +248,7 @@ if ($Background) {
     if (Test-SimulatorReady -TargetHost $BindHost -TargetPort $Port) {
         Write-Output "Chat simulator started in background. PID: $($process.Id)"
         Write-Output "URL: http://$BindHost`:$Port/chat-simulator"
+        Write-Output "Local API: http://$ApiHost`:$ApiPort (postgres + azurefoundry)"
         Write-Output "Stop: Stop-Process -Id (Get-Content `"$pidFile`") -Force"
     } else {
         Write-Warning "Chat simulator started (PID $($process.Id)) but readiness checks are not complete yet."
@@ -147,6 +260,7 @@ if ($Background) {
 }
 
 Write-Output "Starting chat simulator in foreground on http://$BindHost`:$Port/chat-simulator"
+Write-Output "Local API: http://$ApiHost`:$ApiPort (postgres + azurefoundry)"
 Push-Location $appDir
 try {
     & $python @uvicornArgs

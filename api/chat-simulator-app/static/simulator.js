@@ -36,6 +36,7 @@ const createSessionButton = document.getElementById("createSession");
 const clearSessionButton = document.getElementById("clearSession");
 const defaultsUrl = "/static/default-inputs.json";
 const defaultLanguageCode = "SK";
+const MESSAGE_PREVIEW_LIMIT = 256;
 const welcomeMessagesByLanguage = {
   SK: "Ahoj, som Jurisdicta. Pomozem vam s vasim pripadom. Popiste svoj problem a nahrajte relevantnu dokumentaciu.",
   EN: "Hello, I am Jurisdicta. I can help you with your case. Please describe your problem and upload relevant documentation.",
@@ -148,7 +149,7 @@ function defaultApiBaseUrl() {
   const protocol = window.location.protocol === "https:" ? "https:" : "http:";
   const hostname = window.location.hostname || "127.0.0.1";
   const resolvedHost = isLoopbackHostname(hostname) ? hostname : "127.0.0.1";
-  return `${protocol}//${resolvedHost}:8081`;
+  return `${protocol}//${resolvedHost}:8080`;
 }
 
 function normalizeApiBaseUrl(value) {
@@ -268,16 +269,56 @@ function buildChatMessageNode(message) {
   if (message && message._pendingInstruction === true) {
     article.dataset.pendingInstruction = "true";
   }
+  if (message && message._thinkingPlaceholder === true) {
+    article.dataset.thinkingPlaceholder = "true";
+  }
 
   const meta = document.createElement("span");
   meta.className = "chat-meta";
   meta.textContent = messageSpeaker(message);
 
-  const body = document.createElement("p");
-  body.textContent = message.content;
+  const body = buildExpandableMessageBody(message.content);
 
   article.append(meta, body);
   return article;
+}
+
+function buildExpandableMessageBody(content) {
+  const text = String(content || "").trim();
+  const body = document.createElement("p");
+  body.className = "chat-body";
+  if (text.length <= MESSAGE_PREVIEW_LIMIT) {
+    body.textContent = text;
+    return body;
+  }
+
+  let expanded = false;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "chat-expand-toggle";
+
+  const render = () => {
+    body.textContent = "";
+    if (expanded) {
+      body.textContent = text;
+      toggle.textContent = "menej";
+      body.append(" ");
+      body.append(toggle);
+      return;
+    }
+    body.textContent = text.slice(0, MESSAGE_PREVIEW_LIMIT).trimEnd();
+    toggle.textContent = "viac...";
+    body.append(" ");
+    body.append(toggle);
+  };
+
+  toggle.addEventListener("click", () => {
+    expanded = !expanded;
+    render();
+  });
+
+  render();
+  return body;
 }
 
 function appendChatMessage(message) {
@@ -288,6 +329,43 @@ function appendChatMessage(message) {
   clearChatPlaceholder();
   chatTranscriptEl.appendChild(buildChatMessageNode(message));
   chatTranscriptEl.scrollTop = chatTranscriptEl.scrollHeight;
+}
+
+function localizedThinkingMessage() {
+  const country = String(countryInput?.value || "").trim().toUpperCase();
+  const language = String(languageInput?.value || "").trim().toLowerCase();
+  if (country === "SK" || language.startsWith("sk")) {
+    return "Premyslam...";
+  }
+  if (country === "CZ" || language.startsWith("cs") || language.startsWith("cz")) {
+    return "Premyslim...";
+  }
+  if (["AT", "DE", "CH"].includes(country) || language.startsWith("de") || language.startsWith("ge")) {
+    return "Ich denke nach...";
+  }
+  return "Thinking...";
+}
+
+function appendThinkingPlaceholder() {
+  const message = localizedThinkingMessage();
+  const thinkingMessage = {
+    role: "assistant",
+    content: message,
+    agent_name: "System",
+    _thinkingPlaceholder: true,
+  };
+  appendChatMessage(thinkingMessage);
+  appendMessagePreview({
+    role: "assistant",
+    content: message,
+    agent_name: "System",
+  });
+  appendStream(`processing:thinking: ${message}`);
+}
+
+function removeThinkingPlaceholders() {
+  const placeholders = chatTranscriptEl.querySelectorAll('.chat-message[data-thinking-placeholder="true"]');
+  placeholders.forEach((node) => node.remove());
 }
 
 function appendMessagePreview(message) {
@@ -483,6 +561,20 @@ function formatStreamEvent(eventItem) {
     return `${prefix}: ${data.message || JSON.stringify(data)}`;
   }
   return `${eventItem.event}: ${JSON.stringify(data)}`;
+}
+
+function appendProcessingMessage(data) {
+  if (!data || typeof data !== "object") return;
+  const text = String(data.message || "").trim();
+  if (!text) return;
+  const toolName = String(data.tool_name || "").trim();
+  const processingMessage = {
+    role: "assistant",
+    content: text,
+    agent_name: toolName ? `System/${toolName}` : "System",
+  };
+  appendChatMessage(processingMessage);
+  appendMessagePreview(processingMessage);
 }
 
 async function parseResponse(response) {
@@ -947,6 +1039,9 @@ async function startStream() {
       const events = parseSseChunk(`${block}\n\n`);
       for (const eventItem of events) {
         appendStream(formatStreamEvent(eventItem));
+        if (eventItem.event === "processing" && eventItem.data && typeof eventItem.data === "object") {
+          appendProcessingMessage(eventItem.data);
+        }
         if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
           if (!resolvePendingInstructionMessage(eventItem.data)) {
             appendChatMessage(eventItem.data);
@@ -968,6 +1063,9 @@ async function startStream() {
     const trailingEvents = parseSseChunk(buffer);
     for (const eventItem of trailingEvents) {
       appendStream(formatStreamEvent(eventItem));
+      if (eventItem.event === "processing" && eventItem.data && typeof eventItem.data === "object") {
+        appendProcessingMessage(eventItem.data);
+      }
       if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
         if (!resolvePendingInstructionMessage(eventItem.data)) {
           appendChatMessage(eventItem.data);
@@ -1020,27 +1118,112 @@ async function sendUserReply() {
     throw new Error("Wait for the assistant question before sending an answer.");
   }
 
-  const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/reply`, {
-    method: "POST",
-    headers: requestHeaders(),
-    body: JSON.stringify({ content }),
-  });
-
-  const lawyerReply = await parseResponse(response);
-  appendChatMessage({ role: "user", content, agent_name: "User" });
-  appendChatMessage(lawyerReply);
-  waitingForManualReply = assistantRequestsReply(lawyerReply.content);
-  if (waitingForManualReply) {
-    setWorkflowWarning("Assistant asked another question. Use Send answer again to continue.");
-  } else {
-    clearWorkflowWarning();
-  }
   userReplyInput.value = "";
+  appendChatMessage({ role: "user", content, agent_name: "User" });
   appendStream(`user_reply: ${content}`);
+  waitingForManualReply = false;
   refreshReplyControls();
-  await refreshMessages();
-  if (getActiveCaseId()) {
-    await inspectCaseDocuments();
+  appendThinkingPlaceholder();
+  try {
+    appendStream("manual_reply_stream: sending ReadUser turn through /stream");
+    const payload = {
+      instruction: content,
+      documents: [],
+      question_timeout_seconds: Number(questionTimeoutInput.value || 300),
+      max_discussion_minutes: Number(maxDiscussionInput.value || 60),
+      communication_minutes: Number(communicationMinutesInput.value || 30),
+      user_simulation_mode: "ReadUser",
+    };
+    const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/stream`, {
+      method: "POST",
+      headers: requestHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(body || `Failed to stream reply, status=${response.status}`);
+    }
+    if (!response.body) {
+      throw new Error("Streaming body is not available in this browser.");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const reader = response.body.getReader();
+    let skippedEchoedUser = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const split = buffer.split("\n\n");
+      buffer = split.pop() || "";
+
+      for (const block of split) {
+        const events = parseSseChunk(`${block}\n\n`);
+        for (const eventItem of events) {
+          appendStream(formatStreamEvent(eventItem));
+          if (eventItem.event === "processing" && eventItem.data && typeof eventItem.data === "object") {
+            appendProcessingMessage(eventItem.data);
+          }
+          if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
+            const role = String(eventItem.data.role || "").trim().toLowerCase();
+            const echoed = String(eventItem.data.content || "").trim();
+            if (!skippedEchoedUser && role === "user" && echoed === content) {
+              skippedEchoedUser = true;
+            } else {
+              appendChatMessage(eventItem.data);
+            }
+          }
+          if (eventItem.event === "waiting_for_reply") {
+            waitingForManualReply = true;
+            setWorkflowWarning("Assistant asked another question. Use Send answer again to continue.");
+            refreshReplyControls();
+          }
+          if (eventItem.event === "done") {
+            await maybeAutoDownloadPdf();
+          }
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const trailingEvents = parseSseChunk(buffer);
+      for (const eventItem of trailingEvents) {
+        appendStream(formatStreamEvent(eventItem));
+        if (eventItem.event === "processing" && eventItem.data && typeof eventItem.data === "object") {
+          appendProcessingMessage(eventItem.data);
+        }
+        if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
+          const role = String(eventItem.data.role || "").trim().toLowerCase();
+          const echoed = String(eventItem.data.content || "").trim();
+          if (!skippedEchoedUser && role === "user" && echoed === content) {
+            skippedEchoedUser = true;
+          } else {
+            appendChatMessage(eventItem.data);
+          }
+        }
+        if (eventItem.event === "waiting_for_reply") {
+          waitingForManualReply = true;
+          setWorkflowWarning("Assistant asked another question. Use Send answer again to continue.");
+          refreshReplyControls();
+        }
+        if (eventItem.event === "done") {
+          await maybeAutoDownloadPdf();
+        }
+      }
+    }
+    await refreshMessages();
+    if (getActiveCaseId()) {
+      await inspectCaseDocuments();
+    }
+    await maybeAutoDownloadPdf();
+    if (!waitingForManualReply) {
+      clearWorkflowWarning();
+    }
+  } finally {
+    removeThinkingPlaceholders();
+    refreshReplyControls();
   }
 }
 

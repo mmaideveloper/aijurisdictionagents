@@ -664,7 +664,67 @@ def test_stream_share_transfer_with_labeled_company_name_uses_registry_first(mon
     assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in captured_prompts[-1]
     assert "Verified registration number: 46491261" in captured_prompts[-1]
     assert any(payload.get("tool_name") == "obchodny_register_company_check" for payload in processing_payloads)
-    assert any("running company verification" in str(payload.get("message", "")).lower() for payload in processing_payloads)
+    assert any(payload.get("stage") == "processing" for payload in processing_payloads)
+    assert any("spracovavam" in str(payload.get("message", "")).lower() for payload in processing_payloads)
+    assert any(payload.get("stage") == "thinking" for payload in processing_payloads)
+    assert any("premyslam" in str(payload.get("message", "")).lower() for payload in processing_payloads)
+    assert any("idem overit spolocnost" in str(payload.get("message", "")).lower() for payload in processing_payloads)
+    assert any("overenie spolocnosti v orsr je hotove" in str(payload.get("message", "")).lower() for payload in processing_payloads)
+
+
+def test_prepare_country_direct_reply_emits_tool_lifecycle_callbacks(monkeypatch) -> None:
+    from app.chat.country_services import prepare_country_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizánska 665, 059 18 Spišské Bystré",
+                        "status": "Aktívna",
+                    },
+                ),
+            )
+
+    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+
+    session = Session(country="SK", discussion_type="advice", language="SK")
+    messages = [
+        Message(
+            session_id=session.id,
+            role=MessageRole.USER,
+            content=(
+                "Priprav mi postup a documentaciu pre pridanie noveho vlastnika firmy:\n"
+                "Nazov: ESolutions SK s.r.o."
+            ),
+        )
+    ]
+    callback_events: list[dict[str, object]] = []
+    preparation = prepare_country_direct_reply(
+        session=session,
+        messages=messages,
+        current_content=messages[0].content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+        processing_event_callback=callback_events.append,
+    )
+
+    assert callback_events == preparation.processing_events
+    stages = [str(event.get("stage", "")) for event in callback_events]
+    assert "tool_start" in stages
+    assert "tool_result" in stages
+    assert stages.index("tool_start") < stages.index("tool_result")
+    assert any("idem overit spolocnost" in str(event.get("message", "")).lower() for event in callback_events)
+    assert any("overenie spolocnosti v orsr je hotove" in str(event.get("message", "")).lower() for event in callback_events)
 
 
 def test_prepare_country_direct_reply_skips_unconfigured_countries() -> None:
@@ -1084,7 +1144,21 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
     content = reply_response.json()["content"]
     lowered = content.lower()
     assert "pripravil som finálny návrh dokumentácie" in lowered
-    assert "case_update_json" in lowered
+    assert "case_update_json" not in lowered
+    list_response = client.get(
+        f"/v1/chat/sessions/{session_id}/messages",
+        headers=AUTH_HEADERS,
+    )
+    assert list_response.status_code == 200
+    listed_messages = list_response.json()
+    assistant_listed = [item for item in listed_messages if item["role"] == "assistant"]
+    assert assistant_listed
+    assert all("case_update_json" not in item["content"].lower() for item in assistant_listed)
+    persisted_messages = repository.list_messages(session_id)
+    assert any(
+        message.role == MessageRole.ASSISTANT and "case_update_json" in message.content.lower()
+        for message in persisted_messages
+    )
     assert captured_prompts
     prompt = captured_prompts[-1]
     assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt
@@ -1211,7 +1285,9 @@ def test_stream_read_user_pauses_and_waits_for_manual_reply() -> None:
     assert "event: waiting_for_reply" in events
     assert '"status": "waiting_for_reply"' in events
     assert "Používateľ nemohol odpovedať do 50 minút." not in events
+    assert "spracovavam" in events.lower()
     assert '"role": "assistant"' in events
+    assert "premyslam" in events.lower()
     assert "event: result" not in events
 
     session = chat_api._repository.get_session(UUID(session_id))
@@ -2134,6 +2210,94 @@ def test_is_pdf_format_question_detects_pdf_prompt() -> None:
 
     assert _is_pdf_format_question("Do you want the final result in PDF format?")
     assert not _is_pdf_format_question("Please provide your contract date.")
+
+
+def test_enforce_single_question_turn_keeps_only_first_question() -> None:
+    from app.chat.api import _enforce_single_question_turn, _extract_case_update, _user_visible_text
+
+    raw_reply = (
+        "Potrebujem doplnit viac informacii.\n"
+        "1. Potvrdite, ci prevodca je RNDr. Marek Matonok?\n"
+        "2. Potvrdite presny rozsah podielu?\n"
+        "3. Meni sa konatel?\n"
+        "CASE_UPDATE_JSON:\n"
+        '{"case":{"open_questions":["Potvrdite prevodcu?","Potvrdite rozsah podielu?","Meni sa konatel?"]}}'
+    )
+
+    normalized = _enforce_single_question_turn(raw_reply)
+    visible = _user_visible_text(normalized)
+    assert "RNDr. Marek Matonok?" in visible
+    assert "presny rozsah podielu?" not in visible
+    assert "Meni sa konatel?" not in visible
+    assert visible.count("?") == 1
+
+    case_update = _extract_case_update(normalized)
+    assert isinstance(case_update, dict)
+    case_payload = case_update.get("case")
+    assert isinstance(case_payload, dict)
+    assert case_payload.get("open_questions") == ["Potvrdite prevodcu?"]
+
+
+def test_thinking_status_message_is_localized_by_country_or_language() -> None:
+    from app.chat.api import _thinking_status_message
+
+    assert _thinking_status_message(country="SK", language=None) == "Premyslam..."
+    assert _thinking_status_message(country="US", language="sk-SK") == "Premyslam..."
+    assert _thinking_status_message(country="DE", language=None) == "Ich denke nach..."
+    assert _thinking_status_message(country="CZ", language=None) == "Premyslim..."
+    assert _thinking_status_message(country="US", language="en-US") == "Thinking..."
+
+
+def test_processing_status_message_is_localized_by_country_or_language() -> None:
+    from app.chat.api import _processing_status_message
+
+    assert _processing_status_message(country="SK", language=None) == "Spracovavam..."
+    assert _processing_status_message(country="US", language="sk-SK") == "Spracovavam..."
+    assert _processing_status_message(country="DE", language=None) == "Verarbeite Anfrage..."
+    assert _processing_status_message(country="CZ", language=None) == "Zpracovavam..."
+    assert _processing_status_message(country="US", language="en-US") == "Processing..."
+
+
+def test_orsr_tool_messages_are_localized_by_country_or_language() -> None:
+    from app.chat.country_services.slovakia import (
+        _orsr_tool_result_found_message,
+        _orsr_tool_start_message,
+    )
+
+    assert _orsr_tool_start_message(
+        company_query="ESolutions SK s.r.o.",
+        country="SK",
+        language=None,
+    ) == "Idem overit spolocnost 'ESolutions SK s.r.o.' v ORSR."
+    assert _orsr_tool_start_message(
+        company_query="ESolutions SK s.r.o.",
+        country="US",
+        language="de-DE",
+    ) == "Ich werde das Unternehmen 'ESolutions SK s.r.o.' im ORSR pruefen."
+    assert _orsr_tool_start_message(
+        company_query="ESolutions SK s.r.o.",
+        country="US",
+        language="en-US",
+    ) == "I am going to verify company 'ESolutions SK s.r.o.' in ORSR."
+
+    assert _orsr_tool_result_found_message(
+        company_name="ESolutions SK s.r.o.",
+        registration_number="46491261",
+        country="SK",
+        language=None,
+    ) == "Overenie spolocnosti v ORSR je hotove: ESolutions SK s.r.o. (46491261)."
+    assert _orsr_tool_result_found_message(
+        company_name="ESolutions SK s.r.o.",
+        registration_number="46491261",
+        country="US",
+        language="de-DE",
+    ) == "Unternehmenspruefung im ORSR abgeschlossen: ESolutions SK s.r.o. (46491261)."
+    assert _orsr_tool_result_found_message(
+        company_name="ESolutions SK s.r.o.",
+        registration_number="46491261",
+        country="US",
+        language="en-US",
+    ) == "Verification of company done in ORSR: ESolutions SK s.r.o. (46491261)."
 
 
 def _pdf_text(payload: bytes) -> str:

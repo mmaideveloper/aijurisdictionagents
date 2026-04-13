@@ -17,6 +17,7 @@ def prepare_country_direct_reply(
     extract_document_facts: Callable[[list[str]], dict[str, str]],
     current_turn_confirms_document_generation: Callable[[str, list[Message]], bool],
     build_share_transfer_lines: Callable[[dict[str, str]], list[str]],
+    processing_event_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> DirectReplyPreparation:
     country_code = session.country.strip().upper()
     if country_code == "SK":
@@ -29,5 +30,6 @@ def prepare_country_direct_reply(
             extract_document_facts=extract_document_facts,
             current_turn_confirms_document_generation=current_turn_confirms_document_generation,
             build_share_transfer_lines=build_share_transfer_lines,
+            processing_event_callback=processing_event_callback,
         )
     return DirectReplyPreparation(supplemental_documents=[])

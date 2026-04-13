@@ -3,7 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable
 import re
 
-from app.chat.country_services.base import DirectReplyPreparation, build_processing_event
+from app.chat.country_services.base import (
+    DirectReplyPreparation,
+    build_processing_event,
+    emit_processing_event,
+)
 from app.chat.models import Message, MessageRole, Session
 
 from aijurisdictionagents.schemas import Document as CoreDocument
@@ -20,6 +24,7 @@ def prepare_slovakia_direct_reply(
     extract_document_facts: Callable[[list[str]], dict[str, str]],
     current_turn_confirms_document_generation: Callable[[str, list[Message]], bool],
     build_share_transfer_lines: Callable[[dict[str, str]], list[str]],
+    processing_event_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> DirectReplyPreparation:
     if session.country.strip().upper() != "SK":
         return DirectReplyPreparation(supplemental_documents=[])
@@ -33,48 +38,68 @@ def prepare_slovakia_direct_reply(
         return DirectReplyPreparation(supplemental_documents=[])
 
     analysis_message = (
-        "Detected a Slovak company-register question and started verification."
+        "Zistujem informacie o spolocnosti v slovenskom obchodnom registri."
         if asks_company_registry_info
-        else "Detected a Slovak company-document request and started intake analysis."
+        else "Analyzujem poziadavku na slovensku firemnu dokumentaciu."
     )
-    processing_events = [build_processing_event(stage="analysis", message=analysis_message)]
+    processing_events: list[dict[str, object]] = []
+    emit_processing_event(
+        events=processing_events,
+        event=build_processing_event(stage="analysis", message=analysis_message),
+        callback=processing_event_callback,
+    )
 
     company_query = _extract_slovak_company_query(messages=messages, current_content=current_content)
     if not company_query:
         return DirectReplyPreparation(supplemental_documents=[])
 
-    processing_events.append(
-        build_processing_event(
+    emit_processing_event(
+        events=processing_events,
+        event=build_processing_event(
             stage="tool_start",
             tool_name="obchodny_register_company_check",
-            message=f"Running company verification in Obchodný register for '{company_query}'.",
+            message=_orsr_tool_start_message(
+                company_query=company_query,
+                country=session.country,
+                language=session.language,
+            ),
             details={"query": company_query},
-        )
+        ),
+        callback=processing_event_callback,
     )
     company_record, registry_document = _load_slovak_company_registry_document(company_query)
     supplemental_documents = [registry_document] if registry_document is not None else []
     prompt_note = ""
     if company_record:
-        processing_events.append(
-            build_processing_event(
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
                 stage="tool_result",
                 tool_name="obchodny_register_company_check",
-                message=(
-                    "Company verification matched "
-                    f"{company_record.get('name') or company_query}"
-                    f" ({company_record.get('registration_number') or 'IČO unavailable'})."
+                message=_orsr_tool_result_found_message(
+                    company_name=str(company_record.get("name") or company_query),
+                    registration_number=str(company_record.get("registration_number") or ""),
+                    country=session.country,
+                    language=session.language,
                 ),
                 details=company_record,
-            )
+            ),
+            callback=processing_event_callback,
         )
     else:
-        processing_events.append(
-            build_processing_event(
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
                 stage="tool_result",
                 tool_name="obchodny_register_company_check",
-                message=f"Company verification did not return a register match for '{company_query}'.",
+                message=_orsr_tool_result_missing_message(
+                    company_query=company_query,
+                    country=session.country,
+                    language=session.language,
+                ),
                 details={"query": company_query},
-            )
+            ),
+            callback=processing_event_callback,
         )
 
     asks_share_transfer = _looks_like_share_transfer_case(
@@ -110,27 +135,33 @@ def prepare_slovakia_direct_reply(
     provided_labels = _share_transfer_provided_labels(intake_facts)
     missing_labels = _share_transfer_missing_labels(intake_facts)
     if provided_labels:
-        processing_events.append(
-            build_processing_event(
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
                 stage="intake",
-                message=f"Captured from user input: {', '.join(provided_labels)}.",
+                message=f"Zo zadania som zachytil: {', '.join(provided_labels)}.",
                 details={"provided": provided_labels},
-            )
+            ),
+            callback=processing_event_callback,
         )
     if missing_labels:
-        processing_events.append(
-            build_processing_event(
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
                 stage="intake",
-                message=f"Still missing before final drafting: {', '.join(missing_labels)}.",
+                message=f"Pred finalnym draftom este chyba: {', '.join(missing_labels)}.",
                 details={"missing": missing_labels},
-            )
+            ),
+            callback=processing_event_callback,
         )
     else:
-        processing_events.append(
-            build_processing_event(
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
                 stage="intake",
-                message="All core share-transfer drafting inputs are already present in the user request.",
-            )
+                message="Vsetky klucove vstupy pre draft prevodu podielu uz mam k dispozicii.",
+            ),
+            callback=processing_event_callback,
         )
 
     conflicts = _detect_share_transfer_conflicts(
@@ -138,12 +169,14 @@ def prepare_slovakia_direct_reply(
         company_record=company_record,
     )
     if conflicts:
-        processing_events.append(
-            build_processing_event(
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
                 stage="validation",
-                message="Detected potential mismatch between user-provided transferor and ORSR company owners.",
+                message="Nasiel som potencialny nesulad medzi prevodcom od uzivatela a ORSR vlastnikom.",
                 details={"conflicts": conflicts},
-            )
+            ),
+            callback=processing_event_callback,
         )
 
     user_confirmed_document_generation = current_turn_confirms_document_generation(
@@ -1072,3 +1105,46 @@ def _share_transfer_missing_labels(intake_facts: dict[str, str]) -> list[str]:
     if not intake_facts["management_change"]:
         labels.append("management/signing change confirmation")
     return labels
+
+
+def _orsr_tool_start_message(*, company_query: str, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return f"Idem overit spolocnost '{company_query}' v ORSR."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return f"Jdu overit spolecnost '{company_query}' v ORSR."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return f"Ich werde das Unternehmen '{company_query}' im ORSR pruefen."
+    return f"I am going to verify company '{company_query}' in ORSR."
+
+
+def _orsr_tool_result_found_message(
+    *,
+    company_name: str,
+    registration_number: str,
+    country: str,
+    language: str | None,
+) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    registration_text = registration_number.strip() or "ICO unavailable"
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return f"Overenie spolocnosti v ORSR je hotove: {company_name} ({registration_text})."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return f"Overeni spolecnosti v ORSR je hotove: {company_name} ({registration_text})."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return f"Unternehmenspruefung im ORSR abgeschlossen: {company_name} ({registration_text})."
+    return f"Verification of company done in ORSR: {company_name} ({registration_text})."
+
+
+def _orsr_tool_result_missing_message(*, company_query: str, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return f"Overenie spolocnosti v ORSR je hotove: pre '{company_query}' som nenasiel zhodu."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return f"Overeni spolecnosti v ORSR je hotove: pro '{company_query}' jsem nenasel shodu."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return f"Unternehmenspruefung im ORSR abgeschlossen: kein Treffer fuer '{company_query}'."
+    return f"Verification of company done in ORSR: no matching record for '{company_query}'."

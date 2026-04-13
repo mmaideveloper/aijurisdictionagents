@@ -1,6 +1,6 @@
 ---
 name: start-api
-description: Start and verify the local `aijuristiction-api` service in this monorepo. Use when asked to "start api", "run backend locally", "bring up fastapi", "launch local server", or "health-check the API". Prefer this workflow for reliable local startup with the project `.conda` interpreter, default `LLM_PROVIDER=azurefoundry`, optional mock mode, and explicit health verification.
+description: Start and verify the local `aijuristiction-api` service in this monorepo. Use when asked to "start api", "run backend locally", "bring up fastapi", "launch local server", or "health-check the API". Prefer this workflow for reliable local startup with the project `.conda` interpreter, strict default `LLM_PROVIDER=azurefoundry`, optional explicit mock mode, and explicit health verification.
 ---
 
 # Start API
@@ -42,7 +42,7 @@ If started with `-Background`, stop via:
 ## Environment Notes
 
 - Default provider is `azurefoundry`.
-- If local Azure Foundry settings are incomplete, the launcher automatically falls back to `mock` so local API smoke checks still work.
+- Azure Foundry default is strict: if `AZURE_OPENAI_*` settings are incomplete, startup fails instead of silently falling back to `mock`.
 - Local starts now enable `LOCAL_LLM_IO_LOGGING=1` by default, so the API logs the exact model request payload and raw model answer in local runs only.
 - Default document processing mode is direct in-API processing (`DOCUMENT_PROCESSOR_OPTION=api`, with `local` kept only as a legacy alias).
 - Default database mode is `local`.

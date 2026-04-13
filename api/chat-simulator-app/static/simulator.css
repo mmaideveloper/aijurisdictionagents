@@ -160,6 +160,24 @@ pre {
   margin-bottom: 0.25rem;
 }
 
+.chat-body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.chat-expand-toggle {
+  display: inline;
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e2e8f0;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  font-weight: 600;
+}
+
 .chat-placeholder {
   margin: 0;
   color: #94a3b8;

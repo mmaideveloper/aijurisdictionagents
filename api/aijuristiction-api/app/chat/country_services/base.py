@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 from aijurisdictionagents.schemas import Document as CoreDocument
 
@@ -29,3 +30,14 @@ def build_processing_event(
     if details:
         payload["details"] = details
     return payload
+
+
+def emit_processing_event(
+    *,
+    events: list[dict[str, object]],
+    event: dict[str, object],
+    callback: Callable[[dict[str, object]], None] | None = None,
+) -> None:
+    events.append(event)
+    if callback is not None:
+        callback(event)

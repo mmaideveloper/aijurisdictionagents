@@ -35,8 +35,10 @@ function Resolve-EffectiveLlmProvider {
         return "azurefoundry"
     }
 
-    Write-Warning "AZURE_OPENAI_* settings are incomplete for local Azure Foundry use. Falling back to LLM_PROVIDER=mock."
-    return "mock"
+    throw (
+        "LLM_PROVIDER=azurefoundry requires AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT, " +
+        "and either AZURE_OPENAI_API_KEY or AZURE_OPENAI_AD_TOKEN."
+    )
 }
 
 function Resolve-PythonPath {

@@ -7,7 +7,7 @@ import re
 import time
 import textwrap
 from collections import deque
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from datetime import datetime, timezone
 from pathlib import Path
 from queue import Queue
@@ -377,13 +377,14 @@ def _bootstrap_case_history_if_needed(*, session: Session) -> None:
 
 
 def _message_payload(message: Message) -> dict[str, object]:
+    visible_message = _message_for_user(message)
     return {
-        "id": str(message.id),
-        "session_id": str(message.session_id),
-        "role": message.role.value,
-        "agent_name": message.agent_name,
-        "content": message.content,
-        "created_at": message.created_at.isoformat(),
+        "id": str(visible_message.id),
+        "session_id": str(visible_message.session_id),
+        "role": visible_message.role.value,
+        "agent_name": visible_message.agent_name,
+        "content": visible_message.content,
+        "created_at": visible_message.created_at.isoformat(),
     }
 
 
@@ -421,6 +422,8 @@ def _run_direct_lawyer_turn(
     session: Session,
     content: str,
     supplemental_documents: list[CoreDocument] | None = None,
+    processing_event_callback: Callable[[dict[str, object]], None] | None = None,
+    user_message_callback: Callable[[Message], None] | None = None,
 ) -> tuple[Message, Message, str, list[dict[str, object]]]:
     persisted_user = _repository.add_message(
         Message(
@@ -431,6 +434,12 @@ def _run_direct_lawyer_turn(
         )
     )
     _persist_case_message_if_needed(session=session, role="user", content=content, agent_name="User")
+    if user_message_callback is not None:
+        user_message_callback(persisted_user)
+    _emit_thinking_processing_event(
+        session=session,
+        processing_event_callback=processing_event_callback,
+    )
 
     from aijurisdictionagents.agents import create_lawyer_agent
     from aijurisdictionagents.llm import get_llm_client
@@ -452,6 +461,14 @@ def _run_direct_lawyer_turn(
     prompt_override = lawyer.system_prompt
     if session.language and session.language.strip():
         prompt_override = f"{lawyer.system_prompt}\nRespond in {session.language.strip()}."
+    prompt_override = (
+        f"{prompt_override}\n\n"
+        "SINGLE-QUESTION CLARIFICATION POLICY:\n"
+        "- If clarification is needed, ask exactly one highest-priority question in this turn.\n"
+        "- Do not ask multiple numbered questions in one reply.\n"
+        "- Do not include summary/risk/next-step sections while waiting for that single answer.\n"
+        "- Keep CASE_UPDATE_JSON.case.open_questions at maximum one item when awaiting user input."
+    )
     if _user_requested_document_generation(content=content, previous_messages=prior_messages):
         prompt_override = (
             f"{prompt_override}\n\n"
@@ -470,15 +487,22 @@ def _run_direct_lawyer_turn(
         extract_document_facts=_extract_document_facts,
         current_turn_confirms_document_generation=_current_turn_confirms_document_generation,
         build_share_transfer_lines=_build_slovak_share_transfer_lines,
+        processing_event_callback=processing_event_callback,
     )
     if preparation.direct_reply is not None:
+        normalized_direct_reply = _enforce_single_question_turn(preparation.direct_reply)
         persisted_lawyer = _persist_direct_assistant_message(
             session_id=session_id,
             session=session,
-            content=preparation.direct_reply,
+            content=normalized_direct_reply,
             agent_name="LawyerSlovakia",
         )
-        return persisted_user, persisted_lawyer, preparation.direct_reply, preparation.processing_events
+        return (
+            persisted_user,
+            persisted_lawyer,
+            _user_visible_text(normalized_direct_reply),
+            preparation.processing_events,
+        )
     if preparation.prompt_note:
         prompt_override = f"{prompt_override}\n\n{preparation.prompt_note}"
     case_documents: list[CoreDocument] = []
@@ -515,15 +539,18 @@ def _run_direct_lawyer_turn(
         sources=[],
         system_prompt_override=prompt_override,
     )
-    visible_lawyer_content = _prepend_document_status_note(
-        reply=lawyer_message.content,
-        processed_names=processed_names,
-        unprocessed_names=unprocessed_names,
+    normalized_lawyer_content = _enforce_single_question_turn(
+        _prepend_document_status_note(
+            reply=lawyer_message.content,
+            processed_names=processed_names,
+            unprocessed_names=unprocessed_names,
+        )
     )
+    visible_lawyer_content = _user_visible_text(normalized_lawyer_content)
     persisted_lawyer = _persist_direct_assistant_message(
         session_id=session_id,
         session=session,
-        content=visible_lawyer_content,
+        content=normalized_lawyer_content,
         agent_name=lawyer_message.agent_name,
     )
     return persisted_user, persisted_lawyer, visible_lawyer_content, preparation.processing_events
@@ -588,14 +615,14 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         ),
     )
 
-    return persisted_lawyer
+    return _message_for_user(persisted_lawyer)
 
 
 @router.get("/sessions/{session_id}/messages", response_model=List[Message])
 def list_session_messages(session_id: UUID) -> List[Message]:
     if _repository.get_session(session_id) is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-    return _repository.list_messages(session_id)
+    return [_message_for_user(message) for message in _repository.list_messages(session_id)]
 
 
 @router.post("/sessions/{session_id}/stream")
@@ -730,20 +757,21 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
 
     def message_callback(core_message: CoreMessage) -> None:
         nonlocal assistant_messages_seen
-        if core_message_role(core_message.role) == "assistant":
+        normalized_role = core_message_role(core_message.role)
+        if normalized_role == "assistant":
             assistant_messages_seen += 1
         core_conversation.append(core_message)
         persisted = _repository.add_message(
             Message(
                 session_id=session_id,
-                role=MessageRole(core_message_role(core_message.role)),
+                role=MessageRole(normalized_role),
                 content=core_message.content,
                 agent_name=core_message.agent_name,
             )
         )
         _persist_case_message_if_needed(
             session=session,
-            role=core_message_role(core_message.role),
+            role=normalized_role,
             content=core_message.content,
             agent_name=core_message.agent_name,
         )
@@ -760,6 +788,31 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 },
             )
         )
+        if normalized_role == "user":
+            event_queue.put(
+                (
+                    "processing",
+                    {
+                        "stage": "processing",
+                        "message": _processing_status_message(
+                            country=session.country,
+                            language=session.language,
+                        ),
+                    },
+                )
+            )
+            event_queue.put(
+                (
+                    "processing",
+                    {
+                        "stage": "thinking",
+                        "message": _thinking_status_message(
+                            country=session.country,
+                            language=session.language,
+                        ),
+                    },
+                )
+            )
 
     def worker() -> None:
         try:
@@ -827,44 +880,62 @@ def _stream_read_user_session(
     payload: StartSessionStreamRequest,
 ) -> StreamingResponse:
     inline_documents = [CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content) for d in payload.documents]
-    persisted_user, persisted_lawyer, visible_lawyer_content, processing_events = _run_direct_lawyer_turn(
-        session_id=session_id,
-        session=session,
-        content=payload.instruction,
-        supplemental_documents=inline_documents,
-    )
+    event_queue: Queue[tuple[str, dict[str, object]] | None] = Queue()
 
-    events: list[tuple[str, dict[str, object]]] = [
-        ("message", _message_payload(persisted_user)),
-    ]
-    events.extend(("processing", event) for event in processing_events)
-    events.append(("message", _message_payload(persisted_lawyer)))
+    def processing_event_callback(event: dict[str, object]) -> None:
+        event_queue.put(("processing", event))
 
-    if _assistant_requests_user_reply(visible_lawyer_content):
-        events.append(
-            (
-                "waiting_for_reply",
-                {
-                    "session_id": str(session_id),
-                    "mode": "ReadUser",
-                    "message": "Stream paused. Waiting for manual /reply input.",
-                },
+    def user_message_callback(message: Message) -> None:
+        event_queue.put(("message", _message_payload(message)))
+
+    def worker() -> None:
+        try:
+            _persisted_user, persisted_lawyer, visible_lawyer_content, _processing_events = _run_direct_lawyer_turn(
+                session_id=session_id,
+                session=session,
+                content=payload.instruction,
+                supplemental_documents=inline_documents,
+                processing_event_callback=processing_event_callback,
+                user_message_callback=user_message_callback,
             )
-        )
-        events.append(("done", {"session_id": str(session_id), "status": "waiting_for_reply"}))
-    else:
-        session_result = _build_direct_reply_result(
-            session_id=session_id,
-            session=session,
-            messages=_repository.list_messages(session_id),
-            lawyer_message=visible_lawyer_content,
-        )
-        _repository.set_result(session_id, session_result)
-        events.append(("result", session_result.model_dump(mode="json")))
-        events.append(("done", {"session_id": str(session_id), "status": "completed"}))
+            event_queue.put(("message", _message_payload(persisted_lawyer)))
+
+            if _assistant_requests_user_reply(visible_lawyer_content):
+                event_queue.put(
+                    (
+                        "waiting_for_reply",
+                        {
+                            "session_id": str(session_id),
+                            "mode": "ReadUser",
+                            "message": "Stream paused. Waiting for manual /reply input.",
+                        },
+                    )
+                )
+                event_queue.put(("done", {"session_id": str(session_id), "status": "waiting_for_reply"}))
+            else:
+                session_result = _build_direct_reply_result(
+                    session_id=session_id,
+                    session=session,
+                    messages=_repository.list_messages(session_id),
+                    lawyer_message=visible_lawyer_content,
+                )
+                _repository.set_result(session_id, session_result)
+                event_queue.put(("result", session_result.model_dump(mode="json")))
+                event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
+        except Exception as exc:  # noqa: BLE001
+            _repository.mark_failed(session_id)
+            event_queue.put(("error", {"message": str(exc)}))
+        finally:
+            event_queue.put(None)
+
+    Thread(target=worker, daemon=True).start()
 
     def stream() -> Generator[str, None, None]:
-        for event_name, body in events:
+        while True:
+            item = event_queue.get()
+            if item is None:
+                break
+            event_name, body = item
             yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
@@ -1093,6 +1164,109 @@ def _user_visible_text(content: str) -> str:
     if marker is None:
         return content.strip()
     return content[: marker.start()].strip()
+
+
+def _message_for_user(message: Message) -> Message:
+    if message.role != MessageRole.ASSISTANT:
+        return message
+    visible_content = _user_visible_text(message.content)
+    if visible_content == message.content:
+        return message
+    return message.model_copy(update={"content": visible_content})
+
+
+def _compose_assistant_content(
+    *,
+    visible_text: str,
+    case_update: dict[str, Any] | None,
+) -> str:
+    stripped_visible = visible_text.strip()
+    if case_update is None:
+        return stripped_visible
+    payload = json.dumps(case_update, ensure_ascii=False, indent=2)
+    if not stripped_visible:
+        return f"CASE_UPDATE_JSON:\n{payload}"
+    return f"{stripped_visible}\n\nCASE_UPDATE_JSON:\n{payload}"
+
+
+def _first_followup_question(content: str) -> str:
+    normalized = content.strip()
+    first_question_index = normalized.find("?")
+    if first_question_index < 0:
+        return normalized
+    return normalized[: first_question_index + 1].strip()
+
+
+def _truncate_case_update_open_questions(case_update: dict[str, Any]) -> dict[str, Any]:
+    case_payload = case_update.get("case")
+    if not isinstance(case_payload, dict):
+        return case_update
+    open_questions = case_payload.get("open_questions")
+    if isinstance(open_questions, list) and len(open_questions) > 1:
+        case_payload["open_questions"] = open_questions[:1]
+    return case_update
+
+
+def _enforce_single_question_turn(content: str) -> str:
+    visible_text = _user_visible_text(content)
+    if not _assistant_requests_user_reply(visible_text):
+        return content.strip()
+    first_question = _first_followup_question(visible_text)
+    case_update = _extract_case_update(content)
+    if case_update is not None:
+        case_update = _truncate_case_update_open_questions(case_update)
+    return _compose_assistant_content(visible_text=first_question, case_update=case_update)
+
+
+def _emit_thinking_processing_event(
+    *,
+    session: Session,
+    processing_event_callback: Callable[[dict[str, object]], None] | None,
+) -> None:
+    if processing_event_callback is None:
+        return
+    processing_event_callback(
+        {
+            "stage": "processing",
+            "message": _processing_status_message(
+                country=session.country,
+                language=session.language,
+            ),
+        }
+    )
+    processing_event_callback(
+        {
+            "stage": "thinking",
+            "message": _thinking_status_message(
+                country=session.country,
+                language=session.language,
+            ),
+        }
+    )
+
+
+def _processing_status_message(*, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return "Spracovavam..."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return "Zpracovavam..."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return "Verarbeite Anfrage..."
+    return "Processing..."
+
+
+def _thinking_status_message(*, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return "Premyslam..."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return "Premyslim..."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return "Ich denke nach..."
+    return "Thinking..."
 
 
 def _request_pdf_reply(language: str | None) -> str:

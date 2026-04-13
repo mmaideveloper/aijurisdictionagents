@@ -321,6 +321,10 @@ class AppStrings {
       'clear': 'VYMAZAT',
       'you': 'Vy',
       'assistant': 'Asistent',
+      'frontend_agent': 'Frontend',
+      'backend_agent': 'Backend',
+      'frontend_thinking_message': 'Premyslam...',
+      'backend_processing_fallback_message': 'Spracovavam...',
       'document_label': 'Dokument: {{path}}',
       'language_country': 'Jazyk a krajina',
       'local_mode': 'Lokálny režim',
@@ -540,6 +544,10 @@ class AppStrings {
       'clear': 'CLEAR',
       'you': 'You',
       'assistant': 'Assistant',
+      'frontend_agent': 'Frontend',
+      'backend_agent': 'Backend',
+      'frontend_thinking_message': 'Thinking...',
+      'backend_processing_fallback_message': 'Processing...',
       'document_label': 'Document: {{path}}',
       'language_country': 'Language & Country',
       'local_mode': 'Local mode',
@@ -768,6 +776,10 @@ class AppStrings {
       'clear': 'LÖSCHEN',
       'you': 'Sie',
       'assistant': 'Assistent',
+      'frontend_agent': 'Frontend',
+      'backend_agent': 'Backend',
+      'frontend_thinking_message': 'Ich denke nach...',
+      'backend_processing_fallback_message': 'Verarbeite Anfrage...',
       'document_label': 'Dokument: {{path}}',
       'language_country': 'Sprache und Land',
       'local_mode': 'Lokaler Modus',
@@ -2259,6 +2271,137 @@ class ApiClient {
           stackTrace,
           <String, Object?>{
             'action': 'start_discussion_stream',
+            'attempt': attempt + 1,
+            'url': uri.toString(),
+          },
+        );
+        rethrow;
+      } finally {
+        client.close();
+      }
+    }
+  }
+
+  Stream<StreamEvent> startReadUserTurnStream({
+    required String instruction,
+    required LocaleOption locale,
+    required double questionTimeoutSeconds,
+    required double maxDiscussionMinutes,
+    required double communicationMinutes,
+    String? documentPath,
+  }) async* {
+    final payload = <String, Object?>{
+      'instruction': instruction,
+      'documents': <Object?>[],
+      'question_timeout_seconds': questionTimeoutSeconds,
+      'max_discussion_minutes': maxDiscussionMinutes,
+      'communication_minutes': communicationMinutes,
+      'user_simulation_mode': 'ReadUser',
+    };
+    if (documentPath != null && documentPath.trim().isNotEmpty) {
+      await logger.info(
+        'ReadUser turn stream started with local document path context',
+        <String, Object?>{'document_path': documentPath},
+      );
+    }
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final sessionId = await _ensureSession(
+        responderMode: ResponderMode.realPerson,
+        locale: locale,
+      );
+      final path = '/v1/chat/sessions/$sessionId/stream';
+      final uri = baseUri.resolve(path);
+      final requestId = _generateRequestId();
+      final request = http.Request('POST', uri)
+        ..headers.addAll(_headersForRequest(requestId))
+        ..body = jsonEncode(payload);
+      await logger.info(
+        'API stream request',
+        <String, Object?>{
+          'action': 'read_user_turn_stream',
+          'attempt': attempt + 1,
+          'method': 'POST',
+          'url': uri.toString(),
+          'headers': _headersForLog(requestId),
+          'payload': payload,
+        },
+      );
+
+      final client = http.Client();
+      try {
+        final response = await client.send(request);
+        _recordCorrelationId(response);
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          final body = await response.stream.bytesToString();
+          final detail = _extractErrorDetailFromBody(body);
+          await logger.info(
+            'API stream response non-success',
+            <String, Object?>{
+              'action': 'read_user_turn_stream',
+              'attempt': attempt + 1,
+              'status_code': response.statusCode,
+              'detail': detail,
+            },
+          );
+          if (response.statusCode == 404 && _isMissingSessionDetail(detail)) {
+            await _recreateSessionAfterMissing(
+              operation: 'read_user_turn_stream',
+              missingSessionId: sessionId,
+              responderMode: ResponderMode.realPerson,
+              locale: locale,
+            );
+            if (attempt == 0) {
+              continue;
+            }
+            throw const SessionExpiredException();
+          }
+          throw Exception(
+            'ReadUser turn stream failed with status ${response.statusCode}: $detail',
+          );
+        }
+        var buffer = '';
+        await for (final chunk in response.stream.transform(utf8.decoder)) {
+          buffer += chunk;
+          final blocks = buffer.split('\n\n');
+          buffer = blocks.removeLast();
+          for (final block in blocks) {
+            final events = _parseSseBlock(block);
+            for (final event in events) {
+              await logger.info(
+                'API stream event',
+                <String, Object?>{
+                  'action': 'read_user_turn_stream',
+                  'event': event.event,
+                  'data': event.data,
+                },
+              );
+              yield event;
+            }
+          }
+        }
+        if (buffer.trim().isNotEmpty) {
+          final trailingEvents = _parseSseBlock(buffer);
+          for (final event in trailingEvents) {
+            await logger.info(
+              'API stream trailing event',
+              <String, Object?>{
+                'action': 'read_user_turn_stream',
+                'event': event.event,
+                'data': event.data,
+              },
+            );
+            yield event;
+          }
+        }
+        return;
+      } catch (error, stackTrace) {
+        await logger.error(
+          'API stream request failed',
+          error,
+          stackTrace,
+          <String, Object?>{
+            'action': 'read_user_turn_stream',
             'attempt': attempt + 1,
             'url': uri.toString(),
           },
@@ -4853,6 +4996,44 @@ class _ChatHomePageState extends State<ChatHomePage>
     _scrollToLatest();
   }
 
+  String _appendFrontendThinkingMessage() {
+    final messageId = _nextLocalMessageId('frontend-thinking');
+    if (!mounted) {
+      return messageId;
+    }
+    setState(() {
+      _messages.add(
+        ChatMessage(
+          role: 'assistant',
+          content: _strings.t('frontend_thinking_message'),
+          agentName: _strings.t('frontend_agent'),
+          createdAt: DateTime.now(),
+          localId: messageId,
+        ),
+      );
+    });
+    _scrollToLatest();
+    return messageId;
+  }
+
+  void _appendBackendProcessingMessage(String message) {
+    final trimmed = message.trim();
+    if (!mounted || trimmed.isEmpty) {
+      return;
+    }
+    setState(() {
+      _messages.add(
+        ChatMessage(
+          role: 'assistant',
+          content: trimmed,
+          agentName: _strings.t('backend_agent'),
+          createdAt: DateTime.now(),
+        ),
+      );
+    });
+    _scrollToLatest();
+  }
+
   String _nextLocalMessageId(String prefix) {
     _localMessageSequence += 1;
     return '$prefix-${DateTime.now().microsecondsSinceEpoch}-$_localMessageSequence';
@@ -6182,6 +6363,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (appendUserMessage) {
       _scrollToLatest();
     }
+    final frontendThinkingMessageId = _appendFrontendThinkingMessage();
 
     try {
       if (_responderMode == ResponderMode.aiUserSimulator) {
@@ -6258,53 +6440,90 @@ class _ChatHomePageState extends State<ChatHomePage>
           }
         }
       } else {
-        final reply = await _apiClient.sendMessage(
-          message: text,
-          responderMode: _responderMode,
+        final streamInstruction = activeDocumentPath == null
+            ? text
+            : '$text\n\n[Attached local document path: $activeDocumentPath]';
+        var skippedEchoedUserMessage = false;
+        await for (final event in _apiClient.startReadUserTurnStream(
+          instruction: streamInstruction,
           locale: _selectedLocale,
+          questionTimeoutSeconds: _questionTimeoutSeconds,
+          maxDiscussionMinutes: _maxDiscussionMinutes,
+          communicationMinutes: _communicationMinutes,
           documentPath: activeDocumentPath,
-        );
-        final sessionResult = await _apiClient.loadSessionResultDetails();
-        final exportReady = sessionResult?.documentReady ?? false;
-        final visibleReply = _resolveAssistantVisibleReply(
-          rawReply: reply,
-          exportReady: exportReady,
-        );
-        if (_selectedCase != null) {
-          _caseHistoryOffset += 1;
-        }
-        await widget.logger.info(
-          'Assistant reply received',
-          <String, Object?>{
-            'reply_length': visibleReply.length,
-            'responder_mode': _responderMode.name,
-            'document_export_ready': exportReady,
-          },
-        );
-        if (visibleReply.isEmpty) {
-          return;
-        }
-        if (mounted) {
-          setState(() {
-            _messages.add(
-              ChatMessage(
-                role: 'assistant',
-                content: visibleReply,
-                createdAt: DateTime.now(),
-              ),
+        )) {
+          if (event.event == 'processing' && event.data is Map) {
+            final payload = Map<String, dynamic>.from(event.data as Map);
+            final backendMessage = (payload['message'] as String? ?? '').trim();
+            if (backendMessage.isNotEmpty) {
+              _appendBackendProcessingMessage(backendMessage);
+            } else {
+              _appendBackendProcessingMessage(
+                _strings.t('backend_processing_fallback_message'),
+              );
+            }
+            continue;
+          }
+          if (event.event == 'message' && event.data is Map) {
+            final payload = Map<String, dynamic>.from(event.data as Map);
+            final role = (payload['role'] as String? ?? 'assistant')
+                .toLowerCase()
+                .trim();
+            final content = payload['content'] as String? ?? '';
+            final visibleContent = role == 'assistant'
+                ? _resolveAssistantVisibleReply(
+                    rawReply: content,
+                    exportReady: false,
+                  )
+                : _sanitizeVisibleMessageContent(content);
+            final agentName = payload['agent_name'] as String?;
+            if (visibleContent.isEmpty) {
+              continue;
+            }
+            if (!mounted) {
+              continue;
+            }
+            if (!skippedEchoedUserMessage &&
+                role == 'user' &&
+                visibleContent.trim() == text.trim()) {
+              skippedEchoedUserMessage = true;
+              continue;
+            }
+            setState(() {
+              if (_selectedCase != null) {
+                _caseHistoryOffset += 1;
+              }
+              _messages.add(
+                ChatMessage(
+                  role: role,
+                  content: visibleContent,
+                  agentName: agentName,
+                  createdAt: DateTime.now(),
+                ),
+              );
+            });
+            _scrollToLatest();
+            if (role == 'assistant' && speakAssistantReply) {
+              unawaited(_speakAssistantMessage(visibleContent));
+            }
+          }
+          if (event.event == 'result' && event.data is Map) {
+            final result = SessionResultDetails.fromJson(
+              Map<String, dynamic>.from(event.data as Map),
             );
-            _hasExportReady = exportReady;
-            _latestSessionResult = sessionResult;
-          });
-          _syncValidationThreadMessage(scrollToEnd: true);
-          _scrollToLatest();
-          if (speakAssistantReply) {
-            unawaited(
-              _speakAssistantMessage(
-                visibleReply,
-                resumeSpeechInputOnCompletion: _speechInputEnabled,
-              ),
-            );
+            if (mounted) {
+              setState(() {
+                _latestSessionResult = result;
+                _hasExportReady = result.documentReady;
+              });
+              _syncValidationThreadMessage(scrollToEnd: false);
+            }
+          }
+          if (event.event == 'done') {
+            await _refreshSessionResultDetails();
+          }
+          if (event.event == 'error') {
+            throw Exception('ReadUser stream reported error: ${event.data}');
           }
         }
       }
@@ -6324,6 +6543,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       );
       _showApiError(error, apiBaseUrl: widget.apiBaseUrl);
     } finally {
+      _removeThreadMessage(frontendThinkingMessageId);
       if (mounted) {
         setState(() {
           _isSending = false;
