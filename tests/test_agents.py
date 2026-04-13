@@ -40,6 +40,7 @@ def test_lawyer_prompt_requires_old_document_review() -> None:
     assert "older version" in prompt_lower
     assert "upload" in prompt_lower
     assert "out of date" in prompt_lower
+    assert "full document package" in prompt_lower
 
 
 def test_mock_lawyer_returns_short_document_summary_for_summary_request() -> None:
@@ -146,6 +147,7 @@ def test_slovak_lawyer_prompt_includes_company_check_and_tool_first_policy() -> 
     assert "explicit_user_confirmation_required=no" in prompt_lower
     assert "použi tento nástroj ako prvý krok" in prompt_lower
     assert "neplatné alebo nezhodné údaje" in prompt_lower
+    assert "celý balík týchto dokumentov" in prompt_lower
     assert "future_car_verification_check" not in prompt_lower
 
 

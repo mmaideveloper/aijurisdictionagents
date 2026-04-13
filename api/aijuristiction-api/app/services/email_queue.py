@@ -46,7 +46,8 @@ class QueuedEmail:
 class EmailQueueStore:
     def __init__(self, config: EmailQueueConfig) -> None:
         self.config = config
-        self.config.db_local.parent.mkdir(parents=True, exist_ok=True)
+        if self.config.db_option == "local":
+            self.config.db_local.parent.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def from_env(cls) -> "EmailQueueStore":

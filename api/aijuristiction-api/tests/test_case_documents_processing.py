@@ -155,9 +155,9 @@ def test_case_document_upload_limit_and_processing_context(monkeypatch, tmp_path
     assert {item["processing_status"] for item in history.json()["documents"]} == {"processed"}
 
 
-def test_case_document_upload_processes_immediately_in_local_mode(monkeypatch, tmp_path) -> None:
+def test_case_document_upload_processes_immediately_in_api_mode(monkeypatch, tmp_path) -> None:
     _configure(monkeypatch, tmp_path)
-    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "local")
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "api")
     client = TestClient(app)
     user_id = _create_user(client, "+421900222112", "docs-local@example.com")
     case_id = client.post(
@@ -201,6 +201,29 @@ def test_case_document_upload_processes_immediately_in_local_mode(monkeypatch, t
     assert chunks[0].chunk_text == "alpha evidence"
     assert chunks[0].embedding_vector.startswith("[")
     assert chunks[0].embedding_model == "mock-embedding-32d"
+
+
+def test_case_document_upload_processes_immediately_by_default(monkeypatch, tmp_path) -> None:
+    _configure(monkeypatch, tmp_path)
+    monkeypatch.delenv("DOCUMENT_PROCESSOR_OPTION", raising=False)
+    monkeypatch.delenv("DOCUMENT_PROCESSOR", raising=False)
+    client = TestClient(app)
+    user_id = _create_user(client, "+421900222117", "docs-default@example.com")
+    case_id = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Default direct processing"},
+    ).json()["case_id"]
+
+    upload = client.post(
+        f"/v1/cases/{case_id}/documents?user_id={user_id}",
+        headers=_headers(),
+        files=[("files", ("one.txt", b"alpha evidence", "text/plain"))],
+    )
+    assert upload.status_code == 201
+    assert upload.json()["uploaded"][0]["processing_status"] == "processed"
+    assert upload.json()["processed_document_count"] == 1
+    assert upload.json()["unprocessed_document_count"] == 0
 
 
 def test_whitelisted_phone_gets_extended_free_document_limit(monkeypatch, tmp_path) -> None:
@@ -272,7 +295,7 @@ def test_chunk_retrieval_adds_relevant_document_excerpt_to_prompt_context(monkey
 
 def test_case_document_debug_reports_vectors_and_selected_prompt_chunks(monkeypatch, tmp_path) -> None:
     _configure(monkeypatch, tmp_path)
-    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "local")
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "api")
     client = TestClient(app)
     user_id = _create_user(client, "+421900222114", "docs-debug@example.com")
     case_id = client.post(
@@ -320,7 +343,7 @@ def test_uploaded_pdf_is_stored_vectorized_and_used_for_vector_prompt_context(
     tmp_path,
 ) -> None:
     _configure(monkeypatch, tmp_path)
-    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "local")
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "api")
     monkeypatch.setenv("LLM_PROVIDER", "mock")
 
     from app.chat import api as chat_api
@@ -429,7 +452,7 @@ def test_local_embedding_mode_vectorizes_documents_and_supports_semantic_chunk_s
     tmp_path,
 ) -> None:
     _configure(monkeypatch, tmp_path)
-    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "local")
+    monkeypatch.setenv("DOCUMENT_PROCESSOR_OPTION", "api")
     monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL_OPTION", "local")
     monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 

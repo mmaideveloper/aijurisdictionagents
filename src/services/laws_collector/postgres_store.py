@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 
 from .config import LawsCollectorConfig
 from .domain import (
+    ArchiveImportAsset,
     CollectorImportState,
     CollectorProgress,
     LawSemanticCandidate,
@@ -432,7 +433,26 @@ class PostgresLawStore:
                 )
             conn.commit()
 
-    def upsert_artifact(self, *, document_id: str, version_id: str, source_system: str, artifact_kind: str, source_url: str, checksum: str, content_text: str, content_blob: bytes | None, content_bytes: int, http_etag: str, http_last_modified: str, should_redownload: bool, verification_status: str, download_error: str = "") -> None:
+    def upsert_artifact(
+        self,
+        *,
+        document_id: str,
+        version_id: str,
+        source_system: str,
+        artifact_kind: str,
+        source_url: str,
+        checksum: str,
+        storage_backend: str,
+        storage_path: str,
+        content_text: str,
+        content_blob: bytes | None,
+        content_bytes: int,
+        http_etag: str,
+        http_last_modified: str,
+        should_redownload: bool,
+        verification_status: str,
+        download_error: str = "",
+    ) -> None:
         now = _now_iso()
         with self._connect() as conn:
             row = conn.execute(
@@ -447,11 +467,13 @@ class PostgresLawStore:
                     """
                     INSERT INTO source_artifacts(
                         artifact_id, document_id, version_id, source_system, artifact_kind, source_url,
-                        checksum, content_text, content_blob, content_bytes, http_etag, http_last_modified,
+                        checksum, storage_backend, storage_path, content_text, content_blob,
+                        content_bytes, http_etag, http_last_modified,
                         should_redownload, verification_status, download_error, fetched_at, last_checked_at
                     ) VALUES (
                         %(artifact_id)s, %(document_id)s, %(version_id)s, %(source_system)s, %(artifact_kind)s,
-                        %(source_url)s, %(checksum)s, %(content_text)s, %(content_blob)s, %(content_bytes)s,
+                        %(source_url)s, %(checksum)s, %(storage_backend)s, %(storage_path)s,
+                        %(content_text)s, %(content_blob)s, %(content_bytes)s,
                         %(http_etag)s, %(http_last_modified)s, %(should_redownload)s,
                         %(verification_status)s, %(download_error)s, %(now)s, %(now)s
                     )
@@ -464,6 +486,8 @@ class PostgresLawStore:
                         "artifact_kind": artifact_kind,
                         "source_url": source_url,
                         "checksum": checksum,
+                        "storage_backend": storage_backend,
+                        "storage_path": storage_path,
                         "content_text": content_text,
                         "content_blob": content_blob,
                         "content_bytes": content_bytes,
@@ -479,12 +503,29 @@ class PostgresLawStore:
                 conn.execute(
                     """
                     UPDATE source_artifacts
-                    SET http_etag = %(http_etag)s, http_last_modified = %(http_last_modified)s,
-                        should_redownload = %(should_redownload)s, verification_status = %(verification_status)s,
-                        download_error = %(download_error)s, last_checked_at = %(now)s
+                    SET source_system = %(source_system)s,
+                        source_url = %(source_url)s,
+                        storage_backend = %(storage_backend)s,
+                        storage_path = %(storage_path)s,
+                        content_text = %(content_text)s,
+                        content_blob = %(content_blob)s,
+                        content_bytes = %(content_bytes)s,
+                        http_etag = %(http_etag)s,
+                        http_last_modified = %(http_last_modified)s,
+                        should_redownload = %(should_redownload)s,
+                        verification_status = %(verification_status)s,
+                        download_error = %(download_error)s,
+                        last_checked_at = %(now)s
                     WHERE artifact_id = %(artifact_id)s
                     """,
                     {
+                        "source_system": source_system,
+                        "source_url": source_url,
+                        "storage_backend": storage_backend,
+                        "storage_path": storage_path,
+                        "content_text": content_text,
+                        "content_blob": content_blob,
+                        "content_bytes": content_bytes,
                         "http_etag": http_etag,
                         "http_last_modified": http_last_modified,
                         "should_redownload": should_redownload,
@@ -657,6 +698,76 @@ class PostgresLawStore:
                     "completed_at": state.completed_at,
                     "metadata_json": json.dumps(state.metadata, ensure_ascii=True, sort_keys=True),
                     "now": _now_iso(),
+                },
+            )
+            conn.commit()
+
+    def upsert_archive_import_asset(self, asset: ArchiveImportAsset) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO archive_import_assets(
+                    archive_import_asset_id, country_code, source_system, import_key, import_label,
+                    phase, asset_name, source_url, storage_backend, storage_path, checksum,
+                    file_size_bytes, processing_status, downloaded_at, metadata_json, created_at, updated_at
+                ) VALUES (
+                    %(archive_import_asset_id)s, %(country_code)s, %(source_system)s, %(import_key)s, %(import_label)s,
+                    %(phase)s, %(asset_name)s, %(source_url)s, %(storage_backend)s, %(storage_path)s, %(checksum)s,
+                    %(file_size_bytes)s, %(processing_status)s, %(downloaded_at)s, %(metadata_json)s::jsonb, %(now)s, %(now)s
+                )
+                ON CONFLICT(country_code, import_key, asset_name, checksum) DO UPDATE SET
+                    import_label = EXCLUDED.import_label,
+                    phase = EXCLUDED.phase,
+                    source_url = EXCLUDED.source_url,
+                    storage_backend = EXCLUDED.storage_backend,
+                    storage_path = EXCLUDED.storage_path,
+                    file_size_bytes = EXCLUDED.file_size_bytes,
+                    processing_status = EXCLUDED.processing_status,
+                    downloaded_at = EXCLUDED.downloaded_at,
+                    metadata_json = EXCLUDED.metadata_json,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                {
+                    "archive_import_asset_id": str(uuid.uuid4()),
+                    "country_code": asset.country_code,
+                    "source_system": asset.source_system,
+                    "import_key": asset.import_key,
+                    "import_label": asset.import_label,
+                    "phase": asset.phase,
+                    "asset_name": asset.asset_name,
+                    "source_url": asset.source_url,
+                    "storage_backend": asset.storage_backend,
+                    "storage_path": asset.storage_path,
+                    "checksum": asset.checksum,
+                    "file_size_bytes": asset.file_size_bytes,
+                    "processing_status": asset.processing_status,
+                    "downloaded_at": asset.downloaded_at,
+                    "metadata_json": json.dumps(asset.metadata, ensure_ascii=True, sort_keys=True),
+                    "now": _now_iso(),
+                },
+            )
+            conn.commit()
+
+    def update_archive_import_assets_status(
+        self,
+        *,
+        country_code: str,
+        import_key: str,
+        processing_status: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE archive_import_assets
+                SET processing_status = %(processing_status)s,
+                    updated_at = %(updated_at)s
+                WHERE country_code = %(country_code)s AND import_key = %(import_key)s
+                """,
+                {
+                    "country_code": country_code,
+                    "import_key": import_key,
+                    "processing_status": processing_status,
+                    "updated_at": _now_iso(),
                 },
             )
             conn.commit()

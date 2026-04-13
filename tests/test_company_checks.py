@@ -12,10 +12,10 @@ def _registry_with_payload(payload: str) -> ToolRegistry:
 
 def test_answer_slovak_company_seat_question_recognizes_user_text_and_answers_match() -> None:
     payload = (
-        '{"items":[{"CorporateBodyFullName":"Esolution SK s.r.o.",'
-        '"RegistrationNumber":"55544433",'
-        '"RegisteredSeat":"Námestie sv. Egídia 42, Poprad",'
-        '"Status":"Active"}]}'
+        '{"filteredCount":1,"data":[{"corporateBodyFullName":"Esolution SK s.r.o.",'
+        '"registrationNumber":"55544433",'
+        '"physicalAddressLine1":"Námestie sv. Egídia 42",'
+        '"physicalAddressLine2":"058 01 Poprad"}]}'
     )
     registry = _registry_with_payload(payload)
 
@@ -32,10 +32,10 @@ def test_answer_slovak_company_seat_question_recognizes_user_text_and_answers_ma
 
 def test_answer_slovak_company_seat_question_reports_mismatch_city() -> None:
     payload = (
-        '{"items":[{"CorporateBodyFullName":"Esolution SK s.r.o.",'
-        '"RegistrationNumber":"55544433",'
-        '"RegisteredSeat":"Bratislava",'
-        '"Status":"Active"}]}'
+        '{"filteredCount":1,"data":[{"corporateBodyFullName":"Esolution SK s.r.o.",'
+        '"registrationNumber":"55544433",'
+        '"physicalAddressLine1":"Námestie slobody 1",'
+        '"physicalAddressLine2":"811 06 Bratislava"}]}'
     )
     registry = _registry_with_payload(payload)
 

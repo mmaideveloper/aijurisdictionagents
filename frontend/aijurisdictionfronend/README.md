@@ -20,6 +20,29 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## API Chat Integration (Task #238)
+
+The signed-in workspace now uses the live API for case communication in all three modes (`Chat`, `Voice`, `Video`).
+Voice and video are simulated by sending transcript payloads through the same chat reply endpoint.
+
+Frontend environment variables:
+
+- `VITE_API_BASE_URL` (default: `https://api-juris-dev.victoriousdesert-e45eec11.westeurope.azurecontainerapps.io`)
+- `VITE_API_KEY` (default: `aijuris`)
+- `VITE_API_COUNTRY` (default: `SK`)
+- `VITE_API_LANGUAGE` (default: `en`)
+
+Flow used by the workspace:
+
+1. `POST /v1/chat/sessions` once per case.
+2. `POST /v1/chat/sessions/{session_id}/reply` for each outgoing user message.
+3. The API response is appended back to the active case timeline.
+
+Console logging:
+
+- Frontend emits process logs to browser console with `INFO`, `WARN`, and `ERROR` levels.
+- API request lifecycle and failures are logged with structured JSON context.
+
 ## Simulated Login (Frontend-only)
 
 The UI includes an in-memory auth state used for local development. It resets on refresh.
@@ -130,3 +153,12 @@ Task-specific frontend check:
 ```bash
 python examples/frontend_navbar_task_211_minimal_demo.py
 ```
+
+Task #238 API chat minimal demo:
+
+```bash
+python examples/frontend_api_chat_minimal_demo.py
+```
+
+The demo defaults to the shared Azure dev API endpoint. Override it for local API testing with
+`AIJ_API_BASE_URL=http://127.0.0.1:8080`.

@@ -23,6 +23,7 @@ Current implementation status:
 - `src/services/laws_collector/import_planner.py`
 - `src/services/laws_collector/slovlex_process.py`
 - `src/services/laws_collector/slovlex_live_source.py`
+- `src/services/laws_collector/source_artifact_storage.py`
 - `src/services/laws_collector/sqlite_store.py`
 - `src/services/laws_collector/postgres_store.py`
 - `infra/scripts/deploy_laws_collector.ps1`
@@ -277,6 +278,8 @@ erDiagram
         string artifact_kind
         string source_url
         string checksum
+        string storage_backend
+        string storage_path
         string http_etag
         string http_last_modified
         string verification_status
@@ -312,7 +315,7 @@ flowchart TB
     PROV["law_provisions\nprovision anchors and text"]
     META["law_metadata\nstructured law card fields"]
     REL["law_metadata_relations\ndependency graph edges"]
-    ART["source_artifacts\nHTML/PDF raw provenance"]
+    ART["source_artifacts\nHTML/PDF provenance + storage reference"]
     EVT["update_events\ningest audit trail"]
     PROG["collector_progress\nlegacy sequential cursor"]
     ZIPPROG["collector_import_state\narchive/monthly ZIP cursors"]

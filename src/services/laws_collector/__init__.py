@@ -3,6 +3,7 @@
 from .country_registry import CountryLawsCollectorDefinition, get_country_laws_collector_definition
 from .config import LawsCollectorConfig
 from .domain import (
+    ArchiveImportAsset,
     CollectorImportState,
     CollectorProgress,
     LawInformationField,
@@ -24,6 +25,7 @@ from .sqlite_store import SqliteLawStore
 
 __all__ = [
     "CountryLawsCollectorDefinition",
+    "ArchiveImportAsset",
     "CollectorImportState",
     "CollectorProgress",
     "LawInformationField",

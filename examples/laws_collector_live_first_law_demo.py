@@ -41,7 +41,9 @@ def main() -> None:
                    v.version_token, v.embedding_model, v.embedding_dimensions, v.embedding_vector,
                    m.law_type, m.author, m.legal_areas_json,
                    COUNT(r.law_metadata_relation_id) AS relation_count,
-                   LENGTH(a.content_text) AS html_text_length
+                   LENGTH(a.content_text) AS html_text_length,
+                   a.storage_backend,
+                   a.storage_path
             FROM law_documents AS d
             JOIN law_versions AS v ON v.document_id = d.document_id
             LEFT JOIN law_metadata AS m ON m.version_id = v.version_id
@@ -52,7 +54,8 @@ def main() -> None:
               AND d.law_year = 1993 AND d.law_number = 1
             GROUP BY d.law_year, d.law_number, d.official_name, d.last_download_status,
                      v.version_token, v.embedding_model, v.embedding_dimensions, v.embedding_vector,
-                     m.law_type, m.author, m.legal_areas_json, a.content_text, v.created_at
+                     m.law_type, m.author, m.legal_areas_json, a.content_text, a.storage_backend,
+                     a.storage_path, v.created_at
             ORDER BY v.created_at
             LIMIT 1
             """
@@ -85,6 +88,8 @@ def main() -> None:
         print("Legal areas:", law_row[10] or "[]")
         print("Relation count:", law_row[11])
         print("Stored text length:", law_row[12])
+        print("Artifact backend:", law_row[13] or "")
+        print("Artifact path:", law_row[14] or "")
     if progress_row is None:
         print("Collector progress: missing")
     else:

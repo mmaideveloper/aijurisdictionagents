@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+import sqlite3
 import zipfile
 
 from aijurisdictionagents.llm.embeddings import MockEmbeddingClient
+from services.laws_collector.archive_storage import StoredArchiveObject
 from services.laws_collector import LawsCollectorConfig, SqliteLawStore, SlovakLawsCollectorService
 from services.laws_collector.domain import CollectorImportState
 from services.laws_collector.slovlex_zip_import import (
@@ -12,7 +14,6 @@ from services.laws_collector.slovlex_zip_import import (
     SlovLexExportIndex,
     SlovLexMonthlyExport,
     SlovLexZipImportRunner,
-    _extract_zip_archive,
     parse_export_index_html,
 )
 
@@ -23,7 +24,7 @@ def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorS
         db_backend="sqlite",
         db_local=str(tmp_path / "laws.sqlite3"),
         db_cloud="",
-        storage_local="",
+        storage_local=str(tmp_path / "files"),
         storage_cloud="",
         delta_poll_hours=3,
         initial_import_from=date(1993, 1, 1),
@@ -38,6 +39,11 @@ def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorS
         embedding_client=MockEmbeddingClient(),
     )
     return store, service, config
+
+
+def test_slovak_archive_root_defaults_to_laws_collection_sk(tmp_path: Path) -> None:
+    _, _, config = _build_service(tmp_path)
+    assert config.archive_root.as_posix().endswith("/archivelaws/laws-collection-sk")
 
 
 def _build_html(*, number: int, year: int, title: str, effective_from: str) -> str:
@@ -143,6 +149,52 @@ def test_zip_import_runner_imports_monthly_zip_and_marks_state_complete(tmp_path
     assert store.get_counts().documents == 2
 
 
+def test_zip_import_runner_persists_html_source_artifact_references(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    monthly_zip = tmp_path / "fixtures" / "exportZmeny.zip"
+    _create_monthly_zip(
+        monthly_zip,
+        laws=[(1993, 1, "Prvy zakon", "1993-01-01")],
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=None,
+                monthly_export=SlovLexMonthlyExport(
+                    range_start="2026-03-01",
+                    range_end="2026-04-01",
+                    zip_url=monthly_zip.resolve().as_uri(),
+                ),
+            )
+
+    SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT artifact_kind, storage_backend, storage_path, content_text, content_blob
+            FROM source_artifacts
+            WHERE artifact_kind = 'html'
+            ORDER BY fetched_at
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert row is not None
+    assert row["artifact_kind"] == "html"
+    assert row["storage_backend"] == "local_file"
+    assert Path(str(row["storage_path"])).exists()
+    assert row["content_blob"] is None
+    assert "Ustanovenie pre Prvy zakon." in str(row["content_text"])
+
+
 def test_zip_import_runner_resumes_after_timeout(tmp_path: Path) -> None:
     store, service, config = _build_service(tmp_path)
     monthly_zip = tmp_path / "fixtures" / "exportZmeny.zip"
@@ -240,7 +292,75 @@ def test_zip_import_runner_skips_monthly_export_covered_by_completed_archive(tmp
     assert summary.monthly_completed is True
 
 
-def test_zip_import_runner_processes_archive_seed(tmp_path: Path, monkeypatch) -> None:
+def test_zip_import_runner_skips_already_completed_monthly_export(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    store.upsert_import_state(
+        CollectorImportState(
+            country_code="SK",
+            source_system="slov-lex",
+            import_key="slov-lex:zip:archive-seed",
+            import_label="archive seed 2026-04-01",
+            source_url="https://static.slov-lex.sk/static/exporty/ZZ/export.zip",
+            status="completed",
+            started_at="2026-04-01T00:00:00Z",
+            last_processed_at="2026-04-01T00:00:00Z",
+            last_processed_entry="changed/SK/ZZ/1993/1/19930101.html",
+            last_processed_law_year=1993,
+            last_processed_law_number=1,
+            completed_at="2026-04-01T00:00:00Z",
+            metadata={"archive_snapshot_date": "2026-04-01", "phase": "archive"},
+        )
+    )
+    store.upsert_import_state(
+        CollectorImportState(
+            country_code="SK",
+            source_system="slov-lex",
+            import_key="slov-lex:zip:monthly:2026-04-02_2026-04-15",
+            import_label="monthly 2026-04-02..2026-04-15",
+            source_url="https://static.slov-lex.sk/static/exporty/ZZ/exportZmeny.zip",
+            status="completed",
+            started_at="2026-04-15T00:00:00Z",
+            last_processed_at="2026-04-15T00:00:00Z",
+            last_processed_entry="changed/SK/ZZ/1993/2/19930201.html",
+            last_processed_law_year=1993,
+            last_processed_law_number=2,
+            completed_at="2026-04-15T00:00:00Z",
+            metadata={
+                "monthly_range_start": "2026-04-02",
+                "monthly_range_end": "2026-04-15",
+                "phase": "monthly",
+            },
+        )
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-01",
+                    part_urls=("https://static.slov-lex.sk/static/exporty/ZZ/export.zip",),
+                ),
+                monthly_export=SlovLexMonthlyExport(
+                    range_start="2026-04-02",
+                    range_end="2026-04-15",
+                    zip_url="https://static.slov-lex.sk/static/exporty/ZZ/exportZmeny.zip",
+                ),
+            )
+
+    summary = SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    assert summary.phase == "monthly"
+    assert summary.skipped_as_already_completed is True
+    assert summary.entries_processed == 0
+    assert summary.monthly_completed is True
+
+
+def test_zip_import_runner_processes_archive_seed(tmp_path: Path) -> None:
     store, service, config = _build_service(tmp_path)
     archive_zip = tmp_path / "fixtures" / "export.zip"
     _create_monthly_zip(
@@ -250,9 +370,6 @@ def test_zip_import_runner_processes_archive_seed(tmp_path: Path, monkeypatch) -
             (1993, 2, "Druhy zakon", "1993-02-01"),
         ],
     )
-
-    def fake_extract_archive_bundle(*, download_root: Path, extract_root: Path) -> None:
-        _extract_zip_archive(zip_path=download_root / "export.zip", extract_root=extract_root)
 
     class FakeIndexLoader:
         def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
@@ -264,10 +381,6 @@ def test_zip_import_runner_processes_archive_seed(tmp_path: Path, monkeypatch) -
                 monthly_export=None,
             )
 
-    monkeypatch.setattr(
-        "services.laws_collector.slovlex_zip_import._extract_archive_bundle",
-        fake_extract_archive_bundle,
-    )
     summary = SlovLexZipImportRunner(
         config=config,
         store=store,
@@ -282,3 +395,132 @@ def test_zip_import_runner_processes_archive_seed(tmp_path: Path, monkeypatch) -
     assert state.status == "completed"
     assert state.metadata["archive_snapshot_date"] == "2026-04-01"
     assert store.get_counts().documents == 2
+
+
+def test_zip_import_runner_updates_collector_progress(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    archive_zip = tmp_path / "fixtures" / "export.zip"
+    _create_monthly_zip(
+        archive_zip,
+        laws=[
+            (1993, 1, "Prvy zakon", "1993-01-01"),
+            (1993, 2, "Druhy zakon", "1993-02-01"),
+        ],
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-01",
+                    part_urls=(archive_zip.resolve().as_uri(),),
+                ),
+                monthly_export=None,
+            )
+
+    SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    progress = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=1993,
+    )
+    assert progress.last_processed_law == "2/1993"
+    assert progress.last_processed_at is not None
+    assert progress.last_collector_run_at is not None
+
+
+def test_zip_import_runner_reextracts_when_marker_signature_does_not_match(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    archive_root = config.archive_root / "archive" / "2026-04-01"
+    extract_root = archive_root / "extract"
+    extract_root.mkdir(parents=True, exist_ok=True)
+    (extract_root / ".extract.complete").write_text("2026-04-01T00:00:00Z", encoding="utf-8")
+    stale_entry = extract_root / "changed" / "SK" / "ZZ" / "1993" / "999" / "19990101.html"
+    stale_entry.parent.mkdir(parents=True, exist_ok=True)
+    stale_entry.write_text("stale", encoding="utf-8")
+
+    archive_zip = tmp_path / "fixtures" / "export.zip"
+    _create_monthly_zip(
+        archive_zip,
+        laws=[(1993, 1, "Prvy zakon", "1993-01-01")],
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-01",
+                    part_urls=(archive_zip.resolve().as_uri(),),
+                ),
+                monthly_export=None,
+            )
+
+    SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    assert not stale_entry.exists()
+    assert (extract_root / "changed" / "SK" / "ZZ" / "1993" / "1" / "19930101.html").exists()
+
+
+def test_zip_import_runner_records_archive_assets_and_marks_them_processed(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    archive_zip = tmp_path / "fixtures" / "export.zip"
+    _create_monthly_zip(
+        archive_zip,
+        laws=[(1993, 1, "Prvy zakon", "1993-01-01")],
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-01",
+                    part_urls=(archive_zip.resolve().as_uri(),),
+                ),
+                monthly_export=None,
+            )
+
+    class FakeArchiveObjectStore:
+        def persist_file(self, *, source_path: Path, relative_path: str) -> StoredArchiveObject:
+            return StoredArchiveObject(
+                storage_backend="azure_blob",
+                storage_path=f"https://example.blob.core.windows.net/laws-collection-sk/{relative_path}",
+            )
+
+    SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+        archive_object_store=FakeArchiveObjectStore(),
+    ).run()
+
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT import_key, phase, asset_name, storage_backend, storage_path,
+                   processing_status, metadata_json
+            FROM archive_import_assets
+            WHERE import_key = ?
+            """,
+            ("slov-lex:zip:archive-seed",),
+        ).fetchone()
+
+    assert row is not None
+    assert row["phase"] == "archive"
+    assert row["asset_name"] == "export.zip"
+    assert row["storage_backend"] == "azure_blob"
+    assert row["processing_status"] == "processed"
+    assert "laws-collection-sk/sk/archive/2026-04-01/download/export.zip" in str(row["storage_path"])
+    assert "archive_snapshot_date" in str(row["metadata_json"])

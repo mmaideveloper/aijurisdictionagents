@@ -13,6 +13,7 @@ from typing import Any, Sequence, cast
 from urllib.request import Request, urlopen
 
 from app.chat.models import Message, MessageRole, Session
+from app.law_citations import resolve_session_law_citations
 from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.agents import AIWebSearchAgent, AIAgentsValidator, ValidatorInputs
@@ -149,6 +150,11 @@ def build_session_result_metadata(
     )
 
     knowledge_snapshot = get_law_knowledge_snapshot(session.country)
+    law_citations = resolve_session_law_citations(
+        country_code=session.country,
+        messages=visible_messages,
+        final_recommendation=final_recommendation,
+    )
     metadata.update(
         {
             "validation_accuracy": report.weighted_accuracy,
@@ -177,6 +183,7 @@ def build_session_result_metadata(
             "model_knowledge_cutoff_date": knowledge_snapshot.model_knowledge_cutoff_date,
             "model_knowledge_cutoff_source": knowledge_snapshot.model_knowledge_cutoff_source,
             "law_reference_links": list(knowledge_snapshot.reference_links),
+            "law_citations": law_citations,
             "api_version": get_api_version(),
             "core_version": get_core_version(),
         }

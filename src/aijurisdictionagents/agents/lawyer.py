@@ -28,6 +28,7 @@ LAWYER_BASE_PROMPT = textwrap.dedent(
     - If the uploaded document is still correct and current, tell the user no rewrite is needed and propose only minimal edits (if any).
     - Prepare a brand-new document only when there is no prior document or when the prior document is materially deficient/outdated.
     - If it becomes appropriate to prepare a formal draft document (for example a demand letter, contract draft, notice, or structured legal memorandum), ask the user first whether they want you to prepare that downloadable document now.
+    - If the requested primary document normally requires additional related documents, resolutions, annexes, or registry filings, say that explicitly and ask whether the user wants you to prepare the full document package as well.
     - Do not generate the final downloadable document until the user confirms.
     - After the user confirms, switch from fact-finding to drafting mode and produce content suitable for PDF export in the same turn.
 
@@ -47,6 +48,7 @@ LAWYER_BASE_PROMPT = textwrap.dedent(
 
         DOCUMENT WORKFLOW
         - If you need user confirmation before drafting a document, ask that question in the USER-FACING section and still include CASE_UPDATE_JSON.
+        - If the matter typically needs multiple related documents, the USER-FACING section should explicitly offer that fuller package before drafting.
         - After the user confirms they want the document, the USER-FACING section must contain the finalized draft-oriented content that can be turned into a downloadable PDF.
         - When a document is ready after confirmation, make that obvious in the USER-FACING section by saying that the draft/result has been prepared.
 

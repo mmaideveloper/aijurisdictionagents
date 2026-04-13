@@ -217,3 +217,22 @@ def test_postgres_initialize_skips_sqlite_permanent_memory_bootstrap(tmp_path: P
     combined = "\n".join(executed_queries)
     assert "create table if not exists permanent_memory" not in combined.lower()
     assert "autoincrement" not in combined.lower()
+
+
+def test_postgres_store_init_does_not_create_local_dirs(tmp_path: Path) -> None:
+    db_path = tmp_path / "diagnostics" / "unused.sqlite3"
+    blob_root = tmp_path / "cache"
+    assert not db_path.parent.exists()
+    assert not blob_root.exists()
+
+    ApiDatabaseStore(
+        db_path=db_path,
+        blob_root=blob_root,
+        db_option="postgres",
+        db_cloud="postgresql://example",
+        storage_option="azure",
+        store_cloud="UseDevelopmentStorage=true",
+    )
+
+    assert not db_path.parent.exists()
+    assert not blob_root.exists()

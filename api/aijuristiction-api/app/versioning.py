@@ -13,24 +13,22 @@ UNKNOWN_VERSION = "unknown"
 
 
 def get_api_version() -> str:
-    installed = _get_installed_package_version(API_PACKAGE_NAME)
-    if installed != UNKNOWN_VERSION:
-        return installed
-
     source_version = _get_api_project_version()
     if source_version is not None:
         return source_version
+    installed = _get_installed_package_version(API_PACKAGE_NAME)
+    if installed != UNKNOWN_VERSION:
+        return installed
     return UNKNOWN_VERSION
 
 
 def get_core_version() -> str:
-    installed = _get_installed_package_version(CORE_PACKAGE_NAME)
-    if installed != UNKNOWN_VERSION:
-        return installed
-
     source_version = _get_core_source_version()
     if source_version is not None:
         return source_version
+    installed = _get_installed_package_version(CORE_PACKAGE_NAME)
+    if installed != UNKNOWN_VERSION:
+        return installed
     return UNKNOWN_VERSION
 
 

@@ -9,6 +9,7 @@ import uuid
 
 from .config import LawsCollectorConfig
 from .domain import (
+    ArchiveImportAsset,
     CollectorImportState,
     CollectorProgress,
     LawSemanticCandidate,
@@ -49,7 +50,7 @@ class LawDocumentOverview:
 
 
 class SqliteLawStore:
-    """SQLite-backed law metadata store with documents stored inside the database."""
+    """SQLite-backed law metadata store with parsed text in DB and artifact references on storage."""
 
     def __init__(self, *, db_path: Path) -> None:
         self.db_path = db_path
@@ -136,6 +137,8 @@ class SqliteLawStore:
                     artifact_kind TEXT NOT NULL,
                     source_url TEXT NOT NULL,
                     checksum TEXT NOT NULL,
+                    storage_backend TEXT NOT NULL DEFAULT '',
+                    storage_path TEXT NOT NULL DEFAULT '',
                     content_text TEXT NOT NULL,
                     content_blob BLOB,
                     content_bytes INTEGER NOT NULL,
@@ -233,9 +236,31 @@ class SqliteLawStore:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY(country_code, import_key)
                 );
+
+                CREATE TABLE IF NOT EXISTS archive_import_assets (
+                    archive_import_asset_id TEXT PRIMARY KEY,
+                    country_code TEXT NOT NULL,
+                    source_system TEXT NOT NULL,
+                    import_key TEXT NOT NULL,
+                    import_label TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    asset_name TEXT NOT NULL,
+                    source_url TEXT NOT NULL,
+                    storage_backend TEXT NOT NULL,
+                    storage_path TEXT NOT NULL,
+                    checksum TEXT NOT NULL,
+                    file_size_bytes INTEGER NOT NULL,
+                    processing_status TEXT NOT NULL,
+                    downloaded_at TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(country_code, import_key, asset_name, checksum)
+                );
                 """
             )
             _ensure_law_versions_columns(conn)
+            _ensure_source_artifacts_columns(conn)
 
     def upsert_document(self, snapshot: LawSnapshot) -> tuple[str, bool]:
         now = _now_iso()
@@ -596,6 +621,8 @@ class SqliteLawStore:
         artifact_kind: str,
         source_url: str,
         checksum: str,
+        storage_backend: str,
+        storage_path: str,
         content_text: str,
         content_blob: bytes | None,
         content_bytes: int,
@@ -620,11 +647,11 @@ class SqliteLawStore:
                     """
                     INSERT INTO source_artifacts(
                         artifact_id, document_id, version_id, source_system, artifact_kind, source_url,
-                        checksum, content_text, content_blob, content_bytes, http_etag,
+                        checksum, storage_backend, storage_path, content_text, content_blob, content_bytes, http_etag,
                         http_last_modified, should_redownload, verification_status,
                         download_error, fetched_at, last_checked_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(uuid.uuid4()),
@@ -634,6 +661,8 @@ class SqliteLawStore:
                         artifact_kind,
                         source_url,
                         checksum,
+                        storage_backend,
+                        storage_path,
                         content_text,
                         content_blob,
                         content_bytes,
@@ -651,11 +680,19 @@ class SqliteLawStore:
             conn.execute(
                 """
                 UPDATE source_artifacts
-                SET http_etag = ?, http_last_modified = ?, should_redownload = ?,
-                    verification_status = ?, download_error = ?, last_checked_at = ?
+                SET source_system = ?, source_url = ?, storage_backend = ?, storage_path = ?,
+                    content_text = ?, content_blob = ?, content_bytes = ?, http_etag = ?, http_last_modified = ?,
+                    should_redownload = ?, verification_status = ?, download_error = ?, last_checked_at = ?
                 WHERE artifact_id = ?
                 """,
                 (
+                    source_system,
+                    source_url,
+                    storage_backend,
+                    storage_path,
+                    content_text,
+                    content_blob,
+                    content_bytes,
                     http_etag,
                     http_last_modified,
                     1 if should_redownload else 0,
@@ -823,6 +860,73 @@ class SqliteLawStore:
                 ),
             )
 
+    def upsert_archive_import_asset(self, asset: ArchiveImportAsset) -> None:
+        now = _now_iso()
+        metadata_json = json.dumps(asset.metadata, ensure_ascii=True, sort_keys=True)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO archive_import_assets(
+                    archive_import_asset_id, country_code, source_system, import_key, import_label,
+                    phase, asset_name, source_url, storage_backend, storage_path, checksum,
+                    file_size_bytes, processing_status, downloaded_at, metadata_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(country_code, import_key, asset_name, checksum) DO UPDATE SET
+                    import_label = excluded.import_label,
+                    phase = excluded.phase,
+                    source_url = excluded.source_url,
+                    storage_backend = excluded.storage_backend,
+                    storage_path = excluded.storage_path,
+                    file_size_bytes = excluded.file_size_bytes,
+                    processing_status = excluded.processing_status,
+                    downloaded_at = excluded.downloaded_at,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    str(uuid.uuid4()),
+                    asset.country_code,
+                    asset.source_system,
+                    asset.import_key,
+                    asset.import_label,
+                    asset.phase,
+                    asset.asset_name,
+                    asset.source_url,
+                    asset.storage_backend,
+                    asset.storage_path,
+                    asset.checksum,
+                    asset.file_size_bytes,
+                    asset.processing_status,
+                    asset.downloaded_at,
+                    metadata_json,
+                    now,
+                    now,
+                ),
+            )
+
+    def update_archive_import_assets_status(
+        self,
+        *,
+        country_code: str,
+        import_key: str,
+        processing_status: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE archive_import_assets
+                SET processing_status = ?, updated_at = ?
+                WHERE country_code = ? AND import_key = ?
+                """,
+                (
+                    processing_status,
+                    _now_iso(),
+                    country_code,
+                    import_key,
+                ),
+            )
+
     def get_counts(self) -> CollectorCounts:
         with self._connect() as conn:
             return CollectorCounts(
@@ -922,6 +1026,19 @@ def _ensure_law_versions_columns(conn: sqlite3.Connection) -> None:
     if "embedding_dimensions" not in existing:
         conn.execute(
             "ALTER TABLE law_versions ADD COLUMN embedding_dimensions INTEGER NOT NULL DEFAULT 0"
+        )
+
+
+def _ensure_source_artifacts_columns(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("PRAGMA table_info(source_artifacts)").fetchall()
+    existing = {str(row["name"]) for row in rows}
+    if "storage_backend" not in existing:
+        conn.execute(
+            "ALTER TABLE source_artifacts ADD COLUMN storage_backend TEXT NOT NULL DEFAULT ''"
+        )
+    if "storage_path" not in existing:
+        conn.execute(
+            "ALTER TABLE source_artifacts ADD COLUMN storage_path TEXT NOT NULL DEFAULT ''"
         )
 
 

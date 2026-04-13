@@ -3,8 +3,10 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 from math import fsum
+from pathlib import PurePosixPath
 from time import perf_counter
 from typing import Protocol
+from urllib.parse import urlparse
 
 from aijurisdictionagents.llm.embeddings import EmbeddingClient, get_embedding_client
 from services.document_processor.runtime import (
@@ -25,6 +27,11 @@ from .domain import (
     UpdateCheckItem,
     UpdateCheckPlan,
     format_law_identifier,
+)
+from .source_artifact_storage import (
+    SourceArtifactObjectStore,
+    StoredSourceArtifactObject,
+    build_source_artifact_object_store,
 )
 
 
@@ -73,6 +80,8 @@ class LawStore(Protocol):
         artifact_kind: str,
         source_url: str,
         checksum: str,
+        storage_backend: str,
+        storage_path: str,
         content_text: str,
         content_blob: bytes | None,
         content_bytes: int,
@@ -105,11 +114,13 @@ class LawsCollectorService:
         config: LawsCollectorConfig,
         store: LawStore,
         embedding_client: EmbeddingClient | None = None,
+        source_artifact_store: SourceArtifactObjectStore | None = None,
     ) -> None:
         config.validate()
         self.config = config
         self.store = store
         self.embedding_client = embedding_client or get_embedding_client()
+        self.source_artifact_store = source_artifact_store or build_source_artifact_object_store(config)
 
     def sync(self, snapshots: tuple[LawSnapshot, ...]) -> SyncSummary:
         summary = SyncSummary()
@@ -137,6 +148,7 @@ class LawsCollectorService:
                 snapshot=snapshot,
                 embedding_client=self.embedding_client,
             )
+            html_source_content = snapshot.html_source_content or snapshot.html_content.encode("utf-8")
             stored_version = self.store.upsert_version(
                 document_id=document_id,
                 snapshot=snapshot,
@@ -161,6 +173,19 @@ class LawsCollectorService:
                     relations=snapshot.relations,
                 )
             self.store.replace_provisions(version_id=stored_version.version_id, provisions=snapshot.provisions)
+            html_artifact = _persist_source_artifact(
+                source_artifact_store=self.source_artifact_store,
+                country_code=snapshot.country_code,
+                collection_code=snapshot.collection_code,
+                year=snapshot.year,
+                number=snapshot.number,
+                version_token=snapshot.version_token,
+                artifact_kind="html",
+                source_url=snapshot.html_url,
+                checksum=html_checksum,
+                default_extension=".html",
+                content=html_source_content,
+            )
             self.store.upsert_artifact(
                 document_id=document_id,
                 version_id=stored_version.version_id,
@@ -168,29 +193,47 @@ class LawsCollectorService:
                 artifact_kind="html",
                 source_url=snapshot.html_url,
                 checksum=html_checksum,
+                storage_backend=html_artifact.storage_backend,
+                storage_path=html_artifact.storage_path,
                 content_text=snapshot.html_content,
                 content_blob=None,
-                content_bytes=len(snapshot.html_content.encode("utf-8")),
+                content_bytes=len(html_source_content),
                 http_etag=snapshot.http_etag,
                 http_last_modified=snapshot.http_last_modified,
                 should_redownload=False,
                 verification_status="stored",
             )
-            self.store.upsert_artifact(
-                document_id=document_id,
-                version_id=stored_version.version_id,
-                source_system=snapshot.source_system,
-                artifact_kind="pdf",
-                source_url=snapshot.pdf_url,
-                checksum=pdf_checksum,
-                content_text="",
-                content_blob=snapshot.pdf_content,
-                content_bytes=len(snapshot.pdf_content),
-                http_etag=snapshot.http_etag,
-                http_last_modified=snapshot.http_last_modified,
-                should_redownload=False,
-                verification_status="stored",
-            )
+            if snapshot.pdf_content:
+                pdf_artifact = _persist_source_artifact(
+                    source_artifact_store=self.source_artifact_store,
+                    country_code=snapshot.country_code,
+                    collection_code=snapshot.collection_code,
+                    year=snapshot.year,
+                    number=snapshot.number,
+                    version_token=snapshot.version_token,
+                    artifact_kind="pdf",
+                    source_url=snapshot.pdf_url,
+                    checksum=pdf_checksum,
+                    default_extension=".pdf",
+                    content=snapshot.pdf_content,
+                )
+                self.store.upsert_artifact(
+                    document_id=document_id,
+                    version_id=stored_version.version_id,
+                    source_system=snapshot.source_system,
+                    artifact_kind="pdf",
+                    source_url=snapshot.pdf_url,
+                    checksum=pdf_checksum,
+                    storage_backend=pdf_artifact.storage_backend,
+                    storage_path=pdf_artifact.storage_path,
+                    content_text="",
+                    content_blob=None,
+                    content_bytes=len(snapshot.pdf_content),
+                    http_etag=snapshot.http_etag,
+                    http_last_modified=snapshot.http_last_modified,
+                    should_redownload=False,
+                    verification_status="stored",
+                )
 
             event_type = _event_type(document_created=document_created, version_state=stored_version.state)
             if event_type != "no_change":
@@ -327,6 +370,55 @@ def _hash_text(value: str) -> str:
 
 def _hash_bytes(value: bytes) -> str:
     return sha256(value).hexdigest()
+
+
+def _persist_source_artifact(
+    *,
+    source_artifact_store: SourceArtifactObjectStore,
+    country_code: str,
+    collection_code: str,
+    year: int,
+    number: int,
+    version_token: str,
+    artifact_kind: str,
+    source_url: str,
+    checksum: str,
+    default_extension: str,
+    content: bytes,
+) -> StoredSourceArtifactObject:
+    relative_path = _build_source_artifact_storage_relative_path(
+        country_code=country_code,
+        collection_code=collection_code,
+        year=year,
+        number=number,
+        version_token=version_token,
+        artifact_kind=artifact_kind,
+        source_url=source_url,
+        checksum=checksum,
+        default_extension=default_extension,
+    )
+    return source_artifact_store.persist_bytes(content=content, relative_path=relative_path)
+
+
+def _build_source_artifact_storage_relative_path(
+    *,
+    country_code: str,
+    collection_code: str,
+    year: int,
+    number: int,
+    version_token: str,
+    artifact_kind: str,
+    source_url: str,
+    checksum: str,
+    default_extension: str,
+) -> str:
+    parsed = urlparse(source_url)
+    extension = PurePosixPath(parsed.path).suffix or default_extension
+    filename = f"{artifact_kind}-{checksum[:16]}{extension}"
+    return (
+        f"source-artifacts/{country_code.lower()}/{collection_code.lower()}/"
+        f"{year}/{number}/{version_token}/{filename}"
+    )
 
 
 def _build_embedding_input(snapshot: LawSnapshot) -> str:

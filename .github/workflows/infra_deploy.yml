@@ -49,6 +49,7 @@ jobs:
       AZURE_POSTGRES_STORAGE_SIZE_GB: ${{ vars.AZURE_POSTGRES_STORAGE_SIZE_GB }}
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_STORAGE_CONTAINER_NAME }}
+      AZURE_LAWS_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_LAWS_STORAGE_CONTAINER_NAME }}
       AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
       AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
       AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
@@ -365,6 +366,7 @@ jobs:
               acrName="${{ steps.acr.outputs.acr_name }}" \
               storageAccountName="${{ steps.storage.outputs.storage_account_name }}" \
               storageContainerName="${{ steps.storage.outputs.storage_container_name }}" \
+              lawsStorageContainerName="${AZURE_LAWS_STORAGE_CONTAINER_NAME:-laws-collection-sk}" \
               logAnalyticsWorkspaceName="$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
               applicationInsightsName="${{ steps.appinsights.outputs.application_insights_name }}" \
               managedIdentityName="$AZURE_MANAGED_IDENTITY_NAME" \

@@ -29,11 +29,13 @@ _LOGGER = logging.getLogger(__name__)
 def _document_processor_mode() -> str:
     value = os.getenv(
         "DOCUMENT_PROCESSOR_OPTION",
-        os.getenv("DOCUMENT_PROCESSOR", "local"),
+        os.getenv("DOCUMENT_PROCESSOR", "api"),
     ).strip().lower()
-    if value in {"local", "azure"}:
-        return value
-    return "local"
+    if value in {"", "api", "local"}:
+        return "api"
+    if value == "azure":
+        return "azure"
+    return "api"
 
 
 class CaseResponse(BaseModel):
@@ -228,7 +230,7 @@ async def upload_case_documents(
         uploaded_documents.append(stored_document)
         uploaded.append(_to_case_document_response(stored_document))
         next_version += 1
-    if _document_processor_mode() == "local" and uploaded_documents:
+    if _document_processor_mode() != "azure" and uploaded_documents:
         processor = DocumentProcessor(store)
         processor.process_documents(uploaded_documents)
         uploaded = [
@@ -349,7 +351,18 @@ def download_case_document(
         document = store.get_case_document(case_id=case_id, doc_id=doc_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    payload = store.read_storage_bytes(storage_uri=document.storage_uri)
+    try:
+        payload = store.read_storage_bytes(storage_uri=document.storage_uri)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stored payload is unavailable for document {doc_id}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Case storage backend is not reachable for this document",
+        ) from exc
     media_type = guess_type(document.original_filename)[0] or 'application/octet-stream'
     return Response(
         content=payload,
@@ -391,6 +404,16 @@ def _read_case_communication_content(
         return content
     try:
         return str(store.read_storage_text(storage_uri=transcript_uri))
+    except FileNotFoundError:
+        _LOGGER.info(
+            'Case communication transcript not found; using summary fallback',
+            extra={
+                'case_id': communication.case_id,
+                'communication_id': communication.communication_id,
+                'transcript_uri': transcript_uri,
+            },
+        )
+        return content
     except Exception:
         _LOGGER.warning(
             'Falling back to case communication summary because transcript could not be read',

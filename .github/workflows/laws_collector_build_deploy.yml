@@ -79,6 +79,8 @@ jobs:
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
       AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_LAWS_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_LAWS_STORAGE_CONTAINER_NAME }}
       AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
       AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
       AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
@@ -89,6 +91,7 @@ jobs:
       AZURE_LAWS_POSTGRES_DATABASE_NAME_SK: ${{ vars.AZURE_LAWS_POSTGRES_DATABASE_NAME_SK }}
       AZURE_LAWS_COLLECTOR_MAX_PROBES: ${{ vars.AZURE_LAWS_COLLECTOR_MAX_PROBES }}
       LAWS_COLLECTOR_MAX_RUNNING_TIME: ${{ vars.LAWS_COLLECTOR_MAX_RUNNING_TIME }}
+      LAWS_STORAGE_CLOUD: ${{ vars.LAWS_STORAGE_CLOUD }}
       LAWS_COLLECTOR_IMPORT: ${{ vars.LAWS_COLLECTOR_IMPORT || 'zip' }}
       SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'local' }}
       SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
@@ -106,6 +109,7 @@ jobs:
             "AZURE_LOCATION",
             "AZURE_CONTAINERAPPS_ENVIRONMENT",
             "AZURE_CONTAINER_REGISTRY",
+            "AZURE_STORAGE_ACCOUNT_NAME",
             "AZURE_MANAGED_IDENTITY_NAME",
             "AZURE_POSTGRES_SERVER_NAME",
             "AZURE_POSTGRES_ADMIN_USERNAME",
@@ -221,11 +225,14 @@ jobs:
             -ContainerAppName $containerAppName `
             -AcrName "${{ steps.acr.outputs.acr_name }}" `
             -ManagedIdentityName $env:AZURE_MANAGED_IDENTITY_NAME `
+            -StorageAccountName $env:AZURE_STORAGE_ACCOUNT_NAME `
+            -StorageContainerName $env:AZURE_LAWS_STORAGE_CONTAINER_NAME `
             -ApplicationInsightsName $env:AZURE_APPLICATION_INSIGHTS_NAME `
             -PostgresServerName $env:AZURE_POSTGRES_SERVER_NAME `
             -PostgresDatabaseName $postgresDatabaseName `
             -PostgresAdminUsername $env:AZURE_POSTGRES_ADMIN_USERNAME `
             -PostgresAdminPassword $env:AZURE_POSTGRES_ADMIN_PASSWORD `
+            -LawsStorageCloud $env:LAWS_STORAGE_CLOUD `
             -LawsCollectorImport $env:LAWS_COLLECTOR_IMPORT `
             -SystemEmbeddingModelOption $env:SYSTEM_EMBEDDING_MODEL_OPTION `
             -SystemEmbeddingModel $env:SYSTEM_EMBEDDING_MODEL `

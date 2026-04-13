@@ -28,6 +28,7 @@ import 'chat/speech_flow.dart';
 import 'logging/app_logger.dart';
 import 'platform/app_updater.dart';
 import 'platform/device_phone_number.dart';
+import 'platform/file_opener.dart';
 import 'platform/file_saver.dart';
 import 'update/github_release.dart';
 
@@ -52,6 +53,7 @@ const String _defaultLanguage = String.fromEnvironment(
   defaultValue: 'SK',
 );
 const String _localAutofillPhoneNumber = '+421944400166';
+final FileOpener _savedFileOpener = createFileOpener();
 
 const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
   'SK':
@@ -251,6 +253,8 @@ class AppStrings {
       'document_pdf_offer':
           'Návrh dokumentu som do chatu nezobrazila. Chcete ho vidieť vo formáte PDF? Použite tlačidlo PDF dokument.',
       'open_saved_file_failed': 'Súbor sa nepodarilo otvoriť.',
+      'downloaded_files_title': 'Stiahnuté súbory',
+      'downloaded_files_subtitle': 'Vyberte súbor, ktorý chcete teraz otvoriť.',
       'failed_to_load_cases': 'Nepodarilo sa načítať prípady: {{error}}',
       'failed_to_load_case_history':
           'Nepodarilo sa načítať históriu prípadu: {{error}}',
@@ -301,6 +305,11 @@ class AppStrings {
       'case_validation_title': 'Validacia pripadu',
       'validation_accuracy_label': 'Presnost',
       'validation_summary_label': 'Zhrnutie validacie',
+      'law_citations_title': 'Relevantné právne citácie',
+      'law_citation_open': 'Otvoriť plné znenie',
+      'law_citation_effective_from': 'Účinné od',
+      'law_citation_version': 'Verzia',
+      'law_citation_open_failed': 'Súbor zákona sa nepodarilo otvoriť.',
       'knowledge_updated_label': 'Pravne data aktualizovane',
       'model_version_label': 'Verzia modelu',
       'law_date_label': 'Law Date',
@@ -464,6 +473,8 @@ class AppStrings {
       'document_pdf_offer':
           'I did not show the generated document in chat. Do you want to see it as PDF? Use the Document PDF button.',
       'open_saved_file_failed': 'Could not open the saved file.',
+      'downloaded_files_title': 'Downloaded files',
+      'downloaded_files_subtitle': 'Choose the file you want to open now.',
       'failed_to_load_cases': 'Failed to load cases: {{error}}',
       'failed_to_load_case_history': 'Failed to load case history: {{error}}',
       'maximum_cases':
@@ -513,6 +524,11 @@ class AppStrings {
       'case_validation_title': 'Case validation',
       'validation_accuracy_label': 'Accuracy',
       'validation_summary_label': 'Validation summary',
+      'law_citations_title': 'Relevant legal citations',
+      'law_citation_open': 'Open full law',
+      'law_citation_effective_from': 'Effective from',
+      'law_citation_version': 'Version',
+      'law_citation_open_failed': 'Could not open the law file.',
       'knowledge_updated_label': 'Legal data updated',
       'model_version_label': 'Model version',
       'law_date_label': 'Law Date',
@@ -681,6 +697,9 @@ class AppStrings {
           'Ich habe den erzeugten Dokumententext nicht im Chat angezeigt. Möchten Sie ihn als PDF sehen? Verwenden Sie die Schaltfläche PDF Dokument.',
       'open_saved_file_failed':
           'Gespeicherte Datei konnte nicht geöffnet werden.',
+      'downloaded_files_title': 'Heruntergeladene Dateien',
+      'downloaded_files_subtitle':
+          'Wählen Sie die Datei aus, die jetzt geöffnet werden soll.',
       'failed_to_load_cases': 'Fälle konnten nicht geladen werden: {{error}}',
       'failed_to_load_case_history':
           'Fallhistorie konnte nicht geladen werden: {{error}}',
@@ -732,6 +751,12 @@ class AppStrings {
       'case_validation_title': 'Fallvalidierung',
       'validation_accuracy_label': 'Genauigkeit',
       'validation_summary_label': 'Validierungszusammenfassung',
+      'law_citations_title': 'Relevante Gesetzeszitate',
+      'law_citation_open': 'Vollständiges Gesetz öffnen',
+      'law_citation_effective_from': 'Wirksam ab',
+      'law_citation_version': 'Version',
+      'law_citation_open_failed':
+          'Die Gesetzesdatei konnte nicht geöffnet werden.',
       'knowledge_updated_label': 'Rechtsdaten aktualisiert',
       'model_version_label': 'Modellversion',
       'law_date_label': 'Law Date',
@@ -847,12 +872,8 @@ Future<void> _openSavedFile(
   AppStrings strings,
   String savedPath,
 ) async {
-  final fileUri = Uri.file(savedPath);
   try {
-    final opened = await launchUrl(
-      fileUri,
-      mode: LaunchMode.externalApplication,
-    );
+    final opened = await _savedFileOpener.open(savedPath);
     if (!opened && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(strings.t('open_saved_file_failed'))),
@@ -865,6 +886,18 @@ Future<void> _openSavedFile(
       );
     }
   }
+}
+
+class _SavedLocalFile {
+  const _SavedLocalFile({
+    required this.fileName,
+    required this.savedPath,
+    required this.contentType,
+  });
+
+  final String fileName;
+  final String savedPath;
+  final String contentType;
 }
 
 class AIJurisdictionMobileApp extends StatelessWidget {
@@ -1405,6 +1438,7 @@ class SessionResultDetails {
     required this.validationSummary,
     required this.knowledgeLastUpdatedAt,
     required this.coreVersion,
+    required this.lawCitations,
   });
 
   final String finalRecommendation;
@@ -1414,6 +1448,7 @@ class SessionResultDetails {
   final String? validationSummary;
   final String? knowledgeLastUpdatedAt;
   final String? coreVersion;
+  final List<LawCitationDetails> lawCitations;
 
   bool get hasValidationData =>
       validationAccuracy != null ||
@@ -1426,6 +1461,8 @@ class SessionResultDetails {
     final metadata = Map<String, dynamic>.from(
       json['metadata'] as Map? ?? const <String, dynamic>{},
     );
+    final rawLawCitations =
+        metadata['law_citations'] as List? ?? const <Object>[];
     return SessionResultDetails(
       finalRecommendation: json['final_recommendation'] as String? ?? '',
       judgeRationale: json['judge_rationale'] as String? ?? '',
@@ -1434,6 +1471,41 @@ class SessionResultDetails {
       validationSummary: metadata['validation_summary'] as String?,
       knowledgeLastUpdatedAt: metadata['knowledge_last_updated_at'] as String?,
       coreVersion: metadata['core_version'] as String?,
+      lawCitations: rawLawCitations
+          .whereType<Map>()
+          .map((item) => LawCitationDetails.fromJson(
+                Map<String, dynamic>.from(item.cast<String, dynamic>()),
+              ))
+          .toList(),
+    );
+  }
+}
+
+class LawCitationDetails {
+  const LawCitationDetails({
+    required this.label,
+    required this.summary,
+    required this.openUrl,
+    required this.officialSourceUrl,
+    required this.effectiveFrom,
+    required this.versionToken,
+  });
+
+  final String label;
+  final String summary;
+  final String openUrl;
+  final String officialSourceUrl;
+  final String effectiveFrom;
+  final String versionToken;
+
+  static LawCitationDetails fromJson(Map<String, dynamic> json) {
+    return LawCitationDetails(
+      label: json['label'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+      openUrl: json['open_url'] as String? ?? '',
+      officialSourceUrl: json['official_source_url'] as String? ?? '',
+      effectiveFrom: json['effective_from'] as String? ?? '',
+      versionToken: json['version_token'] as String? ?? '',
     );
   }
 }
@@ -3870,6 +3942,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const Duration _speechMaxListenDuration = Duration(minutes: 30);
 
   final TextEditingController _inputController = TextEditingController();
+  final FocusNode _inputFocusNode = FocusNode();
   final RuleEngine _ruleEngine = const RuleEngine();
   late final JurisdictaSpeechService _speechService;
   final ScrollController _messagesScrollController = ScrollController();
@@ -3930,12 +4003,37 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _updateCheckInProgress = false;
   bool _documentAutoAnalysisInProgress = false;
   int _localMessageSequence = 0;
+  bool _inputComposerExpanded = false;
 
   bool get _showLocalResponderSwitch {
     return _isLocalApiBaseUrl(widget.apiBaseUrl);
   }
 
+  bool get _isInputComposerExpanded => _inputComposerExpanded || _isListening;
+
   AppStrings get _strings => AppStrings(_selectedLocale.languageCode);
+
+  void _setInputComposerExpanded(bool value, {bool unfocus = false}) {
+    if (unfocus) {
+      _inputFocusNode.unfocus();
+    }
+    if (!mounted || _inputComposerExpanded == value) {
+      return;
+    }
+    setState(() {
+      _inputComposerExpanded = value;
+    });
+  }
+
+  void _handleInputFocusChanged() {
+    if (_inputFocusNode.hasFocus) {
+      _setInputComposerExpanded(true);
+      return;
+    }
+    if (!_isListening) {
+      _setInputComposerExpanded(false);
+    }
+  }
 
   @override
   void initState() {
@@ -3959,6 +4057,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     _speechService = const SpeechServiceFactory().create();
     _speaker = _speechService.speaker;
     _speechRecognizer = _speechService.recognizer;
+    _inputFocusNode.addListener(_handleInputFocusChanged);
     _apiClient.setSignedInUser(_signedInUser.userId);
     final welcomeLanguage =
         _normalizeLanguageCode(_selectedLocale.languageCode);
@@ -5526,6 +5625,8 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _toggleSpeechInput() async {
+    _setInputComposerExpanded(true);
+    _inputFocusNode.requestFocus();
     _lastHandledSpeechText = null;
     await _speaker.stop();
     if (!_speechEnabled) {
@@ -5557,8 +5658,23 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _downloadRequestedDocuments() async {
+    final savedFiles = <_SavedLocalFile>[];
     for (final kind in <String>['summary', 'document']) {
-      await _downloadPdf(kind);
+      final savedFile = await _downloadPdf(kind);
+      if (savedFile != null) {
+        savedFiles.add(savedFile);
+      }
+    }
+    if (!mounted || savedFiles.isEmpty) {
+      return;
+    }
+    if (savedFiles.length == 1) {
+      await _openSavedFile(context, _strings, savedFiles.first.savedPath);
+      return;
+    }
+    final selected = await _showDownloadedFilesPicker(savedFiles);
+    if (selected != null && mounted) {
+      await _openSavedFile(context, _strings, selected.savedPath);
     }
   }
 
@@ -5656,6 +5772,8 @@ class _ChatHomePageState extends State<ChatHomePage>
     _processSpeechOnStop = false;
     _speechRecognizer.stop();
     _inputController.dispose();
+    _inputFocusNode.removeListener(_handleInputFocusChanged);
+    _inputFocusNode.dispose();
     _messagesScrollController.dispose();
     super.dispose();
   }
@@ -5960,6 +6078,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   Future<void> _sendMessage() async {
     if (_isListening) {
       await _stopSpeechListening(submitAfterStop: true);
+      _setInputComposerExpanded(false, unfocus: true);
       return;
     }
     final text = _inputController.text.trim();
@@ -5968,6 +6087,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
 
     _lastHandledSpeechText = null;
+    _setInputComposerExpanded(false, unfocus: true);
     final handledCommand = await _tryHandleUserCommand(
       text,
       appendUserMessage: true,
@@ -6372,13 +6492,13 @@ class _ChatHomePageState extends State<ChatHomePage>
     return status;
   }
 
-  Future<void> _downloadPdf(String kind) async {
+  Future<_SavedLocalFile?> _downloadPdf(String kind) async {
     if (_isDownloading) {
-      return;
+      return null;
     }
     if (!_hasExportReady) {
       _showSnackbar(_strings.t('pdf_not_ready'));
-      return;
+      return null;
     }
     setState(() {
       _isDownloading = true;
@@ -6411,7 +6531,11 @@ class _ChatHomePageState extends State<ChatHomePage>
         _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
           'path': savedPath,
         }));
-        await _openSavedFile(context, _strings, savedPath);
+        return _SavedLocalFile(
+          fileName: payload.filename,
+          savedPath: savedPath,
+          contentType: payload.contentType,
+        );
       } else {
         _showSnackbar(_strings.t('pdf_download_started', <String, String>{
           'filename': payload.filename,
@@ -6438,6 +6562,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         });
       }
     }
+    return null;
   }
 
   Future<void> _openAccountSettings() async {
@@ -6890,6 +7015,84 @@ class _ChatHomePageState extends State<ChatHomePage>
     widget.onSignedOut();
   }
 
+  Future<_SavedLocalFile?> _showDownloadedFilesPicker(
+    List<_SavedLocalFile> files,
+  ) {
+    return showModalBottomSheet<_SavedLocalFile>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _strings.t('downloaded_files_title'),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _strings.t('downloaded_files_subtitle'),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: files.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final file = files[index];
+                    return ListTile(
+                      leading: const Icon(Icons.picture_as_pdf_outlined),
+                      title: Text(file.fileName),
+                      subtitle: Text(file.savedPath),
+                      onTap: () => Navigator.of(context).pop(file),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildComposerInputField({
+    required AppStrings strings,
+    required bool expanded,
+  }) {
+    return TextField(
+      controller: _inputController,
+      focusNode: _inputFocusNode,
+      minLines: expanded ? null : 1,
+      maxLines: expanded ? null : 1,
+      expands: expanded,
+      keyboardType: TextInputType.multiline,
+      textInputAction:
+          expanded ? TextInputAction.newline : TextInputAction.send,
+      onSubmitted: expanded ? null : (_) => _sendMessage(),
+      onTap: () => _setInputComposerExpanded(true),
+      onTapOutside: (_) => _setInputComposerExpanded(false, unfocus: true),
+      decoration: InputDecoration(
+        hintText: _responderMode == ResponderMode.aiUserSimulator
+            ? strings.t('case_input_discussion')
+            : strings.t('case_input_question'),
+        filled: true,
+        fillColor: Colors.white,
+        alignLabelWithHint: expanded,
+        border: const OutlineInputBorder(),
+      ),
+    );
+  }
+
   void _showSnackbar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -6945,9 +7148,94 @@ class _ChatHomePageState extends State<ChatHomePage>
     }));
   }
 
+  Future<void> _openLawCitation(LawCitationDetails citation) async {
+    final rawUrl = citation.openUrl.trim().isNotEmpty
+        ? citation.openUrl.trim()
+        : citation.officialSourceUrl.trim();
+    if (rawUrl.isEmpty) {
+      _showSnackbar(_strings.t('law_citation_open_failed'));
+      return;
+    }
+    final uri = Uri.tryParse(rawUrl);
+    final resolvedUri = uri == null
+        ? null
+        : (uri.hasScheme ? uri : _apiClient.baseUri.resolveUri(uri));
+    if (resolvedUri == null) {
+      _showSnackbar(_strings.t('law_citation_open_failed'));
+      return;
+    }
+    final opened = await launchUrl(
+      resolvedUri,
+      mode: LaunchMode.platformDefault,
+    );
+    if (!opened) {
+      _showSnackbar(_strings.t('law_citation_open_failed'));
+    }
+  }
+
+  Widget _buildLawCitationsPanel({
+    required AppStrings strings,
+    required SessionResultDetails result,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            strings.t('law_citations_title'),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 8),
+          for (final citation in result.lawCitations)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: OutlinedButton(
+                onPressed: () => unawaited(_openLawCitation(citation)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.all(12),
+                  alignment: Alignment.centerLeft,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      citation.label,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    if (citation.effectiveFrom.trim().isNotEmpty)
+                      Text(
+                        '${strings.t('law_citation_effective_from')}: ${citation.effectiveFrom}',
+                      ),
+                    if (citation.versionToken.trim().isNotEmpty)
+                      Text(
+                        '${strings.t('law_citation_version')}: ${citation.versionToken}',
+                      ),
+                    if (citation.summary.trim().isNotEmpty)
+                      Text(citation.summary),
+                    const SizedBox(height: 4),
+                    Text(strings.t('law_citation_open')),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = _strings;
+    final lawCitations =
+        _latestSessionResult?.lawCitations ?? const <LawCitationDetails>[];
     return Scaffold(
       body: Stack(
         children: [
@@ -7285,76 +7573,133 @@ class _ChatHomePageState extends State<ChatHomePage>
                     ],
                   ),
                 ),
+                if (lawCitations.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: _buildLawCitationsPanel(
+                      strings: strings,
+                      result: _latestSessionResult!,
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            onPressed: _captureDocument,
-                            icon: const Icon(Icons.camera_alt_outlined),
-                            tooltip: strings.t('capture_document'),
+                      if (_isInputComposerExpanded) ...[
+                        Row(
+                          children: [
+                            IconButton(
+                              onPressed: _captureDocument,
+                              icon: const Icon(Icons.camera_alt_outlined),
+                              tooltip: strings.t('capture_document'),
+                            ),
+                            IconButton(
+                              onPressed: _pickDocuments,
+                              icon: const Icon(Icons.upload_file),
+                              tooltip: strings.t('upload_documents'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          height: MediaQuery.sizeOf(context).height * 0.5,
+                          child: _buildComposerInputField(
+                            strings: strings,
+                            expanded: true,
                           ),
-                          IconButton(
-                            onPressed: _pickDocuments,
-                            icon: const Icon(Icons.upload_file),
-                            tooltip: strings.t('upload_documents'),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _inputController,
-                              minLines: 1,
-                              maxLines: 1,
-                              keyboardType: TextInputType.text,
-                              textInputAction: TextInputAction.send,
-                              onSubmitted: (_) => _sendMessage(),
-                              decoration: InputDecoration(
-                                hintText: _responderMode ==
-                                        ResponderMode.aiUserSimulator
-                                    ? strings.t('case_input_discussion')
-                                    : strings.t('case_input_question'),
-                                filled: true,
-                                fillColor: Colors.white,
-                                border: const OutlineInputBorder(),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            IconButton(
+                              onPressed:
+                                  _speechEnabled ? _toggleSpeechInput : null,
+                              icon: Icon(
+                                _isListening ? Icons.mic : Icons.mic_none,
+                                color: _isListening
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null,
+                              ),
+                              tooltip: _isListening
+                                  ? strings.t('stop_speech_input')
+                                  : strings.t('speech_input'),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              onPressed: _isSending ? null : _sendMessage,
+                              icon: _isSending
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.send),
+                              tooltip: _responderMode ==
+                                      ResponderMode.aiUserSimulator
+                                  ? strings.t('start_ai_discussion')
+                                  : strings.t('send_to_api'),
+                            ),
+                          ],
+                        ),
+                      ] else
+                        Row(
+                          children: [
+                            IconButton(
+                              onPressed: _captureDocument,
+                              icon: const Icon(Icons.camera_alt_outlined),
+                              tooltip: strings.t('capture_document'),
+                            ),
+                            IconButton(
+                              onPressed: _pickDocuments,
+                              icon: const Icon(Icons.upload_file),
+                              tooltip: strings.t('upload_documents'),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildComposerInputField(
+                                strings: strings,
+                                expanded: false,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed:
-                                _speechEnabled ? _toggleSpeechInput : null,
-                            icon: Icon(
-                              _isListening ? Icons.mic : Icons.mic_none,
-                              color: _isListening
-                                  ? Theme.of(context).colorScheme.primary
-                                  : null,
+                            const SizedBox(width: 8),
+                            IconButton(
+                              onPressed:
+                                  _speechEnabled ? _toggleSpeechInput : null,
+                              icon: Icon(
+                                _isListening ? Icons.mic : Icons.mic_none,
+                                color: _isListening
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null,
+                              ),
+                              tooltip: _isListening
+                                  ? strings.t('stop_speech_input')
+                                  : strings.t('speech_input'),
                             ),
-                            tooltip: _isListening
-                                ? strings.t('stop_speech_input')
-                                : strings.t('speech_input'),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: _isSending ? null : _sendMessage,
-                            icon: _isSending
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.send),
-                            tooltip:
-                                _responderMode == ResponderMode.aiUserSimulator
-                                    ? strings.t('start_ai_discussion')
-                                    : strings.t('send_to_api'),
-                          ),
-                        ],
-                      ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              onPressed: _isSending ? null : _sendMessage,
+                              icon: _isSending
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.send),
+                              tooltip: _responderMode ==
+                                      ResponderMode.aiUserSimulator
+                                  ? strings.t('start_ai_discussion')
+                                  : strings.t('send_to_api'),
+                            ),
+                          ],
+                        ),
                       const SizedBox(height: 6),
                       _buildUpgradeProgressCard(Theme.of(context), strings),
                       const SizedBox(height: 6),

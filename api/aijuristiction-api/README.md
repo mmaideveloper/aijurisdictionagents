@@ -71,9 +71,10 @@ Local API startup loads the repository root `.env` automatically. If you overrid
 
 Document processing mode:
 
-- `DOCUMENT_PROCESSOR_OPTION=local`: uploaded case documents are processed immediately inside the API and stored with extracted text plus vector data.
+- `DOCUMENT_PROCESSOR_OPTION=api`: uploaded case documents are processed immediately inside the API and stored with extracted text plus vector data.
+- `DOCUMENT_PROCESSOR_OPTION=local`: legacy alias for `api`.
 - `DOCUMENT_PROCESSOR_OPTION=azure`: uploads stay pending until the Azure Container Apps document-processor job runs.
-- Recommended deployed value: `DOCUMENT_PROCESSOR_OPTION=azure`
+- Default and recommended value: `DOCUMENT_PROCESSOR_OPTION=api`
 
 ### Policy-driven multi-intent document task planning
 
@@ -110,15 +111,33 @@ python examples/document_task_plan_demo.py
 
 ### Tool-first Slovak company drafting
 
-For Slovak company-document workflows, the direct reply path now uses available registry tools before asking the user for data that can be verified automatically.
+For Slovak company-document workflows, the API now uses a hybrid model-driven tool orchestration:
+
+- backend performs deterministic intent/tool routing and executes available registry tools first,
+- verified tool output is injected into LLM prompt context,
+- LLM prepares the final user-facing answer (or clarification question when data conflicts are detected).
+
+Country-specific intake and tool-first shortcuts now live under `app/chat/country_services/`. The API endpoint layer dispatches by `session.country`, so new countries can add their own country module without expanding `app/chat/api.py` with more country-specific phrase matching.
 
 Current behavior for `s.r.o.` / `a.s.` drafting flows:
 
 - if the user provides a Slovak company name or IČO, the API first runs `obchodny_register_company_check`
+- the ORSR lookup now enriches the top company match through the detail endpoint `/api/legal-person/extract-full`, so the API can also see current stakeholders, statutory representatives, company-signing rules, deposit values, and normalized status (`Aktívna` vs. `v likvidácii`)
 - the assistant then uses verified company name, IČO, seat, and status instead of asking for those facts again
+- if the register shows exactly one current stakeholder, the API can reuse that stakeholder as the likely transferor instead of asking for the transferor again
+- if the requested main document usually requires related resolutions, updated articles, or registry attachments, the assistant explicitly offers to prepare that fuller package too
 - if the user later says `áno` / `show me the draft`, the API returns the working draft directly instead of looping back into the same intake questions
+- for direct register-information questions like `kto je majiteľ firmy ...`, the API now returns ORSR-backed owner/statutory summary directly (without falling back to stale share-transfer prompts from earlier turns in the same session)
+- if user-provided transferor identity conflicts with ORSR stakeholders, the LLM prompt now enforces a confirmation step before final document generation.
 
 Minimal runnable example:
+
+```bash
+python examples/share_transfer_related_documents_demo.py
+python examples/share_transfer_tool_first_demo.py
+```
+
+Full draft package example:
 
 ```bash
 python examples/share_transfer_tool_first_demo.py
@@ -181,6 +200,30 @@ If you want only the database container or the repository database rules, use `d
 `GET /health` now verifies the configured API database connection before returning healthy.
 If the database is unreachable or misconfigured, the endpoint returns `503` with
 `error=database_unavailable` and a `message` field that the mobile app can show directly.
+The response also reports the configured LLM provider so callers can distinguish `mock`
+from `azurefoundry` mode.
+
+Minimal runnable example:
+
+```bash
+curl -fsS http://127.0.0.1:8080/health
+```
+
+Example healthy response:
+
+```json
+{
+  "status": "ok",
+  "llm": {
+    "status": "ok",
+    "provider": "mock"
+  },
+  "database": {
+    "status": "ok",
+    "backend": "local"
+  }
+}
+```
 
 `GET /version` response includes:
 - `api_version`: API package version (`api/aijuristiction-api/pyproject.toml`).
@@ -192,6 +235,7 @@ If the database is unreachable or misconfigured, the endpoint returns `503` with
 - `model_knowledge_cutoff_date`: LLM cutoff date resolved from the current model metadata and cached in `permanent_memory`.
 - `model_knowledge_cutoff_source`: source URL used for the resolved cutoff date, typically an official OpenAI model page.
 - `law_reference_links`: recent official law links available in the system knowledge store.
+- `law_citations`: structured version-specific legal citations resolved from the current answer/session context. Each item includes the law identifier, title, version token, effective date, and an `open_url` that can stream the stored full-law source from local storage or Azure Blob.
 - `mobile_app_version`: latest mobile app version from `mobile_app/pubspec.yaml`.
 - `mobile_app_release_url`: release page used by the mobile app update flow.
 - `mobile_app_apk_download_url`: default APK asset URL used by Android in-app update flow.
@@ -314,6 +358,7 @@ Email DB configuration (separate from API metadata DB):
 - `EMAIL_DB_LOCAL` (default `./runs/storage/api/sqlite/email.sqlite3`)
 - `EMAIL_DB_CLOUD` (required for postgres/azure, default inherits `DB_CLOUD`)
 - `EMAIL_SCHEDULER_ENABLED` (default `true`)
+- When `EMAIL_DB_OPTION` is `postgres` or `azure`, the API does not create local SQLite directories from `EMAIL_DB_LOCAL`.
 
 Postgres/Azure email schema migrations are stored under `databases/api/email`.
 
@@ -383,6 +428,7 @@ and support three database modes:
 - `DB_OPTION=postgres`: local PostgreSQL for Docker-based development (`DB_CLOUD=postgresql://...`)
 - `DB_OPTION=azure`: Azure Database for PostgreSQL Flexible Server (`DB_CLOUD=postgresql://...sslmode=require`)
   - Use the exact Flexible Server administrator login as the username.
+  - In `postgres`/`azure` modes, startup skips creating local SQLite/`runs` folders from `DB_LOCAL`.
 
 The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.md`.
 
@@ -390,8 +436,13 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
+- If a transcript or document payload is missing in local storage, history responses fall back to saved summaries and document download returns `404` instead of `500`.
 - Uploaded case documents are stored as `case -> many documents`. Each processed uploaded document keeps the extracted full text plus a real embedding in `case_document_contents`, and chunk-level text/embedding rows in `case_document_chunks`.
 - Direct `POST /v1/chat/sessions/{session_id}/reply` now loads the most relevant processed document chunks for the user query by combining lexical overlap with semantic similarity from real embeddings, then injects those chunks into the extra system-context document message.
+- Slovak share-transfer intake now prefers labeled company fields such as `Nazov:` / `Názov:` / `Obchodné meno:` when extracting the ORSR lookup query, so owner names in later lines do not override the company verification step.
+- `POST /v1/chat/sessions/{session_id}/stream` in `ReadUser` mode now emits intermediate `processing` SSE events for the company-verification path, including ORSR tool start/result and which drafting inputs were detected vs. still missing.
+- Slovak share-transfer intake is now selective: if the user already supplied the transferee details or said the transfer is `bezodplatne`, the assistant asks only for the remaining missing items instead of repeating the same checklist.
+- The Slovak share-transfer intake parser now also recognizes inline numbered one-line inputs such as `Dalsi vlastnik: ... 2. Podiel sa prevádza bezodplatne. 3. Nemení iba spoločnícka štruktúra ...`, so chatsimulator cases do not lose those facts just because the user typed everything in a single paragraph.
 - Local API starts through [skills/start-api/scripts/start_api.ps1](/C:/Users/maton/Projects/aijurisdictionagents/skills/start-api/scripts/start_api.ps1) now enable `LOCAL_LLM_IO_LOGGING=1` by default, so local logs include the exact model payload and raw model response for debugging without changing deployed environments.
 - The mobile app uses these endpoints to show the latest 5 saved case messages after case selection and to expose case-document download buttons.
 - If an older case-history transcript blob is missing or unreadable, the API now falls back to the stored communication summary instead of failing the history load or blocking new session creation for that case.
@@ -407,7 +458,14 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - Direct `POST /v1/chat/sessions/{session_id}/reply` sessions also persist a session result now, so the mobile `Real Agent` flow can download PDFs without going through the simulator stream.
 - In `Real Agent` mode, the lawyer can first ask whether a formal document should be prepared as PDF; once the user confirms, the next direct reply marks `metadata.document_ready=true` in `GET /v1/chat/sessions/{session_id}/result`.
 - Explicit document-revision requests that mention uploaded documents plus update/fix wording such as reviewing a contract against newer laws are also treated as document-preparation requests, so the API can prepare an updated export without waiting for a separate summary-only path.
-- `GET /v1/chat/sessions/{session_id}/result` metadata now also includes `last_law_update_date`, `last_law_update_source`, `model_knowledge_cutoff_date`, `model_knowledge_cutoff_source`, `law_reference_links`, `api_version`, and the backward-compatible `knowledge_last_updated_at` alias.
+- `GET /v1/chat/sessions/{session_id}/result` metadata now also includes `last_law_update_date`, `last_law_update_source`, `model_knowledge_cutoff_date`, `model_knowledge_cutoff_source`, `law_reference_links`, `law_citations`, `api_version`, and the backward-compatible `knowledge_last_updated_at` alias.
+- `GET /v1/laws/source?...` streams the stored full-law source for a resolved citation. For local imports it reads the persisted local file, and for Azure imports it reads the same artifact from Blob storage.
+
+Citation payload demo:
+
+```bash
+python examples/law_citation_resolution_demo.py
+```
 - When the laws database has no import timestamp yet, `knowledge_last_updated_at` falls back to the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value while `last_law_update_date` remains empty.
 - For Slovak and other Central European locales, the exporter uses a Unicode TrueType font when available so characters such as `á`, `č`, `ľ`, `ô`, and `ž` render correctly in the generated PDF.
 
@@ -466,6 +524,12 @@ Example for a deployed browser build:
 
 ```bash
 CORS_ALLOW_ORIGINS=https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io uvicorn app.main:app --reload --port 8080
+
+## Local source precedence
+
+- The local startup script `skills/start-api/scripts/start_api.ps1` now prepends both `api/aijuristiction-api` and repo `src/` to `PYTHONPATH`.
+- This ensures local API runs use the current repository source code for `aijurisdictionagents` instead of an older installed site-packages build.
+- If local behavior does not match the checked-out repo code, restart the API through the startup script rather than reusing an older Python process.
 ```
 
 ## Chat simulator
@@ -477,7 +541,7 @@ Run it independently to test chat flows before frontend deployment.
 For persisted-case debugging with local PostgreSQL, start the API with:
 
 ```bash
-DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR_OPTION=local LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
+DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@127.0.0.1:5432/aijurisdiction STORAGE_OPTION=local DOCUMENT_PROCESSOR_OPTION=api LOCAL_LLM_IO_LOGGING=1 uvicorn app.main:app --reload --port 8080
 ```
 
 The simulator can then call `GET /v1/cases/{case_id}/documents/debug?user_id=...&query=...` to show:

@@ -4,6 +4,8 @@ param jobName string = 'laws-collector'
 param acrName string
 param managedIdentityName string
 param image string
+param storageAccountName string = ''
+param storageContainerName string = 'laws-collection-sk'
 param postgresServerName string
 param postgresDatabaseName string = 'laws_sk'
 param postgresAdminUsername string
@@ -13,6 +15,7 @@ param postgresAdminPassword string
 param postgresConnectionString string = ''
 @secure()
 param applicationInsightsConnectionString string = ''
+param lawsStorageCloud string = ''
 param lawsCollectorImport string = 'zip'
 param systemEmbeddingModelOption string = 'local'
 param systemEmbeddingModel string = 'all-MiniLM-L6-v2'
@@ -37,6 +40,20 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
   name: managedIdentityName
 }
 
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = if (!empty(storageAccountName)) {
+  name: storageAccountName
+}
+
+resource storageBlobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' existing = if (!empty(storageAccountName)) {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource storageContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (!empty(storageAccountName)) {
+  parent: storageBlobService
+  name: storageContainerName
+}
+
 resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' existing = {
   name: postgresServerName
 }
@@ -53,6 +70,25 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
     principalType: 'ServicePrincipal'
   }
 }
+
+resource storageBlobDataRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountName)) {
+  name: guid(storageAccount.id, managedIdentity.id, 'StorageBlobDataContributor')
+  scope: storageAccount
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+    )
+    principalType: 'ServicePrincipal'
+  }
+}
+
+var lawsStorageCloudValue = !empty(lawsStorageCloud)
+  ? lawsStorageCloud
+  : (!empty(storageAccountName)
+      ? 'https://${storageAccount.name}.blob.core.windows.net/${storageContainerName}'
+      : '')
 
 resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
   name: jobName
@@ -124,6 +160,10 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
                 secretRef: 'laws-db-cloud'
               }
               {
+                name: 'AZURE_CLIENT_ID'
+                value: managedIdentity.properties.clientId
+              }
+              {
                 name: 'LAWS_WORKER_FIXTURE'
                 value: 'live'
               }
@@ -152,6 +192,14 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
                 value: systemEmbeddingModel
               }
             ],
+            !empty(lawsStorageCloudValue)
+              ? [
+                  {
+                    name: 'LAWS_STORAGE_CLOUD'
+                    value: lawsStorageCloudValue
+                  }
+                ]
+              : [],
             !empty(applicationInsightsConnectionString)
               ? [
                   {
@@ -167,6 +215,7 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
   }
   dependsOn: [
     acrPullRoleAssignment
+    storageBlobDataRoleAssignment
   ]
 }
 

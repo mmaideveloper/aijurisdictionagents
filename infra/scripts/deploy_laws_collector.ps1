@@ -7,11 +7,14 @@ param(
     [string]$ContainerAppName = "laws-collector",
     [string]$AcrName,
     [string]$ManagedIdentityName,
+    [string]$StorageAccountName,
+    [string]$StorageContainerName = "laws-collection-sk",
     [string]$PostgresServerName,
     [string]$PostgresDatabaseName = "laws_sk",
     [string]$PostgresAdminUsername,
     [string]$PostgresAdminPassword,
     [string]$ApplicationInsightsName,
+    [string]$LawsStorageCloud,
     [string]$LawsCollectorImport = "zip",
     [string]$SystemEmbeddingModelOption = "local",
     [string]$SystemEmbeddingModel = "all-MiniLM-L6-v2",
@@ -205,11 +208,14 @@ $envLocation = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFi
 $envContainerEnv = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_CONTAINERAPPS_ENVIRONMENT" }
 $envAcr = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_CONTAINER_REGISTRY" }
 $envIdentity = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_MANAGED_IDENTITY_NAME" }
+$envStorageAccountName = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_STORAGE_ACCOUNT_NAME" }
+$envStorageContainerName = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_STORAGE_CONTAINER_NAME" }
 $envPgServer = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_SERVER_NAME" }
 $envPgDb = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_LAWS_POSTGRES_DATABASE_NAME_SK" }
 $envPgUser = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_USERNAME" }
 $envPgPass = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_POSTGRES_ADMIN_PASSWORD" }
 $envApplicationInsightsName = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "AZURE_APPLICATION_INSIGHTS_NAME" }
+$envLawsStorageCloud = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "LAWS_STORAGE_CLOUD" }
 $envLawsCollectorImport = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "LAWS_COLLECTOR_IMPORT" }
 $envSystemEmbeddingModelOption = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL_OPTION" }
 $envSystemEmbeddingModel = if ($SkipEnvFile) { "" } else { Get-ValueFromEnvFile -Path $EnvFilePath -Key "SYSTEM_EMBEDDING_MODEL" }
@@ -222,11 +228,14 @@ $Location = Resolve-InputValue -ExplicitValue $Location -EnvFileValue $envLocati
 $ContainerAppEnvironmentName = Resolve-InputValue -ExplicitValue $ContainerAppEnvironmentName -EnvFileValue $envContainerEnv -EnvironmentValue $env:AZURE_CONTAINERAPPS_ENVIRONMENT
 $AcrName = Resolve-InputValue -ExplicitValue $AcrName -EnvFileValue $envAcr -EnvironmentValue $env:AZURE_CONTAINER_REGISTRY
 $ManagedIdentityName = Resolve-InputValue -ExplicitValue $ManagedIdentityName -EnvFileValue $envIdentity -EnvironmentValue $env:AZURE_MANAGED_IDENTITY_NAME
+$StorageAccountName = Resolve-InputValue -ExplicitValue $StorageAccountName -EnvFileValue $envStorageAccountName -EnvironmentValue $env:AZURE_STORAGE_ACCOUNT_NAME
+$StorageContainerName = Resolve-InputValue -ExplicitValue $StorageContainerName -EnvFileValue $envStorageContainerName -EnvironmentValue $env:AZURE_LAWS_STORAGE_CONTAINER_NAME
 $PostgresServerName = Resolve-InputValue -ExplicitValue $PostgresServerName -EnvFileValue $envPgServer -EnvironmentValue $env:AZURE_POSTGRES_SERVER_NAME
 $PostgresDatabaseName = Resolve-InputValue -ExplicitValue $PostgresDatabaseName -EnvFileValue $envPgDb -EnvironmentValue $env:AZURE_LAWS_POSTGRES_DATABASE_NAME_SK
 $PostgresAdminUsername = Resolve-InputValue -ExplicitValue $PostgresAdminUsername -EnvFileValue $envPgUser -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_USERNAME
 $PostgresAdminPassword = Resolve-InputValue -ExplicitValue $PostgresAdminPassword -EnvFileValue $envPgPass -EnvironmentValue $env:AZURE_POSTGRES_ADMIN_PASSWORD
 $ApplicationInsightsName = Resolve-InputValue -ExplicitValue $ApplicationInsightsName -EnvFileValue $envApplicationInsightsName -EnvironmentValue $env:AZURE_APPLICATION_INSIGHTS_NAME
+$LawsStorageCloud = Resolve-InputValue -ExplicitValue $LawsStorageCloud -EnvFileValue $envLawsStorageCloud -EnvironmentValue $env:LAWS_STORAGE_CLOUD
 $LawsCollectorImport = Resolve-InputValue -ExplicitValue $LawsCollectorImport -EnvFileValue $envLawsCollectorImport -EnvironmentValue $env:LAWS_COLLECTOR_IMPORT
 $SystemEmbeddingModelOption = Resolve-InputValue -ExplicitValue $SystemEmbeddingModelOption -EnvFileValue $envSystemEmbeddingModelOption -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL_OPTION
 $SystemEmbeddingModel = Resolve-InputValue -ExplicitValue $SystemEmbeddingModel -EnvFileValue $envSystemEmbeddingModel -EnvironmentValue $env:SYSTEM_EMBEDDING_MODEL
@@ -247,6 +256,7 @@ if ([string]::IsNullOrWhiteSpace($LawsCollectorImport)) { $LawsCollectorImport =
 if ($LawsCollectorImport -notin @("one_law_url", "zip")) {
     throw "LawsCollectorImport must be one of: one_law_url, zip."
 }
+if ([string]::IsNullOrWhiteSpace($StorageContainerName)) { $StorageContainerName = "laws-collection-sk" }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddingModelOption = "local" }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel = "all-MiniLM-L6-v2" }
 $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "0 0 * * *"
@@ -354,12 +364,15 @@ az deployment group create `
       acrName=$AcrName `
       managedIdentityName=$ManagedIdentityName `
       image=$image `
+      storageAccountName=$StorageAccountName `
+      storageContainerName=$StorageContainerName `
       postgresServerName=$PostgresServerName `
       postgresDatabaseName=$PostgresDatabaseName `
       postgresAdminUsername=$PostgresAdminUsername `
       postgresAdminPassword=$PostgresAdminPassword `
       postgresConnectionString=$dbCloud `
       applicationInsightsConnectionString=$applicationInsightsConnectionString `
+      lawsStorageCloud=$LawsStorageCloud `
       lawsCollectorImport=$LawsCollectorImport `
       systemEmbeddingModelOption=$SystemEmbeddingModelOption `
       systemEmbeddingModel=$SystemEmbeddingModel `

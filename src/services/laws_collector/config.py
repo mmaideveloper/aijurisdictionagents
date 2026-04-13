@@ -87,7 +87,7 @@ class LawsCollectorConfig:
     @property
     def archive_root(self) -> Path:
         if self.country_code == "SK":
-            return _resolve_repo_path("./archivelaws/slovakia")
+            return _resolve_repo_path("./archivelaws/laws-collection-sk")
         return _resolve_repo_path(f"./archivelaws/{self.country_code.lower()}")
 
     @property

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from io import BytesIO
 import json
 import logging
@@ -25,6 +24,7 @@ from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
 from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 
 from app.chat.core_runtime import core_message_role, run_orchestration
+from app.chat.country_services import prepare_country_direct_reply
 from app.chat.intent_policy_service import (
     build_document_task_plan_note,
     is_document_modernization_request,
@@ -39,7 +39,6 @@ from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.llm import get_embedding_client
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
-from aijurisdictionagents.tools import build_default_tool_registry
 from services.document_processor.runtime import (
     cosine_similarity,
     lexical_overlap_score,
@@ -108,6 +107,16 @@ def _read_case_communication_content(*, store: ApiDatabaseStore, communication: 
         return content
     try:
         return str(store.read_storage_text(storage_uri=transcript_uri))
+    except FileNotFoundError:
+        _LOGGER.info(
+            "Case communication transcript not found; using summary fallback",
+            extra={
+                "case_id": getattr(communication, "case_id", None),
+                "communication_id": getattr(communication, "communication_id", None),
+                "transcript_uri": transcript_uri,
+            },
+        )
+        return content
     except Exception:
         _LOGGER.warning(
             "Falling back to case communication summary because transcript could not be read",
@@ -382,279 +391,6 @@ def _assistant_requests_user_reply(content: str) -> bool:
     return "?" in content
 
 
-@dataclass
-class _DirectReplyPreparation:
-    supplemental_documents: list[CoreDocument]
-    prompt_note: str = ""
-    direct_reply: str | None = None
-
-
-def _prepare_slovak_company_reply(
-    *,
-    session: Session,
-    messages: list[Message],
-    current_content: str,
-    prior_messages: list[Message],
-) -> _DirectReplyPreparation:
-    if session.country.strip().upper() != "SK":
-        return _DirectReplyPreparation(supplemental_documents=[])
-    if not _looks_like_company_document_matter(messages):
-        return _DirectReplyPreparation(supplemental_documents=[])
-
-    company_query = _extract_slovak_company_query(messages)
-    if not company_query:
-        return _DirectReplyPreparation(supplemental_documents=[])
-
-    company_record, registry_document = _load_slovak_company_registry_document(company_query)
-    supplemental_documents = [registry_document] if registry_document is not None else []
-    prompt_note = _build_slovak_company_prompt_note(
-        company_query=company_query,
-        company_record=company_record,
-    )
-
-    if not _looks_like_share_transfer_case(messages):
-        return _DirectReplyPreparation(
-            supplemental_documents=supplemental_documents,
-            prompt_note=prompt_note,
-        )
-
-    if _current_turn_confirms_document_generation(
-        content=current_content,
-        previous_messages=prior_messages,
-    ):
-        direct_reply = _build_slovak_share_transfer_direct_reply(
-            messages=messages,
-            company_record=company_record,
-        )
-        return _DirectReplyPreparation(
-            supplemental_documents=supplemental_documents,
-            prompt_note=prompt_note,
-            direct_reply=direct_reply,
-        )
-
-    direct_reply = _build_slovak_share_transfer_intake_reply(company_record=company_record)
-    return _DirectReplyPreparation(
-        supplemental_documents=supplemental_documents,
-        prompt_note=prompt_note,
-        direct_reply=direct_reply,
-    )
-
-
-def _looks_like_company_document_matter(messages: list[Message]) -> bool:
-    combined = " ".join(
-        message.content.lower()
-        for message in messages
-        if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
-    )
-    company_tokens = (
-        "s.r.o",
-        "s. r. o",
-        "a.s",
-        "a. s",
-        "firma",
-        "spolocnost",
-        "spoločnosť",
-        "ico",
-        "ičo",
-    )
-    document_tokens = (
-        "dokument",
-        "document",
-        "navrh",
-        "návrh",
-        "priprav",
-        "vygeneruj",
-        "zmluv",
-        "podanie",
-    )
-    return any(token in combined for token in company_tokens) and any(
-        token in combined for token in document_tokens
-    )
-
-
-def _looks_like_share_transfer_case(messages: list[Message]) -> bool:
-    combined = " ".join(
-        message.content.lower()
-        for message in messages
-        if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
-    )
-    share_transfer_tokens = (
-        "prevod podielu",
-        "obchodny podiel",
-        "obchodný podiel",
-        "spolocnik",
-        "spoločník",
-        "konatel",
-        "konateľ",
-        "novy vlastnik",
-        "nový vlastník",
-        "share transfer",
-        "owner",
-        "vlastnik",
-        "vlastník",
-    )
-    return any(token in combined for token in share_transfer_tokens)
-
-
-def _extract_slovak_company_query(messages: list[Message]) -> str | None:
-    registration_pattern = re.compile(r"(?:\bičo\b|\bico\b)\s*[:=]?\s*([0-9]{6,10})", re.IGNORECASE)
-    prefixed_company_pattern = re.compile(
-        r"(?:firma|fima|spoločnosť|spolocnost)\s+([^,;\n]+?(?:s\.?\s*r\.?\s*o\.?|a\.?\s*s\.?))",
-        re.IGNORECASE,
-    )
-    company_pattern = re.compile(
-        r"([A-Z0-9ÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ][^,;\n]{1,120}?(?:s\.?\s*r\.?\s*o\.?|a\.?\s*s\.?))",
-        re.IGNORECASE,
-    )
-    for message in reversed(messages):
-        if message.role != MessageRole.USER:
-            continue
-        registration_match = registration_pattern.search(message.content)
-        if registration_match is not None:
-            return registration_match.group(1).strip()
-        prefixed_match = prefixed_company_pattern.search(message.content)
-        if prefixed_match is not None:
-            return _normalize_company_query(prefixed_match.group(1))
-        company_matches = list(company_pattern.finditer(message.content))
-        if company_matches:
-            return _normalize_company_query(company_matches[-1].group(1))
-    return None
-
-
-def _normalize_company_query(value: str) -> str:
-    cleaned = re.sub(r"\s+", " ", value).strip(" ,.;")
-    cleaned = re.sub(r"^(?:firma|fima|spoločnosť|spolocnost)\s+", "", cleaned, flags=re.IGNORECASE)
-    cleaned = cleaned.strip(" ,.;")
-    if re.search(r"s\.?\s*r\.?\s*o$", cleaned, flags=re.IGNORECASE):
-        return re.sub(r"s\.?\s*r\.?\s*o$", "s.r.o.", cleaned, flags=re.IGNORECASE)
-    if re.search(r"a\.?\s*s$", cleaned, flags=re.IGNORECASE):
-        return re.sub(r"a\.?\s*s$", "a.s.", cleaned, flags=re.IGNORECASE)
-    return cleaned
-
-
-def _load_slovak_company_registry_document(
-    company_query: str,
-) -> tuple[dict[str, str] | None, CoreDocument | None]:
-    registry = build_default_tool_registry()
-    result = registry.run(
-        "obchodny_register_company_check",
-        company_name_or_registration=company_query,
-    )
-    if not result.ok or not result.records:
-        return None, None
-
-    primary = result.records[0]
-    normalized_primary = {
-        "name": str(primary.get("name", "")).strip(),
-        "registration_number": str(primary.get("registration_number", "")).strip(),
-        "seat": str(primary.get("seat", "")).strip(),
-        "status": str(primary.get("status", "")).strip(),
-    }
-    lines = [
-        "Slovak business register lookup",
-        f"Query: {company_query}",
-        f"Result count: {len(result.records)}",
-        "",
-    ]
-    for index, record in enumerate(result.records[:3], start=1):
-        lines.extend(
-            [
-                f"Candidate {index}:",
-                f"Name: {str(record.get('name', '')).strip() or '[missing]'}",
-                f"Registration number: {str(record.get('registration_number', '')).strip() or '[missing]'}",
-                f"Seat: {str(record.get('seat', '')).strip() or '[missing]'}",
-                f"Status: {str(record.get('status', '')).strip() or '[missing]'}",
-                "",
-            ]
-        )
-    return normalized_primary, CoreDocument(
-        doc_id=f"orsr-{abs(hash(company_query))}",
-        path="registry/slovak_business_register.md",
-        content="\n".join(lines).strip(),
-    )
-
-
-def _build_slovak_company_prompt_note(
-    *,
-    company_query: str,
-    company_record: dict[str, str] | None,
-) -> str:
-    lines = [
-        "TOOL-FIRST COMPANY LOOKUP MODE:",
-        f"- The system already queried obchodny_register_company_check using: {company_query}",
-        "- Use the verified company data first instead of asking again for company name, IČO, seat, status, or statutory-register basics when they are already available.",
-        "- If some drafting inputs are still missing, ask only for those missing items.",
-        "- If the user asks to see the draft now, do not repeat prior intake questions. Produce the working draft with placeholders for any still-missing signature details.",
-    ]
-    if company_record:
-        lines.extend(
-            [
-                f"- Verified company name: {company_record.get('name') or '[missing]'}",
-                f"- Verified registration number: {company_record.get('registration_number') or '[missing]'}",
-                f"- Verified seat: {company_record.get('seat') or '[missing]'}",
-                f"- Verified status: {company_record.get('status') or '[missing]'}",
-            ]
-        )
-    return "\n".join(lines)
-
-
-def _build_slovak_share_transfer_intake_reply(
-    *,
-    company_record: dict[str, str] | None,
-) -> str:
-    lines = [
-        "Najprv som overil firmu v Obchodnom registri, aby som sa nepýtal na údaje, ktoré viem získať automaticky.",
-        "",
-        "Overené firemné údaje:",
-        f"Obchodné meno: {(company_record or {}).get('name') or '[nepodarilo sa overiť]'}",
-        f"IČO: {(company_record or {}).get('registration_number') or '[nepodarilo sa overiť]'}",
-        f"Sídlo: {(company_record or {}).get('seat') or '[nepodarilo sa overiť]'}",
-        f"Stav: {(company_record or {}).get('status') or '[nepodarilo sa overiť]'}",
-        "",
-        "Na finálny návrh dokumentácie k prevodu obchodného podielu ešte potrebujem len tieto údaje:",
-        "1. Presné identifikačné údaje prevodcu a nadobúdateľa.",
-        "2. Potvrdenie, aký podiel sa prevádza a či je prevod odplatný alebo bezodplatný.",
-        "3. Potvrdenie, či sa mení iba spoločnícka štruktúra alebo aj konateľ / spôsob konania.",
-        "",
-        "Keď tieto údaje doplníte, pripravím návrh dokumentov a postup podania bez ďalšieho opakovania tých istých otázok.",
-    ]
-    return "\n".join(lines)
-
-
-def _build_slovak_share_transfer_direct_reply(
-    *,
-    messages: list[Message],
-    company_record: dict[str, str] | None,
-) -> str:
-    context_lines = _normalize_document_lines(
-        "\n".join(
-            message.content
-            for message in messages
-            if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
-        )
-    )
-    facts = _extract_document_facts(context_lines)
-    if company_record:
-        if company_record.get("name"):
-            facts["company_name"] = company_record["name"]
-        if company_record.get("registration_number"):
-            facts["company_identifier"] = company_record["registration_number"]
-        if company_record.get("seat"):
-            facts["company_seat"] = company_record["seat"]
-
-    verified_lines = [
-        "Pripravil som pracovný návrh dokumentácie k prevodu obchodného podielu.",
-        "Použil som údaje, ktoré sa dali overiť automaticky v Obchodnom registri. Miesta označené [doplnit] je ešte potrebné vyplniť pred podpisom alebo podaním.",
-        "",
-        "Overené firemné údaje:",
-        f"Obchodné meno: {facts['company_name']}",
-        f"IČO: {facts['company_identifier']}",
-        f"Sídlo: {facts['company_seat']}",
-        "",
-    ]
-    return "\n".join([*verified_lines, *_build_slovak_share_transfer_lines(facts)])
-
-
 def _persist_direct_assistant_message(
     *,
     session_id: UUID,
@@ -685,7 +421,7 @@ def _run_direct_lawyer_turn(
     session: Session,
     content: str,
     supplemental_documents: list[CoreDocument] | None = None,
-) -> tuple[Message, Message, str]:
+) -> tuple[Message, Message, str, list[dict[str, object]]]:
     persisted_user = _repository.add_message(
         Message(
             session_id=session_id,
@@ -725,11 +461,15 @@ def _run_direct_lawyer_turn(
             "- Produce the finalized draft-oriented response for PDF export in this turn.\n"
             "- Include CASE_UPDATE_JSON after the user-facing content."
         )
-    preparation = _prepare_slovak_company_reply(
+    preparation = prepare_country_direct_reply(
         session=session,
         messages=history,
         current_content=content,
         prior_messages=prior_messages,
+        normalize_document_lines=_normalize_document_lines,
+        extract_document_facts=_extract_document_facts,
+        current_turn_confirms_document_generation=_current_turn_confirms_document_generation,
+        build_share_transfer_lines=_build_slovak_share_transfer_lines,
     )
     if preparation.direct_reply is not None:
         persisted_lawyer = _persist_direct_assistant_message(
@@ -738,7 +478,7 @@ def _run_direct_lawyer_turn(
             content=preparation.direct_reply,
             agent_name="LawyerSlovakia",
         )
-        return persisted_user, persisted_lawyer, preparation.direct_reply
+        return persisted_user, persisted_lawyer, preparation.direct_reply, preparation.processing_events
     if preparation.prompt_note:
         prompt_override = f"{prompt_override}\n\n{preparation.prompt_note}"
     case_documents: list[CoreDocument] = []
@@ -786,7 +526,7 @@ def _run_direct_lawyer_turn(
         content=visible_lawyer_content,
         agent_name=lawyer_message.agent_name,
     )
-    return persisted_user, persisted_lawyer, visible_lawyer_content
+    return persisted_user, persisted_lawyer, visible_lawyer_content, preparation.processing_events
 
 
 class StartSessionStreamRequest(BaseModel):
@@ -833,7 +573,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     if not content:
         raise HTTPException(status_code=400, detail="Reply content is required")
 
-    _persisted_user, persisted_lawyer, visible_lawyer_content = _run_direct_lawyer_turn(
+    _persisted_user, persisted_lawyer, visible_lawyer_content, _processing_events = _run_direct_lawyer_turn(
         session_id=session_id,
         session=session,
         content=content,
@@ -1043,16 +783,20 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 message_callback=message_callback,
             )
             persisted_messages = _repository.list_messages(session_id)
+            metadata = build_session_result_metadata(
+                session=session,
+                messages=persisted_messages,
+                final_recommendation=result.final_recommendation,
+                base_metadata={"message_count": len(result.messages), "mode": "discussion_stream"},
+            )
             session_result = SessionResult(
                 final_recommendation=result.final_recommendation,
                 judge_rationale=result.judge_rationale,
-                citations=[{"filename": c.filename, "snippet": c.snippet} for c in result.citations],
-                metadata=build_session_result_metadata(
-                    session=session,
-                    messages=persisted_messages,
-                    final_recommendation=result.final_recommendation,
-                    base_metadata={"message_count": len(result.messages), "mode": "discussion_stream"},
+                citations=_merge_session_citations(
+                    generic_citations=[{"filename": c.filename, "snippet": c.snippet} for c in result.citations],
+                    metadata=metadata,
                 ),
+                metadata=metadata,
             )
             _repository.set_result(session_id, session_result)
             event_queue.put(("result", session_result.model_dump(mode="json")))
@@ -1083,7 +827,7 @@ def _stream_read_user_session(
     payload: StartSessionStreamRequest,
 ) -> StreamingResponse:
     inline_documents = [CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content) for d in payload.documents]
-    persisted_user, persisted_lawyer, visible_lawyer_content = _run_direct_lawyer_turn(
+    persisted_user, persisted_lawyer, visible_lawyer_content, processing_events = _run_direct_lawyer_turn(
         session_id=session_id,
         session=session,
         content=payload.instruction,
@@ -1092,8 +836,9 @@ def _stream_read_user_session(
 
     events: list[tuple[str, dict[str, object]]] = [
         ("message", _message_payload(persisted_user)),
-        ("message", _message_payload(persisted_lawyer)),
     ]
+    events.extend(("processing", event) for event in processing_events)
+    events.append(("message", _message_payload(persisted_lawyer)))
 
     if _assistant_requests_user_reply(visible_lawyer_content):
         events.append(
@@ -1231,7 +976,6 @@ def _assistant_requests_document_confirmation(content: str) -> bool:
 
 
 def _current_turn_confirms_document_generation(
-    *,
     content: str,
     previous_messages: list[Message],
 ) -> bool:
@@ -1260,24 +1004,25 @@ def _build_direct_reply_result(
         if visible_text
         else "Direct lawyer reply stored for session export."
     )
+    metadata = build_session_result_metadata(
+        session=session,
+        messages=messages,
+        final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
+        base_metadata={
+            "message_count": len(messages),
+            "mode": "direct_reply",
+            "country": session.country,
+            "language": session.language or "",
+            "document_requested": document_requested,
+            "document_confirmed": document_confirmed,
+            "document_ready": document_ready,
+        },
+    )
     return SessionResult(
         final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
         judge_rationale=rationale,
-        citations=[],
-        metadata=build_session_result_metadata(
-            session=session,
-            messages=messages,
-            final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
-            base_metadata={
-                "message_count": len(messages),
-                "mode": "direct_reply",
-                "country": session.country,
-                "language": session.language or "",
-                "document_requested": document_requested,
-                "document_confirmed": document_confirmed,
-                "document_ready": document_ready,
-            },
-        ),
+        citations=_merge_session_citations(generic_citations=[], metadata=metadata),
+        metadata=metadata,
     )
 
 
@@ -1878,6 +1623,42 @@ def _format_validation_accuracy(value: object) -> str:
     return f"{numeric:.1f}%"
 
 
+def _merge_session_citations(
+    *,
+    generic_citations: list[dict[str, str]],
+    metadata: dict[str, object],
+) -> list[dict[str, str]]:
+    merged = list(generic_citations)
+    for citation in _law_citation_session_citations(metadata):
+        if citation not in merged:
+            merged.append(citation)
+    return merged
+
+
+def _law_citation_session_citations(metadata: dict[str, object]) -> list[dict[str, str]]:
+    citations: list[dict[str, str]] = []
+    raw_law_citations = metadata.get("law_citations")
+    if not isinstance(raw_law_citations, list):
+        return citations
+    for raw_item in raw_law_citations:
+        if not isinstance(raw_item, dict):
+            continue
+        label = str(raw_item.get("law_identifier") or raw_item.get("label") or "").strip()
+        title = str(raw_item.get("title") or "").strip()
+        version_token = str(raw_item.get("version_token") or "").strip()
+        effective_from = str(raw_item.get("effective_from") or "").strip()
+        summary_bits = [part for part in (title, f"version {version_token}" if version_token else "", f"effective from {effective_from}" if effective_from else "") if part]
+        if not label:
+            continue
+        citations.append(
+            {
+                "filename": label,
+                "snippet": ", ".join(summary_bits),
+            }
+        )
+    return citations
+
+
 def _summary_citation_lines(citations: list[dict[str, str]]) -> list[str]:
     lines: list[str] = []
     for citation in citations[:5]:
@@ -1889,6 +1670,41 @@ def _summary_citation_lines(citations: list[dict[str, str]]) -> list[str]:
             lines.append(f"- {filename}")
         elif snippet:
             lines.append(f"- {snippet}")
+    return lines
+
+
+def _law_citation_export_lines(*, metadata: dict[str, object], language: str | None) -> list[str]:
+    prefers_slovak = (language or "").strip().lower().startswith("sk")
+    lines: list[str] = []
+    raw_law_citations = metadata.get("law_citations")
+    if not isinstance(raw_law_citations, list):
+        return lines
+    for raw_item in raw_law_citations:
+        if not isinstance(raw_item, dict):
+            continue
+        identifier = str(raw_item.get("law_identifier") or raw_item.get("label") or "").strip()
+        title = str(raw_item.get("title") or "").strip()
+        version_token = str(raw_item.get("version_token") or "").strip()
+        effective_from = str(raw_item.get("effective_from") or "").strip()
+        if not identifier:
+            continue
+        if prefers_slovak:
+            detail = f"- {identifier}"
+            if title:
+                detail += f": {title}"
+            if version_token:
+                detail += f", verzia {version_token}"
+            if effective_from:
+                detail += f", účinná od {effective_from}"
+        else:
+            detail = f"- {identifier}"
+            if title:
+                detail += f": {title}"
+            if version_token:
+                detail += f", version {version_token}"
+            if effective_from:
+                detail += f", effective from {effective_from}"
+        lines.append(detail)
     return lines
 
 
@@ -1926,25 +1742,50 @@ def _build_document_export_content(
                 break
     document_kind = _detect_document_kind(context_lines, case_update)
     facts = _extract_document_facts(context_lines, case_update)
+    law_citation_lines = _law_citation_export_lines(
+        metadata=result.metadata if result is not None else {},
+        language=language,
+    )
 
     if (language or "").strip().lower().startswith("sk"):
         title = f"Generovaný Dokument {session_id}"
         if document_kind == "rental_agreement":
-            return title, _build_standard_slovak_agreement_lines(facts)
+            lines = _build_standard_slovak_agreement_lines(facts)
+            return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
         if document_kind == "easement_demand":
-            return title, _build_slovak_easement_demand_lines(facts)
+            lines = _build_slovak_easement_demand_lines(facts)
+            return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
         if document_kind == "share_transfer":
-            return title, _build_slovak_share_transfer_lines(facts)
-        return title, _build_generic_slovak_case_document_lines(facts)
+            lines = _build_slovak_share_transfer_lines(facts)
+            return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        lines = _build_generic_slovak_case_document_lines(facts)
+        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
 
     title = f"Generated Document {session_id}"
     if document_kind == "rental_agreement":
-        return title, _build_standard_english_agreement_lines(facts)
+        lines = _build_standard_english_agreement_lines(facts)
+        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
     if document_kind == "easement_demand":
-        return title, _build_english_easement_demand_lines(facts)
+        lines = _build_english_easement_demand_lines(facts)
+        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
     if document_kind == "share_transfer":
-        return title, _build_english_share_transfer_lines(facts)
-    return title, _build_generic_english_case_document_lines(facts)
+        lines = _build_english_share_transfer_lines(facts)
+        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+    lines = _build_generic_english_case_document_lines(facts)
+    return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+
+
+def _append_document_law_citations(
+    *,
+    lines: List[str],
+    citations: list[str],
+    language: str | None,
+) -> List[str]:
+    if not citations:
+        return lines
+    prefers_slovak = (language or "").strip().lower().startswith("sk")
+    heading = "Právne citácie" if prefers_slovak else "Legal citations"
+    return [*lines, "", heading, *citations]
 
 
 def _pick_document_message(candidates: List[str]) -> str:

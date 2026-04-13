@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start Frontend API"
+  short_description: "Run Vite frontend wired to dev API"
+  default_prompt: "Use $start-frontend-api to start the React frontend and connect it to the Azure dev API."

@@ -4,23 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI Juristiction Chat Simulator</title>
-    <link rel="stylesheet" href="/static/simulator.css" />
+    <link rel="stylesheet" href="/static/simulator.css?v=__SIMULATOR_VERSION__" />
   </head>
   <body>
     <main class="shell">
       <div class="simulator-layout">
         <div class="simulator-controls">
           <h1>Chat Simulator</h1>
-          <p>Start a chat session, submit your case with documents, and watch streamed core messages in real-time.</p>
+          <p>Start a chat session, submit your case instruction, and watch streamed core messages in real-time.</p>
 
           <section class="grid">
             <div>
               <label for="baseUrl">API base URL</label>
-              <input id="baseUrl" value="http://127.0.0.1:8080" placeholder="http://127.0.0.1:8080" />
+              <input id="baseUrl" value="http://127.0.0.1:8081" placeholder="http://127.0.0.1:8081" />
             </div>
             <div>
               <label for="apiKey">x-api-key</label>
               <input id="apiKey" value="aijuris" />
+            </div>
+            <div>
+              <label for="preparedCase">Prepared case</label>
+              <select id="preparedCase">
+                <option value="">Loading prepared cases...</option>
+              </select>
             </div>
           </section>
 
@@ -40,12 +46,6 @@
                 <option value="court">court</option>
               </select>
             </div>
-          </section>
-
-          <section class="row">
-            <button id="createSession">Create Session</button>
-            <button id="clearSession" class="secondary">Clear Session</button>
-            <pre id="sessionStatus">No session created yet.</pre>
           </section>
 
           <section class="row">
@@ -79,21 +79,34 @@
 
           <section class="grid row">
             <div>
-              <button id="ensureUser">Ensure User</button>
+              <button id="ensureUser" type="button">Ensure User</button>
             </div>
             <div>
-              <button id="createCase" class="secondary">Create Case</button>
+              <button id="createCase" class="secondary" type="button">Create Case</button>
             </div>
             <div>
-              <button id="uploadCaseDocuments" class="secondary">Upload To Case</button>
+              <button id="uploadCaseDocuments" class="secondary" type="button">Upload To Case</button>
             </div>
             <div>
-              <button id="inspectCaseDocuments" class="secondary">Inspect Stored Docs</button>
+              <button id="inspectCaseDocuments" class="secondary" type="button">Inspect Stored Docs</button>
+            </div>
+            <div>
+              <button id="createSession" type="button">Create Session</button>
+            </div>
+            <div>
+              <button id="clearSession" class="secondary" type="button">Clear Session</button>
+            </div>
+            <div>
+              <button id="deleteAllCases" class="secondary" type="button">Delete All Cases</button>
             </div>
           </section>
 
           <section class="row">
             <pre id="caseStatus">No persisted user/case created yet.</pre>
+          </section>
+
+          <section class="row">
+            <pre id="sessionStatus">No session created yet.</pre>
           </section>
 
           <section class="row">
@@ -108,14 +121,14 @@
             </div>
             <div>
               <label for="maxDiscussion">Max discussion (minutes)</label>
-              <input id="maxDiscussion" type="number" min="0" step="1" value="15" />
+              <input id="maxDiscussion" type="number" min="0" step="1" value="60" />
             </div>
           </section>
 
           <section class="row">
             <label for="documents">Upload documents (text-based files)</label>
             <input id="documents" type="file" multiple />
-            <small>Use <strong>Upload To Case</strong> to persist files into the API backend and database. If a persisted case exists, stream/reply calls use that stored case context instead of inline temporary documents.</small>
+            <small>Documents are optional. Use <strong>Upload To Case</strong> only when you want persisted API/database storage for later retrieval or document-debug inspection.</small>
           </section>
 
           <section class="row">
@@ -124,12 +137,12 @@
           </section>
 
           <section class="row actions">
-            <button id="startStream">Start Stream</button>
-            <button id="refreshMessages" class="secondary">Refresh Messages</button>
-            <button id="getResult" class="secondary">Get Result</button>
-            <button id="downloadJson" class="secondary">Download JSON</button>
-            <button id="downloadPdf" class="secondary">Download Summary PDF</button>
-            <button id="downloadDocumentPdf" class="secondary">Download Document PDF</button>
+            <button id="startStream" type="button">Start Stream</button>
+            <button id="refreshMessages" class="secondary" type="button">Refresh Messages</button>
+            <button id="getResult" class="secondary" type="button">Get Result</button>
+            <button id="downloadJson" class="secondary" type="button">Download JSON</button>
+            <button id="downloadPdf" class="secondary" type="button">Download Summary PDF</button>
+            <button id="downloadDocumentPdf" class="secondary" type="button">Download Document PDF</button>
           </section>
 
           <section class="row">
@@ -167,14 +180,14 @@
           <form id="chatReplyForm" class="chat-reply-form" novalidate>
             <label for="userSimulationMode">Reply mode</label>
             <select id="userSimulationMode">
-              <option value="ReadUser">ReadUser</option>
-              <option value="AIUserSimulatorAgent" selected>AIUserSimulatorAgent</option>
+              <option value="ReadUser" selected>ReadUser</option>
+              <option value="AIUserSimulatorAgent">AIUserSimulatorAgent</option>
             </select>
             <small>Choose how user replies are provided during core streaming.</small>
             <small>If user requests PDF and later says thank you, simulator auto-downloads PDF on stream completion.</small>
 
             <label for="communicationMinutes">Communication minutes</label>
-            <input id="communicationMinutes" type="number" min="1" value="3" />
+            <input id="communicationMinutes" type="number" min="1" value="30" />
 
             <label for="userReplyInput">End user answer</label>
             <textarea id="userReplyInput" placeholder="Type end user response..."></textarea>
@@ -184,6 +197,7 @@
         </aside>
       </div>
     </main>
-    <script src="/static/simulator.js"></script>
+    <script id="preparedCasesData" type="application/json">__PREPARED_CASES_JSON__</script>
+    <script src="/static/simulator.js?v=__SIMULATOR_VERSION__"></script>
   </body>
 </html>
