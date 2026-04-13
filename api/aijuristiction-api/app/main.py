@@ -39,7 +39,6 @@ dotenv.load_dotenv(_REPO_ENV_PATH, override=False)
 API_VERSION = get_api_version()
 DEFAULT_API_LLM_PROVIDER = "azurefoundry"
 os.environ.setdefault("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER)
-EFFECTIVE_LLM_PROVIDER = os.getenv("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER).strip().lower()
 DOCUMENT_PROCESSOR_MODE = (
     os.getenv(
         "DOCUMENT_PROCESSOR_OPTION",
@@ -79,6 +78,25 @@ def _configured_db_backend() -> str:
     if raw_value == "postgress":
         return "postgres"
     return raw_value or "local"
+
+
+def _configured_llm_provider() -> str:
+    raw_value = os.getenv("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER).strip().lower()
+    if raw_value in {"", "azure", "azurefoundry"}:
+        return "azurefoundry"
+    return raw_value
+
+
+def _llm_health_payload() -> dict[str, str]:
+    provider = _configured_llm_provider()
+    status = "ok" if provider in {"mock", "azurefoundry", "openai"} else "error"
+    payload = {
+        "status": status,
+        "provider": provider,
+    }
+    if status == "error":
+        payload["message"] = f'Unsupported LLM_PROVIDER "{provider}"'
+    return payload
 
 
 def _law_snapshot_payload(*, country_code: str | None) -> dict[str, Any]:
@@ -140,7 +158,7 @@ async def startup_log() -> None:
         app.version,
         get_core_version(),
         logging.getLevelName(LOG_LEVEL),
-        EFFECTIVE_LLM_PROVIDER,
+        _configured_llm_provider(),
         store.db_option,
         DOCUMENT_PROCESSOR_MODE,
         law_snapshot.last_law_update_date,
@@ -201,6 +219,7 @@ async def unhandled_exception_handler(request: fastapi.Request, exc: Exception) 
 @app.get("/health")
 def health() -> JSONResponse:
     database_backend = _configured_db_backend()
+    llm_payload = _llm_health_payload()
     try:
         store = ApiDatabaseStore.from_env()
         database_backend = store.db_option
@@ -217,6 +236,7 @@ def health() -> JSONResponse:
                 "status": "error",
                 "error": "database_unavailable",
                 "message": message,
+                "llm": llm_payload,
                 "database": {
                     "status": "error",
                     "backend": database_backend,
@@ -226,6 +246,7 @@ def health() -> JSONResponse:
     return JSONResponse(
         {
             "status": "ok",
+            "llm": llm_payload,
             "database": {
                 "status": "ok",
                 "backend": database_backend,
