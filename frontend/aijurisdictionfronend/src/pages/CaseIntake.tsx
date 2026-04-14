@@ -7,7 +7,6 @@ type IntakeErrors = {
   title: boolean;
   jurisdiction: boolean;
   opposingParty: boolean;
-  documents: boolean;
 };
 
 const CaseIntake: React.FC = () => {
@@ -24,8 +23,7 @@ const CaseIntake: React.FC = () => {
   const errors: IntakeErrors = {
     title: title.trim().length === 0,
     jurisdiction: jurisdiction.trim().length === 0,
-    opposingParty: opposingParty.trim().length === 0,
-    documents: files.length === 0
+    opposingParty: opposingParty.trim().length === 0
   };
   const hasErrors = Object.values(errors).some(Boolean);
 
@@ -141,7 +139,7 @@ const CaseIntake: React.FC = () => {
                 >
                   {t("caseUploadButton")}
                 </button>
-                <small className="hint">{t("caseStorageMode")}</small>
+                <small className="hint">{t("caseUploadOptional")}</small>
               </div>
               <div className="selected-files" aria-live="polite">
                 <strong>{t("caseSelectedFilesTitle")}</strong>
@@ -175,9 +173,7 @@ const CaseIntake: React.FC = () => {
                   <p className="hint">{t("caseNoFilesSelected")}</p>
                 )}
               </div>
-              {showErrors && errors.documents ? (
-                <small className="form-error">{t("caseDocumentsRequired")}</small>
-              ) : null}
+              <small className="hint">{t("caseStorageMode")}</small>
             </div>
 
             {showErrors && hasErrors ? (

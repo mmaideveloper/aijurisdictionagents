@@ -104,7 +104,7 @@ Task `#242` is implemented as a frontend-only mock flow. It does not create or u
   - case name
   - jurisdiction
   - opposing party
-  - at least one uploaded document
+- Uploading documents is optional
 - Submitting the form creates a mock case in frontend storage and returns the user to `/`
 - The new case appears in:
   - the signed-in homepage sidebar

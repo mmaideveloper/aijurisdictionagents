@@ -32,9 +32,9 @@ const labels: Record<string, string> = {
   caseUpload: "Upload evidence",
   caseUploadBody: "Drag documents or upload PDF, DOCX, evidence packs.",
   caseUploadButton: "Upload files",
+  caseUploadOptional: "Uploading documents is optional. You can create the case first and add files later.",
   caseFieldRequired: "This field is required.",
-  caseDocumentsRequired: "Upload at least one document.",
-  caseFormValidationMessage: "Fill out all case fields and attach at least one document.",
+  caseFormValidationMessage: "Fill out all case fields before creating the case.",
   caseSelectedFilesTitle: "Selected files",
   caseNoFilesSelected: "No documents selected yet.",
   caseRemoveFile: "Remove",
@@ -62,9 +62,28 @@ describe("Case intake page", () => {
     await user.click(screen.getByRole("button", { name: "Start AI lawyer chat" }));
 
     expect(screen.getAllByText("This field is required.")).toHaveLength(3);
-    expect(screen.getByText("Upload at least one document.")).toBeDefined();
-    expect(screen.getByText("Fill out all case fields and attach at least one document.")).toBeDefined();
+    expect(screen.getByText("Fill out all case fields before creating the case.")).toBeDefined();
     expect(createCaseMock).not.toHaveBeenCalled();
+  });
+
+  it("creates a mock case without uploaded documents", async () => {
+    const user = userEvent.setup();
+    render(<CaseIntake />);
+
+    await user.type(screen.getByLabelText("Case name"), "No-doc intake");
+    await user.type(screen.getByLabelText("Jurisdiction"), "Slovakia");
+    await user.type(screen.getByLabelText("Opposing party"), "Northwind LLC");
+
+    await user.click(screen.getByRole("button", { name: "Start AI lawyer chat" }));
+
+    expect(createCaseMock).toHaveBeenCalledTimes(1);
+    expect(createCaseMock).toHaveBeenCalledWith({
+      title: "No-doc intake",
+      jurisdiction: "Slovakia",
+      opposingParty: "Northwind LLC",
+      documents: []
+    });
+    expect(navigateMock).toHaveBeenCalledWith("/", { replace: true });
   });
 
   it("creates a mock case and navigates home when the form is complete", async () => {
