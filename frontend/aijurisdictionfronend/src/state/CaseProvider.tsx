@@ -34,6 +34,33 @@ export type CaseWorkspace = {
   output: string;
 };
 
+export type CaseDocumentRecord = {
+  id: string;
+  caseId: string;
+  originalFilename: string;
+  mimeType: string;
+  size: number;
+  sizeLabel: string;
+  uploadedAt: string;
+};
+
+export type CaseDocumentSummary = CaseDocumentRecord & {
+  caseTitle: string;
+};
+
+export type CreateCaseDocumentInput = {
+  originalFilename: string;
+  mimeType: string;
+  size: number;
+};
+
+export type CreateCaseInput = {
+  title: string;
+  jurisdiction: string;
+  opposingParty: string;
+  documents: CreateCaseDocumentInput[];
+};
+
 export type CaseRecord = {
   id: string;
   title: string;
@@ -45,15 +72,20 @@ export type CaseRecord = {
   selectedMode: CaseMode;
   selectedCommunicationMode: CaseCommunicationMode;
   workspace: CaseWorkspace;
+  jurisdiction: string;
+  opposingParty: string;
+  documents: CaseDocumentRecord[];
+  source: "mock";
 };
 
 type CaseContextValue = {
   cases: CaseRecord[];
+  documents: CaseDocumentSummary[];
   activeCaseId: string | null;
   activeCase: CaseRecord | null;
   hasSelectedCase: boolean;
   continueRequested: boolean;
-  createCase: () => CaseRecord;
+  createCase: (input: CreateCaseInput) => CaseRecord;
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
   setContinueRequested: (value: boolean) => void;
@@ -66,37 +98,92 @@ type CaseContextValue = {
 };
 
 const CaseContext = React.createContext<CaseContextValue | undefined>(undefined);
+const CASE_STORAGE_KEY = "aijurisdictionfrontend.mock.cases.v1";
 
-const initialCases: CaseRecord[] = [
-  {
-    id: "case-001",
-    title: "Keystone Holdings Intake",
-    description: "Intake and jurisdiction review for Keystone Holdings matter.",
+const formatFileSize = (size: number): string => {
+  if (size >= 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (size >= 1024) {
+    return `${Math.max(1, Math.round(size / 1024))} KB`;
+  }
+  return `${Math.max(1, size)} B`;
+};
+
+const buildDocumentRecord = (
+  caseId: string,
+  uploadedAt: string,
+  document: CreateCaseDocumentInput,
+  index: number
+): CaseDocumentRecord => ({
+  id: `${caseId}-document-${index + 1}`,
+  caseId,
+  originalFilename: document.originalFilename,
+  mimeType: document.mimeType,
+  size: document.size,
+  sizeLabel: formatFileSize(document.size),
+  uploadedAt
+});
+
+const createMockCase = (input: CreateCaseInput, createdAt: string, id: string): CaseRecord => {
+  const documents = input.documents.map((document, index) =>
+    buildDocumentRecord(id, createdAt, document, index)
+  );
+  return {
+    id,
+    title: input.title.trim(),
+    description: `${input.jurisdiction.trim()} matter involving ${input.opposingParty.trim()}.`,
     status: "In progress",
-    createdAt: "2026-02-03T09:00:00.000Z",
+    createdAt,
     interactionHistory: [
       {
-        id: "case-001-1",
-        createdAt: "2026-02-09T10:00:00.000Z",
+        id: `${id}-interaction-1`,
+        createdAt,
         actor: "AI Lawyer",
-        message: "Drafted timeline summary from uploaded exhibits."
+        message: "Opened new case workspace from the intake form."
       },
       {
-        id: "case-001-2",
-        createdAt: "2026-02-10T12:30:00.000Z",
-        actor: "AI Lawyer",
-        message: "Reviewed contract variance clauses for compliance risk."
-      },
-      {
-        id: "case-001-3",
-        createdAt: "2026-02-10T16:00:00.000Z",
-        actor: "AI Lawyer",
-        message: "Queued agent sync with regional legal guidance."
+        id: `${id}-interaction-2`,
+        createdAt,
+        actor: "System",
+        message: `Stored ${documents.length} uploaded document${documents.length === 1 ? "" : "s"} in mock profile storage.`
       }
     ],
     selectedRole: "AI Lawyer",
     selectedMode: "Draft",
     selectedCommunicationMode: "Chat",
+    workspace: {
+      meta: `${input.jurisdiction.trim()} · ${documents.length} doc${documents.length === 1 ? "" : "s"}`,
+      objective: `Prepare the case against ${input.opposingParty.trim()} and organize the uploaded evidence.`,
+      nextAction: "Review the intake summary and start the AI lawyer chat when ready.",
+      jurisdiction: input.jurisdiction.trim(),
+      output: "Intake brief + document packet"
+    },
+    jurisdiction: input.jurisdiction.trim(),
+    opposingParty: input.opposingParty.trim(),
+    documents,
+    source: "mock"
+  };
+};
+
+const defaultCases: CaseRecord[] = [
+  {
+    ...createMockCase(
+      {
+        title: "Keystone Holdings Intake",
+        jurisdiction: "EU + UK",
+        opposingParty: "Northshore Advisory",
+        documents: [
+          {
+            originalFilename: "keystone-timeline.pdf",
+            mimeType: "application/pdf",
+            size: 182_430
+          }
+        ]
+      },
+      "2026-02-03T09:00:00.000Z",
+      "case-001"
+    ),
     workspace: {
       meta: "Due in 2 days",
       objective: "Consolidate jurisdiction analysis and prepare a briefing memo for counsel review.",
@@ -106,34 +193,23 @@ const initialCases: CaseRecord[] = [
     }
   },
   {
-    id: "case-002",
-    title: "Atlas Contract Review",
-    description: "Contract review and risk alignment for Atlas procurement.",
+    ...createMockCase(
+      {
+        title: "Atlas Contract Review",
+        jurisdiction: "US + Canada",
+        opposingParty: "Atlas Procurement Vendor",
+        documents: [
+          {
+            originalFilename: "atlas-vendor-packet.docx",
+            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            size: 95_000
+          }
+        ]
+      },
+      "2026-01-28T14:15:00.000Z",
+      "case-002"
+    ),
     status: "On hold",
-    createdAt: "2026-01-28T14:15:00.000Z",
-    interactionHistory: [
-      {
-        id: "case-002-1",
-        createdAt: "2026-02-06T09:10:00.000Z",
-        actor: "AI Judge",
-        message: "Requested updated vendor packet from counsel."
-      },
-      {
-        id: "case-002-2",
-        createdAt: "2026-02-07T11:45:00.000Z",
-        actor: "AI Judge",
-        message: "Flagged missing data privacy addendum."
-      },
-      {
-        id: "case-002-3",
-        createdAt: "2026-02-08T15:20:00.000Z",
-        actor: "AI Judge",
-        message: "Prepared negotiation highlights for review."
-      }
-    ],
-    selectedRole: "AI Judge",
-    selectedMode: "Review",
-    selectedCommunicationMode: "Voice",
     workspace: {
       meta: "Waiting on docs",
       objective: "Gather missing vendor exhibits and align on scope with procurement leadership.",
@@ -143,34 +219,17 @@ const initialCases: CaseRecord[] = [
     }
   },
   {
-    id: "case-003",
-    title: "Meridian Audit Prep",
-    description: "Audit preparation for Meridian controls validation.",
+    ...createMockCase(
+      {
+        title: "Meridian Audit Prep",
+        jurisdiction: "EU + US",
+        opposingParty: "External Audit Team",
+        documents: []
+      },
+      "2026-02-05T08:30:00.000Z",
+      "case-003"
+    ),
     status: "Scheduled",
-    createdAt: "2026-02-05T08:30:00.000Z",
-    interactionHistory: [
-      {
-        id: "case-003-1",
-        createdAt: "2026-02-10T08:45:00.000Z",
-        actor: "Opposing Counsel",
-        message: "Outlined audit scope with finance partners."
-      },
-      {
-        id: "case-003-2",
-        createdAt: "2026-02-10T13:05:00.000Z",
-        actor: "Opposing Counsel",
-        message: "Mapped evidence checklist to control owners."
-      },
-      {
-        id: "case-003-3",
-        createdAt: "2026-02-10T17:30:00.000Z",
-        actor: "Opposing Counsel",
-        message: "Drafted opening statement for kickoff."
-      }
-    ],
-    selectedRole: "Opposing Counsel",
-    selectedMode: "Live",
-    selectedCommunicationMode: "Video",
     workspace: {
       meta: "Kickoff today",
       objective: "Align audit prep checklist and confirm timeline with internal teams.",
@@ -180,34 +239,17 @@ const initialCases: CaseRecord[] = [
     }
   },
   {
-    id: "case-004",
-    title: "Northwind Arbitration",
-    description: "Post-arbitration wrap-up and archive for Northwind.",
+    ...createMockCase(
+      {
+        title: "Northwind Arbitration",
+        jurisdiction: "UK",
+        opposingParty: "Northwind Counterparty",
+        documents: []
+      },
+      "2026-01-12T16:20:00.000Z",
+      "case-004"
+    ),
     status: "Completed",
-    createdAt: "2026-01-12T16:20:00.000Z",
-    interactionHistory: [
-      {
-        id: "case-004-1",
-        createdAt: "2026-02-04T09:00:00.000Z",
-        actor: "AI Lawyer",
-        message: "Generated final arbitration brief."
-      },
-      {
-        id: "case-004-2",
-        createdAt: "2026-02-04T12:20:00.000Z",
-        actor: "AI Lawyer",
-        message: "Collected final stakeholder sign-offs."
-      },
-      {
-        id: "case-004-3",
-        createdAt: "2026-02-04T16:05:00.000Z",
-        actor: "AI Lawyer",
-        message: "Archived evidence package."
-      }
-    ],
-    selectedRole: "AI Lawyer",
-    selectedMode: "Archive",
-    selectedCommunicationMode: "Chat",
     workspace: {
       meta: "Closed last week",
       objective: "Finalize arbitration summary and archive case documentation.",
@@ -218,40 +260,170 @@ const initialCases: CaseRecord[] = [
   }
 ];
 
-const buildNewCase = (index: number): CaseRecord => {
-  const createdAt = new Date().toISOString();
-  const idBase = Date.now().toString();
+const normalizeStoredDocument = (
+  value: unknown,
+  caseId: string
+): CaseDocumentRecord | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.originalFilename !== "string" ||
+    typeof candidate.size !== "number" ||
+    typeof candidate.uploadedAt !== "string"
+  ) {
+    return null;
+  }
   return {
-    id: `case-${idBase}`,
-    title: `New matter ${index + 1}`,
-    description: "Newly created case workspace.",
-    status: "In progress",
-    createdAt,
-    interactionHistory: [
-      {
-        id: `case-${idBase}-1`,
-        createdAt,
-        actor: "AI Lawyer",
-        message: "Opened new case workspace."
-      },
-      {
-        id: `case-${idBase}-2`,
-        createdAt,
-        actor: "AI Lawyer",
-        message: "Set initial jurisdiction focus."
-      }
-    ],
-    selectedRole: "AI Lawyer",
-    selectedMode: "Draft",
-    selectedCommunicationMode: "Chat",
-    workspace: {
-      meta: "Just created",
-      objective: "Define scope, assign roles, and request initial documents.",
-      nextAction: "Add key facts and upload first evidence set.",
-      jurisdiction: "TBD",
-      output: "Intake brief"
-    }
+    id: candidate.id,
+    caseId,
+    originalFilename: candidate.originalFilename,
+    mimeType: typeof candidate.mimeType === "string" ? candidate.mimeType : "application/octet-stream",
+    size: candidate.size,
+    sizeLabel:
+      typeof candidate.sizeLabel === "string" && candidate.sizeLabel.trim()
+        ? candidate.sizeLabel
+        : formatFileSize(candidate.size),
+    uploadedAt: candidate.uploadedAt
   };
+};
+
+const normalizeStoredCase = (value: unknown): CaseRecord | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.title !== "string" ||
+    typeof candidate.description !== "string" ||
+    typeof candidate.createdAt !== "string"
+  ) {
+    return null;
+  }
+
+  const rawDocuments = Array.isArray(candidate.documents) ? candidate.documents : [];
+  const documents = rawDocuments
+    .map((document) => normalizeStoredDocument(document, candidate.id as string))
+    .filter((document): document is CaseDocumentRecord => document !== null);
+
+  const rawWorkspace =
+    candidate.workspace && typeof candidate.workspace === "object"
+      ? (candidate.workspace as Record<string, unknown>)
+      : {};
+  const rawInteractions = Array.isArray(candidate.interactionHistory) ? candidate.interactionHistory : [];
+  const interactionHistory = rawInteractions
+    .map((interaction) => {
+      if (!interaction || typeof interaction !== "object") {
+        return null;
+      }
+      const item = interaction as Record<string, unknown>;
+      if (
+        typeof item.id !== "string" ||
+        typeof item.createdAt !== "string" ||
+        typeof item.actor !== "string" ||
+        typeof item.message !== "string"
+      ) {
+        return null;
+      }
+      return {
+        id: item.id,
+        createdAt: item.createdAt,
+        actor: item.actor,
+        message: item.message
+      } satisfies CaseInteraction;
+    })
+    .filter((interaction): interaction is CaseInteraction => interaction !== null);
+
+  const status =
+    candidate.status === "On hold" ||
+    candidate.status === "Scheduled" ||
+    candidate.status === "Completed"
+      ? candidate.status
+      : "In progress";
+  const selectedRole =
+    candidate.selectedRole === "AI Judge" || candidate.selectedRole === "Opposing Counsel"
+      ? candidate.selectedRole
+      : "AI Lawyer";
+  const selectedMode =
+    candidate.selectedMode === "Review" ||
+    candidate.selectedMode === "Live" ||
+    candidate.selectedMode === "Archive"
+      ? candidate.selectedMode
+      : "Draft";
+  const selectedCommunicationMode =
+    candidate.selectedCommunicationMode === "Voice" ||
+    candidate.selectedCommunicationMode === "Video"
+      ? candidate.selectedCommunicationMode
+      : "Chat";
+
+  return {
+    id: candidate.id,
+    title: candidate.title,
+    description: candidate.description,
+    status,
+    createdAt: candidate.createdAt,
+    interactionHistory,
+    selectedRole,
+    selectedMode,
+    selectedCommunicationMode,
+    workspace: {
+      meta: typeof rawWorkspace.meta === "string" ? rawWorkspace.meta : "Mock workspace",
+      objective:
+        typeof rawWorkspace.objective === "string"
+          ? rawWorkspace.objective
+          : "Define scope, assign roles, and request initial documents.",
+      nextAction:
+        typeof rawWorkspace.nextAction === "string"
+          ? rawWorkspace.nextAction
+          : "Review the intake summary and start the AI lawyer chat.",
+      jurisdiction:
+        typeof rawWorkspace.jurisdiction === "string"
+          ? rawWorkspace.jurisdiction
+          : typeof candidate.jurisdiction === "string"
+            ? candidate.jurisdiction
+            : "TBD",
+      output:
+        typeof rawWorkspace.output === "string" ? rawWorkspace.output : "Intake brief"
+    },
+    jurisdiction: typeof candidate.jurisdiction === "string" ? candidate.jurisdiction : "TBD",
+    opposingParty:
+      typeof candidate.opposingParty === "string" ? candidate.opposingParty : "Unknown",
+    documents,
+    source: "mock"
+  };
+};
+
+const loadStoredCases = (): CaseRecord[] => {
+  if (typeof window === "undefined") {
+    return defaultCases;
+  }
+
+  try {
+    const rawCases = window.localStorage.getItem(CASE_STORAGE_KEY);
+    if (!rawCases) {
+      return defaultCases;
+    }
+    const parsedCases: unknown = JSON.parse(rawCases);
+    if (!Array.isArray(parsedCases)) {
+      return defaultCases;
+    }
+    const normalized = parsedCases
+      .map((item) => normalizeStoredCase(item))
+      .filter((item): item is CaseRecord => item !== null);
+    return normalized.length > 0 ? normalized : defaultCases;
+  } catch {
+    return defaultCases;
+  }
+};
+
+const persistCases = (cases: CaseRecord[]): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(CASE_STORAGE_KEY, JSON.stringify(cases));
 };
 
 const toApiMessageContent = (
@@ -268,24 +440,51 @@ const toApiMessageContent = (
 };
 
 export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cases, setCases] = React.useState<CaseRecord[]>(initialCases);
-  const [activeCaseId, setActiveCaseId] = React.useState<string | null>(initialCases[0]?.id ?? null);
+  const [cases, setCases] = React.useState<CaseRecord[]>(() => loadStoredCases());
+  const [activeCaseId, setActiveCaseId] = React.useState<string | null>(null);
   const [hasSelectedCase, setHasSelectedCase] = React.useState(false);
   const [continueRequested, setContinueRequested] = React.useState(false);
   const sessionIdsByCaseRef = React.useRef<Record<string, string>>({});
+
+  React.useEffect(() => {
+    persistCases(cases);
+  }, [cases]);
+
+  React.useEffect(() => {
+    if (!cases.some((caseItem) => caseItem.id === activeCaseId)) {
+      setActiveCaseId(cases[0]?.id ?? null);
+    }
+  }, [activeCaseId, cases]);
+
+  const documents = React.useMemo(() => {
+    return cases
+      .flatMap((caseItem) =>
+        caseItem.documents.map((document) => ({
+          ...document,
+          caseTitle: caseItem.title
+        }))
+      )
+      .sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt));
+  }, [cases]);
 
   const activeCase = React.useMemo(() => {
     return cases.find((caseItem) => caseItem.id === activeCaseId) ?? cases[0] ?? null;
   }, [activeCaseId, cases]);
 
-  const createCase = React.useCallback(() => {
-    const newCase = buildNewCase(cases.length);
+  const createCase = React.useCallback((input: CreateCaseInput) => {
+    const createdAt = new Date().toISOString();
+    const id = `case-${Date.now()}`;
+    const newCase = createMockCase(input, createdAt, id);
     setCases((prev) => [newCase, ...prev]);
     setActiveCaseId(newCase.id);
     setHasSelectedCase(true);
     setContinueRequested(false);
+    consoleLogger.info("Created mock case in frontend state", {
+      caseId: newCase.id,
+      documentCount: newCase.documents.length
+    });
     return newCase;
-  }, [cases.length]);
+  }, []);
 
   const setActiveCase = React.useCallback((caseId: string) => {
     setActiveCaseId(caseId);
@@ -329,8 +528,6 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return existingSessionId;
     }
 
-    // Frontend sidebar case ids are local-only (not persisted in API DB), so we open
-    // API chat sessions without case_id for stable chat simulation.
     const session = await createChatSession();
     sessionIdsByCaseRef.current[caseId] = session.id;
 
@@ -375,13 +572,19 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [cases, ensureCaseSessionId]
   );
 
-  const setCaseRole = React.useCallback((caseId: string, role: CaseRole) => {
-    updateCase(caseId, { selectedRole: role });
-  }, [updateCase]);
+  const setCaseRole = React.useCallback(
+    (caseId: string, role: CaseRole) => {
+      updateCase(caseId, { selectedRole: role });
+    },
+    [updateCase]
+  );
 
-  const setCaseMode = React.useCallback((caseId: string, mode: CaseMode) => {
-    updateCase(caseId, { selectedMode: mode });
-  }, [updateCase]);
+  const setCaseMode = React.useCallback(
+    (caseId: string, mode: CaseMode) => {
+      updateCase(caseId, { selectedMode: mode });
+    },
+    [updateCase]
+  );
 
   const setCaseCommunicationMode = React.useCallback(
     (caseId: string, mode: CaseCommunicationMode) => {
@@ -393,6 +596,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value = React.useMemo(
     () => ({
       cases,
+      documents,
       activeCaseId,
       activeCase,
       hasSelectedCase,
@@ -410,6 +614,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }),
     [
       cases,
+      documents,
       activeCaseId,
       activeCase,
       hasSelectedCase,

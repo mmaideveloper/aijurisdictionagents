@@ -95,6 +95,23 @@ The `/profile` page displays structured user information from the current mock a
 - Includes subscription pricing controls (billing cadence + plan selector)
 - Includes an opened-cases panel with quick navigation back to active matters
 
+## Mock Case Creation Flow (Task #242)
+
+Task `#242` is implemented as a frontend-only mock flow. It does not create or upload cases/documents through the API.
+
+- `+ New case` opens the intake form at `/app/case`
+- The intake form requires:
+  - case name
+  - jurisdiction
+  - opposing party
+  - at least one uploaded document
+- Submitting the form creates a mock case in frontend storage and returns the user to `/`
+- The new case appears in:
+  - the signed-in homepage sidebar
+  - `My Profile` under `Opened cases`
+- Uploaded documents appear in `My Profile` under `My Documents`
+- Mock cases/documents are stored in browser `localStorage` for local development and tests
+
 ## Legal pages and footer links
 
 Global footer links are available in all language modes (`en`, `sk`, `de`) and are visible on both public and signed-in screens.
@@ -158,6 +175,12 @@ Task #238 API chat minimal demo:
 
 ```bash
 python examples/frontend_api_chat_minimal_demo.py
+```
+
+Task #242 mock case creation minimal demo:
+
+```bash
+python examples/frontend_case_creation_task_242_minimal_demo.py
 ```
 
 The demo defaults to the shared Azure dev API endpoint. Override it for local API testing with

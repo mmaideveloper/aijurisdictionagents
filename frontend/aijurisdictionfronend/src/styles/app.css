@@ -946,6 +946,11 @@
   font-weight: 600;
 }
 
+.form-error {
+  color: #8d2b2b;
+  font-size: 0.85rem;
+}
+
 input,
 textarea {
   padding: 0.8rem 1rem;
@@ -972,6 +977,50 @@ textarea {
   display: grid;
   gap: 1rem;
   text-align: center;
+}
+
+.upload--intake {
+  text-align: left;
+}
+
+.upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.selected-files {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.selected-files__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.selected-files__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.8rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.selected-files__item div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.selected-files__item small {
+  color: var(--ink-muted);
 }
 
 .chat {
@@ -1149,6 +1198,38 @@ textarea {
 
 .profile-case-button:hover {
   border-color: rgba(31, 27, 22, 0.18);
+}
+
+.profile-document-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.profile-document-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+}
+
+.profile-document-item div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.profile-document-item small {
+  color: var(--ink-muted);
+}
+
+.profile-document-meta {
+  white-space: nowrap;
 }
 
 @media (max-width: 1100px) {
