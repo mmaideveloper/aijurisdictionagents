@@ -1,6 +1,9 @@
 import React from "react";
 import { createChatSession, replyToSession } from "../api/chatClient";
+import { getMockCaseTemplate, isSeededCaseTemplateId } from "../content/mockCaseTemplates";
+import { translate, type Language } from "../data/translations";
 import { consoleLogger } from "../logging/consoleLogger";
+import { useLanguage } from "../components/LanguageProvider";
 
 export type CaseStatus = "In progress" | "On hold" | "Scheduled" | "Completed";
 export type CaseMode = "Draft" | "Review" | "Live" | "Archive";
@@ -99,6 +102,74 @@ type CaseContextValue = {
 
 const CaseContext = React.createContext<CaseContextValue | undefined>(undefined);
 const CASE_STORAGE_KEY = "aijurisdictionfrontend.mock.cases.v1";
+const STORED_DOCUMENT_MESSAGE_PATTERN = /^Stored (?<count>\d+) uploaded documents? in mock profile storage\.$/;
+
+const buildCreatedCaseDescription = (jurisdiction: string, opposingParty: string, language: Language) =>
+  translate(language, "mockCreatedCaseDescription", {
+    jurisdiction,
+    opposingParty
+  });
+
+const buildCreatedCaseMeta = (jurisdiction: string, documentCount: number, language: Language) =>
+  translate(
+    language,
+    documentCount === 1 ? "mockCreatedCaseMetaSingular" : "mockCreatedCaseMetaPlural",
+    {
+      jurisdiction,
+      count: documentCount
+    }
+  );
+
+const localizeInteractionActor = (
+  actor: string,
+  language: Language
+): string => {
+  if (actor === "AI Lawyer") {
+    return translate(language, "workspaceLawyerTitle");
+  }
+  if (actor === "AI Judge") {
+    return translate(language, "workspaceJudgeTitle");
+  }
+  if (actor === "Opposing Counsel") {
+    return translate(language, "workspaceOpposingTitle");
+  }
+  if (actor === "System") {
+    return translate(language, "workspaceSystemLabel");
+  }
+  if (actor === "You") {
+    return translate(language, "workspaceUserLabel");
+  }
+  if (actor === "You (Voice)") {
+    return translate(language, "workspaceUserVoiceLabel");
+  }
+  if (actor === "You (Video)") {
+    return translate(language, "workspaceUserVideoLabel");
+  }
+  return actor;
+};
+
+const localizeInteractionMessage = (
+  message: string,
+  language: Language
+): string => {
+  if (message === "Opened new case workspace from the intake form.") {
+    return translate(language, "mockCreatedCaseOpenMessage");
+  }
+
+  const storedDocumentMatch = message.match(STORED_DOCUMENT_MESSAGE_PATTERN);
+  if (storedDocumentMatch?.groups?.count) {
+    const count = Number(storedDocumentMatch.groups.count);
+    return translate(
+      language,
+      count === 1
+        ? "mockCreatedCaseStoredDocumentsSingular"
+        : "mockCreatedCaseStoredDocumentsPlural",
+      { count }
+    );
+  }
+
+  return message;
+};
 
 const formatFileSize = (size: number): string => {
   if (size >= 1024 * 1024) {
@@ -268,6 +339,61 @@ const defaultCases: CaseRecord[] = [
     }
   }
 ];
+
+const localizeCaseRecord = (caseItem: CaseRecord, language: Language): CaseRecord => {
+  const documentCount = caseItem.documents.length;
+
+  const localizedWorkspace = isSeededCaseTemplateId(caseItem.id)
+    ? (() => {
+        const template = getMockCaseTemplate(language, caseItem.id);
+        return {
+          meta: template.meta,
+          objective: template.objective,
+          nextAction: template.nextAction,
+          jurisdiction: caseItem.workspace.jurisdiction,
+          output: template.output
+        } satisfies CaseWorkspace;
+      })()
+    : {
+        meta:
+          caseItem.source === "mock"
+            ? buildCreatedCaseMeta(caseItem.jurisdiction, documentCount, language)
+            : caseItem.workspace.meta,
+        objective:
+          caseItem.source === "mock"
+            ? translate(language, "mockCreatedCaseObjective", {
+                opposingParty: caseItem.opposingParty
+              })
+            : caseItem.workspace.objective,
+        nextAction:
+          caseItem.source === "mock"
+            ? translate(language, "mockCreatedCaseNextAction")
+            : caseItem.workspace.nextAction,
+        jurisdiction: caseItem.workspace.jurisdiction,
+        output:
+          caseItem.source === "mock"
+            ? translate(language, "mockCreatedCaseOutput")
+            : caseItem.workspace.output
+      };
+
+  return {
+    ...caseItem,
+    title: isSeededCaseTemplateId(caseItem.id)
+      ? getMockCaseTemplate(language, caseItem.id).title
+      : caseItem.title,
+    description: isSeededCaseTemplateId(caseItem.id)
+      ? getMockCaseTemplate(language, caseItem.id).description
+      : caseItem.source === "mock"
+        ? buildCreatedCaseDescription(caseItem.jurisdiction, caseItem.opposingParty, language)
+        : caseItem.description,
+    interactionHistory: caseItem.interactionHistory.map((interaction) => ({
+      ...interaction,
+      actor: localizeInteractionActor(interaction.actor, language),
+      message: localizeInteractionMessage(interaction.message, language)
+    })),
+    workspace: localizedWorkspace
+  };
+};
 
 const normalizeStoredDocument = (
   value: unknown,
@@ -449,22 +575,27 @@ const toApiMessageContent = (
 };
 
 export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cases, setCases] = React.useState<CaseRecord[]>(() => loadStoredCases());
+  const { language } = useLanguage();
+  const [storedCases, setStoredCases] = React.useState<CaseRecord[]>(() => loadStoredCases());
   const [activeCaseId, setActiveCaseId] = React.useState<string | null>(null);
   const [hasSelectedCase, setHasSelectedCase] = React.useState(false);
   const [continueRequested, setContinueRequested] = React.useState(false);
   const sessionIdsByCaseRef = React.useRef<Record<string, string>>({});
 
   React.useEffect(() => {
-    persistCases(cases);
-  }, [cases]);
+    persistCases(storedCases);
+  }, [storedCases]);
 
   React.useEffect(() => {
-    if (activeCaseId && !cases.some((caseItem) => caseItem.id === activeCaseId)) {
+    if (activeCaseId && !storedCases.some((caseItem) => caseItem.id === activeCaseId)) {
       setActiveCaseId(null);
       setHasSelectedCase(false);
     }
-  }, [activeCaseId, cases]);
+  }, [activeCaseId, storedCases]);
+
+  const cases = React.useMemo(() => {
+    return storedCases.map((caseItem) => localizeCaseRecord(caseItem, language));
+  }, [language, storedCases]);
 
   const documents = React.useMemo(() => {
     return cases
@@ -488,7 +619,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const createdAt = new Date().toISOString();
     const id = `case-${Date.now()}`;
     const newCase = createMockCase(input, createdAt, id);
-    setCases((prev) => [newCase, ...prev]);
+    setStoredCases((prev) => [newCase, ...prev]);
     setActiveCaseId(newCase.id);
     setHasSelectedCase(true);
     setContinueRequested(false);
@@ -496,8 +627,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       caseId: newCase.id,
       documentCount: newCase.documents.length
     });
-    return newCase;
-  }, []);
+    return localizeCaseRecord(newCase, language);
+  }, [language]);
 
   const setActiveCase = React.useCallback((caseId: string) => {
     setActiveCaseId(caseId);
@@ -510,7 +641,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const updateCase = React.useCallback((caseId: string, update: Partial<CaseRecord>) => {
-    setCases((prev) =>
+    setStoredCases((prev) =>
       prev.map((caseItem) => (caseItem.id === caseId ? { ...caseItem, ...update } : caseItem))
     );
   }, []);
@@ -524,7 +655,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
         actor,
         message
       };
-      setCases((prev) =>
+      setStoredCases((prev) =>
         prev.map((caseItem) =>
           caseItem.id === caseId
             ? { ...caseItem, interactionHistory: [...caseItem.interactionHistory, interaction] }
@@ -541,7 +672,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return existingSessionId;
     }
 
-    const session = await createChatSession();
+    const session = await createChatSession({ language });
     sessionIdsByCaseRef.current[caseId] = session.id;
 
     consoleLogger.info("Created API session for case", {
@@ -550,11 +681,11 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return session.id;
-  }, []);
+  }, [language]);
 
   const sendCaseMessage = React.useCallback(
     async (input: SendCaseMessageInput): Promise<SendCaseMessageResult> => {
-      const caseExists = cases.some((caseItem) => caseItem.id === input.caseId);
+      const caseExists = storedCases.some((caseItem) => caseItem.id === input.caseId);
       if (!caseExists) {
         throw new Error(`Case ${input.caseId} was not found.`);
       }
@@ -582,7 +713,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
         assistantMessage: assistantMessage.content
       };
     },
-    [cases, ensureCaseSessionId]
+    [storedCases, ensureCaseSessionId]
   );
 
   const setCaseRole = React.useCallback(

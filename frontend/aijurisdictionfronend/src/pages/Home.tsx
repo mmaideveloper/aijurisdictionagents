@@ -6,6 +6,7 @@ import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import WorkspaceWelcome from "../components/WorkspaceWelcome";
 import { CaseCommunicationMode, CaseRole, useCases } from "../state/CaseProvider";
+import { caseStatusTranslationKeys } from "../state/caseStatus";
 
 const Home: React.FC = () => {
   const { t } = useLanguage();
@@ -105,13 +106,15 @@ const Home: React.FC = () => {
         const apiErrorMessage = error instanceof Error ? error.message : fallbackMessage;
 
         if (error instanceof ApiRequestError && error.kind === "network") {
-          setApiError(`Unable to reach API. ${apiErrorMessage}`);
-          addInteraction(activeCase.id, "System", `Unable to reach API. ${apiErrorMessage}`);
+          const message = `${t("workspaceApiUnavailablePrefix")} ${apiErrorMessage}`;
+          setApiError(message);
+          addInteraction(activeCase.id, "System", message);
           return false;
         }
 
-        setApiError(`API request failed. ${apiErrorMessage}`);
-        addInteraction(activeCase.id, "System", `API request failed. ${apiErrorMessage}`);
+        const message = `${t("workspaceApiRequestFailedPrefix")} ${apiErrorMessage}`;
+        setApiError(message);
+        addInteraction(activeCase.id, "System", message);
         return false;
       } finally {
         setIsSendingMessage(false);
@@ -154,14 +157,14 @@ const Home: React.FC = () => {
         <section className="workspace-shell">
           <header className="workspace-header">
             <div>
-              <h1>Workspace</h1>
+              <h1>{t("workspaceHeaderTitle")}</h1>
               <p className="hint">
-                Welcome back, {user?.name ?? "Admin"}. Pick a case to continue your work.
+                {t("workspaceWelcomeBack", { name: user?.name ?? t("commonUser") })}
               </p>
             </div>
             <div className="workspace-meta">
-              <span className="pill active">Signed in</span>
-              <span className="pill">{activeMatterCount} active matters</span>
+              <span className="pill active">{t("workspaceSignedIn")}</span>
+              <span className="pill">{t("workspaceActiveMatters", { count: activeMatterCount })}</span>
             </div>
           </header>
 
@@ -178,12 +181,14 @@ const Home: React.FC = () => {
                   <>
                     <div className="panel-card__header">
                       <div className="workspace-case-header">
-                        <h2>{activeCase?.title ?? "Active Case"}</h2>
+                        <h2>{activeCase?.title ?? t("workspaceDefaultActiveCase")}</h2>
                         <p className="hint">{activeCase?.description}</p>
                       </div>
                       <div className="workspace-case-meta">
-                        <span className="pill">{activeCase?.status ?? "In progress"}</span>
-                        <span className="pill">{activeCase?.workspace.meta ?? "Case"}</span>
+                        <span className="pill">
+                          {activeCase ? t(caseStatusTranslationKeys[activeCase.status]) : t("workspaceStatusInProgress")}
+                        </span>
+                        <span className="pill">{activeCase?.workspace.meta ?? t("workspaceDefaultActiveCase")}</span>
                       </div>
                     </div>
                     <div className="workspace-stream">
@@ -211,7 +216,7 @@ const Home: React.FC = () => {
                               type="text"
                               value={draftMessage}
                               onChange={(event) => setDraftMessage(event.target.value)}
-                              placeholder="Type your message..."
+                              placeholder={t("workspaceChatPlaceholder")}
                               disabled={isSendingMessage}
                             />
                             <button
@@ -219,15 +224,15 @@ const Home: React.FC = () => {
                               className="button primary"
                               disabled={isSendingMessage || !draftMessage.trim()}
                             >
-                              {isSendingMessage ? "Sending..." : "Send"}
+                              {isSendingMessage ? t("workspaceSending") : t("workspaceChatSend")}
                             </button>
                           </form>
                           <p className="workspace-chat__status">
-                            {isSendingMessage ? "Waiting for API response..." : "Connected through API chat."}
+                            {isSendingMessage ? t("workspaceWaitingForApi") : t("workspaceConnectedApi")}
                           </p>
                           {apiError ? (
                             <p className="workspace-chat__status workspace-chat__status--error">
-                              API error: {apiError}
+                              {t("workspaceApiErrorLabel")}: {apiError}
                             </p>
                           ) : null}
                         </div>
@@ -244,7 +249,7 @@ const Home: React.FC = () => {
                               : t("commsVideoBody")}
                           </p>
                           <label className="workspace-mode-card__input-label" htmlFor="mode-transcript">
-                            Message transcript
+                            {t("workspaceTranscriptLabel")}
                           </label>
                           <textarea
                             id="mode-transcript"
@@ -253,8 +258,8 @@ const Home: React.FC = () => {
                             onChange={(event) => setModeDraftMessage(event.target.value)}
                             placeholder={
                               activeCase?.selectedCommunicationMode === "Voice"
-                                ? "Write a voice message transcript..."
-                                : "Write a video message transcript..."
+                                ? t("workspaceVoiceTranscriptPlaceholder")
+                                : t("workspaceVideoTranscriptPlaceholder")
                             }
                             disabled={isSendingMessage}
                           />
@@ -265,20 +270,20 @@ const Home: React.FC = () => {
                             disabled={isSendingMessage || !modeDraftMessage.trim()}
                           >
                             {isSendingMessage
-                              ? "Sending..."
+                              ? t("workspaceSending")
                               : activeCase?.selectedCommunicationMode === "Voice"
-                                ? "Send voice transcript"
-                                : "Send video transcript"}
+                                ? t("workspaceSendVoiceTranscript")
+                                : t("workspaceSendVideoTranscript")}
                           </button>
                           {apiError ? (
                             <p className="workspace-chat__status workspace-chat__status--error">
-                              API error: {apiError}
+                              {t("workspaceApiErrorLabel")}: {apiError}
                             </p>
                           ) : null}
                         </article>
                       )}
                       <article className="workspace-callout">
-                        <h3>Next recommended action</h3>
+                        <h3>{t("workspaceNextRecommendedAction")}</h3>
                         <p>{activeCase?.workspace.nextAction}</p>
                         <button
                           type="button"
@@ -302,7 +307,7 @@ const Home: React.FC = () => {
             <aside className="workspace-panel workspace-panel--right">
               <div className="panel-card">
                 <div className="panel-card__header">
-                  <h2>Configurations</h2>
+                  <h2>{t("workspaceConfigurations")}</h2>
                 </div>
                 <div className="config-list">
                   <fieldset className="role-selector" disabled={!activeCase}>

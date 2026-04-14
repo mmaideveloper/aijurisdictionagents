@@ -4,6 +4,7 @@ import { useLanguage } from "../components/LanguageProvider";
 import { useAuth } from "../auth/mockAuth";
 import { BillingCadence, plans } from "../data/plans";
 import { useCases } from "../state/CaseProvider";
+import { caseStatusTranslationKeys } from "../state/caseStatus";
 
 interface ProfileField {
   label: string;
@@ -105,7 +106,7 @@ const Profile: React.FC = () => {
                       }}
                     >
                       <span>{caseItem.title}</span>
-                      <small>{caseItem.status}</small>
+                      <small>{t(caseStatusTranslationKeys[caseItem.status])}</small>
                     </button>
                   </li>
                 ))}

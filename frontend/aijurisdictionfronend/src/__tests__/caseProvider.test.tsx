@@ -4,6 +4,7 @@ import React from "react";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { LanguageProvider, useLanguage } from "../components/LanguageProvider";
 import { CaseProvider, useCases } from "../state/CaseProvider";
 
 vi.mock("../api/chatClient", () => ({
@@ -55,6 +56,21 @@ const CaseConsumer: React.FC = () => {
   );
 };
 
+const LocalizedCaseConsumer: React.FC = () => {
+  const { cases } = useCases();
+  const { setLanguage } = useLanguage();
+
+  return (
+    <div>
+      <button type="button" onClick={() => setLanguage("sk")}>
+        Switch to SK
+      </button>
+      <div data-testid="localized-title">{cases[0]?.title ?? ""}</div>
+      <div data-testid="localized-next-action">{cases[0]?.workspace.nextAction ?? ""}</div>
+    </div>
+  );
+};
+
 describe("CaseProvider", () => {
   beforeEach(() => {
     cleanup();
@@ -64,9 +80,11 @@ describe("CaseProvider", () => {
   it("stores created mock cases and aggregated documents in localStorage", async () => {
     const user = userEvent.setup();
     render(
-      <CaseProvider>
-        <CaseConsumer />
-      </CaseProvider>
+      <LanguageProvider>
+        <CaseProvider>
+          <CaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
     );
 
     const initialCases = Number(screen.getByTestId("case-count").textContent ?? "0");
@@ -125,9 +143,11 @@ describe("CaseProvider", () => {
     );
 
     render(
-      <CaseProvider>
-        <CaseConsumer />
-      </CaseProvider>
+      <LanguageProvider>
+        <CaseProvider>
+          <CaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
     );
 
     expect(screen.getByTestId("case-count").textContent).toBe("1");
@@ -136,5 +156,24 @@ describe("CaseProvider", () => {
     expect(screen.getByTestId("latest-document").textContent).toBe("stored-evidence.pdf");
     expect(screen.getByTestId("active-case").textContent).toBe("");
     expect(screen.getByTestId("has-selected-case").textContent).toBe("false");
+  });
+
+  it("re-localizes seeded mock case content when the language changes", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <LocalizedCaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    expect(screen.getByTestId("localized-title").textContent).toBe("Keystone Holdings Intake");
+
+    await user.click(screen.getByRole("button", { name: "Switch to SK" }));
+
+    expect(screen.getByTestId("localized-title").textContent).toBe("Intake Keystone Holdings");
+    expect(screen.getByTestId("localized-next-action").textContent).toContain("Naplánujte");
   });
 });
