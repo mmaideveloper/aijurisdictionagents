@@ -5,9 +5,11 @@ import { Footer } from "./Footer";
 import { useAuth } from "../auth/mockAuth";
 import { Sidebar } from "./Sidebar";
 import { BsBoxArrowRight } from "react-icons/bs";
+import { useLanguage } from "./LanguageProvider";
 
 export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
+  const { t } = useLanguage();
   const { pathname } = useLocation();
   const hasWorkspaceLayout = isAuthenticated && pathname === "/";
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
@@ -24,7 +26,7 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
             type="button"
             className="sidebar-bubble"
             onClick={toggleSidebar}
-            aria-label="Open sidebar"
+            aria-label={t("sidebarOpen")}
           >
             <BsBoxArrowRight className="sidebar-icon" />
           </button>

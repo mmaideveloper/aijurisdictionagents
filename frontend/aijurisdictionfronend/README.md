@@ -112,6 +112,17 @@ Task `#242` is implemented as a frontend-only mock flow. It does not create or u
 - Uploaded documents appear in `My Profile` under `My Documents`
 - Mock cases/documents are stored in browser `localStorage` for local development and tests
 
+## Language Switching (Task #243)
+
+Task `#243` keeps the selected UI language active across routes and applies it to the current page immediately.
+
+- The language switcher selection is stored in browser `localStorage`
+- Public routes and signed-in routes reuse the same selected language
+- Signed-in workspace labels and sidebar copy update immediately when the user changes language
+- App-owned mock case/workspace text is re-localized for `en`, `sk`, and `de`
+- User-provided content such as case titles and uploaded filenames stays unchanged
+- New chat sessions pass the selected frontend language to the API session creation call
+
 ## Legal pages and footer links
 
 Global footer links are available in all language modes (`en`, `sk`, `de`) and are visible on both public and signed-in screens.
@@ -181,6 +192,12 @@ Task #242 mock case creation minimal demo:
 
 ```bash
 python examples/frontend_case_creation_task_242_minimal_demo.py
+```
+
+Task #243 language switching minimal demo:
+
+```bash
+python examples/frontend_language_switching_task_243_minimal_demo.py
 ```
 
 The demo defaults to the shared Azure dev API endpoint. Override it for local API testing with

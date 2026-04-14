@@ -144,7 +144,7 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
     }
   };
 
-  const profileName = user?.name ?? "User";
+  const profileName = user?.name ?? t("commonUser");
   const profileEmail = user?.email ?? "";
   const profileInitial = profileName.slice(0, 1).toUpperCase();
   const showBrand = !isAuthenticated || pathname !== "/" || isSidebarCollapsed;

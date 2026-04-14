@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useCases } from "../state/CaseProvider";
 import { useLanguage } from "./LanguageProvider";
 import { BsBoxArrowLeft } from "react-icons/bs";
+import { caseStatusTranslationKeys } from "../state/caseStatus";
 
 const statusClass = (status: string) => status.toLowerCase().replace(/\s+/g, "-");
 
@@ -32,7 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                 type="button"
                 className="sidebar-close-btn"
                 onClick={onClose}
-                aria-label="Close sidebar"
+                aria-label={t("sidebarClose")}
               >
                 <BsBoxArrowLeft className="sidebar-icon" />
               </button>
@@ -41,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
 
           <div className="sidebar-section sidebar-section--cases">
             <div className="sidebar-section__header">
-              <h3>Cases</h3>
+              <h3>{t("sidebarCasesTitle")}</h3>
               <span>{cases.length}</span>
             </div>
             <button
@@ -49,7 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
               className="button ghost full sidebar-action"
               onClick={() => navigate("/app/case")}
             >
-              + New case
+              {t("sidebarNewCase")}
             </button>
             <div className="case-list-scroll">
               <ul className="case-list">
@@ -72,7 +73,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                             <span className="case-meta">{caseItem.workspace.meta}</span>
                           </div>
                         </div>
-                        <span className="case-status-label">{caseItem.status}</span>
+                        <span className="case-status-label">{t(caseStatusTranslationKeys[caseItem.status])}</span>
                       </button>
                     </li>
                   );
@@ -83,16 +84,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
 
           <div className="sidebar-section">
             <div className="sidebar-section__header">
-              <h3>Navigation</h3>
-              <span>Coming soon</span>
+              <h3>{t("sidebarNavigationTitle")}</h3>
+              <span>{t("sidebarComingSoon")}</span>
             </div>
             <div className="sidebar-placeholder">
-              Add shortcuts to case tools, reports, and settings here.
+              {t("sidebarPlaceholder")}
             </div>
           </div>
 
           <div className="sidebar-footer">
-            <span>Workspace controls</span>
+            <span>{t("sidebarFooter")}</span>
           </div>
         </div>
       </div>

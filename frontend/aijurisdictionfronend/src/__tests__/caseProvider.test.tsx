@@ -4,7 +4,13 @@ import React from "react";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CaseProvider, useCases } from "../state/CaseProvider";
+import { createChatSession, replyToSession } from "../api/chatClient";
+import { LanguageProvider, useLanguage } from "../components/LanguageProvider";
+import {
+  buildLocalizedInteractionMessage,
+  CaseProvider,
+  useCases
+} from "../state/CaseProvider";
 
 vi.mock("../api/chatClient", () => ({
   createChatSession: vi.fn(),
@@ -55,18 +61,104 @@ const CaseConsumer: React.FC = () => {
   );
 };
 
+const LocalizedCaseConsumer: React.FC = () => {
+  const { cases } = useCases();
+  const { setLanguage } = useLanguage();
+
+  return (
+    <div>
+      <button type="button" onClick={() => setLanguage("sk")}>
+        Switch to SK
+      </button>
+      <div data-testid="localized-title">{cases[0]?.title ?? ""}</div>
+      <div data-testid="localized-next-action">{cases[0]?.workspace.nextAction ?? ""}</div>
+    </div>
+  );
+};
+
+const SessionLanguageConsumer: React.FC = () => {
+  const { sendCaseMessage } = useCases();
+  const { setLanguage } = useLanguage();
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() =>
+          void sendCaseMessage({
+            caseId: "case-001",
+            content: "hello",
+            communicationMode: "Chat"
+          })
+        }
+      >
+        Send EN
+      </button>
+      <button type="button" onClick={() => setLanguage("sk")}>
+        Switch to SK
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void sendCaseMessage({
+            caseId: "case-001",
+            content: "ahoj",
+            communicationMode: "Chat"
+          })
+        }
+      >
+        Send SK
+      </button>
+    </div>
+  );
+};
+
+const LocalizedSystemMessageConsumer: React.FC = () => {
+  const { cases, addInteraction } = useCases();
+  const { setLanguage } = useLanguage();
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() =>
+          addInteraction(
+            "case-001",
+            "System",
+            buildLocalizedInteractionMessage("workspaceApiUnavailablePrefix", {
+              detail: "Network request failed."
+            })
+          )
+        }
+      >
+        Add Error
+      </button>
+      <button type="button" onClick={() => setLanguage("de")}>
+        Switch to DE
+      </button>
+      <div data-testid="localized-system-message">
+        {cases[0]?.interactionHistory.at(-1)?.message ?? ""}
+      </div>
+    </div>
+  );
+};
+
 describe("CaseProvider", () => {
   beforeEach(() => {
     cleanup();
     window.localStorage.clear();
+    vi.mocked(createChatSession).mockReset();
+    vi.mocked(replyToSession).mockReset();
   });
 
   it("stores created mock cases and aggregated documents in localStorage", async () => {
     const user = userEvent.setup();
     render(
-      <CaseProvider>
-        <CaseConsumer />
-      </CaseProvider>
+      <LanguageProvider>
+        <CaseProvider>
+          <CaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
     );
 
     const initialCases = Number(screen.getByTestId("case-count").textContent ?? "0");
@@ -125,9 +217,11 @@ describe("CaseProvider", () => {
     );
 
     render(
-      <CaseProvider>
-        <CaseConsumer />
-      </CaseProvider>
+      <LanguageProvider>
+        <CaseProvider>
+          <CaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
     );
 
     expect(screen.getByTestId("case-count").textContent).toBe("1");
@@ -136,5 +230,96 @@ describe("CaseProvider", () => {
     expect(screen.getByTestId("latest-document").textContent).toBe("stored-evidence.pdf");
     expect(screen.getByTestId("active-case").textContent).toBe("");
     expect(screen.getByTestId("has-selected-case").textContent).toBe("false");
+  });
+
+  it("re-localizes seeded mock case content when the language changes", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <LocalizedCaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    expect(screen.getByTestId("localized-title").textContent).toBe("Keystone Holdings Intake");
+
+    await user.click(screen.getByRole("button", { name: "Switch to SK" }));
+
+    expect(screen.getByTestId("localized-title").textContent).toBe("Intake Keystone Holdings");
+    expect(screen.getByTestId("localized-next-action").textContent).toContain("Naplánujte");
+  });
+
+  it("creates a new API session for a case after the language changes", async () => {
+    const user = userEvent.setup();
+    vi.mocked(createChatSession)
+      .mockResolvedValueOnce({
+        id: "session-en",
+        user_id: null,
+        case_id: null,
+        country: "SK",
+        language: "en",
+        discussion_type: "advice",
+        state: "active",
+        created_at: "2026-04-14T10:00:00.000Z"
+      })
+      .mockResolvedValueOnce({
+        id: "session-sk",
+        user_id: null,
+        case_id: null,
+        country: "SK",
+        language: "sk",
+        discussion_type: "advice",
+        state: "active",
+        created_at: "2026-04-14T10:05:00.000Z"
+      });
+    vi.mocked(replyToSession).mockResolvedValue({
+      id: "message-1",
+      session_id: "session-en",
+      role: "assistant",
+      content: "Reply",
+      agent_name: "AI Assistant",
+      created_at: "2026-04-14T10:00:01.000Z"
+    });
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <SessionLanguageConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    await user.click(screen.getByRole("button", { name: "Send EN" }));
+    await user.click(screen.getByRole("button", { name: "Switch to SK" }));
+    await user.click(screen.getByRole("button", { name: "Send SK" }));
+
+    expect(createChatSession).toHaveBeenNthCalledWith(1, { language: "en" });
+    expect(createChatSession).toHaveBeenNthCalledWith(2, { language: "sk" });
+  });
+
+  it("re-localizes stored system interaction messages after language changes", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <LocalizedSystemMessageConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    await user.click(screen.getByRole("button", { name: "Add Error" }));
+
+    expect(screen.getByTestId("localized-system-message").textContent).toBe(
+      "Unable to reach API. Network request failed."
+    );
+
+    await user.click(screen.getByRole("button", { name: "Switch to DE" }));
+
+    expect(screen.getByTestId("localized-system-message").textContent).toBe(
+      "API ist nicht erreichbar. Network request failed."
+    );
   });
 });
