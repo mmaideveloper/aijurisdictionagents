@@ -898,6 +898,15 @@ def _stream_read_user_session(
                 processing_event_callback=processing_event_callback,
                 user_message_callback=user_message_callback,
             )
+            current_messages = _repository.list_messages(session_id)
+            if not current_messages:
+                current_messages = [message for message in (_persisted_user, persisted_lawyer) if message is not None]
+            for document_event in _document_generation_progress_events(
+                session=session,
+                messages=current_messages,
+                lawyer_message=visible_lawyer_content,
+            ):
+                event_queue.put(("processing", document_event))
             event_queue.put(("message", _message_payload(persisted_lawyer)))
 
             if _assistant_requests_user_reply(visible_lawyer_content):
@@ -916,7 +925,7 @@ def _stream_read_user_session(
                 session_result = _build_direct_reply_result(
                     session_id=session_id,
                     session=session,
-                    messages=_repository.list_messages(session_id),
+                    messages=current_messages,
                     lawyer_message=visible_lawyer_content,
                 )
                 _repository.set_result(session_id, session_result)
@@ -1044,6 +1053,163 @@ def _assistant_requests_document_confirmation(content: str) -> bool:
         and "?" in content
         and any(marker in lowered for marker in confirmation_markers)
     )
+
+
+def _document_generation_progress_events(
+    *,
+    session: Session,
+    messages: list[Message],
+    lawyer_message: str,
+) -> list[dict[str, object]]:
+    visible_text = _user_visible_text(lawyer_message)
+    if _assistant_requests_user_reply(visible_text):
+        return []
+    document_names = _document_progress_names(
+        messages=messages,
+        lawyer_message=lawyer_message,
+        country=session.country,
+        language=session.language,
+    )
+    if len(document_names) < 2:
+        return []
+    lowered_visible = visible_text.lower()
+    if not _document_export_ready(messages) and not any(
+        marker in lowered_visible
+        for marker in ("pripravil som", "pripravila som", "prepared", "ready", "hotove", "hotový")
+    ):
+        return []
+    return [
+        {
+            "stage": "document_ready",
+            "message": _document_progress_message(
+                document_name=document_name,
+                country=session.country,
+                language=session.language,
+            ),
+            "details": {"document_name": document_name},
+        }
+        for document_name in document_names
+    ]
+
+
+def _document_progress_names(
+    *,
+    messages: list[Message],
+    lawyer_message: str,
+    country: str,
+    language: str | None,
+) -> list[str]:
+    visible_text = _user_visible_text(lawyer_message)
+    extracted = _extract_document_titles_from_text(visible_text)
+    if len(extracted) >= 2:
+        return extracted
+    discussion_messages = [
+        message.content for message in messages if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
+    ]
+    context_lines = _normalize_document_lines("\n".join([*discussion_messages, visible_text]))
+    source = _pick_document_message([visible_text, *discussion_messages])
+    case_update = _extract_case_update(source)
+    if case_update is None:
+        for content in discussion_messages:
+            case_update = _extract_case_update(content)
+            if case_update is not None:
+                break
+    document_kind = _detect_document_kind(context_lines, case_update)
+    defaults = _default_document_titles_for_kind(
+        document_kind=document_kind,
+        country=country,
+        language=language,
+    )
+    if len(defaults) >= 2:
+        return defaults
+    return extracted
+
+
+def _extract_document_titles_from_text(content: str) -> list[str]:
+    if not content.strip():
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        normalized = re.sub(r"^\d+\.\s*", "", line)
+        normalized = normalized.strip("* ").strip()
+        if ":" in normalized:
+            normalized = normalized.split(":", 1)[0].strip()
+        if not _looks_like_document_title(normalized):
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        names.append(normalized)
+    return names
+
+
+def _looks_like_document_title(value: str) -> bool:
+    lowered = value.lower()
+    document_tokens = (
+        "zmluv",
+        "zapisnic",
+        "zápisnic",
+        "rozhodnut",
+        "spolocenskej zmluvy",
+        "spoločenskej zmluvy",
+        "zakladatelskej listiny",
+        "zakladateľskej listiny",
+        "registry filing",
+        "founding deed",
+    )
+    exclusion_tokens = (
+        "prakticky postup",
+        "praktický postup",
+        "odhad trvania",
+        "estimated timing",
+        "poznamka",
+        "poznámka",
+        "podklady",
+        "prilohy",
+        "prílohy",
+    )
+    if any(token in lowered for token in exclusion_tokens):
+        return False
+    return any(token in lowered for token in document_tokens)
+
+
+def _default_document_titles_for_kind(
+    *, document_kind: str, country: str, language: str | None
+) -> list[str]:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if document_kind != "share_transfer":
+        return []
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return [
+            "Zmluva o prevode obchodneho podielu",
+            "Rozhodnutie jedineho spolocnika / zapisnica",
+            "Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny",
+        ]
+    return [
+        "Share transfer agreement",
+        "Sole shareholder decision / meeting minutes",
+        "Updated articles / founding deed",
+    ]
+
+
+def _document_progress_message(
+    *, document_name: str, country: str, language: str | None
+) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return f"Pripravil som dokument: {document_name}."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return f"Pripravil jsem dokument: {document_name}."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return f"Dokument vorbereitet: {document_name}."
+    return f"Prepared document: {document_name}."
 
 
 def _current_turn_confirms_document_generation(
@@ -1920,6 +2086,22 @@ def _build_document_export_content(
         metadata=result.metadata if result is not None else {},
         language=language,
     )
+    if country.strip().upper() == "SK" and document_kind == "share_transfer":
+        from app.chat.country_services.slovakia import build_slovak_share_transfer_export_lines
+
+        title = f"GenerovanÃ½ Dokument {session_id}"
+        export_lines = build_slovak_share_transfer_export_lines(
+            messages=messages,
+            normalize_document_lines=_normalize_document_lines,
+            extract_document_facts=_extract_document_facts,
+            build_share_transfer_lines=_build_slovak_share_transfer_lines,
+        )
+        if export_lines:
+            return title, _append_document_law_citations(
+                lines=export_lines,
+                citations=law_citation_lines,
+                language=language,
+            )
 
     if (language or "").strip().lower().startswith("sk"):
         title = f"Generovaný Dokument {session_id}"
@@ -2257,53 +2439,66 @@ def _build_english_easement_demand_lines(facts: dict[str, str]) -> List[str]:
 
 def _build_slovak_share_transfer_lines(facts: dict[str, str]) -> List[str]:
     return [
-        "Pracovný návrh dokumentácie k prevodu obchodného podielu v s.r.o.",
+        "Pracovny balik dokumentacie k prevodu obchodneho podielu v s.r.o.",
         "",
-        "Identifikácia spoločnosti",
-        f"Obchodné meno: {facts['company_name']}",
-        f"Sídlo: {facts['company_seat']}",
-        f"IČO: {facts['company_identifier']}",
+        "Identifikacia spolocnosti",
+        f"Obchodne meno: {facts['company_name']}",
+        f"Sidlo: {facts['company_seat']}",
+        f"ICO: {facts['company_identifier']}",
         "",
-        "Základné parametre prevodu",
-        f"Predmet prevodu: obchodný podiel vo výške {facts['transfer_share']}.",
+        "Zakladne parametre prevodu",
+        f"Predmet prevodu: obchodny podiel vo vyske {facts['transfer_share']}.",
         f"Odplata za prevod: {_with_period(facts['transfer_price'])}",
         f"Prevodca: {facts['transferor_name']}",
-        f"Nadobúdateľ: {facts['transferee_name']}",
+        f"Nadobudatel: {facts['transferee_name']}",
         "",
-        "1. Návrh zmluvy o prevode obchodného podielu",
-        "Článok I - Zmluvné strany",
+        "1. Navrh zmluvy o prevode obchodneho podielu",
+        "Clanok I - Zmluvne strany",
         f"Prevodca: {facts['transferor_name']}.",
-        f"Nadobúdateľ: {facts['transferee_name']}.",
+        f"Nadobudatel: {facts['transferee_name']}.",
         "",
-        "Článok II - Predmet prevodu",
-        f"Prevodca prevádza na nadobúdateľa obchodný podiel v spoločnosti {facts['company_name']} vo výške {facts['transfer_share']}.",
+        "Clanok II - Predmet prevodu",
+        f"Prevodca prevadza na nadobudatela obchodny podiel v spolocnosti {facts['company_name']} vo vyske {facts['transfer_share']}.",
         "",
-        "Článok III - Odplata",
-        f"Zmluvné strany sa dohodli na odplate {_with_period(facts['transfer_price'])}",
+        "Clanok III - Odplata",
+        f"Zmluvne strany sa dohodli na odplate {_with_period(facts['transfer_price'])}",
         "",
-        "Článok IV - Vyhlásenia strán",
-        "Prevodca vyhlasuje, že je oprávnený s obchodným podielom nakladať a že podiel nie je zaťažený právami tretích osôb, ak sa v prílohách neuvedie inak.",
-        "Nadobúdateľ vyhlasuje, že pristupuje k spoločenskej zmluve a preberá práva a povinnosti spoločníka v rozsahu prevádzaného podielu.",
+        "Clanok IV - Vyhlasenia stran",
+        "Prevodca vyhlasuje, ze je opravneny s obchodnym podielom nakladat a ze podiel nie je zatazeny pravami tretich osob, ak sa v prilohach neuvedie inak.",
+        "Nadobudatel vyhlasuje, ze pristupuje k spolocenskej zmluve a prebera prava a povinnosti spolocnika v rozsahu prevadzaneho podielu.",
         "",
-        "2. Podklady, ktoré je potrebné pripraviť",
-        "1. Zmluva o prevode obchodného podielu s doplnenými identifikačnými údajmi strán.",
-        "2. Rozhodnutie jediného spoločníka alebo zápisnica z valného zhromaždenia, ak to vyžaduje spoločenská zmluva alebo sa mení štatutár / obchodné vedenie.",
-        "3. Úplné znenie spoločenskej zmluvy alebo zakladateľskej listiny po zapracovaní zmeny spoločníkov a podielov.",
-        "4. Návrh na zápis zmeny do obchodného registra vrátane príloh podľa typu zmeny.",
+        "2. Navrh rozhodnutia jedineho spolocnika / zapisnice",
+        f"Spolocnost: {facts['company_name']}, ICO {facts['company_identifier']}, sidlo {facts['company_seat']}.",
+        "Jediny spolocnik alebo valne zhromazdenie berie na vedomie prevod obchodneho podielu a schvaluje znenie zmluvy, ak to vyzaduje spolocenska zmluva.",
+        f"Po ucinnosti prevodu bude spolocnicka struktura zapisana tak, aby nadobudatel {facts['transferee_name']} nadobudol podiel vo vyske {facts['transfer_share']}.",
         "",
-        "3. Praktický postup podania",
+        "3. Navrh aktualizovaneho uplneho znenia spolocenskej zmluvy / zakladatelskej listiny",
+        f"Obchodne meno spolocnosti: {facts['company_name']}.",
+        f"Sidlo spolocnosti: {facts['company_seat']}.",
+        f"ICO: {facts['company_identifier']}.",
+        "Ustanovenie o spolocnikoch a vkladoch sa upravi tak, aby zodpovedalo novej vlastnickej strukture po prevode podielu.",
+        f"Novy spolocnik / nadobudatel: {facts['transferee_name']}.",
+        f"Prevodca po prevode ponecha alebo prevedie podiel podla dohodnuteho rozsahu {facts['transfer_share']}.",
+        "",
+        "4. Podklady a prilohy pre obchodny register",
+        "1. Zmluva o prevode obchodneho podielu s doplnenymi identifikacnymi udajmi stran.",
+        "2. Rozhodnutie jedineho spolocnika alebo zapisnica z valneho zhromazdenia, ak to vyzaduje spolocenska zmluva alebo sa meni statutar / obchodne vedenie.",
+        "3. Uplne znenie spolocenskej zmluvy alebo zakladatelskej listiny po zapracovani zmeny spolocnikov a podielov.",
+        "4. Navrh na zapis zmeny do obchodneho registra vratane priloh podla typu zmeny.",
+        "",
+        "5. Prakticky postup podania",
         f"Podanie smeruje na: {facts['filing_authority']}.",
-        "Najprv doplňte identifikačné údaje strán, presný rozsah podielu a prípadné zmeny v konateľoch alebo spôsobe konania.",
-        "Následne pripravte podpisové verzie dokumentov a skontrolujte, či spoločenská zmluva nevyžaduje osobitný súhlas alebo predkupné pravidlá.",
-        "Po podpise podajte návrh na zápis zmeny do obchodného registra spolu so všetkými povinnými prílohami.",
+        "Najprv doplnte identifikacne udaje stran, presny rozsah podielu a pripadne zmeny v konateloch alebo sposobe konania.",
+        "Nasledne pripravte podpisove verzie dokumentov a skontrolujte, ci spolocenska zmluva nevyzaduje osobitny suhlas alebo predkupne pravidla.",
+        "Po podpise podajte navrh na zapis zmeny do obchodneho registra spolu so vsetkymi povinnymi prilohami.",
         "",
-        "4. Odhad trvania",
+        "6. Odhad trvania",
         _with_period(facts["estimated_timeline"]),
         "",
-        "Poznámka",
-        "Tento výstup je pracovný návrh. Pred podpisom a podaním je potrebné doplniť presné identifikačné údaje, preveriť spoločenskú zmluvu a zvoliť správny balík príloh podľa konkrétnej zmeny.",
+        "Poznamka",
+        "Tento vystup je pracovny balik draftov. Pred podpisom a podanim je potrebne doplnit presne identifikacne udaje, preverit spolocensku zmluvu a zvolit spravny balik priloh podla konkretnej zmeny.",
         "",
-        "Podpis právneho zástupcu / klienta: ____________________________",
+        "Podpis pravneho zastupcu / klienta: ____________________________",
     ]
 
 

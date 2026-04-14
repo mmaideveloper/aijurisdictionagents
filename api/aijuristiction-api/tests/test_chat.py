@@ -361,6 +361,79 @@ def test_document_export_for_company_share_transfer_uses_full_session_context() 
     assert "50%" in lowered_lines or "50 %" in lowered_lines
 
 
+def test_document_export_for_company_share_transfer_uses_verified_company_package(monkeypatch) -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizanska 665, 059 18 Spisske Bystre",
+                        "status": "Aktivna",
+                        "stakeholders": (
+                            {
+                                "name": "RNDr. Marek Matonok",
+                                "address": "Partizanska 665/101, 059 18 Spisske Bystre, Slovenska republika",
+                            },
+                        ),
+                    },
+                ),
+            )
+
+    slovakia_service._ORSR_CACHE.clear()
+    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "Priprav mi postup a dokumentaciu pre pridanie noveho vlastnika firmy.\n"
+                "Nazov: ESolutions SK s.r.o.\n"
+                "Prevodca = vlastnik firmy\n"
+                "Dalsi vlastnik: Jano Hrasko, Rozpravkova 12, Rozpravkovo\n"
+                "Kazdy z vlastnikov ma 50%.\n"
+                "Podiel sa prevadza bezodplatne.\n"
+                "Meni sa iba spolocnicka struktura."
+            ),
+        ),
+    ]
+    result = SessionResult(
+        final_recommendation="Pripravil som balik dokumentov k prevodu obchodneho podielu.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+    )
+
+    lowered_lines = " ".join(lines).lower()
+    assert "esolutions sk s.r.o." in lowered_lines
+    assert "46491261" in lowered_lines
+    assert "partizanska 665, 059 18 spisske bystre" in lowered_lines
+    assert "rndr. marek matonok" in lowered_lines
+    assert "jano hrasko" in lowered_lines
+    assert "50%" in lowered_lines or "50 %" in lowered_lines
+    assert "navrh rozhodnutia jedineho spolocnika" in lowered_lines
+    assert "navrh aktualizovaneho uplneho znenia spolocenskej zmluvy" in lowered_lines
+    slovakia_service._ORSR_CACHE.clear()
+
+
 def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
@@ -424,7 +497,95 @@ def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:
     assert "Verified company name: ESolutions SK s.r.o." in prompt
     assert "Verified registration number: 12345678" in prompt
     assert "Still missing inputs:" in prompt
-    assert "exact transferred share" in prompt
+    assert "Already captured inputs: share scope" in prompt
+    assert "Share scope is already captured" in prompt
+
+
+def test_reply_endpoint_share_transfer_keeps_registry_context_for_short_followups(monkeypatch) -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    class _FakeRegistry:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def run(self, name: str, **kwargs):
+            self.calls += 1
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "12345678",
+                        "seat": "Spisske Bystre",
+                        "status": "Aktivna",
+                    },
+                ),
+            )
+
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_SHARE_TRANSFER_REPLY", agent_name="LawyerSlovakia")
+
+    fake_registry = _FakeRegistry()
+    slovakia_service._ORSR_CACHE.clear()
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: fake_registry)
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    first_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={
+            "content": (
+                "Priprav mi postup a dokumentaciu pre pridanie noveho vlastnika firmy.\n"
+                "Nazov: ESolutions SK s.r.o.\n"
+                "Dalsi vlastnik: Jano Hrasko, Rozpravkova 12, Rozpravkovo.\n"
+                "Podiel sa prevadza bezodplatne."
+            )
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert first_reply.status_code == 200
+
+    second_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "50%"},
+        headers=AUTH_HEADERS,
+    )
+    assert second_reply.status_code == 200
+
+    third_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "nie"},
+        headers=AUTH_HEADERS,
+    )
+    assert third_reply.status_code == 200
+
+    assert len(captured_prompts) == 3
+    assert fake_registry.calls == 1
+    assert all("SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt for prompt in captured_prompts)
+    assert "Verified registration number: 12345678" in captured_prompts[-1]
+    slovakia_service._ORSR_CACHE.clear()
 
 
 def test_reply_endpoint_company_owner_question_uses_registry_summary(monkeypatch) -> None:
@@ -727,6 +888,94 @@ def test_prepare_country_direct_reply_emits_tool_lifecycle_callbacks(monkeypatch
     assert any("overenie spolocnosti v orsr je hotove" in str(event.get("message", "")).lower() for event in callback_events)
 
 
+def test_prepare_country_direct_reply_reuses_cached_registry_lookup_for_followup(monkeypatch) -> None:
+    from app.chat.country_services import prepare_country_direct_reply
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.models import Message, MessageRole, Session
+
+    class _FakeRegistry:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def run(self, name: str, **kwargs):
+            self.calls += 1
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizanska 665, 059 18 Spisske Bystre",
+                        "status": "Aktivna",
+                    },
+                ),
+            )
+
+    fake_registry = _FakeRegistry()
+    slovakia_service._ORSR_CACHE.clear()
+    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: fake_registry)
+
+    session = Session(country="SK", discussion_type="advice", language="SK")
+    initial_content = (
+        "Priprav mi postup a dokumentaciu pre pridanie noveho vlastnika firmy.\n"
+        "Nazov: ESolutions SK s.r.o.\n"
+        "Dalsi vlastnik: Jano Hrasko.\n"
+        "Podiel sa prevadza bezodplatne."
+    )
+    initial_messages = [
+        Message(
+            session_id=session.id,
+            role=MessageRole.USER,
+            content=initial_content,
+        )
+    ]
+    first_preparation = prepare_country_direct_reply(
+        session=session,
+        messages=initial_messages,
+        current_content=initial_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+    )
+    assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in first_preparation.prompt_note
+
+    followup_messages = [
+        *initial_messages,
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            content="Potvrdte prosim presny rozsah prevadzaneho podielu.",
+            agent_name="LawyerSlovakia",
+        ),
+        Message(
+            session_id=session.id,
+            role=MessageRole.USER,
+            content="50%",
+            agent_name="User",
+        ),
+    ]
+    second_preparation = prepare_country_direct_reply(
+        session=session,
+        messages=followup_messages,
+        current_content="50%",
+        prior_messages=followup_messages[:-1],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+    )
+
+    assert fake_registry.calls == 1
+    assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in second_preparation.prompt_note
+    assert "Verified registration number: 46491261" in second_preparation.prompt_note
+    assert any(event.get("stage") == "tool_cache" for event in second_preparation.processing_events)
+    slovakia_service._ORSR_CACHE.clear()
+
+
 def test_prepare_country_direct_reply_skips_unconfigured_countries() -> None:
     from app.chat.country_services import prepare_country_direct_reply
     from app.chat.models import Message, MessageRole, Session
@@ -815,6 +1064,7 @@ def test_reply_endpoint_share_transfer_asks_only_for_missing_items(monkeypatch) 
                 "Rozpravkova 12\n"
                 "Rozpravkovo,\n"
                 "Slovenska Republika\n"
+                "Prevadza sa 50% podiel.\n"
                 "Podiel sa prevadza bezodplatne.\n"
                 "Nemeni iba spolocnicka struktura alebo aj konatel / sposob konania."
             )
@@ -825,8 +1075,11 @@ def test_reply_endpoint_share_transfer_asks_only_for_missing_items(monkeypatch) 
     assert reply_response.json()["content"] == "MODEL_MISSING_FIELDS_REPLY"
     assert captured_prompts
     prompt = captured_prompts[-1]
-    assert "Already captured inputs: transferee identification, transfer price / gratuitous flag, management-change flag" in prompt
-    assert "Still missing inputs: transferor identification, exact transferred share" in prompt
+    assert "Already captured inputs: transferee identification, share scope, transfer price / gratuitous flag, management-change flag" in prompt
+    assert "Still missing inputs: transferor identification" in prompt
+    assert "Share scope is already captured" in prompt
+    assert "Management/signing-change status is already captured" in prompt
+    assert "spolocenska zmluva or zakladatelska listina" in prompt
 
 
 def test_reply_endpoint_share_transfer_inline_numbered_text_detects_transferee_and_management_flag(monkeypatch) -> None:
@@ -882,6 +1135,7 @@ def test_reply_endpoint_share_transfer_inline_numbered_text_detects_transferee_a
                 "info: 0.Nazov: ESolutions SK s.r.o. "
                 "1. Presné identifikačné údaje adobúdateľa. "
                 "Dalsi vlastnik: Jano Hrasko Rozpravkova 12 Rozpravkovo, Slovenska Republika "
+                "1a. Prevadza sa 50% podiel. "
                 "2. Podiel sa prevádza bezodplatne. "
                 "3. Nemení iba spoločnícka štruktúra alebo aj konateľ / spôsob konania."
             )
@@ -892,8 +1146,61 @@ def test_reply_endpoint_share_transfer_inline_numbered_text_detects_transferee_a
     assert reply_response.json()["content"] == "MODEL_INLINE_REPLY"
     assert captured_prompts
     prompt = captured_prompts[-1]
-    assert "Already captured inputs: transferee identification, transfer price / gratuitous flag, management-change flag" in prompt
-    assert "Still missing inputs: transferor identification, exact transferred share" in prompt
+    assert "Already captured inputs: transferee identification, share scope, transfer price / gratuitous flag, management-change flag" in prompt
+    assert "Still missing inputs: transferor identification" in prompt
+    assert "The request already points to an additional or new owner." in prompt
+
+
+def test_extract_slovak_share_transfer_request_facts_detects_first_turn_share_scope() -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.models import Message, MessageRole
+
+    session_id = uuid4()
+    facts = slovakia_service._extract_slovak_share_transfer_request_facts(
+        [
+            Message(
+                session_id=session_id,
+                role=MessageRole.USER,
+                content=(
+                    "Priprav mi postup a dokumentaciu pre pridanie noveho vlastnika firmy. "
+                    "Nazov: ESolutions SK s.r.o. "
+                    "Dalsi vlastnik: Jano Hrasko, Rozpravkova 12, Rozpravkovo. "
+                    "Prevadza sa 50% podiel. "
+                    "Podiel sa prevadza bezodplatne. "
+                    "Nemeni sa konatel ani sposob konania."
+                ),
+            )
+        ]
+    )
+
+    assert facts["transferee_details"].startswith("Jano Hrasko")
+    assert facts["transfer_share"] == "50%"
+    assert facts["transfer_price"] == "bezodplatne"
+    assert facts["management_change"]
+
+
+def test_apply_company_record_share_transfer_defaults_replaces_generic_transferor_reference() -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+
+    merged = slovakia_service._apply_company_record_share_transfer_defaults(
+        intake_facts={
+            "transferor_details": "vlastnik firmy",
+            "transferee_details": "Jano Hrasko",
+            "transfer_share": "50%",
+            "transfer_price": "bezodplatne",
+            "management_change": "Meni sa iba spolocnicka struktura; konatel ani sposob konania sa nemeni.",
+        },
+        company_record={
+            "stakeholders": [
+                {
+                    "name": "RNDr. Marek Matonok",
+                    "address": "Partizanska 665/101, 059 18 Spisske Bystre, Slovenska republika",
+                }
+            ]
+        },
+    )
+
+    assert merged["transferor_details"].startswith("RNDr. Marek Matonok")
 
 
 def test_reply_endpoint_share_transfer_uses_single_current_stakeholder_as_transferor(monkeypatch) -> None:
@@ -1311,6 +1618,78 @@ def test_stream_read_user_pauses_and_waits_for_manual_reply() -> None:
     assert reply_response.status_code == 200
     reply_content = reply_response.json()["content"].lower()
     assert "pravne posudenie" in reply_content or "dalsi krok" in reply_content
+
+
+def test_stream_read_user_emits_document_name_progress_before_final_message(monkeypatch) -> None:
+    from app.chat import api as chat_api
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    persisted_user = Message(
+        session_id=session_id,
+        role=MessageRole.USER,
+        content="ano",
+        agent_name="User",
+    )
+    persisted_lawyer = Message(
+        session_id=session_id,
+        role=MessageRole.ASSISTANT,
+        content=(
+            "Pripravil som balik dokumentov.\n"
+            "1. **Zmluva o prevode obchodneho podielu**: hotove.\n"
+            "2. **Rozhodnutie jedineho spolocnika / zapisnica**: hotove.\n"
+            "3. **Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny**: hotove."
+        ),
+        agent_name="LawyerSlovakia",
+    )
+
+    monkeypatch.setattr(
+        chat_api,
+        "_run_direct_lawyer_turn",
+        lambda **kwargs: (persisted_user, persisted_lawyer, persisted_lawyer.content, []),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "_build_direct_reply_result",
+        lambda **kwargs: SessionResult(
+            final_recommendation="Pripravil som balik dokumentov.",
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={"document_requested": True, "document_confirmed": True, "document_ready": True},
+        ),
+    )
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "ano",
+            "documents": [],
+            "question_timeout_seconds": 30,
+            "max_discussion_minutes": 1,
+            "communication_minutes": 1,
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    first_doc = "Zmluva o prevode obchodneho podielu"
+    second_doc = "Rozhodnutie jedineho spolocnika / zapisnica"
+    third_doc = "Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny"
+    assert first_doc in events
+    assert second_doc in events
+    assert third_doc in events
+    assert events.index(first_doc) < events.index('"role": "assistant"')
+    assert events.index(second_doc) < events.index('"role": "assistant"')
+    assert events.index(third_doc) < events.index('"role": "assistant"')
 
 
 def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> None:

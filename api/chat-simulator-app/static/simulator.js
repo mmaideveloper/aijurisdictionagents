@@ -24,6 +24,7 @@ const userReplyInput = document.getElementById("userReplyInput");
 const userSimulationModeInput = document.getElementById("userSimulationMode");
 const sendUserReplyButton = document.getElementById("sendUserReply");
 const replyStatus = document.getElementById("replyStatus");
+const processingStatus = document.getElementById("processingStatus");
 const communicationMinutesInput = document.getElementById("communicationMinutes");
 const userPhoneInput = document.getElementById("userPhone");
 const userEmailInput = document.getElementById("userEmail");
@@ -56,6 +57,9 @@ let autoPdfDownloaded = false;
 let documentRequestedByUser = false;
 let pendingInitialInstructionContent = "";
 let preparedCases = [];
+let processingStatusTimerId = null;
+let processingStatusBaseMessage = "";
+let processingStatusStartedAt = 0;
 
 function decodeBase64ToBytes(base64Value) {
   const normalized = String(base64Value || "").trim();
@@ -361,6 +365,7 @@ function appendThinkingPlaceholder() {
     agent_name: "System",
   });
   appendStream(`processing:thinking: ${message}`);
+  updateProcessingStatus("Backend is processing your request...");
 }
 
 function removeThinkingPlaceholders() {
@@ -567,6 +572,7 @@ function appendProcessingMessage(data) {
   if (!data || typeof data !== "object") return;
   const text = String(data.message || "").trim();
   if (!text) return;
+  removeThinkingPlaceholders();
   const toolName = String(data.tool_name || "").trim();
   const processingMessage = {
     role: "assistant",
@@ -575,6 +581,27 @@ function appendProcessingMessage(data) {
   };
   appendChatMessage(processingMessage);
   appendMessagePreview(processingMessage);
+  updateProcessingStatus(`Backend is processing: ${text}`);
+}
+
+async function handleStreamLifecycleEvent(eventItem, waitingMessage) {
+  if (eventItem.event === "waiting_for_reply") {
+    waitingForManualReply = true;
+    setWorkflowWarning(waitingMessage);
+    refreshReplyControls();
+    finishProcessingStatus("Assistant is waiting for your answer.");
+    return;
+  }
+  if (eventItem.event === "done") {
+    finishProcessingStatus(waitingForManualReply ? "Assistant is waiting for your answer." : "Stream completed.");
+    await maybeAutoDownloadPdf();
+    return;
+  }
+  if (eventItem.event === "error") {
+    const message = String(eventItem?.data?.message || "Stream error").trim();
+    setWorkflowWarning(message);
+    finishProcessingStatus(`Stream error: ${message}`);
+  }
 }
 
 async function parseResponse(response) {
@@ -608,6 +635,48 @@ function clearWorkflowWarning() {
 function setReplyStatus(message) {
   if (!replyStatus) return;
   replyStatus.textContent = String(message || "").trim();
+}
+
+function setProcessingStatus(message) {
+  if (!processingStatus) return;
+  processingStatus.textContent = String(message || "").trim() || "Idle.";
+}
+
+function renderProcessingStatusTimer() {
+  if (!processingStatusStartedAt) return;
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - processingStatusStartedAt) / 1000));
+  setProcessingStatus(`${processingStatusBaseMessage} (${elapsedSeconds}s)`);
+}
+
+function startProcessingStatus(message) {
+  if (processingStatusTimerId) {
+    window.clearInterval(processingStatusTimerId);
+  }
+  processingStatusBaseMessage = String(message || "").trim() || "Backend is processing...";
+  processingStatusStartedAt = Date.now();
+  renderProcessingStatusTimer();
+  processingStatusTimerId = window.setInterval(renderProcessingStatusTimer, 1000);
+}
+
+function updateProcessingStatus(message) {
+  const normalized = String(message || "").trim();
+  if (!normalized) return;
+  if (!processingStatusTimerId) {
+    setProcessingStatus(normalized);
+    return;
+  }
+  processingStatusBaseMessage = normalized;
+  renderProcessingStatusTimer();
+}
+
+function finishProcessingStatus(message = "Idle.") {
+  if (processingStatusTimerId) {
+    window.clearInterval(processingStatusTimerId);
+    processingStatusTimerId = null;
+  }
+  processingStatusBaseMessage = "";
+  processingStatusStartedAt = 0;
+  setProcessingStatus(message);
 }
 
 function refreshPersistedCaseControls() {
@@ -994,100 +1063,104 @@ async function startStream() {
   refreshReplyControls();
   streamLog.textContent = "Starting stream...";
   appendInitialInstructionMessage(instruction);
-  const persistedCaseId = getActiveCaseId();
-  const inlineDocuments = persistedCaseId ? [] : await readSelectedDocuments();
-  const payload = {
-    instruction,
-    documents: inlineDocuments,
-    question_timeout_seconds: Number(questionTimeoutInput.value || 300),
-    max_discussion_minutes: Number(maxDiscussionInput.value || 60),
-    communication_minutes: Number(communicationMinutesInput.value || 30),
-    user_simulation_mode: userSimulationModeInput.value || "ReadUser",
-  };
-  if (persistedCaseId) {
-    appendStream(`case_context: using persisted case ${persistedCaseId} for document retrieval`);
-  }
+  appendThinkingPlaceholder();
+  startProcessingStatus("Backend is processing your request...");
+  try {
+    const persistedCaseId = getActiveCaseId();
+    const inlineDocuments = persistedCaseId ? [] : await readSelectedDocuments();
+    const payload = {
+      instruction,
+      documents: inlineDocuments,
+      question_timeout_seconds: Number(questionTimeoutInput.value || 300),
+      max_discussion_minutes: Number(maxDiscussionInput.value || 60),
+      communication_minutes: Number(communicationMinutesInput.value || 30),
+      user_simulation_mode: userSimulationModeInput.value || "ReadUser",
+    };
+    if (persistedCaseId) {
+      appendStream(`case_context: using persisted case ${persistedCaseId} for document retrieval`);
+    }
 
-  const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/stream`, {
-    method: "POST",
-    headers: requestHeaders(),
-    body: JSON.stringify(payload),
-  });
+    const response = await fetch(`${getBaseUrl()}/v1/chat/sessions/${sessionId}/stream`, {
+      method: "POST",
+      headers: requestHeaders(),
+      body: JSON.stringify(payload),
+    });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Failed to stream, status=${response.status}`);
-  }
-  if (!response.body) {
-    throw new Error("Streaming body is not available in this browser.");
-  }
-  streamStartedForSession = true;
-  refreshReplyControls();
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(body || `Failed to stream, status=${response.status}`);
+    }
+    if (!response.body) {
+      throw new Error("Streaming body is not available in this browser.");
+    }
+    streamStartedForSession = true;
+    refreshReplyControls();
 
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const reader = response.body.getReader();
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const split = buffer.split("\n\n");
-    buffer = split.pop() || "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const split = buffer.split("\n\n");
+      buffer = split.pop() || "";
 
-    for (const block of split) {
-      const events = parseSseChunk(`${block}\n\n`);
-      for (const eventItem of events) {
+      for (const block of split) {
+        const events = parseSseChunk(`${block}\n\n`);
+        for (const eventItem of events) {
+          appendStream(formatStreamEvent(eventItem));
+          if (eventItem.event === "processing" && eventItem.data && typeof eventItem.data === "object") {
+            appendProcessingMessage(eventItem.data);
+          }
+          if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
+            removeThinkingPlaceholders();
+            if (!resolvePendingInstructionMessage(eventItem.data)) {
+              appendChatMessage(eventItem.data);
+            }
+            if (String(eventItem.data.role || "").trim().toLowerCase() === "assistant") {
+              finishProcessingStatus("Assistant replied.");
+            }
+          }
+          await handleStreamLifecycleEvent(eventItem, "Stream paused. Use Send answer to continue the same session.");
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const trailingEvents = parseSseChunk(buffer);
+      for (const eventItem of trailingEvents) {
         appendStream(formatStreamEvent(eventItem));
         if (eventItem.event === "processing" && eventItem.data && typeof eventItem.data === "object") {
           appendProcessingMessage(eventItem.data);
         }
         if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
+          removeThinkingPlaceholders();
           if (!resolvePendingInstructionMessage(eventItem.data)) {
             appendChatMessage(eventItem.data);
           }
+          if (String(eventItem.data.role || "").trim().toLowerCase() === "assistant") {
+            finishProcessingStatus("Assistant replied.");
+          }
         }
-        if (eventItem.event === "waiting_for_reply") {
-          waitingForManualReply = true;
-          setWorkflowWarning("Stream paused. Use Send answer to continue the same session.");
-          refreshReplyControls();
-        }
-        if (eventItem.event === "done") {
-          await maybeAutoDownloadPdf();
-        }
+        await handleStreamLifecycleEvent(eventItem, "Stream paused. Use Send answer to continue the same session.");
       }
     }
-  }
 
-  if (buffer.trim()) {
-    const trailingEvents = parseSseChunk(buffer);
-    for (const eventItem of trailingEvents) {
-      appendStream(formatStreamEvent(eventItem));
-      if (eventItem.event === "processing" && eventItem.data && typeof eventItem.data === "object") {
-        appendProcessingMessage(eventItem.data);
-      }
-      if (eventItem.event === "message" && eventItem.data && typeof eventItem.data === "object") {
-        if (!resolvePendingInstructionMessage(eventItem.data)) {
-          appendChatMessage(eventItem.data);
-        }
-      }
-      if (eventItem.event === "waiting_for_reply") {
-        waitingForManualReply = true;
-        setWorkflowWarning("Stream paused. Use Send answer to continue the same session.");
-        refreshReplyControls();
-      }
-      if (eventItem.event === "done") {
-        await maybeAutoDownloadPdf();
-      }
+    await refreshMessages();
+    refreshReplyControls();
+    if (persistedCaseId) {
+      await inspectCaseDocuments();
     }
+    await maybeAutoDownloadPdf();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    finishProcessingStatus(`Stream failed: ${message}`);
+    throw error;
+  } finally {
+    removeThinkingPlaceholders();
   }
-
-  await refreshMessages();
-  refreshReplyControls();
-  if (persistedCaseId) {
-    await inspectCaseDocuments();
-  }
-  await maybeAutoDownloadPdf();
 }
 
 async function refreshMessages() {
@@ -1124,6 +1197,7 @@ async function sendUserReply() {
   waitingForManualReply = false;
   refreshReplyControls();
   appendThinkingPlaceholder();
+  startProcessingStatus("Backend is processing your reply...");
   try {
     appendStream("manual_reply_stream: sending ReadUser turn through /stream");
     const payload = {
@@ -1172,17 +1246,14 @@ async function sendUserReply() {
             if (!skippedEchoedUser && role === "user" && echoed === content) {
               skippedEchoedUser = true;
             } else {
+              removeThinkingPlaceholders();
               appendChatMessage(eventItem.data);
+              if (role === "assistant") {
+                finishProcessingStatus("Assistant replied.");
+              }
             }
           }
-          if (eventItem.event === "waiting_for_reply") {
-            waitingForManualReply = true;
-            setWorkflowWarning("Assistant asked another question. Use Send answer again to continue.");
-            refreshReplyControls();
-          }
-          if (eventItem.event === "done") {
-            await maybeAutoDownloadPdf();
-          }
+          await handleStreamLifecycleEvent(eventItem, "Assistant asked another question. Use Send answer again to continue.");
         }
       }
     }
@@ -1200,17 +1271,14 @@ async function sendUserReply() {
           if (!skippedEchoedUser && role === "user" && echoed === content) {
             skippedEchoedUser = true;
           } else {
+            removeThinkingPlaceholders();
             appendChatMessage(eventItem.data);
+            if (role === "assistant") {
+              finishProcessingStatus("Assistant replied.");
+            }
           }
         }
-        if (eventItem.event === "waiting_for_reply") {
-          waitingForManualReply = true;
-          setWorkflowWarning("Assistant asked another question. Use Send answer again to continue.");
-          refreshReplyControls();
-        }
-        if (eventItem.event === "done") {
-          await maybeAutoDownloadPdf();
-        }
+        await handleStreamLifecycleEvent(eventItem, "Assistant asked another question. Use Send answer again to continue.");
       }
     }
     await refreshMessages();
@@ -1221,6 +1289,10 @@ async function sendUserReply() {
     if (!waitingForManualReply) {
       clearWorkflowWarning();
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    finishProcessingStatus(`Stream reply failed: ${message}`);
+    throw error;
   } finally {
     removeThinkingPlaceholders();
     refreshReplyControls();
@@ -1301,6 +1373,7 @@ function clearSession() {
   documentDebugEl.textContent = "No document debug fetched yet.";
   renderWelcomeMessage();
   userReplyInput.value = "";
+  finishProcessingStatus("Idle.");
   refreshReplyControls();
   refreshPersistedCaseControls();
 }
@@ -1314,6 +1387,7 @@ function bind(id, fn) {
       appendStream(`error: ${message}`);
       sessionStatus.textContent = message;
       setWorkflowWarning(message);
+      finishProcessingStatus(`Error: ${message}`);
     }
   });
 }
@@ -1338,6 +1412,7 @@ if (downloadDocumentButton) {
       const message = error instanceof Error ? error.message : String(error);
       appendStream(`error: ${message}`);
       sessionStatus.textContent = message;
+      finishProcessingStatus(`Error: ${message}`);
     }
   });
 }
@@ -1372,6 +1447,7 @@ async function initializeSimulator() {
   userSimulationModeInput.value = "ReadUser";
   renderWelcomeMessage();
   clearWorkflowWarning();
+  finishProcessingStatus("Idle.");
   refreshReplyControls();
   refreshPersistedCaseControls();
 }

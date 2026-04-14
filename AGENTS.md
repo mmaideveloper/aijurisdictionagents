@@ -19,6 +19,13 @@ Environment variable rule:
 
 - Whenever you add a new environment variable to the project, add a documented example entry to `.env.example` in the same change.
 
+LLM provider default rule:
+
+- Treat `azurefoundry` as the default LLM provider for local API and chat simulator starts on every computer that uses this repository.
+- Do not silently switch local starts from `azurefoundry` to `mock` just because Azure Foundry credentials are missing or incomplete.
+- Use `mock` only when the user explicitly asks for it or when a task clearly requires deterministic offline testing.
+- When `azurefoundry` is the default and startup cannot continue, stop and report the exact missing `AZURE_OPENAI_*` settings instead of changing provider implicitly.
+
 GitHub workflow / infra environment rule:
 
 - Whenever you add new parameters to a GitHub workflow, or change infrastructure inputs/required settings, update the documented setup steps for `test` and `prod` GitHub Environments in the same change.

@@ -463,6 +463,7 @@ Live URL: `https://www.aiagenticsolutions.eu/`
 ## Assumptions
 
 - The default LLM provider is Azure Foundry (`LLM_PROVIDER=azurefoundry`).
+- Local API and chat simulator starts should keep `azurefoundry` as the default on every computer that uses this repo, and they should fail loudly on missing `AZURE_OPENAI_*` settings instead of silently falling back to `mock`.
 - For local deterministic smoke testing without cloud credentials, set `LLM_PROVIDER=mock`.
 - PDF ingestion is optional and requires installing `pypdf`.
 - The initial version keeps all conversation state in memory.

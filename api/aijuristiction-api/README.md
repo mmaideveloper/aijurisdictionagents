@@ -128,11 +128,19 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 - if the requested main document usually requires related resolutions, updated articles, or registry attachments, the assistant explicitly offers to prepare that fuller package too
 - if the user later says `áno` / `show me the draft`, the API returns the working draft directly instead of looping back into the same intake questions
 - for direct register-information questions like `kto je majiteľ firmy ...`, the API now returns ORSR-backed owner/statutory summary directly (without falling back to stale share-transfer prompts from earlier turns in the same session)
+- repeated ORSR lookups for the same company query are now reused from in-memory API cache during the conversation, so follow-up turns do not keep revalidating identical company data
+- short follow-up replies such as `ano`, `50%`, or `nie` now keep the Slovak share-transfer workflow active when an earlier turn already established the company context
+- first-turn share-transfer facts like `50%` and `konatel / sposob konania sa nemenia` are now treated as settled inputs, so the model does not re-ask them unless the user later contradicts them
+- when a request indicates an additional/new owner, the model is now instructed to proactively recommend related Slovak company-document and filing changes too, including whether the updated `spolocenska zmluva` / `zakladatelska listina` and ORSR attachment package are needed
+- Slovak share-transfer PDF export now rebuilds the document package from ORSR-enriched company data, so exported drafts keep verified company name / seat / ICO and include the main package sections instead of falling back to a generic single-document template
+- generic transferor phrases such as `vlastnik firmy` are now normalized to the verified ORSR owner when the register shows exactly one current stakeholder
 - if user-provided transferor identity conflicts with ORSR stakeholders, the LLM prompt now enforces a confirmation step before final document generation.
 - in `POST /v1/chat/sessions/{session_id}/stream` with `user_simulation_mode=ReadUser`, tool lifecycle progress is streamed live as `processing` SSE events:
   - immediately when backend receives user turn: localized processing status (`Processing...`, `Spracovavam...`, `Verarbeite Anfrage...`, ...)
   - immediately after each user message: localized thinking status (`Thinking...`, `Premyslam...`, `Ich denke nach...`, ... depending on country/language)
   - before ORSR lookup: localized ORSR start message (for example `Idem overit spolocnost '<name>' v ORSR.`, `Ich werde das Unternehmen '<name>' im ORSR pruefen.`, `I am going to verify company '<name>' in ORSR.`)
+  - when ORSR data is reused from cache: localized cache-hit progress message so clients can keep showing that the backend is still processing
+  - when the assistant prepares a multi-document package in `ReadUser` stream mode, the backend now emits one progress event per prepared document name before the final assistant message instead of waiting to describe the whole package at once
   - after ORSR lookup: localized ORSR completion message (for example `Overenie spolocnosti v ORSR je hotove: ...`, `Unternehmenspruefung im ORSR abgeschlossen: ...`, `Verification of company done in ORSR: ...`)
   This lets clients show small progress updates while waiting for the final assistant answer.
 

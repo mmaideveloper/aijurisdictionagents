@@ -36,6 +36,7 @@ The simulator now supports:
 - starting `POST /v1/chat/sessions/{session_id}/stream` and viewing streamed events in real time
 - showing intermediate processing/tool events in the live stream log, including company-verification steps such as ORSR lookup start/result and which drafting inputs are still missing
 - rendering `processing` stream events directly in the End User Chat View as interim system bubbles (for example ORSR verification progress) before the final assistant answer arrives
+- showing a dedicated live processing status with elapsed seconds so Azure/ORSR waits look like active backend work instead of a frozen UI
 - immediately rendering the `Case instruction` as the first end-user message when `Start Stream` is clicked, before assistant events continue the chat
 - showing a dedicated **AI Agent Questions** log (question-only view extracted from assistant turns)
 - using the new right-side **End User Chat View** panel that renders core messages as user-facing chat bubbles
@@ -51,6 +52,7 @@ The simulator now supports:
   - simulator now sends manual replies through `POST /v1/chat/sessions/{session_id}/stream` in `ReadUser` mode, so backend `processing` events are visible in real time
   - while waiting for backend response, the simulator shows a localized frontend `Thinking...` system bubble (`Premyslam...`, `Premyslim...`, `Ich denke nach...`, or `Thinking...`)
   - backend `processing` updates (including localized `Processing...` and `Thinking...`) are rendered as system chat bubbles during the same manual turn
+  - as soon as the first real streamed event arrives, the temporary frontend thinking bubble is removed and replaced by actual backend progress/messages
   - both frontend and backend progress bubbles are mirrored into the live `Messages` JSON panel until the next persisted `Refresh Messages` sync
   - the reply panel now shows the exact reason when manual reply is not ready yet, instead of relying on silent browser form validation
 - auto-downloading PDF export when user requests PDF and later says thank you during a completed stream

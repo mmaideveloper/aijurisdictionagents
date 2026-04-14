@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
+from hashlib import sha1
 import re
+from threading import Lock
 
 from app.chat.country_services.base import (
     DirectReplyPreparation,
@@ -12,6 +15,9 @@ from app.chat.models import Message, MessageRole, Session
 
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.tools import build_default_tool_registry
+
+_ORSR_CACHE_LOCK = Lock()
+_ORSR_CACHE: dict[tuple[str, int], tuple[dict[str, object] | None, str | None]] = {}
 
 
 def prepare_slovakia_direct_reply(
@@ -34,7 +40,11 @@ def prepare_slovakia_direct_reply(
         current_content=current_content,
         prior_messages=prior_messages,
     )
-    if not asks_company_registry_info and not looks_like_company_document:
+    asks_share_transfer = _looks_like_share_transfer_case(
+        current_content=current_content,
+        prior_messages=prior_messages,
+    )
+    if not asks_company_registry_info and not looks_like_company_document and not asks_share_transfer:
         return DirectReplyPreparation(supplemental_documents=[])
 
     analysis_message = (
@@ -67,9 +77,24 @@ def prepare_slovakia_direct_reply(
         ),
         callback=processing_event_callback,
     )
-    company_record, registry_document = _load_slovak_company_registry_document(company_query)
+    company_record, registry_document, cache_hit = _load_slovak_company_registry_document(company_query)
     supplemental_documents = [registry_document] if registry_document is not None else []
     prompt_note = ""
+    if cache_hit:
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
+                stage="tool_cache",
+                tool_name="obchodny_register_company_check",
+                message=_orsr_tool_cache_hit_message(
+                    company_query=company_query,
+                    country=session.country,
+                    language=session.language,
+                ),
+                details={"query": company_query, "cache": "memory"},
+            ),
+            callback=processing_event_callback,
+        )
     if company_record:
         emit_processing_event(
             events=processing_events,
@@ -102,10 +127,6 @@ def prepare_slovakia_direct_reply(
             callback=processing_event_callback,
         )
 
-    asks_share_transfer = _looks_like_share_transfer_case(
-        current_content=current_content,
-        prior_messages=prior_messages,
-    )
     if asks_company_registry_info and not asks_share_transfer:
         prompt_note = _build_slovak_registry_question_prompt_note(
             company_query=company_query,
@@ -292,7 +313,7 @@ def _looks_like_share_transfer_case(*, current_content: str, prior_messages: lis
     )
     if any(token in combined for token in share_transfer_tokens):
         return True
-    if _is_affirmative_short_reply(combined):
+    if _looks_like_contextual_followup_reply(combined):
         if _assistant_recently_discussed_share_transfer(prior_messages):
             return True
         if _user_recently_described_share_transfer(prior_messages):
@@ -318,6 +339,19 @@ def _is_affirmative_short_reply(normalized_content: str) -> bool:
     }
     first_token = cleaned.split()[0]
     return first_token in affirmative_tokens
+
+
+def _looks_like_contextual_followup_reply(normalized_content: str) -> bool:
+    cleaned = re.sub(r"\s+", " ", normalized_content.strip())
+    if not cleaned or len(cleaned) > 120 or "?" in cleaned:
+        return False
+    if _is_affirmative_short_reply(cleaned):
+        return True
+    lowered = cleaned.lower()
+    negative_tokens = {"nie", "no", "nein"}
+    if lowered.split()[0] in negative_tokens:
+        return True
+    return any(character.isdigit() for character in cleaned)
 
 
 def _assistant_recently_discussed_company_documents(prior_messages: list[Message]) -> bool:
@@ -474,14 +508,32 @@ def _normalize_company_query(value: str) -> str:
 
 def _load_slovak_company_registry_document(
     company_query: str,
-) -> tuple[dict[str, object] | None, CoreDocument | None]:
+) -> tuple[dict[str, object] | None, CoreDocument | None, bool]:
+    normalized_query = _normalize_company_query(company_query)
+    cache_key = (normalized_query, id(build_default_tool_registry))
+    with _ORSR_CACHE_LOCK:
+        cached_payload = _ORSR_CACHE.get(cache_key)
+    if cached_payload is not None:
+        return _restore_slovak_company_registry_document(
+            company_query=normalized_query,
+            cached_payload=cached_payload,
+            cache_hit=True,
+        )
+
     registry = build_default_tool_registry()
     result = registry.run(
         "obchodny_register_company_check",
-        company_name_or_registration=company_query,
+        company_name_or_registration=normalized_query,
     )
     if not result.ok or not result.records:
-        return None, None
+        cached_payload = (None, None)
+        with _ORSR_CACHE_LOCK:
+            _ORSR_CACHE[cache_key] = cached_payload
+        return _restore_slovak_company_registry_document(
+            company_query=normalized_query,
+            cached_payload=cached_payload,
+            cache_hit=False,
+        )
 
     primary = result.records[0]
     normalized_primary: dict[str, object] = {
@@ -555,11 +607,32 @@ def _load_slovak_company_registry_document(
                 "",
             ]
         )
-    return normalized_primary, CoreDocument(
-        doc_id=f"orsr-{abs(hash(company_query))}",
-        path="registry/slovak_business_register.md",
-        content="\n".join(lines).strip(),
+    cached_payload = (normalized_primary, "\n".join(lines).strip())
+    with _ORSR_CACHE_LOCK:
+        _ORSR_CACHE[cache_key] = cached_payload
+    return _restore_slovak_company_registry_document(
+        company_query=normalized_query,
+        cached_payload=cached_payload,
+        cache_hit=False,
     )
+
+
+def _restore_slovak_company_registry_document(
+    *,
+    company_query: str,
+    cached_payload: tuple[dict[str, object] | None, str | None],
+    cache_hit: bool,
+) -> tuple[dict[str, object] | None, CoreDocument | None, bool]:
+    cached_record, cached_content = cached_payload
+    restored_record = deepcopy(cached_record) if cached_record is not None else None
+    restored_document = None
+    if cached_content is not None:
+        restored_document = CoreDocument(
+            doc_id=f"orsr-{sha1(company_query.encode('utf-8')).hexdigest()[:16]}",
+            path="registry/slovak_business_register.md",
+            content=cached_content,
+        )
+    return restored_record, restored_document, cache_hit
 
 
 def _build_slovak_company_prompt_note(
@@ -644,6 +717,8 @@ def _build_slovak_share_transfer_model_prompt_note(
         f"- The system already queried obchodny_register_company_check using: {company_query}",
         "- Use verified company data first and do not ask again for company name, IČO, seat, status when available.",
         "- Continue with share-transfer workflow and ask only for missing drafting inputs.",
+        "- Treat every item listed under 'Already captured inputs' as already answered unless the user later contradicts it.",
+        "- Be proactive: recommend the full set of likely Slovak corporate steps, related document changes, filing updates, and attachments even if the user asked only about one document.",
         "- If conflicts are detected between user-provided transferor and ORSR owners, do not finalize drafts yet.",
         "- In conflict cases, ask the user to confirm whether to keep user data or ORSR owner data, then continue.",
     ]
@@ -658,10 +733,19 @@ def _build_slovak_share_transfer_model_prompt_note(
         )
     if provided_labels:
         lines.append(f"- Already captured inputs: {', '.join(provided_labels)}")
+        if intake_facts.get("transfer_share"):
+            lines.append(
+                "- Share scope is already captured, so do not ask again for the percentage or transferred share."
+            )
+        if intake_facts.get("management_change"):
+            lines.append(
+                "- Management/signing-change status is already captured, so do not ask again whether konatel or sposob konania changes."
+            )
     if missing_labels:
         lines.append(f"- Still missing inputs: {', '.join(missing_labels)}")
     else:
         lines.append("- All core drafting inputs appear present.")
+    lines.extend(_build_slovak_share_transfer_proactive_recommendations(intake_facts=intake_facts))
     if conflicts:
         lines.append("- Conflict checks:")
         lines.extend(f"  - {conflict}" for conflict in conflicts)
@@ -673,6 +757,24 @@ def _build_slovak_share_transfer_model_prompt_note(
             "- The user confirmed document generation in this turn. Prepare draft package now using verified data."
         )
     return "\n".join(lines)
+
+
+def _build_slovak_share_transfer_proactive_recommendations(
+    *, intake_facts: dict[str, str]
+) -> list[str]:
+    lines = [
+        "- Proactively search the verified ORSR facts and the user's wording for all necessary follow-on steps and related changes.",
+        "- Always consider and mention the usual Slovak follow-on package where relevant: transfer agreement, corporate approval (sole shareholder decision or general meeting minutes), updated full text of the spolocenska zmluva or zakladatelska listina, signature verification, collection-of-deeds attachments, and ORSR filing steps.",
+    ]
+    if intake_facts.get("transferee_details"):
+        lines.append(
+            "- The request already points to an additional or new owner. Explicitly assess whether the spolocenska zmluva or zakladatelska listina must be updated to reflect the new shareholder structure, ownership percentages, and any related capital/vklad wording."
+        )
+    if intake_facts.get("management_change"):
+        lines.append(
+            "- If the captured facts show that only shareholder structure changes, keep the recommendations focused on ownership documents and filings rather than re-asking about management."
+        )
+    return lines
 
 
 def _detect_share_transfer_conflicts(
@@ -892,6 +994,36 @@ def _build_slovak_share_transfer_direct_reply(
     return "\n".join([*verified_lines, *build_share_transfer_lines(facts)])
 
 
+def build_slovak_share_transfer_export_lines(
+    *,
+    messages: list[Message],
+    normalize_document_lines: Callable[[str], list[str]],
+    extract_document_facts: Callable[[list[str]], dict[str, str]],
+    build_share_transfer_lines: Callable[[dict[str, str]], list[str]],
+) -> list[str] | None:
+    user_messages = [message for message in messages if message.role == MessageRole.USER]
+    if not user_messages:
+        return None
+    current_content = user_messages[-1].content
+    if not _looks_like_share_transfer_case(
+        current_content=current_content,
+        prior_messages=messages[:-1],
+    ):
+        return None
+    company_query = _extract_slovak_company_query(messages=messages, current_content=current_content)
+    company_record = None
+    if company_query:
+        company_record, _, _ = _load_slovak_company_registry_document(company_query)
+    direct_reply = _build_slovak_share_transfer_direct_reply(
+        messages=messages,
+        company_record=company_record,
+        normalize_document_lines=normalize_document_lines,
+        extract_document_facts=extract_document_facts,
+        build_share_transfer_lines=build_share_transfer_lines,
+    )
+    return normalize_document_lines(direct_reply)
+
+
 def _extract_slovak_share_transfer_request_facts(messages: list[Message]) -> dict[str, str]:
     user_text = "\n".join(
         message.content
@@ -933,7 +1065,7 @@ def _extract_slovak_share_transfer_request_facts(messages: list[Message]) -> dic
             transferee_details = " ".join(inline_transferee_match.group(1).strip(" ,;.").split())
 
     transfer_share = ""
-    share_match = re.search(r"\b(\d{1,3}\s*%)\b", user_text)
+    share_match = re.search(r"(?<!\d)(\d{1,3}\s*%)(?!\w)", user_text)
     if share_match is not None:
         transfer_share = re.sub(r"\s+", " ", share_match.group(1)).strip()
     elif re.search(r"(celý|cely)\s+(obchodný\s+podiel|obchodny\s+podiel)", normalized_text):
@@ -1025,7 +1157,9 @@ def _apply_company_record_share_transfer_defaults(
     if not company_record:
         return intake_facts
     merged = dict(intake_facts)
-    if merged.get("transferor_details"):
+    if merged.get("transferor_details") and not _is_generic_transferor_reference(
+        merged["transferor_details"]
+    ):
         return merged
     stakeholders = company_record.get("stakeholders") or []
     if not isinstance(stakeholders, list):
@@ -1045,6 +1179,22 @@ def _apply_company_record_share_transfer_defaults(
         if part
     )
     return merged
+
+
+def _is_generic_transferor_reference(value: str) -> bool:
+    normalized = " ".join(value.lower().split())
+    generic_tokens = (
+        "vlastnik firmy",
+        "majitel firmy",
+        "majiteľ firmy",
+        "sucasny vlastnik",
+        "súčasný vlastník",
+        "sucasny spolocnik",
+        "súčasný spoločník",
+        "povodny vlastnik",
+        "pôvodný vlastník",
+    )
+    return any(token in normalized for token in generic_tokens)
 
 
 def _share_transfer_provided_lines(intake_facts: dict[str, str]) -> list[str]:
@@ -1117,6 +1267,18 @@ def _orsr_tool_start_message(*, company_query: str, country: str, language: str 
     if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
         return f"Ich werde das Unternehmen '{company_query}' im ORSR pruefen."
     return f"I am going to verify company '{company_query}' in ORSR."
+
+
+def _orsr_tool_cache_hit_message(*, company_query: str, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return f"Pouzijem uz overene ORSR data pre '{company_query}', aby som nezdrziaval dalsi krok."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return f"Pouziji uz overena ORSR data pro '{company_query}', at nezdrzuji dalsi krok."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return f"Ich verwende bereits verifizierte ORSR-Daten fuer '{company_query}', damit es schneller weitergeht."
+    return f"Reusing verified ORSR data for '{company_query}' so the next step can continue faster."
 
 
 def _orsr_tool_result_found_message(

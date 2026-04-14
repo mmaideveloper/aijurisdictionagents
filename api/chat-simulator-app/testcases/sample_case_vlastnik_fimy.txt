@@ -19,8 +19,10 @@ Rozpravkova 12
 Rozpravkovo,
 Slovenska Republika
 
-2. Presný rozsah prevádzaného podielu -> Podiel sa prevádza bezodplatne. 
-3. Nemení iba spoločnícka štruktúra alebo aj konateľ / spôsob konania. 
+2. Presný rozsah prevádzaného podielu -> Podiel sa prevádza bezodplatne, 
+   kazdy z vlastnik ma 50%.
+3. Mení sa iba spoločnícka štruktúra, nie konateľ / spôsob konania. 
+4. novy spolumajitel od 1.7.2026
    ",
    "Documents:":[]
 }  

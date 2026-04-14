@@ -20,16 +20,16 @@ def test_version() -> None:
     assert response.status_code == 200
     assert response.json() == {
         'service': 'chat-simulator-app',
-        'version': '0.1.18',
-        'simulator_version': '0.1.18',
+        'version': '0.1.19',
+        'simulator_version': '0.1.19',
     }
 
 
 def test_simulator_page_and_assets() -> None:
     page = client.get('/chat-simulator')
     assert page.status_code == 200
-    assert '/static/simulator.js?v=0.1.18' in page.text
-    assert '/static/simulator.css?v=0.1.18' in page.text
+    assert '/static/simulator.js?v=0.1.19' in page.text
+    assert '/static/simulator.css?v=0.1.19' in page.text
     assert 'Start Stream' in page.text
     assert 'Upload documents' in page.text
     assert 'Persisted Case Debug' in page.text
@@ -37,6 +37,7 @@ def test_simulator_page_and_assets() -> None:
     assert 'Workflow Warning' in page.text
     assert 'http://127.0.0.1:8080' in page.text
     assert 'replyStatus' in page.text
+    assert 'processingStatus' in page.text
     assert 'novalidate' in page.text
     assert 'id="preparedCase"' in page.text
     assert 'id="preparedCasesData"' in page.text
@@ -84,6 +85,10 @@ def test_simulator_page_and_assets() -> None:
     assert 'localizedThinkingMessage' in js.text
     assert 'processing:thinking:' in js.text
     assert '_thinkingPlaceholder' in js.text
+    assert 'Backend is processing your request...' in js.text
+    assert 'handleStreamLifecycleEvent' in js.text
+    assert 'Assistant is waiting for your answer.' in js.text
+    assert 'Stream completed.' in js.text
     assert 'applyPreparedCaseDocuments' in js.text
     assert 'new DataTransfer()' in js.text
     assert 'preparedCasesDataEl' in js.text
