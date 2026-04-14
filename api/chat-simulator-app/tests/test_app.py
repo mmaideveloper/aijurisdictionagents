@@ -35,7 +35,7 @@ def test_simulator_page_and_assets() -> None:
     assert 'Persisted Case Debug' in page.text
     assert 'Upload To Case' in page.text
     assert 'Workflow Warning' in page.text
-    assert 'http://127.0.0.1:8081' in page.text
+    assert 'http://127.0.0.1:8080' in page.text
     assert 'replyStatus' in page.text
     assert 'novalidate' in page.text
     assert 'id="preparedCase"' in page.text

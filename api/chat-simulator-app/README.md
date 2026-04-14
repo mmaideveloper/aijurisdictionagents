@@ -12,7 +12,7 @@ uvicorn app.main:app --reload --port 8090
 
 Open `http://localhost:8090/chat-simulator` and set **API base URL** to your API service.
 
-For local development, the simulator now defaults to `http://127.0.0.1:8081` and automatically normalizes loopback hostnames (`localhost`, `127.0.0.1`, `::1`) to the same host as the simulator page. This avoids the common browser `Failed to fetch` problem when the simulator is opened on `127.0.0.1` but the API field still points to `localhost`, and it also avoids the frequent local conflict where port `8080` is already occupied by Docker Desktop or another service.
+For local development, the simulator now defaults to `http://127.0.0.1:8080` and automatically normalizes loopback hostnames (`localhost`, `127.0.0.1`, `::1`) to the same host as the simulator page. This avoids the common browser `Failed to fetch` problem when the simulator is opened on `127.0.0.1` but the API field still points to `localhost`.
 
 For local PostgreSQL validation, run the API with a persisted case backend:
 

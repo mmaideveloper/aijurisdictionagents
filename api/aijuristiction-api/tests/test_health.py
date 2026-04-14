@@ -25,10 +25,15 @@ class _UnhealthyStore:
 
 def test_health_endpoint(monkeypatch) -> None:
     monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _HealthyStore())
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
+        "llm": {
+            "status": "ok",
+            "provider": "mock",
+        },
         "database": {
             "status": "ok",
             "backend": "local",
@@ -36,17 +41,45 @@ def test_health_endpoint(monkeypatch) -> None:
     }
 
 
+def test_health_endpoint_normalizes_azure_llm_provider(monkeypatch) -> None:
+    monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _HealthyStore())
+    monkeypatch.setenv("LLM_PROVIDER", "azure")
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["llm"] == {
+        "status": "ok",
+        "provider": "azurefoundry",
+    }
+
+
 def test_health_endpoint_reports_database_failure(monkeypatch) -> None:
     monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _UnhealthyStore())
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
     response = client.get("/health")
     assert response.status_code == 503
     payload = response.json()
     assert payload["status"] == "error"
     assert payload["error"] == "database_unavailable"
     assert "password authentication failed" in payload["message"]
+    assert payload["llm"] == {
+        "status": "ok",
+        "provider": "mock",
+    }
     assert payload["database"] == {
         "status": "error",
         "backend": "azure",
+    }
+
+
+def test_health_endpoint_reports_unsupported_llm_provider(monkeypatch) -> None:
+    monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _HealthyStore())
+    monkeypatch.setenv("LLM_PROVIDER", "custom-provider")
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["llm"] == {
+        "status": "error",
+        "provider": "custom-provider",
+        "message": 'Unsupported LLM_PROVIDER "custom-provider"',
     }
 
 

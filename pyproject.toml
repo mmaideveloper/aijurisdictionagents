@@ -35,6 +35,7 @@ dev = [
 legal-discussion = "aijurisdictionagents.cli:main"
 laws-collector = "services.laws_collector.cli:main"
 document-processor = "services.document_processor.__main__:main"
+local-model-builder = "services.local_model_builder.__main__:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

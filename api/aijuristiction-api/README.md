@@ -207,6 +207,30 @@ If you want only the database container or the repository database rules, use `d
 `GET /health` now verifies the configured API database connection before returning healthy.
 If the database is unreachable or misconfigured, the endpoint returns `503` with
 `error=database_unavailable` and a `message` field that the mobile app can show directly.
+The response also reports the configured LLM provider so callers can distinguish `mock`
+from `azurefoundry` mode.
+
+Minimal runnable example:
+
+```bash
+curl -fsS http://127.0.0.1:8080/health
+```
+
+Example healthy response:
+
+```json
+{
+  "status": "ok",
+  "llm": {
+    "status": "ok",
+    "provider": "mock"
+  },
+  "database": {
+    "status": "ok",
+    "backend": "local"
+  }
+}
+```
 
 `GET /version` response includes:
 - `api_version`: API package version (`api/aijuristiction-api/pyproject.toml`).
