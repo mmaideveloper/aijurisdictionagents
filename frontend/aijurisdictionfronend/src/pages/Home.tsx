@@ -5,8 +5,20 @@ import { ApiRequestError } from "../api/chatClient";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import WorkspaceWelcome from "../components/WorkspaceWelcome";
-import { CaseCommunicationMode, CaseRole, useCases } from "../state/CaseProvider";
+import {
+  buildLocalizedInteractionMessage,
+  CaseCommunicationMode,
+  CaseRole,
+  useCases
+} from "../state/CaseProvider";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
+
+type ApiErrorState =
+  | {
+      key: "workspaceApiUnavailablePrefix" | "workspaceApiRequestFailedPrefix";
+      detail: string;
+    }
+  | null;
 
 const Home: React.FC = () => {
   const { t } = useLanguage();
@@ -25,7 +37,7 @@ const Home: React.FC = () => {
   const [draftMessage, setDraftMessage] = React.useState("");
   const [modeDraftMessage, setModeDraftMessage] = React.useState("");
   const [isSendingMessage, setIsSendingMessage] = React.useState(false);
-  const [apiError, setApiError] = React.useState<string | null>(null);
+  const [apiError, setApiError] = React.useState<ApiErrorState>(null);
   const roleOptions = React.useMemo(
     () => [
       {
@@ -106,15 +118,31 @@ const Home: React.FC = () => {
         const apiErrorMessage = error instanceof Error ? error.message : fallbackMessage;
 
         if (error instanceof ApiRequestError && error.kind === "network") {
-          const message = `${t("workspaceApiUnavailablePrefix")} ${apiErrorMessage}`;
-          setApiError(message);
-          addInteraction(activeCase.id, "System", message);
+          setApiError({
+            key: "workspaceApiUnavailablePrefix",
+            detail: apiErrorMessage
+          });
+          addInteraction(
+            activeCase.id,
+            "System",
+            buildLocalizedInteractionMessage("workspaceApiUnavailablePrefix", {
+              detail: apiErrorMessage
+            })
+          );
           return false;
         }
 
-        const message = `${t("workspaceApiRequestFailedPrefix")} ${apiErrorMessage}`;
-        setApiError(message);
-        addInteraction(activeCase.id, "System", message);
+        setApiError({
+          key: "workspaceApiRequestFailedPrefix",
+          detail: apiErrorMessage
+        });
+        addInteraction(
+          activeCase.id,
+          "System",
+          buildLocalizedInteractionMessage("workspaceApiRequestFailedPrefix", {
+            detail: apiErrorMessage
+          })
+        );
         return false;
       } finally {
         setIsSendingMessage(false);
@@ -196,7 +224,10 @@ const Home: React.FC = () => {
                         <div className="workspace-chat">
                           <div className="workspace-chat__history">
                             {activeCase?.interactionHistory.map((item) => {
-                              const isUser = item.actor.startsWith("You");
+                              const isUser =
+                                item.actor === t("workspaceUserLabel") ||
+                                item.actor === t("workspaceUserVoiceLabel") ||
+                                item.actor === t("workspaceUserVideoLabel");
                               return (
                                 <article
                                   key={item.id}
@@ -232,7 +263,7 @@ const Home: React.FC = () => {
                           </p>
                           {apiError ? (
                             <p className="workspace-chat__status workspace-chat__status--error">
-                              {t("workspaceApiErrorLabel")}: {apiError}
+                              {t("workspaceApiErrorLabel")}: {t(apiError.key, { detail: apiError.detail })}
                             </p>
                           ) : null}
                         </div>
@@ -277,7 +308,7 @@ const Home: React.FC = () => {
                           </button>
                           {apiError ? (
                             <p className="workspace-chat__status workspace-chat__status--error">
-                              {t("workspaceApiErrorLabel")}: {apiError}
+                              {t("workspaceApiErrorLabel")}: {t(apiError.key, { detail: apiError.detail })}
                             </p>
                           ) : null}
                         </article>

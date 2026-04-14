@@ -1,7 +1,7 @@
 import React from "react";
 import { createChatSession, replyToSession } from "../api/chatClient";
 import { getMockCaseTemplate, isSeededCaseTemplateId } from "../content/mockCaseTemplates";
-import { translate, type Language } from "../data/translations";
+import { translate, type Language, type TranslationKey, type TranslationValues } from "../data/translations";
 import { consoleLogger } from "../logging/consoleLogger";
 import { useLanguage } from "../components/LanguageProvider";
 
@@ -103,6 +103,44 @@ type CaseContextValue = {
 const CaseContext = React.createContext<CaseContextValue | undefined>(undefined);
 const CASE_STORAGE_KEY = "aijurisdictionfrontend.mock.cases.v1";
 const STORED_DOCUMENT_MESSAGE_PATTERN = /^Stored (?<count>\d+) uploaded documents? in mock profile storage\.$/;
+const LOCALIZED_INTERACTION_PREFIX = "__aj_i18n__:";
+
+type LocalizedInteractionDescriptor = {
+  key: TranslationKey;
+  values?: TranslationValues;
+};
+
+type CaseSessionCacheRecord = {
+  language: Language;
+  sessionId: string;
+};
+
+export const buildLocalizedInteractionMessage = (
+  key: TranslationKey,
+  values?: TranslationValues
+): string => {
+  const descriptor: LocalizedInteractionDescriptor = values ? { key, values } : { key };
+  return `${LOCALIZED_INTERACTION_PREFIX}${JSON.stringify(descriptor)}`;
+};
+
+const parseLocalizedInteractionMessage = (
+  message: string
+): LocalizedInteractionDescriptor | null => {
+  if (!message.startsWith(LOCALIZED_INTERACTION_PREFIX)) {
+    return null;
+  }
+
+  const payload = message.slice(LOCALIZED_INTERACTION_PREFIX.length);
+  try {
+    const parsed = JSON.parse(payload) as Partial<LocalizedInteractionDescriptor>;
+    if (!parsed || typeof parsed.key !== "string") {
+      return null;
+    }
+    return parsed as LocalizedInteractionDescriptor;
+  } catch {
+    return null;
+  }
+};
 
 const buildCreatedCaseDescription = (jurisdiction: string, opposingParty: string, language: Language) =>
   translate(language, "mockCreatedCaseDescription", {
@@ -152,6 +190,11 @@ const localizeInteractionMessage = (
   message: string,
   language: Language
 ): string => {
+  const localizedDescriptor = parseLocalizedInteractionMessage(message);
+  if (localizedDescriptor) {
+    return translate(language, localizedDescriptor.key, localizedDescriptor.values);
+  }
+
   if (message === "Opened new case workspace from the intake form.") {
     return translate(language, "mockCreatedCaseOpenMessage");
   }
@@ -211,13 +254,18 @@ const createMockCase = (input: CreateCaseInput, createdAt: string, id: string): 
         id: `${id}-interaction-1`,
         createdAt,
         actor: "AI Lawyer",
-        message: "Opened new case workspace from the intake form."
+        message: buildLocalizedInteractionMessage("mockCreatedCaseOpenMessage")
       },
       {
         id: `${id}-interaction-2`,
         createdAt,
         actor: "System",
-        message: `Stored ${documents.length} uploaded document${documents.length === 1 ? "" : "s"} in mock profile storage.`
+        message: buildLocalizedInteractionMessage(
+          documents.length === 1
+            ? "mockCreatedCaseStoredDocumentsSingular"
+            : "mockCreatedCaseStoredDocumentsPlural",
+          { count: documents.length }
+        )
       }
     ],
     selectedRole: "AI Lawyer",
@@ -395,6 +443,56 @@ const localizeCaseRecord = (caseItem: CaseRecord, language: Language): CaseRecor
   };
 };
 
+const normalizeLegacyInteractionMessage = (message: string): string => {
+  if (message === "Opened new case workspace from the intake form.") {
+    return buildLocalizedInteractionMessage("mockCreatedCaseOpenMessage");
+  }
+
+  const storedDocumentMatch = message.match(STORED_DOCUMENT_MESSAGE_PATTERN);
+  if (storedDocumentMatch?.groups?.count) {
+    const count = Number(storedDocumentMatch.groups.count);
+    return buildLocalizedInteractionMessage(
+      count === 1
+        ? "mockCreatedCaseStoredDocumentsSingular"
+        : "mockCreatedCaseStoredDocumentsPlural",
+      { count }
+    );
+  }
+
+  const legacySystemMessagePrefixes: Array<{
+    key: "workspaceApiUnavailablePrefix" | "workspaceApiRequestFailedPrefix";
+    prefixes: string[];
+  }> = [
+    {
+      key: "workspaceApiUnavailablePrefix",
+      prefixes: [
+        "Unable to reach API. ",
+        "Nepodarilo sa spojiť s API. ",
+        "API ist nicht erreichbar. "
+      ]
+    },
+    {
+      key: "workspaceApiRequestFailedPrefix",
+      prefixes: [
+        "API request failed. ",
+        "Požiadavka na API zlyhala. ",
+        "API-Anfrage ist fehlgeschlagen. "
+      ]
+    }
+  ];
+
+  for (const descriptor of legacySystemMessagePrefixes) {
+    const prefix = descriptor.prefixes.find((item) => message.startsWith(item));
+    if (prefix) {
+      return buildLocalizedInteractionMessage(descriptor.key, {
+        detail: message.slice(prefix.length)
+      });
+    }
+  }
+
+  return message;
+};
+
 const normalizeStoredDocument = (
   value: unknown,
   caseId: string
@@ -467,7 +565,7 @@ const normalizeStoredCase = (value: unknown): CaseRecord | null => {
         id: item.id,
         createdAt: item.createdAt,
         actor: item.actor,
-        message: item.message
+        message: normalizeLegacyInteractionMessage(item.message)
       } satisfies CaseInteraction;
     })
     .filter((interaction): interaction is CaseInteraction => interaction !== null);
@@ -580,7 +678,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeCaseId, setActiveCaseId] = React.useState<string | null>(null);
   const [hasSelectedCase, setHasSelectedCase] = React.useState(false);
   const [continueRequested, setContinueRequested] = React.useState(false);
-  const sessionIdsByCaseRef = React.useRef<Record<string, string>>({});
+  const sessionIdsByCaseRef = React.useRef<Record<string, CaseSessionCacheRecord>>({});
 
   React.useEffect(() => {
     persistCases(storedCases);
@@ -667,13 +765,16 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const ensureCaseSessionId = React.useCallback(async (caseId: string): Promise<string> => {
-    const existingSessionId = sessionIdsByCaseRef.current[caseId];
-    if (existingSessionId) {
-      return existingSessionId;
+    const existingSession = sessionIdsByCaseRef.current[caseId];
+    if (existingSession && existingSession.language === language) {
+      return existingSession.sessionId;
     }
 
     const session = await createChatSession({ language });
-    sessionIdsByCaseRef.current[caseId] = session.id;
+    sessionIdsByCaseRef.current[caseId] = {
+      language,
+      sessionId: session.id
+    };
 
     consoleLogger.info("Created API session for case", {
       caseId,
