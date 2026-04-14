@@ -14,7 +14,7 @@ const Profile: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const { user } = useAuth();
-  const { cases, selectCase } = useCases();
+  const { cases, documents, selectCase } = useCases();
   const [cadence, setCadence] = useState<BillingCadence>("monthly");
   const [plan, setPlan] = useState(plans[0]?.id ?? "free");
   const selectedPlan = plans.find((option) => option.id === plan) ?? plans[0];
@@ -101,7 +101,7 @@ const Profile: React.FC = () => {
                       className="profile-case-button"
                       onClick={() => {
                         selectCase(caseItem.id);
-                        navigate("/app/workspace");
+                        navigate("/");
                       }}
                     >
                       <span>{caseItem.title}</span>
@@ -112,6 +112,29 @@ const Profile: React.FC = () => {
               </ul>
             ) : (
               <p className="hint">{t("profileOpenedCasesEmpty")}</p>
+            )}
+          </article>
+          <article className="card">
+            <h2>{t("profileDocumentsTitle")}</h2>
+            <p className="hint">{t("profileDocumentsSubtitle")}</p>
+            {documents.length > 0 ? (
+              <ul className="profile-document-list">
+                {documents.map((document) => (
+                  <li key={document.id} className="profile-document-item">
+                    <div>
+                      <strong>{document.originalFilename}</strong>
+                      <small>
+                        {t("profileDocumentCaseLabel")}: {document.caseTitle}
+                      </small>
+                    </div>
+                    <small className="profile-document-meta">
+                      {document.sizeLabel}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="hint">{t("profileDocumentsEmpty")}</p>
             )}
           </article>
         </aside>

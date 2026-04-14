@@ -28,6 +28,14 @@ vi.mock("../state/CaseProvider", () => ({
         status: "In progress"
       }
     ],
+    documents: [
+      {
+        id: "doc-1",
+        originalFilename: "keystone-timeline.pdf",
+        caseTitle: "Keystone Holdings Intake",
+        sizeLabel: "178 KB"
+      }
+    ],
     selectCase: vi.fn()
   })
 }));
@@ -46,6 +54,10 @@ const labels: Record<string, string> = {
   profileOpenedCasesTitle: "Opened cases",
   profileOpenedCasesSubtitle: "Jump back into active matters from your profile.",
   profileOpenedCasesEmpty: "No opened cases yet.",
+  profileDocumentsTitle: "My Documents",
+  profileDocumentsSubtitle: "Uploaded mock documents from your case intake flow.",
+  profileDocumentsEmpty: "No uploaded documents yet.",
+  profileDocumentCaseLabel: "Case",
   profileBilling: "Billing cadence",
   pricingMonthly: "Monthly",
   pricingYearly: "Yearly",
@@ -85,5 +97,8 @@ describe("Profile page", () => {
     expect(screen.getByText("Billing cadence")).toBeDefined();
     expect(screen.getByText("Opened cases")).toBeDefined();
     expect(screen.getByText("Keystone Holdings Intake")).toBeDefined();
+    expect(screen.getByText("My Documents")).toBeDefined();
+    expect(screen.getByText("keystone-timeline.pdf")).toBeDefined();
+    expect(screen.getByText("Case: Keystone Holdings Intake")).toBeDefined();
   });
 });

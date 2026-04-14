@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { useCases } from "../state/CaseProvider";
 import { useLanguage } from "./LanguageProvider";
 import { BsBoxArrowLeft } from "react-icons/bs";
@@ -10,7 +11,8 @@ type SidebarProps = {
 };
 
 export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
-  const { cases, activeCase, createCase, selectCase } = useCases();
+  const navigate = useNavigate();
+  const { cases, activeCase, selectCase } = useCases();
   const { t } = useLanguage();
 
   return (
@@ -42,7 +44,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
               <h3>Cases</h3>
               <span>{cases.length}</span>
             </div>
-            <button type="button" className="button ghost full sidebar-action" onClick={createCase}>
+            <button
+              type="button"
+              className="button ghost full sidebar-action"
+              onClick={() => navigate("/app/case")}
+            >
               + New case
             </button>
             <div className="case-list-scroll">
