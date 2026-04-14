@@ -22,7 +22,7 @@ vi.mock("../logging/consoleLogger", () => ({
 const STORAGE_KEY = "aijurisdictionfrontend.mock.cases.v1";
 
 const CaseConsumer: React.FC = () => {
-  const { cases, documents, createCase } = useCases();
+  const { cases, documents, createCase, activeCase, hasSelectedCase } = useCases();
 
   return (
     <div>
@@ -49,6 +49,8 @@ const CaseConsumer: React.FC = () => {
       <div data-testid="document-count">{documents.length}</div>
       <div data-testid="latest-case">{cases[0]?.title ?? ""}</div>
       <div data-testid="latest-document">{documents[0]?.originalFilename ?? ""}</div>
+      <div data-testid="active-case">{activeCase?.title ?? ""}</div>
+      <div data-testid="has-selected-case">{String(hasSelectedCase)}</div>
     </div>
   );
 };
@@ -132,5 +134,7 @@ describe("CaseProvider", () => {
     expect(screen.getByTestId("document-count").textContent).toBe("1");
     expect(screen.getByTestId("latest-case").textContent).toBe("Stored case");
     expect(screen.getByTestId("latest-document").textContent).toBe("stored-evidence.pdf");
+    expect(screen.getByTestId("active-case").textContent).toBe("");
+    expect(screen.getByTestId("has-selected-case").textContent).toBe("false");
   });
 });

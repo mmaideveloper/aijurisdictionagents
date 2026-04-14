@@ -153,7 +153,7 @@ const createMockCase = (input: CreateCaseInput, createdAt: string, id: string): 
     selectedMode: "Draft",
     selectedCommunicationMode: "Chat",
     workspace: {
-      meta: `${input.jurisdiction.trim()} · ${documents.length} doc${documents.length === 1 ? "" : "s"}`,
+      meta: `${input.jurisdiction.trim()} | ${documents.length} doc${documents.length === 1 ? "" : "s"}`,
       objective: `Prepare the case against ${input.opposingParty.trim()} and organize the uploaded evidence.`,
       nextAction: "Review the intake summary and start the AI lawyer chat when ready.",
       jurisdiction: input.jurisdiction.trim(),
@@ -210,6 +210,9 @@ const defaultCases: CaseRecord[] = [
       "case-002"
     ),
     status: "On hold",
+    selectedRole: "AI Judge",
+    selectedMode: "Review",
+    selectedCommunicationMode: "Voice",
     workspace: {
       meta: "Waiting on docs",
       objective: "Gather missing vendor exhibits and align on scope with procurement leadership.",
@@ -230,6 +233,9 @@ const defaultCases: CaseRecord[] = [
       "case-003"
     ),
     status: "Scheduled",
+    selectedRole: "Opposing Counsel",
+    selectedMode: "Live",
+    selectedCommunicationMode: "Video",
     workspace: {
       meta: "Kickoff today",
       objective: "Align audit prep checklist and confirm timeline with internal teams.",
@@ -250,6 +256,9 @@ const defaultCases: CaseRecord[] = [
       "case-004"
     ),
     status: "Completed",
+    selectedRole: "AI Lawyer",
+    selectedMode: "Archive",
+    selectedCommunicationMode: "Chat",
     workspace: {
       meta: "Closed last week",
       objective: "Finalize arbitration summary and archive case documentation.",
@@ -451,8 +460,9 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [cases]);
 
   React.useEffect(() => {
-    if (!cases.some((caseItem) => caseItem.id === activeCaseId)) {
-      setActiveCaseId(cases[0]?.id ?? null);
+    if (activeCaseId && !cases.some((caseItem) => caseItem.id === activeCaseId)) {
+      setActiveCaseId(null);
+      setHasSelectedCase(false);
     }
   }, [activeCaseId, cases]);
 
@@ -468,7 +478,10 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [cases]);
 
   const activeCase = React.useMemo(() => {
-    return cases.find((caseItem) => caseItem.id === activeCaseId) ?? cases[0] ?? null;
+    if (!activeCaseId) {
+      return null;
+    }
+    return cases.find((caseItem) => caseItem.id === activeCaseId) ?? null;
   }, [activeCaseId, cases]);
 
   const createCase = React.useCallback((input: CreateCaseInput) => {
