@@ -143,6 +143,28 @@ const LocalizedSystemMessageConsumer: React.FC = () => {
   );
 };
 
+const FirstUserMessageConsumer: React.FC = () => {
+  const { cases, addInteraction } = useCases();
+  const activeCase = cases.find((caseItem) => caseItem.id === "case-001");
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => addInteraction("case-001", "You", "Please review the first issue.")}
+      >
+        Send first user message
+      </button>
+      <div data-testid="case-001-history-actors">
+        {activeCase?.interactionHistory.map((interaction) => interaction.actor).join("|") ?? ""}
+      </div>
+      <div data-testid="case-001-history-messages">
+        {activeCase?.interactionHistory.map((interaction) => interaction.message).join("|") ?? ""}
+      </div>
+    </div>
+  );
+};
+
 describe("CaseProvider", () => {
   beforeEach(() => {
     cleanup();
@@ -320,6 +342,35 @@ describe("CaseProvider", () => {
 
     expect(screen.getByTestId("localized-system-message").textContent).toBe(
       "API ist nicht erreichbar. Network request failed."
+    );
+  });
+
+  it("removes the seeded assistant intro after the first user message is added", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <FirstUserMessageConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    expect(screen.getByTestId("case-001-history-actors").textContent).toContain("AI Lawyer");
+    expect(screen.getByTestId("case-001-history-messages").textContent).toContain(
+      "Opened new case workspace from the intake form."
+    );
+
+    await user.click(screen.getByRole("button", { name: "Send first user message" }));
+
+    expect(screen.getByTestId("case-001-history-actors").textContent).not.toContain("AI Lawyer");
+    expect(screen.getByTestId("case-001-history-actors").textContent).toContain("System");
+    expect(screen.getByTestId("case-001-history-actors").textContent).toContain("You");
+    expect(screen.getByTestId("case-001-history-messages").textContent).not.toContain(
+      "Opened new case workspace from the intake form."
+    );
+    expect(screen.getByTestId("case-001-history-messages").textContent).toContain(
+      "Please review the first issue."
     );
   });
 });

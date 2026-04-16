@@ -63,20 +63,17 @@ const Home: React.FC = () => {
       {
         mode: "Chat" as CaseCommunicationMode,
         label: t("commsChat"),
-        icon: <FiMessageSquare aria-hidden="true" />,
-        actionLabel: t("commsChatAction")
+        icon: <FiMessageSquare aria-hidden="true" />
       },
       {
         mode: "Voice" as CaseCommunicationMode,
         label: t("commsVoice"),
-        icon: <FiMic aria-hidden="true" />,
-        actionLabel: t("commsVoiceAction")
+        icon: <FiMic aria-hidden="true" />
       },
       {
         mode: "Video" as CaseCommunicationMode,
         label: t("commsVideo"),
-        icon: <FiVideo aria-hidden="true" />,
-        actionLabel: t("commsVideoAction")
+        icon: <FiVideo aria-hidden="true" />
       }
     ],
     [t]
@@ -165,19 +162,6 @@ const Home: React.FC = () => {
       if (sent) {
         setModeDraftMessage("");
       }
-    };
-
-    const handleNextAction = async () => {
-      if (!activeCase) {
-        return;
-      }
-      const defaultPrompt =
-        activeCase.selectedCommunicationMode === "Voice"
-          ? "Please run a voice-style legal briefing for the current case."
-          : activeCase.selectedCommunicationMode === "Video"
-            ? "Please run a video-style legal briefing for the current case."
-            : "Please continue the legal chat for the current case with next steps.";
-      await submitMessageToApi(activeCase.selectedCommunicationMode, defaultPrompt);
     };
 
     return (
@@ -313,22 +297,6 @@ const Home: React.FC = () => {
                           ) : null}
                         </article>
                       )}
-                      <article className="workspace-callout">
-                        <h3>{t("workspaceNextRecommendedAction")}</h3>
-                        <p>{activeCase?.workspace.nextAction}</p>
-                        <button
-                          type="button"
-                          className="button primary"
-                          onClick={handleNextAction}
-                          disabled={isSendingMessage}
-                        >
-                          {
-                            communicationModeOptions.find(
-                              (option) => option.mode === activeCase?.selectedCommunicationMode
-                            )?.actionLabel
-                          }
-                        </button>
-                      </article>
                     </div>
                   </>
                 )}

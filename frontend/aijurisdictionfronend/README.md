@@ -123,6 +123,14 @@ Task `#243` keeps the selected UI language active across routes and applies it t
 - User-provided content such as case titles and uploaded filenames stays unchanged
 - New chat sessions pass the selected frontend language to the API session creation call
 
+## Chat Window Visuals (Task #245)
+
+Task `#245` refines the signed-in workspace chat presentation.
+
+- The seeded assistant intro message is removed after the user sends the first chat message
+- The chat timeline keeps system notices and live API replies intact
+- The bottom `Next recommended action` card is removed from the workspace chat view
+
 ## Legal pages and footer links
 
 Global footer links are available in all language modes (`en`, `sk`, `de`) and are visible on both public and signed-in screens.
@@ -198,6 +206,12 @@ Task #243 language switching minimal demo:
 
 ```bash
 python examples/frontend_language_switching_task_243_minimal_demo.py
+```
+
+Task #245 chat window visuals minimal demo:
+
+```bash
+python examples/frontend_chat_window_visuals_task_245_minimal_demo.py
 ```
 
 The demo defaults to the shared Azure dev API endpoint. Override it for local API testing with
