@@ -80,14 +80,23 @@ If the user asks to close a task:
 Custom project skills:
 
 - `api` at `skills/api/SKILL.md`
-  - Purpose: start and health-check local `aijuristiction-api` using the same skill name available on this machine.
-  - Script: `.\skills\start-api\scripts\start_api.ps1`
+  - Purpose: start and health-check local `aijuristiction-api` (delegates to `juris-api` defaults: postgres + azurefoundry on port 8080).
+  - Script: `.\skills\juris-api\scripts\start_juris_api.ps1`
+- `juris-api` at `skills/juris-api/SKILL.md`
+  - Purpose: start local `aijuristiction-api` on `127.0.0.1:8080` with local PostgreSQL (Docker Desktop) and `azurefoundry`.
+  - Script: `.\skills\juris-api\scripts\start_juris_api.ps1`
 - `chatsimulatr` at `skills/chatsimulatr/SKILL.md`
-  - Purpose: start and verify the local chat simulator UI.
+  - Purpose: start and verify the local chat simulator UI on port `8090`; checks/starts `juris-api` on `8080` first.
   - Script: `.\skills\chatsimulatr\scripts\start_chat_simulator.ps1`
+- `chat-simulator` at `skills/chat-simulator/SKILL.md`
+  - Purpose: alias skill to start chat simulator UI on port `8090`; checks/starts `juris-api` on `8080` first.
+  - Script: `.\skills\chat-simulator\scripts\start_chat_simulator.ps1`
 - `start-api` at `skills/start-api/SKILL.md`
   - Purpose: start and health-check local `aijuristiction-api`.
   - Script: `.\skills\start-api\scripts\start_api.ps1`
+- `laws-collector` at `skills/laws-collector/SKILL.md`
+  - Purpose: start and monitor laws collector; defaults to local PostgreSQL on Docker Desktop.
+  - Script: `.\skills\laws-collector\scripts\start_laws_collector.ps1`
 - `start-postgres` at `skills/start-postgres/SKILL.md`
   - Purpose: start or reuse the local PostgreSQL Docker instance and apply schema updates.
   - Script: `.\skills\start-postgres\scripts\start_postgres.ps1`

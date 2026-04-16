@@ -1,4 +1,4 @@
 interface:
   display_name: "Start Chat Simulator"
-  short_description: "Start local chat simulator app"
-  default_prompt: "Use $chatsimulatr to start the local chat simulator on port 8090."
+  short_description: "Start simulator and ensure juris-api on 8080"
+  default_prompt: "Use $chatsimulatr to start chat simulator on 8090 and ensure juris-api is running on 8080."

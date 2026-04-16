@@ -2,7 +2,7 @@ param(
     [string]$BindHost = "127.0.0.1",
     [int]$Port = 8090,
     [string]$ApiHost = "127.0.0.1",
-    [int]$ApiPort = 8081,
+    [int]$ApiPort = 8080,
     [switch]$Background,
     [switch]$ConsoleWindow,
     [switch]$Reload,
@@ -127,22 +127,29 @@ function Ensure-LocalApiForSimulator {
         [int]$TargetPort
     )
 
-    $apiLauncher = Join-Path $RepoRoot "skills\start-api\scripts\start_api.ps1"
-    if (-not (Test-Path $apiLauncher)) {
-        throw "API start skill script not found: $apiLauncher"
+    $apiHealthUrl = "http://$TargetHost`:$TargetPort/health"
+    if (Test-UrlReady -Url $apiHealthUrl) {
+        return
     }
 
-    $apiPidFile = Join-Path $RepoRoot "runs\api-local.pid"
-    Stop-ProcessFromPidFile -PidFile $apiPidFile -ExpectedProcessName "python"
+    $apiLauncher = Join-Path $RepoRoot "skills\juris-api\scripts\start_juris_api.ps1"
+    if (-not (Test-Path $apiLauncher)) {
+        throw "Juris API start skill script not found: $apiLauncher"
+    }
+
+    $jurisApiPidFile = Join-Path $RepoRoot "runs\juris-api.pid"
+    if (Test-Path $jurisApiPidFile) {
+        if (Test-UrlReady -Url $apiHealthUrl) {
+            return
+        }
+    }
 
     $apiArgs = @(
         "-NoProfile",
         "-File", $apiLauncher,
         "-Background",
         "-BindHost", $TargetHost,
-        "-Port", "$TargetPort",
-        "-DatabaseOption", "postgres",
-        "-LlmProvider", "azurefoundry"
+        "-Port", "$TargetPort"
     )
 
     $apiStartOutput = & $ShellPath @apiArgs 2>&1
@@ -150,7 +157,6 @@ function Ensure-LocalApiForSimulator {
         throw "Failed to start local API for simulator.`n$($apiStartOutput -join [Environment]::NewLine)"
     }
 
-    $apiHealthUrl = "http://$TargetHost`:$TargetPort/health"
     $isHealthy = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         if (Test-UrlReady -Url $apiHealthUrl) {

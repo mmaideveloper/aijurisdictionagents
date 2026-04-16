@@ -1,4 +1,4 @@
 interface:
   display_name: "Start API"
-  short_description: "Start local API service quickly"
-  default_prompt: "Use $api to start the local API on port 8080."
+  short_description: "Start API on 8080 with postgres + azurefoundry"
+  default_prompt: "Use $api to start juris-api defaults (local postgres + azurefoundry) on port 8080."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Juris API"
+  short_description: "Start API on 8080 with postgres + azurefoundry"
+  default_prompt: "Use $juris-api to start the local API on port 8080 with local PostgreSQL and azurefoundry."

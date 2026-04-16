@@ -1,2 +1,4 @@
-name: laws-collector
-description: Start and monitor the local laws collector worker loop.
+interface:
+  display_name: "Laws Collector"
+  short_description: "Start laws collector with local Docker PostgreSQL by default"
+  default_prompt: "Use $laws-collector to start the local laws collector with Docker PostgreSQL."
