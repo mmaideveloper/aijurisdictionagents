@@ -518,14 +518,6 @@
   gap: 0.5rem;
 }
 
-.workspace-callout {
-  background: var(--surface-muted);
-  padding: 1.2rem;
-  border-radius: 16px;
-  display: grid;
-  gap: 0.8rem;
-}
-
 .config-list {
   display: grid;
   gap: 1rem;

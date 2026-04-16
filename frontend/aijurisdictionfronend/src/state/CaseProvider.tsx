@@ -142,6 +142,36 @@ const parseLocalizedInteractionMessage = (
   }
 };
 
+const USER_INTERACTION_ACTORS = ["You", "You (Voice)", "You (Video)"] as const;
+const ROLE_INTERACTION_ACTORS = ["AI Lawyer", "AI Judge", "Opposing Counsel"] as const;
+
+const isUserInteractionActor = (actor: string): boolean =>
+  USER_INTERACTION_ACTORS.includes(actor as (typeof USER_INTERACTION_ACTORS)[number]);
+
+const isSeededAssistantIntroInteraction = (interaction: CaseInteraction): boolean => {
+  if (!ROLE_INTERACTION_ACTORS.includes(interaction.actor as (typeof ROLE_INTERACTION_ACTORS)[number])) {
+    return false;
+  }
+
+  const localizedDescriptor = parseLocalizedInteractionMessage(interaction.message);
+  return localizedDescriptor?.key === "mockCreatedCaseOpenMessage";
+};
+
+const stripSeededAssistantIntro = (interactionHistory: CaseInteraction[]): CaseInteraction[] =>
+  interactionHistory.filter((interaction) => !isSeededAssistantIntroInteraction(interaction));
+
+const normalizeInteractionHistory = (interactionHistory: CaseInteraction[]): CaseInteraction[] => {
+  const hasUserInteraction = interactionHistory.some((interaction) =>
+    isUserInteractionActor(interaction.actor)
+  );
+
+  if (!hasUserInteraction) {
+    return interactionHistory;
+  }
+
+  return stripSeededAssistantIntro(interactionHistory);
+};
+
 const buildCreatedCaseDescription = (jurisdiction: string, opposingParty: string, language: Language) =>
   translate(language, "mockCreatedCaseDescription", {
     jurisdiction,
@@ -598,7 +628,7 @@ const normalizeStoredCase = (value: unknown): CaseRecord | null => {
     description: candidate.description,
     status,
     createdAt: candidate.createdAt,
-    interactionHistory,
+    interactionHistory: normalizeInteractionHistory(interactionHistory),
     selectedRole,
     selectedMode,
     selectedCommunicationMode,
@@ -756,7 +786,15 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setStoredCases((prev) =>
         prev.map((caseItem) =>
           caseItem.id === caseId
-            ? { ...caseItem, interactionHistory: [...caseItem.interactionHistory, interaction] }
+            ? {
+                ...caseItem,
+                interactionHistory: [
+                  ...(isUserInteractionActor(actor)
+                    ? stripSeededAssistantIntro(caseItem.interactionHistory)
+                    : caseItem.interactionHistory),
+                  interaction
+                ]
+              }
             : caseItem
         )
       );
