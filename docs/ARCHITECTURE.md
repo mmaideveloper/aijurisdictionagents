@@ -46,4 +46,46 @@ The API chat reply flow can add policy-driven task-planning guidance for uploade
 - Policies can also defer content-specific steps when uploaded documents are still unprocessed, instead of forcing the agent to improvise around missing evidence.
 - This planning layer is separate from developer/runtime Codex skills; it is application orchestration logic used to keep user-facing communication aligned with the requested task and make future policies/tasks easier to add.
 
+## Slovak law flow build rules (default for new legal flows)
+
+To scale Slovak legal operations with minimal hardcoded logic, new law flows should follow a hybrid pattern:
+
+- Keep system logic minimal and deterministic:
+  - flow state transitions (`intake -> missing_info -> draft -> validate -> finalize`);
+  - required-field gates and tool permissions;
+  - audit trail, confidence flags, and escalation hooks.
+- Keep legal reasoning model-driven:
+  - legal interpretation;
+  - question generation and follow-up;
+  - first-draft and update text generation;
+  - explanation of risks and alternatives.
+- Keep jurisdiction handling tool-driven:
+  - retrieve up-to-date Slovak law text and effective dates;
+  - validate generated/updated documents against rule checks;
+  - produce document packages from templates and known requirements.
+
+Each new Slovak legal act (for example owner addition, `konateľ` change, company address change) should be represented as configuration data ("flow pack"), not bespoke orchestration code. A flow pack should include:
+
+- required facts;
+- required documents and evidence;
+- validation rules and blocking conditions;
+- output documents;
+- follow-up question strategy.
+
+### Proactive behavior requirement for `AILawyerAgent`
+
+For every Slovak legal flow, the agent must proactively:
+
+- ask for missing mandatory information before finalization;
+- highlight contradictory or risky data and propose the safest next action;
+- suggest better alternatives when available;
+- identify missing documents needed for filing;
+- request clarification or human-lawyer review when confidence is low.
+
+### Minimal runnable example
+
+Use the repository default minimal demo command for smoke checks:
+
+`python examples/minimal_demo.py`
+
 See `docs/SEQUENCE.md` for a high-level sequence diagram.
