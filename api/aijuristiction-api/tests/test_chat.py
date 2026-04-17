@@ -4,6 +4,7 @@ from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
 from uuid import UUID, uuid4
+from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
@@ -252,6 +253,109 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     assert "doba nájmu" in document_text
     assert "vypovedna lehota" in document_text
     assert "platba vopred" in document_text
+
+
+def test_document_export_returns_zip_when_case_update_contains_multiple_documents(
+    monkeypatch,
+) -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    monkeypatch.setattr(chat_api, "_repository", repository)
+
+    session = repository.create_session(Session(country="SK", discussion_type="advice", language="SK"))
+    case_update = {
+        "case": {
+            "case_id": None,
+            "status": "intake_open",
+            "jurisdiction": {"country": "SK", "language": "sk-SK"},
+            "parties": {
+                "client": {
+                    "name": "RNDr. Marek Matonok",
+                    "address": "Testova 30, Poprad",
+                    "identification": "134341432/1299",
+                },
+                "opponent": {
+                    "name": "Jano Hrasko",
+                    "address": "Rozpravkova 12, Rozpravkovo, Slovenska Republika",
+                    "identification": "09809jlkj/2343",
+                },
+            },
+            "matter": {
+                "category": "commercial",
+                "topic": "prevod podielu",
+                "amount_eur": None,
+                "key_dates": {},
+                "facts_summary": "Prevod podielu vo vyske 50% bezodplatne.",
+                "client_goal": "Pridat noveho vlastnika do spolocnosti.",
+            },
+            "documents": [
+                {
+                    "doc_id": "DOC-001",
+                    "type": "contract",
+                    "filename": "Zmluva_o_prevode_podielu.pdf",
+                    "path": "documents/Zmluva_o_prevode_podielu.pdf",
+                },
+                {
+                    "doc_id": "DOC-002",
+                    "type": "other",
+                    "filename": "Zapisnica_z_rozhodnutia_spolocnikov.pdf",
+                    "path": "documents/Zapisnica_z_rozhodnutia_spolocnikov.pdf",
+                },
+                {
+                    "doc_id": "DOC-003",
+                    "type": "contract",
+                    "filename": "Aktualizovana_spolocenska_zmluva.pdf",
+                    "path": "documents/Aktualizovana_spolocenska_zmluva.pdf",
+                },
+            ],
+            "open_questions": [],
+            "next_discussion": {"scheduled_for": None, "agenda": []},
+            "discussions_append": [],
+        }
+    }
+    repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Pripravil som finalny balik dokumentacie. Dokumenty su pripravene na export.\n\n"
+                "CASE_UPDATE_JSON:\n"
+                f"{json.dumps(case_update, ensure_ascii=False)}"
+            ),
+        )
+    )
+    repository.set_result(
+        session.id,
+        SessionResult(
+            final_recommendation="Pripravil som finalny balik dokumentacie.",
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={},
+        ),
+    )
+
+    response = client.get(
+        f"/v1/chat/sessions/{session.id}/export?format=pdf&kind=document",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    disposition = response.headers.get("content-disposition", "")
+    assert disposition.endswith('-document-package.zip"')
+
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = sorted(archive.namelist())
+        assert names == [
+            "Aktualizovana_spolocenska_zmluva.pdf",
+            "Zapisnica_z_rozhodnutia_spolocnikov.pdf",
+            "Zmluva_o_prevode_podielu.pdf",
+        ]
+        for name in names:
+            assert archive.read(name).startswith(b"%PDF")
 
 
 def test_document_export_for_easement_case_is_not_lease_template() -> None:
@@ -1471,6 +1575,7 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
     assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt
     assert "The user confirmed document generation in this turn" in prompt
     assert "DOCUMENT GENERATION MODE" in prompt
+    assert "Do not claim that PDF or ZIP files are already created" in prompt
 
     result_response = client.get(
         f"/v1/chat/sessions/{session_id}/result",
