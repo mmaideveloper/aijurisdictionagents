@@ -11,7 +11,7 @@ info:
   Testova 30
   Poprad
   
-1. Presné identifikačné údaje adobúdateľa. 
+1. Presné identifikačné údaje nadobúdateľa. 
    
    Dalsi vlastnik:
 Jano Hrasko

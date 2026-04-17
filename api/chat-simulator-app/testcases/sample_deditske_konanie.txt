@@ -1,0 +1,25 @@
+
+{
+   "CaseTitle":  "Deditske Konanie",
+   "CaseDescription":"
+                Privprav vsetky informacie pre deditske konanie.
+PZ: PP472DT
+
+info:
+0. : 
+  Frantisek Bader,
+  Nova 1010/29,
+  Poprad-Velka,
+  05801
+
+1. Dedicia
+
+   Janko Hrasko
+   Bratislaa 44
+
+   ",
+   "Documents:":[]
+}  
+
+
+

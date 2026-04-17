@@ -1,0 +1,28 @@
+
+{
+   "CaseTitle":  "Kupa dom",
+   "CaseDescription":"
+                Privprav kupno predajnu zmluvu pre kupu domu:
+PZ: PP472DT
+
+info:
+0.Majitel: 
+  Mar Mat 
+  Nova 1010/29,
+  Poprad-Velka,05801
+  
+1. Presné identifikačné údaje nadobúdateľa. 
+   
+   Dalsi vlastnik:
+Jano Hrasko
+Rozpravkova 12
+Rozpravkovo,
+Slovenska Republika
+
+2. novy majitel od 1.7.2026
+   ",
+   "Documents:":[]
+}  
+
+
+
