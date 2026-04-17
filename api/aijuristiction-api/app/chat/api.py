@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from io import BytesIO
 import json
 import logging
 import re
 import time
 import textwrap
+from zipfile import ZIP_DEFLATED, ZipFile
 from collections import deque
 from collections.abc import Callable, Generator
 from datetime import datetime, timezone
@@ -60,6 +62,13 @@ _LINUX_DEJAVU_FONT_DIRS = (
     Path("/usr/share/fonts/dejavu"),
 )
 _REGISTERED_PDF_FONT_FAMILIES: set[str] = set()
+
+
+@dataclass(frozen=True)
+class _DocumentExportAsset:
+    filename: str
+    title: str
+    lines: list[str]
 
 
 class CreateSessionRequest(BaseModel):
@@ -476,6 +485,8 @@ def _run_direct_lawyer_turn(
             "- The user confirmed that they want the downloadable document prepared now.\n"
             "- Do not ask for PDF confirmation again.\n"
             "- Produce the finalized draft-oriented response for PDF export in this turn.\n"
+            "- Do not claim that PDF or ZIP files are already created, saved, attached, or uploaded.\n"
+            "- Say that the draft package is ready for download/export instead.\n"
             "- Include CASE_UPDATE_JSON after the user-facing content."
         )
     preparation = prepare_country_direct_reply(
@@ -1607,15 +1618,35 @@ def export_session_result(
             headers={"Content-Disposition": f'attachment; filename="session-{session_id}.json"'},
         )
 
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    footer_line = f"AIJ | API {_API_VERSION} | Core {_CORE_VERSION}"
+
     if kind == "document":
-        title, lines = _build_document_export_content(
+        document_assets = _build_document_export_assets(
             session_id=session_id,
             messages=messages,
             result=result,
             country=session.country,
             language=session.language,
         )
-        filename = _build_pdf_filename(session_id=session_id, kind="document")
+        if len(document_assets) > 1:
+            archive_name = _build_document_archive_filename(session_id=session_id)
+            archive_content = _build_document_export_archive(
+                assets=document_assets,
+                country=session.country,
+                language=session.language,
+                generated_at=generated_at,
+                footer_line=footer_line,
+            )
+            return Response(
+                content=archive_content,
+                media_type="application/zip",
+                headers={"Content-Disposition": f'attachment; filename="{archive_name}"'},
+            )
+        asset = document_assets[0]
+        title = asset.title
+        lines = asset.lines
+        filename = asset.filename
     else:
         title, lines = _build_summary_export_content(
             session_id=session_id,
@@ -1626,8 +1657,6 @@ def export_session_result(
         )
         filename = _build_pdf_filename(session_id=session_id, kind="summary")
 
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    footer_line = f"AIJ | API {_API_VERSION} | Core {_CORE_VERSION}"
     pdf_content = _build_simple_pdf(
         title=title,
         lines=lines,
@@ -1741,6 +1770,36 @@ def _build_pdf_filename(*, session_id: UUID, kind: Literal["summary", "document"
     if kind == "document":
         return f"{session_id}-{timestamp}-final-document.pdf"
     return f"{session_id}-{timestamp}-discussion-summary.pdf"
+
+
+def _build_document_archive_filename(*, session_id: UUID) -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    return f"{session_id}-{timestamp}-document-package.zip"
+
+
+def _build_document_export_archive(
+    *,
+    assets: list[_DocumentExportAsset],
+    country: str,
+    language: str | None,
+    generated_at: str,
+    footer_line: str,
+) -> bytes:
+    archive_buffer = BytesIO()
+    with ZipFile(archive_buffer, mode="w", compression=ZIP_DEFLATED) as archive:
+        for asset in assets:
+            pdf_content = _build_simple_pdf(
+                title=asset.title,
+                lines=asset.lines,
+                country=country,
+                language=language,
+                header_line=f"AI Jurisdicta Solution | Generated: {generated_at}",
+                footer_line=footer_line,
+                draw_logo_mark=True,
+                include_title_block=True,
+            )
+            archive.writestr(asset.filename, pdf_content)
+    return archive_buffer.getvalue()
 
 
 def _build_summary_export_content(
@@ -2048,14 +2107,61 @@ def _law_citation_export_lines(*, metadata: dict[str, object], language: str | N
     return lines
 
 
-def _build_document_export_content(
+def _build_document_export_assets(
     *,
     session_id: UUID,
     messages: List[Message],
     result: SessionResult | None,
     country: str,
     language: str | None,
-) -> tuple[str, List[str]]:
+) -> list[_DocumentExportAsset]:
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country=country,
+        language=language,
+    )
+    (
+        _context_lines,
+        case_update,
+        document_kind,
+        facts,
+        law_citation_lines,
+    ) = _prepare_document_export_context(
+        messages=messages,
+        result=result,
+        language=language,
+    )
+    document_entries = _case_update_document_entries(case_update)
+    if len(document_entries) <= 1:
+        entry = document_entries[0] if document_entries else None
+        return [
+            _DocumentExportAsset(
+                filename=_document_asset_filename(
+                    entry=entry,
+                    fallback_filename=_build_pdf_filename(session_id=session_id, kind="document"),
+                ),
+                title=title,
+                lines=lines,
+            )
+        ]
+    return _build_multi_document_export_assets(
+        document_entries=document_entries,
+        document_kind=document_kind,
+        facts=facts,
+        country=country,
+        language=language,
+        law_citation_lines=law_citation_lines,
+    )
+
+
+def _prepare_document_export_context(
+    *,
+    messages: List[Message],
+    result: SessionResult | None,
+    language: str | None,
+) -> tuple[List[str], dict[str, Any] | None, str, dict[str, str], list[str]]:
     discussion_messages = [
         m.content
         for m in messages
@@ -2085,6 +2191,24 @@ def _build_document_export_content(
     law_citation_lines = _law_citation_export_lines(
         metadata=result.metadata if result is not None else {},
         language=language,
+    )
+    return context_lines, case_update, document_kind, facts, law_citation_lines
+
+
+def _build_document_export_content(
+    *,
+    session_id: UUID,
+    messages: List[Message],
+    result: SessionResult | None,
+    country: str,
+    language: str | None,
+) -> tuple[str, List[str]]:
+    context_lines, _case_update, document_kind, facts, law_citation_lines = (
+        _prepare_document_export_context(
+            messages=messages,
+            result=result,
+            language=language,
+        )
     )
     if country.strip().upper() == "SK" and document_kind == "share_transfer":
         from app.chat.country_services.slovakia import build_slovak_share_transfer_export_lines
@@ -2142,6 +2266,174 @@ def _append_document_law_citations(
     prefers_slovak = (language or "").strip().lower().startswith("sk")
     heading = "Právne citácie" if prefers_slovak else "Legal citations"
     return [*lines, "", heading, *citations]
+
+
+def _case_update_document_entries(case_update: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(case_update, dict):
+        return []
+    case = case_update.get("case")
+    if not isinstance(case, dict):
+        return []
+    raw_documents = case.get("documents")
+    if not isinstance(raw_documents, list):
+        return []
+    return [item for item in raw_documents if isinstance(item, dict)]
+
+
+def _document_asset_filename(
+    *,
+    entry: dict[str, Any] | None,
+    fallback_filename: str,
+) -> str:
+    raw_name = ""
+    if entry is not None:
+        raw_name = str(entry.get("filename") or entry.get("path") or "").strip()
+    candidate = Path(raw_name).name if raw_name else ""
+    if not candidate:
+        return fallback_filename
+    stem = Path(candidate).stem.strip() or Path(fallback_filename).stem
+    return f"{stem}.pdf"
+
+
+def _build_multi_document_export_assets(
+    *,
+    document_entries: list[dict[str, Any]],
+    document_kind: str,
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+    law_citation_lines: list[str],
+) -> list[_DocumentExportAsset]:
+    assets: list[_DocumentExportAsset] = []
+    used_filenames: set[str] = set()
+    for index, entry in enumerate(document_entries, start=1):
+        filename = _document_asset_filename(
+            entry=entry,
+            fallback_filename=f"document-{index}.pdf",
+        )
+        unique_filename = _deduplicate_export_filename(filename=filename, used_filenames=used_filenames)
+        title, lines = _build_document_asset_content(
+            entry=entry,
+            document_kind=document_kind,
+            facts=facts,
+            country=country,
+            language=language,
+            law_citation_lines=law_citation_lines,
+            fallback_index=index,
+        )
+        assets.append(
+            _DocumentExportAsset(
+                filename=unique_filename,
+                title=title,
+                lines=lines,
+            )
+        )
+    return assets
+
+
+def _deduplicate_export_filename(*, filename: str, used_filenames: set[str]) -> str:
+    base = Path(filename).stem or "document"
+    suffix = Path(filename).suffix or ".pdf"
+    candidate = f"{base}{suffix}"
+    counter = 2
+    while candidate.lower() in used_filenames:
+        candidate = f"{base}-{counter}{suffix}"
+        counter += 1
+    used_filenames.add(candidate.lower())
+    return candidate
+
+
+def _build_document_asset_content(
+    *,
+    entry: dict[str, Any],
+    document_kind: str,
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+    law_citation_lines: list[str],
+    fallback_index: int,
+) -> tuple[str, list[str]]:
+    if document_kind == "share_transfer":
+        return _build_share_transfer_document_asset_content(
+            entry=entry,
+            facts=facts,
+            country=country,
+            language=language,
+            law_citation_lines=law_citation_lines,
+        )
+
+    title = _document_asset_title(entry=entry, language=language, fallback_index=fallback_index)
+    prefers_slovak = (language or "").strip().lower().startswith("sk")
+    if prefers_slovak:
+        lines = _build_generic_slovak_case_document_lines(facts)
+    else:
+        lines = _build_generic_english_case_document_lines(facts)
+    return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+
+
+def _document_asset_title(
+    *,
+    entry: dict[str, Any],
+    language: str | None,
+    fallback_index: int,
+) -> str:
+    raw_name = str(entry.get("filename") or entry.get("path") or "").strip()
+    if raw_name:
+        stem = Path(raw_name).stem.replace("_", " ").replace("-", " ").strip()
+        if stem:
+            return stem
+    prefers_slovak = (language or "").strip().lower().startswith("sk")
+    if prefers_slovak:
+        return f"Dokument {fallback_index}"
+    return f"Document {fallback_index}"
+
+
+def _build_share_transfer_document_asset_content(
+    *,
+    entry: dict[str, Any],
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+    law_citation_lines: list[str],
+) -> tuple[str, list[str]]:
+    asset_kind = _classify_share_transfer_document_asset(entry)
+    prefers_slovak = country.strip().upper() == "SK" or (language or "").strip().lower().startswith("sk")
+    if prefers_slovak:
+        if asset_kind == "minutes":
+            title = "Rozhodnutie jedineho spolocnika / zapisnica"
+            lines = _build_slovak_share_transfer_minutes_lines(facts)
+        elif asset_kind == "articles":
+            title = "Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny"
+            lines = _build_slovak_share_transfer_articles_lines(facts)
+        else:
+            title = "Zmluva o prevode obchodneho podielu"
+            lines = _build_slovak_share_transfer_agreement_lines(facts)
+    else:
+        if asset_kind == "minutes":
+            title = "Sole shareholder decision / meeting minutes"
+            lines = _build_english_share_transfer_minutes_lines(facts)
+        elif asset_kind == "articles":
+            title = "Updated articles / founding deed"
+            lines = _build_english_share_transfer_articles_lines(facts)
+        else:
+            title = "Share transfer agreement"
+            lines = _build_english_share_transfer_agreement_lines(facts)
+    return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+
+
+def _classify_share_transfer_document_asset(entry: dict[str, Any]) -> Literal["agreement", "minutes", "articles"]:
+    raw_name = " ".join(
+        str(entry.get(key) or "").strip().lower()
+        for key in ("filename", "path", "type")
+    )
+    if any(token in raw_name for token in ("zapisnic", "zápisnic", "rozhodnut", "minutes", "decision")):
+        return "minutes"
+    if any(
+        token in raw_name
+        for token in ("spolocensk", "spoločensk", "zakladatelsk", "zakladateľsk", "articles", "founding")
+    ):
+        return "articles"
+    return "agreement"
 
 
 def _pick_document_message(candidates: List[str]) -> str:
@@ -2502,6 +2794,79 @@ def _build_slovak_share_transfer_lines(facts: dict[str, str]) -> List[str]:
     ]
 
 
+def _build_slovak_share_transfer_agreement_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Clanok I - Zmluvne strany",
+        f"Prevodca: {facts['transferor_name']}.",
+        f"Nadobudatel: {facts['transferee_name']}.",
+        "",
+        "Clanok II - Identifikacia spolocnosti",
+        f"Obchodne meno: {facts['company_name']}.",
+        f"Sidlo: {facts['company_seat']}.",
+        f"ICO: {facts['company_identifier']}.",
+        "",
+        "Clanok III - Predmet prevodu",
+        f"Prevodca prevadza na nadobudatela obchodny podiel vo vyske {facts['transfer_share']}.",
+        "",
+        "Clanok IV - Odplata",
+        f"Zmluvne strany sa dohodli na odplate {_with_period(facts['transfer_price'])}",
+        "",
+        "Clanok V - Vyhlasenia stran",
+        "Prevodca vyhlasuje, ze je opravneny s podielom nakladat a podiel nie je zatazeny pravami tretich osob, ak sa v zmluve neuvedie inak.",
+        "Nadobudatel vyhlasuje, ze pristupuje k spolocenskej zmluve a prebera prava a povinnosti spolocnika v rozsahu prevadzaneho podielu.",
+        "",
+        "Clanok VI - Ucinnost",
+        "Tato zmluva nadobuda ucinnost dnom podpisu, ak zo spolocenskej zmluvy alebo zakona nevyplyva neskorsi okamih.",
+        "",
+        "Podpis prevodcu: ____________________________",
+        "Podpis nadobudatela: ________________________",
+    ]
+
+
+def _build_slovak_share_transfer_minutes_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        f"Spolocnost: {facts['company_name']}.",
+        f"Sidlo: {facts['company_seat']}.",
+        f"ICO: {facts['company_identifier']}.",
+        "",
+        "Program rokovania / rozhodnutia",
+        "1. Vzatie na vedomie prevodu obchodneho podielu.",
+        "2. Schvalenie znenia zmluvy o prevode obchodneho podielu, ak to vyzaduje spolocenska zmluva.",
+        "3. Schvalenie aktualizovaneho uplneho znenia spolocenskej zmluvy / zakladatelskej listiny.",
+        "",
+        "Rozhodnutie",
+        f"Schvaluje sa prevod obchodneho podielu vo vyske {facts['transfer_share']} z prevodcu {facts['transferor_name']} na nadobudatela {facts['transferee_name']}.",
+        "Po ucinnosti prevodu sa zapise nova spolocnicka struktura do obchodneho registra.",
+        "",
+        "Poverenie",
+        "Konatel alebo poverena osoba zabezpeci podpis dokumentov a podanie navrhu na zapis zmeny s prislusnymi prilohami.",
+        "",
+        "Podpis spolocnika / predsedajuceho: ____________________________",
+    ]
+
+
+def _build_slovak_share_transfer_articles_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Clanok I - Obchodne meno a sidlo spolocnosti",
+        f"Obchodne meno: {facts['company_name']}.",
+        f"Sidlo: {facts['company_seat']}.",
+        f"ICO: {facts['company_identifier']}.",
+        "",
+        "Clanok II - Spolocnici a podiely",
+        f"Novy spolocnik / nadobudatel: {facts['transferee_name']}.",
+        f"Rozsah prevadzaneho podielu: {facts['transfer_share']}.",
+        f"Prevodca: {facts['transferor_name']}.",
+        "",
+        "Clanok III - Vyhlasenie o zmene",
+        "Ustanovenia o spolocnikoch, podieloch a vkladoch sa upravuju tak, aby zodpovedali novej vlastnickej strukture po prevode podielu.",
+        "",
+        "Clanok IV - Zaverecne ustanovenia",
+        "Ostatne ustanovenia spolocenskej zmluvy / zakladatelskej listiny zostavaju nezmenene, ak sa dodatkom vyslovne neupravia.",
+        "",
+        "Podpis spolocnika / statutarneho organu: ____________________________",
+    ]
+
+
 def _build_english_share_transfer_lines(facts: dict[str, str]) -> List[str]:
     return [
         "Working draft for a limited-liability company share transfer package",
@@ -2540,6 +2905,71 @@ def _build_english_share_transfer_lines(facts: dict[str, str]) -> List[str]:
         "This output is a working draft and checklist. Complete legal details should be verified before signature and filing.",
         "",
         "Counsel / client signature: ____________________________",
+    ]
+
+
+def _build_english_share_transfer_agreement_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Article I - Parties",
+        f"Transferor: {facts['transferor_name']}.",
+        f"Transferee: {facts['transferee_name']}.",
+        "",
+        "Article II - Company identification",
+        f"Company name: {facts['company_name']}.",
+        f"Registered seat: {facts['company_seat']}.",
+        f"Company ID: {facts['company_identifier']}.",
+        "",
+        "Article III - Transferred share",
+        f"The transferor transfers a business share in the amount of {facts['transfer_share']}.",
+        "",
+        "Article IV - Consideration",
+        f"The agreed consideration is {_with_period(facts['transfer_price'])}",
+        "",
+        "Article V - Representations",
+        "The transferor represents that the share may be transferred and is not encumbered unless expressly stated otherwise.",
+        "The transferee joins the company's constitutional documents and assumes the related shareholder rights and obligations.",
+        "",
+        "Signatures",
+        "Transferor: ____________________________",
+        "Transferee: ____________________________",
+    ]
+
+
+def _build_english_share_transfer_minutes_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        f"Company: {facts['company_name']}.",
+        f"Registered seat: {facts['company_seat']}.",
+        f"Company ID: {facts['company_identifier']}.",
+        "",
+        "Agenda",
+        "1. Acknowledge the share transfer.",
+        "2. Approve the share transfer agreement if required by the constitutional documents.",
+        "3. Approve the updated articles / founding deed.",
+        "",
+        "Resolution",
+        f"The company acknowledges the transfer of a {facts['transfer_share']} business share from {facts['transferor_name']} to {facts['transferee_name']}.",
+        "The authorized representative is instructed to sign and file the registry update with the required annexes.",
+        "",
+        "Signature: ____________________________",
+    ]
+
+
+def _build_english_share_transfer_articles_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Article I - Company identification",
+        f"Company name: {facts['company_name']}.",
+        f"Registered seat: {facts['company_seat']}.",
+        f"Company ID: {facts['company_identifier']}.",
+        "",
+        "Article II - Shareholders and holdings",
+        f"Transferee / new shareholder: {facts['transferee_name']}.",
+        f"Transferred share: {facts['transfer_share']}.",
+        f"Transferor: {facts['transferor_name']}.",
+        "",
+        "Article III - Amendment",
+        "The provisions dealing with shareholders, ownership percentages, and contributions are updated to reflect the post-transfer structure.",
+        "",
+        "Signature: ____________________________",
     ]
 
 

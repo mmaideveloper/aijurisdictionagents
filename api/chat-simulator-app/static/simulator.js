@@ -1322,16 +1322,29 @@ async function downloadResult(format, kind = "summary") {
   const href = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = href;
+  const contentType = String(response.headers.get("Content-Type") || "").trim().toLowerCase();
   const headerName = extractFilenameFromContentDisposition(response.headers.get("Content-Disposition"));
   if (headerName) {
     anchor.download = headerName;
   } else {
-    anchor.download = createFallbackFilename(kind, format);
+    anchor.download = createFallbackFilename(kind, format, contentType);
   }
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(href);
+  const confirmation = exportConfirmationMessage({
+    kind,
+    contentType,
+    filename: anchor.download,
+  });
+  appendStream(`download_ready: ${anchor.download}`);
+  appendChatMessage({
+    role: "assistant",
+    content: confirmation,
+    agent_name: "System/Export",
+  });
+  finishProcessingStatus(confirmation);
 }
 
 function extractFilenameFromContentDisposition(value) {
@@ -1342,7 +1355,7 @@ function extractFilenameFromContentDisposition(value) {
   return "";
 }
 
-function createFallbackFilename(kind, format) {
+function createFallbackFilename(kind, format, contentType = "") {
   const now = new Date();
   const yyyy = String(now.getFullYear());
   const mm = String(now.getMonth() + 1).padStart(2, "0");
@@ -1352,7 +1365,28 @@ function createFallbackFilename(kind, format) {
   const ss = String(now.getSeconds()).padStart(2, "0");
   const ts = `${yyyy}${mm}${dd}${hh}${mi}${ss}`;
   const docName = kind === "document" ? "final-document" : "discussion-summary";
-  return `${sessionId}-${ts}-${docName}.${format}`;
+  const extension = String(contentType || "").includes("zip") ? "zip" : format;
+  return `${sessionId}-${ts}-${docName}.${extension}`;
+}
+
+function exportConfirmationMessage({ kind, contentType, filename }) {
+  const normalizedLanguage = normalizeLanguageCode(languageInput?.value || defaultLanguageCode);
+  const exportedName = String(filename || "").trim() || createFallbackFilename(kind, "pdf", contentType);
+  const isZip = String(contentType || "").includes("zip") || exportedName.toLowerCase().endsWith(".zip");
+
+  if (normalizedLanguage === "SK") {
+    if (isZip) return `Balík dokumentov bol vygenerovaný a stiahnutý: ${exportedName}.`;
+    if (kind === "summary") return `PDF zhrnutie bolo vygenerované a stiahnuté: ${exportedName}.`;
+    return `PDF dokument bol vygenerovaný a stiahnutý: ${exportedName}.`;
+  }
+  if (normalizedLanguage === "GE") {
+    if (isZip) return `Das Dokumentenpaket wurde erstellt und heruntergeladen: ${exportedName}.`;
+    if (kind === "summary") return `Die PDF-Zusammenfassung wurde erstellt und heruntergeladen: ${exportedName}.`;
+    return `Das PDF-Dokument wurde erstellt und heruntergeladen: ${exportedName}.`;
+  }
+  if (isZip) return `The document package was created and downloaded: ${exportedName}.`;
+  if (kind === "summary") return `The PDF summary was created and downloaded: ${exportedName}.`;
+  return `The PDF document was created and downloaded: ${exportedName}.`;
 }
 
 function clearSession() {

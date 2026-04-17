@@ -131,6 +131,8 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 - repeated ORSR lookups for the same company query are now reused from in-memory API cache during the conversation, so follow-up turns do not keep revalidating identical company data
 - short follow-up replies such as `ano`, `50%`, or `nie` now keep the Slovak share-transfer workflow active when an earlier turn already established the company context
 - first-turn share-transfer facts like `50%` and `konatel / sposob konania sa nemenia` are now treated as settled inputs, so the model does not re-ask them unless the user later contradicts them
+- direct document-generation replies are now instructed to say the draft/package is ready for export instead of falsely claiming that PDF/ZIP files were already created or attached
+- `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` now returns a ZIP package when `CASE_UPDATE_JSON.case.documents` lists multiple generated documents; single-document exports still return one PDF
 - when a request indicates an additional/new owner, the model is now instructed to proactively recommend related Slovak company-document and filing changes too, including whether the updated `spolocenska zmluva` / `zakladatelska listina` and ORSR attachment package are needed
 - Slovak share-transfer PDF export now rebuilds the document package from ORSR-enriched company data, so exported drafts keep verified company name / seat / ICO and include the main package sections instead of falling back to a generic single-document template
 - generic transferor phrases such as `vlastnik firmy` are now normalized to the verified ORSR owner when the register shows exactly one current stakeholder
