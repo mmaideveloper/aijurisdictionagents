@@ -1,0 +1,23 @@
+
+{
+   "CaseTitle":  "Vyhladat firmu",
+   "CaseDescription":"
+                Vyhladaj mi informacie o firme a Priprav mi summary s nesledujucimi datami:
+
+      1. adresa
+      2. zoznam firiem vlastnenych danou firmou
+      3. zoznam vlastnikov, alebo osob spojenych s danou firmou
+      4. zoznam dlhov
+         v socialnej poistovne
+         zdravotnej poistovne
+         financnych institucii
+      5. infromacie z webu
+
+      Firma:
+      ESolutions SK s.r.o.
+   ",
+   "Documents:":[]
+}  
+
+
+

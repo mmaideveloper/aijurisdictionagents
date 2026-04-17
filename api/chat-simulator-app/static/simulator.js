@@ -739,8 +739,7 @@ function assistantRequestsReply(message) {
 function refreshReplyControls() {
   const readUserMode = userSimulationModeInput.value === "ReadUser";
   const hasSession = Boolean(sessionId);
-  const canSendManualReply =
-    readUserMode && hasSession && (!streamStartedForSession || waitingForManualReply);
+  const canSendManualReply = readUserMode && hasSession;
 
   userReplyInput.disabled = !readUserMode;
   sendUserReplyButton.disabled = !canSendManualReply;
@@ -758,7 +757,7 @@ function refreshReplyControls() {
     return;
   }
   if (!waitingForManualReply) {
-    setReplyStatus("Manual reply is available after the assistant asks a question.");
+    setReplyStatus("Type an answer and click Send answer. The simulator will continue the current session.");
     return;
   }
   setReplyStatus("Assistant is waiting. Type an answer and click Send answer.");

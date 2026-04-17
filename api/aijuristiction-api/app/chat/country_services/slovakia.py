@@ -153,6 +153,18 @@ def prepare_slovakia_direct_reply(
         intake_facts=_extract_slovak_share_transfer_request_facts(messages),
         company_record=company_record,
     )
+    intake_facts = _apply_persisted_share_transfer_conflict_choice(
+        messages=prior_messages,
+        intake_facts=intake_facts,
+        company_record=company_record,
+    )
+    conflict_resolution = _resolve_share_transfer_conflict_choice(
+        current_content=current_content,
+        prior_messages=prior_messages,
+        intake_facts=intake_facts,
+        company_record=company_record,
+    )
+    intake_facts = conflict_resolution["intake_facts"]
     provided_labels = _share_transfer_provided_labels(intake_facts)
     missing_labels = _share_transfer_missing_labels(intake_facts)
     if provided_labels:
@@ -185,6 +197,35 @@ def prepare_slovakia_direct_reply(
             callback=processing_event_callback,
         )
 
+    user_confirmed_document_generation = current_turn_confirms_document_generation(
+        current_content,
+        prior_messages,
+    )
+
+    if conflict_resolution["resolved"]:
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
+                stage="validation",
+                message=(
+                    "Potvrdil som, ze sa ma pri prevodcovi pouzit ORSR vlastnik."
+                    if conflict_resolution["choice"] == "orsr"
+                    else "Potvrdil som, ze sa ma pri prevodcovi ponechat udaj zo zadania uzivatela."
+                ),
+                details={"choice": conflict_resolution["choice"]},
+            ),
+            callback=processing_event_callback,
+        )
+        if not user_confirmed_document_generation:
+            return DirectReplyPreparation(
+                supplemental_documents=supplemental_documents,
+                direct_reply=_build_slovak_share_transfer_intake_reply(
+                    company_record=company_record,
+                    intake_facts=intake_facts,
+                ),
+                processing_events=processing_events,
+            )
+
     conflicts = _detect_share_transfer_conflicts(
         intake_facts=intake_facts,
         company_record=company_record,
@@ -199,11 +240,15 @@ def prepare_slovakia_direct_reply(
             ),
             callback=processing_event_callback,
         )
+        return DirectReplyPreparation(
+            supplemental_documents=supplemental_documents,
+            direct_reply=_build_slovak_share_transfer_conflict_reply(
+                company_record=company_record,
+                intake_facts=intake_facts,
+            ),
+            processing_events=processing_events,
+        )
 
-    user_confirmed_document_generation = current_turn_confirms_document_generation(
-        current_content,
-        prior_messages,
-    )
     prompt_note = _build_slovak_share_transfer_model_prompt_note(
         company_query=company_query,
         company_record=company_record,
@@ -348,6 +393,19 @@ def _looks_like_contextual_followup_reply(normalized_content: str) -> bool:
     if _is_affirmative_short_reply(cleaned):
         return True
     lowered = cleaned.lower()
+    if any(
+        token in lowered
+        for token in (
+            "orsr",
+            "podla orsr",
+            "podľa orsr",
+            "podla zadania",
+            "podľa zadania",
+            "ponechat prevodcu",
+            "ponechať prevodcu",
+        )
+    ):
+        return True
     negative_tokens = {"nie", "no", "nein"}
     if lowered.split()[0] in negative_tokens:
         return True
@@ -400,6 +458,22 @@ def _assistant_recently_discussed_share_transfer(prior_messages: list[Message]) 
         lowered = message.content.lower()
         if any(token in lowered for token in relevant_tokens):
             return True
+    return False
+
+
+def _assistant_recently_requested_share_transfer_conflict_resolution(
+    prior_messages: list[Message],
+) -> bool:
+    for message in reversed(prior_messages):
+        if message.role != MessageRole.ASSISTANT:
+            continue
+        lowered = message.content.lower()
+        return (
+            "ktorý prevodca je správny" in lowered
+            or "ktory prevodca je spravny" in lowered
+            or "má sa použiť vlastník podľa orsr" in lowered
+            or "ma sa pouzit vlastnik podla orsr" in lowered
+        )
     return False
 
 
@@ -819,9 +893,16 @@ def _detect_share_transfer_conflicts(
 
 
 def _extract_primary_person_name(person_details: str) -> str:
-    head = person_details.split(",")[0].strip()
+    segments = [segment.strip() for segment in person_details.split(",") if segment.strip()]
+    for segment in segments:
+        candidate = re.sub(r"^.*?=\s*", "", segment).strip()
+        if not candidate or _is_generic_transferor_reference(candidate):
+            continue
+        if re.search(r"[A-Za-zÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽáäčďéíĺľňóôŕšťúýž].*\s+[A-Za-zÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽáäčďéíĺľňóôŕšťúýž]", candidate):
+            return candidate
+    head = segments[0] if segments else ""
     if head:
-        return head
+        return re.sub(r"^.*?=\s*", "", head).strip()
     tokens = person_details.split()
     if not tokens:
         return ""
@@ -832,6 +913,36 @@ def _normalize_person_name(value: str) -> str:
     lowered = value.lower()
     cleaned = re.sub(r"[^a-z0-9áäčďéíĺľňóôŕšťúýž]+", " ", lowered)
     return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _build_slovak_share_transfer_conflict_reply(
+    *,
+    company_record: dict[str, object] | None,
+    intake_facts: dict[str, str],
+) -> str:
+    user_transferor = intake_facts.get("transferor_details", "").strip() or "[nevyplnené]"
+    stakeholders_value = (company_record or {}).get("stakeholders")
+    stakeholder_lines: list[str] = []
+    if isinstance(stakeholders_value, list):
+        for stakeholder in stakeholders_value:
+            if not isinstance(stakeholder, dict):
+                continue
+            stakeholder_name = str(stakeholder.get("name", "")).strip()
+            stakeholder_address = str(stakeholder.get("address", "")).strip()
+            if stakeholder_name and stakeholder_address:
+                stakeholder_lines.append(f"{stakeholder_name}, {stakeholder_address}")
+            elif stakeholder_name:
+                stakeholder_lines.append(stakeholder_name)
+    orsr_transferor = "; ".join(stakeholder_lines) if stakeholder_lines else "[nepodarilo sa overiť]"
+    return "\n".join(
+        [
+            "Najprv som overil firmu v Obchodnom registri.",
+            f"Podľa ORSR je aktuálny vlastník / spoločník: {orsr_transferor}.",
+            f"Vo vašom zadaní je ako prevodca uvedené: {user_transferor}.",
+            "Tieto údaje sa nezhodujú, preto zatiaľ nechcem pripraviť nesprávny návrh dokumentov.",
+            "Prosím potvrďte, ktorý prevodca je správny: má sa použiť vlastník podľa ORSR, alebo chcete ponechať prevodcu podľa vášho zadania?",
+        ]
+    )
 
 
 def _build_slovak_company_registry_summary_reply(
@@ -892,6 +1003,123 @@ def _build_slovak_company_registry_summary_reply(
     return "\n".join(lines)
 
 
+def _resolve_share_transfer_conflict_choice(
+    *,
+    current_content: str,
+    prior_messages: list[Message],
+    intake_facts: dict[str, str],
+    company_record: dict[str, object] | None,
+) -> dict[str, object]:
+    merged = dict(intake_facts)
+    if not _assistant_recently_requested_share_transfer_conflict_resolution(prior_messages):
+        return {"resolved": False, "choice": "", "intake_facts": merged}
+
+    choice = _parse_share_transfer_conflict_choice(current_content)
+    if choice == "orsr":
+        resolved_transferor = _get_single_orsr_transferor_details(company_record)
+        if resolved_transferor:
+            merged["transferor_details"] = resolved_transferor
+            return {"resolved": True, "choice": "orsr", "intake_facts": merged}
+        return {"resolved": False, "choice": "", "intake_facts": merged}
+    if choice == "user":
+        return {"resolved": True, "choice": "user", "intake_facts": merged}
+
+    return {"resolved": False, "choice": "", "intake_facts": merged}
+
+
+def _apply_persisted_share_transfer_conflict_choice(
+    *,
+    messages: list[Message],
+    intake_facts: dict[str, str],
+    company_record: dict[str, object] | None,
+) -> dict[str, str]:
+    merged = dict(intake_facts)
+    choice = _latest_share_transfer_conflict_choice(messages)
+    if choice != "orsr":
+        return merged
+    resolved_transferor = _get_single_orsr_transferor_details(company_record)
+    if resolved_transferor:
+        merged["transferor_details"] = resolved_transferor
+    return merged
+
+
+def _latest_share_transfer_conflict_choice(messages: list[Message]) -> str:
+    pending_conflict_question = False
+    latest_choice = ""
+    for message in messages:
+        if message.role == MessageRole.ASSISTANT:
+            if _assistant_recently_requested_share_transfer_conflict_resolution([message]):
+                pending_conflict_question = True
+            continue
+        if message.role != MessageRole.USER or not pending_conflict_question:
+            continue
+        choice = _parse_share_transfer_conflict_choice(message.content)
+        if choice:
+            latest_choice = choice
+            pending_conflict_question = False
+    return latest_choice
+
+
+def _parse_share_transfer_conflict_choice(content: str) -> str:
+    normalized = re.sub(r"[^0-9a-záäčďéíĺľňóôŕšťúýž]+", " ", content.lower()).strip()
+    if not normalized:
+        return ""
+    selects_orsr = _is_affirmative_short_reply(normalized) or any(
+        token in normalized
+        for token in (
+            "orsr",
+            "obchodny register",
+            "obchodný register",
+            "obchodnom registri",
+            "podla orsr",
+            "podľa orsr",
+            "podla registra",
+            "podľa registra",
+        )
+    )
+    if selects_orsr:
+        return "orsr"
+    if any(
+        token in normalized
+        for token in (
+            "podla zadania",
+            "podľa zadania",
+            "podla mojho zadania",
+            "podľa môjho zadania",
+            "ponechat prevodcu",
+            "ponechať prevodcu",
+            "moj prevodca",
+            "môj prevodca",
+            "uzivatela",
+            "užívateľa",
+        )
+    ):
+        return "user"
+    return ""
+
+
+def _get_single_orsr_transferor_details(company_record: dict[str, object] | None) -> str:
+    if not company_record:
+        return ""
+    stakeholders = company_record.get("stakeholders") or []
+    if not isinstance(stakeholders, list):
+        return ""
+    current_stakeholders = [
+        stakeholder for stakeholder in stakeholders if isinstance(stakeholder, dict) and stakeholder.get("name")
+    ]
+    if len(current_stakeholders) != 1:
+        return ""
+    stakeholder = current_stakeholders[0]
+    return ", ".join(
+        part
+        for part in (
+            str(stakeholder.get("name", "")).strip(),
+            str(stakeholder.get("address", "")).strip(),
+        )
+        if part
+    )
+
+
 def _build_slovak_share_transfer_intake_reply(
     *,
     company_record: dict[str, object] | None,
@@ -923,8 +1151,10 @@ def _build_slovak_share_transfer_intake_reply(
                 "Na finálny návrh dokumentácie k prevodu obchodného podielu ešte potrebujem doplniť len toto:",
                 *missing_lines,
                 "",
+                "Keď doplníte tieto zostávajúce údaje, pripravím návrh dokumentácie a ďalší postup bez opakovania už overených firemných údajov.",
             ]
         )
+        return "\n".join(lines)
     else:
         lines.extend(
             [
@@ -962,6 +1192,11 @@ def _build_slovak_share_transfer_direct_reply(
     facts = extract_document_facts(context_lines)
     intake_facts = _apply_company_record_share_transfer_defaults(
         intake_facts=_extract_slovak_share_transfer_request_facts(messages),
+        company_record=company_record,
+    )
+    intake_facts = _apply_persisted_share_transfer_conflict_choice(
+        messages=messages,
+        intake_facts=intake_facts,
         company_record=company_record,
     )
     if company_record:
@@ -1196,7 +1431,12 @@ def _is_generic_transferor_reference(value: str) -> bool:
         "povodny vlastnik",
         "pôvodný vlastník",
     )
-    return any(token in normalized for token in generic_tokens)
+    stripped = normalized
+    for token in generic_tokens:
+        stripped = stripped.replace(token, " ")
+    stripped = re.sub(r"[^a-z0-9áäčďéíĺľňóôŕšťúýž]+", " ", stripped)
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    return bool(normalized) and not stripped
 
 
 def _share_transfer_provided_lines(intake_facts: dict[str, str]) -> list[str]:

@@ -358,6 +358,66 @@ def test_document_export_returns_zip_when_case_update_contains_multiple_document
             assert archive.read(name).startswith(b"%PDF")
 
 
+def test_document_export_returns_zip_from_visible_multi_document_sections_without_case_update_documents(
+    monkeypatch,
+) -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    monkeypatch.setattr(chat_api, "_repository", repository)
+
+    session = repository.create_session(Session(country="SK", discussion_type="advice", language="SK"))
+    repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Skvelé, pripravím celý balík dokumentov.\n\n"
+                "---\n\n"
+                "**Zmluva o prevode podielu**\n\n"
+                "Text návrhu zmluvy.\n\n"
+                "---\n\n"
+                "**Zápisnica z rozhodnutia spoločníkov**\n\n"
+                "Text zápisnice.\n\n"
+                "---\n\n"
+                "**Aktualizácia spoločenskej zmluvy**\n\n"
+                "Text aktualizácie.\n\n"
+                "---\n\n"
+                "**Podanie na ORSR**\n\n"
+                "Text podania.\n\n"
+                "---\n\n"
+                "Balík dokumentov je pripravený na export."
+            ),
+        )
+    )
+    repository.set_result(
+        session.id,
+        SessionResult(
+            final_recommendation="Balík dokumentov je pripravený na export.",
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={},
+        ),
+    )
+
+    response = client.get(
+        f"/v1/chat/sessions/{session.id}/export?format=pdf&kind=document",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = sorted(archive.namelist())
+        assert len(names) == 4
+        assert "Zmluva_o_prevode_podielu.pdf" in names
+        assert "Podanie_na_ORSR.pdf" in names
+        for name in names:
+            assert archive.read(name).startswith(b"%PDF")
+
+
 def test_document_export_for_easement_case_is_not_lease_template() -> None:
     from app.chat.api import _build_document_export_content, _build_simple_pdf
     from app.chat.models import Message, MessageRole
@@ -1307,6 +1367,30 @@ def test_apply_company_record_share_transfer_defaults_replaces_generic_transfero
     assert merged["transferor_details"].startswith("RNDr. Marek Matonok")
 
 
+def test_apply_company_record_share_transfer_defaults_keeps_specific_transferor_details() -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+
+    merged = slovakia_service._apply_company_record_share_transfer_defaults(
+        intake_facts={
+            "transferor_details": "vlastnik firmy, Mar Mat, Testova 30, Poprad",
+            "transferee_details": "Jano Hrasko",
+            "transfer_share": "50%",
+            "transfer_price": "bezodplatne",
+            "management_change": "Meni sa iba spolocnicka struktura; konatel ani sposob konania sa nemeni.",
+        },
+        company_record={
+            "stakeholders": [
+                {
+                    "name": "RNDr. Marek Matonok",
+                    "address": "Partizanska 665/101, 059 18 Spisske Bystre, Slovenska republika",
+                }
+            ]
+        },
+    )
+
+    assert merged["transferor_details"] == "vlastnik firmy, Mar Mat, Testova 30, Poprad"
+
+
 def test_reply_endpoint_share_transfer_uses_single_current_stakeholder_as_transferor(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
@@ -1408,22 +1492,8 @@ def test_reply_endpoint_share_transfer_detects_owner_mismatch_and_requests_confi
                 ),
             )
 
-    captured_prompts: list[str] = []
-
-    class _SpyLawyer:
-        system_prompt = "fake-system"
-
-        def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
-            return SimpleNamespace(content="MODEL_CONFLICT_REPLY", agent_name="LawyerSlovakia")
-
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
     monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
-    monkeypatch.setattr(
-        "aijurisdictionagents.agents.create_lawyer_agent",
-        lambda llm, country: _SpyLawyer(),
-    )
-    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
     session_response = client.post(
         "/v1/chat/sessions",
@@ -1447,12 +1517,184 @@ def test_reply_endpoint_share_transfer_detects_owner_mismatch_and_requests_confi
         headers=AUTH_HEADERS,
     )
     assert reply_response.status_code == 200
-    assert reply_response.json()["content"] == "MODEL_CONFLICT_REPLY"
+    content = reply_response.json()["content"].lower()
+    assert "podľa orsr je aktuálny vlastník / spoločník" in content
+    assert "vo vašom zadaní je ako prevodca uvedené" in content
+    assert "tieto údaje sa nezhodujú" in content
+    assert "má sa použiť vlastník podľa orsr" in content
+
+
+def test_reply_endpoint_share_transfer_orsr_confirmation_does_not_reask_company_ico(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizánska 665, 059 18 Spišské Bystré",
+                        "status": "Aktívna",
+                        "stakeholders": [
+                            {
+                                "name": "RNDr. Marek Matonok",
+                                "address": "Partizánska 665/101, 059 18 Spišské Bystré, Slovenská republika",
+                            }
+                        ],
+                    },
+                ),
+            )
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    first_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={
+            "content": (
+                "Priprav mi postup a documentaciu pre pridanie noveho vlastnika firmy:\n"
+                "Nazov: ESolutions SK s.r.o.\n"
+                "Prevodca = vlastnik firmy\n"
+                "Mar Mat\n"
+                "Testova 30\n"
+                "Poprad\n"
+                "Dalsi vlastnik:\n"
+                "Jano Hrasko\n"
+                "Rozpravkova 12\n"
+                "Rozpravkovo\n"
+                "Slovenska Republika\n"
+                "Podiel sa prevadza bezodplatne, kazdy z vlastnikov ma 50%.\n"
+                "Meni sa iba spolocnicka struktura, nie konatel / sposob konania.\n"
+                "Novy spolumajitel od 1.7.2026."
+            )
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert first_reply.status_code == 200
+    assert "má sa použiť vlastník podľa orsr" in first_reply.json()["content"].lower()
+
+    second_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "podla ORSR"},
+        headers=AUTH_HEADERS,
+    )
+    assert second_reply.status_code == 200
+    content = second_reply.json()["content"].lower()
+    assert "ičo: 46491261" in content
+    assert "môžete mi poskytnúť ičo" not in content
+    assert "možete mi poskytnúť ičo" not in content
+    assert "na finálny návrh už mám všetky základné vstupy" in content
+
+
+def test_reply_endpoint_share_transfer_orsr_confirmation_persists_for_document_generation(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizánska 665, 059 18 Spišské Bystré",
+                        "status": "Aktívna",
+                        "stakeholders": [
+                            {
+                                "name": "RNDr. Marek Matonok",
+                                "address": "Partizánska 665/101, 059 18 Spišské Bystré, Slovenská republika",
+                            }
+                        ],
+                    },
+                ),
+            )
+
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(
+                content="Pripravil som finálny návrh dokumentácie.\nCASE_UPDATE_JSON:\n{}",
+                agent_name="LawyerSlovakia",
+            )
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    first_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={
+            "content": (
+                "Priprav mi postup a documentaciu pre pridanie noveho vlastnika firmy:\n"
+                "Nazov: ESolutions SK s.r.o.\n"
+                "Prevodca = vlastnik firmy\n"
+                "Mar Mat\n"
+                "Testova 30\n"
+                "Poprad\n"
+                "Dalsi vlastnik:\n"
+                "Jano Hrasko\n"
+                "Rozpravkova 12\n"
+                "Rozpravkovo\n"
+                "Slovenska Republika\n"
+                "Podiel sa prevadza bezodplatne, kazdy z vlastnikov ma 50%.\n"
+                "Meni sa iba spolocnicka struktura, nie konatel / sposob konania.\n"
+                "Novy spolumajitel od 1.7.2026."
+            )
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert first_reply.status_code == 200
+    assert "má sa použiť vlastník podľa orsr" in first_reply.json()["content"].lower()
+
+    second_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "podla ORSR"},
+        headers=AUTH_HEADERS,
+    )
+    assert second_reply.status_code == 200
+    assert "na finálny návrh už mám všetky základné vstupy" in second_reply.json()["content"].lower()
+
+    third_reply = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "ano"},
+        headers=AUTH_HEADERS,
+    )
+    assert third_reply.status_code == 200
+    content = third_reply.json()["content"].lower()
+    assert "pripravil som finálny návrh dokumentácie".lower() in content
+    assert "ktorý prevodca je správny" not in content
     assert captured_prompts
-    prompt = captured_prompts[-1]
-    assert "Conflict checks:" in prompt
-    assert "does not match current ORSR stakeholders" in prompt
-    assert "Ask the user to confirm the authoritative transferor identity before producing final documents." in prompt
+    assert "ask the user to confirm the authoritative transferor identity" not in captured_prompts[-1].lower()
 
 
 def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkeypatch) -> None:
@@ -2098,6 +2340,150 @@ def test_document_export_ready_after_confirmation_with_prior_case_update() -> No
     assert result.metadata["document_requested"] is True
     assert result.metadata["document_confirmed"] is True
     assert result.metadata["document_ready"] is True
+
+
+def test_extract_case_update_parses_fenced_json_without_case_update_marker() -> None:
+    from app.chat.api import _extract_case_update, _user_visible_text
+
+    content = (
+        "Výborne, dokumenty sú teraz pripravené na export.\n\n"
+        "Tu je JSON pre uchovanie prípadu:\n\n"
+        "```json\n"
+        '{"case":{"case_id":null,"status":"intake_open","jurisdiction":{"country":"SK","language":"sk-SK"},'
+        '"parties":{"client":{"name":"RNDr. Marek Matonok"},"opponent":{"name":"Jano Hrasko"}},'
+        '"matter":{"category":"commercial","topic":"prevod podielu","amount_eur":null,"key_dates":{},'
+        '"facts_summary":"Prevod podielu.","client_goal":"Pripravit dokumenty."},'
+        '"documents":[],"open_questions":["Kto je prevodca?"],"next_discussion":{"scheduled_for":null,"agenda":[]},'
+        '"discussions_append":[]}}'
+        "\n```"
+    )
+
+    case_update = _extract_case_update(content)
+
+    assert case_update is not None
+    assert case_update["case"]["matter"]["topic"] == "prevod podielu"
+    assert _user_visible_text(content) == "Výborne, dokumenty sú teraz pripravené na export."
+
+
+def test_user_visible_text_strips_technical_json_preamble_before_case_update_marker() -> None:
+    from app.chat.api import _user_visible_text
+
+    content = (
+        "Výborne, dokumenty sú teraz pripravené na export.\n\n"
+        "Tu je JSON pre uchovanie prípadu:\n\n"
+        "CASE_UPDATE_JSON:\n"
+        '{"case":{"case_id":null,"status":"ready_for_next_step","jurisdiction":{"country":"SK","language":"sk-SK"},'
+        '"parties":{"client":{"name":"RNDr. Marek Matonok"},"opponent":{"name":"Jano Hrasko"}},'
+        '"matter":{"category":"commercial","topic":"prevod podielu","amount_eur":null,"key_dates":{},'
+        '"facts_summary":"Prevod podielu.","client_goal":"Pripravit dokumenty."},'
+        '"documents":[],"open_questions":[],"next_discussion":{"scheduled_for":null,"agenda":[]},'
+        '"discussions_append":[]}}'
+    )
+
+    assert _user_visible_text(content) == "Výborne, dokumenty sú teraz pripravené na export."
+
+
+def test_user_visible_text_strips_fake_relative_download_links_and_json_preamble() -> None:
+    from app.chat.api import _user_visible_text
+
+    content = (
+        "Dokumenty sú teraz pripravené na export.\n\n"
+        "Môžete si ich stiahnuť pomocou nasledujúcich odkazov:\n\n"
+        "1. [Zmluva o prevode podielu](documents/Zmluva_o_prevedeni_podielu.pdf)\n"
+        "2. [Zápisnica z rozhodnutia spoločníkov](documents/Zapisnica_z_rozhodnutia.pdf)\n"
+        "3. [Aktualizácia spolocenskej zmluvy](documents/Aktualizacia_spolocenskej_zmluvy.pdf)\n\n"
+        "Tu je JSON pre uchovanie prípadu:\n\n"
+        "CASE_UPDATE_JSON:\n"
+        '{"case":{"case_id":null,"status":"ready_for_next_step","jurisdiction":{"country":"SK","language":"sk-SK"},'
+        '"parties":{"client":{"name":"RNDr. Marek Matonok"},"opponent":{"name":"Jano Hrasko"}},'
+        '"matter":{"category":"commercial","topic":"prevod podielu","amount_eur":null,"key_dates":{},'
+        '"facts_summary":"Prevod podielu.","client_goal":"Pripravit dokumenty."},'
+        '"documents":[{"doc_id":"DOC-001","type":"contract","filename":"zmluva.pdf","path":"documents/zmluva.pdf","received_at":"2026-04-17T18:00:00Z","notes":""}],'
+        '"open_questions":[],"next_discussion":{"scheduled_for":null,"agenda":[]},'
+        '"discussions_append":[]}}'
+    )
+
+    assert _user_visible_text(content) == "Dokumenty sú teraz pripravené na export."
+
+
+def test_stream_read_user_completes_when_question_mark_exists_only_inside_fenced_json(monkeypatch) -> None:
+    from app.chat import api as chat_api
+    from app.chat.models import Message, MessageRole, SessionState
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    persisted_user = Message(
+        session_id=session_id,
+        role=MessageRole.USER,
+        content="ano",
+        agent_name="User",
+    )
+    persisted_lawyer = Message(
+        session_id=session_id,
+        role=MessageRole.ASSISTANT,
+        content=(
+            "Výborne, dokumenty sú teraz pripravené na export.\n\n"
+            "Tu je JSON pre uchovanie prípadu:\n\n"
+            "```json\n"
+            '{"case":{"case_id":null,"status":"intake_open","jurisdiction":{"country":"SK","language":"sk-SK"},'
+            '"parties":{"client":{"name":"RNDr. Marek Matonok"},"opponent":{"name":"Jano Hrasko"}},'
+            '"matter":{"category":"commercial","topic":"prevod podielu","amount_eur":null,"key_dates":{},'
+            '"facts_summary":"Prevod podielu.","client_goal":"Pripravit dokumenty."},'
+            '"documents":[{"doc_id":"DOC-001","type":"contract","filename":"zmluva.pdf","path":"documents/zmluva.pdf","received_at":"2026-04-17T18:00:00Z","notes":""}],'
+            '"open_questions":["Kto je prevodca?"],"next_discussion":{"scheduled_for":null,"agenda":[]},'
+            '"discussions_append":[]}}'
+            "\n```"
+        ),
+        agent_name="LawyerSlovakia",
+    )
+
+    monkeypatch.setattr(
+        chat_api,
+        "_run_direct_lawyer_turn",
+        lambda **kwargs: (persisted_user, persisted_lawyer, persisted_lawyer.content, []),
+    )
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "ano",
+            "documents": [],
+            "question_timeout_seconds": 300,
+            "max_discussion_minutes": 15,
+            "communication_minutes": 3,
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert "event: result" in events
+    assert "waiting_for_reply" not in events
+
+    session = chat_api._repository.get_session(session_id)
+    assert session is not None
+    assert session.state == SessionState.COMPLETED
+
+    result_response = client.get(
+        f"/v1/chat/sessions/{session_id}/result",
+        headers=AUTH_HEADERS,
+    )
+    assert result_response.status_code == 200
+
+    export_response = client.get(
+        f"/v1/chat/sessions/{session_id}/export?format=pdf&kind=document",
+        headers=AUTH_HEADERS,
+    )
+    assert export_response.status_code == 200
+    assert export_response.content.startswith(b"%PDF")
 
 
 def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_path) -> None:

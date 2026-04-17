@@ -398,7 +398,7 @@ def _message_payload(message: Message) -> dict[str, object]:
 
 
 def _assistant_requests_user_reply(content: str) -> bool:
-    return "?" in content
+    return "?" in _user_visible_text(content)
 
 
 def _persist_direct_assistant_message(
@@ -487,6 +487,8 @@ def _run_direct_lawyer_turn(
             "- Produce the finalized draft-oriented response for PDF export in this turn.\n"
             "- Do not claim that PDF or ZIP files are already created, saved, attached, or uploaded.\n"
             "- Say that the draft package is ready for download/export instead.\n"
+            "- Do not mention JSON, CASE_UPDATE_JSON, machine payload, or technical persistence details in the user-facing content.\n"
+            "- Do not include direct file paths, markdown download links, or relative links such as documents/... in the user-facing content.\n"
             "- Include CASE_UPDATE_JSON after the user-facing content."
         )
     preparation = prepare_country_direct_reply(
@@ -1170,10 +1172,17 @@ def _looks_like_document_title(value: str) -> bool:
         "spoločenskej zmluvy",
         "zakladatelskej listiny",
         "zakladateľskej listiny",
+        "podanie na orsr",
+        "orsr",
+        "obchodného registra",
+        "obchodneho registra",
         "registry filing",
         "founding deed",
     )
     exclusion_tokens = (
+        "text ",
+        "textu ",
+        "obsah ",
         "prakticky postup",
         "praktický postup",
         "odhad trvania",
@@ -1337,10 +1346,100 @@ def _contains_case_update_json(content: str) -> bool:
 
 
 def _user_visible_text(content: str) -> str:
-    marker = re.search(r"\*{0,2}\s*CASE_UPDATE_JSON\s*:?\s*\*{0,2}", content, flags=re.IGNORECASE)
-    if marker is None:
-        return content.strip()
-    return content[: marker.start()].strip()
+    bounds = _case_update_payload_bounds(content)
+    if bounds is None:
+        return _strip_user_visible_technical_trailer(content)
+    start_index, _end_index = bounds
+    return _strip_user_visible_technical_trailer(content[:start_index])
+
+
+def _strip_user_visible_technical_trailer(content: str) -> str:
+    lines = _strip_user_visible_technical_lines(content.strip().splitlines())
+    while lines:
+        candidate = lines[-1].strip()
+        normalized = re.sub(r"\s+", " ", candidate.lower())
+        if _looks_like_technical_visible_line(normalized):
+            lines.pop()
+            while lines and not lines[-1].strip():
+                lines.pop()
+            continue
+        break
+    return "\n".join(lines).strip()
+
+
+def _strip_user_visible_technical_lines(lines: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    pending_download_intro = False
+    for line in lines:
+        stripped = line.strip()
+        normalized = re.sub(r"\s+", " ", stripped.lower()) if stripped else ""
+        if _looks_like_fake_download_intro(normalized):
+            pending_download_intro = True
+            continue
+        if _looks_like_fake_download_link(stripped):
+            continue
+        if pending_download_intro and not stripped:
+            continue
+        if pending_download_intro:
+            pending_download_intro = False
+        cleaned.append(line)
+    return cleaned
+
+
+def _looks_like_technical_visible_line(normalized_line: str) -> bool:
+    if not normalized_line:
+        return False
+    technical_prefixes = (
+        "tu je json",
+        "tu je machine",
+        "tu je technicky",
+        "here is the json",
+        "below is the json",
+        "here is the machine",
+        "machine payload",
+        "technical payload",
+        "case_update_json",
+    )
+    technical_fragments = (
+        "json pre uchovanie prípadu",
+        "json pre uchovanie pripadu",
+        "json for case persistence",
+        "json for storing the case",
+        "machine payload",
+        "technical payload",
+    )
+    return normalized_line.startswith(technical_prefixes) or any(
+        fragment in normalized_line for fragment in technical_fragments
+    )
+
+
+def _looks_like_fake_download_intro(normalized_line: str) -> bool:
+    if not normalized_line:
+        return False
+    markers = (
+        "môžete si ich stiahnuť pomocou nasledujúcich odkazov",
+        "mozete si ich stiahnut pomocou nasledujucich odkazov",
+        "môžete si ich stiahnuť na nasledujúcich odkazoch",
+        "mozete si ich stiahnut na nasledujucich odkazoch",
+        "nasledujúce odkazy na stiahnutie",
+        "nasledujuce odkazy na stiahnutie",
+        "download using the following links",
+        "download them using the following links",
+    )
+    return any(marker in normalized_line for marker in markers)
+
+
+def _looks_like_fake_download_link(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    return bool(
+        re.match(
+            r"^\d+\.\s*\[[^\]]+\]\(\s*documents/[^)]+\)$",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _message_for_user(message: Message) -> Message:
@@ -2135,6 +2234,12 @@ def _build_document_export_assets(
     )
     document_entries = _case_update_document_entries(case_update)
     if len(document_entries) <= 1:
+        document_entries = _fallback_document_entries_for_export(
+            messages=messages,
+            result=result,
+            document_kind=document_kind,
+        )
+    if len(document_entries) <= 1:
         entry = document_entries[0] if document_entries else None
         return [
             _DocumentExportAsset(
@@ -2154,6 +2259,59 @@ def _build_document_export_assets(
         language=language,
         law_citation_lines=law_citation_lines,
     )
+
+
+def _fallback_document_entries_for_export(
+    *,
+    messages: List[Message],
+    result: SessionResult | None,
+    document_kind: str,
+) -> list[dict[str, Any]]:
+    discussion_messages = [
+        m.content
+        for m in messages
+        if m.role in {MessageRole.USER, MessageRole.ASSISTANT}
+    ]
+    lawyer_messages = [
+        m.content
+        for m in messages
+        if m.role == MessageRole.ASSISTANT and (m.agent_name or "").lower().startswith("lawyer")
+    ]
+    result_text = [result.final_recommendation] if result is not None else []
+    source = _pick_document_message(lawyer_messages) or _pick_document_message(discussion_messages) or "\n".join(result_text)
+    titles = _extract_document_titles_from_text(_user_visible_text(source))
+    if len(titles) <= 1:
+        return []
+    return [
+        {
+            "doc_id": f"FALLBACK-{index:03d}",
+            "type": _fallback_document_entry_type(title=title, document_kind=document_kind),
+            "filename": _fallback_document_entry_filename(title),
+            "path": f"documents/{_fallback_document_entry_filename(title)}",
+        }
+        for index, title in enumerate(titles, start=1)
+    ]
+
+
+def _fallback_document_entry_type(*, title: str, document_kind: str) -> str:
+    lowered = title.lower()
+    if document_kind == "share_transfer":
+        if "zmluv" in lowered:
+            return "contract"
+        if any(token in lowered for token in ("zapisnic", "zápisnic", "rozhodnut")):
+            return "minutes"
+        if any(token in lowered for token in ("spolocensk", "spoločensk", "zakladatels", "zakladateľs")):
+            return "articles"
+        if "orsr" in lowered or "obchodn" in lowered:
+            return "registry_filing"
+    return "other"
+
+
+def _fallback_document_entry_filename(title: str) -> str:
+    normalized = re.sub(r"[^\w\s-]+", "", title, flags=re.UNICODE)
+    normalized = re.sub(r"\s+", "_", normalized.strip())
+    normalized = normalized.strip("_") or "document"
+    return f"{normalized}.pdf"
 
 
 def _prepare_document_export_context(
@@ -2405,6 +2563,9 @@ def _build_share_transfer_document_asset_content(
         elif asset_kind == "articles":
             title = "Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny"
             lines = _build_slovak_share_transfer_articles_lines(facts)
+        elif asset_kind == "registry_filing":
+            title = "Podanie na ORSR"
+            lines = _build_slovak_share_transfer_registry_filing_lines(facts)
         else:
             title = "Zmluva o prevode obchodneho podielu"
             lines = _build_slovak_share_transfer_agreement_lines(facts)
@@ -2415,13 +2576,18 @@ def _build_share_transfer_document_asset_content(
         elif asset_kind == "articles":
             title = "Updated articles / founding deed"
             lines = _build_english_share_transfer_articles_lines(facts)
+        elif asset_kind == "registry_filing":
+            title = "Registry filing package"
+            lines = _build_english_share_transfer_registry_filing_lines(facts)
         else:
             title = "Share transfer agreement"
             lines = _build_english_share_transfer_agreement_lines(facts)
     return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
 
 
-def _classify_share_transfer_document_asset(entry: dict[str, Any]) -> Literal["agreement", "minutes", "articles"]:
+def _classify_share_transfer_document_asset(
+    entry: dict[str, Any]
+) -> Literal["agreement", "minutes", "articles", "registry_filing"]:
     raw_name = " ".join(
         str(entry.get(key) or "").strip().lower()
         for key in ("filename", "path", "type")
@@ -2433,6 +2599,11 @@ def _classify_share_transfer_document_asset(entry: dict[str, Any]) -> Literal["a
         for token in ("spolocensk", "spoločensk", "zakladatelsk", "zakladateľsk", "articles", "founding")
     ):
         return "articles"
+    if any(
+        token in raw_name
+        for token in ("orsr", "registry", "obchodneho_registra", "obchodného_registra", "filing")
+    ):
+        return "registry_filing"
     return "agreement"
 
 
@@ -2867,6 +3038,34 @@ def _build_slovak_share_transfer_articles_lines(facts: dict[str, str]) -> List[s
     ]
 
 
+def _build_slovak_share_transfer_registry_filing_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Navrh podania na zapis zmeny do obchodneho registra",
+        "",
+        "Identifikacia spolocnosti",
+        f"Obchodne meno: {facts['company_name']}.",
+        f"Sidlo: {facts['company_seat']}.",
+        f"ICO: {facts['company_identifier']}.",
+        "",
+        "Predmet navrhu",
+        f"Zapis zmeny spolocnika po prevode obchodneho podielu vo vyske {facts['transfer_share']}.",
+        f"Prevodca: {facts['transferor_name']}.",
+        f"Nadobudatel: {facts['transferee_name']}.",
+        "",
+        "Priloha k podaniu",
+        "1. Zmluva o prevode obchodneho podielu s overenymi podpismi, ak to vyzaduje zakon alebo interny rezim spolocnosti.",
+        "2. Rozhodnutie jedineho spolocnika / zapisnica valneho zhromazdenia, ak je potrebna.",
+        "3. Aktualizovane uplne znenie spolocenskej zmluvy alebo zakladatelskej listiny.",
+        "4. Dalsie listiny pozadovane registrovym sudom alebo formularom ORSR.",
+        "",
+        "Poznamka k podaniu",
+        f"Navrh sa podava cez {facts['filing_authority']} po podpise kompletneho balika dokumentov.",
+        f"Orientacny cas vybavenia: {_with_period(facts['estimated_timeline'])}",
+        "",
+        "Podpis navrhovatela / splnomocnenej osoby: ____________________________",
+    ]
+
+
 def _build_english_share_transfer_lines(facts: dict[str, str]) -> List[str]:
     return [
         "Working draft for a limited-liability company share transfer package",
@@ -2973,6 +3172,34 @@ def _build_english_share_transfer_articles_lines(facts: dict[str, str]) -> List[
     ]
 
 
+def _build_english_share_transfer_registry_filing_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Registry filing package for the share transfer update",
+        "",
+        "Company identification",
+        f"Company name: {facts['company_name']}.",
+        f"Registered seat: {facts['company_seat']}.",
+        f"Company ID: {facts['company_identifier']}.",
+        "",
+        "Requested filing",
+        f"Registration of the shareholder change following a transfer of {facts['transfer_share']}.",
+        f"Transferor: {facts['transferor_name']}.",
+        f"Transferee: {facts['transferee_name']}.",
+        "",
+        "Annex package",
+        "1. Signed share transfer agreement.",
+        "2. Sole shareholder decision / meeting minutes if required.",
+        "3. Updated articles or founding deed.",
+        "4. Any additional forms or annexes required by the registry court.",
+        "",
+        "Filing note",
+        f"The filing should be submitted via {facts['filing_authority']} after the full package is finalized.",
+        f"Indicative processing time: {_with_period(facts['estimated_timeline'])}",
+        "",
+        "Applicant / authorized representative signature: ____________________________",
+    ]
+
+
 def _build_generic_slovak_case_document_lines(facts: dict[str, str]) -> List[str]:
     return [
         "Právne zhrnutie a návrh ďalšieho postupu",
@@ -3026,13 +3253,7 @@ def _build_generic_english_case_document_lines(facts: dict[str, str]) -> List[st
 
 
 def _extract_case_update(content: str) -> dict[str, Any] | None:
-    marker = content.lower().find("case_update_json")
-    if marker < 0:
-        return None
-    json_start = content.find("{", marker)
-    if json_start < 0:
-        return None
-    payload = _extract_json_object(content, json_start)
+    payload = _extract_case_update_payload(content)
     if not payload:
         return None
     try:
@@ -3040,6 +3261,34 @@ def _extract_case_update(content: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return decoded if isinstance(decoded, dict) else None
+
+
+def _extract_case_update_payload(content: str) -> str | None:
+    bounds = _case_update_payload_bounds(content)
+    if bounds is None:
+        return None
+    start_index, end_index = bounds
+    json_start = content.find("{", start_index, end_index)
+    if json_start < 0:
+        return None
+    return _extract_json_object(content[:end_index], json_start)
+
+
+def _case_update_payload_bounds(content: str) -> tuple[int, int] | None:
+    marker = re.search(r"\*{0,2}\s*CASE_UPDATE_JSON\s*:?\s*\*{0,2}", content, flags=re.IGNORECASE)
+    if marker is not None:
+        return marker.start(), len(content)
+
+    fenced_json_pattern = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.IGNORECASE | re.DOTALL)
+    for match in fenced_json_pattern.finditer(content):
+        candidate = match.group(1).strip()
+        try:
+            decoded = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(decoded, dict) and isinstance(decoded.get("case"), dict):
+            return match.start(), match.end()
+    return None
 
 
 def _extract_json_object(content: str, start_index: int) -> str | None:

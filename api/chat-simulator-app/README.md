@@ -46,9 +46,10 @@ The simulator now supports:
 - using `Max discussion (minutes)` with default `60`
 - in `AIUserSimulatorAgent` mode, the simulator answers each AI agent question before conversation finish flow
 - sending manual end-user answers from the bottom input box and getting immediate lawyer response via `POST /v1/chat/sessions/{session_id}/stream` (`ReadUser` mode)
-  - `Send answer` is enabled only in `ReadUser` mode
+  - `Send answer` is enabled whenever the simulator is in `ReadUser` mode and a session already exists
   - if the stream has not started yet for the current session, clicking `Send answer` automatically starts the stream first
   - after the assistant asks the first question, the same click flow sends the typed answer and clears the input box
+  - if the assistant ends the turn with a confirmation/request sentence but without a literal `?`, manual replies still remain available
   - simulator now sends manual replies through `POST /v1/chat/sessions/{session_id}/stream` in `ReadUser` mode, so backend `processing` events are visible in real time
   - while waiting for backend response, the simulator shows a localized frontend `Thinking...` system bubble (`Premyslam...`, `Premyslim...`, `Ich denke nach...`, or `Thinking...`)
   - backend `processing` updates (including localized `Processing...` and `Thinking...`) are rendered as system chat bubbles during the same manual turn

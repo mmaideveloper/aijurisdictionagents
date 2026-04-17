@@ -1,0 +1,24 @@
+
+{
+   "CaseTitle":  "Vyhladat osobu",
+   "CaseDescription":"
+                Vyhladaj mi informacie o osobe a priprav mi vysledok kde bude uvedene.
+
+      1. adresa
+      2. zoznam firiem
+      3. zoznam zivnosti
+      4. zoznam dlhov
+         v socialnej poistovne
+         zdravotnej poistovne
+         financnych institucii
+      5. infromacie z webu
+
+      
+      Osoba:
+      Marek Matonok
+   ",
+   "Documents:":[]
+}  
+
+
+
