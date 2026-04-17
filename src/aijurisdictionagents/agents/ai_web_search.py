@@ -16,10 +16,10 @@ class WebSearchRecord:
 
 
 @dataclass
-class AIWebSearchAgent:
-    """Simple web-search helper that always requires user consent before use."""
+class EntityScreeningAgent:
+    """Global entity-screening helper that always requires user consent before use."""
 
-    name: str = "AIWebSearchAgent"
+    name: str = "EntityScreeningAgent"
 
     def build_screening_consent_prompt(self, *, entity_type: str, entity_value: str) -> str:
         normalized_type = (entity_type or "entity").strip().lower()
@@ -27,6 +27,32 @@ class AIWebSearchAgent:
         return (
             "Before I run internet screening, please confirm permission for this lookup: "
             f"{normalized_type} = '{normalized_value}'. Reply YES to continue or NO to skip."
+        )
+
+    def build_structured_screening_prompt(
+        self,
+        *,
+        entity_type: str,
+        entity_value: str,
+        country: str | None = None,
+    ) -> str:
+        normalized_type = (entity_type or "entity").strip().lower()
+        normalized_value = (entity_value or "").strip() or "unknown"
+        normalized_country = (country or "").strip().upper() or "N/A"
+        if normalized_type == "company":
+            return CompanySearchAgent().build_search_prompt(
+                company_reference=normalized_value,
+                country=normalized_country,
+            )
+        if normalized_type == "person":
+            return PersonSearchAgent().build_search_prompt(
+                person_reference=normalized_value,
+                country=normalized_country,
+            )
+        return (
+            "Find public information about the target entity and prepare a concise report with: "
+            "address, related companies/associations, debt exposure (social/health/financial), and web findings. "
+            f"Entity: {normalized_value}. Country: {normalized_country}."
         )
 
     def search(self, *, query: str, max_results: int = 5) -> list[WebSearchRecord]:
@@ -100,6 +126,60 @@ class AIWebSearchAgent:
         with urlopen(request, timeout=15) as response:
             payload = response.read().decode("utf-8", errors="ignore")
         return _parse_duckduckgo_html_results(payload=payload, max_results=max_results)
+
+
+class AIWebSearchAgent(EntityScreeningAgent):
+    """Backward-compatible alias for EntityScreeningAgent."""
+
+    name: str = "AIWebSearchAgent"
+
+
+@dataclass
+class CompanySearchAgent(EntityScreeningAgent):
+    """Structured company screening prompt helper."""
+
+    name: str = "CompanySearchAgent"
+
+    def build_search_prompt(self, *, company_reference: str, country: str | None = None) -> str:
+        normalized_reference = (company_reference or "").strip() or "unknown company"
+        normalized_country = (country or "").strip().upper() or "N/A"
+        return (
+            "Find publicly available information about the company and prepare a summary containing:\n"
+            "1. registered address\n"
+            "2. list of companies owned by this company\n"
+            "3. list of owners or people associated with the company\n"
+            "4. list of debts or liabilities, especially in:\n"
+            "   - social insurance\n"
+            "   - health insurance\n"
+            "   - financial institutions\n"
+            "5. additional relevant web information\n"
+            f"Company reference: {normalized_reference}\n"
+            f"Country: {normalized_country}"
+        )
+
+
+@dataclass
+class PersonSearchAgent(EntityScreeningAgent):
+    """Structured person screening prompt helper."""
+
+    name: str = "PersonSearchAgent"
+
+    def build_search_prompt(self, *, person_reference: str, country: str | None = None) -> str:
+        normalized_reference = (person_reference or "").strip() or "unknown person"
+        normalized_country = (country or "").strip().upper() or "N/A"
+        return (
+            "Find publicly available information about the person and prepare a summary containing:\n"
+            "1. address\n"
+            "2. list of companies linked to the person\n"
+            "3. list of trade licenses / sole-trader businesses\n"
+            "4. list of debts or liabilities, especially in:\n"
+            "   - social insurance\n"
+            "   - health insurance\n"
+            "   - financial institutions\n"
+            "5. additional relevant web information\n"
+            f"Person reference: {normalized_reference}\n"
+            f"Country: {normalized_country}"
+        )
 
 
 def _parse_duckduckgo_html_results(*, payload: str, max_results: int) -> list[WebSearchRecord]:

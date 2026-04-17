@@ -3,6 +3,9 @@ import re
 
 from aijurisdictionagents.agents.ai_web_search import (
     AIWebSearchAgent,
+    CompanySearchAgent,
+    EntityScreeningAgent,
+    PersonSearchAgent,
     _parse_duckduckgo_html_results,
 )
 from aijurisdictionagents.agents import AIUserSimulatorAgent, create_lawyer_agent
@@ -227,3 +230,37 @@ def test_ai_web_search_agent_falls_back_to_duckduckgo_html(monkeypatch) -> None:
 
     assert len(records) == 1
     assert records[0].url == "https://platform.openai.com/docs/models/gpt-4o-mini"
+
+
+def test_entity_screening_agent_and_ai_web_search_alias_share_consent_prompt() -> None:
+    entity_prompt = EntityScreeningAgent().build_screening_consent_prompt(
+        entity_type="company",
+        entity_value="12345678",
+    )
+    alias_prompt = AIWebSearchAgent().build_screening_consent_prompt(
+        entity_type="company",
+        entity_value="12345678",
+    )
+    assert entity_prompt == alias_prompt
+
+
+def test_company_search_agent_builds_structured_prompt_in_english() -> None:
+    prompt = CompanySearchAgent().build_search_prompt(
+        company_reference="ICO 12345678",
+        country="SK",
+    )
+    assert "registered address" in prompt
+    assert "list of companies owned by this company" in prompt
+    assert "social insurance" in prompt
+    assert "Country: SK" in prompt
+
+
+def test_person_search_agent_builds_structured_prompt_in_english() -> None:
+    prompt = PersonSearchAgent().build_search_prompt(
+        person_reference="Jana Hraska",
+        country="SK",
+    )
+    assert "list of companies linked to the person" in prompt
+    assert "list of trade licenses / sole-trader businesses" in prompt
+    assert "financial institutions" in prompt
+    assert "Person reference: Jana Hraska" in prompt
