@@ -1,5 +1,5 @@
 from .base import Agent
-from .ai_web_search import AIWebSearchAgent
+from .ai_web_search import AIWebSearchAgent, CompanySearchAgent, EntityScreeningAgent, PersonSearchAgent
 from .judge import create_judge
 from .lawyer import create_lawyer
 from .slovakia import create_lawyer_slovakia
@@ -18,6 +18,9 @@ def create_lawyer_agent(llm: LLMClient, country: str) -> Agent:
 __all__ = [
     "Agent",
     "AIWebSearchAgent",
+    "EntityScreeningAgent",
+    "CompanySearchAgent",
+    "PersonSearchAgent",
     "AIUserSimulatorAgent",
     "AIAgentsValidator",
     "ValidationReport",

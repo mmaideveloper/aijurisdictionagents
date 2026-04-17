@@ -1,6 +1,7 @@
-# AIWebSearchAgent
+# EntityScreeningAgent (formerly AIWebSearchAgent)
 
-`AIWebSearchAgent` is a lightweight agent that can be used for internet screening support in document workflows.
+`EntityScreeningAgent` is a lightweight global screening agent for company/person internet checks.
+`AIWebSearchAgent` remains as a backward-compatible alias.
 
 ## Behavior
 
@@ -8,11 +9,18 @@
 - Supports entity-level screening prompts (person, company, car, etc.).
 - Performs a web lookup and returns structured records (`title`, `url`, `snippet`).
 - Falls back to DuckDuckGo HTML results when the instant-answer JSON endpoint does not return search hits.
+- Can be attached as a **global workflow step** (`global_entity_screening`) for all countries when:
+  - user explicitly requests screening, or
+  - model suggests screening based on risk/context.
+  - workflow engine auto-detects screening intent from question text (e.g., `Over mi jana hraska`).
+- Provides structured English prompt templates usable across countries:
+  - `CompanySearchAgent.build_search_prompt(...)`
+  - `PersonSearchAgent.build_search_prompt(...)`
 
 ## Permanent memory model metadata
 
 When API metadata is requested and the current model cutoff is not cached yet, the
-system uses `AIWebSearchAgent` to discover the current model page and stores a
+system uses `EntityScreeningAgent` (or `AIWebSearchAgent` alias) to discover the current model page and stores a
 permanent-memory key `llm_model_setup` with:
 
 - `llm_modelname`
