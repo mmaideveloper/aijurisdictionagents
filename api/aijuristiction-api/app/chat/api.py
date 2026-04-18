@@ -27,6 +27,7 @@ from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 
 from app.chat.core_runtime import core_message_role, run_orchestration
 from app.chat.country_services import prepare_country_direct_reply
+from app.flow_packs.api import get_flow_pack_store
 from app.chat.intent_policy_service import (
     build_document_task_plan_note,
     is_document_modernization_request,
@@ -449,6 +450,7 @@ def _run_direct_lawyer_turn(
         session=session,
         processing_event_callback=processing_event_callback,
     )
+    _warn_if_flow_pack_missing(session_id=session_id, session=session, request_text=content)
 
     from aijurisdictionagents.agents import create_lawyer_agent
     from aijurisdictionagents.llm import get_llm_client
@@ -567,6 +569,29 @@ def _run_direct_lawyer_turn(
         agent_name=lawyer_message.agent_name,
     )
     return persisted_user, persisted_lawyer, visible_lawyer_content, preparation.processing_events
+
+
+def _warn_if_flow_pack_missing(*, session_id: UUID, session: Session, request_text: str) -> None:
+    try:
+        flow_pack = get_flow_pack_store().find_best_match(
+            request_text=request_text,
+            country=session.country,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning(
+            "Flow-pack lookup failed for request | session_id=%s country=%s reason=%s",
+            session_id,
+            session.country,
+            exc,
+        )
+        return
+    if flow_pack is None:
+        _LOGGER.warning(
+            "No flow-pack matched user request | session_id=%s country=%s request=%s",
+            session_id,
+            session.country,
+            " ".join(request_text.split())[:180],
+        )
 
 
 class StartSessionStreamRequest(BaseModel):

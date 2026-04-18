@@ -1,0 +1,88 @@
+# Flow Packs API (Slovak legal process packs)
+
+This API adds flow-pack lifecycle management for Slovak legal processes.
+
+## Purpose
+
+Flow packs provide configurable process metadata used by a future process router:
+
+- intake requirements (`required_facts`)
+- required outputs/documents
+- proactive recommendations
+- escalation guidance
+- enabled/disabled runtime state
+- immutable version history
+
+Default seeded Slovak packs include:
+
+- `sk.contract.sale_purchase`
+- `sk.company.registry_change`
+- `sk.civil.power_of_attorney`
+- `sk.criminal.criminal_complaint`
+- `sk.notary.notarial_process`
+- `sk.support.person_company_screening`
+
+## Storage
+
+Runtime data uses SQLite under repository runtime storage:
+
+- default: `runs/storage/api/sqlite/flow_packs.sqlite3`
+- override env: `API_FLOW_PACKS_SQLITE_PATH`
+- when `DB_OPTION=postgres|azure`, flow packs use `DB_CLOUD` PostgreSQL connection (same API DB backend selection rules)
+
+SQL asset for schema:
+
+- `databases/api/flow_packs_schema.sql`
+- country separation is modeled in the same `flow_packs` table via `jurisdiction` (no separate table per country)
+
+## Endpoints
+
+All endpoints require `x-api-key`.
+
+- `GET /v1/flow-packs?include_deleted=false`
+  - list flow packs (latest and historical versions, ordered by key/version)
+  - optional filter: `jurisdiction=SK|CZ|...`
+- `GET /v1/flow-packs/{flow_key}/versions?include_deleted=true`
+  - list versions for one flow key
+  - optional filter: `jurisdiction=SK|CZ|...`
+- `GET /v1/flow-packs/{flow_key}/versions/{version}`
+  - fetch a single version
+  - when the same `flow_key+version` exists for multiple countries, pass `jurisdiction`
+- `POST /v1/flow-packs`
+  - create a flow pack version (if `version` omitted, auto-increment for key)
+- `POST /v1/flow-packs/{flow_key}/versions`
+  - create next version derived from latest version
+  - optional query: `jurisdiction=SK|CZ|...` (recommended in multi-country setups)
+- `PATCH /v1/flow-packs/{flow_key}/versions/{version}`
+  - update metadata/definition for a version
+  - optional query: `jurisdiction=SK|CZ|...` (required if ambiguous)
+- `POST /v1/flow-packs/{flow_key}/versions/{version}/enable`
+- `POST /v1/flow-packs/{flow_key}/versions/{version}/disable`
+- `DELETE /v1/flow-packs/{flow_key}/versions/{version}`
+  - soft delete (also disables the version)
+  - optional query: `jurisdiction=SK|CZ|...` (required if ambiguous)
+
+## Soft delete and versioning behavior
+
+- `DELETE` marks `is_deleted=true`, sets `deleted_at`, and forces `is_enabled=false`.
+- version values are immutable and unique per `flow_key`.
+- uniqueness is country-scoped: `(jurisdiction, flow_key, version)`.
+- creating a new version never mutates prior versions.
+
+## Runtime warning on unmatched requests
+
+During chat reply processing, the API now attempts to match each user request against enabled flow packs
+for the session country. If no flow pack matches, the API logs a warning (`No flow-pack matched user request`)
+with session id, country, and a short request excerpt.
+
+## Minimal runnable example
+
+```bash
+python examples/flow_packs_minimal_demo.py
+```
+
+Repository default smoke demo remains available:
+
+```bash
+python examples/minimal_demo.py
+```
