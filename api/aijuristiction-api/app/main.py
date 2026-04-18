@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from app.cases_api import router as cases_router
 from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.chat.api import router as chat_router
+from app.flow_packs.api import router as flow_packs_router
 from app.laws_api import router as laws_router
 from app.logging_config import configure_logging
 from app.observability_api import router as observability_router
@@ -130,6 +131,7 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "x-request-id", "x-correlation-id"],
 )
 app.include_router(chat_router)
+app.include_router(flow_packs_router)
 app.include_router(laws_router)
 app.include_router(users_router)
 app.include_router(cases_router)
