@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-from typing import Any, Iterator
+from typing import Any
 import unicodedata
 from uuid import uuid4
 
