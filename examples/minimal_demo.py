@@ -21,6 +21,10 @@ from aijurisdictionagents.workflows import WorkflowEngine, WorkflowRouter, creat
 
 
 if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
     output_root = Path("runs") / "minimal_demo"
     contract_outcome = simulate_contract_summary_case(output_root / "contract_summary_case")
     lease_outcome = simulate_slovak_lease_review(output_root / "slovak_lease_case")

@@ -5,6 +5,7 @@ from copy import deepcopy
 from hashlib import sha1
 import re
 from threading import Lock
+from typing import TypedDict
 
 from app.chat.country_services.base import (
     DirectReplyPreparation,
@@ -18,6 +19,12 @@ from aijurisdictionagents.tools import build_default_tool_registry
 
 _ORSR_CACHE_LOCK = Lock()
 _ORSR_CACHE: dict[tuple[str, int], tuple[dict[str, object] | None, str | None]] = {}
+
+
+class ShareTransferConflictResolution(TypedDict):
+    resolved: bool
+    choice: str
+    intake_facts: dict[str, str]
 
 
 def prepare_slovakia_direct_reply(
@@ -1009,7 +1016,7 @@ def _resolve_share_transfer_conflict_choice(
     prior_messages: list[Message],
     intake_facts: dict[str, str],
     company_record: dict[str, object] | None,
-) -> dict[str, object]:
+) -> ShareTransferConflictResolution:
     merged = dict(intake_facts)
     if not _assistant_recently_requested_share_transfer_conflict_resolution(prior_messages):
         return {"resolved": False, "choice": "", "intake_facts": merged}

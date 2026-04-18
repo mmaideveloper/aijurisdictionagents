@@ -7,6 +7,7 @@ import logging
 import re
 import time
 import textwrap
+import unicodedata
 from zipfile import ZIP_DEFLATED, ZipFile
 from collections import deque
 from collections.abc import Callable, Generator
@@ -1001,7 +1002,7 @@ def _is_explicit_document_request(normalized: str) -> bool:
         "law",
         "laws",
         "predzalob",
-        "predžalob",
+        "predÅ¾alob",
         "vzor",
         "dokument",
     )
@@ -1036,7 +1037,7 @@ def _is_explicit_document_request(normalized: str) -> bool:
 def _is_affirmative_reply(normalized: str) -> bool:
     affirmatives = (
         "ano",
-        "áno",
+        "Ã¡no",
         "yes",
         "sure",
         "ok",
@@ -1056,9 +1057,9 @@ def _assistant_requests_document_confirmation(content: str) -> bool:
         "do you want",
         "would you like",
         "chcete",
-        "mám pripraviť",
+        "mÃ¡m pripraviÅ¥",
         "mam pripravit",
-        "pripraviť",
+        "pripraviÅ¥",
         "pripravit",
     )
     return (
@@ -1088,7 +1089,7 @@ def _document_generation_progress_events(
     lowered_visible = visible_text.lower()
     if not _document_export_ready(messages) and not any(
         marker in lowered_visible
-        for marker in ("pripravil som", "pripravila som", "prepared", "ready", "hotove", "hotový")
+        for marker in ("pripravil som", "pripravila som", "prepared", "ready", "hotove", "hotovÃ½")
     ):
         return []
     return [
@@ -1151,52 +1152,103 @@ def _extract_document_titles_from_text(content: str) -> list[str]:
         normalized = normalized.strip("* ").strip()
         if ":" in normalized:
             normalized = normalized.split(":", 1)[0].strip()
-        if not _looks_like_document_title(normalized):
+        display_name = _repair_common_mojibake(normalized)
+        if not _looks_like_document_title(display_name):
             continue
-        key = normalized.lower()
+        key = _canonicalize_document_text(display_name)
         if key in seen:
             continue
         seen.add(key)
-        names.append(normalized)
+        names.append(display_name)
     return names
 
 
 def _looks_like_document_title(value: str) -> bool:
-    lowered = value.lower()
-    document_tokens = (
-        "zmluv",
-        "zapisnic",
-        "zápisnic",
-        "rozhodnut",
-        "spolocenskej zmluvy",
-        "spoločenskej zmluvy",
-        "zakladatelskej listiny",
-        "zakladateľskej listiny",
+    lowered = _canonicalize_document_text(value)
+    document_prefixes = (
+        "zmluva",
+        "zapisnica",
+        "rozhodnutie",
+        "aktualizacia",
+        "aktualizovane",
         "podanie na orsr",
-        "orsr",
-        "obchodného registra",
-        "obchodneho registra",
+        "navrh rozhodnutia",
+        "share transfer agreement",
+        "sole shareholder decision",
+        "updated articles",
         "registry filing",
         "founding deed",
+    )
+    document_phrases = (
+        "spolocenska zmluva",
+        "spolocenskej zmluvy",
+        "zakladatelska listina",
+        "zakladatelskej listiny",
+        "podanie na orsr",
+        "obchodneho registra",
+        "share transfer agreement",
+        "sole shareholder decision",
+        "updated articles",
+        "founding deed",
+        "registry filing",
     )
     exclusion_tokens = (
         "text ",
         "textu ",
         "obsah ",
         "prakticky postup",
-        "praktický postup",
         "odhad trvania",
         "estimated timing",
         "poznamka",
-        "poznámka",
         "podklady",
         "prilohy",
-        "prílohy",
+        "zmluvne strany",
+        "predmet zmluvy",
+        "doba najmu",
+        "najomne",
+        "skoncenie najmu",
+        "vypovedna lehota",
+        "podpis",
     )
     if any(token in lowered for token in exclusion_tokens):
         return False
-    return any(token in lowered for token in document_tokens)
+    if lowered.startswith(document_prefixes) or any(token in lowered for token in document_phrases):
+        return True
+    signal_groups = (
+        ("prevode", "podiel"),
+        ("pisnica", "rozhodnut"),
+        ("aktualiz", "zmluv"),
+        ("spolocensk", "zmluv"),
+        ("spoloensk", "zmluv"),
+        ("zakladatelsk", "listin"),
+        ("podanie", "orsr"),
+        ("share", "transfer"),
+        ("sole", "decision"),
+        ("updated", "articles"),
+        ("registry", "filing"),
+        ("founding", "deed"),
+    )
+    return any(all(token in lowered for token in group) for group in signal_groups)
 
+
+def _repair_common_mojibake(value: str) -> str:
+    if not any(marker in value for marker in ("Ã", "Â", "Ä", "Å", "â")):
+        return value
+    for source_encoding in ("latin-1", "cp1252"):
+        try:
+            repaired = value.encode(source_encoding, errors="ignore").decode("utf-8", errors="ignore").strip()
+        except UnicodeError:
+            continue
+        if repaired:
+            return repaired
+    return value
+
+
+def _canonicalize_document_text(value: str) -> str:
+    repaired = _repair_common_mojibake(value)
+    normalized = unicodedata.normalize("NFKD", repaired.casefold())
+    ascii_only = "".join(char for char in normalized if not unicodedata.combining(char))
+    return re.sub(r"\s+", " ", ascii_only).strip()
 
 def _default_document_titles_for_kind(
     *, document_kind: str, country: str, language: str | None
@@ -1332,7 +1384,7 @@ def _document_export_ready(messages: list[Message]) -> bool:
         "draft is ready",
         "navrh zmluvy",
         "predzalobna vyzva",
-        "predžalobná výzva",
+        "predÅ¾alobnÃ¡ vÃ½zva",
         "legal summary",
         "pravne zhrnutie",
     )
@@ -1401,7 +1453,7 @@ def _looks_like_technical_visible_line(normalized_line: str) -> bool:
         "case_update_json",
     )
     technical_fragments = (
-        "json pre uchovanie prípadu",
+        "json pre uchovanie prÃ­padu",
         "json pre uchovanie pripadu",
         "json for case persistence",
         "json for storing the case",
@@ -1417,11 +1469,11 @@ def _looks_like_fake_download_intro(normalized_line: str) -> bool:
     if not normalized_line:
         return False
     markers = (
-        "môžete si ich stiahnuť pomocou nasledujúcich odkazov",
+        "mÃ´Å¾ete si ich stiahnuÅ¥ pomocou nasledujÃºcich odkazov",
         "mozete si ich stiahnut pomocou nasledujucich odkazov",
-        "môžete si ich stiahnuť na nasledujúcich odkazoch",
+        "mÃ´Å¾ete si ich stiahnuÅ¥ na nasledujÃºcich odkazoch",
         "mozete si ich stiahnut na nasledujucich odkazoch",
-        "nasledujúce odkazy na stiahnutie",
+        "nasledujÃºce odkazy na stiahnutie",
         "nasledujuce odkazy na stiahnutie",
         "download using the following links",
         "download them using the following links",
@@ -2193,7 +2245,7 @@ def _law_citation_export_lines(*, metadata: dict[str, object], language: str | N
             if version_token:
                 detail += f", verzia {version_token}"
             if effective_from:
-                detail += f", účinná od {effective_from}"
+                detail += f", ÃºÄinnÃ¡ od {effective_from}"
         else:
             detail = f"- {identifier}"
             if title:
@@ -2282,33 +2334,53 @@ def _fallback_document_entries_for_export(
     titles = _extract_document_titles_from_text(_user_visible_text(source))
     if len(titles) <= 1:
         return []
-    return [
-        {
-            "doc_id": f"FALLBACK-{index:03d}",
-            "type": _fallback_document_entry_type(title=title, document_kind=document_kind),
-            "filename": _fallback_document_entry_filename(title),
-            "path": f"documents/{_fallback_document_entry_filename(title)}",
-        }
-        for index, title in enumerate(titles, start=1)
-    ]
+    entries: list[dict[str, Any]] = []
+    for index, title in enumerate(titles, start=1):
+        entry_type = _fallback_document_entry_type(title=title, document_kind=document_kind)
+        filename = _fallback_document_entry_filename(
+            title=title,
+            document_kind=document_kind,
+            entry_type=entry_type,
+        )
+        entries.append(
+            {
+                "doc_id": f"FALLBACK-{index:03d}",
+                "type": entry_type,
+                "filename": filename,
+                "path": f"documents/{filename}",
+            }
+        )
+    return entries
 
 
 def _fallback_document_entry_type(*, title: str, document_kind: str) -> str:
-    lowered = title.lower()
-    if document_kind == "share_transfer":
-        if "zmluv" in lowered:
+    lowered = _canonicalize_document_text(title)
+    if document_kind == "share_transfer" or any(
+        token in lowered for token in ("podiel", "rozhodnut", "spolocensk", "spoloensk", "zakladatels", "orsr")
+    ):
+        if "zmluv" in lowered and "podiel" in lowered:
             return "contract"
-        if any(token in lowered for token in ("zapisnic", "zápisnic", "rozhodnut")):
+        if any(token in lowered for token in ("zapisnic", "pisnica", "rozhodnut")):
             return "minutes"
-        if any(token in lowered for token in ("spolocensk", "spoločensk", "zakladatels", "zakladateľs")):
+        if any(token in lowered for token in ("spolocensk", "spoloensk", "zakladatels")):
             return "articles"
-        if "orsr" in lowered or "obchodn" in lowered:
+        if "orsr" in lowered or "obchodn" in lowered or "podanie" in lowered:
             return "registry_filing"
     return "other"
 
 
-def _fallback_document_entry_filename(title: str) -> str:
-    normalized = re.sub(r"[^\w\s-]+", "", title, flags=re.UNICODE)
+def _fallback_document_entry_filename(title: str, *, document_kind: str, entry_type: str) -> str:
+    if document_kind == "share_transfer" or entry_type in {"contract", "minutes", "articles", "registry_filing"}:
+        known_filenames = {
+            "contract": "Zmluva_o_prevode_podielu.pdf",
+            "minutes": "Zapisnica_z_rozhodnutia_spolocnikov.pdf",
+            "articles": "Aktualizovana_spolocenska_zmluva.pdf",
+            "registry_filing": "Podanie_na_ORSR.pdf",
+        }
+        known_filename = known_filenames.get(entry_type)
+        if known_filename is not None:
+            return known_filename
+    normalized = re.sub(r"[^\w\s-]+", "", _canonicalize_document_text(title), flags=re.UNICODE)
     normalized = re.sub(r"\s+", "_", normalized.strip())
     normalized = normalized.strip("_") or "document"
     return f"{normalized}.pdf"
@@ -2371,7 +2443,7 @@ def _build_document_export_content(
     if country.strip().upper() == "SK" and document_kind == "share_transfer":
         from app.chat.country_services.slovakia import build_slovak_share_transfer_export_lines
 
-        title = f"GenerovanÃ½ Dokument {session_id}"
+        title = f"GenerovanÃƒÂ½ Dokument {session_id}"
         export_lines = build_slovak_share_transfer_export_lines(
             messages=messages,
             normalize_document_lines=_normalize_document_lines,
@@ -2386,7 +2458,7 @@ def _build_document_export_content(
             )
 
     if (language or "").strip().lower().startswith("sk"):
-        title = f"Generovaný Dokument {session_id}"
+        title = f"GenerovanÃ½ Dokument {session_id}"
         if document_kind == "rental_agreement":
             lines = _build_standard_slovak_agreement_lines(facts)
             return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
@@ -2422,7 +2494,7 @@ def _append_document_law_citations(
     if not citations:
         return lines
     prefers_slovak = (language or "").strip().lower().startswith("sk")
-    heading = "Právne citácie" if prefers_slovak else "Legal citations"
+    heading = "PrÃ¡vne citÃ¡cie" if prefers_slovak else "Legal citations"
     return [*lines, "", heading, *citations]
 
 
@@ -2592,16 +2664,16 @@ def _classify_share_transfer_document_asset(
         str(entry.get(key) or "").strip().lower()
         for key in ("filename", "path", "type")
     )
-    if any(token in raw_name for token in ("zapisnic", "zápisnic", "rozhodnut", "minutes", "decision")):
+    if any(token in raw_name for token in ("zapisnic", "zÃ¡pisnic", "rozhodnut", "minutes", "decision")):
         return "minutes"
     if any(
         token in raw_name
-        for token in ("spolocensk", "spoločensk", "zakladatelsk", "zakladateľsk", "articles", "founding")
+        for token in ("spolocensk", "spoloÄensk", "zakladatelsk", "zakladateÄ¾sk", "articles", "founding")
     ):
         return "articles"
     if any(
         token in raw_name
-        for token in ("orsr", "registry", "obchodneho_registra", "obchodného_registra", "filing")
+        for token in ("orsr", "registry", "obchodneho_registra", "obchodnÃ©ho_registra", "filing")
     ):
         return "registry_filing"
     return "agreement"
@@ -2624,10 +2696,10 @@ def _pick_document_message(candidates: List[str]) -> str:
                 "contract",
                 "agreement",
                 "podiel",
-                "spoločník",
+                "spoloÄnÃ­k",
                 "spolocnik",
                 "share transfer",
-                "obchodný podiel",
+                "obchodnÃ½ podiel",
                 "obchodny podiel",
             )
         ):
@@ -2692,37 +2764,37 @@ def _extract_document_facts(
     client_name = _case_text(("case", "parties", "client", "name"), "Klient")
     opponent_name = _case_text(("case", "parties", "opponent", "name"), "Protistrana")
     topic = _case_text(("case", "matter", "topic"), "pravny_problem")
-    facts_summary = _case_text(("case", "matter", "facts_summary"), "Právny problém podľa diskusie.")
-    client_goal = _case_text(("case", "matter", "client_goal"), "Dosiahnuť primerané právne riešenie.")
+    facts_summary = _case_text(("case", "matter", "facts_summary"), "PrÃ¡vny problÃ©m podÄ¾a diskusie.")
+    client_goal = _case_text(("case", "matter", "client_goal"), "DosiahnuÅ¥ primeranÃ© prÃ¡vne rieÅ¡enie.")
     scheduled_for = _case_text(("case", "next_discussion", "scheduled_for"), "")
     agenda_items = next_discussion.get("agenda", []) if isinstance(next_discussion, dict) else []
     agenda = ", ".join(str(item).strip() for item in agenda_items if str(item).strip())
     company_name = _capture(
-        r"(?:firma|fima|spoločnosť|spolocnost)\s+([^,.;\n]+?(?:s\.r\.o\.|a\.s\.|s\. r\. o\.))",
-        "Spoločnosť [doplnit obchodné meno]",
+        r"(?:firma|fima|spoloÄnosÅ¥|spolocnost)\s+([^,.;\n]+?(?:s\.r\.o\.|a\.s\.|s\. r\. o\.))",
+        "SpoloÄnosÅ¥ [doplnit obchodnÃ© meno]",
     )
     company_seat = _capture(
         r"(?:s\.r\.o\.|a\.s\.|s\. r\. o\.)\s*,\s*([^.;\n]+)",
-        "Sídlo spoločnosti [doplnit]",
+        "SÃ­dlo spoloÄnosti [doplnit]",
     )
-    company_identifier = _capture(r"ičo\s*[:=]?\s*([0-9]{6,10})", "[doplnit IČO]")
+    company_identifier = _capture(r"iÄo\s*[:=]?\s*([0-9]{6,10})", "[doplnit IÄŒO]")
     transfer_share = _capture(r"(\d{1,3}\s*%)", "50 %")
     transfer_price = _capture(
-        r"(?:cena prevodu(?: podielu)?(?: je)?|kúpna cena|kupna cena|odplata(?: za prevod)?)\s*[:=]?\s*([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€))",
+        r"(?:cena prevodu(?: podielu)?(?: je)?|kÃºpna cena|kupna cena|odplata(?: za prevod)?)\s*[:=]?\s*([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|â‚¬))",
         "",
     )
     if not transfer_price.strip():
-        transfer_price = _capture(r"\b([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€))\b", "0 EUR")
-    transferor_name = "Súčasný spoločník / prevodca [doplnit údaje]"
-    if "manželka" in text.lower() or "manzelka" in text.lower():
-        transferor_name = "Súčasný spoločník / prevodca (manželka) [doplnit údaje]"
-    transferee_name = client_name if client_name != "Klient" else "Nový spoločník / nadobúdateľ [doplnit údaje]"
-    if "konateľka" in text.lower() or "konatelka" in text.lower():
-        transferor_name = "Súčasný spoločník / konateľka [doplnit údaje]"
-    filing_authority = "Obchodný register / slovensko.sk"
+        transfer_price = _capture(r"\b([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|â‚¬))\b", "0 EUR")
+    transferor_name = "SÃºÄasnÃ½ spoloÄnÃ­k / prevodca [doplnit Ãºdaje]"
+    if "manÅ¾elka" in text.lower() or "manzelka" in text.lower():
+        transferor_name = "SÃºÄasnÃ½ spoloÄnÃ­k / prevodca (manÅ¾elka) [doplnit Ãºdaje]"
+    transferee_name = client_name if client_name != "Klient" else "NovÃ½ spoloÄnÃ­k / nadobÃºdateÄ¾ [doplnit Ãºdaje]"
+    if "konateÄ¾ka" in text.lower() or "konatelka" in text.lower():
+        transferor_name = "SÃºÄasnÃ½ spoloÄnÃ­k / konateÄ¾ka [doplnit Ãºdaje]"
+    filing_authority = "ObchodnÃ½ register / slovensko.sk"
     estimated_timeline = _capture(
-        r"(niekoľko týždňov|niekolko tyzdnov|[0-9]+\s*(?:pracovných|pracovnych)\s+dní|[0-9]+\s*dní)",
-        "Spravidla niekoľko pracovných dní až týždňov po úplnom podaní.",
+        r"(niekoÄ¾ko tÃ½Å¾dÅˆov|niekolko tyzdnov|[0-9]+\s*(?:pracovnÃ½ch|pracovnych)\s+dnÃ­|[0-9]+\s*dnÃ­)",
+        "Spravidla niekoÄ¾ko pracovnÃ½ch dnÃ­ aÅ¾ tÃ½Å¾dÅˆov po Ãºplnom podanÃ­.",
     )
 
     return {
@@ -2740,7 +2812,7 @@ def _extract_document_facts(
         "facts_summary": facts_summary,
         "client_goal": client_goal,
         "scheduled_for": scheduled_for,
-        "agenda": agenda or "Doplniť ďalší postup podľa vývoja komunikácie.",
+        "agenda": agenda or "DoplniÅ¥ ÄalÅ¡Ã­ postup podÄ¾a vÃ½voja komunikÃ¡cie.",
         "company_name": company_name,
         "company_seat": company_seat,
         "company_identifier": company_identifier,
@@ -2755,39 +2827,39 @@ def _extract_document_facts(
 
 def _build_standard_slovak_agreement_lines(facts: dict[str, str]) -> List[str]:
     return [
-        "Nájomná zmluva",
-        "uzatvorená podľa paragrafu 663 a nasl. Občianskeho zákonníka",
+        "NÃ¡jomnÃ¡ zmluva",
+        "uzatvorenÃ¡ podÄ¾a paragrafu 663 a nasl. ObÄianskeho zÃ¡konnÃ­ka",
         "",
-        "Čl. I - Zmluvné strany",
-        f"Prenajímateľ: {facts['prenajimatel']}",
-        f"Nájomca: {facts['najomca']}",
+        "ÄŒl. I - ZmluvnÃ© strany",
+        f"PrenajÃ­mateÄ¾: {facts['prenajimatel']}",
+        f"NÃ¡jomca: {facts['najomca']}",
         "",
-        "Čl. II - Predmet nájmu",
+        "ÄŒl. II - Predmet nÃ¡jmu",
         _with_period(facts["predmet"]),
         "",
-        "Čl. III - Doba nájmu",
+        "ÄŒl. III - Doba nÃ¡jmu",
         _with_period(facts["doba"]),
         "",
-        "Čl. IV - Nájomné a platobné podmienky",
-        f"Nájomné: {_with_period(facts['najomne'])}",
+        "ÄŒl. IV - NÃ¡jomnÃ© a platobnÃ© podmienky",
+        f"NÃ¡jomnÃ©: {_with_period(facts['najomne'])}",
         f"Platba vopred: {_with_period(facts['advance'])}",
         f"Kaucia: {_with_period(facts['deposit'])}",
         "",
-        "Čl. V - Práva a povinnosti zmluvných strán",
-        "Nájomca je povinný užívať predmet nájmu riadne, šetrne a v súlade so zmluvou.",
-        "Prenajímateľ je povinný odovzdať predmet nájmu spôsobilý na dohodnuté užívanie.",
+        "ÄŒl. V - PrÃ¡va a povinnosti zmluvnÃ½ch strÃ¡n",
+        "NÃ¡jomca je povinnÃ½ uÅ¾Ã­vaÅ¥ predmet nÃ¡jmu riadne, Å¡etrne a v sÃºlade so zmluvou.",
+        "PrenajÃ­mateÄ¾ je povinnÃ½ odovzdaÅ¥ predmet nÃ¡jmu spÃ´sobilÃ½ na dohodnutÃ© uÅ¾Ã­vanie.",
         "",
-        "Čl. VI - Skončenie nájmu",
+        "ÄŒl. VI - SkonÄenie nÃ¡jmu",
         _with_period(facts["notice"]),
         "",
-        "Čl. VII - Záverečné ustanovenia",
-        "Zmluva nadobúda platnosť dňom podpisu oboma zmluvnými stranami.",
-        "Zmeny zmluvy je možné vykonať len písomným dodatkom.",
+        "ÄŒl. VII - ZÃ¡vereÄnÃ© ustanovenia",
+        "Zmluva nadobÃºda platnosÅ¥ dÅˆom podpisu oboma zmluvnÃ½mi stranami.",
+        "Zmeny zmluvy je moÅ¾nÃ© vykonaÅ¥ len pÃ­somnÃ½m dodatkom.",
         "",
         "V [mesto], dna [datum]",
         "",
-        "Podpis prenajímateľa: ____________________________",
-        "Podpis nájomcu: _________________________________",
+        "Podpis prenajÃ­mateÄ¾a: ____________________________",
+        "Podpis nÃ¡jomcu: _________________________________",
     ]
 
 
@@ -2826,39 +2898,39 @@ def _build_standard_english_agreement_lines(facts: dict[str, str]) -> List[str]:
 
 def _build_slovak_easement_demand_lines(facts: dict[str, str]) -> List[str]:
     return [
-        "Predžalobná výzva na umožnenie výkonu vecného bremena",
+        "PredÅ¾alobnÃ¡ vÃ½zva na umoÅ¾nenie vÃ½konu vecnÃ©ho bremena",
         "",
-        f"Adresát: {facts['opponent_name']}",
-        f"Odosielateľ: {facts['client_name']}",
+        f"AdresÃ¡t: {facts['opponent_name']}",
+        f"OdosielateÄ¾: {facts['client_name']}",
         "",
         "Vec:",
-        "Výzva na zdržanie sa zásahu do výkonu vecného bremena a na vytvorenie prístupu",
+        "VÃ½zva na zdrÅ¾anie sa zÃ¡sahu do vÃ½konu vecnÃ©ho bremena a na vytvorenie prÃ­stupu",
         "",
-        "Skutkový základ:",
+        "SkutkovÃ½ zÃ¡klad:",
         _with_period(facts["facts_summary"]),
         "",
-        "Právny záujem klienta:",
+        "PrÃ¡vny zÃ¡ujem klienta:",
         _with_period(facts["client_goal"]),
         "",
-        "Požiadavka:",
-        "Žiadam, aby ste sa zdržali akýchkoľvek stavebných zásahov, ktoré by znemožnili alebo podstatne sťažili výkon vecného bremena.",
-        "Zároveň žiadam, aby ste na mieste výkonu vecného bremena zabezpečili primeraný vstup, najmä bránku alebo iné technické riešenie umožňujúce prístup k plynovej prípojke.",
+        "PoÅ¾iadavka:",
+        "Å½iadam, aby ste sa zdrÅ¾ali akÃ½chkoÄ¾vek stavebnÃ½ch zÃ¡sahov, ktorÃ© by znemoÅ¾nili alebo podstatne sÅ¥aÅ¾ili vÃ½kon vecnÃ©ho bremena.",
+        "ZÃ¡roveÅˆ Å¾iadam, aby ste na mieste vÃ½konu vecnÃ©ho bremena zabezpeÄili primeranÃ½ vstup, najmÃ¤ brÃ¡nku alebo inÃ© technickÃ© rieÅ¡enie umoÅ¾ÅˆujÃºce prÃ­stup k plynovej prÃ­pojke.",
         "",
         "Lehota na plnenie:",
-        "Žiadam o písomné stanovisko bez zbytočného odkladu, najneskôr do 7 dní od doručenia tejto výzvy.",
+        "Å½iadam o pÃ­somnÃ© stanovisko bez zbytoÄnÃ©ho odkladu, najneskÃ´r do 7 dnÃ­ od doruÄenia tejto vÃ½zvy.",
         "",
         "Upozornenie:",
-        "Ak nedôjde k náprave, klient zváži ďalšie právne kroky vrátane návrhu na neodkladné opatrenie a uplatnenia súdnej ochrany.",
+        "Ak nedÃ´jde k nÃ¡prave, klient zvÃ¡Å¾i ÄalÅ¡ie prÃ¡vne kroky vrÃ¡tane nÃ¡vrhu na neodkladnÃ© opatrenie a uplatnenia sÃºdnej ochrany.",
         "",
-        "Navrhované podklady k prílohe:",
+        "NavrhovanÃ© podklady k prÃ­lohe:",
         "1. Zmluva alebo rozhodnutie o vecnom bremene.",
-        "2. Písomná komunikácia so susedom.",
-        "3. Fotodokumentácia miesta prípojky a plánovaného plotu.",
+        "2. PÃ­somnÃ¡ komunikÃ¡cia so susedom.",
+        "3. FotodokumentÃ¡cia miesta prÃ­pojky a plÃ¡novanÃ©ho plotu.",
         "",
-        "Poznámka k ďalšiemu postupu:",
+        "PoznÃ¡mka k ÄalÅ¡iemu postupu:",
         _with_period(facts["agenda"]),
         "",
-        "Podpis klienta / zástupcu: ____________________________",
+        "Podpis klienta / zÃ¡stupcu: ____________________________",
     ]
 
 
@@ -3202,27 +3274,27 @@ def _build_english_share_transfer_registry_filing_lines(facts: dict[str, str]) -
 
 def _build_generic_slovak_case_document_lines(facts: dict[str, str]) -> List[str]:
     return [
-        "Právne zhrnutie a návrh ďalšieho postupu",
+        "PrÃ¡vne zhrnutie a nÃ¡vrh ÄalÅ¡ieho postupu",
         "",
         f"Klient: {facts['client_name']}",
         f"Protistrana: {facts['opponent_name']}",
-        f"Téma: {facts['topic']}",
+        f"TÃ©ma: {facts['topic']}",
         "",
-        "Skutkový stav:",
+        "SkutkovÃ½ stav:",
         _with_period(facts["facts_summary"]),
         "",
-        "Cieľ klienta:",
+        "CieÄ¾ klienta:",
         _with_period(facts["client_goal"]),
         "",
-        "Odporúčaný postup:",
-        "1. Zabezpečiť a usporiadať všetky relevantné listiny a komunikáciu.",
-        "2. Písomne vyzvať protistranu na dobrovoľné riešenie.",
-        "3. Vyhodnotiť potrebu predžalobnej výzvy alebo návrhu na súdnu ochranu.",
+        "OdporÃºÄanÃ½ postup:",
+        "1. ZabezpeÄiÅ¥ a usporiadaÅ¥ vÅ¡etky relevantnÃ© listiny a komunikÃ¡ciu.",
+        "2. PÃ­somne vyzvaÅ¥ protistranu na dobrovoÄ¾nÃ© rieÅ¡enie.",
+        "3. VyhodnotiÅ¥ potrebu predÅ¾alobnej vÃ½zvy alebo nÃ¡vrhu na sÃºdnu ochranu.",
         "",
-        "Ďalšia konzultácia:",
+        "ÄŽalÅ¡ia konzultÃ¡cia:",
         _with_period(facts["agenda"]),
         "",
-        "Podpis klienta / zástupcu: ____________________________",
+        "Podpis klienta / zÃ¡stupcu: ____________________________",
     ]
 
 
@@ -3331,7 +3403,7 @@ def _detect_document_kind(
 
     rental_tokens = (
         "prenaj",
-        "nájom",
+        "nÃ¡jom",
         "najom",
         "lease",
         "landlord",
@@ -3339,27 +3411,27 @@ def _detect_document_kind(
         "byt",
     )
     easement_tokens = (
-        "vecné bremeno",
+        "vecnÃ© bremeno",
         "vecne bremeno",
         "easement",
         "plynov",
-        "prípoj",
+        "prÃ­poj",
         "pripoj",
         "sused",
         "plot",
-        "brán",
-        "bránk",
+        "brÃ¡n",
+        "brÃ¡nk",
         "brank",
     )
     share_transfer_tokens = (
         "prevod podielu",
-        "obchodný podiel",
+        "obchodnÃ½ podiel",
         "obchodny podiel",
-        "spoločník",
+        "spoloÄnÃ­k",
         "spolocnik",
-        "konateľ",
+        "konateÄ¾",
         "konatel",
-        "vlastníckych práv firmy",
+        "vlastnÃ­ckych prÃ¡v firmy",
         "vlastnickych prav firmy",
         "s.r.o.",
         "share transfer",
@@ -3499,3 +3571,4 @@ def _pdf_circle_ops(cx: float, cy: float, r: float) -> List[str]:
         f"{cx + k:.3f} {y0:.3f} {x1:.3f} {cy - k:.3f} {x1:.3f} {cy:.3f} c",
         "h",
     ]
+
