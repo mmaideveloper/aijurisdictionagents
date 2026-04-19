@@ -1457,6 +1457,7 @@ def test_reply_endpoint_share_transfer_detects_owner_mismatch_and_requests_confi
 def test_reply_endpoint_share_transfer_orsr_confirmation_does_not_reask_company_ico(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
+    import app.chat.country_services.slovakia as slovakia_service
 
     class _FakeRegistry:
         def run(self, name: str, **kwargs):
@@ -1481,6 +1482,7 @@ def test_reply_endpoint_share_transfer_orsr_confirmation_does_not_reask_company_
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
     monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+    slovakia_service._ORSR_CACHE.clear()
 
     session_response = client.post(
         "/v1/chat/sessions",
@@ -1530,6 +1532,7 @@ def test_reply_endpoint_share_transfer_orsr_confirmation_does_not_reask_company_
 def test_reply_endpoint_share_transfer_orsr_confirmation_persists_for_document_generation(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
+    import app.chat.country_services.slovakia as slovakia_service
 
     class _FakeRegistry:
         def run(self, name: str, **kwargs):
@@ -1566,6 +1569,7 @@ def test_reply_endpoint_share_transfer_orsr_confirmation_persists_for_document_g
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
     monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+    slovakia_service._ORSR_CACHE.clear()
     monkeypatch.setattr(
         "aijurisdictionagents.agents.create_lawyer_agent",
         lambda llm, country: _SpyLawyer(),
@@ -1783,6 +1787,7 @@ def test_build_simple_pdf_preserves_slovak_and_german_characters() -> None:
     assert "ubom" in normalized_extracted or "lubom" in normalized_extracted
     assert "deutsch" in normalized_extracted
     assert "deutsch" in normalized_extracted and ("kundigung" in normalized_extracted or "kndigung" in normalized_extracted)
+    assert "jurisdikcia: slovensk" in normalized_extracted and "republika" in normalized_extracted
 
 def test_create_message_returns_404_for_unknown_session() -> None:
     response = client.post(
@@ -2280,6 +2285,39 @@ def test_reply_endpoint_requires_confirmation_before_document_pdf_ready() -> Non
     assert export_doc_pdf.content.startswith(b"%PDF")
 
 
+def test_processing_placeholder_reply_is_replaced_with_document_ready_message() -> None:
+    from app.chat.api import _finalize_document_ready_reply_if_needed
+    from app.chat.models import Message, MessageRole, Session
+
+    session = Session(country="SK", language="sk-SK")
+    messages = [
+        Message(session_id=session.id, role=MessageRole.USER, content="Priprav mi zmluvu o prevode podielu."),
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            content="Mam pripravit finalny balik dokumentov aj na export do PDF?",
+            agent_name="LawyerSlovakia",
+        ),
+        Message(session_id=session.id, role=MessageRole.USER, content="Ano, prosim."),
+    ]
+
+    finalized = _finalize_document_ready_reply_if_needed(
+        session=session,
+        messages=messages,
+        lawyer_content=(
+            "Pripravim nasledujuce dokumenty:\n"
+            "1. Zmluva o prevode obchodneho podielu.\n"
+            "2. Zapisnica z rozhodnutia spolocnika.\n"
+            "3. Aktualizovane uplne znenie spolocenskej zmluvy.\n\n"
+            "Prosim, dajte mi chvilu."
+        ),
+    )
+
+    assert "pripraveny na export" in finalized.lower()
+    assert "Zmluva o prevode obchodneho podielu" in finalized
+    assert "Zapisnica z rozhodnutia spolocnika" in finalized
+
+
 def test_explicit_slovak_document_update_request_is_recognized() -> None:
     from app.chat.api import _user_requested_document_generation
 
@@ -2490,6 +2528,86 @@ def test_user_visible_text_strips_fake_relative_download_links_and_json_preamble
     )
     assert export_response.status_code == 200
     assert export_response.content.startswith(b"%PDF")
+
+
+def test_completed_read_user_session_returns_document_status_followup() -> None:
+    from app.chat import api as chat_api
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "sk-SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+    session = chat_api._repository.get_session(session_id)
+    assert session is not None
+
+    seeded_messages = [
+        Message(session_id=session_id, role=MessageRole.USER, content="Priprav mi balik dokumentov."),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Mam pripravit finalny balik dokumentov aj na export do PDF?",
+            agent_name="LawyerSlovakia",
+        ),
+        Message(session_id=session_id, role=MessageRole.USER, content="Ano, prosim."),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content=(
+                "Balik dokumentov je pripraveny na export a stiahnutie.\n\n"
+                "Pripravene dokumenty:\n"
+                "1. Zmluva o prevode obchodneho podielu\n"
+                "2. Zapisnica z rozhodnutia spolocnika"
+            ),
+            agent_name="LawyerSlovakia",
+        ),
+    ]
+    for message in seeded_messages:
+        chat_api._repository.add_message(message)
+    chat_api._repository.set_result(
+        session_id,
+        SessionResult(
+            final_recommendation=seeded_messages[-1].content,
+            judge_rationale="Stored ready package.",
+            metadata={
+                "document_requested": True,
+                "document_confirmed": True,
+                "document_ready": True,
+            },
+        ),
+    )
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "Aky je stav dokumentov?",
+            "documents": [],
+            "question_timeout_seconds": 300,
+            "max_discussion_minutes": 15,
+            "communication_minutes": 3,
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert "event: processing" in events
+    assert '"stage": "document_status"' in events
+    assert "stav dokumentov" in events.lower()
+    assert "pripraveny na export a stiahnutie" in events.lower()
+    assert "event: done" in events
+
+    result_response = client.get(
+        f"/v1/chat/sessions/{session_id}/result",
+        headers=AUTH_HEADERS,
+    )
+    assert result_response.status_code == 200
+    assert result_response.json()["metadata"]["document_ready"] is True
 
 
 def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_path) -> None:

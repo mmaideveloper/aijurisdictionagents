@@ -40,6 +40,11 @@ class InMemoryChatRepository:
             self._results[session_id] = result
             self._sessions[session_id].state = SessionState.COMPLETED
 
+    def reactivate_session(self, session_id: UUID) -> None:
+        with self._lock:
+            if session_id in self._sessions:
+                self._sessions[session_id].state = SessionState.ACTIVE
+
     def get_result(self, session_id: UUID) -> SessionResult | None:
         return self._results.get(session_id)
 

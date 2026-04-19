@@ -63,6 +63,10 @@ _LINUX_DEJAVU_FONT_DIRS = (
     Path("/usr/share/fonts/truetype/dejavu"),
     Path("/usr/share/fonts/dejavu"),
 )
+_LINUX_LIBERATION_FONT_DIRS = (
+    Path("/usr/share/fonts/truetype/liberation"),
+    Path("/usr/share/fonts/truetype/liberation2"),
+)
 _REGISTERED_PDF_FONT_FAMILIES: set[str] = set()
 
 
@@ -537,7 +541,11 @@ def _run_direct_lawyer_turn(
         processing_event_callback=processing_event_callback,
     )
     if preparation.direct_reply is not None:
-        normalized_direct_reply = _enforce_single_question_turn(preparation.direct_reply)
+        normalized_direct_reply = _finalize_document_ready_reply_if_needed(
+            session=session,
+            messages=history,
+            lawyer_content=_enforce_single_question_turn(preparation.direct_reply),
+        )
         persisted_lawyer = _persist_direct_assistant_message(
             session_id=session_id,
             session=session,
@@ -592,6 +600,11 @@ def _run_direct_lawyer_turn(
             processed_names=processed_names,
             unprocessed_names=unprocessed_names,
         )
+    )
+    normalized_lawyer_content = _finalize_document_ready_reply_if_needed(
+        session=session,
+        messages=history,
+        lawyer_content=normalized_lawyer_content,
     )
     visible_lawyer_content = _user_visible_text(normalized_lawyer_content)
     persisted_lawyer = _persist_direct_assistant_message(
@@ -701,7 +714,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
     session = _repository.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-    if session.state == SessionState.COMPLETED:
+    if session.state == SessionState.COMPLETED and payload.user_simulation_mode != "ReadUser":
         raise HTTPException(status_code=409, detail="Session already completed")
     if payload.user_simulation_mode == "ReadUser":
         return _stream_read_user_session(session_id=session_id, session=session, payload=payload)
@@ -962,6 +975,51 @@ def _stream_read_user_session(
 
     def worker() -> None:
         try:
+            existing_result = _repository.get_result(session_id)
+            if session.state == SessionState.COMPLETED and _is_document_status_request(payload.instruction):
+                persisted_user = _repository.add_message(
+                    Message(
+                        session_id=session_id,
+                        role=MessageRole.USER,
+                        content=payload.instruction,
+                        agent_name="User",
+                    )
+                )
+                _persist_case_message_if_needed(
+                    session=session,
+                    role="user",
+                    content=payload.instruction,
+                    agent_name="User",
+                )
+                user_message_callback(persisted_user)
+                status_reply = _build_document_status_reply(
+                    session=session,
+                    messages=_repository.list_messages(session_id),
+                    result=existing_result,
+                )
+                persisted_lawyer = _persist_direct_assistant_message(
+                    session_id=session_id,
+                    session=session,
+                    content=status_reply,
+                    agent_name="LawyerStatus",
+                )
+                current_messages = _repository.list_messages(session_id)
+                event_queue.put(
+                    (
+                        "processing",
+                        {
+                            "stage": "document_status",
+                            "message": status_reply,
+                            "details": {"status": "completed"},
+                        },
+                    )
+                )
+                event_queue.put(("message", _message_payload(persisted_lawyer)))
+                _persist_session_history_document_if_needed(session=session, session_id=session_id)
+                event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
+                return
+            if session.state == SessionState.COMPLETED:
+                _repository.reactivate_session(session_id)
             _persisted_user, persisted_lawyer, visible_lawyer_content, _processing_events = _run_direct_lawyer_turn(
                 session_id=session_id,
                 session=session,
@@ -1002,6 +1060,12 @@ def _stream_read_user_session(
                 )
                 _persist_session_history_document_if_needed(session=session, session_id=session_id)
                 _repository.set_result(session_id, session_result)
+                for document_event in _document_completion_processing_events(
+                    session=session,
+                    messages=current_messages,
+                    result=session_result,
+                ):
+                    event_queue.put(("processing", document_event))
                 event_queue.put(("result", session_result.model_dump(mode="json")))
                 event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
         except Exception as exc:  # noqa: BLE001
@@ -1343,6 +1407,127 @@ def _document_progress_message(
     return f"Prepared document: {document_name}."
 
 
+def _document_package_ready_message(
+    *, country: str, language: str | None, document_names: list[str], status_prefix: bool = False
+) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        intro = (
+            "Stav dokumentov: balik dokumentov je pripraveny na export a stiahnutie."
+            if status_prefix
+            else "Balik dokumentov je pripraveny na export a stiahnutie."
+        )
+        label = "Pripravene dokumenty:"
+    elif normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        intro = (
+            "Stav dokumentu: balik dokumentu je pripraven k exportu a stazeni."
+            if status_prefix
+            else "Balik dokumentu je pripraven k exportu a stazeni."
+        )
+        label = "Pripravene dokumenty:"
+    elif normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        intro = (
+            "Dokumentenstatus: Das Dokumentenpaket ist fuer Export und Download bereit."
+            if status_prefix
+            else "Das Dokumentenpaket ist fuer Export und Download bereit."
+        )
+        label = "Vorbereitete Dokumente:"
+    else:
+        intro = (
+            "Document status: the document package is ready for export and download."
+            if status_prefix
+            else "The document package is ready for export and download."
+        )
+        label = "Prepared documents:"
+    if not document_names:
+        return intro
+    items = "\n".join(f"{index}. {name}" for index, name in enumerate(document_names, start=1))
+    return f"{intro}\n\n{label}\n{items}"
+
+
+def _document_status_message(*, country: str, language: str | None, status_text: str) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return f"Stav dokumentov: {status_text}"
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return f"Stav dokumentu: {status_text}"
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return f"Dokumentenstatus: {status_text}"
+    return f"Document status: {status_text}"
+
+
+def _looks_like_processing_placeholder_reply(content: str) -> bool:
+    normalized = " ".join(_user_visible_text(content).lower().split())
+    wait_markers = (
+        "prosim, dajte mi chvilu",
+        "prosim dajte mi chvilu",
+        "dajte mi chvilu",
+        "prosim, pockajte",
+        "prosim pockajte",
+        "please wait",
+        "give me a moment",
+        "one moment",
+        "working on it",
+        "dokoncim navrh",
+        "dokoncim pripravu",
+        "pripravim ich na export",
+    )
+    return any(marker in normalized for marker in wait_markers)
+
+
+def _is_document_status_request(content: str) -> bool:
+    normalized = " ".join(content.lower().split())
+    explicit_phrases = (
+        "status dokument",
+        "status dokumentov",
+        "stav dokument",
+        "stav dokumentov",
+        "je dokument hotovy",
+        "su dokumenty hotove",
+        "su dokumenty pripravene",
+        "je balik pripraveny",
+        "is the document ready",
+        "status of the document",
+        "status of documents",
+        "document status",
+    )
+    if any(phrase in normalized for phrase in explicit_phrases):
+        return True
+    status_tokens = ("status", "stav", "ready", "hotov", "pripraven", "export", "download", "stiahn")
+    document_tokens = ("dokument", "dokumenty", "balik", "package", "pdf", "zip", "draft", "navrh")
+    return any(token in normalized for token in status_tokens) and any(
+        token in normalized for token in document_tokens
+    )
+
+
+def _finalize_document_ready_reply_if_needed(
+    *,
+    session: Session,
+    messages: list[Message],
+    lawyer_content: str,
+) -> str:
+    visible_text = _user_visible_text(lawyer_content)
+    if _assistant_requests_user_reply(visible_text):
+        return lawyer_content.strip()
+    if not _document_generation_requested(messages) or not _document_generation_confirmed(messages):
+        return lawyer_content.strip()
+    if not _looks_like_processing_placeholder_reply(visible_text):
+        return lawyer_content.strip()
+    document_names = _document_progress_names(
+        messages=messages,
+        lawyer_message=lawyer_content,
+        country=session.country,
+        language=session.language,
+    )
+    return _document_package_ready_message(
+        country=session.country,
+        language=session.language,
+        document_names=document_names,
+    ).strip()
+
+
 def _current_turn_confirms_document_generation(
     content: str,
     previous_messages: list[Message],
@@ -1392,6 +1577,85 @@ def _build_direct_reply_result(
         citations=_merge_session_citations(generic_citations=[], metadata=metadata),
         metadata=metadata,
     )
+
+
+def _build_document_status_reply(
+    *,
+    session: Session,
+    messages: list[Message],
+    result: SessionResult | None,
+) -> str:
+    metadata = result.metadata if result is not None else {}
+    document_requested = bool(metadata.get("document_requested"))
+    document_confirmed = bool(metadata.get("document_confirmed"))
+    document_ready = bool(metadata.get("document_ready"))
+    lawyer_message = result.final_recommendation if result is not None else ""
+    document_names = _document_progress_names(
+        messages=messages,
+        lawyer_message=lawyer_message,
+        country=session.country,
+        language=session.language,
+    )
+    if document_ready:
+        return _document_package_ready_message(
+            country=session.country,
+            language=session.language,
+            document_names=document_names,
+            status_prefix=True,
+        )
+    if document_confirmed:
+        return _document_status_message(
+            country=session.country,
+            language=session.language,
+            status_text="balik dokumentov sa este pripravuje, ale export zatial nie je hotovy."
+            if (session.country or "").strip().upper() == "SK" or (session.language or "").strip().lower().startswith("sk")
+            else "the document package is still being prepared and the export is not ready yet.",
+        )
+    if document_requested:
+        return _document_status_message(
+            country=session.country,
+            language=session.language,
+            status_text="dokument bol vyziadany, ale stale chyba potvrdenie alebo doplnujuce udaje."
+            if (session.country or "").strip().upper() == "SK" or (session.language or "").strip().lower().startswith("sk")
+            else "a document was requested, but confirmation or additional details are still missing.",
+        )
+    return _document_status_message(
+        country=session.country,
+        language=session.language,
+        status_text="pre tuto session este nebol pripraveny ziaden dokument."
+        if (session.country or "").strip().upper() == "SK" or (session.language or "").strip().lower().startswith("sk")
+        else "no document has been prepared for this session yet.",
+    )
+
+
+def _document_completion_processing_events(
+    *,
+    session: Session,
+    messages: list[Message],
+    result: SessionResult,
+) -> list[dict[str, object]]:
+    if not bool(result.metadata.get("document_ready")):
+        return []
+    document_names = _document_progress_names(
+        messages=messages,
+        lawyer_message=result.final_recommendation,
+        country=session.country,
+        language=session.language,
+    )
+    return [
+        {
+            "stage": "document_package_ready",
+            "message": _document_package_ready_message(
+                country=session.country,
+                language=session.language,
+                document_names=document_names,
+            ),
+            "details": {
+                "document_names": document_names,
+                "status": "ready",
+            },
+        }
+    ]
 
 
 def _document_generation_requested(messages: list[Message]) -> bool:
@@ -1905,10 +2169,19 @@ def _build_simple_pdf(
     title_font_size = 14.0
     footer_font_size = 9.0
 
+    prefers_slovak_profile = _prefers_slovak_legal_pdf_profile(country=country, language=language)
     header_lines: list[str] = []
     if header_line:
         header_lines.append(header_line)
         header_lines.append("")
+    if prefers_slovak_profile:
+        header_lines.extend(
+            [
+                "Jurisdikcia: Slovenská republika",
+                "Typ dokumentu: právny návrh",
+                "",
+            ]
+        )
 
     title_block: list[str] = [title, "----------------"] if include_title_block else []
     prepared_lines = header_lines + title_block + _wrap_pdf_lines(lines)
@@ -2745,6 +3018,10 @@ def _pick_document_message(candidates: List[str]) -> str:
     def _score(content: str) -> tuple[int, int]:
         lowered = content.lower()
         score = 0
+        if _is_document_status_request(content):
+            score -= 4
+        if _looks_like_processing_placeholder_reply(content):
+            score -= 3
         if any(
             token in lowered
             for token in (
@@ -3534,6 +3811,21 @@ def _resolve_pdf_fonts(*, country: str, language: str | None) -> tuple[str, str]
                     ),
                 ]
             )
+        for font_dir in _LINUX_LIBERATION_FONT_DIRS:
+            font_candidates.extend(
+                [
+                    (
+                        "AIJLiberationSerif",
+                        font_dir / "LiberationSerif-Regular.ttf",
+                        font_dir / "LiberationSerif-Bold.ttf",
+                    ),
+                    (
+                        "AIJLiberationSans",
+                        font_dir / "LiberationSans-Regular.ttf",
+                        font_dir / "LiberationSans-Bold.ttf",
+                    ),
+                ]
+            )
         font_candidates.extend(
             [
                 (
@@ -3557,6 +3849,12 @@ def _resolve_pdf_fonts(*, country: str, language: str | None) -> tuple[str, str]
             if family is not None:
                 return family
     return ("Helvetica", "Helvetica-Bold")
+
+
+def _prefers_slovak_legal_pdf_profile(*, country: str, language: str | None) -> bool:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    return normalized_country == "SK" or normalized_language.startswith("sk")
 
 
 def _register_ttf_font_family(

@@ -30,11 +30,16 @@ const userPhoneInput = document.getElementById("userPhone");
 const userEmailInput = document.getElementById("userEmail");
 const userPasswordInput = document.getElementById("userPassword");
 const caseTitleInput = document.getElementById("caseTitle");
+const existingCaseInput = document.getElementById("existingCase");
 const createCaseButton = document.getElementById("createCase");
+const refreshExistingCasesButton = document.getElementById("refreshExistingCases");
 const uploadCaseDocumentsButton = document.getElementById("uploadCaseDocuments");
 const inspectCaseDocumentsButton = document.getElementById("inspectCaseDocuments");
 const createSessionButton = document.getElementById("createSession");
 const clearSessionButton = document.getElementById("clearSession");
+const caseHistoryEl = document.getElementById("caseHistory");
+const caseDocumentsListEl = document.getElementById("caseDocumentsList");
+const documentViewerEl = document.getElementById("documentViewer");
 const defaultsUrl = "/static/default-inputs.json";
 const defaultLanguageCode = "SK";
 const MESSAGE_PREVIEW_LIMIT = 256;
@@ -57,6 +62,10 @@ let autoPdfDownloaded = false;
 let documentRequestedByUser = false;
 let pendingInitialInstructionContent = "";
 let preparedCases = [];
+let persistedCases = [];
+let currentCaseHistoryMessages = [];
+let currentCaseDocuments = [];
+let activeDocumentViewUrl = null;
 let processingStatusTimerId = null;
 let processingStatusBaseMessage = "";
 let processingStatusStartedAt = 0;
@@ -178,6 +187,166 @@ function getActiveUserId() {
 
 function getActiveCaseId() {
   return currentCaseId;
+}
+
+function updateExistingCaseStatus() {
+  if (!existingCaseInput) return;
+  existingCaseInput.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  if (!currentUserId) {
+    placeholder.textContent = "Ensure User first to load existing cases...";
+  } else if (!persistedCases.length) {
+    placeholder.textContent = "No existing cases found for this user.";
+  } else {
+    placeholder.textContent = "Select existing case...";
+  }
+  existingCaseInput.appendChild(placeholder);
+
+  for (const caseItem of persistedCases) {
+    const option = document.createElement("option");
+    option.value = String(caseItem.case_id || "").trim();
+    option.textContent = formatExistingCaseLabel(caseItem);
+    existingCaseInput.appendChild(option);
+  }
+
+  if (currentCaseId && persistedCases.some((item) => String(item.case_id || "").trim() === currentCaseId)) {
+    existingCaseInput.value = currentCaseId;
+  } else {
+    existingCaseInput.value = "";
+  }
+}
+
+function formatExistingCaseLabel(caseItem) {
+  const title = String(caseItem?.title || caseItem?.case_id || "Untitled case").trim();
+  const status = String(caseItem?.status || "").trim();
+  const updatedAt = String(caseItem?.updated_at || "").trim();
+  const parts = [title];
+  if (status) parts.push(status);
+  if (updatedAt) parts.push(updatedAt);
+  return parts.join(" | ");
+}
+
+function setCaseHistoryPlaceholder(message = "No existing case selected yet.") {
+  if (!caseHistoryEl) return;
+  caseHistoryEl.textContent = String(message || "").trim();
+}
+
+function renderCaseHistory(messages) {
+  currentCaseHistoryMessages = Array.isArray(messages) ? messages : [];
+  if (!caseHistoryEl) return;
+  if (!currentCaseHistoryMessages.length) {
+    setCaseHistoryPlaceholder("Selected case has no stored history yet.");
+    return;
+  }
+  const lines = currentCaseHistoryMessages.map((message) => {
+    const role = String(message?.role || "unknown").trim();
+    const agentName = String(message?.agent_name || "").trim();
+    const speaker = role === "user" ? "User" : agentName || "Assistant";
+    const createdAt = String(message?.created_at || "").trim();
+    const content = String(message?.content || "").trim();
+    return `[${createdAt || "unknown time"}] ${speaker}: ${content}`;
+  });
+  caseHistoryEl.textContent = lines.join("\n\n");
+}
+
+function revokeDocumentViewUrl() {
+  if (!activeDocumentViewUrl) return;
+  URL.revokeObjectURL(activeDocumentViewUrl);
+  activeDocumentViewUrl = null;
+}
+
+function setDocumentViewerPlaceholder(message = "Select View on a case document to preview it here.") {
+  if (!documentViewerEl) return;
+  revokeDocumentViewUrl();
+  documentViewerEl.innerHTML = "";
+  const placeholder = document.createElement("p");
+  placeholder.className = "empty-state";
+  placeholder.textContent = String(message || "").trim();
+  documentViewerEl.appendChild(placeholder);
+}
+
+function renderCaseDocuments(documents) {
+  currentCaseDocuments = Array.isArray(documents) ? documents : [];
+  if (!caseDocumentsListEl) return;
+  caseDocumentsListEl.innerHTML = "";
+  if (!currentCaseDocuments.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "No case documents loaded yet.";
+    caseDocumentsListEl.appendChild(empty);
+    setDocumentViewerPlaceholder("No case document selected yet.");
+    return;
+  }
+
+  for (const documentItem of currentCaseDocuments) {
+    const card = document.createElement("article");
+    card.className = "case-document-card";
+
+    const title = document.createElement("h3");
+    title.textContent = String(documentItem?.original_filename || documentItem?.doc_id || "Document").trim();
+
+    const meta = document.createElement("p");
+    meta.className = "case-document-meta";
+    meta.textContent = [
+      `Document ID: ${String(documentItem?.doc_id || "").trim() || "n/a"}`,
+      `Kind: ${String(documentItem?.kind || "").trim() || "n/a"}`,
+      `Version: ${String(documentItem?.version ?? "").trim() || "n/a"}`,
+      `Status: ${String(documentItem?.processing_status || "").trim() || "n/a"}`,
+      `Processed at: ${String(documentItem?.processed_at || "").trim() || "pending"}`,
+    ].join("\n");
+
+    const actions = document.createElement("div");
+    actions.className = "case-document-actions";
+
+    const viewButton = document.createElement("button");
+    viewButton.type = "button";
+    viewButton.className = "secondary";
+    viewButton.textContent = "View";
+    viewButton.addEventListener("click", async () => {
+      try {
+        await viewCaseDocument(String(documentItem?.doc_id || "").trim());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendStream(`error: ${message}`);
+        setWorkflowWarning(message);
+        finishProcessingStatus(`Error: ${message}`);
+      }
+    });
+
+    const downloadButton = document.createElement("button");
+    downloadButton.type = "button";
+    downloadButton.className = "secondary";
+    downloadButton.textContent = "Download";
+    downloadButton.addEventListener("click", async () => {
+      try {
+        await downloadCaseDocument(String(documentItem?.doc_id || "").trim());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendStream(`error: ${message}`);
+        setWorkflowWarning(message);
+        finishProcessingStatus(`Error: ${message}`);
+      }
+    });
+
+    actions.append(viewButton, downloadButton);
+    card.append(title, meta, actions);
+    caseDocumentsListEl.appendChild(card);
+  }
+}
+
+function resetLoadedCaseData() {
+  currentCaseHistoryMessages = [];
+  currentCaseDocuments = [];
+  setCaseHistoryPlaceholder();
+  if (caseDocumentsListEl) {
+    caseDocumentsListEl.innerHTML = "";
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "No case documents loaded yet.";
+    caseDocumentsListEl.appendChild(empty);
+  }
+  setDocumentViewerPlaceholder();
 }
 
 function ensureChatPlaceholder() {
@@ -573,14 +742,17 @@ function appendProcessingMessage(data) {
   const text = String(data.message || "").trim();
   if (!text) return;
   removeThinkingPlaceholders();
+  const stage = String(data.stage || "").trim().toLowerCase();
   const toolName = String(data.tool_name || "").trim();
-  const processingMessage = {
-    role: "assistant",
-    content: text,
-    agent_name: toolName ? `System/${toolName}` : "System",
-  };
-  appendChatMessage(processingMessage);
-  appendMessagePreview(processingMessage);
+  if (["document_ready", "document_package_ready", "document_status"].includes(stage)) {
+    const processingMessage = {
+      role: "assistant",
+      content: text,
+      agent_name: toolName ? `System/${toolName}` : "System",
+    };
+    appendChatMessage(processingMessage);
+    appendMessagePreview(processingMessage);
+  }
   updateProcessingStatus(`Backend is processing: ${text}`);
 }
 
@@ -593,7 +765,11 @@ async function handleStreamLifecycleEvent(eventItem, waitingMessage) {
     return;
   }
   if (eventItem.event === "done") {
-    finishProcessingStatus(waitingForManualReply ? "Assistant is waiting for your answer." : "Stream completed.");
+    finishProcessingStatus(
+      waitingForManualReply
+        ? "Assistant is waiting for your answer."
+        : "Stream completed. You can ask a follow-up question or document status.",
+    );
     await maybeAutoDownloadPdf();
     return;
   }
@@ -618,6 +794,176 @@ async function safeParseJson(response) {
   } catch {
     return { detail: text };
   }
+}
+
+async function refreshExistingCases({ selectedCaseId = "", preserveSelection = true } = {}) {
+  if (!currentUserId) {
+    persistedCases = [];
+    updateExistingCaseStatus();
+    refreshPersistedCaseControls();
+    return [];
+  }
+  const response = await fetch(
+    `${getBaseUrl()}/v1/cases?user_id=${encodeURIComponent(currentUserId)}`,
+    { headers: requestHeaders(false) },
+  );
+  const body = await parseResponse(response);
+  persistedCases = Array.isArray(body) ? body : [];
+  updateExistingCaseStatus();
+  refreshPersistedCaseControls();
+
+  const targetCaseId = String(selectedCaseId || (preserveSelection ? currentCaseId || "" : "")).trim();
+  if (targetCaseId && persistedCases.some((item) => String(item?.case_id || "").trim() === targetCaseId)) {
+    existingCaseInput.value = targetCaseId;
+  } else if (currentCaseId && !persistedCases.some((item) => String(item?.case_id || "").trim() === currentCaseId)) {
+    currentCaseId = null;
+    hasUploadedCaseDocuments = false;
+    resetLoadedCaseData();
+    invalidateSession("Previously selected case is no longer available. Pick another existing case or create a new one.");
+    updateExistingCaseStatus();
+  }
+  return persistedCases;
+}
+
+async function selectExistingCase(caseId) {
+  const normalizedCaseId = String(caseId || "").trim();
+  if (!normalizedCaseId) {
+    currentCaseId = null;
+    hasUploadedCaseDocuments = false;
+    resetLoadedCaseData();
+    updateExistingCaseStatus();
+    refreshPersistedCaseControls();
+    invalidateSession("Existing case selection cleared.");
+    updateCaseStatus({ mode: "cleared_selected_case", user_id: currentUserId });
+    return null;
+  }
+  if (!currentUserId) {
+    throw new Error("Ensure User first before selecting an existing case.");
+  }
+  const selectedCase = persistedCases.find((item) => String(item?.case_id || "").trim() === normalizedCaseId);
+  if (!selectedCase) {
+    throw new Error("Selected existing case is no longer available. Refresh Existing Cases first.");
+  }
+
+  currentCaseId = normalizedCaseId;
+  if (caseTitleInput) {
+    caseTitleInput.value = String(selectedCase?.title || caseTitleInput.value || "").trim() || "Simulator persisted case";
+  }
+  updateExistingCaseStatus();
+  invalidateSession("Existing case loaded. Click Create Session to continue this conversation on the selected case.");
+
+  const params = new URLSearchParams({
+    user_id: currentUserId,
+    limit: "20",
+  });
+  const response = await fetch(
+    `${getBaseUrl()}/v1/cases/${encodeURIComponent(normalizedCaseId)}/history?${params.toString()}`,
+    { headers: requestHeaders(false) },
+  );
+  const body = await parseResponse(response);
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  const documents = Array.isArray(body?.documents) ? body.documents : [];
+  hasUploadedCaseDocuments = documents.length > 0;
+  renderCaseHistory(messages);
+  renderCaseDocuments(documents);
+  updateCaseStatus({
+    mode: "selected_existing_case",
+    user_id: currentUserId,
+    case: selectedCase,
+    history_message_count: messages.length,
+    document_count: documents.length,
+  });
+  refreshPersistedCaseControls();
+  appendStream(`existing_case_loaded: ${normalizedCaseId} messages=${messages.length} documents=${documents.length}`);
+  if (!documents.length) {
+    setWorkflowWarning("Existing case loaded, but it has no stored documents yet.");
+  } else {
+    clearWorkflowWarning();
+  }
+  return body;
+}
+
+async function fetchCaseDocument(docId) {
+  const normalizedDocId = String(docId || "").trim();
+  if (!currentUserId || !currentCaseId) {
+    throw new Error("Select an existing case first.");
+  }
+  if (!normalizedDocId) {
+    throw new Error("Case document ID is required.");
+  }
+  const response = await fetch(
+    `${getBaseUrl()}/v1/cases/${encodeURIComponent(currentCaseId)}/documents/${encodeURIComponent(normalizedDocId)}?user_id=${encodeURIComponent(currentUserId)}`,
+    { headers: requestHeaders(false) },
+  );
+  if (!response.ok) {
+    const body = await safeParseJson(response);
+    throw new Error(JSON.stringify(body));
+  }
+  const blob = await response.blob();
+  const contentType = String(response.headers.get("Content-Type") || "").trim().toLowerCase();
+  const filename = extractFilenameFromContentDisposition(response.headers.get("Content-Disposition"))
+    || normalizedDocId;
+  return { blob, contentType, filename };
+}
+
+function triggerBlobDownload({ blob, filename }) {
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+}
+
+async function viewCaseDocument(docId) {
+  const { blob, contentType, filename } = await fetchCaseDocument(docId);
+  revokeDocumentViewUrl();
+  documentViewerEl.innerHTML = "";
+
+  const title = document.createElement("p");
+  title.className = "case-document-meta";
+  title.textContent = `Viewing: ${filename} (${contentType || "application/octet-stream"})`;
+  documentViewerEl.appendChild(title);
+
+  if (contentType.includes("pdf")) {
+    activeDocumentViewUrl = URL.createObjectURL(blob);
+    const frame = document.createElement("iframe");
+    frame.className = "document-viewer-frame";
+    frame.src = activeDocumentViewUrl;
+    frame.title = filename;
+    documentViewerEl.appendChild(frame);
+    return;
+  }
+
+  if (contentType.startsWith("text/") || contentType.includes("json") || contentType.includes("xml")) {
+    const text = await blob.text();
+    const pre = document.createElement("pre");
+    pre.className = "document-viewer-pre";
+    pre.textContent = text;
+    documentViewerEl.appendChild(pre);
+    return;
+  }
+
+  activeDocumentViewUrl = URL.createObjectURL(blob);
+  const note = document.createElement("p");
+  note.className = "empty-state";
+  note.textContent = "Inline preview is not available for this document type. Use the link below to open it.";
+  const link = document.createElement("a");
+  link.className = "document-viewer-link";
+  link.href = activeDocumentViewUrl;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = `Open ${filename}`;
+  documentViewerEl.append(note, link);
+}
+
+async function downloadCaseDocument(docId) {
+  const { blob, filename } = await fetchCaseDocument(docId);
+  triggerBlobDownload({ blob, filename });
+  appendStream(`case_document_downloaded: ${filename}`);
+  finishProcessingStatus(`Document downloaded: ${filename}`);
 }
 
 function updateCaseStatus(payload) {
@@ -682,6 +1028,12 @@ function finishProcessingStatus(message = "Idle.") {
 function refreshPersistedCaseControls() {
   if (createCaseButton) {
     createCaseButton.disabled = !currentUserId;
+  }
+  if (refreshExistingCasesButton) {
+    refreshExistingCasesButton.disabled = !currentUserId;
+  }
+  if (existingCaseInput) {
+    existingCaseInput.disabled = !currentUserId || !persistedCases.length;
   }
   if (uploadCaseDocumentsButton) {
     uploadCaseDocumentsButton.disabled = !currentCaseId;
@@ -757,7 +1109,7 @@ function refreshReplyControls() {
     return;
   }
   if (!waitingForManualReply) {
-    setReplyStatus("Type an answer and click Send answer. The simulator will continue the current session.");
+    setReplyStatus("Type an answer and click Send answer to continue the session or ask for document status.");
     return;
   }
   setReplyStatus("Assistant is waiting. Type an answer and click Send answer.");
@@ -785,10 +1137,12 @@ async function ensureUser() {
     if (previousUserId && previousUserId !== currentUserId) {
       currentCaseId = null;
       hasUploadedCaseDocuments = false;
+      resetLoadedCaseData();
       invalidateSession("User changed. Start again with Create Case, Upload To Case, then Create Session.");
     } else {
       clearWorkflowWarning();
     }
+    await refreshExistingCases({ preserveSelection: true });
     updateCaseStatus({ mode: "created_user", user: created, case_id: currentCaseId });
     refreshPersistedCaseControls();
     return created;
@@ -810,10 +1164,12 @@ async function ensureUser() {
     if (previousUserId && previousUserId !== currentUserId) {
       currentCaseId = null;
       hasUploadedCaseDocuments = false;
+      resetLoadedCaseData();
       invalidateSession("User changed. Start again with Create Case, Upload To Case, then Create Session.");
     } else {
       clearWorkflowWarning();
     }
+    await refreshExistingCases({ preserveSelection: true });
     updateCaseStatus({ mode: "loaded_user_by_phone", user: existing, case_id: currentCaseId });
     refreshPersistedCaseControls();
     return existing;
@@ -832,10 +1188,12 @@ async function ensureUser() {
   if (previousUserId && previousUserId !== currentUserId) {
     currentCaseId = null;
     hasUploadedCaseDocuments = false;
+    resetLoadedCaseData();
     invalidateSession("User changed. Start again with Create Case, Upload To Case, then Create Session.");
   } else {
     clearWorkflowWarning();
   }
+  await refreshExistingCases({ preserveSelection: true });
   updateCaseStatus({ mode: "loaded_user_by_email", user, case_id: currentCaseId });
   refreshPersistedCaseControls();
   return user;
@@ -862,7 +1220,9 @@ async function createPersistedCase() {
   const body = await parseResponse(response);
   currentCaseId = body.case_id;
   hasUploadedCaseDocuments = false;
+  resetLoadedCaseData();
   invalidateSession("Case created. You can Create Session immediately, or use Upload To Case first for persisted document retrieval.");
+  await refreshExistingCases({ selectedCaseId: currentCaseId, preserveSelection: false });
   updateCaseStatus({ mode: "created_case", user_id: currentUserId, case: body });
   refreshPersistedCaseControls();
   return body;
@@ -889,7 +1249,9 @@ async function deleteAllCases() {
 
   currentCaseId = null;
   hasUploadedCaseDocuments = false;
+  resetLoadedCaseData();
   invalidateSession("All user cases were cleared. Create Case before using persisted case flow again.");
+  await refreshExistingCases({ preserveSelection: false });
   updateCaseStatus({
     mode: "deleted_all_cases",
     user_id: userId,
@@ -938,6 +1300,7 @@ async function uploadCaseDocuments() {
   const body = await parseResponse(response);
   hasUploadedCaseDocuments = true;
   invalidateSession("Documents uploaded to the active case. Create Session again before starting the stream.");
+  await refreshExistingCases({ selectedCaseId: currentCaseId, preserveSelection: true });
   updateCaseStatus({
     mode: "uploaded_case_documents",
     user_id: currentUserId,
@@ -1049,12 +1412,12 @@ function parseSseChunk(rawChunk) {
   return events;
 }
 
-async function startStream() {
+async function startStream({ instructionOverride = "" } = {}) {
   requireSession();
   if (!hasBoundSessionForCurrentCase()) {
     throw new Error("Current session is stale for the active case. Create Session again before Start Stream.");
   }
-  const instruction = instructionInput.value.trim();
+  const instruction = String(instructionOverride || instructionInput.value).trim();
   if (!instruction) throw new Error("Case instruction is required.");
 
   waitingForManualReply = false;
@@ -1183,11 +1546,9 @@ async function sendUserReply() {
   const content = userReplyInput.value.trim();
   if (!content) throw new Error("End user answer is required.");
   if (!streamStartedForSession) {
-    await startStream();
-  }
-  if (!waitingForManualReply) {
-    refreshReplyControls();
-    throw new Error("Wait for the assistant question before sending an answer.");
+    userReplyInput.value = "";
+    await startStream({ instructionOverride: content });
+    return;
   }
 
   userReplyInput.value = "";
@@ -1430,6 +1791,9 @@ bind("ensureUser", ensureUser);
 bind("createCase", createPersistedCase);
 bind("uploadCaseDocuments", uploadCaseDocuments);
 bind("inspectCaseDocuments", inspectCaseDocuments);
+bind("refreshExistingCases", async () => {
+  await refreshExistingCases({ preserveSelection: true });
+});
 bind("deleteAllCases", deleteAllCases);
 bind("startStream", startStream);
 bind("refreshMessages", refreshMessages);
@@ -1478,6 +1842,8 @@ async function initializeSimulator() {
   await loadPreparedCases();
   baseUrlInput.value = normalizeApiBaseUrl(baseUrlInput.value);
   userSimulationModeInput.value = "ReadUser";
+  updateExistingCaseStatus();
+  resetLoadedCaseData();
   renderWelcomeMessage();
   clearWorkflowWarning();
   finishProcessingStatus("Idle.");
@@ -1488,6 +1854,20 @@ async function initializeSimulator() {
 if (preparedCaseInput) {
   preparedCaseInput.addEventListener("change", () => {
     applyPreparedCaseSelection(preparedCaseInput.value);
+  });
+}
+
+if (existingCaseInput) {
+  existingCaseInput.addEventListener("change", async () => {
+    try {
+      await selectExistingCase(existingCaseInput.value);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendStream(`error: ${message}`);
+      sessionStatus.textContent = message;
+      setWorkflowWarning(message);
+      finishProcessingStatus(`Error: ${message}`);
+    }
   });
 }
 

@@ -145,12 +145,15 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 - user-facing chat text is now sanitized to remove technical persistence preambles like `Tu je JSON pre uchovanie prípadu` and fake relative file links like `documents/...pdf`; the user sees only the natural-language answer while the backend still keeps the machine payload for export/state handling
 - if a multi-document Slovak share-transfer draft is present in the visible assistant text but the model forgot to populate `CASE_UPDATE_JSON.case.documents`, the export endpoint now falls back to the detected document sections and still returns a ZIP package with one PDF per detected document instead of collapsing everything into a single `final-document.pdf`
 - the fallback ZIP detector now ignores ordinary single-document section headings such as `Zmluvne strany` or `Doba najmu`, so sectioned contracts continue to export as one PDF instead of being split into a fake ZIP package
+- if a document-generation turn ends with a generic wait message such as `Prosim, dajte mi chvilu.`, the API now replaces that placeholder with an explicit document-package-ready completion message before persisting the final assistant turn
+- completed `ReadUser` sessions now also accept follow-up status questions such as `stav dokumentov` and answer from the saved export/result state instead of failing with `Session already completed`
 - in `POST /v1/chat/sessions/{session_id}/stream` with `user_simulation_mode=ReadUser`, tool lifecycle progress is streamed live as `processing` SSE events:
   - immediately when backend receives user turn: localized processing status (`Processing...`, `Spracovavam...`, `Verarbeite Anfrage...`, ...)
   - immediately after each user message: localized thinking status (`Thinking...`, `Premyslam...`, `Ich denke nach...`, ... depending on country/language)
   - before ORSR lookup: localized ORSR start message (for example `Idem overit spolocnost '<name>' v ORSR.`, `Ich werde das Unternehmen '<name>' im ORSR pruefen.`, `I am going to verify company '<name>' in ORSR.`)
   - when ORSR data is reused from cache: localized cache-hit progress message so clients can keep showing that the backend is still processing
   - when the assistant prepares a multi-document package in `ReadUser` stream mode, the backend now emits one progress event per prepared document name before the final assistant message instead of waiting to describe the whole package at once
+  - after the result/export is actually ready, the backend emits a final document-package-ready processing event so clients can show a definitive completion state instead of ending on a generic `please wait` sentence
   - after ORSR lookup: localized ORSR completion message (for example `Overenie spolocnosti v ORSR je hotove: ...`, `Unternehmenspruefung im ORSR abgeschlossen: ...`, `Verification of company done in ORSR: ...`)
   This lets clients show small progress updates while waiting for the final assistant answer.
 
@@ -495,9 +498,11 @@ python examples/law_citation_resolution_demo.py
 ```
 - When the laws database has no import timestamp yet, `knowledge_last_updated_at` falls back to the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value while `last_law_update_date` remains empty.
 - For Slovak and other Central European locales, the exporter uses a Unicode TrueType font when available so characters such as `á`, `č`, `ľ`, `ô`, and `ž` render correctly in the generated PDF.
+- For Slovakia (`country=SK` or language `sk-*`), document PDFs now include a Slovak legal-document profile header (`Jurisdikcia: Slovenská republika`, `Typ dokumentu: právny návrh`) to make exports closer to expected local legal formatting.
 
 Additional PDF font notes:
 - The API container installs `fonts-dejavu-core` and the exporter prefers `DejaVu Serif` on Linux, so Azure deployments do not fall back to Helvetica for Slovak or German PDFs.
+- If DejaVu is unavailable on Linux, the exporter now falls back to `Liberation Serif` / `Liberation Sans` before trying platform-default fonts.
 - On Windows, the exporter prefers `Times New Roman` and then `Arial` for Central European PDF exports.
 
 ## Version bump workflow
