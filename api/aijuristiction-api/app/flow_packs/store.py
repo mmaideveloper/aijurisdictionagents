@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from contextlib import contextmanager
@@ -7,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-from typing import Any
+from typing import Any, Iterator
 import unicodedata
 from uuid import uuid4
 
@@ -71,7 +72,7 @@ class FlowPackStore:
         include_deleted: bool = False,
         flow_key: str | None = None,
         jurisdiction: str | None = None,
-    ) -> list[FlowPackResponse]:
+    ) -> builtins.list[FlowPackResponse]:
         clauses: list[str] = []
         params: list[object] = []
         if not include_deleted:
@@ -98,7 +99,7 @@ class FlowPackStore:
         flow_key: str,
         jurisdiction: str | None = None,
         include_deleted: bool = True,
-    ) -> list[FlowPackResponse]:
+    ) -> builtins.list[FlowPackResponse]:
         return self.list(include_deleted=include_deleted, flow_key=flow_key, jurisdiction=jurisdiction)
 
     def get(self, *, flow_key: str, version: int, jurisdiction: str | None = None) -> FlowPackResponse:
@@ -334,7 +335,7 @@ class FlowPackStore:
         return self._config.db_option in {"postgres", "azure"}
 
     @contextmanager
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self) -> Iterator[Any]:
         if self._is_postgres:
             psycopg = _load_psycopg()
             if not self._config.db_cloud:
