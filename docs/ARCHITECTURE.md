@@ -10,7 +10,7 @@
 - LLM Clients: `MockLLMClient` for offline runs, `OpenAIClient` for OpenAI, and `AzureFoundryClient` for Azure OpenAI.
 - Logs include the LLM provider name and client class at startup.
 - Azure Foundry logs auth method plus endpoint, deployment, API version, and temperature on client init.
-- Project Polling: `scripts/project_poll.py` snapshots Project V2 items across configured projects; `scripts/project_in_review.py` moves Ready tasks with PRs to In review.
+- Project Polling: `scripts/project_poll.py` snapshots Project V2 items across configured projects; `scripts/project_requirements_review.py` flags issues missing the `codex - business requirements reviewed` marker and can patch missing requirement sections; `scripts/project_in_review.py` moves Ready tasks with PRs to In review.
 - Lifecycle Automation: local lifecycle pipeline code remains under `aijurisdictionagents.lifecycle` and supporting scripts/docs are used for Ready -> In progress -> PR -> In review flow.
 
 ## Message Schema
