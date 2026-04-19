@@ -505,6 +505,22 @@ Additional PDF font notes:
 - If DejaVu is unavailable on Linux, the exporter now falls back to `Liberation Serif` / `Liberation Sans` before trying platform-default fonts.
 - On Windows, the exporter prefers `Times New Roman` and then `Arial` for Central European PDF exports.
 
+## Document template catalog
+
+- `GET /v1/document-templates` lists the persistent legal-template catalog used for future template-driven contract generation.
+- `POST`, `PATCH`, and `DELETE` on `/v1/document-templates/*` allow templates to be added, updated, and soft-deleted without changing code.
+- `GET /v1/document-templates/match/search?request_text=...&country=SK` returns the best matching template candidate for a client request.
+- The initial seed contains the common Slovak template groups supplied for:
+  - commercial/corporate contracts
+  - employment/personnel documents
+  - court filings
+  - powers of attorney
+  - real-estate / lease contracts
+- Seed records can start as metadata-only (`source_url`, `source_format`, keywords, category) and later be enriched with a full template body for rendering.
+- Template runtime storage defaults to `runs/storage/api/sqlite/document_templates.sqlite3`.
+- Detailed API notes: `docs/DOCUMENT_TEMPLATES_API.md`
+- Minimal runnable example: `python examples/document_templates_minimal_demo.py`
+
 ## Version bump workflow
 
 Rule:
