@@ -2120,6 +2120,81 @@ def test_existing_case_history_falls_back_to_summary_when_transcript_missing(mon
     assert conversation[1].content == "New follow-up question"
 
 
+def test_reply_persists_session_history_document_to_case(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    persisted_history: list[dict[str, str | None]] = []
+
+    class _FakeStore:
+        def list_case_communications(self, *, case_id: str, limit=None, offset: int = 0):
+            return []
+
+        def add_case_message(self, *, case_id: str, role: str, content: str, agent_name: str | None = None):
+            return "comm-id"
+
+        def add_case_session_history_document(
+            self,
+            *,
+            case_id: str,
+            session_id: str,
+            content: str,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            persisted_history.append(
+                {
+                    "case_id": case_id,
+                    "session_id": session_id,
+                    "content": content,
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return "doc-history"
+
+    class _FakeLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            return SimpleNamespace(
+                content="Stored response for conversation memory.",
+                agent_name="LawyerSlovakia",
+            )
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _FakeLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "SK",
+            "case_id": "case-123",
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Please save this discussion for later reuse."},
+        headers=AUTH_HEADERS,
+    )
+    assert reply_response.status_code == 200
+    assert len(persisted_history) == 1
+    assert persisted_history[0]["case_id"] == "case-123"
+    assert persisted_history[0]["session_id"] == session_id
+    persisted_transcript = str(persisted_history[0]["content"])
+    assert "USER: Please save this discussion for later reuse. (agent=User)" in persisted_transcript
+    assert "ASSISTANT: Stored response for conversation memory. (agent=LawyerSlovakia)" in persisted_transcript
+
+
 def test_reply_endpoint_respects_session_language_sk() -> None:
     session_response = client.post(
         "/v1/chat/sessions",

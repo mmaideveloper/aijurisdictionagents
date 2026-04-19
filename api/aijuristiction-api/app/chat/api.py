@@ -111,6 +111,37 @@ def _persist_case_message_if_needed(*, session: Session, role: str, content: str
     store.add_case_message(case_id=case_id, role=role, content=content, agent_name=agent_name)
 
 
+def _persist_session_history_document_if_needed(*, session: Session, session_id: UUID) -> None:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return
+    messages = _repository.list_messages(session_id)
+    if not messages:
+        return
+    lines: list[str] = []
+    for message in messages:
+        role = message.role.value.upper()
+        content = message.content.strip()
+        if not content:
+            continue
+        line = f"{role}: {content}"
+        if message.agent_name:
+            line = f"{line} (agent={message.agent_name})"
+        lines.append(line)
+    if not lines:
+        return
+    transcript = "\n".join(lines)
+    store = _get_store()
+    add_session_history_document = getattr(store, "add_case_session_history_document", None)
+    if callable(add_session_history_document):
+        add_session_history_document(
+            case_id=case_id,
+            session_id=str(session_id),
+            content=transcript,
+            uploaded_by_user_id=str(session.user_id) if session.user_id else None,
+        )
+
+
 def _read_case_communication_content(*, store: ApiDatabaseStore, communication: Any) -> str:
     content = str(getattr(communication, "summary", ""))
     transcript_uri = getattr(communication, "transcript_uri", None)
@@ -187,7 +218,7 @@ def _load_case_documents_for_llm(
     processed_entries: list[tuple[str, str, str, str]] = []
     processed_names_by_doc_id: dict[str, str] = {}
     for document in list_case_documents(case_id=case_id):
-        if document.kind != 'uploaded':
+        if document.kind not in {'uploaded', 'session_history'}:
             continue
         if document.processing_status == 'processed' and document.doc_id in contents_by_doc_id:
             name, text, vector = contents_by_doc_id[document.doc_id]
@@ -644,6 +675,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         session=session,
         content=content,
     )
+    _persist_session_history_document_if_needed(session=session, session_id=session_id)
     _repository.set_result(
         session_id,
         _build_direct_reply_result(
@@ -890,6 +922,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 ),
                 metadata=metadata,
             )
+            _persist_session_history_document_if_needed(session=session, session_id=session_id)
             _repository.set_result(session_id, session_result)
             event_queue.put(("result", session_result.model_dump(mode="json")))
             event_queue.put(("done", {"session_id": str(session_id)}))
@@ -967,6 +1000,7 @@ def _stream_read_user_session(
                     messages=current_messages,
                     lawyer_message=visible_lawyer_content,
                 )
+                _persist_session_history_document_if_needed(session=session, session_id=session_id)
                 _repository.set_result(session_id, session_result)
                 event_queue.put(("result", session_result.model_dump(mode="json")))
                 event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
@@ -3596,4 +3630,3 @@ def _pdf_circle_ops(cx: float, cy: float, r: float) -> List[str]:
         f"{cx + k:.3f} {y0:.3f} {x1:.3f} {cy - k:.3f} {x1:.3f} {cy:.3f} c",
         "h",
     ]
-
