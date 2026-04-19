@@ -906,6 +906,46 @@ class ApiDatabaseStore:
             uploaded_by_user_id=uploaded_by_user_id,
         )
 
+    def add_case_session_history_document(
+        self,
+        *,
+        case_id: str,
+        session_id: str,
+        content: str,
+        uploaded_by_user_id: str | None = None,
+    ) -> str:
+        filename = f"session-{session_id}.txt"
+        with self._connect() as conn:
+            existing = self._fetchone(
+                conn,
+                """
+                SELECT doc_id FROM case_documents
+                WHERE case_id = ? AND kind = 'session_history' AND original_filename = ?
+                LIMIT 1
+                """,
+                (case_id, filename),
+            )
+            if existing is not None:
+                return str(existing[0])
+            row = self._fetchone(
+                conn,
+                """
+                SELECT COALESCE(MAX(version), 0)
+                FROM case_documents
+                WHERE case_id = ? AND kind = 'session_history'
+                """,
+                (case_id,),
+            )
+        next_version = int(row[0]) + 1 if row else 1
+        return self.add_case_document(
+            case_id=case_id,
+            kind="session_history",
+            version=next_version,
+            original_filename=filename,
+            payload=content.encode("utf-8"),
+            uploaded_by_user_id=uploaded_by_user_id,
+        )
+
     def add_case_document(
         self,
         *,
@@ -1032,7 +1072,7 @@ class ApiDatabaseStore:
                 SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id,
                        processing_status, processing_error, processed_at, created_at
                 FROM case_documents
-                WHERE kind = 'uploaded' AND processing_status IN ('uploaded', 'failed')
+                WHERE kind IN ('uploaded', 'session_history') AND processing_status IN ('uploaded', 'failed')
                 ORDER BY created_at ASC
                 LIMIT ?
                 """,
