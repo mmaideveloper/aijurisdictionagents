@@ -17,6 +17,9 @@ Default seeded Slovak packs include:
 
 - `sk.contract.sale_purchase`
 - `sk.company.registry_change`
+- `sk.company.owner_transfer`
+- `sk.civil.lease_advisory`
+- `sk.probate.inheritance_proceeding`
 - `sk.civil.power_of_attorney`
 - `sk.criminal.criminal_complaint`
 - `sk.notary.notarial_process`
@@ -33,7 +36,9 @@ Runtime data uses SQLite under repository runtime storage:
 SQL asset for schema:
 
 - `databases/api/flow_packs_schema.sql`
+- chat-simulator seed additions: `databases/api/seeds/001_chat_simulator_flow_packs.sql`
 - country separation is modeled in the same `flow_packs` table via `jurisdiction` (no separate table per country)
+- seed SQL is idempotent (`WHERE NOT EXISTS`) so existing rows are not overridden and duplicates are not created.
 
 ## Endpoints
 
@@ -75,10 +80,21 @@ During chat reply processing, the API now attempts to match each user request ag
 for the session country. If no flow pack matches, the API logs a warning (`No flow-pack matched user request`)
 with session id, country, and a short request excerpt.
 
+For chat-simulator coverage, flow definitions now include:
+
+- `steps`: ordered process stages each testcase flow follows.
+- `delivery`: output packaging contract:
+  - one output -> `single_document`
+  - multiple outputs -> `multi_document_bundle = "zip"`
+
 ## Minimal runnable example
 
 ```bash
 python examples/flow_packs_minimal_demo.py
+```
+
+```bash
+python examples/chat_simulator_flowpack_coverage_demo.py
 ```
 
 Repository default smoke demo remains available:
