@@ -3,7 +3,7 @@
 This repository uses local polling scripts to drive Project V2 automation.
 
 Automatic polling/pooling GitHub workflow execution is disabled/removed.
-Reason: Codex-based automation requires `OPENAI_KEY` and a separate paid OpenAI API account.
+Reason: project automation is kept local/manual for predictable control of task transitions and comments.
 
 ## Local automation
 
@@ -87,6 +87,25 @@ Move Ready tasks with PRs to In review:
 python scripts/project_in_review.py --config .github/automation.yml --plan-output runs/automation/latest_snapshot/in_review_plan.json
 ```
 
+
+Review tasks that are missing the `codex - business requirements reviewed` comment:
+
+```bash
+python scripts/project_requirements_review.py --config .github/automation.yml --output runs/automation/latest_snapshot/requirements_review_plan.json
+```
+
+Apply comments directly to GitHub issues (posts marker comment where missing):
+
+```bash
+python scripts/project_requirements_review.py --config .github/automation.yml --apply --output runs/automation/latest_snapshot/requirements_review_plan.json
+```
+
+Apply comments **and** auto-fix missing requirements sections in issue descriptions:
+
+```bash
+python scripts/project_requirements_review.py --config .github/automation.yml --apply --fix-body --output runs/automation/latest_snapshot/requirements_review_plan.json
+```
+
 For multiple projects, the script writes:
 
 - `runs/automation/latest_snapshot/project_<project_number>.json`
@@ -114,4 +133,42 @@ In-review dry-run example:
 
 ```bash
 python examples/project_in_review_demo.py
+```
+
+Requirements-review dry-run example:
+
+```bash
+python examples/project_requirements_review_demo.py
+```
+
+## VS Code manual run
+
+This workspace now includes `.vscode/tasks.json` with ready-to-run commands:
+
+- `Automation: Poll projects snapshot`
+- `Automation: Requirements review (dry run)`
+- `Automation: Requirements review (apply + fix body)`
+- `Automation: Move Ready -> In review`
+
+Run them from **Terminal -> Run Task...**.
+
+Recommended extensions are listed in `.vscode/extensions.json`:
+
+- GitHub Pull Requests and Issues (`github.vscode-pull-request-github`) for issue/PR visibility.
+- Python (`ms-python.python`) for running/debugging local scripts.
+
+## Scheduling every 15 minutes
+
+VS Code tasks are manual by default. For scheduling, use your OS scheduler and call the same command.
+
+Linux/macOS cron example:
+
+```bash
+*/15 * * * * cd /path/to/aijurisdictionagents && python scripts/project_requirements_review.py --config .github/automation.yml --apply --fix-body --output runs/automation/latest_snapshot/requirements_review_plan.json >> runs/automation/scheduler.log 2>&1
+```
+
+Windows Task Scheduler action example:
+
+```powershell
+python scripts/project_requirements_review.py --config .github/automation.yml --apply --fix-body --output runs/automation/latest_snapshot/requirements_review_plan.json
 ```
