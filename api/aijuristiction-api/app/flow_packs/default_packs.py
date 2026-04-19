@@ -23,6 +23,12 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
                     "payment_terms",
                 ],
                 "outputs": ["sale_purchase_agreement", "handover_protocol_template"],
+                "steps": [
+                    "collect_parties_and_subject",
+                    "validate_price_and_payment_terms",
+                    "generate_documents",
+                ],
+                "delivery": {"single_document": "sale_purchase_agreement", "multi_document_bundle": "zip"},
                 "proactive_recommendations": [
                     "Navrhni odovzdávací protokol.",
                     "Upozorni na zodpovednosť za vady.",
@@ -38,7 +44,16 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
             "description": "Balík dokumentov pre časté zmeny v s.r.o. vrátane podania na ORSR.",
             "is_enabled": True,
             "definition": {
-                "intent": {"keywords": ["orsr", "obchodny register", "obchodný register", "zapis do orsr"]},
+                "intent": {
+                    "keywords": [
+                        "orsr",
+                        "obchodny register",
+                        "obchodný register",
+                        "zapis do orsr",
+                        "pridanie vlastnika firmy",
+                        "novy vlastnik firmy",
+                    ]
+                },
                 "required_facts": [
                     "company_name",
                     "company_identifier",
@@ -51,6 +66,111 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
                     "updated_articles",
                     "registry_filing_package",
                 ],
+                "steps": [
+                    "collect_company_and_change_facts",
+                    "verify_company_in_register",
+                    "prepare_registry_documents",
+                ],
+                "delivery": {"single_document": None, "multi_document_bundle": "zip"},
+            },
+        },
+        {
+            "flow_key": "sk.company.owner_transfer",
+            "version": 1,
+            "jurisdiction": "SK",
+            "domain": "commercial",
+            "title": "Prevod obchodného podielu (nový vlastník firmy)",
+            "description": "Postup a dokumentácia pre pridanie/prevod nového vlastníka v s.r.o.",
+            "is_enabled": True,
+            "definition": {
+                "intent": {
+                    "keywords": [
+                        "novy vlastnik firmy",
+                        "dalsi vlastnik",
+                        "prevod obchodneho podielu",
+                        "pridanie noveho vlastnika",
+                    ]
+                },
+                "required_facts": [
+                    "company_name",
+                    "transferor_details",
+                    "transferee_details",
+                    "transfer_share_scope",
+                    "effective_date",
+                ],
+                "tools": ["obchodny_register_company_check"],
+                "outputs": [
+                    "share_transfer_agreement",
+                    "corporate_resolution",
+                    "registry_filing_package",
+                ],
+                "steps": [
+                    "collect_transfer_facts",
+                    "confirm_transferor_from_orsr",
+                    "generate_transfer_documents",
+                ],
+                "delivery": {"single_document": None, "multi_document_bundle": "zip"},
+            },
+        },
+        {
+            "flow_key": "sk.civil.lease_advisory",
+            "version": 1,
+            "jurisdiction": "SK",
+            "domain": "civil",
+            "title": "Prenájom bytu (poradenstvo a zmluva)",
+            "description": "Checklist pravidiel prenájmu + návrh nájomnej zmluvy.",
+            "is_enabled": True,
+            "definition": {
+                "intent": {
+                    "keywords": [
+                        "prenajom bytu",
+                        "najomna zmluva",
+                        "podnajomnik",
+                        "vypovedat zmluvu",
+                    ]
+                },
+                "required_facts": [
+                    "property_identification",
+                    "landlord_identification",
+                    "tenant_identification",
+                    "rent_terms",
+                ],
+                "outputs": ["lease_advisory_checklist", "lease_agreement_draft"],
+                "steps": [
+                    "collect_lease_context",
+                    "assess_termination_and_damage_risks",
+                    "generate_lease_documents",
+                ],
+                "delivery": {"single_document": None, "multi_document_bundle": "zip"},
+            },
+        },
+        {
+            "flow_key": "sk.probate.inheritance_proceeding",
+            "version": 1,
+            "jurisdiction": "SK",
+            "domain": "civil",
+            "title": "Dedičské konanie",
+            "description": "Príprava podkladov a kontrolný postup pre dedičské konanie.",
+            "is_enabled": True,
+            "definition": {
+                "intent": {
+                    "keywords": [
+                        "deditske konanie",
+                        "dedičské konanie",
+                        "dedicia",
+                    ]
+                },
+                "required_facts": [
+                    "decedent_identification",
+                    "heirs",
+                    "estate_assets",
+                ],
+                "outputs": ["inheritance_case_brief"],
+                "steps": [
+                    "collect_decedent_and_heir_data",
+                    "prepare_inheritance_case_summary",
+                ],
+                "delivery": {"single_document": "inheritance_case_brief", "multi_document_bundle": "zip"},
             },
         },
         {
@@ -122,10 +242,26 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
             "description": "Pomocný proces pre zistenie verejne dostupných údajov o osobe alebo firme.",
             "is_enabled": True,
             "definition": {
-                "intent": {"keywords": ["overit osobu", "overit firmu", "screening", "preverenie osoby", "preverenie firmy"]},
+                "intent": {
+                    "keywords": [
+                        "overit osobu",
+                        "overit firmu",
+                        "screening",
+                        "preverenie osoby",
+                        "preverenie firmy",
+                        "vyhladaj informacie o firme",
+                        "vyhladaj informacie o osobe",
+                    ]
+                },
                 "required_facts": ["entity_type", "entity_reference"],
                 "outputs": ["screening_summary"],
                 "tools": ["obchodny_register_company_check", "entity_screening_agent"],
+                "steps": [
+                    "collect_target_entity",
+                    "run_screening_tools",
+                    "prepare_summary_document",
+                ],
+                "delivery": {"single_document": "screening_summary", "multi_document_bundle": "zip"},
             },
         },
         {
