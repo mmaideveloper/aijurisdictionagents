@@ -495,9 +495,11 @@ python examples/law_citation_resolution_demo.py
 ```
 - When the laws database has no import timestamp yet, `knowledge_last_updated_at` falls back to the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value while `last_law_update_date` remains empty.
 - For Slovak and other Central European locales, the exporter uses a Unicode TrueType font when available so characters such as `á`, `č`, `ľ`, `ô`, and `ž` render correctly in the generated PDF.
+- For Slovakia (`country=SK` or language `sk-*`), document PDFs now include a Slovak legal-document profile header (`Jurisdikcia: Slovenská republika`, `Typ dokumentu: právny návrh`) to make exports closer to expected local legal formatting.
 
 Additional PDF font notes:
 - The API container installs `fonts-dejavu-core` and the exporter prefers `DejaVu Serif` on Linux, so Azure deployments do not fall back to Helvetica for Slovak or German PDFs.
+- If DejaVu is unavailable on Linux, the exporter now falls back to `Liberation Serif` / `Liberation Sans` before trying platform-default fonts.
 - On Windows, the exporter prefers `Times New Roman` and then `Arial` for Central European PDF exports.
 
 ## Version bump workflow

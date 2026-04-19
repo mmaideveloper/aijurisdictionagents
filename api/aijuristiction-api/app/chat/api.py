@@ -63,6 +63,10 @@ _LINUX_DEJAVU_FONT_DIRS = (
     Path("/usr/share/fonts/truetype/dejavu"),
     Path("/usr/share/fonts/dejavu"),
 )
+_LINUX_LIBERATION_FONT_DIRS = (
+    Path("/usr/share/fonts/truetype/liberation"),
+    Path("/usr/share/fonts/truetype/liberation2"),
+)
 _REGISTERED_PDF_FONT_FAMILIES: set[str] = set()
 
 
@@ -1905,10 +1909,19 @@ def _build_simple_pdf(
     title_font_size = 14.0
     footer_font_size = 9.0
 
+    prefers_slovak_profile = _prefers_slovak_legal_pdf_profile(country=country, language=language)
     header_lines: list[str] = []
     if header_line:
         header_lines.append(header_line)
         header_lines.append("")
+    if prefers_slovak_profile:
+        header_lines.extend(
+            [
+                "Jurisdikcia: Slovenská republika",
+                "Typ dokumentu: právny návrh",
+                "",
+            ]
+        )
 
     title_block: list[str] = [title, "----------------"] if include_title_block else []
     prepared_lines = header_lines + title_block + _wrap_pdf_lines(lines)
@@ -3534,6 +3547,21 @@ def _resolve_pdf_fonts(*, country: str, language: str | None) -> tuple[str, str]
                     ),
                 ]
             )
+        for font_dir in _LINUX_LIBERATION_FONT_DIRS:
+            font_candidates.extend(
+                [
+                    (
+                        "AIJLiberationSerif",
+                        font_dir / "LiberationSerif-Regular.ttf",
+                        font_dir / "LiberationSerif-Bold.ttf",
+                    ),
+                    (
+                        "AIJLiberationSans",
+                        font_dir / "LiberationSans-Regular.ttf",
+                        font_dir / "LiberationSans-Bold.ttf",
+                    ),
+                ]
+            )
         font_candidates.extend(
             [
                 (
@@ -3557,6 +3585,12 @@ def _resolve_pdf_fonts(*, country: str, language: str | None) -> tuple[str, str]
             if family is not None:
                 return family
     return ("Helvetica", "Helvetica-Bold")
+
+
+def _prefers_slovak_legal_pdf_profile(*, country: str, language: str | None) -> bool:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    return normalized_country == "SK" or normalized_language.startswith("sk")
 
 
 def _register_ttf_font_family(

@@ -66,3 +66,9 @@ if __name__ == "__main__":
     if workflow_result.fact_conflicts:
         print(f"Confirmation question: {workflow_result.fact_conflicts[0].confirmation_question}")
     print(f"Validation issues: {[issue.message for issue in workflow_result.validation_issues]}")
+    print()
+    print("=== PDF export UX note ===")
+    print(
+        "For Slovakia-focused document exports, the API PDF builder now uses "
+        "a Slovak legal header profile and Central-European font preferences."
+    )

@@ -1783,6 +1783,7 @@ def test_build_simple_pdf_preserves_slovak_and_german_characters() -> None:
     assert "ubom" in normalized_extracted or "lubom" in normalized_extracted
     assert "deutsch" in normalized_extracted
     assert "deutsch" in normalized_extracted and ("kundigung" in normalized_extracted or "kndigung" in normalized_extracted)
+    assert "jurisdikcia: slovensk" in normalized_extracted and "republika" in normalized_extracted
 
 def test_create_message_returns_404_for_unknown_session() -> None:
     response = client.post(
