@@ -40,6 +40,8 @@ const clearSessionButton = document.getElementById("clearSession");
 const caseHistoryEl = document.getElementById("caseHistory");
 const caseDocumentsListEl = document.getElementById("caseDocumentsList");
 const documentViewerEl = document.getElementById("documentViewer");
+const documentTemplatesListEl = document.getElementById("documentTemplatesList");
+const refreshDocumentTemplatesButton = document.getElementById("refreshDocumentTemplates");
 const defaultsUrl = "/static/default-inputs.json";
 const defaultLanguageCode = "SK";
 const MESSAGE_PREVIEW_LIMIT = 256;
@@ -65,6 +67,7 @@ let preparedCases = [];
 let persistedCases = [];
 let currentCaseHistoryMessages = [];
 let currentCaseDocuments = [];
+let documentTemplates = [];
 let activeDocumentViewUrl = null;
 let processingStatusTimerId = null;
 let processingStatusBaseMessage = "";
@@ -264,6 +267,65 @@ function setDocumentViewerPlaceholder(message = "Select View on a case document 
   placeholder.className = "empty-state";
   placeholder.textContent = String(message || "").trim();
   documentViewerEl.appendChild(placeholder);
+}
+
+function setDocumentTemplatesPlaceholder(message = "No document templates loaded yet.") {
+  if (!documentTemplatesListEl) return;
+  documentTemplatesListEl.innerHTML = "";
+  const placeholder = document.createElement("p");
+  placeholder.className = "empty-state";
+  placeholder.textContent = String(message || "").trim();
+  documentTemplatesListEl.appendChild(placeholder);
+}
+
+function renderDocumentTemplates(templates) {
+  documentTemplates = Array.isArray(templates) ? templates : [];
+  if (!documentTemplatesListEl) return;
+  documentTemplatesListEl.innerHTML = "";
+  if (!documentTemplates.length) {
+    setDocumentTemplatesPlaceholder("No document templates returned by the API.");
+    return;
+  }
+
+  for (const template of documentTemplates) {
+    const card = document.createElement("article");
+    card.className = "document-template-card";
+
+    const title = document.createElement("h3");
+    title.textContent = String(template?.title || template?.template_key || "Template").trim();
+
+    const meta = document.createElement("p");
+    meta.className = "document-template-meta";
+    meta.textContent = [
+      `Key: ${String(template?.template_key || "").trim() || "n/a"}`,
+      `Kind: ${String(template?.template_kind || "").trim() || "n/a"}`,
+      `Category: ${String(template?.category || "").trim() || "n/a"}`,
+      `Jurisdiction: ${String(template?.jurisdiction || "").trim() || "n/a"}`,
+      `Language: ${String(template?.language || "").trim() || "n/a"}`,
+    ].join("\n");
+
+    const actions = document.createElement("div");
+    actions.className = "case-document-actions";
+
+    const generateButton = document.createElement("button");
+    generateButton.type = "button";
+    generateButton.className = "secondary";
+    generateButton.textContent = "Generate PDF";
+    generateButton.addEventListener("click", async () => {
+      try {
+        await generateTemplatePdf(template);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendStream(`error: ${message}`);
+        setWorkflowWarning(message);
+        finishProcessingStatus(`Error: ${message}`);
+      }
+    });
+
+    actions.append(generateButton);
+    card.append(title, meta, actions);
+    documentTemplatesListEl.appendChild(card);
+  }
 }
 
 function renderCaseDocuments(documents) {
@@ -964,6 +1026,43 @@ async function downloadCaseDocument(docId) {
   triggerBlobDownload({ blob, filename });
   appendStream(`case_document_downloaded: ${filename}`);
   finishProcessingStatus(`Document downloaded: ${filename}`);
+}
+
+async function refreshDocumentTemplates() {
+  const country = String(countryInput?.value || "SK").trim() || "SK";
+  const params = new URLSearchParams({
+    include_deleted: "false",
+    jurisdiction: country,
+  });
+  const response = await fetch(`${getBaseUrl()}/v1/document-templates?${params.toString()}`, {
+    headers: requestHeaders(false),
+  });
+  const body = await parseResponse(response);
+  renderDocumentTemplates(Array.isArray(body?.items) ? body.items : []);
+  appendStream(`document_templates_loaded: ${documentTemplates.length}`);
+}
+
+async function generateTemplatePdf(template) {
+  const templateKey = String(template?.template_key || "").trim();
+  if (!templateKey) {
+    throw new Error("Document template key is required.");
+  }
+  const jurisdiction = String(template?.jurisdiction || countryInput?.value || "SK").trim() || "SK";
+  const params = new URLSearchParams({ jurisdiction });
+  const url = `${getBaseUrl()}/v1/document-templates/${encodeURIComponent(templateKey)}/preview/pdf?${params.toString()}`;
+  const response = await fetch(url, {
+    headers: requestHeaders(false),
+  });
+  if (!response.ok) {
+    const body = await safeParseJson(response);
+    throw new Error(JSON.stringify(body));
+  }
+  const blob = await response.blob();
+  const filename = extractFilenameFromContentDisposition(response.headers.get("Content-Disposition"))
+    || `${templateKey.replace(/[^A-Za-z0-9._-]+/g, "_")}-preview.pdf`;
+  triggerBlobDownload({ blob, filename });
+  appendStream(`template_pdf_generated: ${filename}`);
+  finishProcessingStatus(`Template PDF generated: ${filename}`);
 }
 
 function updateCaseStatus(payload) {
@@ -1794,6 +1893,7 @@ bind("inspectCaseDocuments", inspectCaseDocuments);
 bind("refreshExistingCases", async () => {
   await refreshExistingCases({ preserveSelection: true });
 });
+bind("refreshDocumentTemplates", refreshDocumentTemplates);
 bind("deleteAllCases", deleteAllCases);
 bind("startStream", startStream);
 bind("refreshMessages", refreshMessages);
@@ -1844,11 +1944,19 @@ async function initializeSimulator() {
   userSimulationModeInput.value = "ReadUser";
   updateExistingCaseStatus();
   resetLoadedCaseData();
+  setDocumentTemplatesPlaceholder();
   renderWelcomeMessage();
   clearWorkflowWarning();
   finishProcessingStatus("Idle.");
   refreshReplyControls();
   refreshPersistedCaseControls();
+  try {
+    await refreshDocumentTemplates();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setDocumentTemplatesPlaceholder("Document templates could not be loaded.");
+    appendStream(`document_templates_error: ${message}`);
+  }
 }
 
 if (preparedCaseInput) {

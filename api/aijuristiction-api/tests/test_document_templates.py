@@ -141,6 +141,15 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert match_response.json()["matched"] is True
     assert match_response.json()["template"]["template_key"] == "sk.custom.loan_agreement"
 
+    preview_response = client.get(
+        "/v1/document-templates/sk.real_estate.lease_agreement/preview/pdf",
+        params={"jurisdiction": "SK"},
+    )
+    assert preview_response.status_code == 200
+    assert preview_response.headers["content-type"].startswith("application/pdf")
+    assert "sk.real_estate.lease_agreement-preview.pdf" in preview_response.headers["content-disposition"]
+    assert preview_response.content.startswith(b"%PDF")
+
     delete_response = client.delete("/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK")
     assert delete_response.status_code == 200
     assert delete_response.json()["is_deleted"] is True
