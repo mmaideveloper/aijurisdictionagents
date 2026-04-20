@@ -198,6 +198,7 @@ pre {
 }
 
 .case-documents-list,
+.document-templates-list,
 .document-viewer {
   border: 1px solid #1e293b;
   border-radius: 12px;
@@ -208,6 +209,13 @@ pre {
 .case-documents-list {
   display: grid;
   gap: 0.75rem;
+}
+
+.document-templates-list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 380px;
+  overflow-y: auto;
 }
 
 .case-document-card {
@@ -222,7 +230,26 @@ pre {
   font-size: 0.98rem;
 }
 
+.document-template-card {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: #0b1222;
+}
+
+.document-template-card h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.98rem;
+}
+
 .case-document-meta {
+  margin: 0;
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.document-template-meta {
   margin: 0;
   color: #cbd5e1;
   white-space: pre-wrap;
@@ -233,6 +260,17 @@ pre {
   display: flex;
   gap: 0.6rem;
   margin-top: 0.75rem;
+}
+
+.template-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.template-toolbar button {
+  width: auto;
+  min-width: 160px;
 }
 
 .case-document-actions button {
@@ -276,6 +314,7 @@ pre {
     flex-direction: column;
   }
 
+  .template-toolbar button,
   .case-document-actions button {
     width: 100%;
   }

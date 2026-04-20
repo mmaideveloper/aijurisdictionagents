@@ -20,16 +20,16 @@ def test_version() -> None:
     assert response.status_code == 200
     assert response.json() == {
         'service': 'chat-simulator-app',
-        'version': '0.1.21',
-        'simulator_version': '0.1.21',
+        'version': '0.1.22',
+        'simulator_version': '0.1.22',
     }
 
 
 def test_simulator_page_and_assets() -> None:
     page = client.get('/chat-simulator')
     assert page.status_code == 200
-    assert '/static/simulator.js?v=0.1.21' in page.text
-    assert '/static/simulator.css?v=0.1.21' in page.text
+    assert '/static/simulator.js?v=0.1.22' in page.text
+    assert '/static/simulator.css?v=0.1.22' in page.text
     assert 'Start Stream' in page.text
     assert 'Upload documents' in page.text
     assert 'Persisted Case Debug' in page.text
@@ -46,6 +46,9 @@ def test_simulator_page_and_assets() -> None:
     assert 'novalidate' in page.text
     assert 'id="preparedCase"' in page.text
     assert 'id="preparedCasesData"' in page.text
+    assert 'Document Templates' in page.text
+    assert 'id="refreshDocumentTemplates"' in page.text
+    assert 'id="documentTemplatesList"' in page.text
     assert 'sample_case_prenajom' in page.text
     assert 'sample_case_prenajom_contract' in page.text
     assert 'sample_case_vlastnik_fimy' in page.text
@@ -109,6 +112,13 @@ def test_simulator_page_and_assets() -> None:
     assert 'refreshPersistedCaseControls' in js.text
     assert '/internal/delete-user-cases' in js.text
     assert 'continue the session or ask for document status' in js.text
+    assert 'refreshDocumentTemplates' in js.text
+    assert 'generateTemplatePdf' in js.text
+    assert '/v1/document-templates' in js.text
+    assert '/preview/pdf' in js.text
+    assert 'Generate PDF' in js.text
+    assert 'template_pdf_generated' in js.text
+    assert 'document-template-card' in css.text
 
 
 def test_internal_delete_user_cases_route(monkeypatch) -> None:
