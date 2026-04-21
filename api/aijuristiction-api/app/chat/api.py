@@ -2192,6 +2192,7 @@ def _build_simple_pdf(
     include_title_block: bool = True,
 ) -> bytes:
     regular_font, bold_font = _resolve_pdf_fonts(country=country, language=language)
+    use_corporate_template = draw_logo_mark and not include_title_block
     page_width, page_height = cast(tuple[float, float], A4)
     margin_left = 50.0
     margin_top = 52.0
@@ -2200,20 +2201,21 @@ def _build_simple_pdf(
     body_line_height = 14.0
     title_font_size = 14.0
     footer_font_size = 9.0
-    use_corporate_template = draw_logo_mark and not include_title_block
 
     if use_corporate_template:
-        margin_top = 180.0
-        title_font_size = 22.0
-        body_font_size = 10.8
-        body_line_height = 18.0
+        margin_left = 64.0
+        margin_top = 214.0
+        margin_bottom = 44.0
+        title_font_size = 20.0
+        body_font_size = 11.0
+        body_line_height = 24.0
 
     prefers_slovak_profile = _prefers_slovak_legal_pdf_profile(country=country, language=language)
     header_lines: list[str] = []
-    if header_line:
+    if header_line and not use_corporate_template:
         header_lines.append(header_line)
         header_lines.append("")
-    if prefers_slovak_profile:
+    if prefers_slovak_profile and not use_corporate_template:
         header_lines.extend(
             [
                 "Jurisdikcia: Slovenská republika",
@@ -2225,12 +2227,12 @@ def _build_simple_pdf(
     title_block: list[str] = [title, "----------------"] if include_title_block else []
     prepared_lines = header_lines + title_block + _wrap_pdf_lines(lines)
     if use_corporate_template:
-        prepared_lines = [title, ""] + prepared_lines
+        prepared_lines = [title, ""] + _wrap_pdf_lines(lines, width=54)
     if not prepared_lines:
         prepared_lines = [title]
 
     buffer = BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=A4, pageCompression=0)
+    pdf = canvas.Canvas(buffer, pagesize=(page_width, page_height), pageCompression=0)
 
     def start_page() -> float:
         if use_corporate_template:
@@ -2273,8 +2275,15 @@ def _build_simple_pdf(
             draw_footer()
             pdf.showPage()
             y = start_page()
-        pdf.setFont(regular_font, body_font_size)
-        pdf.drawString(margin_left, y, line)
+        _draw_pdf_body_line(
+            pdf=pdf,
+            line=line,
+            x=margin_left,
+            y=y,
+            regular_font=regular_font,
+            bold_font=bold_font,
+            font_size=body_font_size,
+        )
         y -= body_line_height
 
     draw_footer()
@@ -2291,44 +2300,149 @@ def _draw_jurisdicta_corporate_header(
     regular_font: str,
     bold_font: str,
 ) -> None:
-    logo_color = colors.HexColor("#1EA75A")
-    dark_text = colors.HexColor("#111111")
-    muted_text = colors.HexColor("#3E434A")
-    top_y = page_height - 74.0
+    sidebar_color = colors.HexColor("#EAF5FF")
+    grid_color = colors.HexColor("#D8E7F3")
+    logo_box_color = colors.HexColor("#EEF7FF")
+    brand_blue = colors.HexColor("#174A8B")
+    shield_blue = colors.HexColor("#0F4B86")
+    body_text = colors.HexColor("#222222")
+    sidebar_width = 126.0
+    sidebar_x = page_width - sidebar_width
 
-    pdf.setStrokeColor(logo_color)
-    pdf.setLineWidth(3.0)
-    pdf.line(margin_left, top_y, margin_left + 56.0, top_y)
-    pdf.line(margin_left + 22.0, top_y, margin_left + 34.0, top_y - 18.0)
-    pdf.line(margin_left + 56.0, top_y, margin_left + 34.0, top_y - 18.0)
+    pdf.setFillColor(sidebar_color)
+    pdf.rect(sidebar_x, 0, sidebar_width, page_height, stroke=0, fill=1)
 
-    pdf.setFillColor(dark_text)
-    pdf.setFont(bold_font, 20)
-    pdf.drawString(margin_left, top_y - 44.0, "Jurisdicta")
+    pdf.setStrokeColor(grid_color)
+    pdf.setLineWidth(0.45)
+    grid_step = 56.0
+    grid_x = sidebar_x
+    while grid_x <= page_width:
+        pdf.line(grid_x, 0, grid_x, page_height)
+        grid_x += grid_step
+    grid_y = 0.0
+    while grid_y <= page_height:
+        pdf.line(sidebar_x, grid_y, page_width, grid_y)
+        grid_y += grid_step
 
-    right_x = page_width - margin_left
+    logo_x = margin_left + 6.0
+    logo_y = page_height - 116.0
+    logo_w = 168.0
+    logo_h = 46.0
+    pdf.setFillColor(logo_box_color)
+    pdf.rect(logo_x, logo_y, logo_w, logo_h, stroke=0, fill=1)
+
+    shield_x = logo_x + 20.0
+    shield_y = logo_y + 10.0
+    shield_path = pdf.beginPath()
+    shield_path.moveTo(shield_x + 4.0, shield_y + 25.0)
+    shield_path.lineTo(shield_x + 31.0, shield_y + 25.0)
+    shield_path.lineTo(shield_x + 28.0, shield_y + 8.0)
+    shield_path.lineTo(shield_x + 17.5, shield_y)
+    shield_path.lineTo(shield_x + 7.0, shield_y + 8.0)
+    shield_path.close()
+    pdf.setFillColor(shield_blue)
+    pdf.drawPath(shield_path, stroke=0, fill=1)
+    pdf.setStrokeColor(colors.white)
+    pdf.setLineWidth(0.75)
+    pdf.line(shield_x + 17.5, shield_y + 3.0, shield_x + 17.5, shield_y + 22.0)
+    pdf.line(shield_x + 8.5, shield_y + 14.0, shield_x + 26.5, shield_y + 14.0)
+
+    pdf.setFillColor(brand_blue)
+    pdf.setFont(bold_font, 12)
+    pdf.drawString(logo_x + 66.0, logo_y + 18.0, "JurisDicta")
+
+    card_w = 150.0
+    card_h = 84.0
+    card_x = page_width - card_w - 10.0
+    card_y = page_height - 144.0
+    pdf.setFillColor(colors.white)
+    pdf.rect(card_x, card_y, card_w, card_h, stroke=0, fill=1)
+
     contact_lines = (
-        "Jurisdicta Legal Technology",
-        "Orlando, FL 32801",
-        "inquire@jurisdicta.ai",
-        "+1 222 555 7777",
-        "jurisdicta.ai",
+        "Poprad, Slovakia, 05801",
+        "info@jurisdicta.eu",
+        "+421 950 425 113",
     )
-    pdf.setFillColor(muted_text)
+    pdf.setFillColor(body_text)
     pdf.setFont(regular_font, 10)
-    line_y = top_y
+    line_y = card_y + card_h - 24.0
+    text_right = card_x + card_w - 30.0
     for contact_line in contact_lines:
-        pdf.drawRightString(right_x, line_y, contact_line)
-        line_y -= 13.0
+        pdf.drawRightString(text_right, line_y, contact_line)
+        line_y -= 14.0
 
-    separator_x = page_width - margin_left - 94.0
-    pdf.setStrokeColor(colors.HexColor("#777777"))
+    pdf.setStrokeColor(colors.HexColor("#333333"))
     pdf.setLineWidth(1.6)
-    pdf.line(separator_x, top_y + 4.0, separator_x, top_y - 58.0)
+    rule_x = card_x + card_w - 16.0
+    pdf.line(rule_x, card_y + 18.0, rule_x, card_y + card_h - 18.0)
 
-    pdf.setStrokeColor(colors.HexColor("#D8DCE1"))
-    pdf.setLineWidth(1.0)
-    pdf.line(margin_left, top_y - 76.0, page_width - margin_left, top_y - 76.0)
+    _draw_jurisdicta_version_block(
+        pdf=pdf,
+        page_width=page_width,
+        margin_bottom=40.0,
+        regular_font=regular_font,
+        bold_font=bold_font,
+    )
+
+    pdf.setFillColor(body_text)
+
+
+def _draw_jurisdicta_version_block(
+    *,
+    pdf: canvas.Canvas,
+    page_width: float,
+    margin_bottom: float,
+    regular_font: str,
+    bold_font: str,
+) -> None:
+    label_color = colors.HexColor("#526575")
+    value_color = colors.HexColor("#102A43")
+    right_x = page_width - 24.0
+    y = margin_bottom + 12.0
+    version_lines = (
+        ("API version:", _API_VERSION),
+        ("System core version:", _CORE_VERSION),
+    )
+    for label, value in version_lines:
+        pdf.setFont(regular_font, 8.2)
+        pdf.setFillColor(label_color)
+        label_width = pdf.stringWidth(label + " ", regular_font, 8.2)
+        value_width = pdf.stringWidth(value, bold_font, 8.2)
+        start_x = right_x - label_width - value_width
+        pdf.drawString(start_x, y, label)
+        pdf.setFont(bold_font, 8.2)
+        pdf.setFillColor(value_color)
+        pdf.drawString(start_x + label_width, y, value)
+        y -= 12.0
+
+
+def _draw_pdf_body_line(
+    *,
+    pdf: canvas.Canvas,
+    line: str,
+    x: float,
+    y: float,
+    regular_font: str,
+    bold_font: str,
+    font_size: float,
+) -> None:
+    label_match = re.match(
+        r"^([A-Za-zÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽáäčďéíĺľňóôŕšťúýž ./-]{1,28}:)(\s*)(.*)$",
+        line,
+    )
+    if not label_match:
+        pdf.setFont(regular_font, font_size)
+        pdf.drawString(x, y, line)
+        return
+
+    label = label_match.group(1)
+    separator = label_match.group(2)
+    rest = label_match.group(3)
+    pdf.setFont(bold_font, font_size)
+    pdf.drawString(x, y, label)
+    label_width = pdf.stringWidth(label + separator, bold_font, font_size)
+    pdf.setFont(regular_font, font_size)
+    pdf.drawString(x + label_width, y, rest)
 
 
 def _wrap_pdf_lines(lines: List[str], width: int = 90) -> List[str]:

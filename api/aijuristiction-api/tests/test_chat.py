@@ -196,9 +196,16 @@ def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> No
     corporate_text = _pdf_text(corporate_pdf).lower()
     plain_text = _pdf_text(plain_pdf).lower()
 
-    assert "jurisdicta legal technology" in corporate_text
-    assert "orlando, fl 32801" in corporate_text
-    assert "jurisdicta legal technology" not in plain_text
+    assert "poprad, slovakia, 05801" in corporate_text
+    assert "info@jurisdicta.eu" in corporate_text
+    assert "template.net" not in corporate_text
+    assert "api version" in corporate_text
+    assert "system core version" in corporate_text
+    assert "poprad, slovakia, 05801" not in plain_text
+
+    reader = PdfReader(BytesIO(corporate_pdf))
+    page = reader.pages[0]
+    assert float(page.mediabox.width) < float(page.mediabox.height)
 
 
 def test_stream_core_orchestration_and_export_json_pdf() -> None:

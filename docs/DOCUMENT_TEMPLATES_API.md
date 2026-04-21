@@ -96,12 +96,29 @@ discussion summaries intentionally keep the plain PDF style without the corporat
 
 The template preview endpoint renders one template directly through the same PDF builder used by chat document
 exports. It fills known placeholders with realistic sample data, returns `application/pdf`, and uses a
-`Content-Disposition` filename ending in `-preview.pdf`.
+`Content-Disposition` filename ending in `-preview.pdf`. Preview PDFs use the Jurisdicta A4 corporate
+layout with the logo block, contact panel, blue sidebar, and API/system version block from
+`docs/generated_document_template.png`.
 
 The chat simulator now includes a **Document Templates** panel. Use **Refresh Templates** to load templates from
 the selected API base URL and **Generate PDF** on any row to download that template preview. This is intended for
 quick visual checks of Slovak characters, typography, spacing, and final PDF quality before using a template in a
 real chat flow.
+
+To batch-test every enabled template PDF from the command line, run:
+
+```powershell
+.\skills\testdocument\scripts\test_document_templates.ps1
+```
+
+The skill uses the same preview endpoint as the chat simulator button and writes PDFs plus `manifest.json` to:
+
+```text
+runs\testdocument\document-template-pdfs\
+```
+
+Use those PDFs to compare the final document look and feel with the expected `generate_document_template.png`
+reference image when the image is present in the workspace.
 
 ## Source download
 
