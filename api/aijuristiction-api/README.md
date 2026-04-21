@@ -137,18 +137,23 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 - when a request indicates an additional/new owner, the model is now instructed to proactively recommend related Slovak company-document and filing changes too, including whether the updated `spolocenska zmluva` / `zakladatelska listina` and ORSR attachment package are needed
 - Slovak share-transfer PDF export now rebuilds the document package from ORSR-enriched company data, so exported drafts keep verified company name / seat / ICO and include the main package sections instead of falling back to a generic single-document template
 - generic transferor phrases such as `vlastnik firmy` are now normalized to the verified ORSR owner when the register shows exactly one current stakeholder
+- the Slovak share-transfer conflict-resolution helper now returns an explicit typed structure, which keeps the GitHub API build green under `mypy` for the zip-document export flow
 - if user-provided transferor identity conflicts with ORSR stakeholders, the LLM prompt now enforces a confirmation step before final document generation.
 - when the user resolves that transferor conflict with a short reply like `podla ORSR`, the backend now locks in the verified ORSR owner and keeps verified company identity data such as `IČO` as settled instead of asking for them again
 - once the user resolves the ORSR-vs-user transferor conflict, that choice now persists into later follow-up turns such as `ano`, so the API continues to draft the requested package instead of reopening the same transferor conflict
 - if the model returns the case payload inside a fenced ```json block instead of the required `CASE_UPDATE_JSON:` marker, the API now still extracts that payload, ignores question marks inside the machine JSON when deciding whether to wait for another reply, and keeps export/download working
 - user-facing chat text is now sanitized to remove technical persistence preambles like `Tu je JSON pre uchovanie prípadu` and fake relative file links like `documents/...pdf`; the user sees only the natural-language answer while the backend still keeps the machine payload for export/state handling
 - if a multi-document Slovak share-transfer draft is present in the visible assistant text but the model forgot to populate `CASE_UPDATE_JSON.case.documents`, the export endpoint now falls back to the detected document sections and still returns a ZIP package with one PDF per detected document instead of collapsing everything into a single `final-document.pdf`
+- the fallback ZIP detector now ignores ordinary single-document section headings such as `Zmluvne strany` or `Doba najmu`, so sectioned contracts continue to export as one PDF instead of being split into a fake ZIP package
+- if a document-generation turn ends with a generic wait message such as `Prosim, dajte mi chvilu.`, the API now replaces that placeholder with an explicit document-package-ready completion message before persisting the final assistant turn
+- completed `ReadUser` sessions now also accept follow-up status questions such as `stav dokumentov` and answer from the saved export/result state instead of failing with `Session already completed`
 - in `POST /v1/chat/sessions/{session_id}/stream` with `user_simulation_mode=ReadUser`, tool lifecycle progress is streamed live as `processing` SSE events:
   - immediately when backend receives user turn: localized processing status (`Processing...`, `Spracovavam...`, `Verarbeite Anfrage...`, ...)
   - immediately after each user message: localized thinking status (`Thinking...`, `Premyslam...`, `Ich denke nach...`, ... depending on country/language)
   - before ORSR lookup: localized ORSR start message (for example `Idem overit spolocnost '<name>' v ORSR.`, `Ich werde das Unternehmen '<name>' im ORSR pruefen.`, `I am going to verify company '<name>' in ORSR.`)
   - when ORSR data is reused from cache: localized cache-hit progress message so clients can keep showing that the backend is still processing
   - when the assistant prepares a multi-document package in `ReadUser` stream mode, the backend now emits one progress event per prepared document name before the final assistant message instead of waiting to describe the whole package at once
+  - after the result/export is actually ready, the backend emits a final document-package-ready processing event so clients can show a definitive completion state instead of ending on a generic `please wait` sentence
   - after ORSR lookup: localized ORSR completion message (for example `Overenie spolocnosti v ORSR je hotove: ...`, `Unternehmenspruefung im ORSR abgeschlossen: ...`, `Verification of company done in ORSR: ...`)
   This lets clients show small progress updates while waiting for the final assistant answer.
 
@@ -493,10 +498,28 @@ python examples/law_citation_resolution_demo.py
 ```
 - When the laws database has no import timestamp yet, `knowledge_last_updated_at` falls back to the cached `MODEL_KNOWLEDGE_CUTOFF_DATE` value while `last_law_update_date` remains empty.
 - For Slovak and other Central European locales, the exporter uses a Unicode TrueType font when available so characters such as `á`, `č`, `ľ`, `ô`, and `ž` render correctly in the generated PDF.
+- For Slovakia (`country=SK` or language `sk-*`), document PDFs now include a Slovak legal-document profile header (`Jurisdikcia: Slovenská republika`, `Typ dokumentu: právny návrh`) to make exports closer to expected local legal formatting.
 
 Additional PDF font notes:
 - The API container installs `fonts-dejavu-core` and the exporter prefers `DejaVu Serif` on Linux, so Azure deployments do not fall back to Helvetica for Slovak or German PDFs.
+- If DejaVu is unavailable on Linux, the exporter now falls back to `Liberation Serif` / `Liberation Sans` before trying platform-default fonts.
 - On Windows, the exporter prefers `Times New Roman` and then `Arial` for Central European PDF exports.
+
+## Document template catalog
+
+- `GET /v1/document-templates` lists the persistent legal-template catalog used for future template-driven contract generation.
+- `POST`, `PATCH`, and `DELETE` on `/v1/document-templates/*` allow templates to be added, updated, and soft-deleted without changing code.
+- `GET /v1/document-templates/match/search?request_text=...&country=SK` returns the best matching template candidate for a client request.
+- The initial seed contains the common Slovak template groups supplied for:
+  - commercial/corporate contracts
+  - employment/personnel documents
+  - court filings
+  - powers of attorney
+  - real-estate / lease contracts
+- Seed records can start as metadata-only (`source_url`, `source_format`, keywords, category) and later be enriched with a full template body for rendering.
+- Template runtime storage defaults to `runs/storage/api/sqlite/document_templates.sqlite3`.
+- Detailed API notes: `docs/DOCUMENT_TEMPLATES_API.md`
+- Minimal runnable example: `python examples/document_templates_minimal_demo.py`
 
 ## Version bump workflow
 

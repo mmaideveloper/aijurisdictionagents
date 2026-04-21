@@ -5,6 +5,7 @@ from copy import deepcopy
 from hashlib import sha1
 import re
 from threading import Lock
+from typing import TypedDict
 
 from app.chat.country_services.base import (
     DirectReplyPreparation,
@@ -18,6 +19,12 @@ from aijurisdictionagents.tools import build_default_tool_registry
 
 _ORSR_CACHE_LOCK = Lock()
 _ORSR_CACHE: dict[tuple[str, int], tuple[dict[str, object] | None, str | None]] = {}
+
+
+class ShareTransferConflictResolution(TypedDict):
+    resolved: bool
+    choice: str
+    intake_facts: dict[str, str]
 
 
 def prepare_slovakia_direct_reply(
@@ -35,6 +42,11 @@ def prepare_slovakia_direct_reply(
     if session.country.strip().upper() != "SK":
         return DirectReplyPreparation(supplemental_documents=[])
 
+    address_prompt_note = _build_slovak_address_validation_prompt_note(
+        current_content=current_content,
+        prior_messages=prior_messages,
+    )
+
     asks_company_registry_info = _looks_like_company_registry_information_question(current_content)
     looks_like_company_document = _looks_like_company_document_matter(
         current_content=current_content,
@@ -45,6 +57,8 @@ def prepare_slovakia_direct_reply(
         prior_messages=prior_messages,
     )
     if not asks_company_registry_info and not looks_like_company_document and not asks_share_transfer:
+        if address_prompt_note:
+            return DirectReplyPreparation(supplemental_documents=[], prompt_note=address_prompt_note)
         return DirectReplyPreparation(supplemental_documents=[])
 
     analysis_message = (
@@ -61,7 +75,7 @@ def prepare_slovakia_direct_reply(
 
     company_query = _extract_slovak_company_query(messages=messages, current_content=current_content)
     if not company_query:
-        return DirectReplyPreparation(supplemental_documents=[])
+        return DirectReplyPreparation(supplemental_documents=[], prompt_note=address_prompt_note)
 
     emit_processing_event(
         events=processing_events,
@@ -132,6 +146,7 @@ def prepare_slovakia_direct_reply(
             company_query=company_query,
             company_record=company_record,
         )
+        prompt_note = _merge_prompt_notes(prompt_note, address_prompt_note)
         return DirectReplyPreparation(
             supplemental_documents=supplemental_documents,
             prompt_note=prompt_note,
@@ -143,6 +158,7 @@ def prepare_slovakia_direct_reply(
             company_query=company_query,
             company_record=company_record,
         )
+        prompt_note = _merge_prompt_notes(prompt_note, address_prompt_note)
         return DirectReplyPreparation(
             supplemental_documents=supplemental_documents,
             prompt_note=prompt_note,
@@ -258,12 +274,123 @@ def prepare_slovakia_direct_reply(
         conflicts=conflicts,
         user_confirmed_document_generation=user_confirmed_document_generation,
     )
+    prompt_note = _merge_prompt_notes(prompt_note, address_prompt_note)
     return DirectReplyPreparation(
         supplemental_documents=supplemental_documents,
         prompt_note=prompt_note,
         processing_events=processing_events,
     )
 
+
+
+
+def _merge_prompt_notes(primary: str, secondary: str) -> str:
+    if primary and secondary:
+        return f"{primary}\n\n{secondary}"
+    return primary or secondary
+
+
+def _build_slovak_address_validation_prompt_note(*, current_content: str, prior_messages: list[Message]) -> str:
+    if not _looks_like_address_relevant_context(current_content=current_content, prior_messages=prior_messages):
+        return ""
+
+    preference = _resolve_address_validation_preference(prior_messages=prior_messages)
+    if preference == "yes":
+        return "\n".join(
+            [
+                "SLOVAK ADDRESS VALIDATION MODE:",
+                "- User already opted in to address validation for this case.",
+                "- When address text is present, run registeradries_address_validate and map fields: kraj, okres, city, street, house_number, psc.",
+                "- Reuse the remembered consent and do not ask for the same confirmation again unless the user changes preference.",
+            ]
+        )
+    if preference == "no":
+        return "\n".join(
+            [
+                "SLOVAK ADDRESS VALIDATION MODE:",
+                "- User declined address validation for this case.",
+                "- Do not run registeradries_address_validate unless the user explicitly changes their decision.",
+            ]
+        )
+
+    return "\n".join(
+        [
+            "SLOVAK ADDRESS VALIDATION MODE:",
+            "- This turn likely requires an address.",
+            "- Before using address validation tools, ask exactly one concise consent question whether the user wants address validation via registeradries.sk.",
+            "- After the user answers yes/no, remember that choice for the rest of this case.",
+        ]
+    )
+
+
+def _looks_like_address_relevant_context(*, current_content: str, prior_messages: list[Message]) -> bool:
+    combined = " ".join(current_content.lower().split())
+    address_tokens = (
+        "adresa",
+        "adresu",
+        "bydlisko",
+        "sidlo",
+        "sídlo",
+        "ulica",
+        "psc",
+        "psč",
+        "okres",
+        "kraj",
+        "mesto",
+        "obec",
+        "nehnutelnost",
+        "nehnuteľnosť",
+    )
+    if any(token in combined for token in address_tokens):
+        return True
+    if re.search(r"\b\d{3}\s?\d{2}\b", combined):
+        return True
+    for message in reversed(prior_messages[-8:]):
+        if message.role != MessageRole.ASSISTANT:
+            continue
+        lowered = message.content.lower()
+        if "adresa" in lowered and "?" in lowered:
+            return True
+    return False
+
+
+def _resolve_address_validation_preference(*, prior_messages: list[Message]) -> str | None:
+    for index in range(len(prior_messages) - 1, -1, -1):
+        user_message = prior_messages[index]
+        if user_message.role != MessageRole.USER:
+            continue
+        user_text = " ".join(user_message.content.lower().split())
+        if any(token in user_text for token in ("chcem overit adresu", "chcem validovat adresu", "overit adresu", "validovat adresu")):
+            return "yes"
+        if any(token in user_text for token in ("nechcem overit adresu", "nechcem validovat adresu", "neoverovat adresu")):
+            return "no"
+        if not _is_affirmative_or_negative_reply(user_text):
+            continue
+        previous_assistant = _nearest_previous_assistant(prior_messages=prior_messages, before_index=index)
+        if not previous_assistant:
+            continue
+        assistant_text = previous_assistant.lower()
+        if "over" not in assistant_text or "adres" not in assistant_text:
+            continue
+        return "yes" if _is_affirmative_short_reply(user_text) else "no"
+    return None
+
+
+def _is_affirmative_or_negative_reply(normalized_content: str) -> bool:
+    if _is_affirmative_short_reply(normalized_content):
+        return True
+    cleaned = re.sub(r"[^0-9a-záäčďéíĺľňóôŕšťúýž]+", " ", normalized_content.lower()).strip()
+    if not cleaned:
+        return False
+    return cleaned.split()[0] in {"nie", "no", "nein"}
+
+
+def _nearest_previous_assistant(*, prior_messages: list[Message], before_index: int) -> str:
+    for idx in range(before_index - 1, -1, -1):
+        message = prior_messages[idx]
+        if message.role == MessageRole.ASSISTANT:
+            return message.content
+    return ""
 
 def _looks_like_company_document_matter(*, current_content: str, prior_messages: list[Message]) -> bool:
     combined = " ".join(current_content.lower().split())
@@ -1009,7 +1136,7 @@ def _resolve_share_transfer_conflict_choice(
     prior_messages: list[Message],
     intake_facts: dict[str, str],
     company_record: dict[str, object] | None,
-) -> dict[str, object]:
+) -> ShareTransferConflictResolution:
     merged = dict(intake_facts)
     if not _assistant_recently_requested_share_transfer_conflict_resolution(prior_messages):
         return {"resolved": False, "choice": "", "intake_facts": merged}

@@ -54,6 +54,14 @@ def create_lawyer_slovakia(llm: LLMClient) -> Agent:
         - Až po výslovnom potvrdení používateľa prepni do drafting režimu a priprav finálny text vhodný na export do PDF.
         - Po potvrdení používateľa už nežiadaj ďalšie potvrdenie PDF, ale priprav výsledný návrh.
 
+
+
+        ADDRESS-VALIDATION POLICY (Slovakia)
+        - Keď používateľ uvedie adresu alebo prípad vyžaduje adresné údaje (bydlisko/sídlo/nehnuteľnosť), najprv sa opýtaj, či chce overiť adresu cez registeradries.sk.
+        - Odpoveď používateľa (áno/nie) si zapamätaj a použi ju aj pre ďalšie otázky v rovnakom prípade; nepýtaj sa opakovane bez dôvodu.
+        - Ak používateľ súhlasí a je dostupný nástroj registeradries_address_validate, použi ho na mapovanie adresy minimálne na: kraj, okres, city/obec, ulica, súpisné-orientačné číslo, PSČ.
+        - Po overení stručne ukáž mapovanie a prípadné nejasnosti, ktoré treba doplniť.
+
         COMPANY-CHECK POLICY (Slovakia)
         - Ak používateľ žiada pripraviť zmluvu s firmou alebo uvádza firemného partnera, pred draftingom skontroluj, či je dostupný nástroj na overenie firmy (najmä Obchodný register).
         - Ak máš k dispozícii dostatok identifikačných údajov firmy, použi tento nástroj ako prvý krok a používateľa sa nepýtaj na údaje, ktoré vieš overiť automaticky.

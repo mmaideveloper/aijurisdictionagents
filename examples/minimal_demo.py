@@ -17,10 +17,15 @@ from aijurisdictionagents.e2e_workflows import (
     simulate_contract_summary_case,
     simulate_slovak_lease_review,
 )
+from aijurisdictionagents.agents import AIAddressValidatorAgent
 from aijurisdictionagents.workflows import WorkflowEngine, WorkflowRouter, create_default_registry
 
 
 if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
     output_root = Path("runs") / "minimal_demo"
     contract_outcome = simulate_contract_summary_case(output_root / "contract_summary_case")
     lease_outcome = simulate_slovak_lease_review(output_root / "slovak_lease_case")
@@ -62,3 +67,18 @@ if __name__ == "__main__":
     if workflow_result.fact_conflicts:
         print(f"Confirmation question: {workflow_result.fact_conflicts[0].confirmation_question}")
     print(f"Validation issues: {[issue.message for issue in workflow_result.validation_issues]}")
+    print()
+    print("=== PDF export UX note ===")
+    print(
+        "For Slovakia-focused document exports, the API PDF builder now uses "
+        "a Slovak legal header profile and Central-European font preferences. "
+        "Rental packages with sections such as Nájomná zmluva, Inventárny zoznam, "
+        "and Protokol o odovzdaní a prevzatí bytu export as a ZIP package. "
+        "Document templates can also be previewed as PDFs from the chat simulator."
+    )
+    print()
+    print("=== Address validation mapping demo ===")
+    address_result = AIAddressValidatorAgent().validate_from_text(
+        "Námestie slobody 1, 811 06 Bratislava",
+    )
+    print(address_result)

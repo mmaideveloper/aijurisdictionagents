@@ -1,0 +1,46 @@
+{
+  "projects": {
+    "5": [
+      {
+        "status": "Ready",
+        "content": {
+          "number": 101,
+          "title": "Add autonomous task reviewer",
+          "url": "https://example.com/issues/101"
+        }
+      },
+      {
+        "status": "In progress",
+        "content": {
+          "number": 102,
+          "title": "Improve task body template",
+          "url": "https://example.com/issues/102"
+        }
+      }
+    ]
+  },
+  "issues": {
+    "101": {
+      "number": 101,
+      "title": "Add autonomous task reviewer",
+      "url": "https://example.com/issues/101",
+      "body": "## Summary\nNeed a bot to review business requirements every 15 minutes.\n\n## Business requirements\n- Detect tasks with missing codex marker\n- Post review findings\n",
+      "comments": [
+        {
+          "body": "Looks good, proceed."
+        }
+      ]
+    },
+    "102": {
+      "number": 102,
+      "title": "Improve task body template",
+      "url": "https://example.com/issues/102",
+      "body": "Short body",
+      "comments": [
+        {
+          "body": "codex - business requirements reviewed\n\nNo requirement gaps detected from issue text."
+        }
+      ]
+    }
+  }
+}

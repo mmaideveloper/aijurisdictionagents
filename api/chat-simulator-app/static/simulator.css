@@ -112,7 +112,8 @@ pre {
 #streamLog,
 #agentQuestionsLog,
 #messages,
-#result {
+#result,
+#caseHistory {
   max-height: 280px;
   overflow-y: auto;
 }
@@ -196,6 +197,110 @@ pre {
   margin-top: 0.8rem;
 }
 
+.case-documents-list,
+.document-templates-list,
+.document-viewer {
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  background: #020617;
+  padding: 0.85rem;
+}
+
+.case-documents-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.document-templates-list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.case-document-card {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: #0b1222;
+}
+
+.case-document-card h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.98rem;
+}
+
+.document-template-card {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: #0b1222;
+}
+
+.document-template-card h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.98rem;
+}
+
+.case-document-meta {
+  margin: 0;
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.document-template-meta {
+  margin: 0;
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.case-document-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.template-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.template-toolbar button {
+  width: auto;
+  min-width: 160px;
+}
+
+.case-document-actions button {
+  width: auto;
+  min-width: 120px;
+}
+
+.document-viewer-frame {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.document-viewer-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.document-viewer-link {
+  color: #93c5fd;
+}
+
+.empty-state {
+  margin: 0;
+  color: #94a3b8;
+}
+
 @media (max-width: 1100px) {
   .simulator-layout {
     grid-template-columns: 1fr;
@@ -203,5 +308,14 @@ pre {
 
   .chat-transcript {
     max-height: 320px;
+  }
+
+  .case-document-actions {
+    flex-direction: column;
+  }
+
+  .template-toolbar button,
+  .case-document-actions button {
+    width: 100%;
   }
 }

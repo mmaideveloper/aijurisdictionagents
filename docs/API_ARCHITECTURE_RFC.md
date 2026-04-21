@@ -47,6 +47,9 @@ Accepted (initial implementation baseline)
 - Minimal rewrite risk.
 - Faster delivery of backend API with typing/tests.
 - Straightforward containerization for Azure Container Apps.
+- Conversation continuity across sessions: completed chat sessions are persisted as a
+  `session_history` case document (one document per chat session), then processed by
+  the document processor for retrieval in future sessions tied to the same case.
 
 ### Trade-offs
 - SSE is server-to-client only; client-to-server remains normal HTTP.

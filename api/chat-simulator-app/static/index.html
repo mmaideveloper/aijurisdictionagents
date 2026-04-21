@@ -79,6 +79,20 @@
 
           <section class="grid row">
             <div>
+              <label for="existingCase">Existing case</label>
+              <select id="existingCase">
+                <option value="">Ensure User first to load existing cases...</option>
+              </select>
+              <small>Select an existing persisted case to continue the conversation and review its documents.</small>
+            </div>
+            <div>
+              <label>&nbsp;</label>
+              <button id="refreshExistingCases" class="secondary" type="button">Refresh Existing Cases</button>
+            </div>
+          </section>
+
+          <section class="grid row">
+            <div>
               <button id="ensureUser" type="button">Ensure User</button>
             </div>
             <div>
@@ -107,6 +121,35 @@
 
           <section class="row">
             <pre id="sessionStatus">No session created yet.</pre>
+          </section>
+
+          <section class="row">
+            <h2>Selected Case History</h2>
+            <pre id="caseHistory">No existing case selected yet.</pre>
+          </section>
+
+          <section class="row">
+            <h2>Case Documents</h2>
+            <div id="caseDocumentsList" class="case-documents-list">
+              <p class="empty-state">No case documents loaded yet.</p>
+            </div>
+          </section>
+
+          <section class="row">
+            <h2>Document Viewer</h2>
+            <div id="documentViewer" class="document-viewer">
+              <p class="empty-state">Select View on a case document to preview it here.</p>
+            </div>
+          </section>
+
+          <section class="row">
+            <h2>Document Templates</h2>
+            <div class="template-toolbar">
+              <button id="refreshDocumentTemplates" class="secondary" type="button">Refresh Templates</button>
+            </div>
+            <div id="documentTemplatesList" class="document-templates-list">
+              <p class="empty-state">No document templates loaded yet.</p>
+            </div>
           </section>
 
           <section class="row">

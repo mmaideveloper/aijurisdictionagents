@@ -30,12 +30,17 @@ The simulator now supports:
 - showing an initial localized Jurisdicta welcome message in the End User Chat View (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German)
 - submitting a case instruction and optionally uploading text documents
 - provisioning a real API user + persisted case, uploading documents through `POST /v1/cases/{case_id}/documents`, and binding new chat sessions to that case
+- listing existing persisted cases for the active simulator user from a dedicated dropdown, selecting one, and continuing the conversation on that case with a fresh `Create Session`
+- loading the selected case history from `GET /v1/cases/{case_id}/history` so you can review the existing conversation before continuing
+- showing the selected case documents immediately after case selection, including document metadata/status from the API
+- previewing selected existing case documents inline in the simulator (`PDF` iframe preview for PDFs, text preview for text-based files, open/download fallback for binary files)
+- listing API document templates in the **Document Templates** panel and generating a preview PDF from each template through `GET /v1/document-templates/{template_key}/preview/pdf`
 - deleting all persisted cases for the active simulator user with one button when the API reaches the active-case limit (`Maximum number of cases reached (5)`)
   - this action now runs through the internal simulator backend, so it does not depend on browser-side cross-origin delete requests
 - inspecting persisted document debug data from the API, including stored vectors, chunk counts, and the exact prompt chunks selected for the current query
 - starting `POST /v1/chat/sessions/{session_id}/stream` and viewing streamed events in real time
 - showing intermediate processing/tool events in the live stream log, including company-verification steps such as ORSR lookup start/result and which drafting inputs are still missing
-- rendering `processing` stream events directly in the End User Chat View as interim system bubbles (for example ORSR verification progress) before the final assistant answer arrives
+- rendering document-ready/status `processing` events directly in the End User Chat View while keeping lower-level backend progress in the dedicated processing status area instead of flooding the visible transcript
 - showing a dedicated live processing status with elapsed seconds so Azure/ORSR waits look like active backend work instead of a frozen UI
 - immediately rendering the `Case instruction` as the first end-user message when `Start Stream` is clicked, before assistant events continue the chat
 - showing a dedicated **AI Agent Questions** log (question-only view extracted from assistant turns)
@@ -52,10 +57,11 @@ The simulator now supports:
   - if the assistant ends the turn with a confirmation/request sentence but without a literal `?`, manual replies still remain available
   - simulator now sends manual replies through `POST /v1/chat/sessions/{session_id}/stream` in `ReadUser` mode, so backend `processing` events are visible in real time
   - while waiting for backend response, the simulator shows a localized frontend `Thinking...` system bubble (`Premyslam...`, `Premyslim...`, `Ich denke nach...`, or `Thinking...`)
-  - backend `processing` updates (including localized `Processing...` and `Thinking...`) are rendered as system chat bubbles during the same manual turn
+  - backend `processing` updates still feed the live status bar, but only document-ready/document-status milestones are mirrored into the visible chat transcript
   - as soon as the first real streamed event arrives, the temporary frontend thinking bubble is removed and replaced by actual backend progress/messages
   - both frontend and backend progress bubbles are mirrored into the live `Messages` JSON panel until the next persisted `Refresh Messages` sync
   - the reply panel now shows the exact reason when manual reply is not ready yet, instead of relying on silent browser form validation
+  - after a completed stream, `Send answer` stays available for follow-up questions such as asking for the current document status in the same session
 - auto-downloading PDF export when user requests PDF and later says thank you during a completed stream
 - fetching result payload and downloading exports as JSON or PDF (summary + requested document as separate PDF files)
 - grouping `Create Session` and `Clear Session` next to the persisted-case controls so the setup flow stays in one place
@@ -65,6 +71,7 @@ For persisted document review, the simulator supports this optional order when y
 - `Ensure User`
 - `Create Case`
 - `Upload To Case`
+- optional `Refresh Existing Cases` -> select an existing case from the dropdown
 - `Create Session`
 - `Start Stream`
 - `Send answer`

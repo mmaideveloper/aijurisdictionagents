@@ -20,27 +20,35 @@ def test_version() -> None:
     assert response.status_code == 200
     assert response.json() == {
         'service': 'chat-simulator-app',
-        'version': '0.1.19',
-        'simulator_version': '0.1.19',
+        'version': '0.1.22',
+        'simulator_version': '0.1.22',
     }
 
 
 def test_simulator_page_and_assets() -> None:
     page = client.get('/chat-simulator')
     assert page.status_code == 200
-    assert '/static/simulator.js?v=0.1.19' in page.text
-    assert '/static/simulator.css?v=0.1.19' in page.text
+    assert '/static/simulator.js?v=0.1.22' in page.text
+    assert '/static/simulator.css?v=0.1.22' in page.text
     assert 'Start Stream' in page.text
     assert 'Upload documents' in page.text
     assert 'Persisted Case Debug' in page.text
     assert 'Upload To Case' in page.text
+    assert 'Refresh Existing Cases' in page.text
     assert 'Workflow Warning' in page.text
     assert 'http://127.0.0.1:8080' in page.text
     assert 'replyStatus' in page.text
     assert 'processingStatus' in page.text
+    assert 'id="existingCase"' in page.text
+    assert 'id="caseHistory"' in page.text
+    assert 'id="caseDocumentsList"' in page.text
+    assert 'id="documentViewer"' in page.text
     assert 'novalidate' in page.text
     assert 'id="preparedCase"' in page.text
     assert 'id="preparedCasesData"' in page.text
+    assert 'Document Templates' in page.text
+    assert 'id="refreshDocumentTemplates"' in page.text
+    assert 'id="documentTemplatesList"' in page.text
     assert 'sample_case_prenajom' in page.text
     assert 'sample_case_prenajom_contract' in page.text
     assert 'sample_case_vlastnik_fimy' in page.text
@@ -82,19 +90,35 @@ def test_simulator_page_and_assets() -> None:
     assert 'MESSAGE_PREVIEW_LIMIT = 256' in js.text
     assert 'viac...' in js.text
     assert 'appendProcessingMessage' in js.text
+    assert 'document_package_ready' in js.text
+    assert 'document_status' in js.text
     assert 'localizedThinkingMessage' in js.text
     assert 'processing:thinking:' in js.text
     assert '_thinkingPlaceholder' in js.text
     assert 'Backend is processing your request...' in js.text
     assert 'handleStreamLifecycleEvent' in js.text
     assert 'Assistant is waiting for your answer.' in js.text
-    assert 'Stream completed.' in js.text
+    assert 'Stream completed. You can ask a follow-up question or document status.' in js.text
     assert 'applyPreparedCaseDocuments' in js.text
     assert 'new DataTransfer()' in js.text
     assert 'preparedCasesDataEl' in js.text
     assert 'Create Case first before Create Session.' in js.text
+    assert 'refreshExistingCases' in js.text
+    assert 'selectExistingCase' in js.text
+    assert 'viewCaseDocument' in js.text
+    assert 'downloadCaseDocument' in js.text
+    assert 'Existing case loaded. Click Create Session to continue this conversation on the selected case.' in js.text
+    assert 'Type an answer and click Send answer. The simulator will start the stream automatically.' in js.text
     assert 'refreshPersistedCaseControls' in js.text
     assert '/internal/delete-user-cases' in js.text
+    assert 'continue the session or ask for document status' in js.text
+    assert 'refreshDocumentTemplates' in js.text
+    assert 'generateTemplatePdf' in js.text
+    assert '/v1/document-templates' in js.text
+    assert '/preview/pdf' in js.text
+    assert 'Generate PDF' in js.text
+    assert 'template_pdf_generated' in js.text
+    assert 'document-template-card' in css.text
 
 
 def test_internal_delete_user_cases_route(monkeypatch) -> None:
