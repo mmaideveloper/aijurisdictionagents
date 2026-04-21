@@ -6,6 +6,7 @@ from typing import Any
 from .base import Tool, ToolDefinition, ToolResult
 from .address_validator import RegisterAdriesAddressValidatorTool
 from .obchodnyregister import ObchodnyRegisterTool
+from .property_validator import SlovakiaPropertyLVTool
 
 
 @dataclass
@@ -34,5 +35,6 @@ def build_default_tool_registry() -> ToolRegistry:
     tools: dict[str, Tool] = {
         "obchodny_register_company_check": ObchodnyRegisterTool(),
         "registeradries_address_validate": RegisterAdriesAddressValidatorTool(),
+        "slovakia_property_lv_lookup": SlovakiaPropertyLVTool(),
     }
     return ToolRegistry(_tools=tools)
