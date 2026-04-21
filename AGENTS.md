@@ -91,6 +91,9 @@ Custom project skills:
 - `chat-simulator` at `skills/chat-simulator/SKILL.md`
   - Purpose: alias skill to start chat simulator UI on port `8090`; checks/starts `juris-api` on `8080` first.
   - Script: `.\skills\chat-simulator\scripts\start_chat_simulator.ps1`
+- `testdocument` at `skills/testdocument/SKILL.md`
+  - Purpose: generate preview PDFs for every enabled document template through the local API preview renderer and write them under `runs\testdocument\document-template-pdfs`.
+  - Script: `.\skills\testdocument\scripts\test_document_templates.ps1`
 - `start-api` at `skills/start-api/SKILL.md`
   - Purpose: start and health-check local `aijuristiction-api`.
   - Script: `.\skills\start-api\scripts\start_api.ps1`

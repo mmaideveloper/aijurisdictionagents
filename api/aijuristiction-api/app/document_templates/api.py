@@ -107,10 +107,9 @@ def preview_document_template_pdf(
         lines=lines,
         country=template.jurisdiction,
         language=template.language,
-        header_line=f"AI Jurisdicta Template Preview | Template: {template.template_key}",
         footer_line=f"AIJ | Template preview | {template.template_key}",
         draw_logo_mark=True,
-        include_title_block=True,
+        include_title_block=False,
     )
     filename = _template_preview_filename(template)
     return Response(

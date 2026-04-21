@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test Document Templates"
+  short_description: "Generate every document-template preview PDF"
+  default_prompt: "Use $testdocument to generate PDF previews for every enabled document template and report the output folder plus any failures."

@@ -4,7 +4,8 @@ param(
     [switch]$Background,
     [switch]$ConsoleWindow,
     [switch]$Reload,
-    [switch]$Install
+    [switch]$Install,
+    [switch]$SkipLogTail
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,6 +49,9 @@ if ($Reload) {
 }
 if ($Install) {
     $args += "-Install"
+}
+if ($SkipLogTail) {
+    $args += "-SkipLogTail"
 }
 
 & $shellPath @args

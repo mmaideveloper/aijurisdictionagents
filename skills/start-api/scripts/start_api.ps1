@@ -13,7 +13,8 @@ param(
     [switch]$Background,
     [switch]$ConsoleWindow,
     [switch]$Reload,
-    [switch]$Install
+    [switch]$Install,
+    [switch]$SkipLogTail
 )
 
 $ErrorActionPreference = "Stop"
@@ -412,13 +413,15 @@ if ($Background) {
         Write-Output "Database: $($env:DB_OPTION)"
         Write-Output "Storage: $($env:STORAGE_OPTION)"
         Write-Output "LLM I/O logging: $($env:LOCAL_LLM_IO_LOGGING)"
-        $openedLogs = Open-LogTailWindow `
-            -ShellPath $shellPath `
-            -RepoRoot $repoRoot `
-            -Paths @($stdoutLog, $stderrLog) `
-            -WindowTitle "AI Jurisdiction API Logs"
-        if ($openedLogs) {
-            Write-Output "API log tail window started."
+        if (-not $SkipLogTail) {
+            $openedLogs = Open-LogTailWindow `
+                -ShellPath $shellPath `
+                -RepoRoot $repoRoot `
+                -Paths @($stdoutLog, $stderrLog) `
+                -WindowTitle "AI Jurisdiction API Logs"
+            if ($openedLogs) {
+                Write-Output "API log tail window started."
+            }
         }
         Write-Output "Stop: Stop-Process -Id (Get-Content `"$pidFile`") -Force"
     } else {
