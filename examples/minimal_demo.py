@@ -71,7 +71,9 @@ if __name__ == "__main__":
     print("=== PDF export UX note ===")
     print(
         "For Slovakia-focused document exports, the API PDF builder now uses "
-        "a Slovak legal header profile and Central-European font preferences. "
+        "a Jurisdicta corporate document template (header + contact panel + centered title) "
+        "for court/third-party facing documents, "
+        "a Slovak legal header profile where needed, and Central-European font preferences. "
         "Rental packages with visible sections such as Nájomná zmluva, Inventárny zoznam, "
         "and Protokol o odovzdaní a prevzatí bytu export as a ZIP package. "
         "Document templates can also be previewed as PDFs from the chat simulator."

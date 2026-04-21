@@ -81,6 +81,17 @@ Central-European PDF font profile, so headings such as `Nájomná zmluva`, `Čl.
 
 If a chat run only asks for a single rental contract, the endpoint still returns one PDF.
 
+For generated court-facing or third-party organization output documents, the API applies the
+Jurisdicta default corporate template:
+
+- branded Jurisdicta header block
+- right-aligned corporate contact details
+- clean divider line and centered document title
+- same API/Core export footer metadata for traceability
+
+Internal workflow-style outputs (for example legal summary / next-step memorandum style drafts) and
+discussion summaries intentionally keep the plain PDF style without the corporate template.
+
 ## PDF Preview
 
 The template preview endpoint renders one template directly through the same PDF builder used by chat document
@@ -106,9 +117,14 @@ Recommended runtime folder:
 python examples/document_templates_minimal_demo.py
 ```
 
+Generate one sample third-party corporate PDF output:
+
+```bash
+python examples/document_template_pdf_sample_demo.py
+```
+
 Repository default smoke demo remains available:
 
 ```bash
 python examples/minimal_demo.py
 ```
-

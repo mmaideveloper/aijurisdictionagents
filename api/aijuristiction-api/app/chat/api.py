@@ -21,6 +21,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
+from reportlab.lib import colors  # type: ignore[import-untyped]
 from reportlab.lib.pagesizes import A4  # type: ignore[import-untyped]
 from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
 from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
@@ -75,6 +76,7 @@ class _DocumentExportAsset:
     filename: str
     title: str
     lines: list[str]
+    use_corporate_template: bool = False
 
 
 class CreateSessionRequest(BaseModel):
@@ -2145,6 +2147,7 @@ def export_session_result(
         title = asset.title
         lines = asset.lines
         filename = asset.filename
+        use_corporate_template = asset.use_corporate_template
     else:
         title, lines = _build_summary_export_content(
             session_id=session_id,
@@ -2154,15 +2157,20 @@ def export_session_result(
             language=session.language,
         )
         filename = _build_pdf_filename(session_id=session_id, kind="summary")
+        use_corporate_template = False
 
     pdf_content = _build_simple_pdf(
         title=title,
         lines=lines,
         country=session.country,
         language=session.language,
-        header_line=(f"AI Jurisdicta Solution | Generated: {generated_at}" if kind == "document" else None),
+        header_line=(
+            f"AI Jurisdicta Solution | Generated: {generated_at}"
+            if kind == "document" and use_corporate_template
+            else None
+        ),
         footer_line=(footer_line if kind == "document" else None),
-        draw_logo_mark=(kind == "document"),
+        draw_logo_mark=(kind == "document" and use_corporate_template),
         include_title_block=(kind != "document"),
     )
     return Response(
@@ -2192,6 +2200,13 @@ def _build_simple_pdf(
     body_line_height = 14.0
     title_font_size = 14.0
     footer_font_size = 9.0
+    use_corporate_template = draw_logo_mark and not include_title_block
+
+    if use_corporate_template:
+        margin_top = 180.0
+        title_font_size = 22.0
+        body_font_size = 10.8
+        body_line_height = 18.0
 
     prefers_slovak_profile = _prefers_slovak_legal_pdf_profile(country=country, language=language)
     header_lines: list[str] = []
@@ -2209,6 +2224,8 @@ def _build_simple_pdf(
 
     title_block: list[str] = [title, "----------------"] if include_title_block else []
     prepared_lines = header_lines + title_block + _wrap_pdf_lines(lines)
+    if use_corporate_template:
+        prepared_lines = [title, ""] + prepared_lines
     if not prepared_lines:
         prepared_lines = [title]
 
@@ -2216,7 +2233,16 @@ def _build_simple_pdf(
     pdf = canvas.Canvas(buffer, pagesize=A4, pageCompression=0)
 
     def start_page() -> float:
-        if draw_logo_mark:
+        if use_corporate_template:
+            _draw_jurisdicta_corporate_header(
+                pdf=pdf,
+                page_width=page_width,
+                page_height=page_height,
+                margin_left=margin_left,
+                regular_font=regular_font,
+                bold_font=bold_font,
+            )
+        elif draw_logo_mark:
             pdf.setFont(bold_font, 10)
             pdf.drawRightString(page_width - margin_left, page_height - 28, "AI Jurisdicta")
         return page_height - margin_top
@@ -2228,6 +2254,11 @@ def _build_simple_pdf(
 
     y = start_page()
     for index, line in enumerate(prepared_lines):
+        if index == 0 and use_corporate_template:
+            pdf.setFont(bold_font, title_font_size)
+            pdf.drawCentredString(page_width / 2.0, y, line)
+            y -= body_line_height * 1.6
+            continue
         if index == 0 and include_title_block:
             pdf.setFont(bold_font, title_font_size)
             pdf.drawString(margin_left, y, line)
@@ -2249,6 +2280,55 @@ def _build_simple_pdf(
     draw_footer()
     pdf.save()
     return buffer.getvalue()
+
+
+def _draw_jurisdicta_corporate_header(
+    *,
+    pdf: canvas.Canvas,
+    page_width: float,
+    page_height: float,
+    margin_left: float,
+    regular_font: str,
+    bold_font: str,
+) -> None:
+    logo_color = colors.HexColor("#1EA75A")
+    dark_text = colors.HexColor("#111111")
+    muted_text = colors.HexColor("#3E434A")
+    top_y = page_height - 74.0
+
+    pdf.setStrokeColor(logo_color)
+    pdf.setLineWidth(3.0)
+    pdf.line(margin_left, top_y, margin_left + 56.0, top_y)
+    pdf.line(margin_left + 22.0, top_y, margin_left + 34.0, top_y - 18.0)
+    pdf.line(margin_left + 56.0, top_y, margin_left + 34.0, top_y - 18.0)
+
+    pdf.setFillColor(dark_text)
+    pdf.setFont(bold_font, 20)
+    pdf.drawString(margin_left, top_y - 44.0, "Jurisdicta")
+
+    right_x = page_width - margin_left
+    contact_lines = (
+        "Jurisdicta Legal Technology",
+        "Orlando, FL 32801",
+        "inquire@jurisdicta.ai",
+        "+1 222 555 7777",
+        "jurisdicta.ai",
+    )
+    pdf.setFillColor(muted_text)
+    pdf.setFont(regular_font, 10)
+    line_y = top_y
+    for contact_line in contact_lines:
+        pdf.drawRightString(right_x, line_y, contact_line)
+        line_y -= 13.0
+
+    separator_x = page_width - margin_left - 94.0
+    pdf.setStrokeColor(colors.HexColor("#777777"))
+    pdf.setLineWidth(1.6)
+    pdf.line(separator_x, top_y + 4.0, separator_x, top_y - 58.0)
+
+    pdf.setStrokeColor(colors.HexColor("#D8DCE1"))
+    pdf.setLineWidth(1.0)
+    pdf.line(margin_left, top_y - 76.0, page_width - margin_left, top_y - 76.0)
 
 
 def _wrap_pdf_lines(lines: List[str], width: int = 90) -> List[str]:
@@ -2300,10 +2380,14 @@ def _build_document_export_archive(
                 lines=asset.lines,
                 country=country,
                 language=language,
-                header_line=f"AI Jurisdicta Solution | Generated: {generated_at}",
+                header_line=(
+                    f"AI Jurisdicta Solution | Generated: {generated_at}"
+                    if asset.use_corporate_template
+                    else None
+                ),
                 footer_line=footer_line,
-                draw_logo_mark=True,
-                include_title_block=True,
+                draw_logo_mark=asset.use_corporate_template,
+                include_title_block=not asset.use_corporate_template,
             )
             archive.writestr(asset.filename, pdf_content)
     return archive_buffer.getvalue()
@@ -2657,6 +2741,12 @@ def _build_document_export_assets(
                 ),
                 title=title,
                 lines=lines,
+                use_corporate_template=_is_third_party_document(
+                    document_kind=document_kind,
+                    entry=entry,
+                    title=title,
+                    lines=lines,
+                ),
             )
         ]
     return _build_multi_document_export_assets(
@@ -2928,9 +3018,49 @@ def _build_multi_document_export_assets(
                 filename=unique_filename,
                 title=title,
                 lines=lines,
+                use_corporate_template=_is_third_party_document(
+                    document_kind=document_kind,
+                    entry=entry,
+                    title=title,
+                    lines=lines,
+                ),
             )
         )
     return assets
+
+
+def _is_third_party_document(
+    *,
+    document_kind: str,
+    entry: dict[str, Any] | None,
+    title: str,
+    lines: list[str],
+) -> bool:
+    if document_kind in {"rental_agreement", "share_transfer", "easement_demand"}:
+        return True
+    entry_type = _canonicalize_document_text(str((entry or {}).get("type") or ""))
+    if entry_type in {"contract", "minutes", "articles", "registry_filing", "handover_protocol", "inventory"}:
+        return True
+    candidate_text = " ".join(
+        [
+            title,
+            str((entry or {}).get("filename") or ""),
+            str((entry or {}).get("path") or ""),
+            *(lines[:8]),
+        ]
+    )
+    lowered = _canonicalize_document_text(candidate_text)
+    if any(token in lowered for token in ("registry filing", "court filing", "contract", "agreement", "petition", "protocol")):
+        return True
+    internal_markers = (
+        "legal summary and next-step memorandum",
+        "pravne zhrnutie a navrh dalsieho postupu",
+        "recommended next steps",
+        "odporucany postup",
+    )
+    if any(marker in lowered for marker in internal_markers):
+        return False
+    return False
 
 
 def _deduplicate_export_filename(*, filename: str, used_filenames: set[str]) -> str:

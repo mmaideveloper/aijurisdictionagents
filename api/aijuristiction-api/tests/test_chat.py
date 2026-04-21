@@ -10,6 +10,7 @@ from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
+import pytest
 
 from app.main import app
 
@@ -109,6 +110,95 @@ def test_create_session_and_messages_roundtrip() -> None:
     messages = list_response.json()
     assert len(messages) == 1
     assert messages[0]["role"] == "user"
+
+
+def test_third_party_template_classifier_marks_internal_memorandum_as_non_corporate() -> None:
+    import app.chat.api as chat_api
+
+    is_third_party = chat_api._is_third_party_document(
+        document_kind="general",
+        entry={"type": "other", "filename": "internal-memo.pdf"},
+        title="Generated internal memo",
+        lines=[
+            "Legal summary and next-step memorandum",
+            "Recommended next steps:",
+        ],
+    )
+
+    assert is_third_party is False
+
+
+def test_third_party_template_classifier_marks_contract_asset_as_corporate() -> None:
+    import app.chat.api as chat_api
+
+    is_third_party = chat_api._is_third_party_document(
+        document_kind="general",
+        entry={"type": "contract", "filename": "agreement.pdf"},
+        title="Agreement",
+        lines=["Contract between parties."],
+    )
+
+    assert is_third_party is True
+
+
+@pytest.mark.parametrize(
+    ("document_kind", "entry_type", "title", "expected"),
+    [
+        ("rental_agreement", "contract", "Nájomná zmluva", True),
+        ("rental_agreement", "inventory", "Inventárny zoznam", True),
+        ("rental_agreement", "handover_protocol", "Protokol o odovzdaní", True),
+        ("share_transfer", "minutes", "Zápisnica z rozhodnutia", True),
+        ("share_transfer", "registry_filing", "Podanie na ORSR", True),
+        ("general", "other", "Internal legal memo", False),
+    ],
+)
+def test_third_party_template_classifier_by_document_templates(
+    document_kind: str,
+    entry_type: str,
+    title: str,
+    expected: bool,
+) -> None:
+    import app.chat.api as chat_api
+
+    is_third_party = chat_api._is_third_party_document(
+        document_kind=document_kind,
+        entry={"type": entry_type, "filename": "template.pdf"},
+        title=title,
+        lines=[title, "Template content body."],
+    )
+
+    assert is_third_party is expected
+
+
+def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> None:
+    import app.chat.api as chat_api
+
+    corporate_pdf = chat_api._build_simple_pdf(
+        title="Car Rental Legal Memo",
+        lines=["Subject: Liability review", "To: Example Recipient"],
+        country="US",
+        language="en-US",
+        header_line="AI Jurisdicta Solution | Generated: 2026-04-21 10:00:00 UTC",
+        footer_line="AIJ | API 1.0 | Core 1.0",
+        draw_logo_mark=True,
+        include_title_block=False,
+    )
+    plain_pdf = chat_api._build_simple_pdf(
+        title="Internal legal summary",
+        lines=["Recommended next steps:", "1. Collect documents."],
+        country="US",
+        language="en-US",
+        footer_line="AIJ | API 1.0 | Core 1.0",
+        draw_logo_mark=False,
+        include_title_block=True,
+    )
+
+    corporate_text = _pdf_text(corporate_pdf).lower()
+    plain_text = _pdf_text(plain_pdf).lower()
+
+    assert "jurisdicta legal technology" in corporate_text
+    assert "orlando, fl 32801" in corporate_text
+    assert "jurisdicta legal technology" not in plain_text
 
 
 def test_stream_core_orchestration_and_export_json_pdf() -> None:
