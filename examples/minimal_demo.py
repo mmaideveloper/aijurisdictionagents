@@ -76,6 +76,8 @@ if __name__ == "__main__":
         "a Slovak legal header profile where needed, and Central-European font preferences. "
         "Rental packages with visible sections such as Nájomná zmluva, Inventárny zoznam, "
         "and Protokol o odovzdaní a prevzatí bytu export as a ZIP package. "
+        "Assistant technical JSON/XML payloads are hidden from user-facing chat and saved as "
+        "case documents with a view URL when the session is attached to a case. "
         "Document templates can also be previewed as PDFs from the chat simulator or batch-tested with "
         ".\\skills\\testdocument\\scripts\\test_document_templates.ps1."
     )

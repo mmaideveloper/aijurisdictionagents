@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from app.chat.api import _load_case_documents_for_llm
+from app.chat.api import _load_case_documents_for_llm, _user_visible_text
 from app.security import require_api_key
 
 from aijurisdictionagents.api_db import (
@@ -448,6 +448,8 @@ def _to_case_history_message_response(
         prefix, _, suffix = normalized.rpartition('(agent=')
         agent_name = suffix[:-1].strip() or None
         normalized = prefix.strip()
+    if role == 'assistant':
+        normalized = _user_visible_text(normalized)
     return CaseHistoryMessageResponse(
         communication_id=communication.communication_id,
         role=role,

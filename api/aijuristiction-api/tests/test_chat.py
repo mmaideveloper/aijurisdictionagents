@@ -2743,6 +2743,173 @@ def test_user_visible_text_strips_technical_json_preamble_before_case_update_mar
     assert _user_visible_text(content) == "VÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â½borne, dokumenty sÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âº teraz pripravenÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© na export."
 
 
+def test_user_visible_text_strips_bare_case_json_without_marker() -> None:
+    from app.chat.api import _extract_case_update, _user_visible_text
+
+    content = (
+        "Tu je finalny navrh zmluvy na podnajom.\n\n"
+        "{\n"
+        '  "case": {\n'
+        '    "case_id": null,\n'
+        '    "status": "intake_open",\n'
+        '    "jurisdiction": {"country": "SK", "language": "sk-SK"},\n'
+        '    "documents": [],\n'
+        '    "open_questions": ["Kto je prenajimatel?"],\n'
+        '    "discussions_append": []\n'
+        "  }\n"
+        "}"
+    )
+
+    assert _user_visible_text(content) == "Tu je finalny navrh zmluvy na podnajom."
+    case_update = _extract_case_update(content)
+    assert case_update is not None
+    assert case_update["case"]["status"] == "intake_open"
+
+
+def test_assistant_technical_payload_is_saved_as_case_document_and_linked(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Session
+
+    stored_documents: list[dict[str, object]] = []
+
+    class _FakeStore:
+        def add_case_document(
+            self,
+            *,
+            case_id: str,
+            kind: str,
+            version: int,
+            original_filename: str,
+            payload: bytes,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            stored_documents.append(
+                {
+                    "case_id": case_id,
+                    "kind": kind,
+                    "version": version,
+                    "original_filename": original_filename,
+                    "payload": payload.decode("utf-8"),
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return "doc-technical"
+
+    user_id = uuid4()
+    session = Session(
+        user_id=user_id,
+        case_id="case-123",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    content = (
+        "Tu je finalny navrh zmluvy na podnajom.\n\n"
+        "{\n"
+        '  "case": {\n'
+        '    "case_id": null,\n'
+        '    "status": "intake_open",\n'
+        '    "jurisdiction": {"country": "SK", "language": "sk-SK"},\n'
+        '    "open_questions": ["Kto je prenajimatel?"],\n'
+        '    "documents": []\n'
+        "  }\n"
+        "}"
+    )
+
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+
+    persisted_content = chat_api._attach_technical_payload_to_case_if_needed(
+        session=session,
+        content=content,
+    )
+    visible = chat_api._user_visible_text(persisted_content)
+
+    assert len(stored_documents) == 1
+    assert stored_documents[0]["kind"] == "technical_payload"
+    assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
+    stored_payload = json.loads(str(stored_documents[0]["payload"]))
+    assert stored_payload["case"]["status"] == "intake_open"
+    assert "Technick" in visible
+    assert f"/v1/cases/case-123/documents/doc-technical?user_id={user_id}" in visible
+    assert '"case"' not in visible
+
+
+def test_stream_read_user_completes_when_bare_technical_json_contains_question(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    from app.chat.models import Message, MessageRole, SessionState
+    import app.chat.api as chat_api
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    persisted_user = Message(
+        session_id=session_id,
+        role=MessageRole.USER,
+        content="ano",
+        agent_name="User",
+    )
+    persisted_lawyer = Message(
+        session_id=session_id,
+        role=MessageRole.ASSISTANT,
+        content=(
+            "Tu je finalny navrh zmluvy na podnajom.\n\n"
+            "{\n"
+            '  "case": {\n'
+            '    "case_id": null,\n'
+            '    "status": "intake_open",\n'
+            '    "jurisdiction": {"country": "SK", "language": "sk-SK"},\n'
+            '    "open_questions": ["Kto je prenajimatel?"],\n'
+            '    "documents": []\n'
+            "  }\n"
+            "}"
+        ),
+        agent_name="LawyerSlovakia",
+    )
+
+    monkeypatch.setattr(
+        chat_api,
+        "_run_direct_lawyer_turn",
+        lambda **kwargs: (persisted_user, persisted_lawyer, persisted_lawyer.content, []),
+    )
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "ano",
+            "documents": [],
+            "question_timeout_seconds": 300,
+            "max_discussion_minutes": 15,
+            "communication_minutes": 3,
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert "waiting_for_reply" not in events
+    assert '"case"' not in events
+    assert "event: result" in events
+
+    session = chat_api._repository.get_session(session_id)
+    assert session is not None
+    assert session.state == SessionState.COMPLETED
+
+    result_response = client.get(
+        f"/v1/chat/sessions/{session_id}/result",
+        headers=AUTH_HEADERS,
+    )
+    assert result_response.status_code == 200
+
+
 def test_user_visible_text_strips_fake_relative_download_links_and_json_preamble(monkeypatch) -> None:
     from app.chat.api import _user_visible_text
     import app.chat.api as chat_api
