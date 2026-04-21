@@ -584,7 +584,8 @@ def _load_slovak_company_registry_document(
     company_query: str,
 ) -> tuple[dict[str, object] | None, CoreDocument | None, bool]:
     normalized_query = _normalize_company_query(company_query)
-    cache_key = (normalized_query, id(build_default_tool_registry))
+    registry = build_default_tool_registry()
+    cache_key = (normalized_query, id(type(registry)))
     with _ORSR_CACHE_LOCK:
         cached_payload = _ORSR_CACHE.get(cache_key)
     if cached_payload is not None:
@@ -594,7 +595,6 @@ def _load_slovak_company_registry_document(
             cache_hit=True,
         )
 
-    registry = build_default_tool_registry()
     result = registry.run(
         "obchodny_register_company_check",
         company_name_or_registration=normalized_query,
