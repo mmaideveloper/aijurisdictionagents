@@ -1483,7 +1483,7 @@ def test_slovakia_property_validation_preference_is_reused_after_user_confirmati
 
 def test_prepare_slovakia_direct_reply_adds_property_consent_note_for_property_contract_request() -> None:
     from app.chat.country_services import slovakia as slovakia_service
-    from app.chat.models import MessageRole, Session
+    from app.chat.models import Session
 
     session = Session(country="SK")
     current_content = "Priprav kupno predajnu zmluvu na pozemkoch nachadzajuci sa v katastri obce Kravany, na adrese ..."
