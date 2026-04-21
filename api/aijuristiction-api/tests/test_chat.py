@@ -332,8 +332,10 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     summary_text = _pdf_text(summary_pdf.content).lower()
     document_text = _pdf_text(document_pdf.content).lower()
     assert "ai jurisdiction" in summary_text
-    assert "ai jurisdicta solution" in document_text
-    assert "generated:" in document_text
+    assert "jurisdicta" in document_text
+    assert "poprad, slovakia, 05801" in document_text
+    assert "api version" in document_text
+    assert "system core version" in document_text
     assert "aij | api " in document_text
     assert "api " in document_text
     assert "core " in document_text
