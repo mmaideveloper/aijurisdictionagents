@@ -1440,6 +1440,104 @@ def test_slovakia_address_validation_preference_is_reused_after_user_confirmatio
     assert "registeradries_address_validate" in note
 
 
+
+
+def test_slovakia_property_validation_prompt_note_requires_consent_when_preference_unknown() -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+
+    note = slovakia_service._build_slovak_property_validation_prompt_note(
+        current_content="Priprav kupno predajnu zmluvu na pozemkoch v katastri obce Kravany, adresa je ...",
+        prior_messages=[],
+    )
+
+    assert "consent question" in note.lower()
+    assert "slovakia_property_lv_lookup" in note
+
+
+def test_slovakia_property_validation_preference_is_reused_after_user_confirmation() -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.models import Message, MessageRole
+
+    session_id = uuid4()
+    prior_messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Chcete overiť list vlastníctva cez slovakia_property_lv_lookup?",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Áno, overte to.",
+        ),
+    ]
+
+    note = slovakia_service._build_slovak_property_validation_prompt_note(
+        current_content="Zisti mi pozemky usera Jana Novaka.",
+        prior_messages=prior_messages,
+    )
+
+    assert "already opted in" in note
+    assert "all_cadastral_units_slovakia" in note
+
+
+def test_prepare_slovakia_direct_reply_adds_property_consent_note_for_property_contract_request() -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.models import MessageRole, Session
+
+    session = Session(country="SK")
+    current_content = "Priprav kupno predajnu zmluvu na pozemkoch nachadzajuci sa v katastri obce Kravany, na adrese ..."
+    preparation = slovakia_service.prepare_slovakia_direct_reply(
+        session=session,
+        messages=[],
+        current_content=current_content,
+        prior_messages=[],
+        normalize_document_lines=lambda content: content.splitlines(),
+        extract_document_facts=lambda _lines: {},
+        current_turn_confirms_document_generation=lambda *_args, **_kwargs: False,
+        build_share_transfer_lines=lambda _facts: [],
+    )
+
+    assert preparation.prompt_note is not None
+    assert "SLOVAK PROPERTY VALIDATION MODE" in preparation.prompt_note
+    assert "consent question" in preparation.prompt_note.lower()
+
+
+def test_prepare_slovakia_direct_reply_reuses_property_consent_for_owner_lookup_request() -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.models import Message, MessageRole, Session
+
+    session_id = uuid4()
+    prior_messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Chcete overiť list vlastníctva cez slovakia_property_lv_lookup?",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Ano.",
+        ),
+    ]
+    session = Session(country="SK")
+    current_content = "Zisti mi pozemky usera Jana Novaka."
+
+    preparation = slovakia_service.prepare_slovakia_direct_reply(
+        session=session,
+        messages=prior_messages,
+        current_content=current_content,
+        prior_messages=prior_messages,
+        normalize_document_lines=lambda content: content.splitlines(),
+        extract_document_facts=lambda _lines: {},
+        current_turn_confirms_document_generation=lambda *_args, **_kwargs: False,
+        build_share_transfer_lines=lambda _facts: [],
+    )
+
+    assert preparation.prompt_note is not None
+    assert "already opted in" in preparation.prompt_note.lower()
+    assert "slovakia_property_lv_lookup" in preparation.prompt_note
+
 def test_reply_endpoint_share_transfer_uses_single_current_stakeholder_as_transferor(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api

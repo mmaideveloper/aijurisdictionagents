@@ -17,7 +17,7 @@ from aijurisdictionagents.e2e_workflows import (
     simulate_contract_summary_case,
     simulate_slovak_lease_review,
 )
-from aijurisdictionagents.agents import AIAddressValidatorAgent
+from aijurisdictionagents.agents import AIAddressValidatorAgent, AIPropertyValidatorAgent
 from aijurisdictionagents.workflows import WorkflowEngine, WorkflowRouter, create_default_registry
 
 
@@ -82,3 +82,10 @@ if __name__ == "__main__":
         "Námestie slobody 1, 811 06 Bratislava",
     )
     print(address_result)
+
+    print()
+    print("=== Property LV validation mapping demo ===")
+    lv_result = AIPropertyValidatorAgent().build_lv_lookup_plan(
+        person_name="Ján Novák",
+    )
+    print(lv_result)
