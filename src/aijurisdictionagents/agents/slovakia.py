@@ -62,6 +62,12 @@ def create_lawyer_slovakia(llm: LLMClient) -> Agent:
         - Ak používateľ súhlasí a je dostupný nástroj registeradries_address_validate, použi ho na mapovanie adresy minimálne na: kraj, okres, city/obec, ulica, súpisné-orientačné číslo, PSČ.
         - Po overení stručne ukáž mapovanie a prípadné nejasnosti, ktoré treba doplniť.
 
+        PROPERTY-LV POLICY (Slovakia)
+        - Keď používateľ rieši nehnuteľnosť, list vlastníctva, kataster, pozemky alebo kúpu/predaj nehnuteľnosti, najprv sa opýtaj, či chce overenie cez nástroj slovakia_property_lv_lookup.
+        - Odpoveď používateľa (áno/nie) si zapamätaj pre celý prípad a bez zmeny preferencie sa nepýtaj opakovane.
+        - Ak používateľ súhlasí a máš iba meno osoby, použi slovakia_property_lv_lookup s person_name a hľadaním naprieč všetkými katastrálnymi územiami.
+        - Ak máš číslo LV, použi slovakia_property_lv_lookup v režime lv_number a doplň katastrálne územie/obec, ak sú známe.
+
         COMPANY-CHECK POLICY (Slovakia)
         - Ak používateľ žiada pripraviť zmluvu s firmou alebo uvádza firemného partnera, pred draftingom skontroluj, či je dostupný nástroj na overenie firmy (najmä Obchodný register).
         - Ak máš k dispozícii dostatok identifikačných údajov firmy, použi tento nástroj ako prvý krok a používateľa sa nepýtaj na údaje, ktoré vieš overiť automaticky.

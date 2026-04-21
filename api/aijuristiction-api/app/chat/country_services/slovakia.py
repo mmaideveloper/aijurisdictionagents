@@ -46,6 +46,10 @@ def prepare_slovakia_direct_reply(
         current_content=current_content,
         prior_messages=prior_messages,
     )
+    property_prompt_note = _build_slovak_property_validation_prompt_note(
+        current_content=current_content,
+        prior_messages=prior_messages,
+    )
 
     asks_company_registry_info = _looks_like_company_registry_information_question(current_content)
     looks_like_company_document = _looks_like_company_document_matter(
@@ -57,8 +61,9 @@ def prepare_slovakia_direct_reply(
         prior_messages=prior_messages,
     )
     if not asks_company_registry_info and not looks_like_company_document and not asks_share_transfer:
-        if address_prompt_note:
-            return DirectReplyPreparation(supplemental_documents=[], prompt_note=address_prompt_note)
+        non_company_prompt_note = _merge_prompt_notes(address_prompt_note, property_prompt_note)
+        if non_company_prompt_note:
+            return DirectReplyPreparation(supplemental_documents=[], prompt_note=non_company_prompt_note)
         return DirectReplyPreparation(supplemental_documents=[])
 
     analysis_message = (
@@ -147,6 +152,7 @@ def prepare_slovakia_direct_reply(
             company_record=company_record,
         )
         prompt_note = _merge_prompt_notes(prompt_note, address_prompt_note)
+        prompt_note = _merge_prompt_notes(prompt_note, property_prompt_note)
         return DirectReplyPreparation(
             supplemental_documents=supplemental_documents,
             prompt_note=prompt_note,
@@ -159,6 +165,7 @@ def prepare_slovakia_direct_reply(
             company_record=company_record,
         )
         prompt_note = _merge_prompt_notes(prompt_note, address_prompt_note)
+        prompt_note = _merge_prompt_notes(prompt_note, property_prompt_note)
         return DirectReplyPreparation(
             supplemental_documents=supplemental_documents,
             prompt_note=prompt_note,
@@ -275,6 +282,7 @@ def prepare_slovakia_direct_reply(
         user_confirmed_document_generation=user_confirmed_document_generation,
     )
     prompt_note = _merge_prompt_notes(prompt_note, address_prompt_note)
+    prompt_note = _merge_prompt_notes(prompt_note, property_prompt_note)
     return DirectReplyPreparation(
         supplemental_documents=supplemental_documents,
         prompt_note=prompt_note,
@@ -321,6 +329,114 @@ def _build_slovak_address_validation_prompt_note(*, current_content: str, prior_
             "- After the user answers yes/no, remember that choice for the rest of this case.",
         ]
     )
+
+
+
+
+def _build_slovak_property_validation_prompt_note(*, current_content: str, prior_messages: list[Message]) -> str:
+    if not _looks_like_property_relevant_context(current_content=current_content, prior_messages=prior_messages):
+        return ""
+
+    preference = _resolve_property_validation_preference(prior_messages=prior_messages)
+    if preference == "yes":
+        return "\n".join(
+            [
+                "SLOVAK PROPERTY VALIDATION MODE:",
+                "- User already opted in to property LV validation for this case.",
+                "- Run slovakia_property_lv_lookup whenever property ownership or LV lookup is requested.",
+                "- If only person_name is available, use search_scope=all_cadastral_units_slovakia.",
+                "- Reuse remembered consent and do not ask for the same confirmation again unless the user changes preference.",
+            ]
+        )
+    if preference == "no":
+        return "\n".join(
+            [
+                "SLOVAK PROPERTY VALIDATION MODE:",
+                "- User declined property LV validation for this case.",
+                "- Do not run slovakia_property_lv_lookup unless the user explicitly changes their decision.",
+            ]
+        )
+
+    return "\n".join(
+        [
+            "SLOVAK PROPERTY VALIDATION MODE:",
+            "- This turn likely requires Slovak property (list vlastníctva) verification.",
+            "- Before using property validation tools, ask exactly one concise consent question whether the user wants LV lookup via slovakia_property_lv_lookup.",
+            "- After the user answers yes/no, remember that choice for the rest of this case.",
+        ]
+    )
+
+
+def _looks_like_property_relevant_context(*, current_content: str, prior_messages: list[Message]) -> bool:
+    combined = " ".join(current_content.lower().split())
+    property_tokens = (
+        "kupno",
+        "predaj",
+        "predajna",
+        "predajnu",
+        "pozem",
+        "pozemok",
+        "pozemky",
+        "kataster",
+        "katastri",
+        "katastral",
+        "list vlastnictva",
+        "list vlastníctva",
+        "lv",
+        "vlastnik",
+        "vlastník",
+    )
+    if any(token in combined for token in property_tokens):
+        return True
+    for message in reversed(prior_messages[-8:]):
+        if message.role != MessageRole.ASSISTANT:
+            continue
+        lowered = message.content.lower()
+        if "list vlast" in lowered and "?" in lowered:
+            return True
+        if "lv" in lowered and "?" in lowered:
+            return True
+    return False
+
+
+def _resolve_property_validation_preference(*, prior_messages: list[Message]) -> str | None:
+    yes_tokens = (
+        "chcem overit lv",
+        "chcem overiť lv",
+        "chcem vyhladat lv",
+        "chcem vyhľadať lv",
+        "overit list vlastnictva",
+        "overiť list vlastníctva",
+        "zisti pozemky",
+        "zistiť pozemky",
+    )
+    no_tokens = (
+        "nechcem overit lv",
+        "nechcem overiť lv",
+        "neoverovat lv",
+        "neoverovať lv",
+        "nechcem list vlastnictva",
+        "nechcem list vlastníctva",
+    )
+    for index in range(len(prior_messages) - 1, -1, -1):
+        user_message = prior_messages[index]
+        if user_message.role != MessageRole.USER:
+            continue
+        user_text = " ".join(user_message.content.lower().split())
+        if any(token in user_text for token in yes_tokens):
+            return "yes"
+        if any(token in user_text for token in no_tokens):
+            return "no"
+        if not _is_affirmative_or_negative_reply(user_text):
+            continue
+        previous_assistant = _nearest_previous_assistant(prior_messages=prior_messages, before_index=index)
+        if not previous_assistant:
+            continue
+        assistant_text = previous_assistant.lower()
+        if "lv" not in assistant_text and "list vlast" not in assistant_text and "pozem" not in assistant_text:
+            continue
+        return "yes" if _is_affirmative_short_reply(user_text) else "no"
+    return None
 
 
 def _looks_like_address_relevant_context(*, current_content: str, prior_messages: list[Message]) -> bool:

@@ -2,6 +2,7 @@ from .base import Agent
 from .address_validator import AIAddressValidatorAgent
 from .ai_web_search import AIWebSearchAgent, CompanySearchAgent, EntityScreeningAgent, PersonSearchAgent
 from .judge import create_judge
+from .property_validator import AIPropertyValidatorAgent
 from .lawyer import create_lawyer
 from .slovakia import create_lawyer_slovakia
 from .user_simulator import AIUserSimulatorAgent
@@ -20,6 +21,7 @@ __all__ = [
     "Agent",
     "AIAddressValidatorAgent",
     "AIWebSearchAgent",
+    "AIPropertyValidatorAgent",
     "EntityScreeningAgent",
     "CompanySearchAgent",
     "PersonSearchAgent",
