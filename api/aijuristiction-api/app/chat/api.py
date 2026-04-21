@@ -2675,8 +2675,6 @@ def _fallback_document_entries_for_export(
     result: SessionResult | None,
     document_kind: str,
 ) -> list[dict[str, Any]]:
-    if document_kind != "share_transfer":
-        return []
     discussion_messages = [
         m.content
         for m in messages
