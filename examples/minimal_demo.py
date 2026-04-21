@@ -17,6 +17,7 @@ from aijurisdictionagents.e2e_workflows import (
     simulate_contract_summary_case,
     simulate_slovak_lease_review,
 )
+from aijurisdictionagents.agents import AIAddressValidatorAgent
 from aijurisdictionagents.workflows import WorkflowEngine, WorkflowRouter, create_default_registry
 
 
@@ -75,3 +76,9 @@ if __name__ == "__main__":
         "and Protokol o odovzdaní a prevzatí bytu export as a ZIP package. "
         "Document templates can also be previewed as PDFs from the chat simulator."
     )
+    print()
+    print("=== Address validation mapping demo ===")
+    address_result = AIAddressValidatorAgent().validate_from_text(
+        "Námestie slobody 1, 811 06 Bratislava",
+    )
+    print(address_result)

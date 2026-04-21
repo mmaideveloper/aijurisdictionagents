@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .base import Tool, ToolDefinition, ToolResult
+from .address_validator import RegisterAdriesAddressValidatorTool
 from .obchodnyregister import ObchodnyRegisterTool
 
 
@@ -32,5 +33,6 @@ class ToolRegistry:
 def build_default_tool_registry() -> ToolRegistry:
     tools: dict[str, Tool] = {
         "obchodny_register_company_check": ObchodnyRegisterTool(),
+        "registeradries_address_validate": RegisterAdriesAddressValidatorTool(),
     }
     return ToolRegistry(_tools=tools)

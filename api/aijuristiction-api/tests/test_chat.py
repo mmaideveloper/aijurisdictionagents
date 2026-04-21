@@ -1401,6 +1401,45 @@ def test_apply_company_record_share_transfer_defaults_keeps_specific_transferor_
     assert merged["transferor_details"] == "vlastnik firmy, Mar Mat, Testova 30, Poprad"
 
 
+def test_slovakia_address_validation_prompt_note_requires_consent_when_preference_unknown() -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+
+    note = slovakia_service._build_slovak_address_validation_prompt_note(
+        current_content="Moja adresa je Námestie slobody 1, 811 06 Bratislava.",
+        prior_messages=[],
+    )
+
+    assert "consent question" in note.lower()
+    assert "registeradries.sk" in note
+
+
+def test_slovakia_address_validation_preference_is_reused_after_user_confirmation() -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.models import Message, MessageRole
+
+    session_id = uuid4()
+    prior_messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Chcete overiť adresu cez registeradries.sk?",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Áno, overte adresu.",
+        ),
+    ]
+
+    note = slovakia_service._build_slovak_address_validation_prompt_note(
+        current_content="Adresa pre zmluvu: Námestie slobody 1, 811 06 Bratislava.",
+        prior_messages=prior_messages,
+    )
+
+    assert "already opted in" in note
+    assert "registeradries_address_validate" in note
+
+
 def test_reply_endpoint_share_transfer_uses_single_current_stakeholder_as_transferor(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
