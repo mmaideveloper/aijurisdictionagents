@@ -72,7 +72,7 @@ if __name__ == "__main__":
     print(
         "For Slovakia-focused document exports, the API PDF builder now uses "
         "a Slovak legal header profile and Central-European font preferences. "
-        "Rental packages with sections such as Nájomná zmluva, Inventárny zoznam, "
+        "Rental packages with visible sections such as Nájomná zmluva, Inventárny zoznam, "
         "and Protokol o odovzdaní a prevzatí bytu export as a ZIP package. "
         "Document templates can also be previewed as PDFs from the chat simulator."
     )
