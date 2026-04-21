@@ -1,6 +1,6 @@
 [project]
 name = "chat-simulator-app"
-version = "0.1.21"
+version = "0.1.22"
 description = "Standalone chat simulator UI for testing aijuristiction-api chat endpoints"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -345,6 +345,88 @@ def test_fallback_document_entries_ignore_single_contract_section_headings() -> 
     ) == []
 
 
+def test_document_export_returns_zip_for_visible_slovak_rental_package() -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    original_repository = chat_api._repository
+    chat_api._repository = repository
+    try:
+        session = repository.create_session(Session(country="SK", discussion_type="advice", language="sk-SK"))
+        content = (
+            "Kompletný balík dokumentov je pripravený na export.\n\n"
+            "---\n\n"
+            "**Zmluva o nájme bytu**\n\n"
+            "Prenajímateľ prenajíma nájomcovi byt na adrese: Ludvíka Svobodu 2953/50, Poprad.\n\n"
+            "---\n\n"
+            "**Inventárny zoznam:**\n\n"
+            "[Zoznam vybavenia a stavu bytu]\n\n"
+            "---\n\n"
+            "**Potvrdenie o prevzatí bytu:**\n\n"
+            "Nájomca potvrdzuje prevzatie bytu v dohodnutom stave."
+        )
+        repository.add_message(
+            Message(
+                session_id=session.id,
+                role=MessageRole.ASSISTANT,
+                agent_name="LawyerSlovakia",
+                content=content,
+            )
+        )
+        repository.set_result(
+            session.id,
+            SessionResult(
+                final_recommendation=content,
+                judge_rationale="Direct lawyer reply prepared for session export.",
+                metadata={},
+            ),
+        )
+
+        response = client.get(
+            f"/v1/chat/sessions/{session.id}/export?format=pdf&kind=document",
+            headers=AUTH_HEADERS,
+        )
+    finally:
+        chat_api._repository = original_repository
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = sorted(archive.namelist())
+        assert names == [
+            "Inventarny_zoznam.pdf",
+            "Najomna_zmluva.pdf",
+            "Protokol_o_odovzdani_a_prevzati_bytu.pdf",
+        ]
+        for name in names:
+            assert archive.read(name).startswith(b"%PDF")
+
+
+def test_slovak_rental_export_lines_do_not_contain_mojibake() -> None:
+    from app.chat.api import _build_standard_slovak_agreement_lines
+
+    facts = {
+        "prenajimatel": "Prenajímateľ [doplniť údaje]",
+        "najomca": "Nájomca [doplniť údaje]",
+        "predmet": "Byt na adrese Ludvíka Svobodu 2953/50, Poprad",
+        "doba": "Na dobu určitú 1 rok",
+        "najomne": "600 EUR mesačne",
+        "advance": "2 mesačné nájomné vopred",
+        "deposit": "1 mesačné nájomné",
+        "notice": "Výpovedná lehota 1 mesiac",
+    }
+
+    text = "\n".join(_build_standard_slovak_agreement_lines(facts))
+
+    assert "Nájomná zmluva" in text
+    assert "Čl. I - Zmluvné strany" in text
+    assert "Prenajímateľ" in text
+    assert "600 EUR mesačne" in text
+    assert not any(marker in text for marker in ("Ã", "Â", "Ä", "Å", "â"))
+
+
 def test_document_export_for_easement_case_is_not_lease_template() -> None:
     from app.chat.api import _build_document_export_content, _build_simple_pdf
     from app.chat.models import Message, MessageRole

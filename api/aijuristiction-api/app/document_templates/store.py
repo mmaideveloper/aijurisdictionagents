@@ -228,7 +228,7 @@ class DocumentTemplateStore:
                 ),
             )
             conn.commit()
-        return self.get(template_key=template_key, jurisdiction=updated["jurisdiction"])
+        return self.get(template_key=template_key, jurisdiction=str(updated["jurisdiction"]))
 
     def soft_delete(self, *, template_key: str, jurisdiction: str | None = None) -> DocumentTemplateDefinition:
         current = self.get(template_key=template_key, jurisdiction=jurisdiction)

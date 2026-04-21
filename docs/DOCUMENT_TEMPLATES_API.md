@@ -48,6 +48,7 @@ All endpoints require `x-api-key`.
 - `PATCH /v1/document-templates/{template_key}?jurisdiction=SK`
 - `DELETE /v1/document-templates/{template_key}?jurisdiction=SK`
 - `GET /v1/document-templates/match/search?request_text=...&country=SK&template_kind=rental_agreement`
+- `GET /v1/document-templates/{template_key}/preview/pdf?jurisdiction=SK`
 
 ## Match behavior
 
@@ -63,6 +64,33 @@ This is intended as the selection layer for future contract rendering:
 1. detect the client request intent
 2. find the best template candidate
 3. render a concrete draft by filling placeholders from extracted facts
+
+## Chat Export Behavior
+
+The chat document export endpoint (`GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document`)
+now recognizes visible Slovak rental-package sections such as:
+
+- `Zmluva o nájme bytu`
+- `Inventárny zoznam`
+- `Potvrdenie o prevzatí bytu` / odovzdávací protokol
+
+When at least two separate package documents are detected, the endpoint returns a ZIP archive instead of
+collapsing the package into one PDF. Slovak rental export text is generated with UTF-8 Slovak literals and the
+Central-European PDF font profile, so headings such as `Nájomná zmluva`, `Čl. I`, `prenajímateľ`, and
+`nájomca` render without mojibake.
+
+If a chat run only asks for a single rental contract, the endpoint still returns one PDF.
+
+## PDF Preview
+
+The template preview endpoint renders one template directly through the same PDF builder used by chat document
+exports. It fills known placeholders with realistic sample data, returns `application/pdf`, and uses a
+`Content-Disposition` filename ending in `-preview.pdf`.
+
+The chat simulator now includes a **Document Templates** panel. Use **Refresh Templates** to load templates from
+the selected API base URL and **Generate PDF** on any row to download that template preview. This is intended for
+quick visual checks of Slovak characters, typography, spacing, and final PDF quality before using a template in a
+real chat flow.
 
 ## Source download
 

@@ -71,7 +71,10 @@ if __name__ == "__main__":
     print("=== PDF export UX note ===")
     print(
         "For Slovakia-focused document exports, the API PDF builder now uses "
-        "a Slovak legal header profile and Central-European font preferences."
+        "a Slovak legal header profile and Central-European font preferences. "
+        "Rental packages with sections such as Nájomná zmluva, Inventárny zoznam, "
+        "and Protokol o odovzdaní a prevzatí bytu export as a ZIP package. "
+        "Document templates can also be previewed as PDFs from the chat simulator."
     )
     print()
     print("=== Address validation mapping demo ===")
