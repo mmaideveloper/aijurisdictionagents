@@ -8,7 +8,7 @@ from aijurisdictionagents.agents.ai_web_search import (
     PersonSearchAgent,
     _parse_duckduckgo_html_results,
 )
-from aijurisdictionagents.agents import AIUserSimulatorAgent, create_lawyer_agent
+from aijurisdictionagents.agents import AIAddressValidatorAgent, AIUserSimulatorAgent, create_lawyer_agent
 from aijurisdictionagents.llm import MockLLMClient
 from aijurisdictionagents.schemas import Document, Message
 
@@ -264,3 +264,15 @@ def test_person_search_agent_builds_structured_prompt_in_english() -> None:
     assert "list of trade licenses / sole-trader businesses" in prompt
     assert "financial institutions" in prompt
     assert "Person reference: Jana Hraska" in prompt
+
+
+def test_ai_address_validator_agent_extracts_slovak_mapping_and_lookup_url() -> None:
+    agent = AIAddressValidatorAgent()
+    result = agent.validate_from_text("Partizánska 665/101, 059 18 Spišské Bystré")
+
+    assert result["ok"] is True
+    mapping = result["mapping"]
+    assert mapping["street"].startswith("Partiz")
+    assert mapping["house_number"] == "665/101"
+    assert mapping["postal_code"] == "05918"
+    assert "registeradries.sk" in result["lookup_url"]
