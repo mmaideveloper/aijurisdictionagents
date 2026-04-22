@@ -137,6 +137,7 @@ class SignUpInput {
     required this.phoneNumber,
     required this.email,
     required this.password,
+    required this.verificationCode,
     this.firstName,
     this.lastName,
   });
@@ -144,6 +145,7 @@ class SignUpInput {
   final String phoneNumber;
   final String email;
   final String password;
+  final String verificationCode;
   final String? firstName;
   final String? lastName;
 }
@@ -165,6 +167,8 @@ class UpdateProfileInput {
 class LocalAuthStore {
   static const String _currentUserKeyPrefix = 'mobile_auth_current_user_v3';
   static const String _lastPhoneKeyPrefix = 'mobile_auth_last_phone_v3';
+  static const String _deviceTokenKeyPrefix = 'mobile_auth_device_token_v1';
+  static const String _deviceIdKeyPrefix = 'mobile_auth_device_id_v1';
 
   const LocalAuthStore({
     required this.baseUri,
@@ -176,6 +180,8 @@ class LocalAuthStore {
 
   String get _currentUserKey => '${_currentUserKeyPrefix}_${_storageScope()}';
   String get _lastPhoneKey => '${_lastPhoneKeyPrefix}_${_storageScope()}';
+  String get _deviceTokenKey => '${_deviceTokenKeyPrefix}_${_storageScope()}';
+  String get _deviceIdKey => '${_deviceIdKeyPrefix}_${_storageScope()}';
 
   String _storageScope() {
     final buffer = StringBuffer()
@@ -254,12 +260,26 @@ class LocalAuthStore {
   Future<void> signOut() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_currentUserKey);
+    await prefs.remove(_deviceTokenKey);
+  }
+
+  Future<String> getOrCreateDeviceBindingId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString(_deviceIdKey);
+    if (existing != null && existing.trim().isNotEmpty) {
+      return existing;
+    }
+    final created =
+        'device_${DateTime.now().microsecondsSinceEpoch}_${baseUri.host}';
+    await prefs.setString(_deviceIdKey, created);
+    return created;
   }
 
   Future<LocalAuthUser> signUp(SignUpInput input) async {
     final phone = _normalizePhone(input.phoneNumber);
     final email = _normalizeEmail(input.email);
     final password = input.password.trim();
+    final verificationCode = input.verificationCode.trim();
     if (phone.isEmpty) {
       throw Exception('Phone number is required.');
     }
@@ -269,13 +289,17 @@ class LocalAuthStore {
     if (password.isEmpty) {
       throw Exception('Password is required.');
     }
+    if (verificationCode.isEmpty) {
+      throw Exception('Verification code is required.');
+    }
 
     final response = await _postJson(
-      path: '/v1/users/sign-up',
+      path: '/v1/users/sign-up/complete',
       payload: <String, Object?>{
         'phone_number': phone,
         'email': email,
         'password': password,
+        'verification_code': verificationCode,
         'first_name': _normalizeOptionalText(input.firstName),
         'last_name': _normalizeOptionalText(input.lastName),
       },
@@ -286,6 +310,107 @@ class LocalAuthStore {
 
     final user = _userFromApiResponse(response, password: password);
     await _cacheSignedInUser(user);
+    return user;
+  }
+
+  Future<void> sendRegistrationCode({required String email}) async {
+    final normalizedEmail = _normalizeEmail(email);
+    if (normalizedEmail.isEmpty) {
+      throw Exception('Email is required.');
+    }
+    final response = await _postJson(
+      path: '/v1/users/sign-up/send-code',
+      payload: <String, Object?>{'email': normalizedEmail},
+    );
+    if (response.statusCode != 202) {
+      throw Exception(_extractErrorDetail(response));
+    }
+  }
+
+  Future<void> sendSignInCode({
+    required String phoneNumber,
+    required String deviceId,
+  }) async {
+    final phone = _normalizePhone(phoneNumber);
+    final resolvedDeviceId = deviceId.trim();
+    if (phone.isEmpty) {
+      throw Exception('Phone number is required.');
+    }
+    if (resolvedDeviceId.isEmpty) {
+      throw Exception('Device id is required.');
+    }
+    final response = await _postJson(
+      path: '/v1/users/sign-in/send-code',
+      payload: <String, Object?>{
+        'phone_number': phone,
+        'device_id': resolvedDeviceId,
+      },
+    );
+    if (response.statusCode != 202) {
+      throw Exception(_extractErrorDetail(response));
+    }
+  }
+
+  Future<LocalAuthUser?> signInByPhoneOtp({
+    required String phoneNumber,
+    required String verificationCode,
+    required String deviceId,
+  }) async {
+    final phone = _normalizePhone(phoneNumber);
+    final code = verificationCode.trim();
+    final resolvedDeviceId = deviceId.trim();
+    if (phone.isEmpty || code.isEmpty || resolvedDeviceId.isEmpty) {
+      return null;
+    }
+    final response = await _postJson(
+      path: '/v1/users/sign-in/verify-code',
+      payload: <String, Object?>{
+        'phone_number': phone,
+        'verification_code': code,
+        'device_id': resolvedDeviceId,
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorDetail(response));
+    }
+    final user = _userFromApiResponse(response, password: '');
+    await _cacheSignedInUser(user);
+    await _cacheDeviceToken(_deviceTokenFromApiResponse(response));
+    return user;
+  }
+
+  Future<LocalAuthUser?> signInByDeviceToken({
+    required String phoneNumber,
+    required String deviceId,
+  }) async {
+    final phone = _normalizePhone(phoneNumber);
+    final resolvedDeviceId = deviceId.trim();
+    final prefs = await SharedPreferences.getInstance();
+    final cachedToken = prefs.getString(_deviceTokenKey);
+    if (phone.isEmpty ||
+        resolvedDeviceId.isEmpty ||
+        cachedToken == null ||
+        cachedToken.trim().isEmpty) {
+      return null;
+    }
+    final response = await _postJson(
+      path: '/v1/users/sign-in/device',
+      payload: <String, Object?>{
+        'phone_number': phone,
+        'device_id': resolvedDeviceId,
+        'device_token': cachedToken.trim(),
+      },
+    );
+    if (response.statusCode == 401) {
+      await _cacheDeviceToken(null);
+      return null;
+    }
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorDetail(response));
+    }
+    final user = _userFromApiResponse(response, password: '');
+    await _cacheSignedInUser(user);
+    await _cacheDeviceToken(_deviceTokenFromApiResponse(response));
     return user;
   }
 
@@ -432,6 +557,15 @@ class LocalAuthStore {
     await prefs.setString(_lastPhoneKey, phoneNumber);
   }
 
+  Future<void> _cacheDeviceToken(String? token) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (token == null || token.trim().isEmpty) {
+      await prefs.remove(_deviceTokenKey);
+      return;
+    }
+    await prefs.setString(_deviceTokenKey, token.trim());
+  }
+
   Future<http.Response> _postJson({
     required String path,
     required Map<String, Object?> payload,
@@ -486,5 +620,14 @@ class LocalAuthStore {
       firstName: decoded['first_name'] as String?,
       lastName: decoded['last_name'] as String?,
     );
+  }
+
+  String? _deviceTokenFromApiResponse(http.Response response) {
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final token = decoded['device_auth_token'] as String?;
+    if (token == null || token.trim().isEmpty) {
+      return null;
+    }
+    return token.trim();
   }
 }

@@ -94,3 +94,18 @@ if __name__ == "__main__":
         person_name="Ján Novák",
     )
     print(lv_result)
+    print()
+    print("=== Registration email OTP API demo (request examples) ===")
+    print("POST /v1/users/sign-up/send-code  {\"email\": \"user@example.com\"}")
+    print(
+        "POST /v1/users/sign-up/complete  "
+        "{\"phone_number\":\"+421900123456\",\"email\":\"user@example.com\",\"password\":\"secret\",\"verification_code\":\"123456\"}"
+    )
+    print(
+        "POST /v1/users/sign-in/send-code  "
+        "{\"phone_number\":\"+421900123456\",\"device_id\":\"test-web-device\"}"
+    )
+    print(
+        "POST /v1/users/sign-in/verify-code  "
+        "{\"phone_number\":\"+421900123456\",\"device_id\":\"test-web-device\",\"verification_code\":\"123456\"}"
+    )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
@@ -86,6 +87,125 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
         },
     )
     assert update_response.status_code == 200
+
+
+def test_sign_up_complete_requires_valid_email_code(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+
+    send_code_response = client.post(
+        "/v1/users/sign-up/send-code",
+        headers=AUTH_HEADERS,
+        json={"email": "verify@example.com"},
+    )
+    assert send_code_response.status_code == 202
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        row = conn.execute(
+            "SELECT code_hash FROM registration_codes WHERE email = ?",
+            ("verify@example.com",),
+        ).fetchone()
+    assert row is not None
+
+    invalid_complete = client.post(
+        "/v1/users/sign-up/complete",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900111333",
+            "email": "verify@example.com",
+            "password": "secret-pass",
+            "verification_code": "123456",
+        },
+    )
+    assert invalid_complete.status_code == 400
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        code_hash = conn.execute(
+            "SELECT code_hash FROM registration_codes WHERE email = ?",
+            ("verify@example.com",),
+        ).fetchone()[0]
+
+    valid_code = None
+    for candidate in range(0, 1_000_000):
+        code = f"{candidate:06d}"
+        digest = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        if digest == code_hash:
+            valid_code = code
+            break
+    assert valid_code is not None
+
+    complete_response = client.post(
+        "/v1/users/sign-up/complete",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900111333",
+            "email": "verify@example.com",
+            "password": "secret-pass",
+            "verification_code": valid_code,
+        },
+    )
+    assert complete_response.status_code == 201
+
+
+def test_device_bound_sign_in_flow(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121314",
+            "email": "device-login@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    send_code_response = client.post(
+        "/v1/users/sign-in/send-code",
+        headers=AUTH_HEADERS,
+        json={"phone_number": "+421900121314", "device_id": "test-device-1"},
+    )
+    assert send_code_response.status_code == 202
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        code_hash = conn.execute(
+            "SELECT code_hash FROM registration_codes WHERE email = ?",
+            ("signin:+421900121314:test-device-1",),
+        ).fetchone()[0]
+
+    valid_code = None
+    for candidate in range(0, 1_000_000):
+        code = f"{candidate:06d}"
+        digest = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        if digest == code_hash:
+            valid_code = code
+            break
+    assert valid_code is not None
+
+    verify_response = client.post(
+        "/v1/users/sign-in/verify-code",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121314",
+            "device_id": "test-device-1",
+            "verification_code": valid_code,
+        },
+    )
+    assert verify_response.status_code == 200
+    payload = verify_response.json()
+    assert payload["device_auth_token"]
+
+    silent_login_response = client.post(
+        "/v1/users/sign-in/device",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121314",
+            "device_id": "test-device-1",
+            "device_token": payload["device_auth_token"],
+        },
+    )
+    assert silent_login_response.status_code == 200
+    silent_payload = silent_login_response.json()
+    assert silent_payload["user_id"] == payload["user_id"]
+    assert silent_payload["device_auth_token"]
 
 
 def test_sign_up_rejects_duplicate_phone_and_email(monkeypatch, tmp_path: Path) -> None:

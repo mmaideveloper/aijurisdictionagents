@@ -16,7 +16,13 @@ from app.users.notifications import (
     queue_subscription_status_email,
 )
 
-from aijurisdictionagents.api_db import ApiDatabaseStore, SubscriptionPlan, User, UserSubscription
+from aijurisdictionagents.api_db import (
+    ApiDatabaseStore,
+    SubscriptionPlan,
+    User,
+    UserSubscription,
+    generate_one_time_code,
+)
 
 try:
     _psycopg_module: ModuleType | None = importlib.import_module("psycopg")
@@ -41,6 +47,27 @@ class SignUpRequest(BaseModel):
     password: str = Field(min_length=1)
     first_name: str | None = None
     last_name: str | None = None
+
+
+class SendRegistrationCodeRequest(BaseModel):
+    email: str = Field(min_length=1)
+
+
+class CompleteRegistrationRequest(SignUpRequest):
+    verification_code: str = Field(min_length=4, max_length=8)
+
+
+class SendSignInCodeRequest(BaseModel):
+    phone_number: str = Field(min_length=1)
+    device_id: str = Field(min_length=1)
+
+
+class VerifySignInCodeRequest(SendSignInCodeRequest):
+    verification_code: str = Field(min_length=4, max_length=8)
+
+
+class DeviceSignInRequest(SendSignInCodeRequest):
+    device_token: str = Field(min_length=1)
 
 
 class SignInByPhoneRequest(BaseModel):
@@ -108,6 +135,10 @@ class SubscriptionPaymentConfirmationRequest(BaseModel):
     payment_id: str = Field(min_length=1)
 
 
+class DeviceAuthUserProfileResponse(UserProfileResponse):
+    device_auth_token: str | None = None
+
+
 _payment_sessions: dict[str, dict[str, str | int]] = {}
 _ALLOWED_SUCCESS_PHONE = "+421944400166"
 
@@ -144,6 +175,55 @@ def sign_up(
     return _to_user_profile_response(user)
 
 
+@router.post("/sign-up/send-code", status_code=status.HTTP_202_ACCEPTED)
+def send_registration_code(
+    payload: SendRegistrationCodeRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> dict[str, str]:
+    code = generate_one_time_code()
+    email = payload.email.strip().lower()
+    store.save_registration_code(email=email, code=code)
+    scheduler.enqueue(
+        recipient=email,
+        subject="Your registration code",
+        body=(
+            "Hello,\n\n"
+            f"your one time registration code is: {code}\n"
+            "The code expires in 10 minutes.\n"
+        ),
+        metadata={"event": "registration_code"},
+    )
+    return {"status": "code_sent"}
+
+
+@router.post("/sign-up/complete", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)
+def complete_registration(
+    payload: CompleteRegistrationRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> UserProfileResponse:
+    if not store.verify_registration_code(
+        email=payload.email,
+        code=payload.verification_code,
+    ):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+    try:
+        user = store.create_user(
+            phone_number=payload.phone_number,
+            email=payload.email,
+            password=payload.password,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+        )
+    except Exception as exc:
+        if not _is_unique_constraint_error(exc):
+            raise
+        raise _conflict_from_integrity_error(exc) from exc
+    queue_registration_email(scheduler=scheduler, user=user)
+    return _to_user_profile_response(user)
+
+
 @router.post("/sign-in/phone", response_model=UserProfileResponse)
 def sign_in_by_phone(
     payload: SignInByPhoneRequest,
@@ -153,6 +233,67 @@ def sign_in_by_phone(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return _to_user_profile_response(user)
+
+
+@router.post("/sign-in/send-code", status_code=status.HTTP_202_ACCEPTED)
+def send_sign_in_code(
+    payload: SendSignInCodeRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> dict[str, str]:
+    user = store.find_user_by_phone(phone_number=payload.phone_number)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    code = generate_one_time_code()
+    store.save_registration_code(
+        email=_sign_in_code_key(phone_number=payload.phone_number, device_id=payload.device_id),
+        code=code,
+    )
+    scheduler.enqueue(
+        recipient=user.email,
+        subject="Your login code",
+        body=(
+            f"Hello {user.full_name},\n\n"
+            f"your one time login code is: {code}\n"
+            "The code expires in 10 minutes.\n"
+        ),
+        metadata={"event": "sign_in_code", "user_id": user.user_id},
+    )
+    return {"status": "code_sent"}
+
+
+@router.post("/sign-in/verify-code", response_model=DeviceAuthUserProfileResponse)
+def verify_sign_in_code(
+    payload: VerifySignInCodeRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> DeviceAuthUserProfileResponse:
+    user = store.find_user_by_phone(phone_number=payload.phone_number)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    is_valid = store.verify_registration_code(
+        email=_sign_in_code_key(phone_number=payload.phone_number, device_id=payload.device_id),
+        code=payload.verification_code,
+    )
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+    token = store.issue_device_auth_token(user_id=user.user_id, device_id=payload.device_id)
+    return _to_device_auth_user_profile_response(user=user, token=token)
+
+
+@router.post("/sign-in/device", response_model=DeviceAuthUserProfileResponse)
+def sign_in_with_device_token(
+    payload: DeviceSignInRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> DeviceAuthUserProfileResponse:
+    user = store.authenticate_device_auth_token(
+        phone_number=payload.phone_number,
+        device_id=payload.device_id,
+        token=payload.device_token,
+    )
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device token")
+    refreshed_token = store.issue_device_auth_token(user_id=user.user_id, device_id=payload.device_id)
+    return _to_device_auth_user_profile_response(user=user, token=refreshed_token)
 
 
 @router.post("/sign-in", response_model=UserProfileResponse)
@@ -346,6 +487,22 @@ def _to_user_profile_response(user: User) -> UserProfileResponse:
         last_name=user.last_name,
         full_name=user.full_name,
     )
+
+
+def _to_device_auth_user_profile_response(*, user: User, token: str) -> DeviceAuthUserProfileResponse:
+    return DeviceAuthUserProfileResponse(
+        user_id=user.user_id,
+        phone_number=user.phone_number,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        full_name=user.full_name,
+        device_auth_token=token,
+    )
+
+
+def _sign_in_code_key(*, phone_number: str, device_id: str) -> str:
+    return f"signin:{phone_number.strip()}:{device_id.strip()}"
 
 
 def _to_plan_response(plan: SubscriptionPlan) -> SubscriptionPlanResponse:
