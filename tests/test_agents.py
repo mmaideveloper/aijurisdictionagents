@@ -148,11 +148,12 @@ def test_slovak_lawyer_prompt_includes_company_check_and_tool_first_policy() -> 
 
     assert "obchodny_register_company_check" in prompt_lower
     assert "slovakia_property_lv_lookup" in prompt_lower
+    assert "slovakia_car_validate" in prompt_lower
     assert "explicit_user_confirmation_required=no" in prompt_lower
     assert "použi tento nástroj ako prvý krok" in prompt_lower
     assert "neplatné alebo nezhodné údaje" in prompt_lower
     assert "celý balík týchto dokumentov" in prompt_lower
-    assert "future_car_verification_check" not in prompt_lower
+    assert "národné pátracie evidencie" in prompt_lower
 
 
 def test_parse_duckduckgo_html_results_extracts_title_url_and_snippet() -> None:

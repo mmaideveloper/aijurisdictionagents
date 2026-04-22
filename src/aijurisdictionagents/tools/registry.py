@@ -5,6 +5,7 @@ from typing import Any
 
 from .base import Tool, ToolDefinition, ToolResult
 from .address_validator import RegisterAdriesAddressValidatorTool
+from .car_validator import SlovakiaCarValidatorTool
 from .obchodnyregister import ObchodnyRegisterTool
 from .property_validator import SlovakiaPropertyLVTool
 
@@ -36,5 +37,6 @@ def build_default_tool_registry() -> ToolRegistry:
         "obchodny_register_company_check": ObchodnyRegisterTool(),
         "registeradries_address_validate": RegisterAdriesAddressValidatorTool(),
         "slovakia_property_lv_lookup": SlovakiaPropertyLVTool(),
+        "slovakia_car_validate": SlovakiaCarValidatorTool(),
     }
     return ToolRegistry(_tools=tools)

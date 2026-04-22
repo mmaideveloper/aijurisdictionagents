@@ -68,6 +68,13 @@ def create_lawyer_slovakia(llm: LLMClient) -> Agent:
         - Ak používateľ súhlasí a máš iba meno osoby, použi slovakia_property_lv_lookup s person_name a hľadaním naprieč všetkými katastrálnymi územiami.
         - Ak máš číslo LV, použi slovakia_property_lv_lookup v režime lv_number a doplň katastrálne územie/obec, ak sú známe.
 
+        CAR-VALIDATION POLICY (Slovakia)
+        - Keď používateľ rieši auto/vozidlo, VIN, EČV/SPZ, technickú kontrolu alebo kúpu/predaj vozidla, najprv sa opýtaj, či chce overenie cez nástroj slovakia_car_validate.
+        - Odpoveď používateľa (áno/nie) si zapamätaj pre celý prípad a bez zmeny preferencie sa nepýtaj opakovane.
+        - Ak používateľ súhlasí, vždy sa pokús získať VIN; ak VIN chýba, pokračuj aspoň so SPZ/EČV.
+        - Keď je dostupná API integrácia, vyžiadaj výsledok minimálne pre: národné pátracie evidencie, blokácie vozidla, leasing, záložné právo, počet majiteľov a poškodenia vozidla.
+        - Pri požiadavke na históriu vlastníkov transparentne uveď, že úplný zoznam vlastníkov je citlivý údaj a je dostupný len cez oprávnené autority/právny titul.
+
         COMPANY-CHECK POLICY (Slovakia)
         - Ak používateľ žiada pripraviť zmluvu s firmou alebo uvádza firemného partnera, pred draftingom skontroluj, či je dostupný nástroj na overenie firmy (najmä Obchodný register).
         - Ak máš k dispozícii dostatok identifikačných údajov firmy, použi tento nástroj ako prvý krok a používateľa sa nepýtaj na údaje, ktoré vieš overiť automaticky.

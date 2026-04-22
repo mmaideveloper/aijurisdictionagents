@@ -394,5 +394,35 @@ def create_default_registry() -> WorkflowRegistry:
                     ),
                 ),
             ),
+            WorkflowBlueprint(
+                workflow_id="sk.car.verify_vehicle.v1",
+                country="SK",
+                case_group="dopravne_pravo",
+                description="Overenie vozidla podľa VIN/SPZ vrátane vlastníckych obmedzení.",
+                intent_keywords=(
+                    "overit auto",
+                    "overit vozidlo",
+                    "vin",
+                    "spz",
+                    "ecv",
+                    "ečv",
+                    "car validation",
+                ),
+                optional_inputs=("vin", "spz"),
+                mandatory_system_documents=("vehicle_verification_report",),
+                steps=(
+                    WorkflowStep(
+                        step_id="verify_vehicle_vin_spz",
+                        name="Overenie vozidla VIN/SPZ",
+                        description=(
+                            "Validuje VIN a vykoná API overenie: pátracie evidencie, blokácie, leasing, "
+                            "záložné právo, počet majiteľov a poškodenia vozidla."
+                        ),
+                        tool_name="slovakia_car_validate",
+                        required_inputs=(),
+                        output_artifacts=("vehicle_verification_report",),
+                    ),
+                ),
+            ),
         ]
     )
