@@ -16,7 +16,8 @@ from pathlib import Path
 from queue import Queue
 from threading import Thread
 from typing import Any, List, Literal, Optional, cast
-from uuid import UUID
+from urllib.parse import quote
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
@@ -79,6 +80,14 @@ class _DocumentExportAsset:
     use_corporate_template: bool = False
 
 
+@dataclass(frozen=True)
+class _TechnicalPayloadAsset:
+    content: str
+    extension: str
+    start_index: int
+    end_index: int
+
+
 class CreateSessionRequest(BaseModel):
     user_id: Optional[UUID] = None
     case_id: str | None = None
@@ -114,6 +123,8 @@ def _persist_case_message_if_needed(*, session: Session, role: str, content: str
     if case_id is None or not case_id.strip():
         return
     store = _get_store()
+    if role.strip().lower() == "assistant":
+        content = _user_visible_text(content)
     store.add_case_message(case_id=case_id, role=role, content=content, agent_name=agent_name)
 
 
@@ -127,7 +138,8 @@ def _persist_session_history_document_if_needed(*, session: Session, session_id:
     lines: list[str] = []
     for message in messages:
         role = message.role.value.upper()
-        content = message.content.strip()
+        visible_message = _message_for_user(message) if message.role == MessageRole.ASSISTANT else message
+        content = visible_message.content.strip()
         if not content:
             continue
         line = f"{role}: {content}"
@@ -447,6 +459,7 @@ def _persist_direct_assistant_message(
     content: str,
     agent_name: str,
 ) -> Message:
+    content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
     persisted_lawyer = _repository.add_message(
         Message(
             session_id=session_id,
@@ -557,7 +570,7 @@ def _run_direct_lawyer_turn(
         return (
             persisted_user,
             persisted_lawyer,
-            _user_visible_text(normalized_direct_reply),
+            _user_visible_text(persisted_lawyer.content),
             preparation.processing_events,
         )
     if preparation.prompt_note:
@@ -608,14 +621,13 @@ def _run_direct_lawyer_turn(
         messages=history,
         lawyer_content=normalized_lawyer_content,
     )
-    visible_lawyer_content = _user_visible_text(normalized_lawyer_content)
     persisted_lawyer = _persist_direct_assistant_message(
         session_id=session_id,
         session=session,
         content=normalized_lawyer_content,
         agent_name=lawyer_message.agent_name,
     )
-    return persisted_user, persisted_lawyer, visible_lawyer_content, preparation.processing_events
+    return persisted_user, persisted_lawyer, _user_visible_text(persisted_lawyer.content), preparation.processing_events
 
 
 def _warn_if_flow_pack_missing(*, session_id: UUID, session: Session, request_text: str) -> None:
@@ -846,34 +858,28 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         normalized_role = core_message_role(core_message.role)
         if normalized_role == "assistant":
             assistant_messages_seen += 1
+            content = _attach_technical_payload_to_case_if_needed(
+                session=session,
+                content=core_message.content,
+            )
+        else:
+            content = core_message.content
         core_conversation.append(core_message)
         persisted = _repository.add_message(
             Message(
                 session_id=session_id,
                 role=MessageRole(normalized_role),
-                content=core_message.content,
+                content=content,
                 agent_name=core_message.agent_name,
             )
         )
         _persist_case_message_if_needed(
             session=session,
             role=normalized_role,
-            content=core_message.content,
+            content=content,
             agent_name=core_message.agent_name,
         )
-        event_queue.put(
-            (
-                "message",
-                {
-                    "id": str(persisted.id),
-                    "session_id": str(session_id),
-                    "role": persisted.role.value,
-                    "agent_name": persisted.agent_name,
-                    "content": persisted.content,
-                    "created_at": persisted.created_at.isoformat(),
-                },
-            )
-        )
+        event_queue.put(("message", _message_payload(persisted)))
         if normalized_role == "user":
             event_queue.put(
                 (
@@ -1041,7 +1047,10 @@ def _stream_read_user_session(
                 event_queue.put(("processing", document_event))
             event_queue.put(("message", _message_payload(persisted_lawyer)))
 
-            if _assistant_requests_user_reply(visible_lawyer_content):
+            waiting_for_user_reply = _assistant_requests_user_reply(
+                visible_lawyer_content
+            ) and not _document_export_ready(current_messages)
+            if waiting_for_user_reply:
                 event_queue.put(
                     (
                         "waiting_for_reply",
@@ -1722,7 +1731,7 @@ def _document_export_ready(messages: list[Message]) -> bool:
     last_assistant = assistant_messages[-1]
     if _assistant_requests_document_confirmation(last_assistant.content):
         return False
-    if any(_contains_case_update_json(message.content) for message in assistant_messages):
+    if any(_extract_case_update(message.content) is not None for message in assistant_messages):
         return True
     visible_text = _user_visible_text(last_assistant.content).lower()
     ready_markers = (
@@ -1747,11 +1756,137 @@ def _contains_case_update_json(content: str) -> bool:
 
 
 def _user_visible_text(content: str) -> str:
-    bounds = _case_update_payload_bounds(content)
+    bounds = _technical_payload_bounds(content)
     if bounds is None:
         return _strip_user_visible_technical_trailer(content)
-    start_index, _end_index = bounds
+    start_index, _end_index, _extension = bounds
     return _strip_user_visible_technical_trailer(content[:start_index])
+
+
+def _attach_technical_payload_to_case_if_needed(*, session: Session, content: str) -> str:
+    payload = _extract_hidden_technical_payload(content)
+    if payload is None:
+        return content.strip()
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return content.strip()
+    visible_text = _user_visible_text(content)
+    if _contains_case_technical_document_notice(visible_text):
+        return content.strip()
+    doc_id = _persist_case_technical_payload(
+        session=session,
+        payload=payload.content,
+        extension=payload.extension,
+    )
+    if doc_id is None:
+        return content.strip()
+    document_url = _case_document_download_url(session=session, doc_id=doc_id)
+    notice = _technical_payload_saved_notice(
+        country=session.country,
+        language=session.language,
+        document_url=document_url,
+    )
+    technical_tail = content[payload.start_index : payload.end_index].strip()
+    if visible_text:
+        return f"{visible_text}\n\n{notice}\n\n{technical_tail}".strip()
+    return f"{notice}\n\n{technical_tail}".strip()
+
+
+def _contains_case_technical_document_notice(content: str) -> bool:
+    normalized = " ".join(content.lower().split())
+    return (
+        "technicke udaje som ulozil do dokumentu pripadu" in normalized
+        or "technické údaje som uložil do dokumentu prípadu" in normalized
+        or "technical data was saved as a case document" in normalized
+    )
+
+
+def _persist_case_technical_payload(
+    *,
+    session: Session,
+    payload: str,
+    extension: str,
+) -> str | None:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return None
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    filename = f"assistant-technical-{timestamp}-{uuid4().hex[:8]}.{extension}"
+    try:
+        store = _get_store()
+        return store.add_case_document(
+            case_id=case_id,
+            kind="technical_payload",
+            version=1,
+            original_filename=filename,
+            payload=payload.encode("utf-8"),
+            uploaded_by_user_id=str(session.user_id) if session.user_id else None,
+        )
+    except Exception:
+        _LOGGER.warning(
+            "Failed to persist hidden assistant technical payload as a case document",
+            extra={"case_id": case_id, "extension": extension},
+            exc_info=True,
+        )
+        return None
+
+
+def _case_document_download_url(*, session: Session, doc_id: str) -> str:
+    case_id = quote((session.case_id or "").strip(), safe="")
+    encoded_doc_id = quote(doc_id, safe="")
+    url = f"/v1/cases/{case_id}/documents/{encoded_doc_id}"
+    if session.user_id is not None:
+        url = f"{url}?user_id={quote(str(session.user_id), safe='')}"
+    return url
+
+
+def _technical_payload_saved_notice(*, country: str, language: str | None, document_url: str) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return f"Technické údaje som uložil do dokumentu prípadu: {document_url}"
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return f"Technické údaje jsem uložil do dokumentu případu: {document_url}"
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return f"Technische Daten wurden als Falldokument gespeichert: {document_url}"
+    return f"Technical data was saved as a case document: {document_url}"
+
+
+def _extract_hidden_technical_payload(content: str) -> _TechnicalPayloadAsset | None:
+    bounds = _technical_payload_bounds(content)
+    if bounds is None:
+        return None
+    start_index, end_index, extension = bounds
+    raw_payload = content[start_index:end_index].strip()
+    payload = _normalize_technical_payload_for_storage(raw_payload, extension=extension)
+    if not payload:
+        return None
+    return _TechnicalPayloadAsset(
+        content=payload,
+        extension=extension,
+        start_index=start_index,
+        end_index=end_index,
+    )
+
+
+def _normalize_technical_payload_for_storage(raw_payload: str, *, extension: str) -> str:
+    if extension == "json":
+        for start_char in ("{", "["):
+            json_start = raw_payload.find(start_char)
+            if json_start < 0:
+                continue
+            json_payload = _extract_json_value(raw_payload, json_start)
+            if json_payload is None:
+                continue
+            try:
+                decoded = json.loads(json_payload)
+            except json.JSONDecodeError:
+                continue
+            return json.dumps(decoded, ensure_ascii=False, indent=2)
+    if extension == "xml":
+        fenced = re.match(r"^```(?:xml)?\s*(.*?)\s*```$", raw_payload, flags=re.IGNORECASE | re.DOTALL)
+        return (fenced.group(1) if fenced else raw_payload).strip()
+    return raw_payload.strip()
 
 
 def _strip_user_visible_technical_trailer(content: str) -> str:
@@ -2090,7 +2225,7 @@ def _repeated_question_reply(language: str | None, question: str, question_count
 
 @router.get("/sessions/{session_id}/result", response_model=SessionResult)
 def get_session_result(session_id: UUID) -> SessionResult:
-    result = _repository.get_result(session_id)
+    result = _get_or_build_session_result(session_id)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Result for session {session_id} not found")
     return result
@@ -2102,7 +2237,7 @@ def export_session_result(
     format: Literal["json", "pdf"] = Query("json"),
     kind: Literal["summary", "document"] = Query("summary"),
 ) -> Response:
-    result = _repository.get_result(session_id)
+    result = _get_or_build_session_result(session_id)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Result for session {session_id} not found")
     session = _repository.get_session(session_id)
@@ -2178,6 +2313,31 @@ def export_session_result(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _get_or_build_session_result(session_id: UUID) -> SessionResult | None:
+    result = _repository.get_result(session_id)
+    if result is not None:
+        return result
+    session = _repository.get_session(session_id)
+    if session is None:
+        return None
+    messages = _repository.list_messages(session_id)
+    assistant_messages = [message for message in messages if message.role == MessageRole.ASSISTANT]
+    if not assistant_messages:
+        return None
+    latest_assistant = assistant_messages[-1]
+    visible_text = _user_visible_text(latest_assistant.content)
+    if _assistant_requests_user_reply(visible_text) and not _document_export_ready(messages):
+        return None
+    result = _build_direct_reply_result(
+        session_id=session_id,
+        session=session,
+        messages=messages,
+        lawyer_message=visible_text,
+    )
+    _repository.set_result(session_id, result)
+    return result
 
 
 def _build_simple_pdf(
@@ -4092,10 +4252,108 @@ def _case_update_payload_bounds(content: str) -> tuple[int, int] | None:
             continue
         if isinstance(decoded, dict) and isinstance(decoded.get("case"), dict):
             return match.start(), match.end()
+    bare_json_bounds = _bare_json_payload_bounds(content, require_case=True)
+    if bare_json_bounds is not None:
+        return bare_json_bounds
     return None
 
 
+def _technical_payload_bounds(content: str) -> tuple[int, int, str] | None:
+    case_update_bounds = _case_update_payload_bounds(content)
+    if case_update_bounds is not None:
+        start_index, end_index = case_update_bounds
+        return start_index, end_index, "json"
+
+    fenced_payload_pattern = re.compile(r"```(json|xml)?\s*(.*?)\s*```", re.IGNORECASE | re.DOTALL)
+    for match in fenced_payload_pattern.finditer(content):
+        language = (match.group(1) or "").strip().lower()
+        candidate = match.group(2).strip()
+        if language == "json" or _looks_like_json_payload(candidate):
+            return match.start(), match.end(), "json"
+        if language == "xml" or _looks_like_xml_payload(candidate):
+            return match.start(), match.end(), "xml"
+
+    bare_json_bounds = _bare_json_payload_bounds(content, require_case=False)
+    if bare_json_bounds is not None:
+        start_index, end_index = bare_json_bounds
+        return start_index, end_index, "json"
+
+    bare_xml_bounds = _bare_xml_payload_bounds(content)
+    if bare_xml_bounds is not None:
+        start_index, end_index = bare_xml_bounds
+        return start_index, end_index, "xml"
+
+    return None
+
+
+def _bare_json_payload_bounds(content: str, *, require_case: bool) -> tuple[int, int] | None:
+    for match in re.finditer(r"(?m)^[ \t]*(?=[{\[])", content):
+        line_start = match.start()
+        json_start = line_start
+        while json_start < len(content) and content[json_start] in " \t":
+            json_start += 1
+        payload = _extract_json_value(content, json_start)
+        if payload is None:
+            continue
+        end_index = json_start + len(payload)
+        if content[end_index:].strip():
+            continue
+        try:
+            decoded = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        if require_case and not (isinstance(decoded, dict) and isinstance(decoded.get("case"), dict)):
+            continue
+        if not require_case and not isinstance(decoded, (dict, list)):
+            continue
+        return line_start, end_index
+    return None
+
+
+def _bare_xml_payload_bounds(content: str) -> tuple[int, int] | None:
+    for match in re.finditer(r"(?m)^[ \t]*(?=<\??[A-Za-z_])", content):
+        line_start = match.start()
+        xml_start = line_start
+        while xml_start < len(content) and content[xml_start] in " \t":
+            xml_start += 1
+        candidate = content[xml_start:].strip()
+        if _looks_like_xml_payload(candidate):
+            return line_start, len(content)
+    return None
+
+
+def _looks_like_json_payload(content: str) -> bool:
+    stripped = content.strip()
+    if not stripped or stripped[0] not in "{[":
+        return False
+    try:
+        json.loads(stripped)
+    except json.JSONDecodeError:
+        return False
+    return True
+
+
+def _looks_like_xml_payload(content: str) -> bool:
+    stripped = content.strip()
+    if not stripped.startswith("<") or ">" not in stripped:
+        return False
+    if stripped.startswith("<!--"):
+        return False
+    return stripped.startswith("<?xml") or "</" in stripped or "/>" in stripped
+
+
 def _extract_json_object(content: str, start_index: int) -> str | None:
+    value = _extract_json_value(content, start_index)
+    if value is None or not value.startswith("{"):
+        return None
+    return value
+
+
+def _extract_json_value(content: str, start_index: int) -> str | None:
+    if start_index >= len(content) or content[start_index] not in "{[":
+        return None
+    opening_to_closing = {"{": "}", "[": "]"}
+    stack: list[str] = []
     depth = 0
     in_string = False
     escape = False
@@ -4112,11 +4370,13 @@ def _extract_json_object(content: str, start_index: int) -> str | None:
             continue
         if in_string:
             continue
-        if char == "{":
+        if char in opening_to_closing:
+            stack.append(opening_to_closing[char])
             depth += 1
-        elif char == "}":
+        elif stack and char == stack[-1]:
+            stack.pop()
             depth -= 1
-            if depth == 0:
+            if not stack and depth == 0:
                 return content[start_index : index + 1]
     return None
 
