@@ -72,6 +72,7 @@ let activeDocumentViewUrl = null;
 let processingStatusTimerId = null;
 let processingStatusBaseMessage = "";
 let processingStatusStartedAt = 0;
+let activeCaseSelectionMode = null;
 
 function decodeBase64ToBytes(base64Value) {
   const normalized = String(base64Value || "").trim();
@@ -101,6 +102,21 @@ function applyPreparedCaseDocuments(documents) {
     transfer.items.add(file);
   }
   documentsInput.files = transfer.files;
+}
+
+function selectedPreparedCase() {
+  const selectedId = String(preparedCaseInput?.value || "").trim();
+  if (!selectedId) return null;
+  return preparedCases.find((item) => item.id === selectedId) || null;
+}
+
+function buildPreparedCaseFile(document) {
+  const fileName = String(document?.fileName || document?.sourcePath || "document").trim();
+  const mimeType = String(document?.mimeType || "application/octet-stream").trim();
+  const contentBase64 = String(document?.contentBase64 || "").trim();
+  if (!fileName || !contentBase64 || typeof File === "undefined") return null;
+  const bytes = decodeBase64ToBytes(contentBase64);
+  return new File([bytes], fileName, { type: mimeType });
 }
 
 function normalizeLanguageCode(languageCode) {
@@ -891,6 +907,7 @@ async function selectExistingCase(caseId) {
   const normalizedCaseId = String(caseId || "").trim();
   if (!normalizedCaseId) {
     currentCaseId = null;
+    activeCaseSelectionMode = null;
     hasUploadedCaseDocuments = false;
     resetLoadedCaseData();
     updateExistingCaseStatus();
@@ -908,6 +925,7 @@ async function selectExistingCase(caseId) {
   }
 
   currentCaseId = normalizedCaseId;
+  activeCaseSelectionMode = "existing";
   if (caseTitleInput) {
     caseTitleInput.value = String(selectedCase?.title || caseTitleInput.value || "").trim() || "Simulator persisted case";
   }
@@ -1318,6 +1336,7 @@ async function createPersistedCase() {
   }
   const body = await parseResponse(response);
   currentCaseId = body.case_id;
+  activeCaseSelectionMode = "new";
   hasUploadedCaseDocuments = false;
   resetLoadedCaseData();
   invalidateSession("Case created. You can Create Session immediately, or use Upload To Case first for persisted document retrieval.");
@@ -1474,7 +1493,41 @@ async function createSession() {
   clearWorkflowWarning();
   refreshReplyControls();
   refreshPersistedCaseControls();
+  await preloadPreparedCaseDocumentsToActiveCase();
   await refreshMessages();
+}
+
+async function preloadPreparedCaseDocumentsToActiveCase() {
+  if (!currentCaseId || !currentUserId) return;
+  if (activeCaseSelectionMode === "existing") return;
+  if (hasUploadedCaseDocuments) return;
+  const preparedCase = selectedPreparedCase();
+  const preparedDocuments = Array.isArray(preparedCase?.documents) ? preparedCase.documents : [];
+  if (!preparedDocuments.length) return;
+
+  const files = preparedDocuments
+    .map((document) => buildPreparedCaseFile(document))
+    .filter((file) => file !== null);
+  if (!files.length) return;
+
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
+  }
+
+  const response = await fetch(
+    `${getBaseUrl()}/v1/cases/${encodeURIComponent(currentCaseId)}/documents?user_id=${encodeURIComponent(currentUserId)}`,
+    {
+      method: "POST",
+      headers: requestHeaders(false),
+      body: formData,
+    },
+  );
+  await parseResponse(response);
+  hasUploadedCaseDocuments = true;
+  appendStream(`prepared_case_documents_preloaded: case=${currentCaseId} count=${files.length}`);
+  setWorkflowWarning("Prepared testcase documents were preloaded to this case.");
+  await inspectCaseDocuments();
 }
 
 async function readSelectedDocuments() {

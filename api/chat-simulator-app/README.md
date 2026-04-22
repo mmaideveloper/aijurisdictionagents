@@ -25,6 +25,8 @@ The simulator now supports:
 - loading prepared case instructions directly from `api/chat-simulator-app/testcases/` into the rendered internal simulator page and copying the selected case into the instruction box
 - supporting both `CaseDescription` and the legacy typo `CaseDescripton` in prepared-case JSON-like files
 - preloading prepared-case `Documents` attachments from `api/chat-simulator-app/testcases/` into the browser file picker so they are immediately ready for `Upload To Case`
+- auto-uploading prepared-case `Documents` to a newly created case right after `Create Session`, so testcase attachments are persisted without an extra manual `Upload To Case` click
+  - this auto-upload is intentionally skipped when you select an existing case from the dropdown
 - showing a clear prepared-case dropdown state when no local prepared cases are available
 - rendering the simulator page with no-cache headers and versioned static asset URLs so browser refresh picks up the latest internal UI changes immediately
 - showing an initial localized Jurisdicta welcome message in the End User Chat View (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German)
