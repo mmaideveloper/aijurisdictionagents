@@ -1814,7 +1814,7 @@ def _persist_case_technical_payload(
     filename = f"assistant-technical-{timestamp}-{uuid4().hex[:8]}.{extension}"
     try:
         store = _get_store()
-        return store.add_case_document(
+        doc_id = store.add_case_document(
             case_id=case_id,
             kind="technical_payload",
             version=1,
@@ -1822,6 +1822,7 @@ def _persist_case_technical_payload(
             payload=payload.encode("utf-8"),
             uploaded_by_user_id=str(session.user_id) if session.user_id else None,
         )
+        return doc_id if isinstance(doc_id, str) else None
     except Exception:
         _LOGGER.warning(
             "Failed to persist hidden assistant technical payload as a case document",
