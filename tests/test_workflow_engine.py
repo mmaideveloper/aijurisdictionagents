@@ -190,3 +190,19 @@ def test_engine_auto_detects_slovak_screening_request_and_extracts_person() -> N
     assert "person = 'Jana Hraska'" in result.screening_consent_prompt
     assert result.screening_task_prompt is not None
     assert "list of trade licenses / sole-trader businesses" in result.screening_task_prompt
+
+
+def test_router_selects_car_validation_workflow_for_car_queries() -> None:
+    engine = WorkflowEngine(WorkflowRouter(create_default_registry()))
+
+    result = engine.plan_case(
+        question="Overit auto podla VIN WP0ZZZ99ZTS392124 a SPZ BA123AB",
+        country="SK",
+        inputs={"vin": "WP0ZZZ99ZTS392124", "spz": "BA123AB"},
+    )
+
+    assert result.mode == "workflow"
+    assert result.workflow is not None
+    assert result.workflow.workflow_id == "sk.car.verify_vehicle.v1"
+    assert result.required_documents == ("vehicle_verification_report",)
+    assert "pátracie evidencie" in result.workflow.steps[0].description
