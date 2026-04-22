@@ -7,6 +7,8 @@ import hmac
 import json
 import os
 from pathlib import Path
+import random
+import secrets
 import sqlite3
 from typing import Any
 import uuid
@@ -183,6 +185,24 @@ class ApiDatabaseStore:
                     full_name TEXT NOT NULL,
                     password_hash TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS registration_codes (
+                    email TEXT PRIMARY KEY,
+                    code_hash TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS device_auth_tokens (
+                    user_id TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    token_hash TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_used_at TEXT NOT NULL,
+                    PRIMARY KEY(user_id, device_id),
+                    FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS companies (
@@ -426,6 +446,147 @@ class ApiDatabaseStore:
             last_name=normalized_last,
             full_name=resolved_full_name,
         )
+
+    def save_registration_code(
+        self,
+        *,
+        email: str,
+        code: str,
+        expires_in_minutes: int = 10,
+    ) -> None:
+        normalized_email = email.strip().lower()
+        now = datetime.now(timezone.utc)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO registration_codes(email, code_hash, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(email) DO UPDATE SET
+                    code_hash = excluded.code_hash,
+                    expires_at = excluded.expires_at,
+                    created_at = excluded.created_at
+                """,
+                (
+                    normalized_email,
+                    _hash_one_time_code(code),
+                    (now + timedelta(minutes=max(expires_in_minutes, 1))).isoformat(),
+                    now.isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def verify_registration_code(self, *, email: str, code: str) -> bool:
+        normalized_email = email.strip().lower()
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT code_hash, expires_at
+                FROM registration_codes
+                WHERE email = ?
+                """,
+                (normalized_email,),
+            )
+            if row is None:
+                return False
+            stored_hash = str(row[0])
+            expires_at = str(row[1])
+            if not _is_future_iso_datetime(expires_at):
+                self._execute(conn, "DELETE FROM registration_codes WHERE email = ?", (normalized_email,))
+                conn.commit()
+                return False
+            provided_hash = _hash_one_time_code(code)
+            if not hmac.compare_digest(stored_hash, provided_hash):
+                return False
+            self._execute(conn, "DELETE FROM registration_codes WHERE email = ?", (normalized_email,))
+            conn.commit()
+            return True
+
+    def issue_device_auth_token(
+        self,
+        *,
+        user_id: str,
+        device_id: str,
+        expires_in_days: int = 30,
+    ) -> str:
+        normalized_device = device_id.strip()
+        if not normalized_device:
+            raise ValueError("device_id is required")
+        now = datetime.now(timezone.utc)
+        raw_token = secrets.token_urlsafe(32)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO device_auth_tokens(user_id, device_id, token_hash, expires_at, created_at, last_used_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, device_id) DO UPDATE SET
+                    token_hash = excluded.token_hash,
+                    expires_at = excluded.expires_at,
+                    last_used_at = excluded.last_used_at
+                """,
+                (
+                    user_id,
+                    normalized_device,
+                    _hash_one_time_code(raw_token),
+                    (now + timedelta(days=max(expires_in_days, 1))).isoformat(),
+                    now.isoformat(),
+                    now.isoformat(),
+                ),
+            )
+            conn.commit()
+        return raw_token
+
+    def authenticate_device_auth_token(
+        self,
+        *,
+        phone_number: str,
+        device_id: str,
+        token: str,
+    ) -> User | None:
+        user = self.find_user_by_phone(phone_number=phone_number)
+        if user is None:
+            return None
+        normalized_device = device_id.strip()
+        normalized_token = token.strip()
+        if not normalized_device or not normalized_token:
+            return None
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT token_hash, expires_at
+                FROM device_auth_tokens
+                WHERE user_id = ? AND device_id = ?
+                """,
+                (user.user_id, normalized_device),
+            )
+            if row is None:
+                return None
+            token_hash = str(row[0])
+            expires_at = str(row[1])
+            if not _is_future_iso_datetime(expires_at):
+                self._execute(
+                    conn,
+                    "DELETE FROM device_auth_tokens WHERE user_id = ? AND device_id = ?",
+                    (user.user_id, normalized_device),
+                )
+                conn.commit()
+                return None
+            if not hmac.compare_digest(token_hash, _hash_one_time_code(normalized_token)):
+                return None
+            self._execute(
+                conn,
+                """
+                UPDATE device_auth_tokens
+                SET last_used_at = ?
+                WHERE user_id = ? AND device_id = ?
+                """,
+                (datetime.now(timezone.utc).isoformat(), user.user_id, normalized_device),
+            )
+            conn.commit()
+        return user
 
     def list_subscription_plans(self) -> list[SubscriptionPlan]:
         with self._connect() as conn:
@@ -1520,6 +1681,25 @@ def _normalize_optional_text(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def generate_one_time_code(length: int = 6) -> str:
+    digit_count = max(length, 4)
+    return "".join(str(random.randint(0, 9)) for _ in range(digit_count))[:length]
+
+
+def _hash_one_time_code(code: str) -> str:
+    return hashlib.sha256(code.strip().encode("utf-8")).hexdigest()
+
+
+def _is_future_iso_datetime(value: str) -> bool:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed > datetime.now(timezone.utc)
 
 
 def _row_to_case_document(row: tuple[Any, ...]) -> CaseDocument:

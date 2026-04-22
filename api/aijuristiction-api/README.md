@@ -10,6 +10,20 @@ Run the API unit tests from the repo-managed Python environment:
 
 Dedicated API service project for exposing `aijurisdictionagents` to frontend clients.
 
+## Registration email verification flow
+
+Mobile/API registration now supports email one-time-code verification:
+
+- `POST /v1/users/sign-up/send-code` sends a one-time code to the requested email.
+- `POST /v1/users/sign-up/complete` finishes account creation only when the code is valid.
+- Successful account creation still queues the welcome email notification.
+
+Device-bound login flow:
+
+- `POST /v1/users/sign-in/send-code` sends a login OTP to the account email for the provided phone+device.
+- `POST /v1/users/sign-in/verify-code` validates OTP and returns a device-bound auth token.
+- `POST /v1/users/sign-in/device` allows silent sign-in on the same device by reusing the device-bound token.
+
 ## Azure infrastructure
 
 Use the root `infra/` folder to provision Azure resources and deploy from local machine:

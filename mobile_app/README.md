@@ -46,8 +46,9 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Built-in authentication UI:
   - Account profile now includes a `Debug mode` switch (Android) that controls file logging and a `Share logs` action that opens the Android share sheet for the current log file.
   - `Sign up`: phone number + email/password (required), first/last name (optional), persisted through the API
-  - `Sign in`: phone number first; if phone exists, user is signed in automatically through the API
-  - if phone is not found, sign in fallback is shown for email/password
+  - `Sign up` now also requires an email verification code: users must tap `Send code`, receive the one-time code by email, and complete registration with that code.
+  - `Sign in`: app first tries silent login with a device-bound token; if not available/expired, app sends a one-time sign-in code and verifies it.
+  - first successful OTP sign-in stores a device-bound token so subsequent logins on the same device can be silent.
   - after sign-in, `Account` page allows updating password, first name, and last name; on Android it also populates the phone number from the device and locks that field when the device number is available
   - browser/local web remembers the last signed-in phone number and pre-fills the sign-in form
   - local runs also prefill `+421944400166` when no phone was remembered yet
@@ -72,6 +73,7 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
 - Selecting a case now loads the latest 5 persisted case messages, with a paging button to load 5 more older messages while keeping chronological order in the chat area and preserving scroll position when older messages are prepended.
 - The mobile app now remembers the last selected case per signed-in user and API base URL, so reopening the app returns to the same existing case instead of always jumping back to the first item in the case list.
 - The case edit dialog now also shows the current case documents. Tapping a listed document downloads it and opens it with the same file-view flow used from the main case screen.
+- The case edit dialog now also includes a per-document `Share` action that downloads the selected generated document and opens the native share sheet.
 - Before the case edit dialog opens, the app refreshes the current case document list so the shown processing statuses are up to date.
 - When an existing case is opened and the next chat session starts, the API now seeds that session with the case's stored message history so the model can continue from the prior conversation context.
 - If the selected case already has stored attachments, the mobile app now keeps their status inside the normal chat timeline instead of rendering floating download/status chips outside the scrollable discussion. Opening the case edit dialog is the primary way to inspect and open case documents.
@@ -92,6 +94,11 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - if Android blocks sideload installs for this app, the app opens the `Install unknown apps` settings page and resumes installation when the user returns
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/users/sign-up`
+  - `POST /v1/users/sign-up/send-code`
+  - `POST /v1/users/sign-up/complete`
+  - `POST /v1/users/sign-in/send-code`
+  - `POST /v1/users/sign-in/verify-code`
+  - `POST /v1/users/sign-in/device`
   - `POST /v1/users/sign-in`
 - `POST /v1/users/sign-in/phone`
 - `PATCH /v1/users/{user_id}`
