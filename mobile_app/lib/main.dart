@@ -150,6 +150,12 @@ class AppStrings {
       'signing_in': 'Prihlasujem...',
       'login': 'Prihlásenie',
       'sign_in_by_phone': 'Prihlásiť cez telefón',
+      'send_sign_in_code': 'Poslať prihlasovací kód',
+      'verify_sign_in_code': 'Prihlásiť kódom',
+      'sign_in_code_required': 'Prihlasovací kód *',
+      'sign_in_code_sent': 'Prihlasovací kód bol odoslaný na e-mail.',
+      'sign_in_code_send_failed': 'Odoslanie prihlasovacieho kódu zlyhalo: {{error}}',
+      'invalid_sign_in_code': 'Neplatný prihlasovací kód.',
       'sign_in_by_email_password': 'Prihlásiť cez e-mail a heslo',
       'sign_in_failed': 'Prihlásenie zlyhalo: {{error}}',
       'phone_not_found':
@@ -159,6 +165,10 @@ class AppStrings {
       'go_to_sign_up': 'Registrácia',
       'create_account': 'Vytvoriť účet',
       'sign_up_failed': 'Registrácia zlyhala: {{error}}',
+      'verification_code_required': 'Overovací kód *',
+      'send_code': 'Poslať kód',
+      'code_sent': 'Kód bol odoslaný na e-mail.',
+      'send_code_failed': 'Odoslanie kódu zlyhalo: {{error}}',
       'account': 'Účet',
       'sign_out': 'Odhlásiť sa',
       'save_changes': 'Uložiť zmeny',
@@ -315,6 +325,9 @@ class AppStrings {
       'law_date_label': 'Law Date',
       'show_next_5_messages': 'Zobraziť ďalších 5 správ',
       'download_case_document': 'Stiahnuť {{filename}}',
+      'share_case_document': 'Zdieľať {{filename}}',
+      'case_document_shared': 'Dokument bol odoslaný na zdieľanie.',
+      'case_document_share_failed': 'Zdieľanie dokumentu zlyhalo: {{error}}',
       'case_document_download_failed':
           'Sťahovanie dokumentu zlyhalo: {{error}}',
       'attached_document': 'Priložený dokument: {{path}}',
@@ -377,6 +390,12 @@ class AppStrings {
       'signing_in': 'Signing in...',
       'login': 'Login',
       'sign_in_by_phone': 'Sign in by phone',
+      'send_sign_in_code': 'Send sign-in code',
+      'verify_sign_in_code': 'Sign in with code',
+      'sign_in_code_required': 'Sign-in code *',
+      'sign_in_code_sent': 'Sign-in code was sent to email.',
+      'sign_in_code_send_failed': 'Sending sign-in code failed: {{error}}',
+      'invalid_sign_in_code': 'Invalid sign-in code.',
       'sign_in_by_email_password': 'Sign in by email/password',
       'sign_in_failed': 'Sign in failed: {{error}}',
       'phone_not_found':
@@ -386,6 +405,10 @@ class AppStrings {
       'go_to_sign_up': 'Sign up',
       'create_account': 'Create account',
       'sign_up_failed': 'Sign up failed: {{error}}',
+      'verification_code_required': 'Verification code *',
+      'send_code': 'Send code',
+      'code_sent': 'Code was sent to email.',
+      'send_code_failed': 'Sending code failed: {{error}}',
       'account': 'Account',
       'sign_out': 'Sign out',
       'save_changes': 'Save changes',
@@ -538,6 +561,9 @@ class AppStrings {
       'law_date_label': 'Law Date',
       'show_next_5_messages': 'Show next 5 messages',
       'download_case_document': 'Download {{filename}}',
+      'share_case_document': 'Share {{filename}}',
+      'case_document_shared': 'Document was shared.',
+      'case_document_share_failed': 'Document share failed: {{error}}',
       'case_document_download_failed':
           'Failed to download case document: {{error}}',
       'attached_document': 'Attached document: {{path}}',
@@ -599,6 +625,12 @@ class AppStrings {
       'signing_in': 'Anmeldung läuft...',
       'login': 'Login',
       'sign_in_by_phone': 'Mit Telefonnummer anmelden',
+      'send_sign_in_code': 'Login-Code senden',
+      'verify_sign_in_code': 'Mit Code anmelden',
+      'sign_in_code_required': 'Login-Code *',
+      'sign_in_code_sent': 'Login-Code wurde per E-Mail gesendet.',
+      'sign_in_code_send_failed': 'Login-Code senden fehlgeschlagen: {{error}}',
+      'invalid_sign_in_code': 'Ungültiger Login-Code.',
       'sign_in_by_email_password': 'Mit E-Mail und Passwort anmelden',
       'sign_in_failed': 'Anmeldung fehlgeschlagen: {{error}}',
       'phone_not_found':
@@ -608,6 +640,10 @@ class AppStrings {
       'go_to_sign_up': 'Registrieren',
       'create_account': 'Konto erstellen',
       'sign_up_failed': 'Registrierung fehlgeschlagen: {{error}}',
+      'verification_code_required': 'Bestätigungscode *',
+      'send_code': 'Code senden',
+      'code_sent': 'Code wurde per E-Mail gesendet.',
+      'send_code_failed': 'Code senden fehlgeschlagen: {{error}}',
       'account': 'Konto',
       'sign_out': 'Abmelden',
       'save_changes': 'Aenderungen speichern',
@@ -770,6 +806,9 @@ class AppStrings {
       'law_date_label': 'Law Date',
       'show_next_5_messages': 'Weitere 5 Nachrichten zeigen',
       'download_case_document': '{{filename}} herunterladen',
+      'share_case_document': '{{filename}} teilen',
+      'case_document_shared': 'Dokument wurde geteilt.',
+      'case_document_share_failed': 'Dokument konnte nicht geteilt werden: {{error}}',
       'case_document_download_failed':
           'Download des Dokuments fehlgeschlagen: {{error}}',
       'attached_document': 'Angehängtes Dokument: {{path}}',
@@ -2958,21 +2997,22 @@ class _AuthEntryPageState extends State<AuthEntryPage>
   final DevicePhoneNumberService _devicePhoneNumberService =
       const DevicePhoneNumberService();
   final TextEditingController _signInPhoneController = TextEditingController();
-  final TextEditingController _signInEmailController = TextEditingController();
-  final TextEditingController _signInPasswordController =
-      TextEditingController();
+  final TextEditingController _signInCodeController = TextEditingController();
   final TextEditingController _signUpPhoneController = TextEditingController();
   final TextEditingController _signUpEmailController = TextEditingController();
   final TextEditingController _signUpPasswordController =
+      TextEditingController();
+  final TextEditingController _signUpVerificationCodeController =
       TextEditingController();
   final TextEditingController _signUpFirstNameController =
       TextEditingController();
   final TextEditingController _signUpLastNameController =
       TextEditingController();
-  bool _showEmailPasswordFallback = false;
+  bool _showPhoneOtpSignIn = false;
   bool _isBusy = false;
   String _appVersionLabel = 'v0.1.5+43';
   String? _devicePhoneNumber;
+  String? _deviceBindingId;
 
   AppStrings get _strings => AppStrings(_defaultLanguage);
   bool get _isLocalExecution => _isLocalApiBaseUrl(widget.apiBaseUrl);
@@ -2997,11 +3037,11 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     _signInPhoneController.dispose();
-    _signInEmailController.dispose();
-    _signInPasswordController.dispose();
+    _signInCodeController.dispose();
     _signUpPhoneController.dispose();
     _signUpEmailController.dispose();
     _signUpPasswordController.dispose();
+    _signUpVerificationCodeController.dispose();
     _signUpFirstNameController.dispose();
     _signUpLastNameController.dispose();
     super.dispose();
@@ -3023,11 +3063,13 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     final lastPhoneNumber = await widget.authStore.getLastPhoneNumber();
     final devicePhoneNumber =
         await _devicePhoneNumberService.getDevicePhoneNumber();
+    final deviceBindingId = await widget.authStore.getOrCreateDeviceBindingId();
     if (!mounted) {
       return;
     }
     setState(() {
       _devicePhoneNumber = devicePhoneNumber;
+      _deviceBindingId = deviceBindingId;
     });
     if (devicePhoneNumber != null && devicePhoneNumber.isNotEmpty) {
       _signInPhoneController.text = devicePhoneNumber;
@@ -3064,31 +3106,38 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       _isBusy = true;
     });
     try {
-      final user = await widget.authStore.signInByPhone(
-        _signInPhoneController.text,
+      final deviceBindingId = _deviceBindingId ??
+          await widget.authStore.getOrCreateDeviceBindingId();
+      final silentUser = await widget.authStore.signInByDeviceToken(
+        phoneNumber: _signInPhoneController.text,
+        deviceId: deviceBindingId,
       );
-      if (user != null) {
+      if (silentUser != null) {
         await widget.logger.info(
-          'User signed in automatically by phone',
-          <String, Object?>{'phone': user.phoneNumber},
+          'User signed in by device-bound token',
+          <String, Object?>{'phone': silentUser.phoneNumber},
         );
-        widget.onSignedIn(user);
+        widget.onSignedIn(silentUser);
         return;
       }
+      await widget.authStore.sendSignInCode(
+        phoneNumber: _signInPhoneController.text,
+        deviceId: deviceBindingId,
+      );
       if (!mounted) {
         return;
       }
       setState(() {
-        _showEmailPasswordFallback = true;
+        _showPhoneOtpSignIn = true;
       });
-      _showSnackbar(_strings.t('phone_not_found'));
+      _showSnackbar(_strings.t('sign_in_code_sent'));
     } catch (error, stackTrace) {
       await widget.logger.error(
         'Sign-in by phone failed',
         error,
         stackTrace,
       );
-      _showSnackbar(_strings.t('sign_in_failed', <String, String>{
+      _showSnackbar(_strings.t('sign_in_code_send_failed', <String, String>{
         'error': '$error',
       }));
     } finally {
@@ -3100,7 +3149,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     }
   }
 
-  Future<void> _signInByEmailPassword() async {
+  Future<void> _signInByPhoneOtp() async {
     if (_isBusy) {
       return;
     }
@@ -3108,28 +3157,21 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       _isBusy = true;
     });
     try {
-      final user = await widget.authStore.signInByEmailPassword(
-        email: _signInEmailController.text,
-        password: _signInPasswordController.text,
+      final deviceBindingId = _deviceBindingId ??
+          await widget.authStore.getOrCreateDeviceBindingId();
+      final user = await widget.authStore.signInByPhoneOtp(
+        phoneNumber: _signInPhoneController.text,
+        verificationCode: _signInCodeController.text,
+        deviceId: deviceBindingId,
       );
       if (user == null) {
-        _showSnackbar(_strings.t('invalid_email_password'));
+        _showSnackbar(_strings.t('invalid_sign_in_code'));
         return;
       }
-      await widget.logger.info(
-        'User signed in by email/password',
-        <String, Object?>{'phone': user.phoneNumber, 'email': user.email},
-      );
       widget.onSignedIn(user);
     } catch (error, stackTrace) {
-      await widget.logger.error(
-        'Sign-in by email/password failed',
-        error,
-        stackTrace,
-      );
-      _showSnackbar(_strings.t('sign_in_failed', <String, String>{
-        'error': '$error',
-      }));
+      await widget.logger.error('Sign-in by phone OTP failed', error, stackTrace);
+      _showSnackbar(_strings.t('sign_in_failed', <String, String>{'error': '$error'}));
     } finally {
       if (mounted) {
         setState(() {
@@ -3152,6 +3194,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
           phoneNumber: _signUpPhoneController.text,
           email: _signUpEmailController.text,
           password: _signUpPasswordController.text,
+          verificationCode: _signUpVerificationCodeController.text,
           firstName: _signUpFirstNameController.text,
           lastName: _signUpLastNameController.text,
         ),
@@ -3168,6 +3211,36 @@ class _AuthEntryPageState extends State<AuthEntryPage>
         stackTrace,
       );
       _showSnackbar(_strings.t('sign_up_failed', <String, String>{
+        'error': '$error',
+      }));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _sendRegistrationCode() async {
+    if (_isBusy) {
+      return;
+    }
+    setState(() {
+      _isBusy = true;
+    });
+    try {
+      await widget.authStore.sendRegistrationCode(
+        email: _signUpEmailController.text,
+      );
+      _showSnackbar(_strings.t('code_sent'));
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Send registration code failed',
+        error,
+        stackTrace,
+      );
+      _showSnackbar(_strings.t('send_code_failed', <String, String>{
         'error': '$error',
       }));
     } finally {
@@ -3331,40 +3404,26 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                         ? strings
                                                             .t('signing_in')
                                                         : strings.t(
-                                                            'sign_in_by_phone',
+                                                            'send_sign_in_code',
                                                           ),
                                                   ),
                                                 ),
                                               ),
-                                              if (_showEmailPasswordFallback) ...[
+                                              if (_showPhoneOtpSignIn) ...[
                                                 const SizedBox(height: 16),
                                                 const Divider(),
                                                 const SizedBox(height: 8),
                                                 TextField(
-                                                  controller:
-                                                      _signInEmailController,
-                                                  keyboardType: TextInputType
-                                                      .emailAddress,
+                                                  controller: _signInCodeController,
+                                                  keyboardType:
+                                                      TextInputType.number,
                                                   autofillHints: const <String>[
-                                                    AutofillHints.email,
-                                                    AutofillHints.username,
+                                                    AutofillHints.oneTimeCode,
                                                   ],
                                                   decoration: InputDecoration(
-                                                    labelText:
-                                                        strings.t('email'),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 12),
-                                                TextField(
-                                                  controller:
-                                                      _signInPasswordController,
-                                                  obscureText: true,
-                                                  autofillHints: const <String>[
-                                                    AutofillHints.password,
-                                                  ],
-                                                  decoration: InputDecoration(
-                                                    labelText:
-                                                        strings.t('password'),
+                                                    labelText: strings.t(
+                                                      'sign_in_code_required',
+                                                    ),
                                                   ),
                                                 ),
                                                 const SizedBox(height: 12),
@@ -3373,10 +3432,10 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   child: OutlinedButton(
                                                     onPressed: _isBusy
                                                         ? null
-                                                        : _signInByEmailPassword,
+                                                        : _signInByPhoneOtp,
                                                     child: Text(
                                                       strings.t(
-                                                        'sign_in_by_email_password',
+                                                        'verify_sign_in_code',
                                                       ),
                                                     ),
                                                   ),
@@ -3446,6 +3505,34 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                     'password_required',
                                                   ),
                                                 ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: TextField(
+                                                      controller:
+                                                          _signUpVerificationCodeController,
+                                                      keyboardType:
+                                                          TextInputType.number,
+                                                      decoration:
+                                                          InputDecoration(
+                                                        labelText: strings.t(
+                                                          'verification_code_required',
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  FilledButton.tonal(
+                                                    onPressed: _isBusy
+                                                        ? null
+                                                        : _sendRegistrationCode,
+                                                    child: Text(
+                                                      strings.t('send_code'),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                               const SizedBox(height: 12),
                                               TextField(
@@ -4438,6 +4525,40 @@ class _ChatHomePageState extends State<ChatHomePage>
     } catch (error) {
       _showSnackbar(
         _strings.t('case_document_download_failed', <String, String>{
+          'error': '$error',
+        }),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloadingCaseDocumentIds.remove(document.docId);
+        });
+      }
+    }
+  }
+
+  Future<void> _shareCaseDocument(CaseDocumentItem document) async {
+    final selected = _selectedCase;
+    if (selected == null) {
+      return;
+    }
+    setState(() {
+      _downloadingCaseDocumentIds.add(document.docId);
+    });
+    try {
+      final payload = await _apiClient.downloadCaseDocument(
+        caseId: selected.caseId,
+        userId: _signedInUser.userId,
+        docId: document.docId,
+      );
+      final tempDir = await Directory.systemTemp.createTemp('aij-share-');
+      final file = File('${tempDir.path}/${payload.filename}');
+      await file.writeAsBytes(payload.bytes, flush: true);
+      await Share.shareXFiles(<XFile>[XFile(file.path)], text: payload.filename);
+      _showSnackbar(_strings.t('case_document_shared'));
+    } catch (error) {
+      _showSnackbar(
+        _strings.t('case_document_share_failed', <String, String>{
           'error': '$error',
         }),
       );
@@ -7147,6 +7268,16 @@ class _ChatHomePageState extends State<ChatHomePage>
                           leading: Icon(leadingIcon),
                           title: Text(document.originalFilename),
                           subtitle: Text(_documentStatusSubtitle(document)),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.share_outlined),
+                            tooltip: strings.t(
+                              'share_case_document',
+                              <String, String>{
+                                'filename': document.originalFilename,
+                              },
+                            ),
+                            onPressed: () => _shareCaseDocument(document),
+                          ),
                           onTap: () => Navigator.pop(
                             context,
                             CaseEditDialogResult(documentToOpen: document),

@@ -10,6 +10,7 @@ from .store import (
     SubscriptionPlan,
     User,
     UserSubscription,
+    generate_one_time_code,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "SubscriptionPlan",
     "User",
     "UserSubscription",
+    "generate_one_time_code",
 ]
