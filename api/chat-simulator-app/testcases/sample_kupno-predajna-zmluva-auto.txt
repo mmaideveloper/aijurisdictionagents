@@ -21,7 +21,13 @@ Slovenska Republika
 
 2. novy majitel od 1.7.2026
    ",
-   "Documents:":[]
+   "Documents:":[
+
+      { 
+            "filePath": "./Kupna-zmluva-ojazdene-vozidlo.doc",
+            "fileName": "Zmluva navrh"
+           }
+   ]
 }  
 
 

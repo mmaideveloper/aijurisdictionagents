@@ -3,7 +3,6 @@
    "CaseTitle":  "Deditske Konanie",
    "CaseDescription":"
                 Privprav vsetky informacie pre deditske konanie.
-PZ: PP472DT
 
 info:
 0. : 
