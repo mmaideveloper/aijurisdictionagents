@@ -476,7 +476,7 @@ def _document_context(*, case_id: str, store: ApiDatabaseStore) -> CaseDocumentC
     processed: list[str] = []
     unprocessed: list[str] = []
     for document in store.list_case_documents(case_id=case_id):
-        if document.kind != 'uploaded':
+        if document.kind not in {'uploaded', 'chat_attachment', 'session_history'}:
             continue
         if document.processing_status == 'processed':
             processed.append(document.original_filename)

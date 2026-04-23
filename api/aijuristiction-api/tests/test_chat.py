@@ -2518,6 +2518,181 @@ def test_reply_persists_session_history_document_to_case(monkeypatch) -> None:
     assert "ASSISTANT: Stored response for conversation memory. (agent=LawyerSlovakia)" in persisted_transcript
 
 
+def test_case_memory_reuses_previous_session_messages_and_documents(monkeypatch, tmp_path) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    class _FakeEmbeddingClient:
+        def embed_texts(self, texts: list[str]) -> SimpleNamespace:
+            return SimpleNamespace(
+                model_name="fake-embedding-model",
+                vectors=[[float(index + 1), float(len(text))] for index, text in enumerate(texts)],
+            )
+
+    captured_documents: list[list[str]] = []
+
+    class _FakeLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_documents.append([doc.path for doc in documents])
+            return SimpleNamespace(
+                content="Stored response for cross-session memory.",
+                agent_name="LawyerSlovakia",
+            )
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(
+        "services.document_processor.service.get_embedding_client",
+        lambda: _FakeEmbeddingClient(),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _FakeLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900000333",
+            "email": "memory-user@example.com",
+            "password": "secret",
+        },
+    )
+    assert response.status_code == 201
+    user_id = response.json()["user_id"]
+
+    case_response = client.post(
+        "/v1/cases",
+        headers=AUTH_HEADERS,
+        json={"user_id": user_id, "title": "Cross-session memory"},
+    )
+    assert case_response.status_code == 201
+    case_id = case_response.json()["case_id"]
+
+    session_one = client.post(
+        "/v1/chat/sessions",
+        json={
+            "user_id": user_id,
+            "case_id": case_id,
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "SK",
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert session_one.status_code == 200
+    session_one_id = session_one.json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_one_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "Please review the uploaded lease document.",
+            "documents": [
+                {
+                    "doc_id": "doc-1",
+                    "path": "lease-session-1.txt",
+                    "content": "Lease clause from session one.",
+                }
+            ],
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as stream_one:
+        assert stream_one.status_code == 200
+        assert "event: done" in "".join(stream_one.iter_text())
+
+    session_two = client.post(
+        "/v1/chat/sessions",
+        json={
+            "user_id": user_id,
+            "case_id": case_id,
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "SK",
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert session_two.status_code == 200
+    session_two_id = session_two.json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_two_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "Please review the uploaded payment evidence.",
+            "documents": [
+                {
+                    "doc_id": "doc-2",
+                    "path": "payment-session-2.txt",
+                    "content": "Payment evidence from session two.",
+                }
+            ],
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as stream_two:
+        assert stream_two.status_code == 200
+        assert "event: done" in "".join(stream_two.iter_text())
+
+    session_three = client.post(
+        "/v1/chat/sessions",
+        json={
+            "user_id": user_id,
+            "case_id": case_id,
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "SK",
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert session_three.status_code == 200
+    session_three_id = session_three.json()["id"]
+
+    seeded_messages_response = client.get(
+        f"/v1/chat/sessions/{session_three_id}/messages",
+        headers=AUTH_HEADERS,
+    )
+    assert seeded_messages_response.status_code == 200
+    seeded_messages = seeded_messages_response.json()
+    assert len(seeded_messages) == 4
+    assert seeded_messages[0]["content"] == "Please review the uploaded lease document."
+    assert seeded_messages[2]["content"] == "Please review the uploaded payment evidence."
+
+    memory_response = client.get(
+        f"/v1/cases/{case_id}/documents/context?user_id={user_id}",
+        headers=AUTH_HEADERS,
+    )
+    assert memory_response.status_code == 200
+    memory_payload = memory_response.json()
+    processed_documents = memory_payload["processed_documents"]
+    assert "lease-session-1.txt" in processed_documents
+    assert "payment-session-2.txt" in processed_documents
+    assert f"session-{session_one_id}.txt" in processed_documents
+    assert f"session-{session_two_id}.txt" in processed_documents
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_three_id}/reply",
+        json={"content": "Summarize all uploaded documents and prior discussions."},
+        headers=AUTH_HEADERS,
+    )
+    assert reply_response.status_code == 200
+    assert captured_documents
+    final_document_paths = captured_documents[-1]
+    assert any(path.startswith("lease-session-1.txt") for path in final_document_paths)
+    assert any(path.startswith("payment-session-2.txt") for path in final_document_paths)
+    assert any(path.startswith(f"session-{session_one_id}.txt") for path in final_document_paths)
+    assert any(path.startswith(f"session-{session_two_id}.txt") for path in final_document_paths)
+
+
 def test_reply_endpoint_respects_session_language_sk() -> None:
     session_response = client.post(
         "/v1/chat/sessions",

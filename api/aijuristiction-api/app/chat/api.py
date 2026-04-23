@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from io import BytesIO
 import json
 import logging
+import os
 import re
 import time
 import textwrap
@@ -41,7 +42,7 @@ from app.chat.result_metadata import build_session_result_metadata
 from app.security import require_api_key
 from app.versioning import get_api_version, get_core_version
 
-from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument
 from aijurisdictionagents.llm import get_embedding_client
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
@@ -50,6 +51,7 @@ from services.document_processor.runtime import (
     lexical_overlap_score,
     parse_embedding_vector,
 )
+from services.document_processor.service import DocumentProcessor
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"], dependencies=[Depends(require_api_key)])
 _repository = InMemoryChatRepository()
@@ -152,12 +154,60 @@ def _persist_session_history_document_if_needed(*, session: Session, session_id:
     store = _get_store()
     add_session_history_document = getattr(store, "add_case_session_history_document", None)
     if callable(add_session_history_document):
-        add_session_history_document(
+        doc_id = add_session_history_document(
             case_id=case_id,
             session_id=str(session_id),
             content=transcript,
             uploaded_by_user_id=str(session.user_id) if session.user_id else None,
         )
+        get_case_document = getattr(store, "get_case_document", None)
+        if callable(get_case_document):
+            _process_case_documents_if_needed(
+                store=store,
+                documents=[get_case_document(case_id=case_id, doc_id=doc_id)],
+            )
+
+
+def _document_processor_mode() -> str:
+    value = os.getenv(
+        "DOCUMENT_PROCESSOR_OPTION",
+        os.getenv("DOCUMENT_PROCESSOR", "api"),
+    ).strip().lower()
+    if value == "azure":
+        return "azure"
+    return "api"
+
+
+def _process_case_documents_if_needed(
+    *,
+    store: ApiDatabaseStore,
+    documents: list[CaseDocument],
+) -> None:
+    if not documents or _document_processor_mode() == "azure":
+        return
+    DocumentProcessor(store).process_documents(documents)
+
+
+def _persist_inline_case_documents_if_needed(
+    *,
+    session: Session,
+    documents: list[InputDocument],
+) -> None:
+    case_id = (session.case_id or "").strip()
+    if not case_id or not documents:
+        return
+    store = _get_store()
+    persisted_documents: list[CaseDocument] = []
+    for index, document in enumerate(documents, start=1):
+        filename = Path(document.path).name.strip() or f"attachment-{index}.txt"
+        doc_id = store.add_case_text_document(
+            case_id=case_id,
+            original_filename=filename,
+            content=document.content,
+            uploaded_by_user_id=str(session.user_id) if session.user_id else None,
+        )
+        persisted_documents.append(store.get_case_document(case_id=case_id, doc_id=doc_id))
+    _process_case_documents_if_needed(store=store, documents=persisted_documents)
 
 
 def _read_case_communication_content(*, store: ApiDatabaseStore, communication: Any) -> str:
@@ -236,7 +286,7 @@ def _load_case_documents_for_llm(
     processed_entries: list[tuple[str, str, str, str]] = []
     processed_names_by_doc_id: dict[str, str] = {}
     for document in list_case_documents(case_id=case_id):
-        if document.kind not in {'uploaded', 'session_history'}:
+        if document.kind not in {'uploaded', 'chat_attachment', 'session_history'}:
             continue
         if document.processing_status == 'processed' and document.doc_id in contents_by_doc_id:
             name, text, vector = contents_by_doc_id[document.doc_id]
@@ -730,6 +780,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if session.state == SessionState.COMPLETED and payload.user_simulation_mode != "ReadUser":
         raise HTTPException(status_code=409, detail="Session already completed")
+    _persist_inline_case_documents_if_needed(session=session, documents=payload.documents)
     if payload.user_simulation_mode == "ReadUser":
         return _stream_read_user_session(session_id=session_id, session=session, payload=payload)
 

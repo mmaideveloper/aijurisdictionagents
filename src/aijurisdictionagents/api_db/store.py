@@ -1076,18 +1076,38 @@ class ApiDatabaseStore:
         uploaded_by_user_id: str | None = None,
     ) -> str:
         filename = f"session-{session_id}.txt"
+        payload = content.encode("utf-8")
         with self._connect() as conn:
             existing = self._fetchone(
                 conn,
                 """
-                SELECT doc_id FROM case_documents
+                SELECT doc_id, storage_uri FROM case_documents
                 WHERE case_id = ? AND kind = 'session_history' AND original_filename = ?
                 LIMIT 1
                 """,
                 (case_id, filename),
             )
             if existing is not None:
-                return str(existing[0])
+                doc_id = str(existing[0])
+                storage_uri = str(existing[1])
+                self._replace_stored_payload(storage_uri=storage_uri, payload=payload)
+                self._execute(
+                    conn,
+                    """
+                    UPDATE case_documents
+                    SET uploaded_by_user_id = ?, processing_status = 'uploaded',
+                        processing_error = NULL, processed_at = NULL
+                    WHERE doc_id = ?
+                    """,
+                    (uploaded_by_user_id, doc_id),
+                )
+                self._execute(
+                    conn,
+                    "UPDATE cases SET updated_at = ? WHERE case_id = ?",
+                    (_now_iso(), case_id),
+                )
+                conn.commit()
+                return doc_id
             row = self._fetchone(
                 conn,
                 """
@@ -1103,7 +1123,7 @@ class ApiDatabaseStore:
             kind="session_history",
             version=next_version,
             original_filename=filename,
-            payload=content.encode("utf-8"),
+            payload=payload,
             uploaded_by_user_id=uploaded_by_user_id,
         )
 
@@ -1388,6 +1408,11 @@ class ApiDatabaseStore:
             prefix = self.store_cloud.rstrip("/")
             return f"{prefix}/{relative_uri.as_posix()}"
         return relative_uri.as_posix()
+
+    def _replace_stored_payload(self, *, storage_uri: str, payload: bytes) -> None:
+        destination = self._resolve_storage_path(storage_uri)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
 
     def _resolve_storage_path(self, storage_uri: str) -> Path:
         normalized = storage_uri.strip()
