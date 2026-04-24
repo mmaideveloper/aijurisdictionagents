@@ -113,6 +113,6 @@ if __name__ == "__main__":
     print("=== Email delivery setup demo ===")
     print("Public contact email: info@jurisdigta.eu")
     print("SMTP sender: no-reply@jurisdigta.eu")
-    print("SMTP server: mail.webhourse.sk:587 with STARTTLS")
+    print("SMTP server: mail.webhouse.sk:587 with STARTTLS")
     print("SMTP password env: EMAIL_SMTP_PASSWORD")
     print("Chat simulator email test page: http://127.0.0.1:8090/email-tests")

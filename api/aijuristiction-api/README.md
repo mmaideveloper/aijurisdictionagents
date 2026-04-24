@@ -421,7 +421,7 @@ User and subscription endpoints support email notifications with configurable tr
 SMTP configuration (used when `EMAIL_TRANSPORT=smtp`):
 
 - `EMAIL_SENDER` (default: `no-reply@jurisdigta.eu`)
-- `EMAIL_SMTP_HOST` (default: `mail.webhourse.sk`)
+- `EMAIL_SMTP_HOST` (default: `mail.webhouse.sk`)
 - `EMAIL_SMTP_PORT` (default: `587`)
 - `EMAIL_SMTP_USE_TLS` (default: `true`)
 - `EMAIL_SMTP_USERNAME` (default: `EMAIL_SENDER`)

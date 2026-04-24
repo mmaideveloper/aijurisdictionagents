@@ -188,7 +188,7 @@ def _send_email_test(payload: EmailTestSendRequest) -> dict[str, Any]:
     written_email = _write_email_preview(message=message, template=payload.template, transport=transport)
 
     if transport == "smtp":
-        smtp_host = _first_non_empty(payload.smtp_host, os.getenv("EMAIL_SMTP_HOST"), "mail.webhourse.sk")
+        smtp_host = _first_non_empty(payload.smtp_host, os.getenv("EMAIL_SMTP_HOST"), "mail.webhouse.sk")
         smtp_port = payload.smtp_port or int(os.getenv("EMAIL_SMTP_PORT", "587"))
         smtp_username = _first_non_empty(payload.smtp_username, os.getenv("EMAIL_SMTP_USERNAME"), sender)
         smtp_password = _first_non_empty(payload.smtp_password, os.getenv("EMAIL_SMTP_PASSWORD"), "")

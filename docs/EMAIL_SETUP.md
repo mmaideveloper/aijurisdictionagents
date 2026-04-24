@@ -9,7 +9,7 @@ Set these values when real delivery is required:
 ```env
 EMAIL_TRANSPORT=smtp
 EMAIL_SENDER=no-reply@jurisdigta.eu
-EMAIL_SMTP_HOST=mail.webhourse.sk
+EMAIL_SMTP_HOST=mail.webhouse.sk
 EMAIL_SMTP_PORT=587
 EMAIL_SMTP_USE_TLS=true
 EMAIL_SMTP_USERNAME=no-reply@jurisdigta.eu

@@ -123,7 +123,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode; Azure API deployments default to `azure`, while `local` is only for local/dev API runs without the ACA job |
 | `EMAIL_TRANSPORT` | API email transport. Use `smtp` for deployed email delivery; use `log` only for queue/log testing |
 | `EMAIL_SENDER` | Outbound sender address, default `no-reply@jurisdigta.eu` |
-| `EMAIL_SMTP_HOST` | SMTP host, default `mail.webhourse.sk` |
+| `EMAIL_SMTP_HOST` | SMTP host, default `mail.webhouse.sk` |
 | `EMAIL_SMTP_PORT` | SMTP port, default `587` |
 | `EMAIL_SMTP_USE_TLS` | SMTP STARTTLS flag, default `true` |
 | `EMAIL_SMTP_USERNAME` | SMTP username, default `no-reply@jurisdigta.eu` |
@@ -282,7 +282,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `CORS_ALLOW_ORIGINS`
 - `EMAIL_TRANSPORT=smtp`
 - `EMAIL_SENDER=no-reply@jurisdigta.eu`
-- `EMAIL_SMTP_HOST=mail.webhourse.sk`
+- `EMAIL_SMTP_HOST=mail.webhouse.sk`
 - `EMAIL_SMTP_PORT=587`
 - `EMAIL_SMTP_USE_TLS=true`
 - `EMAIL_SMTP_USERNAME=no-reply@jurisdigta.eu`

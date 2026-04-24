@@ -9,7 +9,7 @@ from email.message import EmailMessage
 logger = logging.getLogger("aijuristiction-api.email")
 
 DEFAULT_EMAIL_SENDER = "no-reply@jurisdigta.eu"
-DEFAULT_SMTP_HOST = "mail.webhourse.sk"
+DEFAULT_SMTP_HOST = "mail.webhouse.sk"
 DEFAULT_SMTP_PORT = 587
 
 

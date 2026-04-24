@@ -376,7 +376,7 @@ def test_email_service_defaults_to_jurisdigta_smtp(monkeypatch) -> None:
     service = EmailNotificationService.from_env()
 
     assert service.sender == "no-reply@jurisdigta.eu"
-    assert service.smtp_host == "mail.webhourse.sk"
+    assert service.smtp_host == "mail.webhouse.sk"
     assert service.smtp_port == 587
     assert service.smtp_username == "no-reply@jurisdigta.eu"
     assert service.smtp_password is None
