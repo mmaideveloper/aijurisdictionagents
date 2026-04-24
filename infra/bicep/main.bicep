@@ -5,7 +5,7 @@ param frontendContainerAppName string
 param documentProcessorJobName string = 'document-processor'
 param documentProcessorCronExpression string = '*/15 * * * *'
 param documentProcessorMaxRunningTime int = 15
-param emailSchedulerJobName string = 'email_scheduler'
+param emailSchedulerJobName string = 'email-scheduler'
 param emailSchedulerCronExpression string = '*/5 * * * *'
 param lawsCollectorJobName string = 'laws-collector'
 param lawsCollectorCronExpression string = '0 0 * * *'

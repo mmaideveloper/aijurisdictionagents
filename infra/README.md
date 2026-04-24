@@ -166,7 +166,7 @@ The Bicep deployment provisions or reuses:
 - `azure.extensions=vector`
 - Public frontend Azure Container App (`AZURE_FRONTEND_CONTAINER_APP_NAME`)
 - Document processor ACA Job (`AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, default `document-processor`)
-- Email scheduler ACA Job (`AZURE_EMAIL_SCHEDULER_JOB_NAME`, default `email_scheduler`)
+- Email scheduler ACA Job (`AZURE_EMAIL_SCHEDULER_JOB_NAME`, default `email-scheduler`)
 - Private Azure Container App for the laws collector (`AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, default `laws-collector`)
 
 Existing-resource behavior:
@@ -477,7 +477,7 @@ Use this dedicated job when the deployed API should only enqueue emails. In that
   -ResourceGroupName "<resource-group>" \
   -Location "westeurope" \
   -ContainerAppEnvironmentName "<container-app-env-name>" \
-  -JobName "email_scheduler" \
+  -JobName "email-scheduler" \
   -AcrName "<acr-name>" \
   -ManagedIdentityName "<managed-identity-name>" \
   -PostgresServerName "<postgres-server-name>" \
@@ -506,7 +506,7 @@ Required GitHub Environment variables/secrets for deployment:
 
 Recommended GitHub Environment values:
 
-- `AZURE_EMAIL_SCHEDULER_JOB_NAME=email_scheduler`
+- `AZURE_EMAIL_SCHEDULER_JOB_NAME=email-scheduler`
 - `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION=*/5 * * * *`
 - `EMAIL_TRANSPORT=smtp`
 - `EMAIL_SENDER=no-reply@jurisdigta.eu`

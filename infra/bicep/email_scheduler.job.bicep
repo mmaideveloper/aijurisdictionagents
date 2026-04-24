@@ -1,6 +1,6 @@
 param location string = resourceGroup().location
 param managedEnvironmentName string
-param jobName string = 'email_scheduler'
+param jobName string = 'email-scheduler'
 param acrName string
 param managedIdentityName string
 param image string
@@ -128,7 +128,7 @@ var emailSchedulerEnv = concat(
     }
     {
       name: 'OTEL_SERVICE_NAME'
-      value: 'email_scheduler'
+      value: 'email-scheduler'
     }
   ],
   !empty(emailSmtpPassword)

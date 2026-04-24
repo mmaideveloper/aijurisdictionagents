@@ -4,7 +4,7 @@ param(
     [string]$ResourceGroupName,
     [string]$Location,
     [string]$ContainerAppEnvironmentName,
-    [string]$JobName = "email_scheduler",
+    [string]$JobName = "email-scheduler",
     [string]$AcrName,
     [string]$ManagedIdentityName,
     [string]$PostgresServerName,
@@ -130,6 +130,40 @@ function Resolve-AcaCronExpression {
     return ($parts -join ' ')
 }
 
+function Resolve-AcaJobName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [AllowEmptyString()]
+        [string]$Value,
+        [Parameter(Mandatory = $true)]
+        [string]$DefaultValue
+    )
+
+    $raw = if ([string]::IsNullOrWhiteSpace($Value)) { $DefaultValue } else { $Value.Trim() }
+    $resolved = $raw.ToLowerInvariant()
+    $resolved = [regex]::Replace($resolved, '[^a-z0-9-]+', '-')
+    $resolved = [regex]::Replace($resolved, '-{2,}', '-')
+    $resolved = $resolved.Trim('-')
+
+    if ($raw -ne $resolved) {
+        Write-Host "Normalized $Name from '$raw' to '$resolved'"
+    }
+
+    if (
+        [string]::IsNullOrWhiteSpace($resolved) -or
+        $resolved.Length -lt 2 -or
+        $resolved.Length -gt 32 -or
+        $resolved.Contains('--') -or
+        $resolved[0] -notmatch '[a-z]' -or
+        $resolved[$resolved.Length - 1] -notmatch '[a-z0-9]'
+    ) {
+        throw "$Name must be 2-32 characters, use lowercase alphanumeric or '-', start with a letter, end with alphanumeric, and not contain '--'. Resolved value: '$resolved'."
+    }
+
+    return $resolved
+}
+
 function Test-ResourceExistsInGroup {
     param(
         [Parameter(Mandatory = $true)]
@@ -204,7 +238,7 @@ $EmailSmtpPassword = Resolve-InputValue -ExplicitValue $EmailSmtpPassword -EnvFi
 $CronExpression = Resolve-InputValue -ExplicitValue $CronExpression -EnvFileValue $envCronExpression -EnvironmentValue $env:AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION
 
 if ([string]::IsNullOrWhiteSpace($Location)) { $Location = "westeurope" }
-if ([string]::IsNullOrWhiteSpace($JobName)) { $JobName = "email_scheduler" }
+if ([string]::IsNullOrWhiteSpace($JobName)) { $JobName = "email-scheduler" }
 if ([string]::IsNullOrWhiteSpace($PostgresDatabaseName)) { $PostgresDatabaseName = "aijurisdiction" }
 if ([string]::IsNullOrWhiteSpace($EmailTransport)) { $EmailTransport = "smtp" }
 if ([string]::IsNullOrWhiteSpace($EmailSender)) { $EmailSender = "no-reply@jurisdigta.eu" }
@@ -212,6 +246,7 @@ if ([string]::IsNullOrWhiteSpace($EmailSmtpHost)) { $EmailSmtpHost = "mail.webho
 if ([string]::IsNullOrWhiteSpace($EmailSmtpPort)) { $EmailSmtpPort = "587" }
 if ([string]::IsNullOrWhiteSpace($EmailSmtpUseTls)) { $EmailSmtpUseTls = "true" }
 if ([string]::IsNullOrWhiteSpace($EmailSmtpUsername)) { $EmailSmtpUsername = "no-reply@jurisdigta.eu" }
+$JobName = Resolve-AcaJobName -Name "JobName" -Value $JobName -DefaultValue "email-scheduler"
 $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "*/5 * * * *"
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId

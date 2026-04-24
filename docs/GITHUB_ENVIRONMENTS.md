@@ -227,7 +227,7 @@ These are used by the dedicated email scheduler deployment workflow and by `infr
 
 | Variable | Purpose |
 | --- | --- |
-| `AZURE_EMAIL_SCHEDULER_JOB_NAME` | Optional ACA job name for the email scheduler, default `email_scheduler` |
+| `AZURE_EMAIL_SCHEDULER_JOB_NAME` | Optional ACA job name for the email scheduler, default `email-scheduler` |
 | `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION` | Optional 5-field cron schedule for the email scheduler ACA job, default `*/5 * * * *`; legacy `0 */5 * * * *` values are normalized during deployment |
 | `EMAIL_TRANSPORT` | Email delivery transport for the job, normally `smtp` in Azure |
 | `EMAIL_SENDER` | Outbound sender address, default `no-reply@jurisdigta.eu` |
@@ -324,7 +324,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `EMAIL_SMTP_PORT=587`
 - `EMAIL_SMTP_USE_TLS=true`
 - `EMAIL_SMTP_USERNAME=no-reply@jurisdigta.eu`
-- `AZURE_EMAIL_SCHEDULER_JOB_NAME=email_scheduler`
+- `AZURE_EMAIL_SCHEDULER_JOB_NAME=email-scheduler`
 - `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION=*/5 * * * *`
 - secret `EMAIL_SMTP_PASSWORD`
 - `CAR_VALIDATION_API_BASE_URL` and secret `CAR_VALIDATION_API_KEY` when live vehicle checks should run in that environment
