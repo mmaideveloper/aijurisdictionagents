@@ -118,7 +118,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `LAWS_COLLECTOR_IMPORT` | Laws collector import mode. Default `zip`; set `one_law_url` to keep the older sequential per-law probe importer |
 | `LAWS_STORAGE_CLOUD` | Optional explicit blob container URL override for laws source storage. When unset, the deploy derives `https://<AZURE_STORAGE_ACCOUNT_NAME>.blob.core.windows.net/<AZURE_LAWS_STORAGE_CONTAINER_NAME or laws-collection-sk>` |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
-| `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `*/15 * * * *` |
+| `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `*/15 * * * *`; comma-list values such as `0,15,30,45 * * * *` are supported |
 | `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME` | Optional max runtime per document-processor Azure run in minutes; default `15`, set `0` for unlimited |
 | `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode; Azure API deployments default to `azure`, while `local` is only for local/dev API runs without the ACA job |
 | `EMAIL_TRANSPORT` | API email transport. Use `smtp` for deployed email delivery; use `log` only for queue/log testing |
