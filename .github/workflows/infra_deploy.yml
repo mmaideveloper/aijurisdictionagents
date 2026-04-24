@@ -152,10 +152,26 @@ jobs:
       - name: Resolve laws collector settings
         id: laws
         run: |
+          trim_single_line() {
+            printf '%s' "$1" | tr -d '\r\n'
+          }
+
+          write_output() {
+            local name="$1"
+            local value="$2"
+            local delimiter="EOF_${name}_$(date +%s%N)"
+            {
+              echo "${name}<<${delimiter}"
+              printf '%s\n' "$value"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          }
+
           normalize_aca_cron() {
             local value="$1"
             local default_value="$2"
-            local resolved="$value"
+            local resolved
+            resolved="$(trim_single_line "$value")"
 
             if [ -z "$resolved" ]; then
               resolved="$default_value"
@@ -187,20 +203,36 @@ jobs:
           laws_import="${LAWS_COLLECTOR_IMPORT:-zip}"
           laws_postgres_database="${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}"
 
-          echo "laws_job_name=$laws_job_name" >> "$GITHUB_OUTPUT"
-          echo "laws_cron_expression=$laws_cron_expression" >> "$GITHUB_OUTPUT"
-          echo "laws_max_probes=$laws_max_probes" >> "$GITHUB_OUTPUT"
-          echo "laws_max_running_time=$laws_max_running_time" >> "$GITHUB_OUTPUT"
-          echo "laws_import=$laws_import" >> "$GITHUB_OUTPUT"
-          echo "laws_postgres_database_name=$laws_postgres_database" >> "$GITHUB_OUTPUT"
+          write_output "laws_job_name" "$(trim_single_line "$laws_job_name")"
+          write_output "laws_cron_expression" "$(trim_single_line "$laws_cron_expression")"
+          write_output "laws_max_probes" "$(trim_single_line "$laws_max_probes")"
+          write_output "laws_max_running_time" "$(trim_single_line "$laws_max_running_time")"
+          write_output "laws_import" "$(trim_single_line "$laws_import")"
+          write_output "laws_postgres_database_name" "$(trim_single_line "$laws_postgres_database")"
 
       - name: Resolve document processor settings
         id: documentprocessor
         run: |
+          trim_single_line() {
+            printf '%s' "$1" | tr -d '\r\n'
+          }
+
+          write_output() {
+            local name="$1"
+            local value="$2"
+            local delimiter="EOF_${name}_$(date +%s%N)"
+            {
+              echo "${name}<<${delimiter}"
+              printf '%s\n' "$value"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          }
+
           normalize_aca_cron() {
             local value="$1"
             local default_value="$2"
-            local resolved="$value"
+            local resolved
+            resolved="$(trim_single_line "$value")"
 
             if [ -z "$resolved" ]; then
               resolved="$default_value"
@@ -234,14 +266,14 @@ jobs:
           azure_openai_embeddings_model="${AZURE_OPENAI_EMBEDDINGS_MODEL:-text-embedding-3-large}"
           azure_openai_api_version="${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}"
 
-          echo "document_processor_job_name=$document_processor_job" >> "$GITHUB_OUTPUT"
-          echo "document_processor_cron_expression=$document_processor_cron" >> "$GITHUB_OUTPUT"
-          echo "document_processor_max_running_time=$document_processor_max_running_time" >> "$GITHUB_OUTPUT"
-          echo "llm_provider=$llm_provider" >> "$GITHUB_OUTPUT"
-          echo "system_embedding_model_option=$system_embedding_model_option" >> "$GITHUB_OUTPUT"
-          echo "system_embedding_model=$system_embedding_model" >> "$GITHUB_OUTPUT"
-          echo "azure_openai_embeddings_model=$azure_openai_embeddings_model" >> "$GITHUB_OUTPUT"
-          echo "azure_openai_api_version=$azure_openai_api_version" >> "$GITHUB_OUTPUT"
+          write_output "document_processor_job_name" "$(trim_single_line "$document_processor_job")"
+          write_output "document_processor_cron_expression" "$(trim_single_line "$document_processor_cron")"
+          write_output "document_processor_max_running_time" "$(trim_single_line "$document_processor_max_running_time")"
+          write_output "llm_provider" "$(trim_single_line "$llm_provider")"
+          write_output "system_embedding_model_option" "$(trim_single_line "$system_embedding_model_option")"
+          write_output "system_embedding_model" "$(trim_single_line "$system_embedding_model")"
+          write_output "azure_openai_embeddings_model" "$(trim_single_line "$azure_openai_embeddings_model")"
+          write_output "azure_openai_api_version" "$(trim_single_line "$azure_openai_api_version")"
 
       - name: Detect existing resources and resolve deployment mode
         id: existing
