@@ -127,7 +127,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `EMAIL_SMTP_PORT` | SMTP port, default `587` |
 | `EMAIL_SMTP_USE_TLS` | SMTP STARTTLS flag, default `true` |
 | `EMAIL_SMTP_USERNAME` | SMTP username, default `no-reply@jurisdigta.eu` |
-| `EMAIL_SCHEDULER_ENABLED` | Optional email scheduler toggle for API replicas, default `true` |
+| `EMAIL_SCHEDULER_ENABLED` | Optional email scheduler toggle for API replicas, default `true`; set `false` when a dedicated Azure email scheduler job is deployed |
 | `EMAIL_SCHEDULER_INTERVAL_SECONDS` | Optional scheduler interval, default `60` |
 | `CAR_VALIDATION_API_BASE_URL` | Optional vehicle validation API base URL, for example `https://www.databazavozidiel.sk`; leave unset to skip live car API checks |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
@@ -221,7 +221,45 @@ The laws collector workflow reuses these shared Azure deployment variables:
 - `AZURE_POSTGRES_ADMIN_USERNAME`
 - secret `AZURE_POSTGRES_ADMIN_PASSWORD`
 
-## 9. Configure Mobile Build Variables
+## 9. Configure Email Scheduler Job Variables
+
+These are used by the dedicated email scheduler deployment workflow:
+
+| Variable | Purpose |
+| --- | --- |
+| `AZURE_EMAIL_SCHEDULER_JOB_NAME` | Optional ACA job name for the email scheduler, default `email_scheduler` |
+| `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION` | Optional 5-field cron schedule for the email scheduler ACA job, default `*/5 * * * *`; legacy `0 */5 * * * *` values are normalized during deployment |
+| `EMAIL_TRANSPORT` | Email delivery transport for the job, normally `smtp` in Azure |
+| `EMAIL_SENDER` | Outbound sender address, default `no-reply@jurisdigta.eu` |
+| `EMAIL_SMTP_HOST` | SMTP host, default `mail.webhouse.sk` |
+| `EMAIL_SMTP_PORT` | SMTP port, default `587` |
+| `EMAIL_SMTP_USE_TLS` | SMTP STARTTLS flag, default `true` |
+| `EMAIL_SMTP_USERNAME` | SMTP username, default `no-reply@jurisdigta.eu` |
+
+Required secret when `EMAIL_TRANSPORT=smtp`:
+
+| Secret | Purpose |
+| --- | --- |
+| `EMAIL_SMTP_PASSWORD` | SMTP mailbox password used by the email scheduler ACA job |
+
+The email scheduler workflow reuses these shared Azure deployment variables:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `AZURE_RESOURCE_GROUP`
+- `AZURE_LOCATION`
+- `AZURE_CONTAINERAPPS_ENVIRONMENT`
+- `AZURE_CONTAINER_REGISTRY`
+- `AZURE_MANAGED_IDENTITY_NAME`
+- `AZURE_POSTGRES_SERVER_NAME`
+- `AZURE_POSTGRES_DATABASE_NAME`
+- `AZURE_POSTGRES_ADMIN_USERNAME`
+- secret `AZURE_POSTGRES_ADMIN_PASSWORD`
+
+Keep `EMAIL_SCHEDULER_ENABLED=false` on the API Container App when this dedicated email job is enabled, so API replicas only write to `email_outbox`.
+
+## 10. Configure Mobile Build Variables
 
 The mobile workflow reads the API base URL from the selected GitHub Environment.
 
@@ -244,7 +282,7 @@ Paste those values without extra whitespace. The mobile workflow trims accidenta
 line breaks, validates the keystore and alias with `keytool`, and warns early if
 the selected GitHub Environment contains stale or mismatched signing secrets.
 
-## 10. Populate `test` and `prod`
+## 11. Populate `test` and `prod`
 
 The fastest approach is:
 
@@ -286,10 +324,12 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `EMAIL_SMTP_PORT=587`
 - `EMAIL_SMTP_USE_TLS=true`
 - `EMAIL_SMTP_USERNAME=no-reply@jurisdigta.eu`
+- `AZURE_EMAIL_SCHEDULER_JOB_NAME=email_scheduler`
+- `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION=*/5 * * * *`
 - secret `EMAIL_SMTP_PASSWORD`
 - `CAR_VALIDATION_API_BASE_URL` and secret `CAR_VALIDATION_API_KEY` when live vehicle checks should run in that environment
 
-## 11. Run the Workflows Against the New Environment
+## 12. Run the Workflows Against the New Environment
 
 Use manual workflow dispatch and set `github_environment` to `test` or `prod`.
 
@@ -300,20 +340,22 @@ Typical order:
 3. `API Build and Deploy`
 4. `Document Processor Build and Deploy`
 5. `Laws Collector Build and Deploy`
-6. `web_build_deploy`
-7. `mobile_flutter_build`
+6. `Email Scheduler Build and Deploy`
+7. `web_build_deploy`
+8. `mobile_flutter_build`
 
 Recommended deployed value:
 
 - `DOCUMENT_PROCESSOR_OPTION=azure` for `dev`, `test`, and `prod`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` for `dev`, `test`, and `prod` unless you explicitly want Azure/OpenAI embeddings
 - Keep `DOCUMENT_PROCESSOR_OPTION=local` only in local workstation `.env` files when you want the API process to extract documents immediately without waiting for the ACA job
+- When `Email Scheduler Build and Deploy` is used, set `EMAIL_SCHEDULER_ENABLED=false` on the API Container App so the API only queues emails and the ACA job delivers them on schedule
 
 Observability note:
 
 - The API observability endpoint reuses `AZURE_LOG_ANALYTICS_WORKSPACE_NAME` and `AZURE_MANAGED_IDENTITY_NAME` directly. Do not add separate `APPLICATIONINSIGHTS_*` runtime variables for that feature.
 
-## 12. Current Workflow Defaults
+## 13. Current Workflow Defaults
 
 Some workflows default to `dev` for push-based execution.
 
@@ -326,9 +368,10 @@ That means:
 - `API Build and Deploy` injects SMTP settings and vehicle validation settings into the API Container App; `EMAIL_SMTP_PASSWORD` and `CAR_VALIDATION_API_KEY` are stored as Container App secrets.
 - `API Build and Deploy` fails during environment validation when `EMAIL_TRANSPORT=smtp` and `EMAIL_SMTP_PASSWORD` is empty.
 - `Laws Collector Build and Deploy` now deploys automatically to `dev` on `push` to `main` after its tests/build pass
+- `Email Scheduler Build and Deploy` deploys the dedicated ACA Job to `dev` on `push` to `main` when API/email scheduler files change
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 
-## 13. Quick Validation Checklist
+## 14. Quick Validation Checklist
 
 After setup, verify:
 
@@ -340,6 +383,7 @@ After setup, verify:
 - required Azure variables are set in both environments
 - required secrets are set in both environments
 - `EMAIL_SMTP_PASSWORD` is set when `EMAIL_TRANSPORT=smtp`
+- `AZURE_EMAIL_SCHEDULER_JOB_NAME` and `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION` are set when the dedicated email ACA job should run
 - optional `CAR_VALIDATION_API_BASE_URL` and `CAR_VALIDATION_API_KEY` are set together when live vehicle validation should be enabled
 - `workflow_dispatch` works with `github_environment=test`
 - `workflow_dispatch` works with `github_environment=prod`

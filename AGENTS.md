@@ -103,6 +103,9 @@ Custom project skills:
 - `start-postgres` at `skills/start-postgres/SKILL.md`
   - Purpose: start or reuse the local PostgreSQL Docker instance and apply schema updates.
   - Script: `.\skills\start-postgres\scripts\start_postgres.ps1`
+- `start-email` at `skills/start-email/SKILL.md`
+  - Purpose: start and monitor the local email scheduler against the local API email outbox database.
+  - Script: `.\skills\start-email\scripts\start_email_scheduler.ps1`
 - `start-mobile` at `skills/start-mobile/SKILL.md`
   - Purpose: start and verify the local Flutter mobile app using the same skill name available on this machine.
   - Script: `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`
