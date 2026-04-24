@@ -103,6 +103,9 @@ Custom project skills:
 - `start-postgres` at `skills/start-postgres/SKILL.md`
   - Purpose: start or reuse the local PostgreSQL Docker instance and apply schema updates.
   - Script: `.\skills\start-postgres\scripts\start_postgres.ps1`
+- `start-email` at `skills/start-email/SKILL.md`
+  - Purpose: start and monitor the local email scheduler against the local API email outbox database.
+  - Script: `.\skills\start-email\scripts\start_email_scheduler.ps1`
 - `start-mobile` at `skills/start-mobile/SKILL.md`
   - Purpose: start and verify the local Flutter mobile app using the same skill name available on this machine.
   - Script: `.\skills\start-mobile-app\scripts\start_mobile_app.ps1`
@@ -115,3 +118,8 @@ Custom project skills:
 - `frontend-api` at `skills/frontend-api/SKILL.md`
   - Purpose: alias skill to start frontend wired to API using the same launcher.
   - Script: `.\skills\start-frontend-api\scripts\start_frontend_api.ps1`
+
+Deployment info:
+Created new domain juridigta.eu
+with SSL and subdomains.
+jurisdigta.eu, www.jurisdigta.eu, api.jurisdigta.eu,  web.jurisdigta.eu, services.jurisdigta.eu, admin.jurisdigta.eu

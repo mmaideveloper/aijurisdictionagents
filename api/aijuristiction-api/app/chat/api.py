@@ -2572,7 +2572,7 @@ def _draw_jurisdicta_corporate_header(
 
     contact_lines = (
         "Poprad, Slovakia, 05801",
-        "info@jurisdicta.eu",
+        "info@jurisdigta.eu",
         "+421 950 425 113",
     )
     pdf.setFillColor(body_text)

@@ -5,6 +5,8 @@ param frontendContainerAppName string
 param documentProcessorJobName string = 'document-processor'
 param documentProcessorCronExpression string = '*/15 * * * *'
 param documentProcessorMaxRunningTime int = 15
+param emailSchedulerJobName string = 'email-scheduler'
+param emailSchedulerCronExpression string = '*/5 * * * *'
 param lawsCollectorJobName string = 'laws-collector'
 param lawsCollectorCronExpression string = '0 0 * * *'
 param lawsCollectorMaxProbes int = 1
@@ -49,8 +51,12 @@ param createApplicationInsights bool = true
 param createContainerApp bool = true
 param createFrontendContainerApp bool = true
 param createDocumentProcessorJob bool = true
+param createEmailSchedulerJob bool = true
 param createLawsCollectorJob bool = true
 param createPostgresServer bool = true
+param createAcrPullRoleAssignment bool = true
+param createStorageBlobDataRoleAssignment bool = true
+param createLogAnalyticsDataReaderRoleAssignment bool = true
 param tags object = {}
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (createLogAnalyticsWorkspace) {
@@ -316,8 +322,6 @@ var managedIdentityId = createManagedIdentity ? managedIdentity.id : managedIden
 var managedIdentityPrincipalId = createManagedIdentity
   ? managedIdentity.properties.principalId
   : managedIdentityExisting.properties.principalId
-var createAcrPullRoleAssignment = createContainerApp || createAcr || createManagedIdentity
-var createStorageBlobDataRoleAssignment = createContainerApp || createStorageAccount || createManagedIdentity
 
 resource acrPullRoleAssignmentOnNewAcr 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createAcrPullRoleAssignment && createAcr) {
   name: guid(acrId, managedIdentityId, 'AcrPull')
@@ -371,7 +375,7 @@ resource storageBlobDataRoleAssignmentOnExistingStorage 'Microsoft.Authorization
   }
 }
 
-resource logAnalyticsDataReaderRoleAssignmentOnNewWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createLogAnalyticsWorkspace) {
+resource logAnalyticsDataReaderRoleAssignmentOnNewWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createLogAnalyticsDataReaderRoleAssignment && createLogAnalyticsWorkspace) {
   name: guid(logAnalyticsWorkspace.id, managedIdentityId, 'LogAnalyticsDataReader')
   scope: logAnalyticsWorkspace
   properties: {
@@ -384,7 +388,7 @@ resource logAnalyticsDataReaderRoleAssignmentOnNewWorkspace 'Microsoft.Authoriza
   }
 }
 
-resource logAnalyticsDataReaderRoleAssignmentOnExistingWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!createLogAnalyticsWorkspace) {
+resource logAnalyticsDataReaderRoleAssignmentOnExistingWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createLogAnalyticsDataReaderRoleAssignment && !createLogAnalyticsWorkspace) {
   name: guid(logAnalyticsWorkspaceExisting.id, managedIdentityId, 'LogAnalyticsDataReader')
   scope: logAnalyticsWorkspaceExisting
   properties: {
@@ -520,6 +524,40 @@ module documentProcessorJob 'document_processor.job.bicep' = if (createDocumentP
 
 resource documentProcessorJobExisting 'Microsoft.App/jobs@2024-03-01' existing = if (!createDocumentProcessorJob) {
   name: documentProcessorJobName
+}
+
+module emailSchedulerJob 'email_scheduler.job.bicep' = if (createEmailSchedulerJob) {
+  name: 'emailSchedulerJob'
+  params: {
+    location: location
+    managedEnvironmentName: environmentName
+    jobName: emailSchedulerJobName
+    cronExpression: emailSchedulerCronExpression
+    acrName: acrName
+    managedIdentityName: managedIdentityName
+    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    postgresServerName: postgresServerName
+    postgresDatabaseName: postgresDatabaseName
+    postgresAdminUsername: postgresAdminUsername
+    postgresAdminPassword: postgresAdminPassword
+    postgresConnectionString: postgresConnectionString
+    applicationInsightsConnectionString: createApplicationInsights
+      ? applicationInsights.properties.ConnectionString
+      : applicationInsightsExisting.properties.ConnectionString
+    tags: tags
+  }
+  dependsOn: [
+    managedEnvironment
+    acr
+    managedIdentity
+    postgresServer
+    postgresDatabaseOnNewServer
+    postgresDatabaseOnExistingServer
+  ]
+}
+
+resource emailSchedulerJobExisting 'Microsoft.App/jobs@2024-03-01' existing = if (!createEmailSchedulerJob) {
+  name: emailSchedulerJobName
 }
 
 module lawsCollectorJob 'laws_collector.job.bicep' = if (createLawsCollectorJob) {

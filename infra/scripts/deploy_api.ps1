@@ -467,7 +467,21 @@ function Convert-EnvFileToPairs {
         "DB_OPTION",
         "DB_CLOUD",
         "STORAGE_OPTION",
-        "STORE_CLOUD"
+        "STORE_CLOUD",
+        "EMAIL_DB_OPTION",
+        "EMAIL_DB_CLOUD",
+        "EMAIL_DB_LOCAL",
+        "EMAIL_TRANSPORT",
+        "EMAIL_SENDER",
+        "EMAIL_SMTP_HOST",
+        "EMAIL_SMTP_PORT",
+        "EMAIL_SMTP_USE_TLS",
+        "EMAIL_SMTP_USERNAME",
+        "EMAIL_SMTP_PASSWORD",
+        "EMAIL_SCHEDULER_ENABLED",
+        "EMAIL_SCHEDULER_INTERVAL_SECONDS",
+        "CAR_VALIDATION_API_BASE_URL",
+        "CAR_VALIDATION_API_KEY"
     )
 
     $pairs = New-Object System.Collections.Generic.List[string]
@@ -1044,11 +1058,37 @@ $applicationInsightsConnectionString = Resolve-InputValue `
 if ([string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
     $applicationInsightsConnectionString = $applicationInsightsConnectionStringOutput
 }
+$emailSmtpPasswordFromEnvFile = if ($resolvedEnvFilePath) {
+    Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "EMAIL_SMTP_PASSWORD"
+}
+else {
+    ""
+}
+$emailSmtpPassword = Resolve-InputValue `
+    -ExplicitValue "" `
+    -EnvFileValue $emailSmtpPasswordFromEnvFile `
+    -EnvironmentValue $env:EMAIL_SMTP_PASSWORD
+$carValidationApiKeyFromEnvFile = if ($resolvedEnvFilePath) {
+    Get-ValueFromEnvFile -Path $resolvedEnvFilePath -Key "CAR_VALIDATION_API_KEY"
+}
+else {
+    ""
+}
+$carValidationApiKey = Resolve-InputValue `
+    -ExplicitValue "" `
+    -EnvFileValue $carValidationApiKeyFromEnvFile `
+    -EnvironmentValue $env:CAR_VALIDATION_API_KEY
 $secretPairs = New-Object System.Collections.Generic.List[string]
 $secretPairs.Add("db-cloud=$dbCloud")
 $secretPairs.Add("laws-db-cloud=$lawsDbCloud")
 if (-not [string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
     $secretPairs.Add("applicationinsights-connection-string=$applicationInsightsConnectionString")
+}
+if (-not [string]::IsNullOrWhiteSpace($emailSmtpPassword)) {
+    $secretPairs.Add("email-smtp-password=$emailSmtpPassword")
+}
+if (-not [string]::IsNullOrWhiteSpace($carValidationApiKey)) {
+    $secretPairs.Add("car-validation-api-key=$carValidationApiKey")
 }
 az containerapp secret set `
     --name $ContainerAppName `
@@ -1063,7 +1103,7 @@ $envPairs = Convert-EnvFileToPairs -Path $resolvedEnvFilePath
 $envPairsList = New-Object System.Collections.Generic.List[string]
 foreach ($item in $envPairs) {
     $key = $item.Split("=", 2)[0]
-    if ($key -in @("DB_OPTION", "DB_CLOUD", "DB_LOCAL", "LAWS_COUNTRY", "LAWS_DB_BACKEND", "LAWS_DB_CLOUD", "STORAGE_OPTION", "STORE_CLOUD", "STORE_LOCAL", "APPLICATIONINSIGHTS_CONNECTION_STRING", "DOCUMENT_PROCESSOR_OPTION")) {
+    if ($key -in @("DB_OPTION", "DB_CLOUD", "DB_LOCAL", "LAWS_COUNTRY", "LAWS_DB_BACKEND", "LAWS_DB_CLOUD", "STORAGE_OPTION", "STORE_CLOUD", "STORE_LOCAL", "APPLICATIONINSIGHTS_CONNECTION_STRING", "DOCUMENT_PROCESSOR_OPTION", "EMAIL_DB_OPTION", "EMAIL_DB_CLOUD", "EMAIL_DB_LOCAL", "EMAIL_SMTP_PASSWORD", "CAR_VALIDATION_API_KEY")) {
         continue
     }
     $envPairsList.Add($item)
@@ -1077,11 +1117,20 @@ $envPairsList.Add("LAWS_DB_CLOUD=secretref:laws-db-cloud")
 $envPairsList.Add("STORAGE_OPTION=azure")
 $envPairsList.Add("STORE_LOCAL=/tmp/storage")
 $envPairsList.Add("DOCUMENT_PROCESSOR_OPTION=azure")
+$envPairsList.Add("EMAIL_DB_OPTION=azure")
+$envPairsList.Add("EMAIL_DB_CLOUD=secretref:db-cloud")
+$envPairsList.Add("EMAIL_DB_LOCAL=/tmp/email.sqlite3")
 if (-not [string]::IsNullOrWhiteSpace($storeCloud)) {
     $envPairsList.Add("STORE_CLOUD=$storeCloud")
 }
 if (-not [string]::IsNullOrWhiteSpace($applicationInsightsConnectionString)) {
     $envPairsList.Add("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string")
+}
+if (-not [string]::IsNullOrWhiteSpace($emailSmtpPassword)) {
+    $envPairsList.Add("EMAIL_SMTP_PASSWORD=secretref:email-smtp-password")
+}
+if (-not [string]::IsNullOrWhiteSpace($carValidationApiKey)) {
+    $envPairsList.Add("CAR_VALIDATION_API_KEY=secretref:car-validation-api-key")
 }
 $envPairsList.Add("AZURE_LOG_ANALYTICS_WORKSPACE_NAME=$LogAnalyticsWorkspaceName")
 $envPairsList.Add("AZURE_MANAGED_IDENTITY_NAME=$ManagedIdentityName")

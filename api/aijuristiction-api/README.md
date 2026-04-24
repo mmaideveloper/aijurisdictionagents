@@ -411,7 +411,19 @@ Run scheduler as a separate process (recommended for ACA split deployment):
 python -m app.email_scheduler_main
 ```
 
-For API-only replicas set `EMAIL_SCHEDULER_ENABLED=false`; run exactly one scheduler replica/process with it enabled.
+Run a one-shot batch for the Azure Container Apps Job:
+
+```bash
+python -m app.email_scheduler_job_main
+```
+
+For local repo-managed startup, use:
+
+```powershell
+.\skills\start-email\scripts\start_email_scheduler.ps1 -Background
+```
+
+For API-only replicas set `EMAIL_SCHEDULER_ENABLED=false`; run exactly one scheduler replica/process or ACA Job with delivery enabled.
 
 User and subscription endpoints support email notifications with configurable transport:
 
@@ -420,11 +432,11 @@ User and subscription endpoints support email notifications with configurable tr
 
 SMTP configuration (used when `EMAIL_TRANSPORT=smtp`):
 
-- `EMAIL_SENDER` (default: `noreply@aijurisdiction.local`)
-- `EMAIL_SMTP_HOST` (default: `localhost`)
-- `EMAIL_SMTP_PORT` (default: `1025`)
-- `EMAIL_SMTP_USE_TLS` (default: `false`)
-- `EMAIL_SMTP_USERNAME` (optional)
+- `EMAIL_SENDER` (default: `no-reply@jurisdigta.eu`)
+- `EMAIL_SMTP_HOST` (default: `mail.webhouse.sk`)
+- `EMAIL_SMTP_PORT` (default: `587`)
+- `EMAIL_SMTP_USE_TLS` (default: `true`)
+- `EMAIL_SMTP_USERNAME` (default: `EMAIL_SENDER`)
 - `EMAIL_SMTP_PASSWORD` (optional)
 
 Email enqueue message composition for these endpoints is centralized in `app/users/notifications.py` to keep endpoint handlers small and reduce merge conflicts with payment/subscription feature work.
@@ -435,6 +447,7 @@ Email enqueue message composition for these endpoints is centralized in `app/use
   - request: `payment_id` returned from checkout
   - payment simulation rule: only user phone `+421944400166` is allowed to complete payment successfully
   - all other phone numbers receive simulated payment failure and the requested subscription is canceled (no upgrade)
+  - queues the payment status email notification after the simulated payment result is applied
 
 ### Subscription payment flow (PayPal / Google Pay simulation)
 

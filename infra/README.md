@@ -34,6 +34,7 @@ ACA resources created by repository deployments:
 - Frontend Container App: `AZURE_FRONTEND_CONTAINER_APP_NAME`
 - Laws Collector Container App: `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
 - Document Processor ACA Job: `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`
+- Email Scheduler ACA Job: `AZURE_EMAIL_SCHEDULER_JOB_NAME`
 
 ## Prerequisites
 
@@ -165,6 +166,7 @@ The Bicep deployment provisions or reuses:
 - `azure.extensions=vector`
 - Public frontend Azure Container App (`AZURE_FRONTEND_CONTAINER_APP_NAME`)
 - Document processor ACA Job (`AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, default `document-processor`)
+- Email scheduler ACA Job (`AZURE_EMAIL_SCHEDULER_JOB_NAME`, default `email-scheduler`)
 - Private Azure Container App for the laws collector (`AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, default `laws-collector`)
 
 Existing-resource behavior:
@@ -172,6 +174,7 @@ Existing-resource behavior:
 - If a named resource already exists in the target resource group, deployment reuses it instead of creating it again.
 - The deploy script requires existing named resources to already be in the requested location. If a resource with the same name exists in a different region, deployment fails with a location mismatch instead of silently switching regions.
 - Shared RBAC assignments for the user-assigned managed identity are intentionally keyed only by `scope + principal + role`. This keeps `AcrPull` and `Storage Blob Data Contributor` idempotent across `infra_deploy`, laws collector, frontend, and document processor workflows.
+- `infra_deploy` also checks Azure for equivalent existing RBAC assignments on ACR, Storage, and Log Analytics before running the ARM deployment. This avoids `RoleAssignmentExists` failures when an assignment already exists under a different Azure-generated role-assignment resource ID.
 
 Parameter resolution priority in `deploy_api.ps1`:
 
@@ -196,6 +199,17 @@ user-assigned managed identity client ID.
 `STORE_CLOUD` is set as a blob URL prefix, not as a secret.
 If `CORS_ALLOW_ORIGINS` is present in `.env`, the script passes it through to the API container unchanged.
 Use that only for deployed browser clients such as Flutter web. Native Android/iOS builds do not require CORS configuration.
+Email deployment settings are also passed through to the API container. Non-secret values such as
+`EMAIL_TRANSPORT`, `EMAIL_SENDER`, `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_SMTP_USE_TLS`,
+`EMAIL_SMTP_USERNAME`, `EMAIL_SCHEDULER_ENABLED`, and `EMAIL_SCHEDULER_INTERVAL_SECONDS` are set as
+environment variables. `EMAIL_SMTP_PASSWORD` is stored as the Container Apps secret
+`email-smtp-password` and exposed as `EMAIL_SMTP_PASSWORD=secretref:email-smtp-password`.
+The deploy sets `EMAIL_DB_OPTION=azure` and `EMAIL_DB_CLOUD=secretref:db-cloud` so the email outbox
+uses the same Azure PostgreSQL deployment as the API. Vehicle validation deployment settings are
+handled the same way: `CAR_VALIDATION_API_BASE_URL` is a normal environment variable, while
+`CAR_VALIDATION_API_KEY` is stored as `car-validation-api-key` and exposed by secret reference.
+If you deploy the dedicated email scheduler ACA Job, set `EMAIL_SCHEDULER_ENABLED=false` on the API
+Container App so API replicas only enqueue emails and the scheduled job performs delivery.
 
 If your `.env` is at the repo root, no extra flag is needed. To use a different file:
 
@@ -442,6 +456,64 @@ Required GitHub Environment variables for frontend deployment:
 
 For a repo-level checklist to create additional GitHub Environments such as `test`
 and `prod`, see `docs/GITHUB_ENVIRONMENTS.md`.
+
+## Deploy email scheduler ACA job
+
+A dedicated deployment script and Bicep template are available for the email scheduler:
+
+- Script: `infra/scripts/deploy_email_scheduler.ps1`
+- Template: `infra/bicep/email_scheduler.job.bicep`
+
+The deployment builds `api/aijuristiction-api/Dockerfile`, publishes the image to ACR, applies the
+email PostgreSQL schema migrations from `databases/api/email`, and creates or updates a scheduled
+Azure Container Apps Job that runs `python -m app.email_scheduler_job_main`.
+
+Use this dedicated job when the deployed API should only enqueue emails. In that setup, set
+`EMAIL_SCHEDULER_ENABLED=false` on the API Container App.
+
+```powershell
+./infra/scripts/deploy_email_scheduler.ps1 \
+  -SubscriptionId "<subscription-id>" \
+  -ResourceGroupName "<resource-group>" \
+  -Location "westeurope" \
+  -ContainerAppEnvironmentName "<container-app-env-name>" \
+  -JobName "email-scheduler" \
+  -AcrName "<acr-name>" \
+  -ManagedIdentityName "<managed-identity-name>" \
+  -PostgresServerName "<postgres-server-name>" \
+  -PostgresDatabaseName "aijurisdiction" \
+  -PostgresAdminUsername "<postgres-admin-user>" \
+  -PostgresAdminPassword "<postgres-admin-password>" \
+  -CronExpression "*/5 * * * *" \
+  -ImageTag "latest"
+```
+
+GitHub Actions workflow:
+
+- Workflow file: `.github/workflows/email_build_deploy.yml`
+- Push to `main` for API/email scheduler changes: runs focused API tests, validates the Docker image build, and deploys to the `dev` GitHub Environment
+- Pull requests: run tests and Docker build only
+- Manual run: supports `deploy=true|false`, custom GitHub Environment, and optional image tag override
+- The deploy job temporarily opens the GitHub runner IP on Azure PostgreSQL, installs Python dependencies, applies `python scripts/databases/apply_db_migrations.py --project email`, and then deploys the ACA job
+
+Required GitHub Environment variables/secrets for deployment:
+
+- Variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_CONTAINERAPPS_ENVIRONMENT`, `AZURE_CONTAINER_REGISTRY`, `AZURE_MANAGED_IDENTITY_NAME`, `AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_DATABASE_NAME`, `AZURE_POSTGRES_ADMIN_USERNAME`
+- Variables: `EMAIL_TRANSPORT`, `EMAIL_SENDER`, `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_SMTP_USE_TLS`, `EMAIL_SMTP_USERNAME`
+- Secrets: `AZURE_POSTGRES_ADMIN_PASSWORD`
+- Secret: `EMAIL_SMTP_PASSWORD` when `EMAIL_TRANSPORT=smtp`
+- Optional variables: `AZURE_APPLICATION_INSIGHTS_NAME`, `AZURE_EMAIL_SCHEDULER_JOB_NAME`, `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION`
+
+Recommended GitHub Environment values:
+
+- `AZURE_EMAIL_SCHEDULER_JOB_NAME=email-scheduler`
+- `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION=*/5 * * * *`
+- `EMAIL_TRANSPORT=smtp`
+- `EMAIL_SENDER=no-reply@jurisdigta.eu`
+- `EMAIL_SMTP_HOST=mail.webhouse.sk`
+- `EMAIL_SMTP_PORT=587`
+- `EMAIL_SMTP_USE_TLS=true`
+- `EMAIL_SMTP_USERNAME=no-reply@jurisdigta.eu`
 
 ## Deploy laws collector ACA job
 

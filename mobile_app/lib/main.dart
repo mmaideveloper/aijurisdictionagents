@@ -154,7 +154,8 @@ class AppStrings {
       'verify_sign_in_code': 'Prihlásiť kódom',
       'sign_in_code_required': 'Prihlasovací kód *',
       'sign_in_code_sent': 'Prihlasovací kód bol odoslaný na e-mail.',
-      'sign_in_code_send_failed': 'Odoslanie prihlasovacieho kódu zlyhalo: {{error}}',
+      'sign_in_code_send_failed':
+          'Odoslanie prihlasovacieho kódu zlyhalo: {{error}}',
       'invalid_sign_in_code': 'Neplatný prihlasovací kód.',
       'sign_in_by_email_password': 'Prihlásiť cez e-mail a heslo',
       'sign_in_failed': 'Prihlásenie zlyhalo: {{error}}',
@@ -808,7 +809,8 @@ class AppStrings {
       'download_case_document': '{{filename}} herunterladen',
       'share_case_document': '{{filename}} teilen',
       'case_document_shared': 'Dokument wurde geteilt.',
-      'case_document_share_failed': 'Dokument konnte nicht geteilt werden: {{error}}',
+      'case_document_share_failed':
+          'Dokument konnte nicht geteilt werden: {{error}}',
       'case_document_download_failed':
           'Download des Dokuments fehlgeschlagen: {{error}}',
       'attached_document': 'Angehängtes Dokument: {{path}}',
@@ -3170,8 +3172,10 @@ class _AuthEntryPageState extends State<AuthEntryPage>
       }
       widget.onSignedIn(user);
     } catch (error, stackTrace) {
-      await widget.logger.error('Sign-in by phone OTP failed', error, stackTrace);
-      _showSnackbar(_strings.t('sign_in_failed', <String, String>{'error': '$error'}));
+      await widget.logger
+          .error('Sign-in by phone OTP failed', error, stackTrace);
+      _showSnackbar(
+          _strings.t('sign_in_failed', <String, String>{'error': '$error'}));
     } finally {
       if (mounted) {
         setState(() {
@@ -3414,7 +3418,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                 const Divider(),
                                                 const SizedBox(height: 8),
                                                 TextField(
-                                                  controller: _signInCodeController,
+                                                  controller:
+                                                      _signInCodeController,
                                                   keyboardType:
                                                       TextInputType.number,
                                                   autofillHints: const <String>[
@@ -3623,14 +3628,12 @@ class AccountSettingsPage extends StatefulWidget {
 }
 
 class _AccountSettingsPageState extends State<AccountSettingsPage> {
-  final DevicePhoneNumberService _devicePhoneNumberService =
-      const DevicePhoneNumberService();
   late final TextEditingController _phoneController;
+  late final TextEditingController _emailController;
   late final TextEditingController _passwordController;
   late final TextEditingController _firstNameController;
   late final TextEditingController _lastNameController;
   late LocaleOption _selectedLocale;
-  String? _devicePhoneNumber;
   bool _isSaving = false;
   bool _isLoadingSubscriptions = false;
   bool _isUpdatingSubscription = false;
@@ -3645,12 +3648,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   bool _isSharingLogs = false;
 
   AppStrings get _strings => AppStrings(_selectedLocale.languageCode);
-  bool get _isAndroidDevice =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-  bool get _lockPhoneNumberToDevice =>
-      _isAndroidDevice &&
-      _devicePhoneNumber != null &&
-      _devicePhoneNumber!.trim().isNotEmpty;
 
   UserSubscriptionInfo? get _latestSubscription {
     if (_subscriptions.isEmpty) {
@@ -3663,6 +3660,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   void initState() {
     super.initState();
     _phoneController = TextEditingController(text: widget.user.phoneNumber);
+    _emailController = TextEditingController(text: widget.user.email);
     _passwordController = TextEditingController(text: widget.user.password);
     _firstNameController =
         TextEditingController(text: widget.user.firstName ?? '');
@@ -3671,23 +3669,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     _selectedLocale = widget.selectedLocale;
     _speakerOutputEnabled = widget.speakerOutputEnabled;
     _debugModeEnabled = widget.logger.debugModeEnabled;
-    unawaited(_loadDevicePhoneNumber());
     _loadSubscriptions();
     _loadSpeakerVoices();
-  }
-
-  Future<void> _loadDevicePhoneNumber() async {
-    final devicePhoneNumber =
-        await _devicePhoneNumberService.getDevicePhoneNumber();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _devicePhoneNumber = devicePhoneNumber;
-      if (_lockPhoneNumberToDevice) {
-        _phoneController.text = devicePhoneNumber!;
-      }
-    });
   }
 
   Future<void> _loadSubscriptions() async {
@@ -3908,6 +3891,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   @override
   void dispose() {
     _phoneController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
@@ -3967,14 +3951,20 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           TextField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
-            readOnly: _lockPhoneNumberToDevice,
-            canRequestFocus: !_lockPhoneNumberToDevice,
-            enableInteractiveSelection: !_lockPhoneNumberToDevice,
+            readOnly: true,
             decoration: InputDecoration(
-              labelText: strings.t('phone_number_required'),
-              suffixIcon: _lockPhoneNumberToDevice
-                  ? const Icon(Icons.lock_outline)
-                  : null,
+              labelText: strings.t('phone_number'),
+              suffixIcon: const Icon(Icons.lock_outline),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            readOnly: true,
+            decoration: InputDecoration(
+              labelText: strings.t('email'),
+              suffixIcon: const Icon(Icons.lock_outline),
             ),
           ),
           const SizedBox(height: 12),
@@ -4554,7 +4544,8 @@ class _ChatHomePageState extends State<ChatHomePage>
       final tempDir = await Directory.systemTemp.createTemp('aij-share-');
       final file = File('${tempDir.path}/${payload.filename}');
       await file.writeAsBytes(payload.bytes, flush: true);
-      await Share.shareXFiles(<XFile>[XFile(file.path)], text: payload.filename);
+      await Share.shareXFiles(<XFile>[XFile(file.path)],
+          text: payload.filename);
       _showSnackbar(_strings.t('case_document_shared'));
     } catch (error) {
       _showSnackbar(

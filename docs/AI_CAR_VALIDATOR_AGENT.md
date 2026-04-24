@@ -53,6 +53,15 @@ Voliteľne sa mapujú aj základné údaje vozidla:
 
 - `brand/make`, `model/vehicleModel`, `year/modelYear`, `color/vehicleColor`
 
+## Deployment
+
+Pre Azure API deployment nastavte v GitHub Environment:
+
+- `CAR_VALIDATION_API_BASE_URL` ako premennú, napríklad `https://www.databazavozidiel.sk`
+- `CAR_VALIDATION_API_KEY` ako secret, ak poskytovateľ vyžaduje API kľúč
+
+`API Build and Deploy` a `infra/scripts/deploy_api.ps1` prenesú `CAR_VALIDATION_API_BASE_URL` do API Container App ako bežnú env premennú. `CAR_VALIDATION_API_KEY` sa ukladá ako Container Apps secret `car-validation-api-key` a do aplikácie sa vkladá cez `secretref:car-validation-api-key`.
+
 ## Automatické použitie pre car-dotazy
 
 Repo obsahuje pomocníka `answer_slovak_car_validation_question`, ktorý rozpozná car/VIN/SPZ otázky a spustí `slovakia_car_validate`, ak je v registri dostupný.

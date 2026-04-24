@@ -564,6 +564,69 @@ main {
   color: #fff;
 }
 
+.contact-email {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+}
+
+.contact-form {
+  flex: 1 1 420px;
+  display: grid;
+  gap: 1rem;
+  max-width: 560px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.contact-form label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.contact-form input,
+.contact-form textarea {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  padding: 0.8rem 0.9rem;
+  font: inherit;
+  color: #082046;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.contact-form textarea {
+  min-height: 132px;
+  resize: vertical;
+}
+
+.contact-form button {
+  width: fit-content;
+  border: 0;
+  cursor: pointer;
+}
+
+.form-status {
+  min-height: 1.4rem;
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 0.9rem;
+}
+
+.form-trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 .legal-grid {
   display: grid;
   gap: 1.5rem;
@@ -678,6 +741,15 @@ main {
     align-items: flex-start;
   }
 
+  .contact-form {
+    width: 100%;
+    max-width: none;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
   .footer {
     flex-direction: column;
     align-items: flex-start;
@@ -699,4 +771,3 @@ main {
     transition: none !important;
   }
 }
-

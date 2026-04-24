@@ -20,7 +20,7 @@ export const Footer: React.FC = () => {
       </nav>
       <div className="footer-meta">
         <span>(c) 2026 AIJurisdiction</span>
-        <span>contact@aijurisdiction.eu</span>
+        <span>info@jurisdigta.eu</span>
       </div>
     </footer>
   );

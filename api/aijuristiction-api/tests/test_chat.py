@@ -197,7 +197,7 @@ def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> No
     plain_text = _pdf_text(plain_pdf).lower()
 
     assert "poprad, slovakia, 05801" in corporate_text
-    assert "info@jurisdicta.eu" in corporate_text
+    assert "info@jurisdigta.eu" in corporate_text
     assert "template.net" not in corporate_text
     assert "api version" in corporate_text
     assert "system core version" in corporate_text

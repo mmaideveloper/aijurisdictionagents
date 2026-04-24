@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Juristiction Email Validation Tests</title>
+    <link rel="stylesheet" href="/static/simulator.css?v=__SIMULATOR_VERSION__" />
+  </head>
+  <body>
+    <main class="shell email-test-shell">
+      <div class="email-test-header">
+        <div>
+          <h1>Email Validation Tests</h1>
+          <p>Choose log or SMTP transport and send validation emails from the simulator.</p>
+        </div>
+        <a class="utility-link" href="/chat-simulator">Back to chat simulator</a>
+      </div>
+
+      <section class="grid row">
+        <div>
+          <label for="emailTransport">Email transport</label>
+          <select id="emailTransport">
+            <option value="log" selected>log</option>
+            <option value="smtp">smtp</option>
+          </select>
+        </div>
+        <div>
+          <label for="emailSender">Sender</label>
+          <input id="emailSender" type="email" value="no-reply@jurisdigta.eu" />
+        </div>
+        <div>
+          <label for="emailSmtpHost">SMTP host</label>
+          <input id="emailSmtpHost" value="mail.webhouse.sk" />
+        </div>
+        <div>
+          <label for="emailSmtpPort">SMTP port</label>
+          <input id="emailSmtpPort" type="number" min="1" value="587" />
+        </div>
+      </section>
+
+      <section class="grid row">
+        <div>
+          <label for="emailSmtpUseTls">SMTP TLS</label>
+          <select id="emailSmtpUseTls">
+            <option value="true" selected>true</option>
+            <option value="false">false</option>
+          </select>
+        </div>
+        <div>
+          <label for="emailSmtpUsername">SMTP username</label>
+          <input id="emailSmtpUsername" value="no-reply@jurisdigta.eu" />
+        </div>
+        <div>
+          <label for="emailSmtpPassword">SMTP password</label>
+          <input id="emailSmtpPassword" type="password" placeholder="Uses EMAIL_SMTP_PASSWORD when empty" />
+        </div>
+      </section>
+
+      <section class="grid row">
+        <div>
+          <label for="emailRecipient">Recipient email</label>
+          <input id="emailRecipient" type="email" value="info@jurisdigta.eu" />
+        </div>
+        <div>
+          <label for="emailPhone">Mobile phone</label>
+          <input id="emailPhone" value="+421944400166" />
+        </div>
+        <div>
+          <label for="emailPassword">Password</label>
+          <input id="emailPassword" type="password" value="secret123" />
+        </div>
+        <div>
+          <label for="emailDeviceId">Device ID</label>
+          <input id="emailDeviceId" value="chat-simulator-email-test" />
+        </div>
+      </section>
+
+      <section class="grid row">
+        <div>
+          <label for="emailFirstName">First name</label>
+          <input id="emailFirstName" value="Email" />
+        </div>
+        <div>
+          <label for="emailLastName">Last name</label>
+          <input id="emailLastName" value="Tester" />
+        </div>
+        <div>
+          <label for="emailPlan">Subscription plan</label>
+          <select id="emailPlan">
+            <option value="case">Case</option>
+            <option value="basic">Basic</option>
+            <option value="premium" selected>Premium</option>
+          </select>
+        </div>
+        <div>
+          <label for="emailPaymentProvider">Payment provider</label>
+          <select id="emailPaymentProvider">
+            <option value="paypal" selected>PayPal</option>
+            <option value="google_pay">Google Pay</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="email-test-actions row">
+        <button id="sendRegistrationEmail" type="button">Test: registration email</button>
+        <button id="sendOtpEmail" class="secondary" type="button">Test: mobile OTP email</button>
+        <button id="sendPaymentEmail" class="secondary" type="button">Test: payment email</button>
+      </section>
+
+      <section class="row">
+        <div id="emailTransportLinks" class="transport-links">
+          <a href="/internal/email-tests/logs" target="_blank" rel="noreferrer">Open email logs</a>
+          <a href="/internal/email-tests/emails" target="_blank" rel="noreferrer">Open generated emails</a>
+        </div>
+        <h2>Email Test Log</h2>
+        <pre id="emailTestLog">No email test sent yet.</pre>
+      </section>
+    </main>
+    <script src="/static/email-tests.js?v=__SIMULATOR_VERSION__"></script>
+  </body>
+</html>

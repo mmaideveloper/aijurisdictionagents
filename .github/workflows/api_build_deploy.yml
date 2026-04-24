@@ -99,6 +99,17 @@ jobs:
       DOCUMENT_PROCESSOR_OPTION: ${{ vars.DOCUMENT_PROCESSOR_OPTION || 'azure' }}
       SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'cloud' }}
       SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
+      EMAIL_TRANSPORT: ${{ vars.EMAIL_TRANSPORT || 'smtp' }}
+      EMAIL_SENDER: ${{ vars.EMAIL_SENDER || 'no-reply@jurisdigta.eu' }}
+      EMAIL_SMTP_HOST: ${{ vars.EMAIL_SMTP_HOST || 'mail.webhouse.sk' }}
+      EMAIL_SMTP_PORT: ${{ vars.EMAIL_SMTP_PORT || '587' }}
+      EMAIL_SMTP_USE_TLS: ${{ vars.EMAIL_SMTP_USE_TLS || 'true' }}
+      EMAIL_SMTP_USERNAME: ${{ vars.EMAIL_SMTP_USERNAME || 'no-reply@jurisdigta.eu' }}
+      EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+      EMAIL_SCHEDULER_ENABLED: ${{ vars.EMAIL_SCHEDULER_ENABLED || 'true' }}
+      EMAIL_SCHEDULER_INTERVAL_SECONDS: ${{ vars.EMAIL_SCHEDULER_INTERVAL_SECONDS || '60' }}
+      CAR_VALIDATION_API_BASE_URL: ${{ vars.CAR_VALIDATION_API_BASE_URL }}
+      CAR_VALIDATION_API_KEY: ${{ secrets.CAR_VALIDATION_API_KEY }}
     steps:
       - uses: actions/checkout@v5
 
@@ -111,6 +122,10 @@ jobs:
               missing=1
             fi
           done
+          if [ "${EMAIL_TRANSPORT,,}" = "smtp" ] && [ -z "${EMAIL_SMTP_PASSWORD:-}" ]; then
+            echo "Missing GitHub Environment secret: EMAIL_SMTP_PASSWORD is required when EMAIL_TRANSPORT=smtp"
+            missing=1
+          fi
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
@@ -303,6 +318,12 @@ jobs:
           if [ -n "${AZURE_OPENAI_API_KEY:-}" ]; then
             secret_values+=("azure-openai-api-key=$AZURE_OPENAI_API_KEY")
           fi
+          if [ -n "${EMAIL_SMTP_PASSWORD:-}" ]; then
+            secret_values+=("email-smtp-password=$EMAIL_SMTP_PASSWORD")
+          fi
+          if [ -n "${CAR_VALIDATION_API_KEY:-}" ]; then
+            secret_values+=("car-validation-api-key=$CAR_VALIDATION_API_KEY")
+          fi
 
           retry_containerapp_command "Preconfiguring Container App secrets" \
             az containerapp secret set \
@@ -477,6 +498,12 @@ jobs:
           if [ -n "${AZURE_OPENAI_API_KEY:-}" ]; then
             secret_values+=("azure-openai-api-key=$AZURE_OPENAI_API_KEY")
           fi
+          if [ -n "${EMAIL_SMTP_PASSWORD:-}" ]; then
+            secret_values+=("email-smtp-password=$EMAIL_SMTP_PASSWORD")
+          fi
+          if [ -n "${CAR_VALIDATION_API_KEY:-}" ]; then
+            secret_values+=("car-validation-api-key=$CAR_VALIDATION_API_KEY")
+          fi
           retry_containerapp_command "Setting Container App secrets" \
             az containerapp secret set \
             --name "$AZURE_CONTAINER_APP_NAME" \
@@ -498,8 +525,28 @@ jobs:
             DOCUMENT_PROCESSOR_OPTION=${DOCUMENT_PROCESSOR_OPTION:-azure}
             SYSTEM_EMBEDDING_MODEL_OPTION=${SYSTEM_EMBEDDING_MODEL_OPTION:-cloud}
             SYSTEM_EMBEDDING_MODEL=${SYSTEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+            EMAIL_DB_OPTION=azure
+            EMAIL_DB_CLOUD=secretref:db-cloud
+            EMAIL_DB_LOCAL=/tmp/email.sqlite3
+            EMAIL_TRANSPORT=${EMAIL_TRANSPORT:-smtp}
+            EMAIL_SENDER=${EMAIL_SENDER:-no-reply@jurisdigta.eu}
+            EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-mail.webhouse.sk}
+            EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+            EMAIL_SMTP_USE_TLS=${EMAIL_SMTP_USE_TLS:-true}
+            EMAIL_SMTP_USERNAME=${EMAIL_SMTP_USERNAME:-no-reply@jurisdigta.eu}
+            EMAIL_SCHEDULER_ENABLED=${EMAIL_SCHEDULER_ENABLED:-true}
+            EMAIL_SCHEDULER_INTERVAL_SECONDS=${EMAIL_SCHEDULER_INTERVAL_SECONDS:-60}
             OTEL_SERVICE_NAME=aijuristiction-api
           )
+          if [ -n "${EMAIL_SMTP_PASSWORD:-}" ]; then
+            env_vars+=(EMAIL_SMTP_PASSWORD=secretref:email-smtp-password)
+          fi
+          if [ -n "${CAR_VALIDATION_API_BASE_URL:-}" ]; then
+            env_vars+=(CAR_VALIDATION_API_BASE_URL="$CAR_VALIDATION_API_BASE_URL")
+          fi
+          if [ -n "${CAR_VALIDATION_API_KEY:-}" ]; then
+            env_vars+=(CAR_VALIDATION_API_KEY=secretref:car-validation-api-key)
+          fi
           if [ -n "${AZURE_OPENAI_ENDPOINT:-}" ]; then
             env_vars+=(AZURE_OPENAI_ENDPOINT="$AZURE_OPENAI_ENDPOINT")
           fi

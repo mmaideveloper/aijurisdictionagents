@@ -56,6 +56,8 @@ jobs:
       AZURE_DOCUMENT_PROCESSOR_JOB_NAME: ${{ vars.AZURE_DOCUMENT_PROCESSOR_JOB_NAME }}
       AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION: ${{ vars.AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION }}
       DOCUMENT_PROCESSOR_MAX_RUNNING_TIME: ${{ vars.DOCUMENT_PROCESSOR_MAX_RUNNING_TIME }}
+      AZURE_EMAIL_SCHEDULER_JOB_NAME: ${{ vars.AZURE_EMAIL_SCHEDULER_JOB_NAME }}
+      AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION: ${{ vars.AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION }}
       LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
       SYSTEM_EMBEDDING_MODEL_OPTION: ${{ vars.SYSTEM_EMBEDDING_MODEL_OPTION || 'local' }}
       SYSTEM_EMBEDDING_MODEL: ${{ vars.SYSTEM_EMBEDDING_MODEL || 'all-MiniLM-L6-v2' }}
@@ -152,10 +154,26 @@ jobs:
       - name: Resolve laws collector settings
         id: laws
         run: |
+          trim_single_line() {
+            printf '%s' "$1" | tr -d '\r\n'
+          }
+
+          write_output() {
+            local name="$1"
+            local value="$2"
+            local delimiter="EOF_${name}_$(date +%s%N)"
+            {
+              echo "${name}<<${delimiter}"
+              printf '%s\n' "$value"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          }
+
           normalize_aca_cron() {
             local value="$1"
             local default_value="$2"
-            local resolved="$value"
+            local resolved
+            resolved="$(trim_single_line "$value")"
 
             if [ -z "$resolved" ]; then
               resolved="$default_value"
@@ -187,20 +205,36 @@ jobs:
           laws_import="${LAWS_COLLECTOR_IMPORT:-zip}"
           laws_postgres_database="${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}"
 
-          echo "laws_job_name=$laws_job_name" >> "$GITHUB_OUTPUT"
-          echo "laws_cron_expression=$laws_cron_expression" >> "$GITHUB_OUTPUT"
-          echo "laws_max_probes=$laws_max_probes" >> "$GITHUB_OUTPUT"
-          echo "laws_max_running_time=$laws_max_running_time" >> "$GITHUB_OUTPUT"
-          echo "laws_import=$laws_import" >> "$GITHUB_OUTPUT"
-          echo "laws_postgres_database_name=$laws_postgres_database" >> "$GITHUB_OUTPUT"
+          write_output "laws_job_name" "$(trim_single_line "$laws_job_name")"
+          write_output "laws_cron_expression" "$(trim_single_line "$laws_cron_expression")"
+          write_output "laws_max_probes" "$(trim_single_line "$laws_max_probes")"
+          write_output "laws_max_running_time" "$(trim_single_line "$laws_max_running_time")"
+          write_output "laws_import" "$(trim_single_line "$laws_import")"
+          write_output "laws_postgres_database_name" "$(trim_single_line "$laws_postgres_database")"
 
       - name: Resolve document processor settings
         id: documentprocessor
         run: |
+          trim_single_line() {
+            printf '%s' "$1" | tr -d '\r\n'
+          }
+
+          write_output() {
+            local name="$1"
+            local value="$2"
+            local delimiter="EOF_${name}_$(date +%s%N)"
+            {
+              echo "${name}<<${delimiter}"
+              printf '%s\n' "$value"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          }
+
           normalize_aca_cron() {
             local value="$1"
             local default_value="$2"
-            local resolved="$value"
+            local resolved
+            resolved="$(trim_single_line "$value")"
 
             if [ -z "$resolved" ]; then
               resolved="$default_value"
@@ -234,14 +268,95 @@ jobs:
           azure_openai_embeddings_model="${AZURE_OPENAI_EMBEDDINGS_MODEL:-text-embedding-3-large}"
           azure_openai_api_version="${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}"
 
-          echo "document_processor_job_name=$document_processor_job" >> "$GITHUB_OUTPUT"
-          echo "document_processor_cron_expression=$document_processor_cron" >> "$GITHUB_OUTPUT"
-          echo "document_processor_max_running_time=$document_processor_max_running_time" >> "$GITHUB_OUTPUT"
-          echo "llm_provider=$llm_provider" >> "$GITHUB_OUTPUT"
-          echo "system_embedding_model_option=$system_embedding_model_option" >> "$GITHUB_OUTPUT"
-          echo "system_embedding_model=$system_embedding_model" >> "$GITHUB_OUTPUT"
-          echo "azure_openai_embeddings_model=$azure_openai_embeddings_model" >> "$GITHUB_OUTPUT"
-          echo "azure_openai_api_version=$azure_openai_api_version" >> "$GITHUB_OUTPUT"
+          write_output "document_processor_job_name" "$(trim_single_line "$document_processor_job")"
+          write_output "document_processor_cron_expression" "$(trim_single_line "$document_processor_cron")"
+          write_output "document_processor_max_running_time" "$(trim_single_line "$document_processor_max_running_time")"
+          write_output "llm_provider" "$(trim_single_line "$llm_provider")"
+          write_output "system_embedding_model_option" "$(trim_single_line "$system_embedding_model_option")"
+          write_output "system_embedding_model" "$(trim_single_line "$system_embedding_model")"
+          write_output "azure_openai_embeddings_model" "$(trim_single_line "$azure_openai_embeddings_model")"
+          write_output "azure_openai_api_version" "$(trim_single_line "$azure_openai_api_version")"
+
+      - name: Resolve email scheduler settings
+        id: emailscheduler
+        run: |
+          trim_single_line() {
+            printf '%s' "$1" | tr -d '\r\n'
+          }
+
+          write_output() {
+            local name="$1"
+            local value="$2"
+            local delimiter="EOF_${name}_$(date +%s%N)"
+            {
+              echo "${name}<<${delimiter}"
+              printf '%s\n' "$value"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          normalize_aca_cron() {
+            local value="$1"
+            local default_value="$2"
+            local resolved
+            resolved="$(trim_single_line "$value")"
+
+            if [ -z "$resolved" ]; then
+              resolved="$default_value"
+            fi
+
+            read -r -a parts <<< "$resolved"
+            if [ "${#parts[@]}" -eq 6 ]; then
+              if [ "${parts[0]}" != "0" ]; then
+                echo "::error::ACA Jobs require a 5-field cron expression. If a legacy 6-field value is used, the first field must be 0 seconds."
+                exit 1
+              fi
+              resolved="${parts[1]} ${parts[2]} ${parts[3]} ${parts[4]} ${parts[5]}"
+              echo "Normalized ACA cron expression from 6 fields to 5 fields: $resolved"
+              read -r -a parts <<< "$resolved"
+            fi
+
+            if [ "${#parts[@]}" -ne 5 ]; then
+              echo "::error::ACA Jobs require a 5-field cron expression. Received: $resolved"
+              exit 1
+            fi
+
+            printf '%s\n' "$resolved"
+          }
+
+          normalize_aca_job_name() {
+            local value="$1"
+            local default_value="$2"
+            local raw
+            local resolved
+            raw="$(trim_single_line "$value")"
+            resolved="$raw"
+
+            if [ -z "$resolved" ]; then
+              resolved="$default_value"
+            fi
+
+            resolved="$(printf '%s' "$resolved" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')"
+
+            if [ "$raw" != "$resolved" ] && [ -n "$raw" ]; then
+              echo "::warning::Normalized ACA job name from '$raw' to '$resolved'."
+            fi
+
+            if [ ${#resolved} -lt 2 ] || [ ${#resolved} -gt 32 ] || [[ ! "$resolved" =~ ^[a-z] ]] || [[ ! "$resolved" =~ [a-z0-9]$ ]] || [[ "$resolved" == *"--"* ]]; then
+              echo "::error::ACA job name must be 2-32 chars, lowercase alphanumeric or '-', start with a letter, end with alphanumeric, and not contain '--'. Resolved value: $resolved"
+              exit 1
+            fi
+
+            printf '%s\n' "$resolved"
+          }
+
+          email_scheduler_job="$(normalize_aca_job_name "${AZURE_EMAIL_SCHEDULER_JOB_NAME:-}" "email-scheduler")"
+          email_scheduler_cron="$(normalize_aca_cron "${AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION:-}" "*/5 * * * *")"
+
+          write_output "email_scheduler_job_name" "$(trim_single_line "$email_scheduler_job")"
+          write_output "email_scheduler_cron_expression" "$(trim_single_line "$email_scheduler_cron")"
 
       - name: Detect existing resources and resolve deployment mode
         id: existing
@@ -265,6 +380,7 @@ jobs:
           app_location="$(get_location "$AZURE_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
           frontend_location="$(get_location "$AZURE_FRONTEND_CONTAINER_APP_NAME" "Microsoft.App/containerApps")"
           document_processor_location="$(get_location "${{ steps.documentprocessor.outputs.document_processor_job_name }}" "Microsoft.App/jobs")"
+          email_scheduler_location="$(get_location "${{ steps.emailscheduler.outputs.email_scheduler_job_name }}" "Microsoft.App/jobs")"
           laws_collector_location="$(get_location "${{ steps.laws.outputs.laws_job_name }}" "Microsoft.App/jobs")"
 
           create_log_analytics_workspace=true
@@ -277,6 +393,7 @@ jobs:
           create_container_app=true
           create_frontend_container_app=true
           create_document_processor_job=true
+          create_email_scheduler_job=true
           create_laws_collector_job=true
 
           [ -n "$log_location" ] && create_log_analytics_workspace=false
@@ -289,6 +406,7 @@ jobs:
           [ -n "$app_location" ] && create_container_app=false
           [ -n "$frontend_location" ] && create_frontend_container_app=false
           [ -n "$document_processor_location" ] && create_document_processor_job=false
+          [ -n "$email_scheduler_location" ] && create_email_scheduler_job=false
           [ -n "$laws_collector_location" ] && create_laws_collector_job=false
 
           resolved_location="$AZURE_LOCATION"
@@ -304,7 +422,70 @@ jobs:
           echo "create_container_app=$create_container_app" >> "$GITHUB_OUTPUT"
           echo "create_frontend_container_app=$create_frontend_container_app" >> "$GITHUB_OUTPUT"
           echo "create_document_processor_job=$create_document_processor_job" >> "$GITHUB_OUTPUT"
+          echo "create_email_scheduler_job=$create_email_scheduler_job" >> "$GITHUB_OUTPUT"
           echo "create_laws_collector_job=$create_laws_collector_job" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve shared RBAC settings
+        id: rbac
+        run: |
+          acr_pull_role_id="/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d"
+          storage_blob_data_contributor_role_id="/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/ba92f5b4-2d11-453d-a403-e96b0029c9fe"
+          log_analytics_data_reader_role_id="/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/3b03c2da-16b3-4a49-8834-0f8130efdd3b"
+
+          acr_scope="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.ContainerRegistry/registries/${{ steps.acr.outputs.acr_name }}"
+          storage_scope="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/${{ steps.storage.outputs.storage_account_name }}"
+          log_analytics_scope="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.OperationalInsights/workspaces/$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
+
+          create_acr_pull_role_assignment=true
+          create_storage_blob_data_role_assignment=true
+          create_log_analytics_data_reader_role_assignment=true
+
+          if [ "${{ steps.existing.outputs.create_managed_identity }}" = "false" ]; then
+            managed_identity_principal_id="$(az identity show \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_MANAGED_IDENTITY_NAME" \
+              --query principalId \
+              --output tsv 2>/dev/null || true)"
+
+            if [ -n "$managed_identity_principal_id" ]; then
+              if [ "${{ steps.existing.outputs.create_acr }}" = "false" ]; then
+                acr_existing_assignment_count="$(az role assignment list \
+                  --assignee-object-id "$managed_identity_principal_id" \
+                  --scope "$acr_scope" \
+                  --query "[?roleDefinitionId=='$acr_pull_role_id'] | length(@)" \
+                  --output tsv)"
+                if [ "${acr_existing_assignment_count:-0}" -gt 0 ]; then
+                  create_acr_pull_role_assignment=false
+                fi
+              fi
+
+              if [ "${{ steps.existing.outputs.create_storage_account }}" = "false" ]; then
+                storage_existing_assignment_count="$(az role assignment list \
+                  --assignee-object-id "$managed_identity_principal_id" \
+                  --scope "$storage_scope" \
+                  --query "[?roleDefinitionId=='$storage_blob_data_contributor_role_id'] | length(@)" \
+                  --output tsv)"
+                if [ "${storage_existing_assignment_count:-0}" -gt 0 ]; then
+                  create_storage_blob_data_role_assignment=false
+                fi
+              fi
+
+              if [ "${{ steps.existing.outputs.create_log_analytics_workspace }}" = "false" ]; then
+                log_analytics_existing_assignment_count="$(az role assignment list \
+                  --assignee-object-id "$managed_identity_principal_id" \
+                  --scope "$log_analytics_scope" \
+                  --query "[?roleDefinitionId=='$log_analytics_data_reader_role_id'] | length(@)" \
+                  --output tsv)"
+                if [ "${log_analytics_existing_assignment_count:-0}" -gt 0 ]; then
+                  create_log_analytics_data_reader_role_assignment=false
+                fi
+              fi
+            fi
+          fi
+
+          echo "create_acr_pull_role_assignment=$create_acr_pull_role_assignment" >> "$GITHUB_OUTPUT"
+          echo "create_storage_blob_data_role_assignment=$create_storage_blob_data_role_assignment" >> "$GITHUB_OUTPUT"
+          echo "create_log_analytics_data_reader_role_assignment=$create_log_analytics_data_reader_role_assignment" >> "$GITHUB_OUTPUT"
 
       - name: Deploy infrastructure from Bicep
         run: |
@@ -340,6 +521,8 @@ jobs:
               documentProcessorJobName="${{ steps.documentprocessor.outputs.document_processor_job_name }}" \
               documentProcessorCronExpression="${{ steps.documentprocessor.outputs.document_processor_cron_expression }}" \
               documentProcessorMaxRunningTime="${{ steps.documentprocessor.outputs.document_processor_max_running_time }}" \
+              emailSchedulerJobName="${{ steps.emailscheduler.outputs.email_scheduler_job_name }}" \
+              emailSchedulerCronExpression="${{ steps.emailscheduler.outputs.email_scheduler_cron_expression }}" \
               lawsCollectorJobName="${{ steps.laws.outputs.laws_job_name }}" \
               lawsCollectorCronExpression="${{ steps.laws.outputs.laws_cron_expression }}" \
               lawsCollectorMaxProbes="${{ steps.laws.outputs.laws_max_probes }}" \
@@ -380,13 +563,18 @@ jobs:
               createContainerApp="${{ steps.existing.outputs.create_container_app }}" \
               createFrontendContainerApp="${{ steps.existing.outputs.create_frontend_container_app }}" \
               createDocumentProcessorJob="${{ steps.existing.outputs.create_document_processor_job }}" \
-              createLawsCollectorJob="${{ steps.existing.outputs.create_laws_collector_job }}"
+              createEmailSchedulerJob="${{ steps.existing.outputs.create_email_scheduler_job }}" \
+              createLawsCollectorJob="${{ steps.existing.outputs.create_laws_collector_job }}" \
+              createAcrPullRoleAssignment="${{ steps.rbac.outputs.create_acr_pull_role_assignment }}" \
+              createStorageBlobDataRoleAssignment="${{ steps.rbac.outputs.create_storage_blob_data_role_assignment }}" \
+              createLogAnalyticsDataReaderRoleAssignment="${{ steps.rbac.outputs.create_log_analytics_data_reader_role_assignment }}"
 
       - name: Summarize ACA infrastructure
         run: |
           api_result="reused"
           frontend_result="reused"
           document_processor_result="reused"
+          email_scheduler_result="reused"
           laws_result="reused"
           env_result="reused"
 
@@ -401,6 +589,9 @@ jobs:
           fi
           if [ "${{ steps.existing.outputs.create_document_processor_job }}" = "true" ]; then
             document_processor_result="created"
+          fi
+          if [ "${{ steps.existing.outputs.create_email_scheduler_job }}" = "true" ]; then
+            email_scheduler_result="created"
           fi
           if [ "${{ steps.existing.outputs.create_laws_collector_job }}" = "true" ]; then
             laws_result="created"
@@ -435,5 +626,6 @@ jobs:
             echo "| API container app | $AZURE_CONTAINER_APP_NAME | $api_result | $api_endpoint |"
             echo "| Frontend container app | $AZURE_FRONTEND_CONTAINER_APP_NAME | $frontend_result | $frontend_endpoint |"
             echo "| Document processor ACA job | ${{ steps.documentprocessor.outputs.document_processor_job_name }} | $document_processor_result | schedule: ${{ steps.documentprocessor.outputs.document_processor_cron_expression }}, max runtime minutes: ${{ steps.documentprocessor.outputs.document_processor_max_running_time }} |"
+            echo "| Email scheduler ACA job | ${{ steps.emailscheduler.outputs.email_scheduler_job_name }} | $email_scheduler_result | schedule: ${{ steps.emailscheduler.outputs.email_scheduler_cron_expression }} |"
             echo "| Laws collector ACA job | ${{ steps.laws.outputs.laws_job_name }} | $laws_result | schedule: ${{ steps.laws.outputs.laws_cron_expression }}, max probes: ${{ steps.laws.outputs.laws_max_probes }}, max runtime minutes: ${{ steps.laws.outputs.laws_max_running_time }} |"
           } >> "$GITHUB_STEP_SUMMARY"
