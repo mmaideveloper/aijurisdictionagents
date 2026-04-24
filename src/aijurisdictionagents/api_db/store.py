@@ -1253,7 +1253,8 @@ class ApiDatabaseStore:
                 SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id,
                        processing_status, processing_error, processed_at, created_at
                 FROM case_documents
-                WHERE kind IN ('uploaded', 'session_history') AND processing_status IN ('uploaded', 'failed')
+                WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+                  AND processing_status IN ('uploaded', 'failed')
                 ORDER BY created_at ASC
                 LIMIT ?
                 """,
