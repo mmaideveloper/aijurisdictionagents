@@ -183,6 +183,7 @@ def test_email_test_log_transport_writes_log_and_email(monkeypatch, tmp_path: Pa
     message = client.get(payload['links']['email'])
     assert message.status_code == 200
     assert 'Your JurisDigta registration code is: 123456' in message.text
+    assert 'The code expires in 30 minutes.' in message.text
 
 
 def test_internal_delete_user_cases_route(monkeypatch) -> None:

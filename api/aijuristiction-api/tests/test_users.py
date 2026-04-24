@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import hashlib
 import sqlite3
 from pathlib import Path
@@ -147,6 +148,34 @@ def test_sign_up_complete_requires_valid_email_code(monkeypatch, tmp_path: Path)
     assert complete_response.status_code == 201
 
 
+def test_registration_code_expires_in_thirty_minutes(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+
+    response = client.post(
+        "/v1/users/sign-up/send-code",
+        headers=AUTH_HEADERS,
+        json={"email": "verify@example.com"},
+    )
+    assert response.status_code == 202
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        expires_at_raw = conn.execute(
+            "SELECT expires_at FROM registration_codes WHERE email = ?",
+            ("verify@example.com",),
+        ).fetchone()[0]
+
+    expires_at = datetime.fromisoformat(expires_at_raw)
+    remaining = expires_at - datetime.now(timezone.utc)
+    assert timedelta(minutes=29) <= remaining <= timedelta(minutes=31)
+
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        body = conn.execute(
+            "SELECT body FROM email_outbox WHERE recipient = ? ORDER BY created_at DESC LIMIT 1",
+            ("verify@example.com",),
+        ).fetchone()[0]
+    assert "The code expires in 30 minutes." in body
+
+
 def test_device_bound_sign_in_flow(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)
     sign_up_response = client.post(
@@ -165,6 +194,13 @@ def test_device_bound_sign_in_flow(monkeypatch, tmp_path: Path) -> None:
         json={"phone_number": "+421900121314", "device_id": "test-device-1"},
     )
     assert send_code_response.status_code == 202
+
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        body = conn.execute(
+            "SELECT body FROM email_outbox WHERE recipient = ? AND subject = ? ORDER BY created_at DESC LIMIT 1",
+            ("device-login@example.com", "Your login code"),
+        ).fetchone()[0]
+    assert "The code expires in 30 minutes." in body
 
     with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
         code_hash = conn.execute(

@@ -452,7 +452,7 @@ class ApiDatabaseStore:
         *,
         email: str,
         code: str,
-        expires_in_minutes: int = 10,
+        expires_in_minutes: int = 30,
     ) -> None:
         normalized_email = email.strip().lower()
         now = datetime.now(timezone.utc)

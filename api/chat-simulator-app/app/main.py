@@ -238,7 +238,7 @@ def _build_email_test_content(payload: EmailTestSendRequest) -> tuple[str, str]:
             (
                 f"Hello {full_name},\n\n"
                 "Your JurisDigta registration code is: 123456\n"
-                "The code expires in 10 minutes.\n"
+                "The code expires in 30 minutes.\n"
             ),
         )
     if template == "otp":
@@ -249,7 +249,7 @@ def _build_email_test_content(payload: EmailTestSendRequest) -> tuple[str, str]:
                 f"Hello {full_name},\n\n"
                 "Your one time login code for mobile authentication is: 654321\n"
                 f"Device ID: {device_id}\n"
-                "The code expires in 10 minutes.\n"
+                "The code expires in 30 minutes.\n"
             ),
         )
     if template == "payment":
