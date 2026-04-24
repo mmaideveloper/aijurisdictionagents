@@ -97,6 +97,12 @@ button.secondary {
   background: #475569;
 }
 
+.utility-link {
+  color: #93c5fd;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
 .row {
   margin-top: 1rem;
 }
@@ -122,6 +128,63 @@ pre {
   display: grid;
   gap: 0.6rem;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0 1.2rem;
+}
+
+.page-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 220px;
+  border-radius: 8px;
+  padding: 0.72rem 1rem;
+  background: #3b82f6;
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.email-test-shell {
+  max-width: 980px;
+}
+
+.email-test-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.email-test-actions {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.transport-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.transport-links a {
+  color: #93c5fd;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+#emailTestLog {
+  max-height: 420px;
+  overflow-y: auto;
+  white-space: pre-wrap;
 }
 
 .chat-transcript {

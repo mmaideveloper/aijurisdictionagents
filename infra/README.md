@@ -196,6 +196,15 @@ user-assigned managed identity client ID.
 `STORE_CLOUD` is set as a blob URL prefix, not as a secret.
 If `CORS_ALLOW_ORIGINS` is present in `.env`, the script passes it through to the API container unchanged.
 Use that only for deployed browser clients such as Flutter web. Native Android/iOS builds do not require CORS configuration.
+Email deployment settings are also passed through to the API container. Non-secret values such as
+`EMAIL_TRANSPORT`, `EMAIL_SENDER`, `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_SMTP_USE_TLS`,
+`EMAIL_SMTP_USERNAME`, `EMAIL_SCHEDULER_ENABLED`, and `EMAIL_SCHEDULER_INTERVAL_SECONDS` are set as
+environment variables. `EMAIL_SMTP_PASSWORD` is stored as the Container Apps secret
+`email-smtp-password` and exposed as `EMAIL_SMTP_PASSWORD=secretref:email-smtp-password`.
+The deploy sets `EMAIL_DB_OPTION=azure` and `EMAIL_DB_CLOUD=secretref:db-cloud` so the email outbox
+uses the same Azure PostgreSQL deployment as the API. Vehicle validation deployment settings are
+handled the same way: `CAR_VALIDATION_API_BASE_URL` is a normal environment variable, while
+`CAR_VALIDATION_API_KEY` is stored as `car-validation-api-key` and exposed by secret reference.
 
 If your `.env` is at the repo root, no extra flag is needed. To use a different file:
 

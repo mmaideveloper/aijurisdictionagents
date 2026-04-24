@@ -60,6 +60,10 @@ Footer meta also shows:
 
 The page also includes a legal section with a structured disclaimer and `Last Updated` timestamp.
 
+## Contact form
+
+The contact form prepares an email to `info@jurisdigta.eu` from the user's mail client. The static page includes client-side protections against misuse: required structured fields, email validation, a hidden honeypot field, a minimum submit delay, disposable/test-domain blocking, and web-link blocking in the message field.
+
 ## Video demo
 
 The homepage switches the Jurisdigta avatar video per language:

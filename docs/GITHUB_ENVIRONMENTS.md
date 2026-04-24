@@ -121,6 +121,15 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `*/15 * * * *` |
 | `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME` | Optional max runtime per document-processor Azure run in minutes; default `15`, set `0` for unlimited |
 | `DOCUMENT_PROCESSOR_OPTION` | API document-processing mode; Azure API deployments default to `azure`, while `local` is only for local/dev API runs without the ACA job |
+| `EMAIL_TRANSPORT` | API email transport. Use `smtp` for deployed email delivery; use `log` only for queue/log testing |
+| `EMAIL_SENDER` | Outbound sender address, default `no-reply@jurisdigta.eu` |
+| `EMAIL_SMTP_HOST` | SMTP host, default `mail.webhourse.sk` |
+| `EMAIL_SMTP_PORT` | SMTP port, default `587` |
+| `EMAIL_SMTP_USE_TLS` | SMTP STARTTLS flag, default `true` |
+| `EMAIL_SMTP_USERNAME` | SMTP username, default `no-reply@jurisdigta.eu` |
+| `EMAIL_SCHEDULER_ENABLED` | Optional email scheduler toggle for API replicas, default `true` |
+| `EMAIL_SCHEDULER_INTERVAL_SECONDS` | Optional scheduler interval, default `60` |
+| `CAR_VALIDATION_API_BASE_URL` | Optional vehicle validation API base URL, for example `https://www.databazavozidiel.sk`; leave unset to skip live car API checks |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
 | `AZURE_POSTGRES_VERSION` | Optional PostgreSQL version |
@@ -134,11 +143,13 @@ Required GitHub Environment secret:
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI key used by the API and document processor for chat completions and embeddings |
 | `AZURE_POSTGRES_ADMIN_PASSWORD` | PostgreSQL admin password |
 
-Optional GitHub Environment secret:
+Optional and conditional GitHub Environment secrets:
 
 | Secret | Purpose |
 | --- | --- |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional override for Application Insights connection string; API and Azure workers otherwise resolve it from `AZURE_APPLICATION_INSIGHTS_NAME` during deployment |
+| `EMAIL_SMTP_PASSWORD` | SMTP mailbox password; required by `API Build and Deploy` when `EMAIL_TRANSPORT=smtp` |
+| `CAR_VALIDATION_API_KEY` | Optional vehicle validation API key, injected as a Container App secret when configured |
 
 ## 6. Configure Frontend Variables
 
@@ -269,6 +280,14 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
 - `API_BASE_URL`
 - `CORS_ALLOW_ORIGINS`
+- `EMAIL_TRANSPORT=smtp`
+- `EMAIL_SENDER=no-reply@jurisdigta.eu`
+- `EMAIL_SMTP_HOST=mail.webhourse.sk`
+- `EMAIL_SMTP_PORT=587`
+- `EMAIL_SMTP_USE_TLS=true`
+- `EMAIL_SMTP_USERNAME=no-reply@jurisdigta.eu`
+- secret `EMAIL_SMTP_PASSWORD`
+- `CAR_VALIDATION_API_BASE_URL` and secret `CAR_VALIDATION_API_KEY` when live vehicle checks should run in that environment
 
 ## 11. Run the Workflows Against the New Environment
 
@@ -303,6 +322,9 @@ That means:
 - `API Build and Deploy` now deploys automatically to `dev` on `push` to `main` after tests/build pass
 - `API Build and Deploy` waits for Azure Container App provisioning to settle before applying secret and environment updates, which reduces transient `ContainerAppOperationInProgress` failures during deployment
 - `API Build and Deploy` now fails during environment validation when `AZURE_OPENAI_API_KEY` is empty, because the deployed API always requires that secret for Azure OpenAI access
+- `API Build and Deploy` injects `EMAIL_DB_OPTION=azure`, `EMAIL_DB_CLOUD=secretref:db-cloud`, and `EMAIL_DB_LOCAL=/tmp/email.sqlite3` automatically, so email outbox storage follows the API PostgreSQL deployment.
+- `API Build and Deploy` injects SMTP settings and vehicle validation settings into the API Container App; `EMAIL_SMTP_PASSWORD` and `CAR_VALIDATION_API_KEY` are stored as Container App secrets.
+- `API Build and Deploy` fails during environment validation when `EMAIL_TRANSPORT=smtp` and `EMAIL_SMTP_PASSWORD` is empty.
 - `Laws Collector Build and Deploy` now deploys automatically to `dev` on `push` to `main` after its tests/build pass
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 
@@ -317,5 +339,7 @@ After setup, verify:
 - `API_BASE_URL` is set in both environments
 - required Azure variables are set in both environments
 - required secrets are set in both environments
+- `EMAIL_SMTP_PASSWORD` is set when `EMAIL_TRANSPORT=smtp`
+- optional `CAR_VALIDATION_API_BASE_URL` and `CAR_VALIDATION_API_KEY` are set together when live vehicle validation should be enabled
 - `workflow_dispatch` works with `github_environment=test`
 - `workflow_dispatch` works with `github_environment=prod`

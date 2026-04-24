@@ -331,8 +331,41 @@
         <div>
           <h2 data-i18n="contact_title">Ste pripravení na detailný walkthrough?</h2>
           <p data-i18n="contact_body">Požiadajte o briefing a prispôsobíme demo vašej jurisdikcii a workflow.</p>
+          <p class="contact-email">info@jurisdigta.eu</p>
         </div>
-        <a class="button primary" href="mailto:contact@aijurisdiction.eu" data-i18n="contact_cta">Kontaktujte tím</a>
+        <form id="contact-request-form" class="contact-form" novalidate>
+          <input id="contact-started-at" name="started_at" type="hidden" />
+          <div class="form-trap" aria-hidden="true">
+            <label for="contact-website">Website</label>
+            <input id="contact-website" name="website" tabindex="-1" autocomplete="off" />
+          </div>
+          <div class="form-grid">
+            <div>
+              <label for="contact-name" data-i18n="contact_name_label">Meno</label>
+              <input id="contact-name" name="name" autocomplete="name" required minlength="2" maxlength="80" />
+            </div>
+            <div>
+              <label for="contact-email-input" data-i18n="contact_email_label">Email</label>
+              <input id="contact-email-input" name="email" type="email" autocomplete="email" required maxlength="120" />
+            </div>
+          </div>
+          <div class="form-grid">
+            <div>
+              <label for="contact-company" data-i18n="contact_company_label">Organizácia</label>
+              <input id="contact-company" name="company" autocomplete="organization" maxlength="120" />
+            </div>
+            <div>
+              <label for="contact-topic" data-i18n="contact_topic_label">Téma</label>
+              <input id="contact-topic" name="topic" required minlength="3" maxlength="120" />
+            </div>
+          </div>
+          <div>
+            <label for="contact-message" data-i18n="contact_message_label">Správa</label>
+            <textarea id="contact-message" name="message" required minlength="20" maxlength="1200"></textarea>
+          </div>
+          <p id="contact-form-status" class="form-status" role="status" aria-live="polite"></p>
+          <button class="button primary" type="submit" data-i18n="contact_cta">Odoslať požiadavku</button>
+        </form>
       </div>
     </section>
 
@@ -385,7 +418,7 @@
     </div>
     <div class="footer-meta">
       <span>(c) 2026 AI Jurisdiction</span>
-      <span>info@aijurisdiction.eu</span>
+      <span>info@jurisdigta.eu</span>
       <span class="footer-version">
         <span data-i18n="footer_version_api_label">API version</span>:
         <strong>0.1.1</strong>
@@ -509,7 +542,16 @@
         faq_a3: "Áno. Ingest podporuje vektorové indexy, zdieľané repozitáre pre regulačné aktualizácie a limity nahrávania podľa plánu (Free 2, Case 5, Basic 5, Premium 50 dokumentov na prípad).",
         contact_title: "Ste pripravení na detailný walkthrough?",
         contact_body: "Požiadajte o briefing a prispôsobíme demo vašej jurisdikcii a workflow.",
-        contact_cta: "Kontaktujte tím",
+        contact_name_label: "Meno",
+        contact_email_label: "Email",
+        contact_company_label: "Organizácia",
+        contact_topic_label: "Téma",
+        contact_message_label: "Správa",
+        contact_cta: "Odoslať požiadavku",
+        contact_status_ready: "Pripravili sme email pre info@jurisdigta.eu.",
+        contact_status_invalid: "Skontrolujte meno, email, tému a správu.",
+        contact_status_robot: "Požiadavku nebolo možné odoslať.",
+        contact_status_links: "Správa nemôže obsahovať webové odkazy.",
         footer_tagline: "Multi-agentná právna inteligencia pre regulované operácie.",
         footer_link_privacy: "Zasady sukromia",
         footer_link_disclaimer: "Upozornenie",
@@ -642,7 +684,16 @@
         faq_a3: "Ja. Der Intake unterstützt Vektorindizes, gemeinsame Repositories für regulatorische Updates und planabhängige Upload-Limits (Free 2, Case 5, Basic 5, Premium 50 Dokumente pro Fall).",
         contact_title: "Bereit für einen detaillierten Walkthrough?",
         contact_body: "Briefing anfragen und wir passen die Demo an Jurisdiktion und Workflow an.",
-        contact_cta: "Team kontaktieren",
+        contact_name_label: "Name",
+        contact_email_label: "E-Mail",
+        contact_company_label: "Organisation",
+        contact_topic_label: "Thema",
+        contact_message_label: "Nachricht",
+        contact_cta: "Anfrage senden",
+        contact_status_ready: "Die E-Mail an info@jurisdigta.eu wurde vorbereitet.",
+        contact_status_invalid: "Bitte prüfen Sie Name, E-Mail, Thema und Nachricht.",
+        contact_status_robot: "Die Anfrage konnte nicht gesendet werden.",
+        contact_status_links: "Die Nachricht darf keine Weblinks enthalten.",
         footer_tagline: "Multi-Agenten-Rechtsintelligenz für regulierte Abläufe.",
         footer_link_privacy: "Datenschutz",
         footer_link_disclaimer: "Haftungsausschluss",
@@ -775,7 +826,16 @@
         faq_a3: "Yes. Evidence ingestion supports vector indexes, shared repositories for regulatory updates, and plan-based upload limits (Free 2, Case 5, Basic 5, Premium 50 documents per case).",
         contact_title: "Ready for a deeper walkthrough?",
         contact_body: "Request a briefing and we will tailor a demo to your jurisdiction and workflow.",
-        contact_cta: "Contact the team",
+        contact_name_label: "Name",
+        contact_email_label: "Email",
+        contact_company_label: "Organization",
+        contact_topic_label: "Topic",
+        contact_message_label: "Message",
+        contact_cta: "Send request",
+        contact_status_ready: "Prepared an email to info@jurisdigta.eu.",
+        contact_status_invalid: "Check name, email, topic, and message.",
+        contact_status_robot: "The request could not be sent.",
+        contact_status_links: "The message cannot contain web links.",
         footer_tagline: "Multi-agent legal intelligence for regulated operations.",
         footer_link_privacy: "Privacy Policy",
         footer_link_disclaimer: "Disclaimer",
@@ -809,6 +869,82 @@
       de: "assets/jurisdigta-ge.mp4",
       en: "assets/jurisdigta-en.mp4"
     };
+    const contactAddress = ["info", "jurisdigta.eu"].join("@");
+    const contactForm = document.getElementById("contact-request-form");
+    const contactStartedAt = document.getElementById("contact-started-at");
+    const contactStatus = document.getElementById("contact-form-status");
+    const blockedEmailDomains = new Set([
+      "example.com",
+      "example.org",
+      "test.com",
+      "mailinator.com",
+      "tempmail.com",
+      "10minutemail.com"
+    ]);
+    let activeLanguage = "sk";
+
+    function contactText(key) {
+      const dictionary = translations[activeLanguage] || translations.sk;
+      return dictionary[key] || translations.en[key] || key;
+    }
+
+    function setContactStatus(key) {
+      if (contactStatus) {
+        contactStatus.textContent = key ? contactText(key) : "";
+      }
+    }
+
+    function isLikelyRealEmail(value) {
+      const email = String(value || "").trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+        return false;
+      }
+      if (email.includes("..")) {
+        return false;
+      }
+      const domain = email.split("@").pop();
+      return Boolean(domain) && !blockedEmailDomains.has(domain);
+    }
+
+    function hasWebLink(value) {
+      return /\b(?:https?:\/\/|www\.|\.ru\b|\.cn\b)/i.test(String(value || ""));
+    }
+
+    function buildContactBody(data) {
+      return [
+        `Name: ${data.get("name")}`,
+        `Email: ${data.get("email")}`,
+        `Organization: ${data.get("company") || "-"}`,
+        `Topic: ${data.get("topic")}`,
+        "",
+        String(data.get("message") || "")
+      ].join("\n");
+    }
+
+    function handleContactSubmit(event) {
+      event.preventDefault();
+      if (!contactForm) {
+        return;
+      }
+      const data = new FormData(contactForm);
+      const elapsedMs = Date.now() - Number(data.get("started_at") || 0);
+      if (String(data.get("website") || "").trim() || elapsedMs < 3000) {
+        setContactStatus("contact_status_robot");
+        return;
+      }
+      if (!contactForm.checkValidity() || !isLikelyRealEmail(data.get("email"))) {
+        setContactStatus("contact_status_invalid");
+        return;
+      }
+      if (hasWebLink(data.get("message"))) {
+        setContactStatus("contact_status_links");
+        return;
+      }
+      const subject = `JurisDigta request: ${String(data.get("topic") || "").trim()}`;
+      const body = buildContactBody(data);
+      window.location.href = `mailto:${contactAddress}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      setContactStatus("contact_status_ready");
+    }
 
     function applyTranslations(lang) {
       const dictionary = translations[lang] || translations.sk;
@@ -853,6 +989,7 @@
 
     function setLanguage(lang) {
       const next = translations[lang] ? lang : "sk";
+      activeLanguage = next;
       localStorage.setItem("aj_lang", next);
       languageButtons.forEach((button) => {
         button.setAttribute("aria-pressed", button.dataset.lang === next ? "true" : "false");
@@ -864,10 +1001,15 @@
     languageButtons.forEach((button) => {
       button.addEventListener("click", () => setLanguage(button.dataset.lang));
     });
+    if (contactStartedAt) {
+      contactStartedAt.value = String(Date.now());
+    }
+    if (contactForm) {
+      contactForm.addEventListener("submit", handleContactSubmit);
+    }
 
     const storedLang = localStorage.getItem("aj_lang");
     setLanguage(storedLang || "sk");
   </script>
 </body>
 </html>
-

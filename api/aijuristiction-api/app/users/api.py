@@ -449,6 +449,7 @@ def confirm_subscription_payment(
     subscription_id: str,
     payload: SubscriptionPaymentConfirmationRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> UserSubscriptionResponse:
     payment = _payment_sessions.get(payload.payment_id)
     if payment is None:
@@ -465,6 +466,7 @@ def confirm_subscription_payment(
     if user.phone_number != _ALLOWED_SUCCESS_PHONE:
         payment["payment_status"] = "failed"
         item = store.update_subscription_status(subscription_id=subscription_id, status="canceled")
+        queue_subscription_status_email(scheduler=scheduler, user=user, item=item)
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail={
@@ -475,6 +477,7 @@ def confirm_subscription_payment(
 
     payment["payment_status"] = "paid"
     item = store.update_subscription_status(subscription_id=subscription_id, status="paid")
+    queue_subscription_status_email(scheduler=scheduler, user=user, item=item)
     return _to_subscription_response(item)
 
 

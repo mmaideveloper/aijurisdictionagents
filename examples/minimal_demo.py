@@ -109,3 +109,10 @@ if __name__ == "__main__":
         "POST /v1/users/sign-in/verify-code  "
         "{\"phone_number\":\"+421900123456\",\"device_id\":\"test-web-device\",\"verification_code\":\"123456\"}"
     )
+    print()
+    print("=== Email delivery setup demo ===")
+    print("Public contact email: info@jurisdigta.eu")
+    print("SMTP sender: no-reply@jurisdigta.eu")
+    print("SMTP server: mail.webhourse.sk:587 with STARTTLS")
+    print("SMTP password env: EMAIL_SMTP_PASSWORD")
+    print("Chat simulator email test page: http://127.0.0.1:8090/email-tests")

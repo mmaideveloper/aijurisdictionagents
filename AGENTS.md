@@ -115,3 +115,8 @@ Custom project skills:
 - `frontend-api` at `skills/frontend-api/SKILL.md`
   - Purpose: alias skill to start frontend wired to API using the same launcher.
   - Script: `.\skills\start-frontend-api\scripts\start_frontend_api.ps1`
+
+Deployment info:
+Created new domain juridigta.eu
+with SSL and subdomains.
+jurisdigta.eu, www.jurisdigta.eu, api.jurisdigta.eu,  web.jurisdigta.eu, services.jurisdigta.eu, admin.jurisdigta.eu

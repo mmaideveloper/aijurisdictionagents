@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.email import EmailNotificationService
 from app.services.email_scheduler import EmailScheduler
 from app.services.email_queue import EmailQueueConfig, EmailQueueStore
 from app.users.api import get_email_scheduler, get_user_store
@@ -360,6 +361,28 @@ def test_scheduler_marks_failed_after_two_attempts(monkeypatch, tmp_path: Path) 
     assert attempts == 2
 
 
+def test_email_service_defaults_to_jurisdigta_smtp(monkeypatch) -> None:
+    for name in (
+        "EMAIL_SENDER",
+        "EMAIL_TRANSPORT",
+        "EMAIL_SMTP_HOST",
+        "EMAIL_SMTP_PORT",
+        "EMAIL_SMTP_USERNAME",
+        "EMAIL_SMTP_PASSWORD",
+        "EMAIL_SMTP_USE_TLS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    service = EmailNotificationService.from_env()
+
+    assert service.sender == "no-reply@jurisdigta.eu"
+    assert service.smtp_host == "mail.webhourse.sk"
+    assert service.smtp_port == 587
+    assert service.smtp_username == "no-reply@jurisdigta.eu"
+    assert service.smtp_password is None
+    assert service.smtp_use_tls is True
+
+
 def test_claim_pending_prevents_double_pick(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)
 
@@ -440,6 +463,11 @@ def test_subscription_checkout_payment_failure_does_not_upgrade_for_non_whitelis
     assert subscriptions[0]["status"] == "canceled"
     assert subscriptions[1]["plan_code"] == "free"
     assert subscriptions[1]["status"] == "paid"
+    rows = _fetch_emails(tmp_path / "email.sqlite3")
+    assert [row[1] for row in rows] == [
+        "Welcome to AI Jurisdiction",
+        "Subscription status changed",
+    ]
 
 
 def test_subscription_checkout_and_payment_confirmation_success_for_whitelisted_phone(
@@ -476,6 +504,11 @@ def test_subscription_checkout_and_payment_confirmation_success_for_whitelisted_
     )
     assert confirm_response.status_code == 200
     assert confirm_response.json()["status"] == "paid"
+    rows = _fetch_emails(tmp_path / "email.sqlite3")
+    assert [row[1] for row in rows] == [
+        "Welcome to AI Jurisdiction",
+        "Payment confirmed",
+    ]
 
 
 def test_subscription_checkout_accepts_google_pay(monkeypatch, tmp_path: Path) -> None:

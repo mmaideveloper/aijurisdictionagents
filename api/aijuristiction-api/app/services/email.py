@@ -8,6 +8,10 @@ from email.message import EmailMessage
 
 logger = logging.getLogger("aijuristiction-api.email")
 
+DEFAULT_EMAIL_SENDER = "no-reply@jurisdigta.eu"
+DEFAULT_SMTP_HOST = "mail.webhourse.sk"
+DEFAULT_SMTP_PORT = 587
+
 
 @dataclass(frozen=True)
 class EmailNotificationService:
@@ -21,14 +25,15 @@ class EmailNotificationService:
 
     @classmethod
     def from_env(cls) -> "EmailNotificationService":
+        sender = os.getenv("EMAIL_SENDER", DEFAULT_EMAIL_SENDER).strip() or DEFAULT_EMAIL_SENDER
         return cls(
-            sender=os.getenv("EMAIL_SENDER", "noreply@aijurisdiction.local").strip() or "noreply@aijurisdiction.local",
+            sender=sender,
             transport=os.getenv("EMAIL_TRANSPORT", "log").strip().lower() or "log",
-            smtp_host=os.getenv("EMAIL_SMTP_HOST", "localhost").strip() or "localhost",
-            smtp_port=int(os.getenv("EMAIL_SMTP_PORT", "1025")),
-            smtp_username=_optional_env("EMAIL_SMTP_USERNAME"),
+            smtp_host=os.getenv("EMAIL_SMTP_HOST", DEFAULT_SMTP_HOST).strip() or DEFAULT_SMTP_HOST,
+            smtp_port=int(os.getenv("EMAIL_SMTP_PORT", str(DEFAULT_SMTP_PORT))),
+            smtp_username=_optional_env("EMAIL_SMTP_USERNAME") or sender,
             smtp_password=_optional_env("EMAIL_SMTP_PASSWORD"),
-            smtp_use_tls=_env_bool("EMAIL_SMTP_USE_TLS", default=False),
+            smtp_use_tls=_env_bool("EMAIL_SMTP_USE_TLS", default=True),
         )
 
     def send_email(self, *, recipient: str, subject: str, body: str) -> None:

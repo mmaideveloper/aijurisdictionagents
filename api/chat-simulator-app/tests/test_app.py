@@ -20,16 +20,18 @@ def test_version() -> None:
     assert response.status_code == 200
     assert response.json() == {
         'service': 'chat-simulator-app',
-        'version': '0.1.22',
-        'simulator_version': '0.1.22',
+        'version': '0.1.24',
+        'simulator_version': '0.1.24',
     }
 
 
 def test_simulator_page_and_assets() -> None:
     page = client.get('/chat-simulator')
     assert page.status_code == 200
-    assert '/static/simulator.js?v=0.1.22' in page.text
-    assert '/static/simulator.css?v=0.1.22' in page.text
+    assert '/static/simulator.js?v=0.1.24' in page.text
+    assert '/static/simulator.css?v=0.1.24' in page.text
+    assert '/email-tests' in page.text
+    assert 'Email Validation Tests' in page.text
     assert 'Start Stream' in page.text
     assert 'Upload documents' in page.text
     assert 'Persisted Case Debug' in page.text
@@ -119,6 +121,68 @@ def test_simulator_page_and_assets() -> None:
     assert 'Generate PDF' in js.text
     assert 'template_pdf_generated' in js.text
     assert 'document-template-card' in css.text
+    assert 'page-action' in css.text
+
+
+def test_email_tests_page_and_assets() -> None:
+    page = client.get('/email-tests')
+    assert page.status_code == 200
+    assert '/static/email-tests.js?v=0.1.24' in page.text
+    assert 'Email Validation Tests' in page.text
+    assert 'id="emailTransport"' in page.text
+    assert '<option value="log" selected>log</option>' in page.text
+    assert '<option value="smtp">smtp</option>' in page.text
+    assert 'Open email logs' in page.text
+    assert 'Open generated emails' in page.text
+    assert 'Test: registration email' in page.text
+    assert 'Test: mobile OTP email' in page.text
+    assert 'Test: payment email' in page.text
+    assert 'info@jurisdigta.eu' in page.text
+    assert '+421944400166' in page.text
+    assert page.headers['cache-control'] == 'no-store, no-cache, must-revalidate, max-age=0'
+
+    js = client.get('/static/email-tests.js')
+    assert js.status_code == 200
+    assert '/internal/email-tests/send' in js.text
+    assert 'emailPayload' in js.text
+    assert 'smtp_password' in js.text
+    assert 'Open latest email' in js.text
+
+
+def test_email_test_log_transport_writes_log_and_email(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, '_EMAIL_TEST_RUNS_DIR', tmp_path)
+
+    response = client.post(
+        '/internal/email-tests/send',
+        json={
+            'transport': 'log',
+            'template': 'registration',
+            'recipient': 'recipient@example.com',
+            'sender': 'no-reply@jurisdigta.eu',
+            'first_name': 'Test',
+            'last_name': 'User',
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['status'] == 'logged'
+    assert payload['links']['logs'] == '/internal/email-tests/logs'
+    assert payload['links']['emails'] == '/internal/email-tests/emails'
+    assert payload['links']['email'].endswith('.eml')
+
+    logs = client.get('/internal/email-tests/logs')
+    assert logs.status_code == 200
+    assert 'recipient@example.com' in logs.text
+    assert 'Your registration code' in logs.text
+
+    emails = client.get('/internal/email-tests/emails')
+    assert emails.status_code == 200
+    assert payload['links']['email'].split('/')[-1] in emails.text
+
+    message = client.get(payload['links']['email'])
+    assert message.status_code == 200
+    assert 'Your JurisDigta registration code is: 123456' in message.text
 
 
 def test_internal_delete_user_cases_route(monkeypatch) -> None:

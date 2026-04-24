@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime, timezone
+from email.message import EmailMessage
 import json
 from importlib.metadata import PackageNotFoundError, version as package_version
 from mimetypes import guess_type
+import os
 from pathlib import Path
 import re
+import smtplib
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -21,12 +25,14 @@ SIMULATOR_PACKAGE = "chat-simulator-app"
 
 app = FastAPI(
     title="AI Juristiction Chat Simulator App",
-    version="0.1.22",
+    version="0.1.24",
     description="Standalone chat simulator application for validating core chat APIs.",
 )
 
 _STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 _TESTCASES_DIR = Path(__file__).resolve().parent.parent / "testcases"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_EMAIL_TEST_RUNS_DIR = _REPO_ROOT / "runs" / "chat-simulator-email-tests"
 
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
@@ -38,6 +44,24 @@ class DeleteUserCasesRequest(BaseModel):
     phone_number: str | None = None
     email: str | None = None
     password: str | None = None
+
+
+class EmailTestSendRequest(BaseModel):
+    transport: str = Field(min_length=1)
+    template: str = Field(min_length=1)
+    recipient: str = Field(min_length=1)
+    sender: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_use_tls: bool = True
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    phone_number: str | None = None
+    device_id: str | None = None
+    plan_code: str | None = None
+    payment_provider: str | None = None
 
 
 @app.get("/health")
@@ -67,7 +91,74 @@ def delete_user_cases(payload: DeleteUserCasesRequest) -> dict[str, Any]:
 @app.get("/", include_in_schema=False)
 @app.get("/chat-simulator", include_in_schema=False)
 def simulator_page() -> HTMLResponse:
+    return _render_static_page("index.html")
+
+
+@app.get("/email-tests", include_in_schema=False)
+def email_tests_page() -> HTMLResponse:
+    return _render_static_page("email-tests.html")
+
+
+@app.post("/internal/email-tests/send")
+def send_email_test(payload: EmailTestSendRequest) -> dict[str, Any]:
+    try:
+        return _send_email_test(payload)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Email test failed: {exc}") from exc
+
+
+@app.get("/internal/email-tests/logs", include_in_schema=False)
+def email_test_logs() -> PlainTextResponse:
+    log_path = _email_test_log_path()
+    if not log_path.exists():
+        return PlainTextResponse("No email test log entries yet.\n")
+    return PlainTextResponse(log_path.read_text(encoding="utf-8", errors="replace"))
+
+
+@app.get("/internal/email-tests/emails", include_in_schema=False)
+def email_test_messages() -> HTMLResponse:
+    emails_dir = _email_test_emails_dir()
+    files = sorted(emails_dir.glob("*.eml"), key=lambda path: path.stat().st_mtime, reverse=True) if emails_dir.exists() else []
+    items = [
+        f'<li><a href="/internal/email-tests/emails/{path.name}">{path.name}</a></li>'
+        for path in files
+        if _is_safe_email_filename(path.name)
+    ]
+    body = "\n".join(items) if items else "<li>No generated email previews yet.</li>"
+    return HTMLResponse(
+        f"""<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Email test messages</title></head>
+  <body>
+    <h1>Email test messages</h1>
+    <ul>{body}</ul>
+    <p><a href="/email-tests">Back to email tests</a></p>
+  </body>
+</html>""",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/internal/email-tests/emails/{filename}", include_in_schema=False)
+def email_test_message_file(filename: str) -> FileResponse:
+    if not _is_safe_email_filename(filename):
+        raise HTTPException(status_code=400, detail="Invalid email filename")
+    path = (_email_test_emails_dir() / filename).resolve()
+    try:
+        path.relative_to(_email_test_emails_dir().resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid email filename") from exc
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Email preview not found")
+    return FileResponse(path, media_type="message/rfc822", filename=filename)
+
+
+def _render_static_page(filename: str) -> HTMLResponse:
     html = (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    if filename != "index.html":
+        html = (_STATIC_DIR / filename).read_text(encoding="utf-8")
     prepared_cases_json = json.dumps(_list_testcases(), ensure_ascii=False).replace("</script>", "<\\/script>")
     rendered = (
         html.replace("__PREPARED_CASES_JSON__", prepared_cases_json)
@@ -80,6 +171,169 @@ def simulator_page() -> HTMLResponse:
             "Pragma": "no-cache",
         },
     )
+
+
+def _send_email_test(payload: EmailTestSendRequest) -> dict[str, Any]:
+    transport = payload.transport.strip().lower()
+    if transport not in {"log", "smtp"}:
+        raise HTTPException(status_code=400, detail="transport must be log or smtp")
+
+    sender = _first_non_empty(payload.sender, os.getenv("EMAIL_SENDER"), "no-reply@jurisdigta.eu")
+    recipient = payload.recipient.strip()
+    if not _looks_like_email(recipient):
+        raise HTTPException(status_code=400, detail="recipient must be a valid email address")
+
+    subject, body = _build_email_test_content(payload)
+    message = _build_email_message(sender=sender, recipient=recipient, subject=subject, body=body)
+    written_email = _write_email_preview(message=message, template=payload.template, transport=transport)
+
+    if transport == "smtp":
+        smtp_host = _first_non_empty(payload.smtp_host, os.getenv("EMAIL_SMTP_HOST"), "mail.webhourse.sk")
+        smtp_port = payload.smtp_port or int(os.getenv("EMAIL_SMTP_PORT", "587"))
+        smtp_username = _first_non_empty(payload.smtp_username, os.getenv("EMAIL_SMTP_USERNAME"), sender)
+        smtp_password = _first_non_empty(payload.smtp_password, os.getenv("EMAIL_SMTP_PASSWORD"), "")
+        _send_message_via_smtp(
+            message=message,
+            host=smtp_host,
+            port=smtp_port,
+            use_tls=payload.smtp_use_tls,
+            username=smtp_username,
+            password=smtp_password,
+        )
+        status = "sent"
+    else:
+        status = "logged"
+
+    _append_email_test_log(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "status": status,
+            "transport": transport,
+            "template": payload.template.strip().lower(),
+            "sender": sender,
+            "recipient": recipient,
+            "subject": subject,
+            "email_file": written_email.name,
+        }
+    )
+    return {
+        "status": status,
+        "transport": transport,
+        "recipient": recipient,
+        "subject": subject,
+        "links": {
+            "logs": "/internal/email-tests/logs",
+            "emails": "/internal/email-tests/emails",
+            "email": f"/internal/email-tests/emails/{written_email.name}",
+        },
+    }
+
+
+def _build_email_test_content(payload: EmailTestSendRequest) -> tuple[str, str]:
+    template = payload.template.strip().lower()
+    full_name = " ".join(part for part in [payload.first_name, payload.last_name] if part).strip() or "Email Tester"
+    if template == "registration":
+        return (
+            "Your registration code",
+            (
+                f"Hello {full_name},\n\n"
+                "Your JurisDigta registration code is: 123456\n"
+                "The code expires in 10 minutes.\n"
+            ),
+        )
+    if template == "otp":
+        device_id = (payload.device_id or "chat-simulator-email-test").strip()
+        return (
+            "Your login code",
+            (
+                f"Hello {full_name},\n\n"
+                "Your one time login code for mobile authentication is: 654321\n"
+                f"Device ID: {device_id}\n"
+                "The code expires in 10 minutes.\n"
+            ),
+        )
+    if template == "payment":
+        plan_code = (payload.plan_code or "premium").strip()
+        provider = (payload.payment_provider or "paypal").strip()
+        return (
+            "Payment confirmed",
+            (
+                f"Hello {full_name},\n\n"
+                f"Payment for your '{plan_code}' subscription was confirmed via {provider}. "
+                "Your plan is active.\n"
+            ),
+        )
+    raise HTTPException(status_code=400, detail="template must be registration, otp, or payment")
+
+
+def _build_email_message(*, sender: str, recipient: str, subject: str, body: str) -> EmailMessage:
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = recipient
+    message["Subject"] = subject
+    message.set_content(body)
+    return message
+
+
+def _send_message_via_smtp(
+    *,
+    message: EmailMessage,
+    host: str,
+    port: int,
+    use_tls: bool,
+    username: str,
+    password: str,
+) -> None:
+    with smtplib.SMTP(host, port, timeout=15) as smtp:
+        if use_tls:
+            smtp.starttls()
+        if username and password:
+            smtp.login(username, password)
+        smtp.send_message(message)
+
+
+def _write_email_preview(*, message: EmailMessage, template: str, transport: str) -> Path:
+    emails_dir = _email_test_emails_dir()
+    emails_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    safe_template = re.sub(r"[^a-z0-9_-]+", "-", template.strip().lower()) or "email"
+    filename = f"{timestamp}-{transport}-{safe_template}.eml"
+    path = emails_dir / filename
+    path.write_text(message.as_string(), encoding="utf-8")
+    return path
+
+
+def _append_email_test_log(entry: dict[str, str]) -> None:
+    log_path = _email_test_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _email_test_log_path() -> Path:
+    return _EMAIL_TEST_RUNS_DIR / "email-tests.log"
+
+
+def _email_test_emails_dir() -> Path:
+    return _EMAIL_TEST_RUNS_DIR / "emails"
+
+
+def _is_safe_email_filename(filename: str) -> bool:
+    return re.fullmatch(r"[A-Za-z0-9_.-]+\.eml", filename) is not None
+
+
+def _looks_like_email(value: str) -> bool:
+    return re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value.strip()) is not None
+
+
+def _first_non_empty(*values: str | None) -> str:
+    for value in values:
+        if value is None:
+            continue
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    return ""
 
 
 def _list_testcases() -> list[dict[str, str]]:
