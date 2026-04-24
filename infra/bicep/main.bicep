@@ -51,6 +51,9 @@ param createFrontendContainerApp bool = true
 param createDocumentProcessorJob bool = true
 param createLawsCollectorJob bool = true
 param createPostgresServer bool = true
+param createAcrPullRoleAssignment bool = true
+param createStorageBlobDataRoleAssignment bool = true
+param createLogAnalyticsDataReaderRoleAssignment bool = true
 param tags object = {}
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (createLogAnalyticsWorkspace) {
@@ -316,8 +319,6 @@ var managedIdentityId = createManagedIdentity ? managedIdentity.id : managedIden
 var managedIdentityPrincipalId = createManagedIdentity
   ? managedIdentity.properties.principalId
   : managedIdentityExisting.properties.principalId
-var createAcrPullRoleAssignment = createContainerApp || createAcr || createManagedIdentity
-var createStorageBlobDataRoleAssignment = createContainerApp || createStorageAccount || createManagedIdentity
 
 resource acrPullRoleAssignmentOnNewAcr 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createAcrPullRoleAssignment && createAcr) {
   name: guid(acrId, managedIdentityId, 'AcrPull')
@@ -371,7 +372,7 @@ resource storageBlobDataRoleAssignmentOnExistingStorage 'Microsoft.Authorization
   }
 }
 
-resource logAnalyticsDataReaderRoleAssignmentOnNewWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createLogAnalyticsWorkspace) {
+resource logAnalyticsDataReaderRoleAssignmentOnNewWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createLogAnalyticsDataReaderRoleAssignment && createLogAnalyticsWorkspace) {
   name: guid(logAnalyticsWorkspace.id, managedIdentityId, 'LogAnalyticsDataReader')
   scope: logAnalyticsWorkspace
   properties: {
@@ -384,7 +385,7 @@ resource logAnalyticsDataReaderRoleAssignmentOnNewWorkspace 'Microsoft.Authoriza
   }
 }
 
-resource logAnalyticsDataReaderRoleAssignmentOnExistingWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!createLogAnalyticsWorkspace) {
+resource logAnalyticsDataReaderRoleAssignmentOnExistingWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createLogAnalyticsDataReaderRoleAssignment && !createLogAnalyticsWorkspace) {
   name: guid(logAnalyticsWorkspaceExisting.id, managedIdentityId, 'LogAnalyticsDataReader')
   scope: logAnalyticsWorkspaceExisting
   properties: {

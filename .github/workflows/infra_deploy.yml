@@ -338,6 +338,68 @@ jobs:
           echo "create_document_processor_job=$create_document_processor_job" >> "$GITHUB_OUTPUT"
           echo "create_laws_collector_job=$create_laws_collector_job" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve shared RBAC settings
+        id: rbac
+        run: |
+          acr_pull_role_id="/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d"
+          storage_blob_data_contributor_role_id="/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/ba92f5b4-2d11-453d-a403-e96b0029c9fe"
+          log_analytics_data_reader_role_id="/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/3b03c2da-16b3-4a49-8834-0f8130efdd3b"
+
+          acr_scope="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.ContainerRegistry/registries/${{ steps.acr.outputs.acr_name }}"
+          storage_scope="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/${{ steps.storage.outputs.storage_account_name }}"
+          log_analytics_scope="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.OperationalInsights/workspaces/$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
+
+          create_acr_pull_role_assignment=true
+          create_storage_blob_data_role_assignment=true
+          create_log_analytics_data_reader_role_assignment=true
+
+          if [ "${{ steps.existing.outputs.create_managed_identity }}" = "false" ]; then
+            managed_identity_principal_id="$(az identity show \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_MANAGED_IDENTITY_NAME" \
+              --query principalId \
+              --output tsv 2>/dev/null || true)"
+
+            if [ -n "$managed_identity_principal_id" ]; then
+              if [ "${{ steps.existing.outputs.create_acr }}" = "false" ]; then
+                acr_existing_assignment_count="$(az role assignment list \
+                  --assignee-object-id "$managed_identity_principal_id" \
+                  --scope "$acr_scope" \
+                  --query "[?roleDefinitionId=='$acr_pull_role_id'] | length(@)" \
+                  --output tsv)"
+                if [ "${acr_existing_assignment_count:-0}" -gt 0 ]; then
+                  create_acr_pull_role_assignment=false
+                fi
+              fi
+
+              if [ "${{ steps.existing.outputs.create_storage_account }}" = "false" ]; then
+                storage_existing_assignment_count="$(az role assignment list \
+                  --assignee-object-id "$managed_identity_principal_id" \
+                  --scope "$storage_scope" \
+                  --query "[?roleDefinitionId=='$storage_blob_data_contributor_role_id'] | length(@)" \
+                  --output tsv)"
+                if [ "${storage_existing_assignment_count:-0}" -gt 0 ]; then
+                  create_storage_blob_data_role_assignment=false
+                fi
+              fi
+
+              if [ "${{ steps.existing.outputs.create_log_analytics_workspace }}" = "false" ]; then
+                log_analytics_existing_assignment_count="$(az role assignment list \
+                  --assignee-object-id "$managed_identity_principal_id" \
+                  --scope "$log_analytics_scope" \
+                  --query "[?roleDefinitionId=='$log_analytics_data_reader_role_id'] | length(@)" \
+                  --output tsv)"
+                if [ "${log_analytics_existing_assignment_count:-0}" -gt 0 ]; then
+                  create_log_analytics_data_reader_role_assignment=false
+                fi
+              fi
+            fi
+          fi
+
+          echo "create_acr_pull_role_assignment=$create_acr_pull_role_assignment" >> "$GITHUB_OUTPUT"
+          echo "create_storage_blob_data_role_assignment=$create_storage_blob_data_role_assignment" >> "$GITHUB_OUTPUT"
+          echo "create_log_analytics_data_reader_role_assignment=$create_log_analytics_data_reader_role_assignment" >> "$GITHUB_OUTPUT"
+
       - name: Deploy infrastructure from Bicep
         run: |
           postgres_connection_string="$(python - <<'PY'
@@ -412,7 +474,10 @@ jobs:
               createContainerApp="${{ steps.existing.outputs.create_container_app }}" \
               createFrontendContainerApp="${{ steps.existing.outputs.create_frontend_container_app }}" \
               createDocumentProcessorJob="${{ steps.existing.outputs.create_document_processor_job }}" \
-              createLawsCollectorJob="${{ steps.existing.outputs.create_laws_collector_job }}"
+              createLawsCollectorJob="${{ steps.existing.outputs.create_laws_collector_job }}" \
+              createAcrPullRoleAssignment="${{ steps.rbac.outputs.create_acr_pull_role_assignment }}" \
+              createStorageBlobDataRoleAssignment="${{ steps.rbac.outputs.create_storage_blob_data_role_assignment }}" \
+              createLogAnalyticsDataReaderRoleAssignment="${{ steps.rbac.outputs.create_log_analytics_data_reader_role_assignment }}"
 
       - name: Summarize ACA infrastructure
         run: |
