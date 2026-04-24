@@ -224,6 +224,23 @@ function Ensure-LocalPostgresReady {
     return $connectionLine.Substring("Connection string:".Length).Trim()
 }
 
+function Resolve-ExistingLawsDbCloud {
+    param(
+        [string]$ProvidedValue,
+        [string]$EnvironmentValue
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ProvidedValue)) {
+        return $ProvidedValue.Trim()
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($EnvironmentValue)) {
+        return $EnvironmentValue.Trim()
+    }
+
+    return ""
+}
+
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $python = Resolve-PythonPath -RepoRoot $repoRoot
 $shellPath = Resolve-PowerShellPath
@@ -247,7 +264,13 @@ if ($DatabaseOption -eq "sqlite") {
 }
 else {
     $env:LAWS_DB_BACKEND = "postgres"
-    $env:LAWS_DB_CLOUD = Ensure-LocalPostgresReady -RepoRoot $repoRoot -ExistingDbCloud $DbCloud
+    $resolvedDbCloud = Resolve-ExistingLawsDbCloud -ProvidedValue $DbCloud -EnvironmentValue $env:LAWS_DB_CLOUD
+    if ($resolvedDbCloud) {
+        $env:LAWS_DB_CLOUD = $resolvedDbCloud
+    }
+    else {
+        $env:LAWS_DB_CLOUD = Ensure-LocalPostgresReady -RepoRoot $repoRoot -ExistingDbCloud $DbCloud
+    }
     Remove-Item -Path "Env:LAWS_DB_LOCAL" -ErrorAction SilentlyContinue
 }
 

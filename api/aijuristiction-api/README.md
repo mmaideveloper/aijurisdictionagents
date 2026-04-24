@@ -411,7 +411,19 @@ Run scheduler as a separate process (recommended for ACA split deployment):
 python -m app.email_scheduler_main
 ```
 
-For API-only replicas set `EMAIL_SCHEDULER_ENABLED=false`; run exactly one scheduler replica/process with it enabled.
+Run a one-shot batch for the Azure Container Apps Job:
+
+```bash
+python -m app.email_scheduler_job_main
+```
+
+For local repo-managed startup, use:
+
+```powershell
+.\skills\start-email\scripts\start_email_scheduler.ps1 -Background
+```
+
+For API-only replicas set `EMAIL_SCHEDULER_ENABLED=false`; run exactly one scheduler replica/process or ACA Job with delivery enabled.
 
 User and subscription endpoints support email notifications with configurable transport:
 
@@ -421,7 +433,7 @@ User and subscription endpoints support email notifications with configurable tr
 SMTP configuration (used when `EMAIL_TRANSPORT=smtp`):
 
 - `EMAIL_SENDER` (default: `no-reply@jurisdigta.eu`)
-- `EMAIL_SMTP_HOST` (default: `mail.webhourse.sk`)
+- `EMAIL_SMTP_HOST` (default: `mail.webhouse.sk`)
 - `EMAIL_SMTP_PORT` (default: `587`)
 - `EMAIL_SMTP_USE_TLS` (default: `true`)
 - `EMAIL_SMTP_USERNAME` (default: `EMAIL_SENDER`)

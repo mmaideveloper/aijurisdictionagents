@@ -1,0 +1,228 @@
+name: Email Scheduler Build and Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/aijuristiction-api/**"
+      - "pyproject.toml"
+      - "databases/api/email/**"
+      - "infra/scripts/deploy_email_scheduler.ps1"
+      - "infra/bicep/email_scheduler.job.bicep"
+      - ".github/workflows/email_build_deploy.yml"
+  pull_request:
+    paths:
+      - "api/aijuristiction-api/**"
+      - "pyproject.toml"
+      - "databases/api/email/**"
+      - "infra/scripts/deploy_email_scheduler.ps1"
+      - "infra/bicep/email_scheduler.job.bicep"
+      - ".github/workflows/email_build_deploy.yml"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy the email scheduler ACA job"
+        required: false
+        type: boolean
+        default: true
+      github_environment:
+        description: "GitHub Environment that contains Azure variables"
+        required: true
+        default: "dev"
+      image_tag:
+        description: "Optional image tag override. Defaults to the commit SHA."
+        required: false
+        default: ""
+
+jobs:
+  test_and_build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install root dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Install API test dependencies
+        working-directory: api/aijuristiction-api
+        run: pip install -e .[dev]
+
+      - name: Run email scheduler tests
+        working-directory: api/aijuristiction-api
+        run: pytest tests/test_email_scheduler_job_main.py tests/test_users.py
+
+      - name: Build API Docker image for scheduler job
+        run: docker build -f api/aijuristiction-api/Dockerfile -t aijuristiction-api:${{ github.sha }} .
+
+  deploy_to_azure:
+    runs-on: windows-latest
+    needs: test_and_build
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.github_environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_MANAGED_IDENTITY_NAME: ${{ vars.AZURE_MANAGED_IDENTITY_NAME }}
+      AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
+      AZURE_POSTGRES_SERVER_NAME: ${{ vars.AZURE_POSTGRES_SERVER_NAME }}
+      AZURE_POSTGRES_DATABASE_NAME: ${{ vars.AZURE_POSTGRES_DATABASE_NAME }}
+      AZURE_POSTGRES_ADMIN_USERNAME: ${{ vars.AZURE_POSTGRES_ADMIN_USERNAME }}
+      AZURE_POSTGRES_ADMIN_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
+      AZURE_EMAIL_SCHEDULER_JOB_NAME: ${{ vars.AZURE_EMAIL_SCHEDULER_JOB_NAME || 'email_scheduler' }}
+      AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION: ${{ vars.AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION || '*/5 * * * *' }}
+      EMAIL_TRANSPORT: ${{ vars.EMAIL_TRANSPORT || 'smtp' }}
+      EMAIL_SENDER: ${{ vars.EMAIL_SENDER || 'no-reply@jurisdigta.eu' }}
+      EMAIL_SMTP_HOST: ${{ vars.EMAIL_SMTP_HOST || 'mail.webhouse.sk' }}
+      EMAIL_SMTP_PORT: ${{ vars.EMAIL_SMTP_PORT || '587' }}
+      EMAIL_SMTP_USE_TLS: ${{ vars.EMAIL_SMTP_USE_TLS || 'true' }}
+      EMAIL_SMTP_USERNAME: ${{ vars.EMAIL_SMTP_USERNAME || 'no-reply@jurisdigta.eu' }}
+      EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate required environment variables
+        shell: pwsh
+        run: |
+          $required = @(
+            "AZURE_CLIENT_ID",
+            "AZURE_TENANT_ID",
+            "AZURE_SUBSCRIPTION_ID",
+            "AZURE_RESOURCE_GROUP",
+            "AZURE_LOCATION",
+            "AZURE_CONTAINERAPPS_ENVIRONMENT",
+            "AZURE_CONTAINER_REGISTRY",
+            "AZURE_MANAGED_IDENTITY_NAME",
+            "AZURE_POSTGRES_SERVER_NAME",
+            "AZURE_POSTGRES_ADMIN_USERNAME",
+            "AZURE_POSTGRES_ADMIN_PASSWORD"
+          )
+
+          $missing = @()
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace((Get-Item "env:$name" -ErrorAction SilentlyContinue).Value)) {
+              $missing += $name
+            }
+          }
+
+          if ($env:EMAIL_TRANSPORT.Trim().ToLowerInvariant() -eq "smtp" -and [string]::IsNullOrWhiteSpace($env:EMAIL_SMTP_PASSWORD)) {
+            $missing += "EMAIL_SMTP_PASSWORD"
+          }
+
+          if ($missing.Count -gt 0) {
+            $missing | ForEach-Object { Write-Host "Missing GitHub Environment variable or secret: $_" }
+            exit 1
+          }
+
+      - name: Normalize ACR settings
+        id: acr
+        shell: pwsh
+        run: |
+          $raw = "${env:AZURE_CONTAINER_REGISTRY}"
+          $lowered = $raw.Trim().ToLowerInvariant()
+          if ($lowered.EndsWith(".azurecr.io")) {
+            $lowered = $lowered.Substring(0, $lowered.Length - ".azurecr.io".Length)
+          }
+          $acrName = [regex]::Replace($lowered, "[^a-z0-9]", "")
+
+          if ([string]::IsNullOrWhiteSpace($acrName) -or $acrName.Length -lt 5 -or $acrName.Length -gt 50) {
+            Write-Error "Invalid ACR value '$raw'. Normalized name '$acrName' must be 5-50 alphanumeric characters."
+          }
+
+          if ($raw -ne $acrName -and $raw -ne "$acrName.azurecr.io") {
+            Write-Host "::warning::Normalized AZURE_CONTAINER_REGISTRY from '$raw' to '$acrName'."
+          }
+
+          "acr_name=$acrName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Ensure Azure Container Apps extension
+        shell: pwsh
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Allow GitHub runner IP on PostgreSQL firewall
+        shell: pwsh
+        run: |
+          $runnerIp = (Invoke-RestMethod -Uri "https://api.ipify.org").Trim()
+          az postgres flexible-server firewall-rule create `
+            --resource-group $env:AZURE_RESOURCE_GROUP `
+            --name $env:AZURE_POSTGRES_SERVER_NAME `
+            --rule-name "github-runner-${{ github.run_id }}" `
+            --start-ip-address $runnerIp `
+            --end-ip-address $runnerIp `
+            --only-show-errors `
+            --output none
+
+      - name: Install deployment dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Deploy email scheduler job
+        shell: pwsh
+        run: |
+          $imageTagInput = "${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}"
+          $imageTag = if ([string]::IsNullOrWhiteSpace($imageTagInput)) {
+            "${{ github.sha }}"
+          } else {
+            $imageTagInput
+          }
+
+          ./infra/scripts/deploy_email_scheduler.ps1 `
+            -SkipEnvFile `
+            -SubscriptionId $env:AZURE_SUBSCRIPTION_ID `
+            -ResourceGroupName $env:AZURE_RESOURCE_GROUP `
+            -Location $env:AZURE_LOCATION `
+            -ContainerAppEnvironmentName $env:AZURE_CONTAINERAPPS_ENVIRONMENT `
+            -JobName $env:AZURE_EMAIL_SCHEDULER_JOB_NAME `
+            -AcrName "${{ steps.acr.outputs.acr_name }}" `
+            -ManagedIdentityName $env:AZURE_MANAGED_IDENTITY_NAME `
+            -ApplicationInsightsName $env:AZURE_APPLICATION_INSIGHTS_NAME `
+            -PostgresServerName $env:AZURE_POSTGRES_SERVER_NAME `
+            -PostgresDatabaseName $env:AZURE_POSTGRES_DATABASE_NAME `
+            -PostgresAdminUsername $env:AZURE_POSTGRES_ADMIN_USERNAME `
+            -PostgresAdminPassword $env:AZURE_POSTGRES_ADMIN_PASSWORD `
+            -EmailTransport $env:EMAIL_TRANSPORT `
+            -EmailSender $env:EMAIL_SENDER `
+            -EmailSmtpHost $env:EMAIL_SMTP_HOST `
+            -EmailSmtpPort $env:EMAIL_SMTP_PORT `
+            -EmailSmtpUseTls $env:EMAIL_SMTP_USE_TLS `
+            -EmailSmtpUsername $env:EMAIL_SMTP_USERNAME `
+            -EmailSmtpPassword $env:EMAIL_SMTP_PASSWORD `
+            -CronExpression $env:AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION `
+            -ImageTag $imageTag
+
+      - name: Remove GitHub runner firewall rule
+        if: always()
+        shell: pwsh
+        run: |
+          az postgres flexible-server firewall-rule delete `
+            --resource-group $env:AZURE_RESOURCE_GROUP `
+            --name $env:AZURE_POSTGRES_SERVER_NAME `
+            --rule-name "github-runner-${{ github.run_id }}" `
+            --yes `
+            --only-show-errors `
+            --output none

@@ -35,7 +35,8 @@ description: Start and monitor the local laws collector worker. By default it us
 ## Environment Notes
 
 - Default backend: PostgreSQL (`LAWS_DB_BACKEND=postgres`)
-- Default PostgreSQL connection comes from `.\skills\start-postgres\scripts\start_postgres.ps1 -ProjectName laws-collector`
+- If `LAWS_DB_CLOUD` is already set (for example in `.env`), the launcher uses that connection directly.
+- Otherwise the default PostgreSQL connection comes from `.\skills\start-postgres\scripts\start_postgres.ps1 -ProjectName laws-collector`
 - Real embeddings use the shared `LLM_PROVIDER` and embedding settings from `.env` unless the shell already defines them
 - SQLite fallback DB path: `./runs/storage/laws-collector/sqlite/sk_laws.sqlite3`
 - Default local files path: `./runs/storage/laws-collector/files/sk`
