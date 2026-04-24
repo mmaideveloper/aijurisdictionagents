@@ -535,7 +535,8 @@ module emailSchedulerJob 'email_scheduler.job.bicep' = if (createEmailSchedulerJ
     cronExpression: emailSchedulerCronExpression
     acrName: acrName
     managedIdentityName: managedIdentityName
-    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    image: 'mcr.microsoft.com/azurelinux/base/core:3.0'
+    runScheduler: false
     postgresServerName: postgresServerName
     postgresDatabaseName: postgresDatabaseName
     postgresAdminUsername: postgresAdminUsername

@@ -338,6 +338,7 @@ az deployment group create `
       acrName=$AcrName `
       managedIdentityName=$ManagedIdentityName `
       image=$image `
+      runScheduler=true `
       postgresServerName=$PostgresServerName `
       postgresDatabaseName=$PostgresDatabaseName `
       postgresAdminUsername=$PostgresAdminUsername `
