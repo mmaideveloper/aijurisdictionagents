@@ -67,6 +67,8 @@ Recommended GitHub Environment variables:
 - `AZURE_EMAIL_SCHEDULER_JOB_NAME=email_scheduler`
 - `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION=*/5 * * * *`
 
+`infra_deploy` now provisions the initial ACA job shell for this scheduler in the selected GitHub Environment. Run `Email Scheduler Build and Deploy` afterward to publish the real image, apply migrations, and inject SMTP secrets.
+
 The deploy path applies the PostgreSQL email schema migrations from `databases/api/email` before it updates the ACA Job, and the job runs `python -m app.email_scheduler_job_main` once per trigger.
 
 When this dedicated Azure job is deployed, set `EMAIL_SCHEDULER_ENABLED=false` on the API Container App so API replicas only enqueue emails and the scheduled job performs delivery.

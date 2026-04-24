@@ -223,7 +223,7 @@ The laws collector workflow reuses these shared Azure deployment variables:
 
 ## 9. Configure Email Scheduler Job Variables
 
-These are used by the dedicated email scheduler deployment workflow:
+These are used by the dedicated email scheduler deployment workflow and by `infra_deploy` when it provisions the initial ACA job shell:
 
 | Variable | Purpose |
 | --- | --- |
