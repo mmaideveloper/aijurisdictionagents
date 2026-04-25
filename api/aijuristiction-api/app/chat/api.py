@@ -38,6 +38,8 @@ from app.chat.intent_policy_service import (
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.repository import InMemoryChatRepository
 from app.chat.result_metadata import build_session_result_metadata
+from app.document_templates.disclaimers import resolve_disclaimer_from_templates
+from app.document_templates.store import get_document_template_store
 from app.security import require_api_key
 from app.versioning import get_api_version, get_core_version
 
@@ -77,6 +79,7 @@ class _DocumentExportAsset:
     filename: str
     title: str
     lines: list[str]
+    disclaimer: tuple[str, str, str] | None = None
     use_corporate_template: bool = False
 
 
@@ -2283,6 +2286,7 @@ def export_session_result(
         title = asset.title
         lines = asset.lines
         filename = asset.filename
+        disclaimer = asset.disclaimer
         use_corporate_template = asset.use_corporate_template
     else:
         title, lines = _build_summary_export_content(
@@ -2293,6 +2297,7 @@ def export_session_result(
             language=session.language,
         )
         filename = _build_pdf_filename(session_id=session_id, kind="summary")
+        disclaimer = None
         use_corporate_template = False
 
     pdf_content = _build_simple_pdf(
@@ -2306,6 +2311,7 @@ def export_session_result(
             else None
         ),
         footer_line=(footer_line if kind == "document" else None),
+        disclaimer=disclaimer,
         draw_logo_mark=(kind == "document" and use_corporate_template),
         include_title_block=(kind != "document"),
     )
@@ -2349,6 +2355,7 @@ def _build_simple_pdf(
     language: str | None,
     header_line: str | None = None,
     footer_line: str | None = None,
+    disclaimer: tuple[str, str, str] | None = None,
     draw_logo_mark: bool = False,
     include_title_block: bool = True,
 ) -> bytes:
@@ -2385,10 +2392,31 @@ def _build_simple_pdf(
             ]
         )
 
+    if disclaimer is not None:
+        disclaimer_title, disclaimer_text, _disclaimer_footer = disclaimer
+        if disclaimer_title.strip():
+            header_lines.append(disclaimer_title.strip())
+        if disclaimer_text.strip():
+            header_lines.extend(
+                _wrap_pdf_lines(
+                    [disclaimer_text.strip()],
+                    width=(54 if use_corporate_template else 82),
+                )
+            )
+        header_lines.append("")
+
     title_block: list[str] = [title, "----------------"] if include_title_block else []
     prepared_lines = header_lines + title_block + _wrap_pdf_lines(lines)
     if use_corporate_template:
-        prepared_lines = [title, ""] + _wrap_pdf_lines(lines, width=54)
+        prepared_lines = [title, ""]
+        if disclaimer is not None:
+            disclaimer_title, disclaimer_text, _disclaimer_footer = disclaimer
+            if disclaimer_title.strip():
+                prepared_lines.append(disclaimer_title.strip())
+            if disclaimer_text.strip():
+                prepared_lines.extend(_wrap_pdf_lines([disclaimer_text.strip()], width=54))
+            prepared_lines.append("")
+        prepared_lines.extend(_wrap_pdf_lines(lines, width=54))
     if not prepared_lines:
         prepared_lines = [title]
 
@@ -2411,9 +2439,16 @@ def _build_simple_pdf(
         return page_height - margin_top
 
     def draw_footer() -> None:
-        if footer_line:
+        effective_footer = footer_line
+        if disclaimer is not None and disclaimer[2].strip():
+            effective_footer = (
+                f"{footer_line} | {disclaimer[2].strip()}"
+                if footer_line
+                else disclaimer[2].strip()
+            )
+        if effective_footer:
             pdf.setFont(regular_font, footer_font_size)
-            pdf.drawString(margin_left, margin_bottom - 8, footer_line)
+            pdf.drawString(margin_left, margin_bottom - 8, effective_footer)
 
     y = start_page()
     for index, line in enumerate(prepared_lines):
@@ -2661,6 +2696,7 @@ def _build_document_export_archive(
                     else None
                 ),
                 footer_line=footer_line,
+                disclaimer=asset.disclaimer,
                 draw_logo_mark=asset.use_corporate_template,
                 include_title_block=not asset.use_corporate_template,
             )
@@ -3008,6 +3044,11 @@ def _build_document_export_assets(
         )
     if len(document_entries) <= 1:
         entry = document_entries[0] if document_entries else None
+        disclaimer = _resolve_document_export_disclaimer(
+            country=country,
+            language=language,
+            document_kind=document_kind,
+        )
         return [
             _DocumentExportAsset(
                 filename=_document_asset_filename(
@@ -3016,6 +3057,7 @@ def _build_document_export_assets(
                 ),
                 title=title,
                 lines=lines,
+                disclaimer=disclaimer,
                 use_corporate_template=_is_third_party_document(
                     document_kind=document_kind,
                     entry=entry,
@@ -3273,6 +3315,11 @@ def _build_multi_document_export_assets(
 ) -> list[_DocumentExportAsset]:
     assets: list[_DocumentExportAsset] = []
     used_filenames: set[str] = set()
+    disclaimer = _resolve_document_export_disclaimer(
+        country=country,
+        language=language,
+        document_kind=document_kind,
+    )
     for index, entry in enumerate(document_entries, start=1):
         filename = _document_asset_filename(
             entry=entry,
@@ -3293,6 +3340,7 @@ def _build_multi_document_export_assets(
                 filename=unique_filename,
                 title=title,
                 lines=lines,
+                disclaimer=disclaimer,
                 use_corporate_template=_is_third_party_document(
                     document_kind=document_kind,
                     entry=entry,
@@ -3336,6 +3384,35 @@ def _is_third_party_document(
     if any(marker in lowered for marker in internal_markers):
         return False
     return False
+
+
+def _resolve_document_export_disclaimer(
+    *,
+    country: str,
+    language: str | None,
+    document_kind: str,
+) -> tuple[str, str, str] | None:
+    try:
+        store = get_document_template_store()
+        templates = store.list(include_deleted=False, jurisdiction=country.strip().upper())
+    except Exception:
+        templates = []
+    return resolve_disclaimer_from_templates(
+        templates=templates,
+        country=country,
+        language=language,
+        template_kind=_template_kind_for_document_kind(document_kind),
+    )
+
+
+def _template_kind_for_document_kind(document_kind: str) -> str | None:
+    mapping = {
+        "rental_agreement": "rental_agreement",
+        "share_transfer": "share_transfer_agreement",
+        "easement_demand": "court_filing",
+        "generic_case_document": "court_filing",
+    }
+    return mapping.get(document_kind)
 
 
 def _deduplicate_export_filename(*, filename: str, used_filenames: set[str]) -> str:

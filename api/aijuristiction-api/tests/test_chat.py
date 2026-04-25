@@ -180,6 +180,7 @@ def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> No
         language="en-US",
         header_line="AI Jurisdicta Solution | Generated: 2026-04-21 10:00:00 UTC",
         footer_line="AIJ | API 1.0 | Core 1.0",
+        disclaimer=("Important notice", "Draft only. Lawyer review required.", "Draft only"),
         draw_logo_mark=True,
         include_title_block=False,
     )
@@ -201,6 +202,9 @@ def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> No
     assert "template.net" not in corporate_text
     assert "api version" in corporate_text
     assert "system core version" in corporate_text
+    assert "important notice" in corporate_text
+    assert "lawyer review required" in corporate_text
+    assert "draft only" in corporate_text
     assert "poprad, slovakia, 05801" not in plain_text
 
     reader = PdfReader(BytesIO(corporate_pdf))
@@ -352,6 +356,8 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     assert "podpis prenaj" in document_text
     assert "vypovedna lehota" in document_text or "lehota" in document_text
     assert "platba vopred" in document_text
+    assert "dolezite upozornenie" in _canonical_text(document_text)
+    assert "vyzaduje pravnu kontrolu" in _canonical_text(document_text)
 
 def test_document_export_returns_zip_from_visible_multi_document_sections_without_case_update_documents(
     monkeypatch,
