@@ -209,3 +209,41 @@ def test_download_case_document_returns_404_when_payload_missing() -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Stored payload is unavailable for document doc-1"
+
+
+def test_session_history_document_reuses_same_doc_id_and_refreshes_payload(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    user = store.create_user(
+        email="history-refresh@example.com",
+        password="secret",
+        phone_number="+421900000099",
+    )
+    case = store.create_case(user_id=user.user_id, company_id=None, title="History refresh case")
+
+    first_doc_id = store.add_case_session_history_document(
+        case_id=case.case_id,
+        session_id="session-1",
+        content="USER: first turn",
+        uploaded_by_user_id=user.user_id,
+    )
+    second_doc_id = store.add_case_session_history_document(
+        case_id=case.case_id,
+        session_id="session-1",
+        content="USER: first turn\nASSISTANT: refreshed turn",
+        uploaded_by_user_id=user.user_id,
+    )
+
+    assert second_doc_id == first_doc_id
+    stored_document = store.get_case_document(case_id=case.case_id, doc_id=first_doc_id)
+    assert stored_document.processing_status == "uploaded"
+    assert store.read_storage_text(storage_uri=stored_document.storage_uri) == (
+        "USER: first turn\nASSISTANT: refreshed turn"
+    )

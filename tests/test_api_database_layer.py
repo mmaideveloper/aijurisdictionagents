@@ -236,3 +236,44 @@ def test_postgres_store_init_does_not_create_local_dirs(tmp_path: Path) -> None:
 
     assert not db_path.parent.exists()
     assert not blob_root.exists()
+
+
+def test_list_unprocessed_case_documents_includes_chat_attachments(tmp_path: Path) -> None:
+    store = ApiDatabaseStore(
+        db_path=tmp_path / "api.sqlite3",
+        blob_root=tmp_path / "blob",
+    )
+    store.initialize()
+
+    user = store.create_user(
+        phone_number="+421900444333",
+        email="attachments@example.com",
+        password="secret",
+        first_name="Attachment",
+        last_name="User",
+    )
+    case = store.create_case(
+        user_id=user.user_id,
+        company_id=None,
+        title="Attachment processing",
+    )
+
+    chat_attachment_id = store.add_case_text_document(
+        case_id=case.case_id,
+        original_filename="lease.txt",
+        content="Lease clause from chat upload.",
+        uploaded_by_user_id=user.user_id,
+    )
+    session_history_id = store.add_case_session_history_document(
+        case_id=case.case_id,
+        session_id="session-1",
+        content="USER: first turn",
+        uploaded_by_user_id=user.user_id,
+    )
+
+    unprocessed_ids = {
+        document.doc_id for document in store.list_unprocessed_case_documents(limit=10)
+    }
+
+    assert chat_attachment_id in unprocessed_ids
+    assert session_history_id in unprocessed_ids
