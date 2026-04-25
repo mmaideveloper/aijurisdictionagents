@@ -17,6 +17,7 @@ Mobile/API registration now supports email one-time-code verification:
 - `POST /v1/users/sign-up/send-code` sends a one-time code to the requested email.
 - `POST /v1/users/sign-up/complete` finishes account creation only when the code is valid.
 - Successful account creation still queues the welcome email notification.
+- Registration and device sign-in OTP codes now expire after 30 minutes.
 
 Device-bound login flow:
 

@@ -67,7 +67,7 @@ Recommended GitHub Environment variables:
 - `AZURE_EMAIL_SCHEDULER_JOB_NAME=email-scheduler`
 - `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION=*/5 * * * *`
 
-`infra_deploy` now provisions the initial ACA job shell for this scheduler in the selected GitHub Environment. Run `Email Scheduler Build and Deploy` afterward to publish the real image, apply migrations, and inject SMTP secrets.
+`infra_deploy` now provisions the initial ACA job shell for this scheduler in the selected GitHub Environment. That shell uses a no-op placeholder container so the job can exist before the real image is published. Run `Email Scheduler Build and Deploy` afterward to publish the real image, apply migrations, and inject SMTP secrets.
 Legacy values such as `email_scheduler` are normalized to `email-scheduler` during deployment.
 
 The deploy path applies the PostgreSQL email schema migrations from `databases/api/email` before it updates the ACA Job, and the job runs `python -m app.email_scheduler_job_main` once per trigger.

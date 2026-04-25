@@ -166,7 +166,7 @@ The Bicep deployment provisions or reuses:
 - `azure.extensions=vector`
 - Public frontend Azure Container App (`AZURE_FRONTEND_CONTAINER_APP_NAME`)
 - Document processor ACA Job (`AZURE_DOCUMENT_PROCESSOR_JOB_NAME`, default `document-processor`)
-- Email scheduler ACA Job (`AZURE_EMAIL_SCHEDULER_JOB_NAME`, default `email-scheduler`)
+- Email scheduler ACA Job (`AZURE_EMAIL_SCHEDULER_JOB_NAME`, default `email-scheduler`; `infra_deploy` creates a no-op shell until the dedicated email deploy publishes the real image)
 - Private Azure Container App for the laws collector (`AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`, default `laws-collector`)
 
 Existing-resource behavior:

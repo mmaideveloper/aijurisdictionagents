@@ -4,6 +4,7 @@ param jobName string = 'email-scheduler'
 param acrName string
 param managedIdentityName string
 param image string
+param runScheduler bool = true
 param postgresServerName string
 param postgresDatabaseName string = 'aijurisdiction'
 param postgresAdminUsername string
@@ -149,6 +150,20 @@ var emailSchedulerEnv = concat(
     : []
 )
 
+var emailSchedulerCommand = runScheduler ? [
+  'python'
+] : [
+  '/bin/sh'
+]
+
+var emailSchedulerArgs = runScheduler ? [
+  '-m'
+  'app.email_scheduler_job_main'
+] : [
+  '-c'
+  'echo email scheduler shell provisioned; exit 0'
+]
+
 resource emailSchedulerJob 'Microsoft.App/jobs@2024-03-01' = {
   name: jobName
   location: location
@@ -183,13 +198,8 @@ resource emailSchedulerJob 'Microsoft.App/jobs@2024-03-01' = {
         {
           name: 'email-scheduler'
           image: image
-          command: [
-            'python'
-          ]
-          args: [
-            '-m'
-            'app.email_scheduler_job_main'
-          ]
+          command: emailSchedulerCommand
+          args: emailSchedulerArgs
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'

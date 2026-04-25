@@ -190,7 +190,7 @@ def send_registration_code(
         body=(
             "Hello,\n\n"
             f"your one time registration code is: {code}\n"
-            "The code expires in 10 minutes.\n"
+            "The code expires in 30 minutes.\n"
         ),
         metadata={"event": "registration_code"},
     )
@@ -255,7 +255,7 @@ def send_sign_in_code(
         body=(
             f"Hello {user.full_name},\n\n"
             f"your one time login code is: {code}\n"
-            "The code expires in 10 minutes.\n"
+            "The code expires in 30 minutes.\n"
         ),
         metadata={"event": "sign_in_code", "user_id": user.user_id},
     )
