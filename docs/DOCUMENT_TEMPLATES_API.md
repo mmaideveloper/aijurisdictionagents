@@ -8,7 +8,7 @@ matched against a client request, and later extended with full template bodies f
 The template catalog is meant to support the next step of document generation:
 
 - keep a managed list of common legal templates per jurisdiction
-- store template metadata, source URL, format, optional body, and matching keywords
+- store template metadata, source URL, format, optional body, matching keywords, and legal disclaimer text/footer
 - allow add/update/delete without editing application code
 - support request-to-template matching before rendering a concrete contract
 
@@ -49,6 +49,12 @@ All endpoints require `x-api-key`.
 - `DELETE /v1/document-templates/{template_key}?jurisdiction=SK`
 - `GET /v1/document-templates/match/search?request_text=...&country=SK&template_kind=rental_agreement`
 - `GET /v1/document-templates/{template_key}/preview/pdf?jurisdiction=SK`
+
+Template payloads also support:
+
+- `disclaimer_title`
+- `disclaimer_text`
+- `disclaimer_footer`
 
 ## Match behavior
 
@@ -99,6 +105,9 @@ exports. It fills known placeholders with realistic sample data, returns `applic
 `Content-Disposition` filename ending in `-preview.pdf`. Preview PDFs use the Jurisdicta A4 corporate
 layout with the logo block, contact panel, blue sidebar, and API/system version block from
 `docs/generated_document_template.png`.
+
+For Slovak templates and generated Slovak document exports, the renderer now adds a visible legal disclaimer block on
+the first page and repeats a short disclaimer in the footer so the draft status is not easy to miss.
 
 The chat simulator now includes a **Document Templates** panel. Use **Refresh Templates** to load templates from
 the selected API base URL and **Generate PDF** on any row to download that template preview. This is intended for

@@ -541,6 +541,8 @@ Additional PDF font notes:
 - `GET /v1/document-templates` lists the persistent legal-template catalog used for future template-driven contract generation.
 - `POST`, `PATCH`, and `DELETE` on `/v1/document-templates/*` allow templates to be added, updated, and soft-deleted without changing code.
 - `GET /v1/document-templates/match/search?request_text=...&country=SK` returns the best matching template candidate for a client request.
+- Templates now support optional `disclaimer_title`, `disclaimer_text`, and `disclaimer_footer` fields so legal disclaimer wording can be updated without a code deploy.
+- Template preview PDFs and chat-generated Slovak document PDFs render the disclaimer on page one and repeat the short disclaimer in the footer.
 - The initial seed contains the common Slovak template groups supplied for:
   - commercial/corporate contracts
   - employment/personnel documents

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pypdf import PdfReader
 
 from app.document_templates.api import get_document_template_store, router
 from app.document_templates.models import DocumentTemplateCreateRequest, DocumentTemplateUpdateRequest
@@ -120,18 +122,23 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
             "flow_keys": [],
             "placeholders": [],
             "source_refs": [],
+            "disclaimer_title": "Dolezite upozornenie",
+            "disclaimer_text": "Pred podpisom nechajte text skontrolovat advokatom.",
+            "disclaimer_footer": "Pravny navrh",
             "is_enabled": True,
         },
     )
     assert create_response.status_code == 201
     assert create_response.json()["template_key"] == "sk.custom.loan_agreement"
+    assert create_response.json()["disclaimer_text"] == "Pred podpisom nechajte text skontrolovat advokatom."
 
     patch_response = client.patch(
         "/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK",
-        json={"title": "Pozickova zmluva updated"},
+        json={"title": "Pozickova zmluva updated", "disclaimer_footer": "Vyziaduje pravnu kontrolu"},
     )
     assert patch_response.status_code == 200
     assert patch_response.json()["title"] == "Pozickova zmluva updated"
+    assert patch_response.json()["disclaimer_footer"] == "Vyziaduje pravnu kontrolu"
 
     match_response = client.get(
         "/v1/document-templates/match/search",
@@ -149,6 +156,11 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert preview_response.headers["content-type"].startswith("application/pdf")
     assert "sk.real_estate.lease_agreement-preview.pdf" in preview_response.headers["content-disposition"]
     assert preview_response.content.startswith(b"%PDF")
+    preview_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(preview_response.content)).pages
+    )
+    assert "Dolezite upozornenie" in preview_text
+    assert "pravnu kontrolu" in preview_text.casefold()
 
     delete_response = client.delete("/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK")
     assert delete_response.status_code == 200
