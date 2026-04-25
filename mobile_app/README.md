@@ -48,7 +48,8 @@ Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris D
   - `Sign up`: phone number + email/password (required), first/last name (optional), persisted through the API
   - `Sign up` now also requires an email verification code: users must tap `Send code`, receive the one-time code by email, and complete registration with that code.
   - `Sign in`: app first tries silent login with a device-bound token; if not available/expired, app sends a one-time sign-in code and verifies it.
-  - first successful OTP sign-in stores a device-bound token so subsequent logins on the same device can be silent.
+  - first successful OTP sign-in stores a device-bound token; subsequent sign-ins on the same device are silent for 8 hours, then OTP is required again.
+  - explicit `Sign out` clears the device-bound token and forces OTP on the next sign-in.
   - after sign-in, `Account` page shows the stored phone number and email as read-only fields, and allows updating only password, first name, and last name
   - browser/local web remembers the last signed-in phone number and pre-fills the sign-in form
   - local runs also prefill `+421944400166` when no phone was remembered yet

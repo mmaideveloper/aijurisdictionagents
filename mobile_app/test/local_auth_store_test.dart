@@ -75,4 +75,52 @@ void main() {
     expect(await localStore.getCurrentUser(), isNull);
     expect((await devStore.getCurrentUser())?.userId, 'dev-user');
   });
+
+  test('sign out clears scoped device token metadata', () async {
+    SharedPreferences.setMockInitialValues({
+      'mobile_auth_device_token_v1_http_127_0_0_1_8080': 'token-local',
+      'mobile_auth_device_token_issued_at_v1_http_127_0_0_1_8080':
+          DateTime.utc(2026, 1, 1).millisecondsSinceEpoch,
+      'mobile_auth_device_token_v1_https_api_juris_dev_example_com':
+          'token-dev',
+      'mobile_auth_device_token_issued_at_v1_https_api_juris_dev_example_com':
+          DateTime.utc(2026, 1, 1).millisecondsSinceEpoch,
+    });
+
+    final localStore = LocalAuthStore(
+      baseUri: Uri.parse('http://127.0.0.1:8080'),
+      apiKey: 'aijuris',
+    );
+    final devStore = LocalAuthStore(
+      baseUri: Uri.parse('https://api-juris-dev.example.com'),
+      apiKey: 'aijuris',
+    );
+
+    await localStore.signOut();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getString('mobile_auth_device_token_v1_http_127_0_0_1_8080'),
+      isNull,
+    );
+    expect(
+      prefs.getInt('mobile_auth_device_token_issued_at_v1_http_127_0_0_1_8080'),
+      isNull,
+    );
+    expect(
+      prefs.getString(
+        'mobile_auth_device_token_v1_https_api_juris_dev_example_com',
+      ),
+      'token-dev',
+    );
+    expect(
+      prefs.getInt(
+        'mobile_auth_device_token_issued_at_v1_https_api_juris_dev_example_com',
+      ),
+      DateTime.utc(2026, 1, 1).millisecondsSinceEpoch,
+    );
+
+    expect((await devStore.getCurrentUser()), isNull);
+  });
+
 }
