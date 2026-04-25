@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from .base import Tool, ToolDefinition, ToolResult
 from .address_validator import RegisterAdriesAddressValidatorTool
 from .car_validator import SlovakiaCarValidatorTool
+from .dovera_debtors import DoveraDebtorCheckTool
 from .obchodnyregister import ObchodnyRegisterTool
 from .property_validator import SlovakiaPropertyLVTool
 
@@ -34,9 +35,10 @@ class ToolRegistry:
 
 def build_default_tool_registry() -> ToolRegistry:
     tools: dict[str, Tool] = {
-        "obchodny_register_company_check": ObchodnyRegisterTool(),
-        "registeradries_address_validate": RegisterAdriesAddressValidatorTool(),
-        "slovakia_property_lv_lookup": SlovakiaPropertyLVTool(),
-        "slovakia_car_validate": SlovakiaCarValidatorTool(),
+        "obchodny_register_company_check": cast(Tool, ObchodnyRegisterTool()),
+        "registeradries_address_validate": cast(Tool, RegisterAdriesAddressValidatorTool()),
+        "slovakia_property_lv_lookup": cast(Tool, SlovakiaPropertyLVTool()),
+        "slovakia_car_validate": cast(Tool, SlovakiaCarValidatorTool()),
+        "dovera_debtor_check": cast(Tool, DoveraDebtorCheckTool()),
     }
     return ToolRegistry(_tools=tools)

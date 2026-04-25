@@ -174,7 +174,7 @@ class PersonSearchAgent(EntityScreeningAgent):
             "3. list of trade licenses / sole-trader businesses\n"
             "4. list of debts or liabilities, especially in:\n"
             "   - social insurance\n"
-            "   - health insurance\n"
+            "   - health insurance (including public debtor-list checks such as Dôvera when available)\n"
             "   - financial institutions\n"
             "5. additional relevant web information\n"
             f"Person reference: {normalized_reference}\n"
