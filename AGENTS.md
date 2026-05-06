@@ -7,6 +7,14 @@ Coding standards: typing, linting, tests, error handling
 Output requirements: always create/update docs, add minimal runnable example
 Minimal runnable example (default): `python examples/minimal_demo.py`
 
+
+Regulatory baseline rule (GDPR + EU AI Act):
+
+- Every new task, design, and code change must be evaluated against GDPR and the EU AI Act before implementation.
+- During implementation, apply privacy-by-design/data-minimization, explicit consent handling where required, retention/deletion controls, user transparency, traceable logging, and human-oversight safeguards for legal-risk outputs.
+- If a requested change conflicts with GDPR or EU AI Act expectations, stop and surface the compliance gap plus a compliant alternative.
+
+
 Database layout rule:
 
 - Keep only SQL assets under `databases/<projectname>/` such as migrations, init SQL, and seed data.

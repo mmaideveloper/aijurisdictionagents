@@ -37,6 +37,7 @@ Each agent message includes:
 ## API document-task planning
 
 The API chat reply flow can add policy-driven task-planning guidance for uploaded-document requests before sending the prompt to the lawyer agent.
+Case-backed chat memory relies on persisted `uploaded`, `chat_attachment`, and `session_history` documents being available to the active document-processing path so later sessions can retrieve earlier inline uploads and refreshed transcript snapshots.
 
 - Mixed requests such as "review/update uploaded document and summarize it" are converted into an ordered internal task plan.
 - The task order follows the user message order.

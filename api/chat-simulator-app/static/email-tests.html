@@ -99,12 +99,25 @@
             <option value="google_pay">Google Pay</option>
           </select>
         </div>
+        <div>
+          <label for="emailCaseSubject">Case subject</label>
+          <input id="emailCaseSubject" value="Share transfer package" />
+        </div>
+        <div>
+          <label for="emailTemplateVersion">Template version</label>
+          <input id="emailTemplateVersion" value="v1" />
+        </div>
+        <div>
+          <label for="emailCorrelationId">Correlation ID</label>
+          <input id="emailCorrelationId" value="SIM-EMAIL-TEST-001" />
+        </div>
       </section>
 
       <section class="email-test-actions row">
         <button id="sendRegistrationEmail" type="button">Test: registration email</button>
         <button id="sendOtpEmail" class="secondary" type="button">Test: mobile OTP email</button>
         <button id="sendPaymentEmail" class="secondary" type="button">Test: payment email</button>
+        <button id="sendDocumentsEmail" class="secondary" type="button">Test: documents email</button>
       </section>
 
       <section class="row">

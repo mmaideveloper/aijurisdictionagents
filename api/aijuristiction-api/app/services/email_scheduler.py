@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
+import base64
 from uuid import uuid4
+from typing import Any
 
 from app.services.email import EmailNotificationService
 from app.services.email_queue import EmailQueueStore
@@ -21,7 +23,7 @@ class EmailScheduler:
         queue_store.initialize()
         return cls(queue_store=queue_store, email_service=EmailNotificationService.from_env())
 
-    def enqueue(self, *, recipient: str, subject: str, body: str, metadata: dict[str, str]) -> str:
+    def enqueue(self, *, recipient: str, subject: str, body: str, metadata: dict[str, Any]) -> str:
         email_id = str(uuid4())
         self.queue_store.enqueue_email(
             email_id=email_id,
@@ -41,6 +43,8 @@ class EmailScheduler:
                     recipient=item.recipient,
                     subject=item.subject,
                     body=item.body,
+                    html_body=_metadata_str(item.metadata, "html_body"),
+                    attachments=_decode_attachments(item.metadata.get("attachments")),
                 )
                 self.queue_store.mark_sent(email_id=item.email_id)
                 processed += 1
@@ -62,3 +66,34 @@ def scheduler_interval_seconds() -> int:
     except ValueError:
         return 60
     return max(value, 5)
+
+
+def _metadata_str(metadata: object, key: str) -> str | None:
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get(key)
+    return str(value) if isinstance(value, str) and value.strip() else None
+
+
+def _decode_attachments(raw: object) -> list[dict[str, object]]:
+    if not isinstance(raw, list):
+        return []
+    decoded: list[dict[str, object]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content_base64")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        try:
+            payload = base64.b64decode(content.encode("utf-8"), validate=True)
+        except Exception:
+            continue
+        decoded.append(
+            {
+                "filename": str(item.get("filename") or "attachment.bin"),
+                "mime_type": str(item.get("mime_type") or "application/octet-stream"),
+                "content": payload,
+            }
+        )
+    return decoded

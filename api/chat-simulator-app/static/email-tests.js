@@ -6,6 +6,9 @@ const firstNameInput = document.getElementById("emailFirstName");
 const lastNameInput = document.getElementById("emailLastName");
 const planInput = document.getElementById("emailPlan");
 const paymentProviderInput = document.getElementById("emailPaymentProvider");
+const caseSubjectInput = document.getElementById("emailCaseSubject");
+const templateVersionInput = document.getElementById("emailTemplateVersion");
+const correlationIdInput = document.getElementById("emailCorrelationId");
 const transportInput = document.getElementById("emailTransport");
 const senderInput = document.getElementById("emailSender");
 const smtpHostInput = document.getElementById("emailSmtpHost");
@@ -59,6 +62,9 @@ function emailPayload(template) {
     last_name: lastNameInput.value.trim() || "Tester",
     plan_code: planInput.value,
     payment_provider: paymentProviderInput.value,
+    case_subject: caseSubjectInput.value.trim(),
+    template_version: templateVersionInput.value.trim(),
+    correlation_id: correlationIdInput.value.trim(),
   };
 }
 
@@ -107,4 +113,5 @@ function bind(id, template) {
 bind("sendRegistrationEmail", "registration");
 bind("sendOtpEmail", "otp");
 bind("sendPaymentEmail", "payment");
+bind("sendDocumentsEmail", "documents");
 renderTransportLinks();

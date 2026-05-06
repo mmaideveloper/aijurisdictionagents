@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 
 from app.document_templates.catalog import render_template
+from app.document_templates.disclaimers import resolve_template_disclaimer
 from app.document_templates.models import (
     DocumentTemplateCreateRequest,
     DocumentTemplateDefinition,
@@ -102,12 +103,14 @@ def preview_document_template_pdf(
     # the production chat PDF renderer for visual quality checks.
     from app.chat.api import _build_simple_pdf
 
+    disclaimer = resolve_template_disclaimer(template)
     pdf_content = _build_simple_pdf(
         title=rendered.title or template.title,
         lines=lines,
         country=template.jurisdiction,
         language=template.language,
         footer_line=f"AIJ | Template preview | {template.template_key}",
+        disclaimer=disclaimer,
         draw_logo_mark=True,
         include_title_block=False,
     )

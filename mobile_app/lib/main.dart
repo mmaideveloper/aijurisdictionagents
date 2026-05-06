@@ -53,6 +53,9 @@ const String _defaultLanguage = String.fromEnvironment(
   defaultValue: 'SK',
 );
 const String _localAutofillPhoneNumber = '+421944400166';
+const String _dataProcessingNoticeUrl =
+    'https://www.jurisdigta.eu/#data-processing-consent';
+const String _dataProcessingConsentVersion = '2026-05-06';
 final FileOpener _savedFileOpener = createFileOpener();
 
 const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
@@ -170,6 +173,11 @@ class AppStrings {
       'send_code': 'Poslať kód',
       'code_sent': 'Kód bol odoslaný na e-mail.',
       'send_code_failed': 'Odoslanie kódu zlyhalo: {{error}}',
+      'data_processing_consent_label':
+          'Súhlasím so spracovaním osobných a finančných údajov podľa právneho oznámenia.',
+      'data_processing_consent_link': 'Pozrieť právne oznámenie',
+      'data_processing_consent_required':
+          'Pred registráciou musíte potvrdiť právne oznámenie.',
       'account': 'Účet',
       'sign_out': 'Odhlásiť sa',
       'save_changes': 'Uložiť zmeny',
@@ -410,6 +418,11 @@ class AppStrings {
       'send_code': 'Send code',
       'code_sent': 'Code was sent to email.',
       'send_code_failed': 'Sending code failed: {{error}}',
+      'data_processing_consent_label':
+          'I agree with processing of personal and financial data according to the legal notice.',
+      'data_processing_consent_link': 'Review legal notice',
+      'data_processing_consent_required':
+          'You must confirm the legal notice before registration.',
       'account': 'Account',
       'sign_out': 'Sign out',
       'save_changes': 'Save changes',
@@ -645,6 +658,11 @@ class AppStrings {
       'send_code': 'Code senden',
       'code_sent': 'Code wurde per E-Mail gesendet.',
       'send_code_failed': 'Code senden fehlgeschlagen: {{error}}',
+      'data_processing_consent_label':
+          'Ich stimme der Verarbeitung personenbezogener und finanzieller Daten gemäß Rechtshinweis zu.',
+      'data_processing_consent_link': 'Rechtshinweis ansehen',
+      'data_processing_consent_required':
+          'Bitte bestätigen Sie den Rechtshinweis vor der Registrierung.',
       'account': 'Konto',
       'sign_out': 'Abmelden',
       'save_changes': 'Aenderungen speichern',
@@ -3011,6 +3029,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
   final TextEditingController _signUpLastNameController =
       TextEditingController();
   bool _showPhoneOtpSignIn = false;
+  bool _dataProcessingConsentAccepted = false;
   bool _isBusy = false;
   String _appVersionLabel = 'v0.1.5+43';
   String? _devicePhoneNumber;
@@ -3201,6 +3220,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
           verificationCode: _signUpVerificationCodeController.text,
           firstName: _signUpFirstNameController.text,
           lastName: _signUpLastNameController.text,
+          dataProcessingConsentAccepted: _dataProcessingConsentAccepted,
+          dataProcessingConsentVersion: _dataProcessingConsentVersion,
         ),
       );
       await widget.logger.info(
@@ -3425,7 +3446,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   autofillHints: const <String>[
                                                     AutofillHints.oneTimeCode,
                                                   ],
-                                                  decoration: InputDecoration(
+                                                  textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                     labelText: strings.t(
                                                       'sign_in_code_required',
                                                     ),
@@ -3468,7 +3490,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   AutofillHints
                                                       .telephoneNumberDevice,
                                                 ],
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'phone_number_required',
                                                   ),
@@ -3491,7 +3514,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   AutofillHints.email,
                                                   AutofillHints.newUsername,
                                                 ],
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'email_required',
                                                   ),
@@ -3505,7 +3529,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                 autofillHints: const <String>[
                                                   AutofillHints.newPassword,
                                                 ],
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'password_required',
                                                   ),
@@ -3543,7 +3568,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                               TextField(
                                                 controller:
                                                     _signUpFirstNameController,
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'first_name_optional',
                                                   ),
@@ -3553,13 +3579,49 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                               TextField(
                                                 controller:
                                                     _signUpLastNameController,
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'last_name_optional',
                                                   ),
                                                 ),
                                               ),
                                               const SizedBox(height: 16),
+                                              CheckboxListTile(
+                                                contentPadding: EdgeInsets.zero,
+                                                value:
+                                                    _dataProcessingConsentAccepted,
+                                                onChanged: (value) {
+                                                  setState(() {
+                                                    _dataProcessingConsentAccepted =
+                                                        value ?? false;
+                                                  });
+                                                },
+                                                title: Text(strings.t(
+                                                  'data_processing_consent_label',
+                                                )),
+                                              ),
+                                              Align(
+                                                alignment:
+                                                    Alignment.centerLeft,
+                                                child: TextButton(
+                                                  onPressed: () {
+                                                    launchUrl(
+                                                      Uri.parse(
+                                                        _dataProcessingNoticeUrl,
+                                                      ),
+                                                      mode: LaunchMode
+                                                          .externalApplication,
+                                                    );
+                                                  },
+                                                  child: Text(
+                                                    strings.t(
+                                                      'data_processing_consent_link',
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
                                               SizedBox(
                                                 width: double.infinity,
                                                 child: FilledButton(
@@ -3952,7 +4014,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             controller: _phoneController,
             keyboardType: TextInputType.phone,
             readOnly: true,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('phone_number'),
               suffixIcon: const Icon(Icons.lock_outline),
             ),
@@ -3962,7 +4025,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
             readOnly: true,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('email'),
               suffixIcon: const Icon(Icons.lock_outline),
             ),
@@ -3971,21 +4035,24 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           TextField(
             controller: _passwordController,
             obscureText: true,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('password_required'),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _firstNameController,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('first_name'),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _lastNameController,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('last_name'),
             ),
           ),
@@ -5421,6 +5488,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     required bool exportReady,
   }) {
     final visibleReply = _sanitizeVisibleMessageContent(rawReply);
+    if (!exportReady && _looksLikeGeneratedDocumentDraft(visibleReply)) {
+      _hasExportReady = true;
+    }
     if (visibleReply.isEmpty) {
       return '';
     }
@@ -7068,7 +7138,8 @@ class _ChatHomePageState extends State<ChatHomePage>
         title: Text(strings.t('create_case')),
         content: TextField(
           controller: controller,
-          decoration: InputDecoration(labelText: strings.t('case_name')),
+          textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(labelText: strings.t('case_name')),
         ),
         actions: [
           TextButton(
@@ -7423,6 +7494,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       onSubmitted: expanded ? null : (_) => _sendMessage(),
       onTap: () => _setInputComposerExpanded(true),
       onTapOutside: (_) => _setInputComposerExpanded(false, unfocus: true),
+      textAlignVertical: TextAlignVertical.top,
       decoration: InputDecoration(
         hintText: _responderMode == ResponderMode.aiUserSimulator
             ? strings.t('case_input_discussion')
@@ -7433,6 +7505,18 @@ class _ChatHomePageState extends State<ChatHomePage>
         border: const OutlineInputBorder(),
       ),
     );
+  }
+
+
+  String _localizedAgentName(String? rawAgentName, AppStrings strings) {
+    final normalized = (rawAgentName ?? '').trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return strings.t('assistant');
+    }
+    if (normalized.contains('lawyer')) {
+      return strings.t('assistant');
+    }
+    return rawAgentName!.trim();
   }
 
   void _showSnackbar(String message) {
@@ -7822,9 +7906,10 @@ class _ChatHomePageState extends State<ChatHomePage>
                         final isUser = message.role == 'user';
                         final speaker = isUser
                             ? strings.t('you')
-                            : ((message.agentName?.trim().isNotEmpty ?? false)
-                                ? message.agentName!.trim()
-                                : strings.t('assistant'));
+                            : _localizedAgentName(
+                                message.agentName,
+                                strings,
+                              );
                         return Align(
                           alignment: isUser
                               ? Alignment.centerRight
@@ -7947,7 +8032,8 @@ class _ChatHomePageState extends State<ChatHomePage>
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           curve: Curves.easeOut,
-                          height: MediaQuery.sizeOf(context).height * 0.5,
+                          height: (MediaQuery.sizeOf(context).height * 0.5) -
+                              (MediaQuery.viewInsetsOf(context).bottom * 0.35),
                           child: _buildComposerInputField(
                             strings: strings,
                             expanded: true,
@@ -8267,3 +8353,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     );
   }
 }
+    if (!_dataProcessingConsentAccepted) {
+      _showSnackbar(_strings.t('data_processing_consent_required'));
+      return;
+    }

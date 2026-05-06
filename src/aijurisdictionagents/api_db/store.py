@@ -31,6 +31,8 @@ class User:
     first_name: str | None
     last_name: str | None
     full_name: str
+    data_processing_consent_at: str | None
+    data_processing_consent_version: str | None
 
 
 @dataclass(frozen=True)
@@ -183,6 +185,8 @@ class ApiDatabaseStore:
                     first_name TEXT,
                     last_name TEXT,
                     full_name TEXT NOT NULL,
+                    data_processing_consent_at TEXT,
+                    data_processing_consent_version TEXT,
                     password_hash TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
@@ -393,6 +397,8 @@ class ApiDatabaseStore:
         full_name: str | None = None,
         first_name: str | None = None,
         last_name: str | None = None,
+        data_processing_consent_at: str | None = None,
+        data_processing_consent_version: str | None = None,
     ) -> User:
         user_id = str(uuid.uuid4())
         now = _now_iso()
@@ -413,9 +419,10 @@ class ApiDatabaseStore:
                 conn,
                 """
                 INSERT INTO users(
-                    user_id, phone_number, email, first_name, last_name, full_name, password_hash, created_at
+                    user_id, phone_number, email, first_name, last_name, full_name,
+                    data_processing_consent_at, data_processing_consent_version, password_hash, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -424,6 +431,8 @@ class ApiDatabaseStore:
                     normalized_first,
                     normalized_last,
                     resolved_full_name,
+                    data_processing_consent_at,
+                    data_processing_consent_version,
                     password_hash,
                     now,
                 ),
@@ -445,6 +454,8 @@ class ApiDatabaseStore:
             first_name=normalized_first,
             last_name=normalized_last,
             full_name=resolved_full_name,
+            data_processing_consent_at=data_processing_consent_at,
+            data_processing_consent_version=data_processing_consent_version,
         )
 
     def save_registration_code(
@@ -719,7 +730,7 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT user_id, phone_number, email, first_name, last_name, full_name
+                SELECT user_id, phone_number, email, first_name, last_name, full_name, data_processing_consent_at, data_processing_consent_version
                 FROM users
                 WHERE phone_number = ?
                 """,
@@ -734,7 +745,7 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT user_id, phone_number, email, first_name, last_name, full_name
+                SELECT user_id, phone_number, email, first_name, last_name, full_name, data_processing_consent_at, data_processing_consent_version
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -749,7 +760,7 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT user_id, phone_number, email, first_name, last_name, full_name
+                SELECT user_id, phone_number, email, first_name, last_name, full_name, data_processing_consent_at, data_processing_consent_version
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -776,7 +787,7 @@ class ApiDatabaseStore:
             current = self._fetchone(
                 conn,
                 """
-                SELECT user_id, phone_number, email, first_name, last_name, full_name
+                SELECT user_id, phone_number, email, first_name, last_name, full_name, data_processing_consent_at, data_processing_consent_version
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -832,6 +843,8 @@ class ApiDatabaseStore:
             first_name=normalized_first,
             last_name=normalized_last,
             full_name=resolved_full_name,
+            data_processing_consent_at=current_user.data_processing_consent_at,
+            data_processing_consent_version=current_user.data_processing_consent_version,
         )
 
     def create_company(self, *, legal_name: str, profile_json: str = "{}") -> Company:
@@ -1076,18 +1089,38 @@ class ApiDatabaseStore:
         uploaded_by_user_id: str | None = None,
     ) -> str:
         filename = f"session-{session_id}.txt"
+        payload = content.encode("utf-8")
         with self._connect() as conn:
             existing = self._fetchone(
                 conn,
                 """
-                SELECT doc_id FROM case_documents
+                SELECT doc_id, storage_uri FROM case_documents
                 WHERE case_id = ? AND kind = 'session_history' AND original_filename = ?
                 LIMIT 1
                 """,
                 (case_id, filename),
             )
             if existing is not None:
-                return str(existing[0])
+                doc_id = str(existing[0])
+                storage_uri = str(existing[1])
+                self._replace_stored_payload(storage_uri=storage_uri, payload=payload)
+                self._execute(
+                    conn,
+                    """
+                    UPDATE case_documents
+                    SET uploaded_by_user_id = ?, processing_status = 'uploaded',
+                        processing_error = NULL, processed_at = NULL
+                    WHERE doc_id = ?
+                    """,
+                    (uploaded_by_user_id, doc_id),
+                )
+                self._execute(
+                    conn,
+                    "UPDATE cases SET updated_at = ? WHERE case_id = ?",
+                    (_now_iso(), case_id),
+                )
+                conn.commit()
+                return doc_id
             row = self._fetchone(
                 conn,
                 """
@@ -1103,7 +1136,7 @@ class ApiDatabaseStore:
             kind="session_history",
             version=next_version,
             original_filename=filename,
-            payload=content.encode("utf-8"),
+            payload=payload,
             uploaded_by_user_id=uploaded_by_user_id,
         )
 
@@ -1233,7 +1266,8 @@ class ApiDatabaseStore:
                 SELECT doc_id, case_id, kind, version, storage_uri, original_filename, uploaded_by_user_id,
                        processing_status, processing_error, processed_at, created_at
                 FROM case_documents
-                WHERE kind IN ('uploaded', 'session_history') AND processing_status IN ('uploaded', 'failed')
+                WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+                  AND processing_status IN ('uploaded', 'failed')
                 ORDER BY created_at ASC
                 LIMIT ?
                 """,
@@ -1389,6 +1423,11 @@ class ApiDatabaseStore:
             return f"{prefix}/{relative_uri.as_posix()}"
         return relative_uri.as_posix()
 
+    def _replace_stored_payload(self, *, storage_uri: str, payload: bytes) -> None:
+        destination = self._resolve_storage_path(storage_uri)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+
     def _resolve_storage_path(self, storage_uri: str) -> Path:
         normalized = storage_uri.strip()
         if normalized.startswith("http://") or normalized.startswith("https://"):
@@ -1464,6 +1503,10 @@ class ApiDatabaseStore:
             self._execute(conn, "ALTER TABLE users ADD COLUMN first_name TEXT")
         if "last_name" not in columns:
             self._execute(conn, "ALTER TABLE users ADD COLUMN last_name TEXT")
+        if "data_processing_consent_at" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN data_processing_consent_at TEXT")
+        if "data_processing_consent_version" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN data_processing_consent_version TEXT")
         self._execute(
             conn,
             """
@@ -1774,6 +1817,8 @@ def _row_to_user(row: tuple[object, ...]) -> User:
         first_name=str(values[3]) if values[3] is not None else None,
         last_name=str(values[4]) if values[4] is not None else None,
         full_name=str(values[5]),
+        data_processing_consent_at=str(values[6]) if len(values) > 6 and values[6] is not None else None,
+        data_processing_consent_version=str(values[7]) if len(values) > 7 and values[7] is not None else None,
     )
 
 

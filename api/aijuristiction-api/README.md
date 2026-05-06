@@ -493,8 +493,10 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
+- `GET /v1/cases/{case_id}/documents/context?user_id=...` now reports processed/unprocessed memory inputs across uploaded files, chat attachments, and generated `session_history` transcripts.
 - If a transcript or document payload is missing in local storage, history responses fall back to saved summaries and document download returns `404` instead of `500`.
 - Uploaded case documents are stored as `case -> many documents`. Each processed uploaded document keeps the extracted full text plus a real embedding in `case_document_contents`, and chunk-level text/embedding rows in `case_document_chunks`.
+- Case-backed chat streams now persist inline session documents as reusable case attachments, process them immediately in local/API mode, and refresh the per-session `session-{session_id}.txt` transcript document on every later turn in the same session.
 - Direct `POST /v1/chat/sessions/{session_id}/reply` now loads the most relevant processed document chunks for the user query by combining lexical overlap with semantic similarity from real embeddings, then injects those chunks into the extra system-context document message.
 - Slovak share-transfer intake now prefers labeled company fields such as `Nazov:` / `Názov:` / `Obchodné meno:` when extracting the ORSR lookup query, so owner names in later lines do not override the company verification step.
 - `POST /v1/chat/sessions/{session_id}/stream` in `ReadUser` mode now emits intermediate `processing` SSE events for the company-verification path, including ORSR tool start/result and which drafting inputs were detected vs. still missing.
@@ -539,6 +541,8 @@ Additional PDF font notes:
 - `GET /v1/document-templates` lists the persistent legal-template catalog used for future template-driven contract generation.
 - `POST`, `PATCH`, and `DELETE` on `/v1/document-templates/*` allow templates to be added, updated, and soft-deleted without changing code.
 - `GET /v1/document-templates/match/search?request_text=...&country=SK` returns the best matching template candidate for a client request.
+- Templates now support optional `disclaimer_title`, `disclaimer_text`, and `disclaimer_footer` fields so legal disclaimer wording can be updated without a code deploy.
+- Template preview PDFs and chat-generated Slovak document PDFs render the disclaimer on page one and repeat the short disclaimer in the footer.
 - The initial seed contains the common Slovak template groups supplied for:
   - commercial/corporate contracts
   - employment/personnel documents
@@ -916,6 +920,7 @@ New endpoints:
 
 If `POST /v1/chat/sessions` is created with `case_id`, the API now seeds that new in-memory session with the stored case history so the next reply/stream turn can continue the existing case context instead of starting with an empty prompt.
 If one of those seeded case-history transcript files is missing, the API falls back to the saved summary text so existing cases can still create a session and continue.
+Case-backed session `3` can now also reuse documents uploaded during session `1` and session `2`, because inline chat documents are persisted into case memory and refreshed session-history transcripts are reprocessed for later retrieval.
 
 
 ## Minimal runnable example (streaming API + core)
@@ -924,4 +929,10 @@ Start API first, then run:
 
 ```bash
 python examples/api_streaming_demo.py
+```
+
+Cross-session memory formatting demo:
+
+```bash
+python examples/conversation_memory_minimal_demo.py
 ```

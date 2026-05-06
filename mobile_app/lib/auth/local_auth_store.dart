@@ -72,6 +72,8 @@ class LocalAuthUser {
     required this.password,
     this.firstName,
     this.lastName,
+    this.dataProcessingConsentAt,
+    this.dataProcessingConsentVersion,
   });
 
   final String userId;
@@ -80,6 +82,8 @@ class LocalAuthUser {
   final String password;
   final String? firstName;
   final String? lastName;
+  final String? dataProcessingConsentAt;
+  final String? dataProcessingConsentVersion;
 
   String get displayName {
     final first = (firstName ?? '').trim();
@@ -98,6 +102,8 @@ class LocalAuthUser {
     String? password,
     String? firstName,
     String? lastName,
+    String? dataProcessingConsentAt,
+    String? dataProcessingConsentVersion,
   }) {
     return LocalAuthUser(
       userId: userId ?? this.userId,
@@ -106,6 +112,10 @@ class LocalAuthUser {
       password: password ?? this.password,
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
+      dataProcessingConsentAt:
+          dataProcessingConsentAt ?? this.dataProcessingConsentAt,
+      dataProcessingConsentVersion:
+          dataProcessingConsentVersion ?? this.dataProcessingConsentVersion,
     );
   }
 
@@ -117,6 +127,8 @@ class LocalAuthUser {
       'password': password,
       'first_name': firstName,
       'last_name': lastName,
+      'data_processing_consent_at': dataProcessingConsentAt,
+      'data_processing_consent_version': dataProcessingConsentVersion,
     };
   }
 
@@ -128,6 +140,9 @@ class LocalAuthUser {
       password: json['password'] as String? ?? '',
       firstName: json['first_name'] as String?,
       lastName: json['last_name'] as String?,
+      dataProcessingConsentAt: json['data_processing_consent_at'] as String?,
+      dataProcessingConsentVersion:
+          json['data_processing_consent_version'] as String?,
     );
   }
 }
@@ -140,6 +155,8 @@ class SignUpInput {
     required this.verificationCode,
     this.firstName,
     this.lastName,
+    required this.dataProcessingConsentAccepted,
+    required this.dataProcessingConsentVersion,
   });
 
   final String phoneNumber;
@@ -148,6 +165,8 @@ class SignUpInput {
   final String verificationCode;
   final String? firstName;
   final String? lastName;
+  final bool dataProcessingConsentAccepted;
+  final String dataProcessingConsentVersion;
 }
 
 class UpdateProfileInput {
@@ -168,7 +187,10 @@ class LocalAuthStore {
   static const String _currentUserKeyPrefix = 'mobile_auth_current_user_v3';
   static const String _lastPhoneKeyPrefix = 'mobile_auth_last_phone_v3';
   static const String _deviceTokenKeyPrefix = 'mobile_auth_device_token_v1';
+  static const String _deviceTokenIssuedAtKeyPrefix =
+      'mobile_auth_device_token_issued_at_v1';
   static const String _deviceIdKeyPrefix = 'mobile_auth_device_id_v1';
+  static const Duration _deviceTokenRememberDuration = Duration(hours: 8);
 
   const LocalAuthStore({
     required this.baseUri,
@@ -181,6 +203,8 @@ class LocalAuthStore {
   String get _currentUserKey => '${_currentUserKeyPrefix}_${_storageScope()}';
   String get _lastPhoneKey => '${_lastPhoneKeyPrefix}_${_storageScope()}';
   String get _deviceTokenKey => '${_deviceTokenKeyPrefix}_${_storageScope()}';
+  String get _deviceTokenIssuedAtKey =>
+      '${_deviceTokenIssuedAtKeyPrefix}_${_storageScope()}';
   String get _deviceIdKey => '${_deviceIdKeyPrefix}_${_storageScope()}';
 
   String _storageScope() {
@@ -261,6 +285,7 @@ class LocalAuthStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_currentUserKey);
     await prefs.remove(_deviceTokenKey);
+    await prefs.remove(_deviceTokenIssuedAtKey);
   }
 
   Future<String> getOrCreateDeviceBindingId() async {
@@ -302,6 +327,8 @@ class LocalAuthStore {
         'verification_code': verificationCode,
         'first_name': _normalizeOptionalText(input.firstName),
         'last_name': _normalizeOptionalText(input.lastName),
+        'data_processing_consent_accepted': input.dataProcessingConsentAccepted,
+        'data_processing_consent_version': input.dataProcessingConsentVersion,
       },
     );
     if (response.statusCode != 201) {
@@ -391,6 +418,18 @@ class LocalAuthStore {
         resolvedDeviceId.isEmpty ||
         cachedToken == null ||
         cachedToken.trim().isEmpty) {
+      return null;
+    }
+    final tokenIssuedAtEpochMs = prefs.getInt(_deviceTokenIssuedAtKey);
+    if (tokenIssuedAtEpochMs == null) {
+      await _cacheDeviceToken(null);
+      return null;
+    }
+    final tokenIssuedAt =
+        DateTime.fromMillisecondsSinceEpoch(tokenIssuedAtEpochMs, isUtc: true);
+    if (DateTime.now().toUtc().difference(tokenIssuedAt) >=
+        _deviceTokenRememberDuration) {
+      await _cacheDeviceToken(null);
       return null;
     }
     final response = await _postJson(
@@ -561,9 +600,14 @@ class LocalAuthStore {
     final prefs = await SharedPreferences.getInstance();
     if (token == null || token.trim().isEmpty) {
       await prefs.remove(_deviceTokenKey);
+      await prefs.remove(_deviceTokenIssuedAtKey);
       return;
     }
     await prefs.setString(_deviceTokenKey, token.trim());
+    await prefs.setInt(
+      _deviceTokenIssuedAtKey,
+      DateTime.now().toUtc().millisecondsSinceEpoch,
+    );
   }
 
   Future<http.Response> _postJson({
@@ -619,6 +663,9 @@ class LocalAuthStore {
       password: password,
       firstName: decoded['first_name'] as String?,
       lastName: decoded['last_name'] as String?,
+      dataProcessingConsentAt: decoded['data_processing_consent_at'] as String?,
+      dataProcessingConsentVersion:
+          decoded['data_processing_consent_version'] as String?,
     );
   }
 

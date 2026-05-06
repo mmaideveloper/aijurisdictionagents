@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from io import BytesIO
 import json
 import logging
+import os
 import re
 import time
 import textwrap
@@ -38,10 +39,12 @@ from app.chat.intent_policy_service import (
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.repository import InMemoryChatRepository
 from app.chat.result_metadata import build_session_result_metadata
+from app.document_templates.disclaimers import resolve_disclaimer_from_templates
+from app.document_templates.store import get_document_template_store
 from app.security import require_api_key
 from app.versioning import get_api_version, get_core_version
 
-from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument
 from aijurisdictionagents.llm import get_embedding_client
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
@@ -50,6 +53,7 @@ from services.document_processor.runtime import (
     lexical_overlap_score,
     parse_embedding_vector,
 )
+from services.document_processor.service import DocumentProcessor
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"], dependencies=[Depends(require_api_key)])
 _repository = InMemoryChatRepository()
@@ -77,6 +81,7 @@ class _DocumentExportAsset:
     filename: str
     title: str
     lines: list[str]
+    disclaimer: tuple[str, str, str] | None = None
     use_corporate_template: bool = False
 
 
@@ -152,12 +157,60 @@ def _persist_session_history_document_if_needed(*, session: Session, session_id:
     store = _get_store()
     add_session_history_document = getattr(store, "add_case_session_history_document", None)
     if callable(add_session_history_document):
-        add_session_history_document(
+        doc_id = add_session_history_document(
             case_id=case_id,
             session_id=str(session_id),
             content=transcript,
             uploaded_by_user_id=str(session.user_id) if session.user_id else None,
         )
+        get_case_document = getattr(store, "get_case_document", None)
+        if callable(get_case_document):
+            _process_case_documents_if_needed(
+                store=store,
+                documents=[get_case_document(case_id=case_id, doc_id=doc_id)],
+            )
+
+
+def _document_processor_mode() -> str:
+    value = os.getenv(
+        "DOCUMENT_PROCESSOR_OPTION",
+        os.getenv("DOCUMENT_PROCESSOR", "api"),
+    ).strip().lower()
+    if value == "azure":
+        return "azure"
+    return "api"
+
+
+def _process_case_documents_if_needed(
+    *,
+    store: ApiDatabaseStore,
+    documents: list[CaseDocument],
+) -> None:
+    if not documents or _document_processor_mode() == "azure":
+        return
+    DocumentProcessor(store).process_documents(documents)
+
+
+def _persist_inline_case_documents_if_needed(
+    *,
+    session: Session,
+    documents: list[InputDocument],
+) -> None:
+    case_id = (session.case_id or "").strip()
+    if not case_id or not documents:
+        return
+    store = _get_store()
+    persisted_documents: list[CaseDocument] = []
+    for index, document in enumerate(documents, start=1):
+        filename = Path(document.path).name.strip() or f"attachment-{index}.txt"
+        doc_id = store.add_case_text_document(
+            case_id=case_id,
+            original_filename=filename,
+            content=document.content,
+            uploaded_by_user_id=str(session.user_id) if session.user_id else None,
+        )
+        persisted_documents.append(store.get_case_document(case_id=case_id, doc_id=doc_id))
+    _process_case_documents_if_needed(store=store, documents=persisted_documents)
 
 
 def _read_case_communication_content(*, store: ApiDatabaseStore, communication: Any) -> str:
@@ -236,7 +289,7 @@ def _load_case_documents_for_llm(
     processed_entries: list[tuple[str, str, str, str]] = []
     processed_names_by_doc_id: dict[str, str] = {}
     for document in list_case_documents(case_id=case_id):
-        if document.kind not in {'uploaded', 'session_history'}:
+        if document.kind not in {'uploaded', 'chat_attachment', 'session_history'}:
             continue
         if document.processing_status == 'processed' and document.doc_id in contents_by_doc_id:
             name, text, vector = contents_by_doc_id[document.doc_id]
@@ -406,7 +459,7 @@ def _prepend_document_status_note(*, reply: str, processed_names: list[str], unp
     if processed_names:
         lines.append('Processed documents available for search: ' + ', '.join(processed_names) + '.')
     if unprocessed_names:
-        lines.append('Still processing: ' + ', '.join(unprocessed_names) + '.')
+        lines.append('Spracovanie stále prebieha: ' + ', '.join(unprocessed_names) + '.')
     note = '\n'.join(lines).strip()
     if not note:
         return reply
@@ -542,7 +595,9 @@ def _run_direct_lawyer_turn(
             "- Say that the draft package is ready for download/export instead.\n"
             "- Do not mention JSON, CASE_UPDATE_JSON, machine payload, or technical persistence details in the user-facing content.\n"
             "- Do not include direct file paths, markdown download links, or relative links such as documents/... in the user-facing content.\n"
-            "- Include CASE_UPDATE_JSON after the user-facing content."
+            "- Include CASE_UPDATE_JSON after the user-facing content.\n"
+            "- Never output unresolved placeholders in square brackets (for example [Vase meno], [address], [ico]).\n"
+            "- If any required field is missing, ask for it explicitly instead of using placeholders."
         )
     preparation = prepare_country_direct_reply(
         session=session,
@@ -565,7 +620,7 @@ def _run_direct_lawyer_turn(
             session_id=session_id,
             session=session,
             content=normalized_direct_reply,
-            agent_name="LawyerSlovakia",
+            agent_name="Assistant",
         )
         return (
             persisted_user,
@@ -730,6 +785,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if session.state == SessionState.COMPLETED and payload.user_simulation_mode != "ReadUser":
         raise HTTPException(status_code=409, detail="Session already completed")
+    _persist_inline_case_documents_if_needed(session=session, documents=payload.documents)
     if payload.user_simulation_mode == "ReadUser":
         return _stream_read_user_session(session_id=session_id, session=session, payload=payload)
 
@@ -2283,6 +2339,7 @@ def export_session_result(
         title = asset.title
         lines = asset.lines
         filename = asset.filename
+        disclaimer = asset.disclaimer
         use_corporate_template = asset.use_corporate_template
     else:
         title, lines = _build_summary_export_content(
@@ -2293,6 +2350,7 @@ def export_session_result(
             language=session.language,
         )
         filename = _build_pdf_filename(session_id=session_id, kind="summary")
+        disclaimer = None
         use_corporate_template = False
 
     pdf_content = _build_simple_pdf(
@@ -2306,6 +2364,7 @@ def export_session_result(
             else None
         ),
         footer_line=(footer_line if kind == "document" else None),
+        disclaimer=disclaimer,
         draw_logo_mark=(kind == "document" and use_corporate_template),
         include_title_block=(kind != "document"),
     )
@@ -2349,6 +2408,7 @@ def _build_simple_pdf(
     language: str | None,
     header_line: str | None = None,
     footer_line: str | None = None,
+    disclaimer: tuple[str, str, str] | None = None,
     draw_logo_mark: bool = False,
     include_title_block: bool = True,
 ) -> bytes:
@@ -2385,10 +2445,31 @@ def _build_simple_pdf(
             ]
         )
 
+    if disclaimer is not None:
+        disclaimer_title, disclaimer_text, _disclaimer_footer = disclaimer
+        if disclaimer_title.strip():
+            header_lines.append(disclaimer_title.strip())
+        if disclaimer_text.strip():
+            header_lines.extend(
+                _wrap_pdf_lines(
+                    [disclaimer_text.strip()],
+                    width=(54 if use_corporate_template else 82),
+                )
+            )
+        header_lines.append("")
+
     title_block: list[str] = [title, "----------------"] if include_title_block else []
     prepared_lines = header_lines + title_block + _wrap_pdf_lines(lines)
     if use_corporate_template:
-        prepared_lines = [title, ""] + _wrap_pdf_lines(lines, width=54)
+        prepared_lines = [title, ""]
+        if disclaimer is not None:
+            disclaimer_title, disclaimer_text, _disclaimer_footer = disclaimer
+            if disclaimer_title.strip():
+                prepared_lines.append(disclaimer_title.strip())
+            if disclaimer_text.strip():
+                prepared_lines.extend(_wrap_pdf_lines([disclaimer_text.strip()], width=54))
+            prepared_lines.append("")
+        prepared_lines.extend(_wrap_pdf_lines(lines, width=54))
     if not prepared_lines:
         prepared_lines = [title]
 
@@ -2411,9 +2492,16 @@ def _build_simple_pdf(
         return page_height - margin_top
 
     def draw_footer() -> None:
-        if footer_line:
+        effective_footer = footer_line
+        if disclaimer is not None and disclaimer[2].strip():
+            effective_footer = (
+                f"{footer_line} | {disclaimer[2].strip()}"
+                if footer_line
+                else disclaimer[2].strip()
+            )
+        if effective_footer:
             pdf.setFont(regular_font, footer_font_size)
-            pdf.drawString(margin_left, margin_bottom - 8, footer_line)
+            pdf.drawString(margin_left, margin_bottom - 8, effective_footer)
 
     y = start_page()
     for index, line in enumerate(prepared_lines):
@@ -2661,6 +2749,7 @@ def _build_document_export_archive(
                     else None
                 ),
                 footer_line=footer_line,
+                disclaimer=asset.disclaimer,
                 draw_logo_mark=asset.use_corporate_template,
                 include_title_block=not asset.use_corporate_template,
             )
@@ -3008,6 +3097,11 @@ def _build_document_export_assets(
         )
     if len(document_entries) <= 1:
         entry = document_entries[0] if document_entries else None
+        disclaimer = _resolve_document_export_disclaimer(
+            country=country,
+            language=language,
+            document_kind=document_kind,
+        )
         return [
             _DocumentExportAsset(
                 filename=_document_asset_filename(
@@ -3016,6 +3110,7 @@ def _build_document_export_assets(
                 ),
                 title=title,
                 lines=lines,
+                disclaimer=disclaimer,
                 use_corporate_template=_is_third_party_document(
                     document_kind=document_kind,
                     entry=entry,
@@ -3273,6 +3368,11 @@ def _build_multi_document_export_assets(
 ) -> list[_DocumentExportAsset]:
     assets: list[_DocumentExportAsset] = []
     used_filenames: set[str] = set()
+    disclaimer = _resolve_document_export_disclaimer(
+        country=country,
+        language=language,
+        document_kind=document_kind,
+    )
     for index, entry in enumerate(document_entries, start=1):
         filename = _document_asset_filename(
             entry=entry,
@@ -3293,6 +3393,7 @@ def _build_multi_document_export_assets(
                 filename=unique_filename,
                 title=title,
                 lines=lines,
+                disclaimer=disclaimer,
                 use_corporate_template=_is_third_party_document(
                     document_kind=document_kind,
                     entry=entry,
@@ -3336,6 +3437,35 @@ def _is_third_party_document(
     if any(marker in lowered for marker in internal_markers):
         return False
     return False
+
+
+def _resolve_document_export_disclaimer(
+    *,
+    country: str,
+    language: str | None,
+    document_kind: str,
+) -> tuple[str, str, str] | None:
+    try:
+        store = get_document_template_store()
+        templates = store.list(include_deleted=False, jurisdiction=country.strip().upper())
+    except Exception:
+        templates = []
+    return resolve_disclaimer_from_templates(
+        templates=templates,
+        country=country,
+        language=language,
+        template_kind=_template_kind_for_document_kind(document_kind),
+    )
+
+
+def _template_kind_for_document_kind(document_kind: str) -> str | None:
+    mapping = {
+        "rental_agreement": "rental_agreement",
+        "share_transfer": "share_transfer_agreement",
+        "easement_demand": "court_filing",
+        "generic_case_document": "court_filing",
+    }
+    return mapping.get(document_kind)
 
 
 def _deduplicate_export_filename(*, filename: str, used_filenames: set[str]) -> str:

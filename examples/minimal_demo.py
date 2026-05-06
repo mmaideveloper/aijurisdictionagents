@@ -116,3 +116,17 @@ if __name__ == "__main__":
     print("SMTP server: mail.webhouse.sk:587 with STARTTLS")
     print("SMTP password env: EMAIL_SMTP_PASSWORD")
     print("Chat simulator email test page: http://127.0.0.1:8090/email-tests")
+
+
+
+def mobile_chat_fixes_summary() -> dict[str, str]:
+    """Minimal runnable summary for mobile chat fixes."""
+    return {
+        "composer_alignment": "top-left with keyboard-aware height",
+        "agent_label": "localized assistant label",
+        "document_ready": "fallback enabled when generated draft is detected",
+    }
+
+
+if __name__ == "__main__":
+    print(mobile_chat_fixes_summary())

@@ -29,6 +29,9 @@ class DocumentTemplateBasePayload(BaseModel):
     flow_keys: list[str] = Field(default_factory=list)
     placeholders: list[str] = Field(default_factory=list)
     source_refs: list[TemplateSourceReference] = Field(default_factory=list)
+    disclaimer_title: str = Field(default="", max_length=200)
+    disclaimer_text: str = Field(default="", max_length=4000)
+    disclaimer_footer: str = Field(default="", max_length=300)
     is_enabled: bool = True
 
 
@@ -50,6 +53,9 @@ class DocumentTemplateUpdateRequest(BaseModel):
     flow_keys: list[str] | None = None
     placeholders: list[str] | None = None
     source_refs: list[TemplateSourceReference] | None = None
+    disclaimer_title: str | None = Field(default=None, max_length=200)
+    disclaimer_text: str | None = Field(default=None, max_length=4000)
+    disclaimer_footer: str | None = Field(default=None, max_length=300)
     is_enabled: bool | None = None
 
 
@@ -69,6 +75,9 @@ class DocumentTemplateDefinition(BaseModel):
     flow_keys: tuple[str, ...] = ()
     placeholders: tuple[str, ...] = ()
     source_refs: tuple[TemplateSourceReference, ...] = ()
+    disclaimer_title: str = ""
+    disclaimer_text: str = ""
+    disclaimer_footer: str = ""
     is_enabled: bool = True
     is_deleted: bool = False
     created_at: datetime | None = None
@@ -92,6 +101,9 @@ class DocumentTemplateResponse(BaseModel):
     flow_keys: list[str]
     placeholders: list[str]
     source_refs: list[TemplateSourceReference]
+    disclaimer_title: str = ""
+    disclaimer_text: str = ""
+    disclaimer_footer: str = ""
     is_enabled: bool
     is_deleted: bool
     created_at: datetime | None = None
@@ -116,6 +128,9 @@ class DocumentTemplateResponse(BaseModel):
             flow_keys=list(item.flow_keys),
             placeholders=list(item.placeholders),
             source_refs=list(item.source_refs),
+            disclaimer_title=item.disclaimer_title,
+            disclaimer_text=item.disclaimer_text,
+            disclaimer_footer=item.disclaimer_footer,
             is_enabled=item.is_enabled,
             is_deleted=item.is_deleted,
             created_at=item.created_at,

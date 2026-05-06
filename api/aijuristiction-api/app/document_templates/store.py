@@ -133,8 +133,9 @@ class DocumentTemplateStore:
                     INSERT INTO document_templates (
                         template_id, template_key, jurisdiction, language, category, title, template_kind,
                         description, source_format, source_url, body, keywords_json, flow_keys_json,
-                        placeholders_json, source_refs_json, is_enabled, is_deleted, created_at, updated_at, deleted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                        placeholders_json, source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer,
+                        is_enabled, is_deleted, created_at, updated_at, deleted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                     """
                 ),
                 self._params(
@@ -153,6 +154,9 @@ class DocumentTemplateStore:
                     json.dumps(payload.flow_keys, ensure_ascii=False, sort_keys=True),
                     json.dumps(payload.placeholders, ensure_ascii=False, sort_keys=True),
                     json.dumps([item.model_dump(mode="json") for item in payload.source_refs], ensure_ascii=False, sort_keys=True),
+                    payload.disclaimer_title.strip(),
+                    payload.disclaimer_text.strip(),
+                    payload.disclaimer_footer.strip(),
                     1 if payload.is_enabled else 0,
                     now,
                     now,
@@ -193,6 +197,21 @@ class DocumentTemplateStore:
                 ensure_ascii=False,
                 sort_keys=True,
             ),
+            "disclaimer_title": (
+                payload.disclaimer_title.strip()
+                if isinstance(payload.disclaimer_title, str)
+                else current.disclaimer_title
+            ),
+            "disclaimer_text": (
+                payload.disclaimer_text.strip()
+                if isinstance(payload.disclaimer_text, str)
+                else current.disclaimer_text
+            ),
+            "disclaimer_footer": (
+                payload.disclaimer_footer.strip()
+                if isinstance(payload.disclaimer_footer, str)
+                else current.disclaimer_footer
+            ),
             "is_enabled": 1 if (payload.is_enabled if payload.is_enabled is not None else current.is_enabled) else 0,
             "updated_at": _utc_now_iso(),
         }
@@ -203,7 +222,8 @@ class DocumentTemplateStore:
                     UPDATE document_templates
                     SET jurisdiction = ?, language = ?, category = ?, title = ?, template_kind = ?,
                         description = ?, source_format = ?, source_url = ?, body = ?, keywords_json = ?,
-                        flow_keys_json = ?, placeholders_json = ?, source_refs_json = ?, is_enabled = ?, updated_at = ?
+                        flow_keys_json = ?, placeholders_json = ?, source_refs_json = ?, disclaimer_title = ?,
+                        disclaimer_text = ?, disclaimer_footer = ?, is_enabled = ?, updated_at = ?
                     WHERE template_key = ? AND jurisdiction = ?
                     """
                 ),
@@ -221,6 +241,9 @@ class DocumentTemplateStore:
                     updated["flow_keys_json"],
                     updated["placeholders_json"],
                     updated["source_refs_json"],
+                    updated["disclaimer_title"],
+                    updated["disclaimer_text"],
+                    updated["disclaimer_footer"],
                     updated["is_enabled"],
                     updated["updated_at"],
                     current.template_key,
@@ -306,6 +329,9 @@ class DocumentTemplateStore:
                     flow_keys=list(item.flow_keys),
                     placeholders=list(item.placeholders),
                     source_refs=list(item.source_refs),
+                    disclaimer_title=item.disclaimer_title,
+                    disclaimer_text=item.disclaimer_text,
+                    disclaimer_footer=item.disclaimer_footer,
                     is_enabled=item.is_enabled,
                 )
             )
@@ -318,6 +344,7 @@ class DocumentTemplateStore:
                     conn.execute(statement)
             else:
                 conn.executescript(_load_schema_sql())
+            self._ensure_compatibility_columns(conn)
             conn.commit()
 
     @property
@@ -372,6 +399,9 @@ class DocumentTemplateStore:
                 for item in _parse_json_array(row.get("source_refs_json"))
                 if isinstance(item, dict)
             ),
+            disclaimer_title=str(row.get("disclaimer_title") or ""),
+            disclaimer_text=str(row.get("disclaimer_text") or ""),
+            disclaimer_footer=str(row.get("disclaimer_footer") or ""),
             is_enabled=bool(row["is_enabled"]),
             is_deleted=bool(row["is_deleted"]),
             created_at=_parse_timestamp(row.get("created_at")),
@@ -386,6 +416,36 @@ class DocumentTemplateStore:
 
     def _params(self, *values: object) -> tuple[object, ...]:
         return tuple(values)
+
+    def _ensure_compatibility_columns(self, conn: Any) -> None:
+        existing_columns = self._existing_columns(conn)
+        compatibility_columns = {
+            "disclaimer_title": "TEXT NOT NULL DEFAULT ''",
+            "disclaimer_text": "TEXT NOT NULL DEFAULT ''",
+            "disclaimer_footer": "TEXT NOT NULL DEFAULT ''",
+        }
+        for column_name, definition in compatibility_columns.items():
+            if column_name in existing_columns:
+                continue
+            conn.execute(
+                self._sql(f"ALTER TABLE document_templates ADD COLUMN {column_name} {definition}")
+            )
+
+    def _existing_columns(self, conn: Any) -> set[str]:
+        if self._is_postgres:
+            rows = conn.execute(
+                self._sql(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = ? AND table_schema = current_schema()
+                    """
+                ),
+                self._params("document_templates"),
+            ).fetchall()
+            return {str(row["column_name"]) for row in rows}
+        rows = conn.execute(self._sql("PRAGMA table_info(document_templates)")).fetchall()
+        return {str(row["name"]) for row in rows}
 
 
 def _utc_now_iso() -> str:
