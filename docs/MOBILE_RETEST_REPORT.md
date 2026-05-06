@@ -73,3 +73,10 @@ To fully satisfy mobile citation and PDF requirements:
 
 ### Minimal runnable example
 - `python examples/minimal_demo.py`
+
+
+## 2026-05-06 mobile chat fixes
+- Composer input now keeps top-left text alignment and scales better with software keyboard.
+- Assistant label is normalized to localized assistant text instead of internal agent labels.
+- Export documents button now enables when a generated draft reply is detected even before delayed result sync.
+- API document-processing banner now uses Slovak wording and adds guardrails to avoid unresolved placeholders in replies.
