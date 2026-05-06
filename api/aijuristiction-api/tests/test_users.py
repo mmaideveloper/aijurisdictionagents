@@ -143,6 +143,8 @@ def test_sign_up_complete_requires_valid_email_code(monkeypatch, tmp_path: Path)
             "email": "verify@example.com",
             "password": "secret-pass",
             "verification_code": valid_code,
+            "data_processing_consent_accepted": True,
+            "data_processing_consent_version": "2026-05-06",
         },
     )
     assert complete_response.status_code == 201
@@ -224,6 +226,8 @@ def test_device_bound_sign_in_flow(monkeypatch, tmp_path: Path) -> None:
             "phone_number": "+421900121314",
             "device_id": "test-device-1",
             "verification_code": valid_code,
+            "data_processing_consent_accepted": True,
+            "data_processing_consent_version": "2026-05-06",
         },
     )
     assert verify_response.status_code == 200

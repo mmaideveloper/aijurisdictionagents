@@ -66,3 +66,5 @@ The legal section on the corporate web page now explicitly covers:
 - GDPR-oriented personal data handling principles (lawfulness, minimization, retention controls).
 - EU AI Act transparency expectations for AI-assisted legal workflows.
 - Human oversight requirements and user notification for AI-generated output.
+
+- Added legal section #data-processing-consent for GDPR/AI Act data-processing disclosures and registration consent linking from mobile app.
