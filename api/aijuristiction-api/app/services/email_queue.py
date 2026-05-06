@@ -40,6 +40,7 @@ class QueuedEmail:
     recipient: str
     subject: str
     body: str
+    metadata: dict[str, Any]
     attempts: int
 
 
@@ -117,7 +118,7 @@ class EmailQueueStore:
             with self._connect_sqlite() as conn:
                 rows = conn.execute(
                     """
-                    SELECT email_id, recipient, subject, body, attempts
+                    SELECT email_id, recipient, subject, body, metadata_json, attempts
                     FROM email_outbox
                     WHERE status = 'pending' AND attempts < 2
                     ORDER BY created_at ASC
@@ -132,7 +133,7 @@ class EmailQueueStore:
                     [(now, row[0]) for row in rows],
                 )
                 conn.commit()
-            return [QueuedEmail(*row) for row in rows]
+            return [QueuedEmail(row[0], row[1], row[2], row[3], _load_metadata(row[4]), row[5]) for row in rows]
 
         with self._connect_postgres() as conn:
             rows = conn.execute(
@@ -149,12 +150,12 @@ class EmailQueueStore:
                 SET status = 'processing', updated_at = %s
                 FROM candidates
                 WHERE queued.email_id = candidates.email_id
-                RETURNING queued.email_id, queued.recipient, queued.subject, queued.body, queued.attempts
+                RETURNING queued.email_id, queued.recipient, queued.subject, queued.body, queued.metadata_json, queued.attempts
                 """,
                 (limit, now),
             ).fetchall()
             conn.commit()
-        return [QueuedEmail(*row) for row in rows]
+        return [QueuedEmail(row[0], row[1], row[2], row[3], _load_metadata(row[4]), row[5]) for row in rows]
 
     def mark_sent(self, *, email_id: str) -> None:
         now = _now_iso()
@@ -229,3 +230,13 @@ def _resolve_repo_path(value: str) -> Path:
         return candidate
     repo_root = Path(__file__).resolve().parents[4]
     return repo_root / candidate
+
+
+def _load_metadata(value: Any) -> dict[str, Any]:
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}

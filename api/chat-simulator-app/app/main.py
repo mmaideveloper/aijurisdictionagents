@@ -62,6 +62,9 @@ class EmailTestSendRequest(BaseModel):
     device_id: str | None = None
     plan_code: str | None = None
     payment_provider: str | None = None
+    case_subject: str | None = None
+    template_version: str | None = None
+    correlation_id: str | None = None
 
 
 @app.get("/health")
@@ -263,7 +266,23 @@ def _build_email_test_content(payload: EmailTestSendRequest) -> tuple[str, str]:
                 "Your plan is active.\n"
             ),
         )
-    raise HTTPException(status_code=400, detail="template must be registration, otp, or payment")
+    if template == "documents":
+        case_subject = (payload.case_subject or "Generated legal documents").strip()
+        template_version = (payload.template_version or "v1").strip()
+        correlation_id = (payload.correlation_id or "SIM-EMAIL-TEST").strip()
+        return (
+            f"Legal document package | {case_subject}",
+            (
+                f"Dear {full_name},\n\n"
+                "Please find your generated legal documents attached. "
+                "This package is prepared for your legal review and filing workflow.\n\n"
+                "JurisDigta Legal Desk\n\n"
+                f"Case Subject: {case_subject}\n"
+                f"Version: {template_version}\n"
+                f"Correlation ID: {correlation_id}\n"
+            ),
+        )
+    raise HTTPException(status_code=400, detail="template must be registration, otp, payment, or documents")
 
 
 def _build_email_message(*, sender: str, recipient: str, subject: str, body: str) -> EmailMessage:

@@ -5,6 +5,7 @@ import logging
 import os
 import smtplib
 from email.message import EmailMessage
+from typing import Any
 
 logger = logging.getLogger("aijuristiction-api.email")
 
@@ -36,9 +37,23 @@ class EmailNotificationService:
             smtp_use_tls=_env_bool("EMAIL_SMTP_USE_TLS", default=True),
         )
 
-    def send_email(self, *, recipient: str, subject: str, body: str) -> None:
+    def send_email(
+        self,
+        *,
+        recipient: str,
+        subject: str,
+        body: str,
+        html_body: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> None:
         if self.transport == "smtp":
-            self._send_via_smtp(recipient=recipient, subject=subject, body=body)
+            self._send_via_smtp(
+                recipient=recipient,
+                subject=subject,
+                body=body,
+                html_body=html_body,
+                attachments=attachments or [],
+            )
             return
         logger.info(
             "Email notification (%s): from=%s to=%s subject=%s body=%s",
@@ -49,12 +64,30 @@ class EmailNotificationService:
             body,
         )
 
-    def _send_via_smtp(self, *, recipient: str, subject: str, body: str) -> None:
+    def _send_via_smtp(
+        self,
+        *,
+        recipient: str,
+        subject: str,
+        body: str,
+        html_body: str | None,
+        attachments: list[dict[str, Any]],
+    ) -> None:
         message = EmailMessage()
         message["From"] = self.sender
         message["To"] = recipient
         message["Subject"] = subject
         message.set_content(body)
+        if html_body:
+            message.add_alternative(html_body, subtype="html")
+        for attachment in attachments:
+            filename = str(attachment.get("filename") or "attachment.bin")
+            mime_type = str(attachment.get("mime_type") or "application/octet-stream")
+            payload = attachment.get("content")
+            if not isinstance(payload, (bytes, bytearray)):
+                continue
+            maintype, _, subtype = mime_type.partition("/")
+            message.add_attachment(bytes(payload), maintype=maintype or "application", subtype=subtype or "octet-stream", filename=filename)
 
         with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=10) as smtp:
             if self.smtp_use_tls:
