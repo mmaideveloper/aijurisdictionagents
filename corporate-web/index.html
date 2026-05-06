@@ -405,6 +405,16 @@
           </ul>
         </article>
 
+        <article id="data-processing-consent" class="legal-card">
+          <h3 data-i18n="legal_data_processing_title">Data processing notice and consent</h3>
+          <ul class="legal-list">
+            <li data-i18n="legal_data_processing_item_1">Users may provide personal and financial data during document preparation, including third-party data, only when they have legal basis and authority.</li>
+            <li data-i18n="legal_data_processing_item_2">JurisDigta processes provided data as a processor/controller under GDPR principles and applies security, minimization, access controls, and retention policies.</li>
+            <li data-i18n="legal_data_processing_item_3">Users remain responsible for legality, accuracy, and lawful sharing of party data and must avoid prohibited or unlawful processing.</li>
+            <li data-i18n="legal_data_processing_item_4">AI outputs support legal drafting workflows; users must review and confirm compliance with applicable law, GDPR, and EU AI Act obligations before use.</li>
+          </ul>
+        </article>
+
         <article id="terms" class="legal-card">
           <h3 data-i18n="legal_terms_title">Terms of Service</h3>
           <p data-i18n="legal_terms_body">
@@ -424,6 +434,7 @@
       <a href="#privacy" data-i18n="footer_link_privacy">Privacy Policy</a>
       <a href="#disclaimer" data-i18n="footer_link_disclaimer">Disclaimer</a>
       <a href="#terms" data-i18n="footer_link_terms">Terms of Service</a>
+      <a href="#data-processing-consent" data-i18n="footer_link_data_processing">Data processing notice</a>
     </div>
     <div class="footer-meta">
       <span>(c) 2026 AI Jurisdiction</span>
@@ -857,6 +868,7 @@
         footer_link_privacy: "Privacy Policy",
         footer_link_disclaimer: "Disclaimer",
         footer_link_terms: "Terms of Service",
+        footer_link_data_processing: "Data processing notice",
         footer_version_api_label: "API version",
         footer_version_core_label: "System core version",
         legal_title: "Legal information",
@@ -874,6 +886,11 @@
         legal_ai_act_item_1: "JurisDigta provides AI-assisted legal workflow support and does not replace licensed legal counsel.",
         legal_ai_act_item_2: "Human review and decision-making remain required for legal conclusions and external filings.",
         legal_ai_act_item_3: "Users are informed when outputs are AI-generated and should validate critical facts before use.",
+        legal_data_processing_title: "Data processing notice and consent",
+        legal_data_processing_item_1: "Users may provide personal and financial data during document preparation, including third-party data, only when they have legal basis and authority.",
+        legal_data_processing_item_2: "JurisDigta processes provided data as a processor/controller under GDPR principles and applies security, minimization, access controls, and retention policies.",
+        legal_data_processing_item_3: "Users remain responsible for legality, accuracy, and lawful sharing of party data and must avoid prohibited or unlawful processing.",
+        legal_data_processing_item_4: "AI outputs support legal drafting workflows; users must review and confirm compliance with applicable law, GDPR, and EU AI Act obligations before use.",
         legal_last_updated_label: "Last Updated",
         legal_last_updated_date: "May 6, 2026",
         legal_terms_title: "Terms of Service",
@@ -972,20 +989,23 @@
       document.documentElement.lang = lang;
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         const key = element.dataset.i18n;
-        if (dictionary[key]) {
-          element.textContent = dictionary[key];
+        const translated = dictionary[key] || translations.en[key];
+        if (translated) {
+          element.textContent = translated;
         }
       });
       document.querySelectorAll("[data-i18n-alt]").forEach((element) => {
         const key = element.dataset.i18nAlt;
-        if (dictionary[key]) {
-          element.setAttribute("alt", dictionary[key]);
+        const translated = dictionary[key] || translations.en[key];
+        if (translated) {
+          element.setAttribute("alt", translated);
         }
       });
       document.querySelectorAll("[data-i18n-aria]").forEach((element) => {
         const key = element.dataset.i18nAria;
-        if (dictionary[key]) {
-          element.setAttribute("aria-label", dictionary[key]);
+        const translated = dictionary[key] || translations.en[key];
+        if (translated) {
+          element.setAttribute("aria-label", translated);
         }
       });
       if (metaDescription && dictionary.meta_description) {

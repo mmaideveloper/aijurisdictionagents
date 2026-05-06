@@ -53,6 +53,9 @@ const String _defaultLanguage = String.fromEnvironment(
   defaultValue: 'SK',
 );
 const String _localAutofillPhoneNumber = '+421944400166';
+const String _dataProcessingNoticeUrl =
+    'https://www.jurisdigta.eu/#data-processing-consent';
+const String _dataProcessingConsentVersion = '2026-05-06';
 final FileOpener _savedFileOpener = createFileOpener();
 
 const Map<String, String> _sessionExpiredMessagesByLanguage = <String, String>{
@@ -170,6 +173,11 @@ class AppStrings {
       'send_code': 'Poslať kód',
       'code_sent': 'Kód bol odoslaný na e-mail.',
       'send_code_failed': 'Odoslanie kódu zlyhalo: {{error}}',
+      'data_processing_consent_label':
+          'Súhlasím so spracovaním osobných a finančných údajov podľa právneho oznámenia.',
+      'data_processing_consent_link': 'Pozrieť právne oznámenie',
+      'data_processing_consent_required':
+          'Pred registráciou musíte potvrdiť právne oznámenie.',
       'account': 'Účet',
       'sign_out': 'Odhlásiť sa',
       'save_changes': 'Uložiť zmeny',
@@ -410,6 +418,11 @@ class AppStrings {
       'send_code': 'Send code',
       'code_sent': 'Code was sent to email.',
       'send_code_failed': 'Sending code failed: {{error}}',
+      'data_processing_consent_label':
+          'I agree with processing of personal and financial data according to the legal notice.',
+      'data_processing_consent_link': 'Review legal notice',
+      'data_processing_consent_required':
+          'You must confirm the legal notice before registration.',
       'account': 'Account',
       'sign_out': 'Sign out',
       'save_changes': 'Save changes',
@@ -645,6 +658,11 @@ class AppStrings {
       'send_code': 'Code senden',
       'code_sent': 'Code wurde per E-Mail gesendet.',
       'send_code_failed': 'Code senden fehlgeschlagen: {{error}}',
+      'data_processing_consent_label':
+          'Ich stimme der Verarbeitung personenbezogener und finanzieller Daten gemäß Rechtshinweis zu.',
+      'data_processing_consent_link': 'Rechtshinweis ansehen',
+      'data_processing_consent_required':
+          'Bitte bestätigen Sie den Rechtshinweis vor der Registrierung.',
       'account': 'Konto',
       'sign_out': 'Abmelden',
       'save_changes': 'Aenderungen speichern',
@@ -3011,6 +3029,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
   final TextEditingController _signUpLastNameController =
       TextEditingController();
   bool _showPhoneOtpSignIn = false;
+  bool _dataProcessingConsentAccepted = false;
   bool _isBusy = false;
   String _appVersionLabel = 'v0.1.5+43';
   String? _devicePhoneNumber;
@@ -3201,6 +3220,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
           verificationCode: _signUpVerificationCodeController.text,
           firstName: _signUpFirstNameController.text,
           lastName: _signUpLastNameController.text,
+          dataProcessingConsentAccepted: _dataProcessingConsentAccepted,
+          dataProcessingConsentVersion: _dataProcessingConsentVersion,
         ),
       );
       await widget.logger.info(
@@ -3566,6 +3587,41 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                 ),
                                               ),
                                               const SizedBox(height: 16),
+                                              CheckboxListTile(
+                                                contentPadding: EdgeInsets.zero,
+                                                value:
+                                                    _dataProcessingConsentAccepted,
+                                                onChanged: (value) {
+                                                  setState(() {
+                                                    _dataProcessingConsentAccepted =
+                                                        value ?? false;
+                                                  });
+                                                },
+                                                title: Text(strings.t(
+                                                  'data_processing_consent_label',
+                                                )),
+                                              ),
+                                              Align(
+                                                alignment:
+                                                    Alignment.centerLeft,
+                                                child: TextButton(
+                                                  onPressed: () {
+                                                    launchUrl(
+                                                      Uri.parse(
+                                                        _dataProcessingNoticeUrl,
+                                                      ),
+                                                      mode: LaunchMode
+                                                          .externalApplication,
+                                                    );
+                                                  },
+                                                  child: Text(
+                                                    strings.t(
+                                                      'data_processing_consent_link',
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
                                               SizedBox(
                                                 width: double.infinity,
                                                 child: FilledButton(
@@ -8297,3 +8353,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     );
   }
 }
+    if (!_dataProcessingConsentAccepted) {
+      _showSnackbar(_strings.t('data_processing_consent_required'));
+      return;
+    }

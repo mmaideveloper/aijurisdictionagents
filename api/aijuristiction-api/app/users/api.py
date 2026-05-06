@@ -39,6 +39,8 @@ class UserProfileResponse(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     full_name: str
+    data_processing_consent_at: str | None = None
+    data_processing_consent_version: str | None = None
 
 
 class SignUpRequest(BaseModel):
@@ -47,6 +49,8 @@ class SignUpRequest(BaseModel):
     password: str = Field(min_length=1)
     first_name: str | None = None
     last_name: str | None = None
+    data_processing_consent_accepted: bool = False
+    data_processing_consent_version: str | None = None
 
 
 class SendRegistrationCodeRequest(BaseModel):
@@ -166,6 +170,8 @@ def sign_up(
             password=payload.password,
             first_name=payload.first_name,
             last_name=payload.last_name,
+            data_processing_consent_at=_now_if_accepted(payload.data_processing_consent_accepted),
+            data_processing_consent_version=payload.data_processing_consent_version,
         )
     except Exception as exc:
         if not _is_unique_constraint_error(exc):
@@ -208,6 +214,8 @@ def complete_registration(
         code=payload.verification_code,
     ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+    if not payload.data_processing_consent_accepted:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Data processing consent is required")
     try:
         user = store.create_user(
             phone_number=payload.phone_number,
@@ -215,6 +223,8 @@ def complete_registration(
             password=payload.password,
             first_name=payload.first_name,
             last_name=payload.last_name,
+            data_processing_consent_at=_now_if_accepted(payload.data_processing_consent_accepted),
+            data_processing_consent_version=payload.data_processing_consent_version,
         )
     except Exception as exc:
         if not _is_unique_constraint_error(exc):
@@ -489,6 +499,8 @@ def _to_user_profile_response(user: User) -> UserProfileResponse:
         first_name=user.first_name,
         last_name=user.last_name,
         full_name=user.full_name,
+        data_processing_consent_at=user.data_processing_consent_at,
+        data_processing_consent_version=user.data_processing_consent_version,
     )
 
 
@@ -500,8 +512,18 @@ def _to_device_auth_user_profile_response(*, user: User, token: str) -> DeviceAu
         first_name=user.first_name,
         last_name=user.last_name,
         full_name=user.full_name,
+        data_processing_consent_at=user.data_processing_consent_at,
+        data_processing_consent_version=user.data_processing_consent_version,
         device_auth_token=token,
     )
+
+
+def _now_if_accepted(accepted: bool) -> str | None:
+    if not accepted:
+        return None
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _sign_in_code_key(*, phone_number: str, device_id: str) -> str:
