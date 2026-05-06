@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import logging
 import os
+import base64
 from mimetypes import guess_type
 from pathlib import Path
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
@@ -20,6 +23,7 @@ from aijurisdictionagents.api_db import (
 )
 from services.document_processor.service import DocumentProcessor
 from services.document_processor.runtime import render_documents_for_prompt
+from app.services.email_scheduler import EmailScheduler
 
 router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key)])
 _MAX_ACTIVE_CASES = 5
@@ -93,6 +97,22 @@ class CaseDocumentUploadResponse(BaseModel):
 class CaseDocumentContextResponse(BaseModel):
     processed_documents: list[str]
     unprocessed_documents: list[str]
+
+
+class SendCaseDocumentsEmailRequest(BaseModel):
+    user_id: str = Field(min_length=1)
+    recipient: str = Field(min_length=3)
+    case_subject: str = Field(default="")
+    version: str = Field(default="v1")
+    correlation_id: str | None = None
+
+
+class SendCaseDocumentsEmailResponse(BaseModel):
+    email_id: str
+    recipient: str
+    case_subject: str
+    attachment_count: int
+    correlation_id: str
 
 
 class CaseDocumentDebugStoredResponse(BaseModel):
@@ -373,6 +393,46 @@ def download_case_document(
     )
 
 
+@router.post('/{case_id}/documents/send-email', response_model=SendCaseDocumentsEmailResponse)
+def send_case_documents_email(
+    case_id: str,
+    payload: SendCaseDocumentsEmailRequest,
+    store: ApiDatabaseStore = Depends(get_store),
+) -> SendCaseDocumentsEmailResponse:
+    case = _ensure_case_access(case_id=case_id, user_id=payload.user_id, store=store)
+    documents = [item for item in store.list_case_documents(case_id=case_id) if item.kind in {"uploaded", "chat_attachment", "session_history"}]
+    if not documents:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No case documents available to send.")
+    correlation_id = (payload.correlation_id or str(uuid4())).strip()
+    subject = (payload.case_subject or case.title).strip() or f"Case {case.case_id}"
+    plain = f"Dear client,\n\nPlease find attached generated documents for case '{subject}'.\n\nRegards,\nJurisDigta Legal Team"
+    html = _build_lawyer_email_html(case_subject=subject, version=payload.version.strip() or "v1", correlation_id=correlation_id)
+    attachments: list[dict[str, str]] = []
+    for document in documents:
+        raw = store.read_storage_bytes(storage_uri=document.storage_uri)
+        attachments.append(
+            {
+                "filename": document.original_filename,
+                "mime_type": guess_type(document.original_filename)[0] or "application/octet-stream",
+                "content_base64": base64.b64encode(raw).decode("utf-8"),
+            }
+        )
+    scheduler = EmailScheduler.from_env()
+    email_id = scheduler.enqueue(
+        recipient=payload.recipient.strip().lower(),
+        subject=f"Legal document package | {subject}",
+        body=plain,
+        metadata={"event": "case_documents_email", "case_id": case_id, "html_body": html, "attachments": attachments},
+    )
+    return SendCaseDocumentsEmailResponse(
+        email_id=email_id,
+        recipient=payload.recipient.strip().lower(),
+        case_subject=subject,
+        attachment_count=len(attachments),
+        correlation_id=correlation_id,
+    )
+
+
 def _to_case_response(case: Case) -> CaseResponse:
     return CaseResponse(
         case_id=case.case_id,
@@ -485,4 +545,18 @@ def _document_context(*, case_id: str, store: ApiDatabaseStore) -> CaseDocumentC
     return CaseDocumentContextResponse(
         processed_documents=processed,
         unprocessed_documents=unprocessed,
+    )
+
+
+def _build_lawyer_email_html(*, case_subject: str, version: str, correlation_id: str) -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return (
+        "<html><body style='font-family:Georgia,serif;color:#1f2937'>"
+        "<p>Dear Client,</p>"
+        "<p>Please find attached your generated legal documents prepared for the referenced case subject.</p>"
+        "<p>Kind regards,<br/>JurisDigta Legal Desk</p>"
+        "<hr/>"
+        f"<p style='font-size:12px;color:#6b7280'>Case Subject: {case_subject}<br/>"
+        f"Version: {version}<br/>Correlation ID: {correlation_id}<br/>Generated: {timestamp}</p>"
+        "</body></html>"
     )
