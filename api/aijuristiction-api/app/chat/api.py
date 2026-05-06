@@ -459,7 +459,7 @@ def _prepend_document_status_note(*, reply: str, processed_names: list[str], unp
     if processed_names:
         lines.append('Processed documents available for search: ' + ', '.join(processed_names) + '.')
     if unprocessed_names:
-        lines.append('Still processing: ' + ', '.join(unprocessed_names) + '.')
+        lines.append('Spracovanie stále prebieha: ' + ', '.join(unprocessed_names) + '.')
     note = '\n'.join(lines).strip()
     if not note:
         return reply
@@ -595,7 +595,9 @@ def _run_direct_lawyer_turn(
             "- Say that the draft package is ready for download/export instead.\n"
             "- Do not mention JSON, CASE_UPDATE_JSON, machine payload, or technical persistence details in the user-facing content.\n"
             "- Do not include direct file paths, markdown download links, or relative links such as documents/... in the user-facing content.\n"
-            "- Include CASE_UPDATE_JSON after the user-facing content."
+            "- Include CASE_UPDATE_JSON after the user-facing content.\n"
+            "- Never output unresolved placeholders in square brackets (for example [Vase meno], [address], [ico]).\n"
+            "- If any required field is missing, ask for it explicitly instead of using placeholders."
         )
     preparation = prepare_country_direct_reply(
         session=session,
@@ -618,7 +620,7 @@ def _run_direct_lawyer_turn(
             session_id=session_id,
             session=session,
             content=normalized_direct_reply,
-            agent_name="LawyerSlovakia",
+            agent_name="Assistant",
         )
         return (
             persisted_user,

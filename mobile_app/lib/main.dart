@@ -3425,7 +3425,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   autofillHints: const <String>[
                                                     AutofillHints.oneTimeCode,
                                                   ],
-                                                  decoration: InputDecoration(
+                                                  textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                     labelText: strings.t(
                                                       'sign_in_code_required',
                                                     ),
@@ -3468,7 +3469,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   AutofillHints
                                                       .telephoneNumberDevice,
                                                 ],
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'phone_number_required',
                                                   ),
@@ -3491,7 +3493,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   AutofillHints.email,
                                                   AutofillHints.newUsername,
                                                 ],
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'email_required',
                                                   ),
@@ -3505,7 +3508,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                 autofillHints: const <String>[
                                                   AutofillHints.newPassword,
                                                 ],
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'password_required',
                                                   ),
@@ -3543,7 +3547,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                               TextField(
                                                 controller:
                                                     _signUpFirstNameController,
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'first_name_optional',
                                                   ),
@@ -3553,7 +3558,8 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                               TextField(
                                                 controller:
                                                     _signUpLastNameController,
-                                                decoration: InputDecoration(
+                                                textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'last_name_optional',
                                                   ),
@@ -3952,7 +3958,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             controller: _phoneController,
             keyboardType: TextInputType.phone,
             readOnly: true,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('phone_number'),
               suffixIcon: const Icon(Icons.lock_outline),
             ),
@@ -3962,7 +3969,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
             readOnly: true,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('email'),
               suffixIcon: const Icon(Icons.lock_outline),
             ),
@@ -3971,21 +3979,24 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           TextField(
             controller: _passwordController,
             obscureText: true,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('password_required'),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _firstNameController,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('first_name'),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _lastNameController,
-            decoration: InputDecoration(
+            textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
               labelText: strings.t('last_name'),
             ),
           ),
@@ -5421,6 +5432,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     required bool exportReady,
   }) {
     final visibleReply = _sanitizeVisibleMessageContent(rawReply);
+    if (!exportReady && _looksLikeGeneratedDocumentDraft(visibleReply)) {
+      _hasExportReady = true;
+    }
     if (visibleReply.isEmpty) {
       return '';
     }
@@ -7068,7 +7082,8 @@ class _ChatHomePageState extends State<ChatHomePage>
         title: Text(strings.t('create_case')),
         content: TextField(
           controller: controller,
-          decoration: InputDecoration(labelText: strings.t('case_name')),
+          textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(labelText: strings.t('case_name')),
         ),
         actions: [
           TextButton(
@@ -7423,6 +7438,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       onSubmitted: expanded ? null : (_) => _sendMessage(),
       onTap: () => _setInputComposerExpanded(true),
       onTapOutside: (_) => _setInputComposerExpanded(false, unfocus: true),
+      textAlignVertical: TextAlignVertical.top,
       decoration: InputDecoration(
         hintText: _responderMode == ResponderMode.aiUserSimulator
             ? strings.t('case_input_discussion')
@@ -7433,6 +7449,18 @@ class _ChatHomePageState extends State<ChatHomePage>
         border: const OutlineInputBorder(),
       ),
     );
+  }
+
+
+  String _localizedAgentName(String? rawAgentName, AppStrings strings) {
+    final normalized = (rawAgentName ?? '').trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return strings.t('assistant');
+    }
+    if (normalized.contains('lawyer')) {
+      return strings.t('assistant');
+    }
+    return rawAgentName!.trim();
   }
 
   void _showSnackbar(String message) {
@@ -7822,9 +7850,10 @@ class _ChatHomePageState extends State<ChatHomePage>
                         final isUser = message.role == 'user';
                         final speaker = isUser
                             ? strings.t('you')
-                            : ((message.agentName?.trim().isNotEmpty ?? false)
-                                ? message.agentName!.trim()
-                                : strings.t('assistant'));
+                            : _localizedAgentName(
+                                message.agentName,
+                                strings,
+                              );
                         return Align(
                           alignment: isUser
                               ? Alignment.centerRight
@@ -7947,7 +7976,8 @@ class _ChatHomePageState extends State<ChatHomePage>
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           curve: Curves.easeOut,
-                          height: MediaQuery.sizeOf(context).height * 0.5,
+                          height: (MediaQuery.sizeOf(context).height * 0.5) -
+                              (MediaQuery.viewInsetsOf(context).bottom * 0.35),
                           child: _buildComposerInputField(
                             strings: strings,
                             expanded: true,
