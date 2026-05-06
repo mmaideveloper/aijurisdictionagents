@@ -3208,6 +3208,10 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     if (_isBusy) {
       return;
     }
+    if (!_dataProcessingConsentAccepted) {
+      _showSnackbar(_strings.t('data_processing_consent_required'));
+      return;
+    }
     setState(() {
       _isBusy = true;
     });
@@ -3283,16 +3287,16 @@ class _AuthEntryPageState extends State<AuthEntryPage>
     return Scaffold(
       body: Stack(
         children: [
-          Positioned.fill(
+          const Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: <Color>[
-                    const Color(0xFF041B59),
-                    const Color(0xFF1388E9),
-                    const Color(0xFF041B59),
+                    Color(0xFF041B59),
+                    Color(0xFF1388E9),
+                    Color(0xFF041B59),
                   ],
                 ),
               ),
@@ -4063,7 +4067,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<LocaleOption>(
-            value: _selectedLocale,
+            initialValue: _selectedLocale,
             isExpanded: true,
             onChanged: (locale) {
               if (locale == null) {
@@ -4101,7 +4105,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedSpeakerVoiceId,
+                    initialValue: _selectedSpeakerVoiceId,
                     hint: Text(strings.t('speaker_voice_unavailable')),
                     items: _speakerVoices
                         .map(
@@ -4136,7 +4140,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             const LinearProgressIndicator()
           else ...[
             DropdownButtonFormField<String>(
-              value: _selectedPlanCode,
+              initialValue: _selectedPlanCode,
               items: _plans
                   .map((plan) => DropdownMenuItem<String>(
                         value: plan.planCode,
@@ -4573,6 +4577,9 @@ class _ChatHomePageState extends State<ChatHomePage>
         _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
           'path': savedPath,
         }));
+        if (!mounted) {
+          return;
+        }
         await _openSavedFile(context, _strings, savedPath);
       } else {
         _showSnackbar(_strings.t('pdf_download_started', <String, String>{
@@ -7287,6 +7294,9 @@ class _ChatHomePageState extends State<ChatHomePage>
         });
       }
     } catch (_) {}
+    if (!mounted) {
+      return;
+    }
     final controller = TextEditingController(text: selected.title);
     final strings = _strings;
     final dialogResult = await showDialog<CaseEditDialogResult>(
@@ -7665,16 +7675,16 @@ class _ChatHomePageState extends State<ChatHomePage>
     return Scaffold(
       body: Stack(
         children: [
-          Positioned.fill(
+          const Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: <Color>[
-                    const Color(0xFF041B59),
-                    const Color(0xFF1388E9),
-                    const Color(0xFF041B59),
+                    Color(0xFF041B59),
+                    Color(0xFF1388E9),
+                    Color(0xFF041B59),
                   ],
                 ),
               ),
@@ -8353,7 +8363,3 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     );
   }
 }
-    if (!_dataProcessingConsentAccepted) {
-      _showSnackbar(_strings.t('data_processing_consent_required'));
-      return;
-    }

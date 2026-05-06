@@ -2,6 +2,8 @@
 
 Flutter mobile client prepared for local testing of the AIJurisDictA (AI Juris Digital Agent) chat workflow.
 
+The current mobile build is kept compatible with Flutter analyzer changes in the GitHub workflow, including the `DropdownButtonFormField.initialValue` migration used by newer Flutter 3.33+ toolchains.
+
 ## Features
 
 - Chat-bot style conversation UI.
