@@ -130,3 +130,22 @@ def mobile_chat_fixes_summary() -> dict[str, str]:
 
 if __name__ == "__main__":
     print(mobile_chat_fixes_summary())
+
+
+def prepare_task_skill_summary() -> dict[str, object]:
+    """Minimal runnable summary for the prepare-task skill contract."""
+    return {
+        "skill": "prepare-task",
+        "source_modes": ["idea text", "existing GitHub issue/task description"],
+        "readiness_checks": [
+            "repository context reviewed",
+            "GDPR and EU AI Act risks evaluated",
+            "acceptance criteria and test plan drafted",
+            "docs and minimal runnable example identified",
+        ],
+        "default_minimal_example": "python examples/minimal_demo.py",
+    }
+
+
+if __name__ == "__main__":
+    print(prepare_task_skill_summary())

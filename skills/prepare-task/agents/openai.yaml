@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Task"
+  short_description: "Refine GitHub Project ideas into ready technical tasks"
+  default_prompt: "Prepare my idea or GitHub Project task for implementation by reviewing the repository, asking required questions, and updating or creating the task description."
