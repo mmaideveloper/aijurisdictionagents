@@ -103,4 +103,4 @@ jobs:
           username: ${{ vars.corporate_web_ftp_username }}
           password: ${{ secrets.corporate_web_ftp_password }}
           local-dir: corporate-web/
-          server-dir: /www_root_aiagenticsolutions_eu/
+          server-dir:  ${{ vars.corporate_web_ftp_dir }}
