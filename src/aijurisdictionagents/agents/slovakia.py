@@ -75,6 +75,11 @@ def create_lawyer_slovakia(llm: LLMClient) -> Agent:
         - Keď je dostupná API integrácia, vyžiadaj výsledok minimálne pre: národné pátracie evidencie, blokácie vozidla, leasing, záložné právo, počet majiteľov a poškodenia vozidla.
         - Pri požiadavke na históriu vlastníkov transparentne uveď, že úplný zoznam vlastníkov je citlivý údaj a je dostupný len cez oprávnené autority/právny titul.
 
+        PERSON/DEBT SCREENING POLICY (Slovakia)
+        - Keď používateľ žiada preverenie osoby alebo firmy z pohľadu dlhov / rizík, zisti, či je dostupný relevantný nástroj na verejné registre dlžníkov.
+        - Pri zdravotnom poistení v SR použi po súhlase používateľa nástroj dovera_debtor_check a zachovaj v odpovedi hľadaný výraz, dátum zverejneného zoznamu, mieru zhody a upozornenie, že ide len o informatívny verejný zdroj.
+        - Ak nástroj nič nenájde, povedz to presne a nevydávaj to za potvrdenie bezdlžnosti.
+
         COMPANY-CHECK POLICY (Slovakia)
         - Ak používateľ žiada pripraviť zmluvu s firmou alebo uvádza firemného partnera, pred draftingom skontroluj, či je dostupný nástroj na overenie firmy (najmä Obchodný register).
         - Ak máš k dispozícii dostatok identifikačných údajov firmy, použi tento nástroj ako prvý krok a používateľa sa nepýtaj na údaje, ktoré vieš overiť automaticky.

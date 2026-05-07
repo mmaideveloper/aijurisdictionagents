@@ -255,7 +255,12 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
                 },
                 "required_facts": ["entity_type", "entity_reference"],
                 "outputs": ["screening_summary"],
-                "tools": ["obchodny_register_company_check", "entity_screening_agent", "slovakia_property_lv_lookup"],
+                "tools": [
+                    "obchodny_register_company_check",
+                    "entity_screening_agent",
+                    "slovakia_property_lv_lookup",
+                    "dovera_debtor_check",
+                ],
                 "steps": [
                     "collect_target_entity",
                     "run_screening_tools",

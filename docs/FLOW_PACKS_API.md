@@ -25,6 +25,8 @@ Default seeded Slovak packs include:
 - `sk.notary.notarial_process`
 - `sk.support.person_company_screening`
 
+The Slovak screening pack now advertises `dovera_debtor_check` alongside the existing screening tools so debt-risk checks can include normalized Dôvera debtor-list evidence.
+
 ## Storage
 
 Runtime data uses SQLite under repository runtime storage:
