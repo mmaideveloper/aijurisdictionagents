@@ -4267,6 +4267,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _speechEnabled = false;
   bool _speechInputEnabled = false;
   bool _isListening = false;
+  bool _stoppingSpeechManually = false;
   bool _awaitingSpokenName = false;
   bool _awaitingCaseArchiveConfirmation = false;
   bool _awaitingSpokenCaseTitle = false;
@@ -8005,8 +8006,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                       ),
                       FilledButton.tonalIcon(
                         onPressed:
-                            (_isDownloading || _isSending ||
-                                    !(_hasExportReady || _hasGeneratedCaseDocuments))
+                            (_isDownloading || _isSending || !_hasExportReady)
                                 ? null
                                 : _downloadRequestedDocuments,
                         icon: _isDownloading
