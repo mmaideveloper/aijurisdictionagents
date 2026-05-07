@@ -187,6 +187,7 @@ These are used by `.github/workflows/corporate_web_deploy.yml`, whose manual env
 | --- | --- |
 | `corporate_web_ftp` | FTP server host for corporate web deployment |
 | `corporate_web_ftp_username` | FTP username |
+| `corporate_web_ftp_dir` | FTP remote directory for the selected corporate web hostname/subdomain. It must be dedicated to this site because the deploy uses clean-slate upload for that folder |
 | `CORPORATE_WEB_API_BASE_URL` | API base URL injected into corporate web contact form; set this to the dev/test/prod API URL for the matching environment. `/v1` or `/v1/contact` suffixes are accepted. When unset, the workflow falls back to `API_BASE_URL`, then `https://api.jurisdigta.eu` |
 | `TURNSTILE_SITE_KEY` | Public Cloudflare Turnstile site key injected into the static contact form |
 

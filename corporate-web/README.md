@@ -73,6 +73,8 @@ Local preview uses `http://127.0.0.1:8080/v1/contact` while the source page stil
 
 Client-side protections include required structured fields, email validation, a hidden honeypot field, a minimum submit delay, disposable/test-domain blocking, web-link blocking, and Cloudflare Turnstile when `TURNSTILE_SITE_KEY` is injected during deploy. The topic must be at least 2 characters and the message at least 5 characters. The API repeats the critical honeypot, email, length, link, and Turnstile token checks before sending the email.
 
+Turnstile is lazy-loaded only after a real `TURNSTILE_SITE_KEY` is injected, so local source previews never call Cloudflare with the placeholder key. If Cloudflare returns `400` for a real key on a deployed domain, add that exact hostname to the Turnstile widget's allowed domains or set the environment's `TURNSTILE_SITE_KEY` to a widget created for that domain.
+
 ## Video demo
 
 The homepage switches the Jurisdigta avatar video per language:

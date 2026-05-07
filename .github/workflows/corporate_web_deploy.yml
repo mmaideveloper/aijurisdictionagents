@@ -31,9 +31,11 @@ jobs:
         env:
           TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
           CORPORATE_WEB_API_BASE_URL: ${{ vars.CORPORATE_WEB_API_BASE_URL || vars.API_BASE_URL || 'https://api.jurisdigta.eu' }}
+          CORPORATE_WEB_FTP_DIR: ${{ vars.corporate_web_ftp_dir }}
         run: |
           api_version="$(sed -nE 's/^version = "([^"]+)"/\1/p' api/aijuristiction-api/pyproject.toml | head -n 1)"
           core_version="$(sed -nE 's/^__version__ = "([^"]+)"/\1/p' src/aijurisdictionagents/__init__.py | head -n 1)"
+          asset_version="${api_version}-${GITHUB_SHA::12}"
           contact_api_base_url="${CORPORATE_WEB_API_BASE_URL%/}"
           case "$contact_api_base_url" in
             */v1/contact) contact_api_url="$contact_api_base_url" ;;
@@ -51,7 +53,12 @@ jobs:
             exit 1
           fi
 
-          API_VERSION="$api_version" CORE_VERSION="$core_version" CONTACT_API_URL="$contact_api_url" python - <<'PY'
+          if [ -z "${CORPORATE_WEB_FTP_DIR:-}" ]; then
+            echo "::error::Missing GitHub Environment variable: corporate_web_ftp_dir"
+            exit 1
+          fi
+
+          API_VERSION="$api_version" CORE_VERSION="$core_version" CONTACT_API_URL="$contact_api_url" ASSET_VERSION="$asset_version" python - <<'PY'
           import os
           import re
           from pathlib import Path
@@ -69,6 +76,7 @@ jobs:
               html,
           )
           html = html.replace("__CONTACT_API_URL__", os.environ["CONTACT_API_URL"])
+          html = html.replace("__CORPORATE_WEB_ASSET_VERSION__", os.environ["ASSET_VERSION"])
           index_path.write_text(html, encoding="utf-8")
           PY
 
@@ -87,6 +95,7 @@ jobs:
           echo "Corporate web API version: $api_version"
           echo "Corporate web system core version: $core_version"
           echo "Corporate web contact API URL: $contact_api_url"
+          echo "Corporate web asset version: $asset_version"
 
       - name: Verify corporate web build
         run: |
@@ -95,6 +104,8 @@ jobs:
           grep -q 'data-build-version="core"' corporate-web/index.html
           grep -q '/v1/contact' corporate-web/index.html
           ! grep -q '__CONTACT_API_URL__' corporate-web/index.html
+          ! grep -q '__CORPORATE_WEB_ASSET_VERSION__' corporate-web/index.html
+          ! grep -q 'data-sitekey="__TURNSTILE_SITE_KEY__"' corporate-web/index.html
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -104,3 +115,4 @@ jobs:
           password: ${{ secrets.corporate_web_ftp_password }}
           local-dir: corporate-web/
           server-dir:  ${{ vars.corporate_web_ftp_dir }}
+          dangerous-clean-slate: true

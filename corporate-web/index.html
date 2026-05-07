@@ -10,8 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&display=swap" rel="stylesheet" />
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-  <link rel="stylesheet" href="styles.css?v=20260306-2" />
+  <link rel="stylesheet" href="styles.css?v=__CORPORATE_WEB_ASSET_VERSION__" />
 </head>
 <body>
   <div class="bg-glow"></div>
@@ -369,10 +368,10 @@
           </div>
           <div
             id="contact-turnstile"
-            class="cf-turnstile"
-            data-sitekey="__TURNSTILE_SITE_KEY__"
+            data-turnstile-sitekey="__TURNSTILE_SITE_KEY__"
             data-theme="light"
             data-size="normal"
+            hidden
           ></div>
           <p id="contact-form-status" class="form-status" role="status" aria-live="polite"></p>
           <button class="button primary" type="submit" data-i18n="contact_cta">Odoslať požiadavku</button>
@@ -1017,6 +1016,24 @@
       return Boolean(turnstileSiteKey && !turnstileSiteKey.startsWith("__"));
     }
 
+    function loadTurnstile() {
+      if (!contactTurnstile || !hasConfiguredTurnstile()) {
+        return;
+      }
+      contactTurnstile.hidden = false;
+      contactTurnstile.classList.add("cf-turnstile");
+      contactTurnstile.setAttribute("data-sitekey", turnstileSiteKey);
+      if (document.querySelector('script[data-turnstile-api="true"]')) {
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+      script.async = true;
+      script.defer = true;
+      script.dataset.turnstileApi = "true";
+      document.head.appendChild(script);
+    }
+
     function getTurnstileToken() {
       const responseInput = contactForm
         ? contactForm.querySelector('input[name="cf-turnstile-response"]')
@@ -1152,9 +1169,7 @@
     if (contactForm) {
       contactForm.addEventListener("submit", handleContactSubmit);
     }
-    if (contactTurnstile && !hasConfiguredTurnstile()) {
-      contactTurnstile.hidden = true;
-    }
+    loadTurnstile();
 
     const storedLang = localStorage.getItem("aj_lang");
     setLanguage(storedLang || "sk");
