@@ -10,6 +10,7 @@ This repository vendors the Codex skills needed for local development so they ar
 - `start-mobile`: alias for the mobile launcher with the same skill name used in the local Codex profile
 - `start-mobile-app`: project-native Flutter mobile launcher
 - `laws-collector`: starts and verifies the local laws collector worker loop
+- `prepare-task`: prepares ideas or GitHub Project tasks for implementation by reviewing repository context, asking required questions, and updating or creating the task description
 
 ## Skill files
 
@@ -39,4 +40,10 @@ Use the example wrapper to verify the repo sees all skills and to preview the sy
 
 ```bash
 python examples/project_skills_demo.py
+```
+
+The default repository demo also prints the task-preparation skill contract:
+
+```bash
+python examples/minimal_demo.py
 ```
