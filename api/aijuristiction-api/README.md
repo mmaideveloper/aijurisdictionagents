@@ -431,6 +431,8 @@ User and subscription endpoints support email notifications with configurable tr
 - `EMAIL_TRANSPORT=log` (default): logs notifications to API logs (safe for local dev/tests)
 - `EMAIL_TRANSPORT=smtp`: sends real emails via SMTP
 
+Corporate contact requests use `POST /v1/contact` without an API key. The endpoint validates the public website payload, rejects honeypot/link spam, verifies Cloudflare Turnstile when `CONTACT_CAPTCHA_REQUIRED=true` or `TURNSTILE_SECRET_KEY` is configured, and sends an email to `info@jurisdigta.eu` through the configured backend email transport.
+
 SMTP configuration (used when `EMAIL_TRANSPORT=smtp`):
 
 - `EMAIL_SENDER` (default: `no-reply@jurisdigta.eu`)
@@ -593,6 +595,7 @@ curl -X POST "http://localhost:8080/v1/chat/sessions" \
   - `http://localhost:<any-port>`
   - `http://127.x.x.x:<any-port>` for loopback IPv4 addresses
   - `http://[::1]:<any-port>` for IPv6 loopback
+  - `Origin: null` for static `file://` previews, including the corporate web contact form during local checks
 - Deployed browser clients are blocked until you set `CORS_ALLOW_ORIGINS` explicitly.
 - Native Android/iOS builds do not require `CORS_ALLOW_ORIGINS`.
 - Override allowed origins with `CORS_ALLOW_ORIGINS` (comma-separated), for example:

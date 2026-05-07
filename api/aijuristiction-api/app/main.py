@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from app.cases_api import router as cases_router
 from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.chat.api import router as chat_router
+from app.contact_api import router as contact_router
 from app.document_templates.api import router as document_templates_router
 from app.flow_packs.api import router as flow_packs_router
 from app.laws_api import router as laws_router
@@ -59,13 +60,22 @@ TELEMETRY_MODE = configure_telemetry(
 )
 logger = logging.getLogger("aijuristiction-api.http")
 _SUPPORTED_LAW_VERSION_COUNTRIES: tuple[str, ...] = ("SK",)
+_DEFAULT_CORPORATE_WEB_ORIGINS: tuple[str, ...] = (
+    "https://jurisdigta.eu",
+    "https://www.jurisdigta.eu",
+    "https://web.jurisdigta.eu",
+    "https://juridigta.eu",
+    "https://www.juridigta.eu",
+    "https://web.juridigta.eu",
+)
 
 
 def _cors_allow_origins() -> list[str]:
     value = os.getenv("CORS_ALLOW_ORIGINS")
     if value:
         return [origin.strip() for origin in value.split(",") if origin.strip()]
-    return []
+    # Browser previews opened from file:// send Origin: null.
+    return [*list(_DEFAULT_CORPORATE_WEB_ORIGINS), "null"]
 
 
 def _cors_allow_origin_regex() -> str | None:
@@ -132,6 +142,7 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "x-request-id", "x-correlation-id"],
 )
 app.include_router(chat_router)
+app.include_router(contact_router)
 app.include_router(document_templates_router)
 app.include_router(flow_packs_router)
 app.include_router(laws_router)

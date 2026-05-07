@@ -1,6 +1,6 @@
 # Corporate Web
 
-Static single-page site for AI Jurisdiction.
+Static single-page site for AI Jurisdigta.
 
 ## Local debugging
 
@@ -58,11 +58,20 @@ Footer meta also shows:
 - API version (`aijuristiction-api`)
 - System core version (`aijurisdictionagents`)
 
+The deployment workflow replaces these footer values from the latest repository sources during deploy:
+
+- API: `api/aijuristiction-api/pyproject.toml`
+- System core: `src/aijurisdictionagents/__init__.py`
+
 The page also includes a legal section with a structured disclaimer and `Last Updated` timestamp.
 
 ## Contact form
 
-The contact form prepares an email to `info@jurisdigta.eu` from the user's mail client. The static page includes client-side protections against misuse: required structured fields, email validation, a hidden honeypot field, a minimum submit delay, disposable/test-domain blocking, and web-link blocking in the message field.
+The contact form posts to the first-party API endpoint, which sends an email to `info@jurisdigta.eu` from the backend through the configured SMTP server. It does not open the user's local email client.
+
+Local preview uses `http://127.0.0.1:8080/v1/contact` while the source page still contains the build placeholder. Deployed builds replace `__CONTACT_API_URL__` from the selected GitHub Environment's `CORPORATE_WEB_API_BASE_URL` variable, falling back to `API_BASE_URL` and then `https://api.jurisdigta.eu`.
+
+Client-side protections include required structured fields, email validation, a hidden honeypot field, a minimum submit delay, disposable/test-domain blocking, web-link blocking, and Cloudflare Turnstile when `TURNSTILE_SITE_KEY` is injected during deploy. The topic must be at least 2 characters and the message at least 5 characters. The API repeats the critical honeypot, email, length, link, and Turnstile token checks before sending the email.
 
 ## Video demo
 

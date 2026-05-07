@@ -12,8 +12,10 @@ Create two new GitHub Environments:
 
 - `test`
 - `prod`
+- `Prod` if you use the capitalized corporate web production target
 
 These environments are used by repository workflows that deploy infrastructure, API, frontend, document processor jobs, and mobile builds.
+The corporate website workflow additionally exposes a capitalized `Prod` manual dispatch option for hosts configured under that exact GitHub Environment name.
 
 ## 1. Create the GitHub Environments
 
@@ -23,6 +25,7 @@ In GitHub:
 2. Go to `Settings -> Environments`.
 3. Create a new environment named `test`.
 4. Create a new environment named `prod`.
+5. Create a new environment named `Prod` if the corporate website should deploy through the capitalized production environment.
 
 Recommended protection rules:
 
@@ -50,6 +53,7 @@ The important part is the `subject`, which must exactly match the repository and
 
 - `repo:mmaideveloper/aijurisdictionagents:environment:test`
 - `repo:mmaideveloper/aijurisdictionagents:environment:prod`
+- `repo:mmaideveloper/aijurisdictionagents:environment:Prod` if using the capitalized corporate web environment
 
 Example PowerShell for `test`:
 
@@ -73,6 +77,7 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 ```
 
 Repeat the same for `prod` with `GithubEnvironment = "prod"`.
+Repeat for `Prod` with `GithubEnvironment = "Prod"` if using the capitalized corporate web environment.
 
 ## 4. Configure Shared Azure Deployment Variables
 
@@ -135,6 +140,9 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_POSTGRES_VERSION` | Optional PostgreSQL version |
 | `AZURE_POSTGRES_STORAGE_SIZE_GB` | Optional PostgreSQL storage size |
 | `CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the API |
+| `CONTACT_CAPTCHA_REQUIRED` | Set `true` in public environments to require Cloudflare Turnstile verification for `POST /v1/contact` |
+| `CONTACT_RATE_LIMIT_MAX_REQUESTS` | Optional backend per-IP contact form throttle, default `5` |
+| `CONTACT_RATE_LIMIT_WINDOW_SECONDS` | Optional backend per-IP contact form throttle window, default `600` |
 
 Required GitHub Environment secret:
 
@@ -150,6 +158,7 @@ Optional and conditional GitHub Environment secrets:
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional override for Application Insights connection string; API and Azure workers otherwise resolve it from `AZURE_APPLICATION_INSIGHTS_NAME` during deployment |
 | `EMAIL_SMTP_PASSWORD` | SMTP mailbox password; required by `API Build and Deploy` when `EMAIL_TRANSPORT=smtp` |
 | `CAR_VALIDATION_API_KEY` | Optional vehicle validation API key, injected as a Container App secret when configured |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key for backend contact-form verification when `CONTACT_CAPTCHA_REQUIRED=true` |
 
 ## 6. Configure Frontend Variables
 
@@ -169,6 +178,25 @@ The frontend workflow also reuses these shared Azure deployment variables:
 - `AZURE_CONTAINERAPPS_ENVIRONMENT`
 - `AZURE_CONTAINER_REGISTRY`
 - `AZURE_MANAGED_IDENTITY_NAME`
+
+## 6a. Configure Corporate Web FTP Variables
+
+These are used by `.github/workflows/corporate_web_deploy.yml`, whose manual environment choices are `dev`, `test`, `prod`, and `Prod`.
+
+| Variable | Purpose |
+| --- | --- |
+| `corporate_web_ftp` | FTP server host for corporate web deployment |
+| `corporate_web_ftp_username` | FTP username |
+| `CORPORATE_WEB_API_BASE_URL` | API base URL injected into corporate web contact form; set this to the dev/test/prod API URL for the matching environment. `/v1` or `/v1/contact` suffixes are accepted. When unset, the workflow falls back to `API_BASE_URL`, then `https://api.jurisdigta.eu` |
+| `TURNSTILE_SITE_KEY` | Public Cloudflare Turnstile site key injected into the static contact form |
+
+Required secret:
+
+| Secret | Purpose |
+| --- | --- |
+| `corporate_web_ftp_password` | FTP password |
+
+Configure the same entries on `Prod` when using the capitalized corporate web production environment.
 
 ## 7. Configure Document Processor Variables
 
@@ -318,6 +346,11 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
 - `API_BASE_URL`
 - `CORS_ALLOW_ORIGINS`
+- `CONTACT_CAPTCHA_REQUIRED=true`
+- `CONTACT_RATE_LIMIT_MAX_REQUESTS=5`
+- `CONTACT_RATE_LIMIT_WINDOW_SECONDS=600`
+- `TURNSTILE_SITE_KEY`
+- secret `TURNSTILE_SECRET_KEY`
 - `EMAIL_TRANSPORT=smtp`
 - `EMAIL_SENDER=no-reply@jurisdigta.eu`
 - `EMAIL_SMTP_HOST=mail.webhouse.sk`
@@ -383,6 +416,7 @@ After setup, verify:
 - required Azure variables are set in both environments
 - required secrets are set in both environments
 - `EMAIL_SMTP_PASSWORD` is set when `EMAIL_TRANSPORT=smtp`
+- `TURNSTILE_SITE_KEY` is set on the corporate web GitHub Environment and `TURNSTILE_SECRET_KEY` is set on the API GitHub Environment when `CONTACT_CAPTCHA_REQUIRED=true`
 - `AZURE_EMAIL_SCHEDULER_JOB_NAME` and `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION` are set when the dedicated email ACA job should run
 - optional `CAR_VALIDATION_API_BASE_URL` and `CAR_VALIDATION_API_KEY` are set together when live vehicle validation should be enabled
 - `workflow_dispatch` works with `github_environment=test`

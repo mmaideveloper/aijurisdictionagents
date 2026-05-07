@@ -106,7 +106,19 @@ runs/chat-simulator-email-tests/
 
 ## Corporate web contact form
 
-The corporate web contact form opens a user email draft addressed to `info@jurisdigta.eu`. Because the site is static, spam protection is client-side only: HTML validation, a hidden honeypot field, a minimum submit delay, disposable/test-domain blocking, and link blocking in the message field.
+The corporate web contact form posts to the first-party API endpoint `POST /v1/contact`, which sends an email to `info@jurisdigta.eu` from the backend through the configured SMTP transport.
+
+The static page does not open the user's local mail client. Client-side protections include HTML validation, a hidden honeypot field, a minimum submit delay, disposable/test-domain blocking, link blocking, and Cloudflare Turnstile when configured. The topic must be at least 2 characters and the message at least 5 characters. The API repeats the critical email, honeypot, length, link, and Turnstile token checks before sending.
+
+Production anti-spam settings:
+
+```env
+CONTACT_CAPTCHA_REQUIRED=true
+TURNSTILE_SITE_KEY=<public Turnstile site key injected into corporate web>
+TURNSTILE_SECRET_KEY=<private Turnstile secret configured on the API>
+CONTACT_RATE_LIMIT_MAX_REQUESTS=5
+CONTACT_RATE_LIMIT_WINDOW_SECONDS=600
+```
 
 Minimal runnable example:
 

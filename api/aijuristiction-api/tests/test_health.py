@@ -246,3 +246,16 @@ def test_cors_preflight_allows_ipv6_loopback_on_custom_port() -> None:
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://[::1]:7358"
+
+
+def test_cors_preflight_allows_local_file_preview_contact_form() -> None:
+    response = client.options(
+        "/v1/contact",
+        headers={
+            "Origin": "null",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "null"

@@ -12,6 +12,7 @@ on:
           - dev
           - test
           - prod
+          - Prod
 
 permissions:
   contents: read
@@ -26,9 +27,74 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Sync displayed package versions
+        env:
+          TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+          CORPORATE_WEB_API_BASE_URL: ${{ vars.CORPORATE_WEB_API_BASE_URL || vars.API_BASE_URL || 'https://api.jurisdigta.eu' }}
+        run: |
+          api_version="$(sed -nE 's/^version = "([^"]+)"/\1/p' api/aijuristiction-api/pyproject.toml | head -n 1)"
+          core_version="$(sed -nE 's/^__version__ = "([^"]+)"/\1/p' src/aijurisdictionagents/__init__.py | head -n 1)"
+          contact_api_base_url="${CORPORATE_WEB_API_BASE_URL%/}"
+          case "$contact_api_base_url" in
+            */v1/contact) contact_api_url="$contact_api_base_url" ;;
+            */v1) contact_api_url="$contact_api_base_url/contact" ;;
+            *) contact_api_url="$contact_api_base_url/v1/contact" ;;
+          esac
+
+          if [ -z "$api_version" ]; then
+            echo "::error::Could not resolve API version from api/aijuristiction-api/pyproject.toml"
+            exit 1
+          fi
+
+          if [ -z "$core_version" ]; then
+            echo "::error::Could not resolve system core version from src/aijurisdictionagents/__init__.py"
+            exit 1
+          fi
+
+          API_VERSION="$api_version" CORE_VERSION="$core_version" CONTACT_API_URL="$contact_api_url" python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          index_path = Path("corporate-web/index.html")
+          html = index_path.read_text(encoding="utf-8")
+          html = re.sub(
+              r'(<strong data-build-version="api">)[^<]*(</strong>)',
+              rf'\g<1>{os.environ["API_VERSION"]}\2',
+              html,
+          )
+          html = re.sub(
+              r'(<strong data-build-version="core">)[^<]*(</strong>)',
+              rf'\g<1>{os.environ["CORE_VERSION"]}\2',
+              html,
+          )
+          html = html.replace("__CONTACT_API_URL__", os.environ["CONTACT_API_URL"])
+          index_path.write_text(html, encoding="utf-8")
+          PY
+
+          if [ -n "${TURNSTILE_SITE_KEY:-}" ]; then
+            TURNSTILE_SITE_KEY="$TURNSTILE_SITE_KEY" python - <<'PY'
+          import os
+          from pathlib import Path
+
+          index_path = Path("corporate-web/index.html")
+          html = index_path.read_text(encoding="utf-8")
+          html = html.replace("__TURNSTILE_SITE_KEY__", os.environ["TURNSTILE_SITE_KEY"])
+          index_path.write_text(html, encoding="utf-8")
+          PY
+          fi
+
+          echo "Corporate web API version: $api_version"
+          echo "Corporate web system core version: $core_version"
+          echo "Corporate web contact API URL: $contact_api_url"
+
       - name: Verify corporate web build
         run: |
           test -f corporate-web/index.html
+          grep -q 'data-build-version="api"' corporate-web/index.html
+          grep -q 'data-build-version="core"' corporate-web/index.html
+          grep -q '/v1/contact' corporate-web/index.html
+          ! grep -q '__CONTACT_API_URL__' corporate-web/index.html
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
