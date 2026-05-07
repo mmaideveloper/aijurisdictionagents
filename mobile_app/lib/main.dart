@@ -237,6 +237,8 @@ class AppStrings {
       'speech_input_disabled': 'Vstup hlasom vypnutý',
       'speech_input_disabled_message':
           'Vstup hlasom je vypnutý. Zapnite ho tlačidlom Vstup hlasom.',
+      'speech_input_auto_stopped':
+          'Hlasový vstup bol po 30 sekundách ticha zastavený. Klepnite na mikrofón pre pokračovanie.',
       'speaker_output': 'Hlasový výstup asistenta',
       'speaker_voice_label': 'Hlas asistenta',
       'speaker_voice_unavailable': 'Pre zvolený jazyk nie je dostupný hlas.',
@@ -479,6 +481,8 @@ class AppStrings {
       'speech_input_disabled': 'Speech input off',
       'speech_input_disabled_message':
           'Speech input is turned off. Use the Speech input button to enable it.',
+      'speech_input_auto_stopped':
+          'Speech input paused for 30 seconds and was stopped. Tap the microphone to continue.',
       'speaker_output': 'Assistant voice output',
       'speaker_voice_label': 'Assistant voice',
       'speaker_voice_unavailable':
@@ -987,7 +991,7 @@ class AIJurisdictionMobileApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'AIJurisDigta',
+      title: 'Jurisdigta AI Agent',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
@@ -4229,7 +4233,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const double _questionTimeoutSeconds = 3600;
   static const double _maxDiscussionMinutes = 60;
   static const double _communicationMinutes = 60;
-  static const Duration _speechSilenceTimeout = Duration(seconds: 10);
+  static const Duration _speechSilenceTimeout = Duration(seconds: 30);
   static const Duration _speechMaxListenDuration = Duration(minutes: 30);
 
   final TextEditingController _inputController = TextEditingController();
@@ -4263,6 +4267,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _speechEnabled = false;
   bool _speechInputEnabled = false;
   bool _isListening = false;
+  bool _stoppingSpeechManually = false;
   bool _awaitingSpokenName = false;
   bool _awaitingCaseArchiveConfirmation = false;
   bool _awaitingSpokenCaseTitle = false;
@@ -5565,6 +5570,9 @@ class _ChatHomePageState extends State<ChatHomePage>
       ),
     );
     if (!isListening) {
+      if (!_stoppingSpeechManually && _speechInputEnabled && _lastFinalSpeechResult == null) {
+        _showSnackbar(_strings.t('speech_input_auto_stopped'));
+      }
       final shouldProcess = _processSpeechOnStop;
       final shouldSubmit = _submitSpeechOnStop;
       _processSpeechOnStop = true;
@@ -5649,6 +5657,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     final completer = Completer<void>();
     _speechStopCompleter = completer;
+    _stoppingSpeechManually = true;
     await _speechRecognizer.stop();
     if (!completer.isCompleted) {
       await completer.future.timeout(
@@ -5656,6 +5665,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         onTimeout: () {},
       );
     }
+    _stoppingSpeechManually = false;
   }
 
   Future<void> _requestNewCaseFromCommand({
@@ -6004,8 +6014,10 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     if (!_speechInputEnabled) {
-      _showSnackbar(_strings.t('speech_input_disabled_message'));
-      return;
+      await _toggleSpeechInputEnabled();
+      if (!_speechInputEnabled || !mounted) {
+        return;
+      }
     }
     if (_isListening) {
       await _stopSpeechListening(submitAfterStop: true);
@@ -7495,9 +7507,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     return TextField(
       controller: _inputController,
       focusNode: _inputFocusNode,
-      minLines: expanded ? null : 1,
-      maxLines: expanded ? null : 1,
-      expands: expanded,
+      minLines: expanded ? 5 : 1,
+      maxLines: expanded ? 5 : 1,
+      expands: false,
       keyboardType: TextInputType.multiline,
       textInputAction:
           expanded ? TextInputAction.newline : TextInputAction.send,
