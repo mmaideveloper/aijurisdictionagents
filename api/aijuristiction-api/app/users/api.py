@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sqlite3
 from types import ModuleType
 from uuid import uuid4
@@ -58,7 +59,7 @@ class SendRegistrationCodeRequest(BaseModel):
 
 
 class CompleteRegistrationRequest(SignUpRequest):
-    verification_code: str = Field(min_length=4, max_length=8)
+    verification_code: str = Field(min_length=1, max_length=64)
 
 
 class SendSignInCodeRequest(BaseModel):
@@ -67,7 +68,7 @@ class SendSignInCodeRequest(BaseModel):
 
 
 class VerifySignInCodeRequest(SendSignInCodeRequest):
-    verification_code: str = Field(min_length=4, max_length=8)
+    verification_code: str = Field(min_length=1, max_length=64)
 
 
 class DeviceSignInRequest(SendSignInCodeRequest):
@@ -209,7 +210,7 @@ def complete_registration(
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> UserProfileResponse:
-    if not store.verify_registration_code(
+    if not _accepts_any_local_auth_code() and not store.verify_registration_code(
         email=payload.email,
         code=payload.verification_code,
     ):
@@ -280,11 +281,10 @@ def verify_sign_in_code(
     user = store.find_user_by_phone(phone_number=payload.phone_number)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    is_valid = store.verify_registration_code(
+    if not _accepts_any_local_auth_code() and not store.verify_registration_code(
         email=_sign_in_code_key(phone_number=payload.phone_number, device_id=payload.device_id),
         code=payload.verification_code,
-    )
-    if not is_valid:
+    ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
     token = store.issue_device_auth_token(user_id=user.user_id, device_id=payload.device_id)
     return _to_device_auth_user_profile_response(user=user, token=token)
@@ -528,6 +528,15 @@ def _now_if_accepted(accepted: bool) -> str | None:
 
 def _sign_in_code_key(*, phone_number: str, device_id: str) -> str:
     return f"signin:{phone_number.strip()}:{device_id.strip()}"
+
+
+def _accepts_any_local_auth_code() -> bool:
+    return os.getenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _to_plan_response(plan: SubscriptionPlan) -> SubscriptionPlanResponse:

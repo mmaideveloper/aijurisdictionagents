@@ -95,6 +95,9 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
   - update metadata is read from `GET /version`
   - on Android, if the API advertises an APK download URL, the app now shows an inline progress card with download percentage, downloaded/total MB, APK path/URL context, permission check state, and installer handoff status before opening the Android installer after user confirmation
   - if Android blocks sideload installs for this app, the app opens the `Install unknown apps` settings page and resumes installation when the user returns
+- When the chat stream creates a case document and returns its internal `/v1/cases/.../documents/...` path before session result metadata is available, the app enables the document action and still downloads the rendered PDF export while hiding the internal technical path from the client-visible chat message.
+  - If multiple session documents are available, the document action opens a list first; tapping a row downloads and opens that specific PDF document.
+  - If the app was reopened and no active chat session exists anymore, it restores document readiness from generated `technical_payload` case-document metadata and falls back to `GET /v1/cases/{case_id}/documents/{doc_id}/pdf` so the user still receives a PDF instead of the stored JSON payload.
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/users/sign-up`
   - `POST /v1/users/sign-up/send-code`

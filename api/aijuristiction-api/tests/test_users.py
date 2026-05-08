@@ -150,6 +150,27 @@ def test_sign_up_complete_requires_valid_email_code(monkeypatch, tmp_path: Path)
     assert complete_response.status_code == 201
 
 
+def test_local_auth_accepts_any_registration_code_when_enabled(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "1")
+
+    complete_response = client.post(
+        "/v1/users/sign-up/complete",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900111334",
+            "email": "local-any-code@example.com",
+            "password": "secret-pass",
+            "verification_code": "1",
+            "data_processing_consent_accepted": True,
+            "data_processing_consent_version": "2026-05-06",
+        },
+    )
+
+    assert complete_response.status_code == 201
+    assert complete_response.json()["email"] == "local-any-code@example.com"
+
+
 def test_registration_code_expires_in_thirty_minutes(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)
 
@@ -247,6 +268,34 @@ def test_device_bound_sign_in_flow(monkeypatch, tmp_path: Path) -> None:
     silent_payload = silent_login_response.json()
     assert silent_payload["user_id"] == payload["user_id"]
     assert silent_payload["device_auth_token"]
+
+
+def test_local_auth_accepts_any_sign_in_code_when_enabled(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "1")
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121315",
+            "email": "local-login-any-code@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+
+    verify_response = client.post(
+        "/v1/users/sign-in/verify-code",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121315",
+            "device_id": "local-device",
+            "verification_code": "1",
+        },
+    )
+
+    assert verify_response.status_code == 200
+    assert verify_response.json()["device_auth_token"]
 
 
 def test_sign_up_rejects_duplicate_phone_and_email(monkeypatch, tmp_path: Path) -> None:

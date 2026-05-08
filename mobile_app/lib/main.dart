@@ -23,6 +23,7 @@ import 'state/mobile_app_providers.dart';
 import 'audio/jurisdicta_speaker.dart';
 import 'speech_service.dart';
 import 'auth/local_auth_store.dart';
+import 'chat/generated_document_message.dart';
 import 'chat/rule_engine.dart';
 import 'chat/speech_flow.dart';
 import 'logging/app_logger.dart';
@@ -520,6 +521,8 @@ class AppStrings {
       'open_saved_file_failed': 'Could not open the saved file.',
       'downloaded_files_title': 'Downloaded files',
       'downloaded_files_subtitle': 'Choose the file you want to open now.',
+      'available_documents_title': 'Documents to download',
+      'available_documents_subtitle': 'Choose the document you want to open.',
       'failed_to_load_cases': 'Failed to load cases: {{error}}',
       'failed_to_load_case_history': 'Failed to load case history: {{error}}',
       'maximum_cases':
@@ -1373,9 +1376,15 @@ class CaseHistoryMessage {
         _isInternalDocumentAutoAnalysisPrompt(content)) {
       return null;
     }
+    final visibleContent = role.toLowerCase() == 'assistant'
+        ? stripInternalGeneratedDocumentNotice(content)
+        : content;
+    if (visibleContent.trim().isEmpty) {
+      return null;
+    }
     return ChatMessage(
       role: role,
-      content: content,
+      content: visibleContent,
       agentName: agentName,
       createdAt: DateTime.tryParse(createdAt),
     );
@@ -1502,6 +1511,41 @@ class ExportFilePayload {
   final Uint8List bytes;
   final String filename;
   final String contentType;
+}
+
+class DocumentExportOption {
+  const DocumentExportOption({
+    required this.index,
+    required this.filename,
+    required this.title,
+  });
+
+  final int index;
+  final String filename;
+  final String title;
+
+  static DocumentExportOption fromJson(Map<String, dynamic> json) {
+    return DocumentExportOption(
+      index: json['index'] as int? ?? 0,
+      filename: json['filename'] as String? ?? 'document.pdf',
+      title: json['title'] as String? ?? 'Document',
+    );
+  }
+}
+
+class _DocumentDownloadOption {
+  const _DocumentDownloadOption.sessionExport(this.export)
+      : caseDocument = null;
+
+  const _DocumentDownloadOption.caseDocument(this.caseDocument) : export = null;
+
+  final DocumentExportOption? export;
+  final CaseDocumentItem? caseDocument;
+
+  String get title => export?.title ?? caseDocument?.originalFilename ?? '';
+
+  String get subtitle =>
+      export?.filename ?? caseDocument?.processingStatus ?? '';
 }
 
 class SessionResultDetails {
@@ -2605,6 +2649,72 @@ class ApiClient {
     );
   }
 
+  Future<List<DocumentExportOption>> listDocumentExportOptions() async {
+    final sessionId = _sessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return const <DocumentExportOption>[];
+    }
+    final response = await _get(
+      path: '/v1/chat/sessions/$sessionId/export/documents',
+      action: 'list_document_exports',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = _extractErrorDetail(response);
+      throw Exception(
+        'Document export list failed with status ${response.statusCode}: $detail',
+      );
+    }
+    final decoded =
+        _decodeResponseBody(response, action: 'list_document_exports');
+    final rawDocuments =
+        decoded['documents'] as List<dynamic>? ?? const <dynamic>[];
+    return rawDocuments
+        .whereType<Map>()
+        .map((item) => DocumentExportOption.fromJson(
+              Map<String, dynamic>.from(item.cast<String, dynamic>()),
+            ))
+        .toList(growable: false);
+  }
+
+  Future<ExportFilePayload> downloadDocumentExportPdf({
+    required int index,
+    required ResponderMode responderMode,
+    required LocaleOption locale,
+  }) async {
+    final sessionId = _sessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      throw Exception('No active session. Start a discussion first.');
+    }
+    final response = await _get(
+      path: '/v1/chat/sessions/$sessionId/export/documents/$index',
+      action: 'export_document_pdf_$index',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = _extractErrorDetail(response);
+      if (_isMissingSessionDetail(detail)) {
+        await _recreateSessionAfterMissing(
+          operation: 'export_document_pdf_$index',
+          missingSessionId: sessionId,
+          responderMode: responderMode,
+          locale: locale,
+        );
+        throw const SessionExpiredException();
+      }
+      throw Exception(
+        'Document PDF export failed with status ${response.statusCode}: $detail',
+      );
+    }
+    final filename = _filenameFromContentDisposition(
+          response.headers['content-disposition'],
+        ) ??
+        'document.pdf';
+    return ExportFilePayload(
+      bytes: response.bodyBytes,
+      filename: filename,
+      contentType: response.headers['content-type'] ?? 'application/pdf',
+    );
+  }
+
   Future<List<CaseDocumentItem>> uploadCaseDocuments({
     required String caseId,
     required String userId,
@@ -2705,6 +2815,32 @@ class ApiClient {
       filename: filename,
       contentType:
           response.headers['content-type'] ?? 'application/octet-stream',
+    );
+  }
+
+  Future<ExportFilePayload> downloadGeneratedCaseDocumentPdf({
+    required String caseId,
+    required String userId,
+    required String docId,
+  }) async {
+    final response = await _get(
+      path: '/v1/cases/$caseId/documents/$docId/pdf?user_id=$userId',
+      action: 'generated_case_document_pdf_download',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = _extractErrorDetail(response);
+      throw Exception(
+        'Generated case document PDF download failed with status ${response.statusCode}: $detail',
+      );
+    }
+    final filename = _filenameFromContentDisposition(
+          response.headers['content-disposition'],
+        ) ??
+        'case-document.pdf';
+    return ExportFilePayload(
+      bytes: response.bodyBytes,
+      filename: filename,
+      contentType: response.headers['content-type'] ?? 'application/pdf',
     );
   }
 
@@ -3474,8 +3610,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   autofillHints: const <String>[
                                                     AutofillHints.oneTimeCode,
                                                   ],
-                                                  textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+                                                  textAlignVertical:
+                                                      TextAlignVertical.top,
+                                                  decoration: InputDecoration(
                                                     labelText: strings.t(
                                                       'sign_in_code_required',
                                                     ),
@@ -3518,8 +3655,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   AutofillHints
                                                       .telephoneNumberDevice,
                                                 ],
-                                                textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+                                                textAlignVertical:
+                                                    TextAlignVertical.top,
+                                                decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'phone_number_required',
                                                   ),
@@ -3542,8 +3680,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                   AutofillHints.email,
                                                   AutofillHints.newUsername,
                                                 ],
-                                                textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+                                                textAlignVertical:
+                                                    TextAlignVertical.top,
+                                                decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'email_required',
                                                   ),
@@ -3557,8 +3696,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                 autofillHints: const <String>[
                                                   AutofillHints.newPassword,
                                                 ],
-                                                textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+                                                textAlignVertical:
+                                                    TextAlignVertical.top,
+                                                decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'password_required',
                                                   ),
@@ -3596,8 +3736,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                               TextField(
                                                 controller:
                                                     _signUpFirstNameController,
-                                                textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+                                                textAlignVertical:
+                                                    TextAlignVertical.top,
+                                                decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'first_name_optional',
                                                   ),
@@ -3607,8 +3748,9 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                               TextField(
                                                 controller:
                                                     _signUpLastNameController,
-                                                textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+                                                textAlignVertical:
+                                                    TextAlignVertical.top,
+                                                decoration: InputDecoration(
                                                   labelText: strings.t(
                                                     'last_name_optional',
                                                   ),
@@ -3630,8 +3772,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                                 )),
                                               ),
                                               Align(
-                                                alignment:
-                                                    Alignment.centerLeft,
+                                                alignment: Alignment.centerLeft,
                                                 child: TextButton(
                                                   onPressed: () {
                                                     launchUrl(
@@ -4043,7 +4184,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             keyboardType: TextInputType.phone,
             readOnly: true,
             textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+            decoration: InputDecoration(
               labelText: strings.t('phone_number'),
               suffixIcon: const Icon(Icons.lock_outline),
             ),
@@ -4054,7 +4195,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             keyboardType: TextInputType.emailAddress,
             readOnly: true,
             textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+            decoration: InputDecoration(
               labelText: strings.t('email'),
               suffixIcon: const Icon(Icons.lock_outline),
             ),
@@ -4064,7 +4205,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             controller: _passwordController,
             obscureText: true,
             textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+            decoration: InputDecoration(
               labelText: strings.t('password_required'),
             ),
           ),
@@ -4072,7 +4213,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           TextField(
             controller: _firstNameController,
             textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+            decoration: InputDecoration(
               labelText: strings.t('first_name'),
             ),
           ),
@@ -4080,7 +4221,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           TextField(
             controller: _lastNameController,
             textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(
+            decoration: InputDecoration(
               labelText: strings.t('last_name'),
             ),
           ),
@@ -4274,6 +4415,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _isSending = false;
   bool _isDownloading = false;
   bool _hasExportReady = false;
+  String? _latestGeneratedCaseDocumentId;
   String _appVersionLabel = 'v0.1.5+41';
   String? _systemLastLawUpdateDate;
   String? _systemModelKnowledgeCutoffDate;
@@ -4487,6 +4629,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     setState(() {
       _selectedCase = selected;
       _hasExportReady = false;
+      _latestGeneratedCaseDocumentId = null;
       _caseHistoryOffset = 0;
       _caseHistoryHasMore = false;
       _caseDocuments = <CaseDocumentItem>[];
@@ -4533,8 +4676,22 @@ class _ChatHomePageState extends State<ChatHomePage>
           .map((item) => item.toChatMessage())
           .whereType<ChatMessage>()
           .toList(growable: false);
+      String? generatedDocumentId;
+      for (final message in page.messages.reversed) {
+        generatedDocumentId = _acceptedGeneratedCaseDocumentId(message.content);
+        if (generatedDocumentId != null) {
+          break;
+        }
+      }
+      generatedDocumentId ??= _latestGeneratedDocumentIdFromCaseDocuments(
+        page.documents,
+      );
       setState(() {
         _caseDocuments = page.documents;
+        if (generatedDocumentId != null) {
+          _latestGeneratedCaseDocumentId = generatedDocumentId;
+          _hasExportReady = true;
+        }
         _caseHistoryHasMore = page.hasMore;
         _caseHistoryOffset = offset + page.messages.length;
         if (reset) {
@@ -4579,19 +4736,34 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
+  String? _latestGeneratedDocumentIdFromCaseDocuments(
+    List<CaseDocumentItem> documents,
+  ) {
+    for (final document in documents.reversed) {
+      if (document.kind == 'technical_payload' && document.docId.isNotEmpty) {
+        return document.docId;
+      }
+    }
+    return null;
+  }
+
   Future<void> _downloadCaseDocument(CaseDocumentItem document) async {
+    await _downloadCaseDocumentById(document.docId);
+  }
+
+  Future<void> _downloadCaseDocumentById(String docId) async {
     final selected = _selectedCase;
-    if (selected == null) {
+    if (selected == null || docId.trim().isEmpty) {
       return;
     }
     setState(() {
-      _downloadingCaseDocumentIds.add(document.docId);
+      _downloadingCaseDocumentIds.add(docId);
     });
     try {
       final payload = await _apiClient.downloadCaseDocument(
         caseId: selected.caseId,
         userId: _signedInUser.userId,
-        docId: document.docId,
+        docId: docId,
       );
       final savedPath = await _fileSaver.save(
         bytes: payload.bytes,
@@ -4620,7 +4792,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     } finally {
       if (mounted) {
         setState(() {
-          _downloadingCaseDocumentIds.remove(document.docId);
+          _downloadingCaseDocumentIds.remove(docId);
         });
       }
     }
@@ -5519,8 +5691,17 @@ class _ChatHomePageState extends State<ChatHomePage>
     required String rawReply,
     required bool exportReady,
   }) {
-    final visibleReply = _sanitizeVisibleMessageContent(rawReply);
-    if (!exportReady && _looksLikeGeneratedDocumentDraft(visibleReply)) {
+    final generatedDocumentId = _acceptedGeneratedCaseDocumentId(rawReply);
+    if (generatedDocumentId != null) {
+      _latestGeneratedCaseDocumentId = generatedDocumentId;
+      _hasExportReady = true;
+    }
+    final visibleReply = _sanitizeVisibleMessageContent(
+      stripInternalGeneratedDocumentNotice(rawReply),
+    );
+    if (!exportReady &&
+        (generatedDocumentId != null ||
+            _looksLikeGeneratedDocumentDraft(visibleReply))) {
       _hasExportReady = true;
     }
     if (visibleReply.isEmpty) {
@@ -5533,6 +5714,17 @@ class _ChatHomePageState extends State<ChatHomePage>
       return visibleReply;
     }
     return _strings.t('document_pdf_offer');
+  }
+
+  String? _acceptedGeneratedCaseDocumentId(String content) {
+    final generatedDocument = extractGeneratedCaseDocumentReference(content);
+    if (generatedDocument == null ||
+        generatedDocument.caseId != _selectedCase?.caseId ||
+        (generatedDocument.userId != null &&
+            generatedDocument.userId != _signedInUser.userId)) {
+      return null;
+    }
+    return generatedDocument.docId;
   }
 
   Future<void> _setSpeakerOutputEnabled(bool enabled) async {
@@ -5590,7 +5782,9 @@ class _ChatHomePageState extends State<ChatHomePage>
       ),
     );
     if (!isListening) {
-      if (!_stoppingSpeechManually && _speechInputEnabled && _lastFinalSpeechResult == null) {
+      if (!_stoppingSpeechManually &&
+          _speechInputEnabled &&
+          _lastFinalSpeechResult == null) {
         _showSnackbar(_strings.t('speech_input_auto_stopped'));
       }
       final shouldProcess = _processSpeechOnStop;
@@ -6060,24 +6254,193 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _downloadRequestedDocuments() async {
-    final savedFiles = <_SavedLocalFile>[];
-    for (final kind in <String>['summary', 'document']) {
-      final savedFile = await _downloadPdf(kind);
-      if (savedFile != null) {
-        savedFiles.add(savedFile);
+    final sessionId = _apiClient.sessionId;
+    if (sessionId != null && sessionId.isNotEmpty) {
+      try {
+        final exportOptions = await _apiClient.listDocumentExportOptions();
+        if (exportOptions.isNotEmpty) {
+          final selected = exportOptions.length == 1
+              ? _DocumentDownloadOption.sessionExport(exportOptions.first)
+              : await _showDocumentDownloadPicker(
+                  exportOptions
+                      .map(_DocumentDownloadOption.sessionExport)
+                      .toList(growable: false),
+                );
+          if (selected?.export != null) {
+            final savedFile =
+                await _downloadDocumentExportPdf(selected!.export!);
+            if (savedFile != null && mounted) {
+              await _openSavedFile(context, _strings, savedFile.savedPath);
+            }
+          }
+          return;
+        }
+      } catch (error, stackTrace) {
+        await widget.logger.error(
+          'Failed to list document export options',
+          error,
+          stackTrace,
+        );
       }
     }
-    if (!mounted || savedFiles.isEmpty) {
+
+    final generatedDocumentId = _latestGeneratedCaseDocumentId;
+    if ((_apiClient.sessionId == null || _apiClient.sessionId!.isEmpty) &&
+        generatedDocumentId != null &&
+        generatedDocumentId.trim().isNotEmpty) {
+      final savedFile = await _downloadGeneratedCaseDocumentPdf(
+        generatedDocumentId,
+      );
+      if (savedFile != null && mounted) {
+        await _openSavedFile(context, _strings, savedFile.savedPath);
+      }
       return;
     }
-    if (savedFiles.length == 1) {
-      await _openSavedFile(context, _strings, savedFiles.first.savedPath);
+    if (_caseDocuments.length > 1) {
+      final selected = await _showDocumentDownloadPicker(
+        _caseDocuments
+            .map(_DocumentDownloadOption.caseDocument)
+            .toList(growable: false),
+      );
+      if (selected?.caseDocument != null) {
+        final caseDocument = selected!.caseDocument!;
+        if (caseDocument.kind == 'technical_payload') {
+          final savedFile = await _downloadGeneratedCaseDocumentPdf(
+            caseDocument.docId,
+          );
+          if (savedFile != null && mounted) {
+            await _openSavedFile(context, _strings, savedFile.savedPath);
+          }
+        } else {
+          await _downloadCaseDocument(caseDocument);
+        }
+      }
       return;
     }
-    final selected = await _showDownloadedFilesPicker(savedFiles);
-    if (selected != null && mounted) {
-      await _openSavedFile(context, _strings, selected.savedPath);
+
+    final savedFile = await _downloadPdf('document');
+    if (!mounted || savedFile == null) {
+      return;
     }
+    await _openSavedFile(context, _strings, savedFile.savedPath);
+  }
+
+  Future<_SavedLocalFile?> _downloadDocumentExportPdf(
+    DocumentExportOption option,
+  ) async {
+    if (_isDownloading) {
+      return null;
+    }
+    setState(() {
+      _isDownloading = true;
+    });
+    try {
+      await widget.logger.info(
+        'Document PDF export download requested',
+        <String, Object?>{'index': option.index, 'filename': option.filename},
+      );
+      final payload = await _apiClient.downloadDocumentExportPdf(
+        index: option.index,
+        responderMode: _responderMode,
+        locale: _selectedLocale,
+      );
+      final savedPath = await _fileSaver.save(
+        bytes: payload.bytes,
+        fileName: payload.filename,
+        contentType: payload.contentType,
+      );
+      if (savedPath != null && savedPath.isNotEmpty) {
+        _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
+          'path': savedPath,
+        }));
+        return _SavedLocalFile(
+          fileName: payload.filename,
+          savedPath: savedPath,
+          contentType: payload.contentType,
+        );
+      }
+      _showSnackbar(_strings.t('pdf_download_started', <String, String>{
+        'filename': payload.filename,
+      }));
+    } on SessionExpiredException {
+      _showSnackbar(
+        _sessionExpiredMessageForLanguage(_selectedLocale.languageCode),
+      );
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Document PDF export download failed',
+        error,
+        stackTrace,
+        <String, Object?>{'index': option.index, 'filename': option.filename},
+      );
+      _showSnackbar(_strings.t('pdf_download_failed', <String, String>{
+        'error': '$error',
+      }));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
+    }
+    return null;
+  }
+
+  Future<_SavedLocalFile?> _downloadGeneratedCaseDocumentPdf(
+      String docId) async {
+    final selected = _selectedCase;
+    if (_isDownloading || selected == null || docId.trim().isEmpty) {
+      return null;
+    }
+    setState(() {
+      _isDownloading = true;
+    });
+    try {
+      await widget.logger.info(
+        'Generated case document PDF download requested',
+        <String, Object?>{'case_id': selected.caseId, 'doc_id': docId},
+      );
+      final payload = await _apiClient.downloadGeneratedCaseDocumentPdf(
+        caseId: selected.caseId,
+        userId: _signedInUser.userId,
+        docId: docId,
+      );
+      final savedPath = await _fileSaver.save(
+        bytes: payload.bytes,
+        fileName: payload.filename,
+        contentType: payload.contentType,
+      );
+      if (savedPath != null && savedPath.isNotEmpty) {
+        _showSnackbar(_strings.t('pdf_saved_to', <String, String>{
+          'path': savedPath,
+        }));
+        return _SavedLocalFile(
+          fileName: payload.filename,
+          savedPath: savedPath,
+          contentType: payload.contentType,
+        );
+      }
+      _showSnackbar(_strings.t('pdf_download_started', <String, String>{
+        'filename': payload.filename,
+      }));
+    } catch (error, stackTrace) {
+      await widget.logger.error(
+        'Generated case document PDF download failed',
+        error,
+        stackTrace,
+        <String, Object?>{'case_id': selected.caseId, 'doc_id': docId},
+      );
+      _showSnackbar(_strings.t('pdf_download_failed', <String, String>{
+        'error': '$error',
+      }));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
+    }
+    return null;
   }
 
   Future<bool> _ensureCaseSelectedForOutgoingMessage(String message) async {
@@ -6465,7 +6828,8 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
       setState(() {
         _latestSessionResult = details;
-        _hasExportReady = details?.documentReady ?? false;
+        _hasExportReady = (details?.documentReady ?? false) ||
+            _latestGeneratedCaseDocumentId != null;
       });
       _syncValidationThreadMessage(scrollToEnd: true);
     } catch (error, stackTrace) {
@@ -6562,6 +6926,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     setState(() {
       _isSending = true;
       _hasExportReady = false;
+      _latestGeneratedCaseDocumentId = null;
       if (appendUserMessage && _selectedCase != null) {
         _caseHistoryOffset += 1;
       }
@@ -6648,7 +7013,8 @@ class _ChatHomePageState extends State<ChatHomePage>
             if (mounted) {
               setState(() {
                 _latestSessionResult = result;
-                _hasExportReady = result.documentReady;
+                _hasExportReady = result.documentReady ||
+                    _latestGeneratedCaseDocumentId != null;
               });
               _syncValidationThreadMessage(scrollToEnd: false);
             }
@@ -6735,7 +7101,8 @@ class _ChatHomePageState extends State<ChatHomePage>
             if (mounted) {
               setState(() {
                 _latestSessionResult = result;
-                _hasExportReady = result.documentReady;
+                _hasExportReady = result.documentReady ||
+                    _latestGeneratedCaseDocumentId != null;
               });
               _syncValidationThreadMessage(scrollToEnd: false);
             }
@@ -7051,6 +7418,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _selectedLocale = locale;
       _updateWelcomeMessageForLocale();
       _hasExportReady = false;
+      _latestGeneratedCaseDocumentId = null;
     });
     ProviderScope.containerOf(context, listen: false)
         .read(appLocaleProvider.notifier)
@@ -7178,7 +7546,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         content: TextField(
           controller: controller,
           textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration(labelText: strings.t('case_name')),
+          decoration: InputDecoration(labelText: strings.t('case_name')),
         ),
         actions: [
           TextButton(
@@ -7470,10 +7838,10 @@ class _ChatHomePageState extends State<ChatHomePage>
     widget.onSignedOut();
   }
 
-  Future<_SavedLocalFile?> _showDownloadedFilesPicker(
-    List<_SavedLocalFile> files,
+  Future<_DocumentDownloadOption?> _showDocumentDownloadPicker(
+    List<_DocumentDownloadOption> documents,
   ) {
-    return showModalBottomSheet<_SavedLocalFile>(
+    return showModalBottomSheet<_DocumentDownloadOption>(
       context: context,
       builder: (context) {
         return SafeArea(
@@ -7486,12 +7854,12 @@ class _ChatHomePageState extends State<ChatHomePage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _strings.t('downloaded_files_title'),
+                      _strings.t('available_documents_title'),
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _strings.t('downloaded_files_subtitle'),
+                      _strings.t('available_documents_subtitle'),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -7500,15 +7868,15 @@ class _ChatHomePageState extends State<ChatHomePage>
               Flexible(
                 child: ListView.separated(
                   shrinkWrap: true,
-                  itemCount: files.length,
+                  itemCount: documents.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, index) {
-                    final file = files[index];
+                    final document = documents[index];
                     return ListTile(
                       leading: const Icon(Icons.picture_as_pdf_outlined),
-                      title: Text(file.fileName),
-                      subtitle: Text(file.savedPath),
-                      onTap: () => Navigator.of(context).pop(file),
+                      title: Text(document.title),
+                      subtitle: Text(document.subtitle),
+                      onTap: () => Navigator.of(context).pop(document),
                     );
                   },
                 ),
@@ -7548,7 +7916,6 @@ class _ChatHomePageState extends State<ChatHomePage>
       ),
     );
   }
-
 
   String _localizedAgentName(String? rawAgentName, AppStrings strings) {
     final normalized = (rawAgentName ?? '').trim().toLowerCase();
@@ -7801,6 +8168,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                                 setState(() {
                                   _responderMode = mode;
                                   _hasExportReady = false;
+                                  _latestGeneratedCaseDocumentId = null;
                                 });
                                 unawaited(
                                   widget.logger.info(

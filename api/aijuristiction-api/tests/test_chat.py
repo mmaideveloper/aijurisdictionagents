@@ -270,6 +270,24 @@ def test_stream_core_orchestration_and_export_json_pdf() -> None:
     assert f"{session_id}-" in doc_disposition
     assert "-final-document.pdf" in doc_disposition
 
+    export_documents = client.get(
+        f"/v1/chat/sessions/{session_id}/export/documents",
+        headers=AUTH_HEADERS,
+    )
+    assert export_documents.status_code == 200
+    documents_payload = export_documents.json()
+    assert documents_payload["documents"]
+    first_document = documents_payload["documents"][0]
+    assert first_document["filename"].endswith(".pdf")
+
+    selected_document_pdf = client.get(
+        f"/v1/chat/sessions/{session_id}/export/documents/{first_document['index']}",
+        headers=AUTH_HEADERS,
+    )
+    assert selected_document_pdf.status_code == 200
+    assert selected_document_pdf.headers["content-type"].startswith("application/pdf")
+    assert selected_document_pdf.content.startswith(b"%PDF")
+
 
 def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     defaults_path = (
@@ -3010,9 +3028,55 @@ def test_assistant_technical_payload_is_saved_as_case_document_and_linked(monkey
     assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
     stored_payload = json.loads(str(stored_documents[0]["payload"]))
     assert stored_payload["case"]["status"] == "intake_open"
-    assert "Technick" in visible
-    assert f"/v1/cases/case-123/documents/doc-technical?user_id={user_id}" in visible
+    assert "Technick" not in visible
+    assert f"/v1/cases/case-123/documents/doc-technical?user_id={user_id}" not in visible
     assert '"case"' not in visible
+
+
+def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None:
+    from app.chat.api import _build_direct_reply_result
+    from app.chat.models import Message, MessageRole, Session
+
+    session_id = uuid4()
+    user_id = uuid4()
+    session = Session(
+        id=session_id,
+        user_id=user_id,
+        case_id="case-123",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="Chcete, aby som pripravil dokument na stiahnutie?",
+        ),
+        Message(session_id=session_id, role=MessageRole.USER, content="ano"),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Dokument je pripraveny na stiahnutie.\n\n"
+                "Technicke udaje som ulozil do dokumentu pripadu: "
+                f"/v1/cases/case-123/documents/doc-technical?user_id={user_id}\n\n"
+                '{"case":{"status":"intake_open"}}'
+            ),
+        ),
+    ]
+
+    result = _build_direct_reply_result(
+        session_id=session_id,
+        session=session,
+        messages=messages,
+        lawyer_message=messages[-1].content,
+    )
+
+    assert result.metadata["document_ready"] is True
+    assert "/v1/cases/" not in result.final_recommendation
 
 
 def test_stream_read_user_completes_when_bare_technical_json_contains_question(monkeypatch) -> None:

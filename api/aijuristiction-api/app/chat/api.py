@@ -93,6 +93,16 @@ class _TechnicalPayloadAsset:
     end_index: int
 
 
+class DocumentExportOption(BaseModel):
+    index: int
+    filename: str
+    title: str
+
+
+class DocumentExportOptionsResponse(BaseModel):
+    documents: list[DocumentExportOption]
+
+
 class CreateSessionRequest(BaseModel):
     user_id: Optional[UUID] = None
     case_id: str | None = None
@@ -1793,9 +1803,14 @@ def _document_export_ready(messages: list[Message]) -> bool:
     ready_markers = (
         "pripravil som",
         "pripravila som",
+        "pripraven",
+        "pripraveny",
+        "pripravene",
+        "stiahnutie",
         "prepared the final",
         "prepared the draft",
         "draft is ready",
+        "ready for download",
         "navrh zmluvy",
         "predzalobna vyzva",
         "predžalobná výzva",
@@ -1804,7 +1819,7 @@ def _document_export_ready(messages: list[Message]) -> bool:
     )
     if any(marker in visible_text for marker in ready_markers):
         return True
-    return "?" not in last_assistant.content and bool(visible_text.strip())
+    return "?" not in visible_text and bool(visible_text.strip())
 
 
 def _contains_case_update_json(content: str) -> bool:
@@ -1992,6 +2007,9 @@ def _looks_like_technical_visible_line(normalized_line: str) -> bool:
         "machine payload",
         "technical payload",
         "case_update_json",
+        "technicke udaje som ulozil do dokumentu pripadu",
+        "technical data was saved as a case document",
+        "technische daten wurden als falldokument gespeichert",
     )
     technical_fragments = (
         "json pre uchovanie prípadu",
@@ -2000,6 +2018,7 @@ def _looks_like_technical_visible_line(normalized_line: str) -> bool:
         "json for storing the case",
         "machine payload",
         "technical payload",
+        "/v1/cases/",
     )
     return normalized_line.startswith(technical_prefixes) or any(
         fragment in normalized_line for fragment in technical_fragments
@@ -2288,6 +2307,39 @@ def get_session_result(session_id: UUID) -> SessionResult:
     return result
 
 
+@router.get("/sessions/{session_id}/export/documents", response_model=DocumentExportOptionsResponse)
+def list_session_document_exports(session_id: UUID) -> DocumentExportOptionsResponse:
+    session, _result, _messages, assets = _session_document_export_context(session_id)
+    return DocumentExportOptionsResponse(
+        documents=[
+            DocumentExportOption(
+                index=index,
+                filename=asset.filename,
+                title=asset.title or f"Document {index + 1}",
+            )
+            for index, asset in enumerate(assets)
+        ]
+    )
+
+
+@router.get("/sessions/{session_id}/export/documents/{document_index}")
+def export_session_document_pdf(session_id: UUID, document_index: int) -> Response:
+    session, _result, _messages, assets = _session_document_export_context(session_id)
+    if document_index < 0 or document_index >= len(assets):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Document export {document_index} for session {session_id} not found",
+        )
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    footer_line = f"AIJ | API {_API_VERSION} | Core {_CORE_VERSION}"
+    return _document_export_asset_response(
+        asset=assets[document_index],
+        session=session,
+        generated_at=generated_at,
+        footer_line=footer_line,
+    )
+
+
 @router.get("/sessions/{session_id}/export")
 def export_session_result(
     session_id: UUID,
@@ -2335,12 +2387,12 @@ def export_session_result(
                 media_type="application/zip",
                 headers={"Content-Disposition": f'attachment; filename="{archive_name}"'},
             )
-        asset = document_assets[0]
-        title = asset.title
-        lines = asset.lines
-        filename = asset.filename
-        disclaimer = asset.disclaimer
-        use_corporate_template = asset.use_corporate_template
+        return _document_export_asset_response(
+            asset=document_assets[0],
+            session=session,
+            generated_at=generated_at,
+            footer_line=footer_line,
+        )
     else:
         title, lines = _build_summary_export_content(
             session_id=session_id,
@@ -2398,6 +2450,55 @@ def _get_or_build_session_result(session_id: UUID) -> SessionResult | None:
     )
     _repository.set_result(session_id, result)
     return result
+
+
+def _session_document_export_context(
+    session_id: UUID,
+) -> tuple[Session, SessionResult, list[Message], list[_DocumentExportAsset]]:
+    result = _get_or_build_session_result(session_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Result for session {session_id} not found")
+    session = _repository.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    messages = _repository.list_messages(session_id)
+    assets = _build_document_export_assets(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country=session.country,
+        language=session.language,
+    )
+    return session, result, messages, assets
+
+
+def _document_export_asset_response(
+    *,
+    asset: _DocumentExportAsset,
+    session: Session,
+    generated_at: str,
+    footer_line: str,
+) -> Response:
+    pdf_content = _build_simple_pdf(
+        title=asset.title,
+        lines=asset.lines,
+        country=session.country,
+        language=session.language,
+        header_line=(
+            f"AI Jurisdicta Solution | Generated: {generated_at}"
+            if asset.use_corporate_template
+            else None
+        ),
+        footer_line=footer_line,
+        disclaimer=asset.disclaimer,
+        draw_logo_mark=asset.use_corporate_template,
+        include_title_block=False,
+    )
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{asset.filename}"'},
+    )
 
 
 def _build_simple_pdf(

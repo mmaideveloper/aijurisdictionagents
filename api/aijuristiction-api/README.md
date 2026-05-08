@@ -157,7 +157,7 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 - when the user resolves that transferor conflict with a short reply like `podla ORSR`, the backend now locks in the verified ORSR owner and keeps verified company identity data such as `IČO` as settled instead of asking for them again
 - once the user resolves the ORSR-vs-user transferor conflict, that choice now persists into later follow-up turns such as `ano`, so the API continues to draft the requested package instead of reopening the same transferor conflict
 - if the model returns the case payload inside a fenced ```json block instead of the required `CASE_UPDATE_JSON:` marker, the API now still extracts that payload, ignores question marks inside the machine JSON when deciding whether to wait for another reply, and keeps export/download working
-- user-facing chat text is now sanitized to remove technical persistence preambles like `Tu je JSON pre uchovanie prípadu` and fake relative file links like `documents/...pdf`; the user sees only the natural-language answer while the backend still keeps the machine payload for export/state handling
+- user-facing chat text is now sanitized to remove technical persistence preambles like `Tu je JSON pre uchovanie prípadu`, internal saved-document notices such as `/v1/cases/.../documents/...`, and fake relative file links like `documents/...pdf`; the user sees only the natural-language answer while the backend still keeps the machine payload for export/state handling
 - if a multi-document Slovak share-transfer draft is present in the visible assistant text but the model forgot to populate `CASE_UPDATE_JSON.case.documents`, the export endpoint now falls back to the detected document sections and still returns a ZIP package with one PDF per detected document instead of collapsing everything into a single `final-document.pdf`
 - the same visible-section ZIP fallback now applies to Slovak rental packages (for example `Nájomná zmluva`, `Inventárny zoznam`, `Potvrdenie o prevzatí bytu`) even when machine case-update JSON is missing, so sectioned package exports stay downloadable as ZIP
 - the fallback ZIP detector now ignores ordinary single-document section headings such as `Zmluvne strany` or `Doba najmu`, so sectioned contracts continue to export as one PDF instead of being split into a fake ZIP package
@@ -495,6 +495,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
+- `GET /v1/cases/{case_id}/documents/{doc_id}/pdf?user_id=...` renders the client-visible assistant draft tied to a generated technical case document as a PDF, without exposing the stored JSON payload.
 - `GET /v1/cases/{case_id}/documents/context?user_id=...` now reports processed/unprocessed memory inputs across uploaded files, chat attachments, and generated `session_history` transcripts.
 - If a transcript or document payload is missing in local storage, history responses fall back to saved summaries and document download returns `404` instead of `500`.
 - Uploaded case documents are stored as `case -> many documents`. Each processed uploaded document keeps the extracted full text plus a real embedding in `case_document_contents`, and chunk-level text/embedding rows in `case_document_chunks`.
@@ -507,6 +508,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - Direct assistant clarification turns now enforce one-question-at-a-time behavior: when extra data is required, the API keeps only the highest-priority follow-up question in that turn and truncates `CASE_UPDATE_JSON.case.open_questions` to a single item.
 - User-facing chat payloads no longer expose raw `CASE_UPDATE_JSON` or bare JSON/XML technical trailers; API stores hidden technical payloads as case documents, adds the case-document URL to the friendly assistant text, and returns only visible assistant text in `/reply`, `/messages`, case history, and streaming `message` events.
 - Local API starts through [skills/start-api/scripts/start_api.ps1](/C:/Users/maton/Projects/aijurisdictionagents/skills/start-api/scripts/start_api.ps1) now enable `LOCAL_LLM_IO_LOGGING=1` by default, so local logs include the exact model payload and raw model response for debugging without changing deployed environments.
+- Local API starts bound to `127.0.0.1`, `localhost`, or `::1` also set `LOCAL_AUTH_ACCEPT_ANY_CODE=1`, allowing any 4-8 character verification code for local registration/sign-in testing only. Keep this disabled in deployed environments.
 - The mobile app uses these endpoints to show the latest 5 saved case messages after case selection and to expose case-document download buttons.
 - If an older case-history transcript blob is missing or unreadable, the API now falls back to the stored communication summary instead of failing the history load or blocking new session creation for that case.
 
@@ -920,6 +922,7 @@ New endpoints:
 - `POST /v1/chat/sessions/{session_id}/stream` (SSE streaming from core orchestrator)
 - `GET /v1/chat/sessions/{session_id}/result`
 - `GET /v1/chat/sessions/{session_id}/export?format=json|pdf&kind=summary|document` (`kind` applies to `pdf`)
+- `GET /v1/chat/sessions/{session_id}/export/documents` lists individual PDF documents available for a session, and `GET /v1/chat/sessions/{session_id}/export/documents/{index}` downloads one selected PDF instead of forcing a multi-document ZIP.
 
 If `POST /v1/chat/sessions` is created with `case_id`, the API now seeds that new in-memory session with the stored case history so the next reply/stream turn can continue the existing case context instead of starting with an empty prompt.
 If one of those seeded case-history transcript files is missing, the API falls back to the saved summary text so existing cases can still create a session and continue.

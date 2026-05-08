@@ -316,6 +316,9 @@ $env:LLM_PROVIDER = $LlmProvider
 if (-not $env:LOCAL_LLM_IO_LOGGING) {
     $env:LOCAL_LLM_IO_LOGGING = "1"
 }
+if ((-not $env:LOCAL_AUTH_ACCEPT_ANY_CODE) -and ($BindHost -in @("127.0.0.1", "localhost", "::1"))) {
+    $env:LOCAL_AUTH_ACCEPT_ANY_CODE = "1"
+}
 $pythonPathEntries = @($apiDir, $srcDir)
 if ($env:PYTHONPATH) {
     $pythonPathEntries += $env:PYTHONPATH
