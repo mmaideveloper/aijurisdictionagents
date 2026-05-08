@@ -210,6 +210,7 @@ PDF exports are downloaded through:
 Use the single `Documents` button above the message composer to download all user-requested export documents (summary + document PDF).
 If multiple export files are downloaded, the app now shows a picker list of the saved files and opens the selected file after the user taps it.
 On Android, saved PDF/case-document files are now opened through the platform file-opening flow instead of a raw `file://` launcher call, which avoids the previous `Could not open the saved file` failure for locally saved documents.
+Case-document downloads now correctly handle `Content-Disposition` variants (`filename*=UTF-8''...` and unquoted `filename=...`), which fixes failed downloads when backend filenames include UTF-8 characters.
 Buttons are enabled after AI stream emits `result`/`done` (PDF must be generated first).
 In `Real Agent` mode, when the lawyer decides a formal document is needed, the agent first asks for confirmation and the PDF buttons stay disabled until the follow-up reply actually prepares the document.
 The mobile app now also resets document-export readiness to `false` when a fresh session result is unavailable, so a previous case cannot leave the `Documents` button enabled for a new conversation.

@@ -2530,16 +2530,36 @@ class ApiClient {
     if (headerValue == null || headerValue.trim().isEmpty) {
       return null;
     }
-    final match = RegExp(r'filename="([^"]+)"', caseSensitive: false)
+
+    final utf8Match = RegExp(
+      r"filename\*=UTF-8''([^;]+)",
+      caseSensitive: false,
+    ).firstMatch(headerValue);
+    if (utf8Match != null) {
+      final encoded = utf8Match.group(1)?.trim();
+      if (encoded != null && encoded.isNotEmpty) {
+        return Uri.decodeComponent(encoded).trim();
+      }
+    }
+
+    final quotedMatch = RegExp(
+      r'filename="([^"]+)"',
+      caseSensitive: false,
+    ).firstMatch(headerValue);
+    if (quotedMatch != null) {
+      final quoted = quotedMatch.group(1)?.trim();
+      if (quoted != null && quoted.isNotEmpty) {
+        return quoted;
+      }
+    }
+
+    final plainMatch = RegExp(r'filename=([^;]+)', caseSensitive: false)
         .firstMatch(headerValue);
-    if (match == null) {
+    final plain = plainMatch?.group(1)?.trim();
+    if (plain == null || plain.isEmpty) {
       return null;
     }
-    final value = match.group(1)?.trim();
-    if (value == null || value.isEmpty) {
-      return null;
-    }
-    return value;
+    return plain.replaceAll('"', '').trim();
   }
 
   Future<ExportFilePayload> downloadExportPdf({
