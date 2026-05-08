@@ -1,13 +1,25 @@
 ---
 name: prepare-task
-description: Prepare an idea or GitHub Project task for implementation in this repository. Use when the user asks to refine an idea, prepare a task, make a GitHub Project item ready, update a task description, create a task from an idea, or ask the necessary technical/product/compliance questions before implementation. Works with existing GitHub issue/project task descriptions or new ideas that need to become implementation-ready work items.
+description: Prepare an idea or GitHub Project task for implementation in this repository. Use when the user asks to refine an idea, prepare a task, make a GitHub Project item ready, update a task description, create a task from an idea, or ask the necessary technical/product/compliance questions before implementation. Also use in normal chat when the user starts with phrases like "here is my idea", "I have an idea for a feature", "new feature idea", "can you prepare this task", or "turn this into a GitHub task". Works with conversational idea intake, existing GitHub issue/project task descriptions, or new ideas that need to become implementation-ready work items.
 ---
 
 # Prepare Task
 
 ## Overview
 
-Turn a loose idea or existing GitHub Project task into an implementation-ready task description. Review repository context first, ask only necessary questions, and update the existing task description or create a new issue/project task when no task exists.
+Turn a loose idea or existing GitHub Project task into an implementation-ready task description. In chat, run an interview flow: collect the idea, review repository context, ask only necessary questions, draft the task, and ask for explicit confirmation before creating or updating a GitHub issue/project item.
+
+## Chat Intake
+
+When the user gives a feature idea directly in chat:
+
+1. Treat the message as the initial idea source.
+2. Acknowledge that the goal is task preparation, not implementation.
+3. Review relevant repository context before asking detailed follow-up questions.
+4. Ask up to three focused questions at a time until the ready criteria are met.
+5. Show a concise draft task summary and ask: "Create a GitHub task for this in the appropriate project?"
+6. Create or update a GitHub task only after the user explicitly confirms.
+7. If the user says not yet, keep the drafted task details in the conversation and list the remaining blockers.
 
 ## Workflow
 
@@ -30,7 +42,7 @@ Turn a loose idea or existing GitHub Project task into an implementation-ready t
    - Avoid asking questions already answered by repository context or the task description.
 5. Draft or update the task description.
    - If an issue/task exists, insert the prepared details into that issue description.
-   - If no task exists, create a new GitHub issue in the repository and add it to the appropriate GitHub Project when possible.
+   - If no task exists, ask for confirmation before creating a new GitHub issue in the repository and adding it to the appropriate GitHub Project.
    - Keep the existing description content unless it is obsolete; add a structured "Prepared Technical Details" section.
 6. Mark readiness clearly.
    - Do not move the task to Ready unless the user asks or the repository workflow requires it and all readiness criteria are met.
