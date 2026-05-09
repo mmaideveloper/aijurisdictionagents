@@ -72,6 +72,14 @@ class LocalAuthUser {
     required this.password,
     this.firstName,
     this.lastName,
+    this.address,
+    this.city,
+    this.country,
+    this.zipCode,
+    this.taxNumber,
+    this.identityCardNumber,
+    this.dateOfBirth,
+    this.socialSecurityNumber,
     this.dataProcessingConsentAt,
     this.dataProcessingConsentVersion,
   });
@@ -82,6 +90,14 @@ class LocalAuthUser {
   final String password;
   final String? firstName;
   final String? lastName;
+  final String? address;
+  final String? city;
+  final String? country;
+  final String? zipCode;
+  final String? taxNumber;
+  final String? identityCardNumber;
+  final String? dateOfBirth;
+  final String? socialSecurityNumber;
   final String? dataProcessingConsentAt;
   final String? dataProcessingConsentVersion;
 
@@ -102,6 +118,14 @@ class LocalAuthUser {
     String? password,
     String? firstName,
     String? lastName,
+    String? address,
+    String? city,
+    String? country,
+    String? zipCode,
+    String? taxNumber,
+    String? identityCardNumber,
+    String? dateOfBirth,
+    String? socialSecurityNumber,
     String? dataProcessingConsentAt,
     String? dataProcessingConsentVersion,
   }) {
@@ -112,6 +136,14 @@ class LocalAuthUser {
       password: password ?? this.password,
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
+      address: address ?? this.address,
+      city: city ?? this.city,
+      country: country ?? this.country,
+      zipCode: zipCode ?? this.zipCode,
+      taxNumber: taxNumber ?? this.taxNumber,
+      identityCardNumber: identityCardNumber ?? this.identityCardNumber,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
+      socialSecurityNumber: socialSecurityNumber ?? this.socialSecurityNumber,
       dataProcessingConsentAt:
           dataProcessingConsentAt ?? this.dataProcessingConsentAt,
       dataProcessingConsentVersion:
@@ -127,6 +159,14 @@ class LocalAuthUser {
       'password': password,
       'first_name': firstName,
       'last_name': lastName,
+      'address': address,
+      'city': city,
+      'country': country,
+      'zip_code': zipCode,
+      'tax_number': taxNumber,
+      'identity_card_number': identityCardNumber,
+      'date_of_birth': dateOfBirth,
+      'social_security_number': socialSecurityNumber,
       'data_processing_consent_at': dataProcessingConsentAt,
       'data_processing_consent_version': dataProcessingConsentVersion,
     };
@@ -140,6 +180,14 @@ class LocalAuthUser {
       password: json['password'] as String? ?? '',
       firstName: json['first_name'] as String?,
       lastName: json['last_name'] as String?,
+      address: json['address'] as String?,
+      city: json['city'] as String?,
+      country: json['country'] as String?,
+      zipCode: json['zip_code'] as String?,
+      taxNumber: json['tax_number'] as String?,
+      identityCardNumber: json['identity_card_number'] as String?,
+      dateOfBirth: json['date_of_birth'] as String?,
+      socialSecurityNumber: json['social_security_number'] as String?,
       dataProcessingConsentAt: json['data_processing_consent_at'] as String?,
       dataProcessingConsentVersion:
           json['data_processing_consent_version'] as String?,
@@ -175,12 +223,28 @@ class UpdateProfileInput {
     required this.password,
     this.firstName,
     this.lastName,
+    this.address,
+    this.city,
+    this.country,
+    this.zipCode,
+    this.taxNumber,
+    this.identityCardNumber,
+    this.dateOfBirth,
+    this.socialSecurityNumber,
   });
 
   final String phoneNumber;
   final String password;
   final String? firstName;
   final String? lastName;
+  final String? address;
+  final String? city;
+  final String? country;
+  final String? zipCode;
+  final String? taxNumber;
+  final String? identityCardNumber;
+  final String? dateOfBirth;
+  final String? socialSecurityNumber;
 }
 
 class LocalAuthStore {
@@ -528,6 +592,18 @@ class LocalAuthStore {
         'password': password.isEmpty ? null : password,
         'first_name': _normalizeOptionalText(input.firstName),
         'last_name': _normalizeOptionalText(input.lastName),
+        'address': _normalizeOptionalText(input.address ?? current.address),
+        'city': _normalizeOptionalText(input.city ?? current.city),
+        'country': _normalizeOptionalText(input.country ?? current.country),
+        'zip_code': _normalizeOptionalText(input.zipCode ?? current.zipCode),
+        'tax_number':
+            _normalizeOptionalText(input.taxNumber ?? current.taxNumber),
+        'identity_card_number': _normalizeOptionalText(
+            input.identityCardNumber ?? current.identityCardNumber),
+        'date_of_birth':
+            _normalizeOptionalText(input.dateOfBirth ?? current.dateOfBirth),
+        'social_security_number': _normalizeOptionalText(
+            input.socialSecurityNumber ?? current.socialSecurityNumber),
       },
     );
     if (response.statusCode != 200) {
@@ -663,6 +739,14 @@ class LocalAuthStore {
       password: password,
       firstName: decoded['first_name'] as String?,
       lastName: decoded['last_name'] as String?,
+      address: decoded['address'] as String?,
+      city: decoded['city'] as String?,
+      country: decoded['country'] as String?,
+      zipCode: decoded['zip_code'] as String?,
+      taxNumber: decoded['tax_number'] as String?,
+      identityCardNumber: decoded['identity_card_number'] as String?,
+      dateOfBirth: decoded['date_of_birth'] as String?,
+      socialSecurityNumber: decoded['social_security_number'] as String?,
       dataProcessingConsentAt: decoded['data_processing_consent_at'] as String?,
       dataProcessingConsentVersion:
           decoded['data_processing_consent_version'] as String?,

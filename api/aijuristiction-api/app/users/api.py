@@ -40,6 +40,14 @@ class UserProfileResponse(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     full_name: str
+    address: str | None = None
+    city: str | None = None
+    country: str | None = None
+    zip_code: str | None = None
+    tax_number: str | None = None
+    identity_card_number: str | None = None
+    date_of_birth: str | None = None
+    social_security_number: str | None = None
     data_processing_consent_at: str | None = None
     data_processing_consent_version: str | None = None
 
@@ -89,6 +97,14 @@ class UpdateUserProfileRequest(BaseModel):
     password: str | None = None
     first_name: str | None = None
     last_name: str | None = None
+    address: str | None = None
+    city: str | None = None
+    country: str | None = None
+    zip_code: str | None = None
+    tax_number: str | None = None
+    identity_card_number: str | None = None
+    date_of_birth: str | None = None
+    social_security_number: str | None = None
 
 
 class SubscriptionPlanResponse(BaseModel):
@@ -323,6 +339,13 @@ def update_user_profile(
     payload: UpdateUserProfileRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> UserProfileResponse:
+    current = store.find_user_by_id(user_id=user_id)
+    if current is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found")
+    model_fields_set = getattr(payload, "model_fields_set", None)
+    provided_fields: set[str] = (
+        set(model_fields_set) if model_fields_set is not None else set(getattr(payload, "__fields_set__", set()))
+    )
     try:
         user = store.update_user(
             user_id=user_id,
@@ -330,6 +353,22 @@ def update_user_profile(
             password=payload.password,
             first_name=payload.first_name,
             last_name=payload.last_name,
+            address=payload.address if "address" in provided_fields else current.address,
+            city=payload.city if "city" in provided_fields else current.city,
+            country=payload.country if "country" in provided_fields else current.country,
+            zip_code=payload.zip_code if "zip_code" in provided_fields else current.zip_code,
+            tax_number=payload.tax_number if "tax_number" in provided_fields else current.tax_number,
+            identity_card_number=(
+                payload.identity_card_number
+                if "identity_card_number" in provided_fields
+                else current.identity_card_number
+            ),
+            date_of_birth=payload.date_of_birth if "date_of_birth" in provided_fields else current.date_of_birth,
+            social_security_number=(
+                payload.social_security_number
+                if "social_security_number" in provided_fields
+                else current.social_security_number
+            ),
         )
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -499,6 +538,14 @@ def _to_user_profile_response(user: User) -> UserProfileResponse:
         first_name=user.first_name,
         last_name=user.last_name,
         full_name=user.full_name,
+        address=user.address,
+        city=user.city,
+        country=user.country,
+        zip_code=user.zip_code,
+        tax_number=user.tax_number,
+        identity_card_number=user.identity_card_number,
+        date_of_birth=user.date_of_birth,
+        social_security_number=user.social_security_number,
         data_processing_consent_at=user.data_processing_consent_at,
         data_processing_consent_version=user.data_processing_consent_version,
     )
@@ -512,6 +559,14 @@ def _to_device_auth_user_profile_response(*, user: User, token: str) -> DeviceAu
         first_name=user.first_name,
         last_name=user.last_name,
         full_name=user.full_name,
+        address=user.address,
+        city=user.city,
+        country=user.country,
+        zip_code=user.zip_code,
+        tax_number=user.tax_number,
+        identity_card_number=user.identity_card_number,
+        date_of_birth=user.date_of_birth,
+        social_security_number=user.social_security_number,
         data_processing_consent_at=user.data_processing_consent_at,
         data_processing_consent_version=user.data_processing_consent_version,
         device_auth_token=token,

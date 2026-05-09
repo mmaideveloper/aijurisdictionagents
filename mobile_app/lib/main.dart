@@ -151,6 +151,14 @@ class AppStrings {
       'first_name_optional': 'Meno (voliteľné)',
       'last_name': 'Priezvisko',
       'last_name_optional': 'Priezvisko (voliteľné)',
+      'address': 'Adresa',
+      'city': 'Mesto',
+      'country': 'Krajina',
+      'zip_code': 'PSC',
+      'tax_number': 'DIC',
+      'identity_card_number': 'Cislo obcianskeho preukazu',
+      'date_of_birth': 'Datum narodenia',
+      'social_security_number': 'Rodne cislo',
       'signing_in': 'Prihlasujem...',
       'login': 'Prihlásenie',
       'sign_in_by_phone': 'Prihlásiť cez telefón',
@@ -179,7 +187,7 @@ class AppStrings {
       'data_processing_consent_link': 'Pozrieť právne oznámenie',
       'data_processing_consent_required':
           'Pred registráciou musíte potvrdiť právne oznámenie.',
-      'account': 'Účet',
+      'account': 'Profile',
       'sign_out': 'Odhlásiť sa',
       'save_changes': 'Uložiť zmeny',
       'language_changed': 'Jazyk bol zmenený na {{language}}.',
@@ -399,6 +407,14 @@ class AppStrings {
       'first_name_optional': 'First name (optional)',
       'last_name': 'Last name',
       'last_name_optional': 'Last name (optional)',
+      'address': 'Address',
+      'city': 'City',
+      'country': 'Country',
+      'zip_code': 'ZIP code',
+      'tax_number': 'Tax number',
+      'identity_card_number': 'Identity card number',
+      'date_of_birth': 'Date of birth',
+      'social_security_number': 'Social security number',
       'signing_in': 'Signing in...',
       'login': 'Login',
       'sign_in_by_phone': 'Sign in by phone',
@@ -426,7 +442,7 @@ class AppStrings {
       'data_processing_consent_link': 'Review legal notice',
       'data_processing_consent_required':
           'You must confirm the legal notice before registration.',
-      'account': 'Account',
+      'account': 'Profile',
       'sign_out': 'Sign out',
       'save_changes': 'Save changes',
       'language_changed': 'Language changed to {{language}}.',
@@ -643,6 +659,14 @@ class AppStrings {
       'first_name_optional': 'Vorname (optional)',
       'last_name': 'Nachname',
       'last_name_optional': 'Nachname (optional)',
+      'address': 'Adresse',
+      'city': 'Stadt',
+      'country': 'Land',
+      'zip_code': 'PLZ',
+      'tax_number': 'Steuernummer',
+      'identity_card_number': 'Ausweisnummer',
+      'date_of_birth': 'Geburtsdatum',
+      'social_security_number': 'Personenkennzahl',
       'signing_in': 'Anmeldung läuft...',
       'login': 'Login',
       'sign_in_by_phone': 'Mit Telefonnummer anmelden',
@@ -670,7 +694,7 @@ class AppStrings {
       'data_processing_consent_link': 'Rechtshinweis ansehen',
       'data_processing_consent_required':
           'Bitte bestätigen Sie den Rechtshinweis vor der Registrierung.',
-      'account': 'Konto',
+      'account': 'Profile',
       'sign_out': 'Abmelden',
       'save_changes': 'Aenderungen speichern',
       'language_changed': 'Sprache wurde auf {{language}} geaendert.',
@@ -3864,6 +3888,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   late final TextEditingController _passwordController;
   late final TextEditingController _firstNameController;
   late final TextEditingController _lastNameController;
+  late final TextEditingController _addressController;
+  late final TextEditingController _cityController;
+  late final TextEditingController _countryController;
+  late final TextEditingController _zipCodeController;
+  late final TextEditingController _taxNumberController;
+  late final TextEditingController _identityCardNumberController;
+  late final TextEditingController _dateOfBirthController;
+  late final TextEditingController _socialSecurityNumberController;
   late LocaleOption _selectedLocale;
   bool _isSaving = false;
   bool _isLoadingSubscriptions = false;
@@ -3897,6 +3929,18 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         TextEditingController(text: widget.user.firstName ?? '');
     _lastNameController =
         TextEditingController(text: widget.user.lastName ?? '');
+    _addressController = TextEditingController(text: widget.user.address ?? '');
+    _cityController = TextEditingController(text: widget.user.city ?? '');
+    _countryController = TextEditingController(text: widget.user.country ?? '');
+    _zipCodeController = TextEditingController(text: widget.user.zipCode ?? '');
+    _taxNumberController =
+        TextEditingController(text: widget.user.taxNumber ?? '');
+    _identityCardNumberController =
+        TextEditingController(text: widget.user.identityCardNumber ?? '');
+    _dateOfBirthController =
+        TextEditingController(text: widget.user.dateOfBirth ?? '');
+    _socialSecurityNumberController =
+        TextEditingController(text: widget.user.socialSecurityNumber ?? '');
     _selectedLocale = widget.selectedLocale;
     _speakerOutputEnabled = widget.speakerOutputEnabled;
     _debugModeEnabled = widget.logger.debugModeEnabled;
@@ -4126,6 +4170,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     _passwordController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _addressController.dispose();
+    _cityController.dispose();
+    _countryController.dispose();
+    _zipCodeController.dispose();
+    _taxNumberController.dispose();
+    _identityCardNumberController.dispose();
+    _dateOfBirthController.dispose();
+    _socialSecurityNumberController.dispose();
     super.dispose();
   }
 
@@ -4143,6 +4195,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           password: _passwordController.text,
           firstName: _firstNameController.text,
           lastName: _lastNameController.text,
+          address: _addressController.text,
+          city: _cityController.text,
+          country: _countryController.text,
+          zipCode: _zipCodeController.text,
+          taxNumber: _taxNumberController.text,
+          identityCardNumber: _identityCardNumberController.text,
+          dateOfBirth: _dateOfBirthController.text,
+          socialSecurityNumber: _socialSecurityNumberController.text,
         ),
       );
       if (!mounted) {
@@ -4223,6 +4283,79 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             textAlignVertical: TextAlignVertical.top,
             decoration: InputDecoration(
               labelText: strings.t('last_name'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _addressController,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: InputDecoration(
+              labelText: strings.t('address'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _cityController,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: InputDecoration(
+              labelText: strings.t('city'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _zipCodeController,
+                  textAlignVertical: TextAlignVertical.top,
+                  decoration: InputDecoration(
+                    labelText: strings.t('zip_code'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _countryController,
+                  textAlignVertical: TextAlignVertical.top,
+                  decoration: InputDecoration(
+                    labelText: strings.t('country'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _taxNumberController,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: InputDecoration(
+              labelText: strings.t('tax_number'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _identityCardNumberController,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: InputDecoration(
+              labelText: strings.t('identity_card_number'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _dateOfBirthController,
+            keyboardType: TextInputType.datetime,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: InputDecoration(
+              labelText: strings.t('date_of_birth'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _socialSecurityNumberController,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: InputDecoration(
+              labelText: strings.t('social_security_number'),
             ),
           ),
           const SizedBox(height: 20),

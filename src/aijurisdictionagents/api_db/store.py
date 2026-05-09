@@ -31,6 +31,14 @@ class User:
     first_name: str | None
     last_name: str | None
     full_name: str
+    address: str | None
+    city: str | None
+    country: str | None
+    zip_code: str | None
+    tax_number: str | None
+    identity_card_number: str | None
+    date_of_birth: str | None
+    social_security_number: str | None
     data_processing_consent_at: str | None
     data_processing_consent_version: str | None
 
@@ -185,6 +193,14 @@ class ApiDatabaseStore:
                     first_name TEXT,
                     last_name TEXT,
                     full_name TEXT NOT NULL,
+                    address TEXT,
+                    city TEXT,
+                    country TEXT,
+                    zip_code TEXT,
+                    tax_number TEXT,
+                    identity_card_number TEXT,
+                    date_of_birth TEXT,
+                    social_security_number TEXT,
                     data_processing_consent_at TEXT,
                     data_processing_consent_version TEXT,
                     password_hash TEXT NOT NULL,
@@ -397,6 +413,14 @@ class ApiDatabaseStore:
         full_name: str | None = None,
         first_name: str | None = None,
         last_name: str | None = None,
+        address: str | None = None,
+        city: str | None = None,
+        country: str | None = None,
+        zip_code: str | None = None,
+        tax_number: str | None = None,
+        identity_card_number: str | None = None,
+        date_of_birth: str | None = None,
+        social_security_number: str | None = None,
         data_processing_consent_at: str | None = None,
         data_processing_consent_version: str | None = None,
     ) -> User:
@@ -407,6 +431,14 @@ class ApiDatabaseStore:
         normalized_phone = _normalize_phone(phone_number)
         normalized_first = _normalize_optional_text(first_name)
         normalized_last = _normalize_optional_text(last_name)
+        normalized_address = _normalize_optional_text(address)
+        normalized_city = _normalize_optional_text(city)
+        normalized_country = _normalize_optional_text(country)
+        normalized_zip_code = _normalize_optional_text(zip_code)
+        normalized_tax_number = _normalize_optional_text(tax_number)
+        normalized_identity_card_number = _normalize_optional_text(identity_card_number)
+        normalized_date_of_birth = _normalize_optional_text(date_of_birth)
+        normalized_social_security_number = _normalize_optional_text(social_security_number)
         resolved_full_name = _resolve_full_name(
             full_name=full_name,
             first_name=normalized_first,
@@ -420,9 +452,11 @@ class ApiDatabaseStore:
                 """
                 INSERT INTO users(
                     user_id, phone_number, email, first_name, last_name, full_name,
+                    address, city, country, zip_code, tax_number, identity_card_number,
+                    date_of_birth, social_security_number,
                     data_processing_consent_at, data_processing_consent_version, password_hash, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -431,6 +465,14 @@ class ApiDatabaseStore:
                     normalized_first,
                     normalized_last,
                     resolved_full_name,
+                    normalized_address,
+                    normalized_city,
+                    normalized_country,
+                    normalized_zip_code,
+                    normalized_tax_number,
+                    normalized_identity_card_number,
+                    normalized_date_of_birth,
+                    normalized_social_security_number,
                     data_processing_consent_at,
                     data_processing_consent_version,
                     password_hash,
@@ -454,6 +496,14 @@ class ApiDatabaseStore:
             first_name=normalized_first,
             last_name=normalized_last,
             full_name=resolved_full_name,
+            address=normalized_address,
+            city=normalized_city,
+            country=normalized_country,
+            zip_code=normalized_zip_code,
+            tax_number=normalized_tax_number,
+            identity_card_number=normalized_identity_card_number,
+            date_of_birth=normalized_date_of_birth,
+            social_security_number=normalized_social_security_number,
             data_processing_consent_at=data_processing_consent_at,
             data_processing_consent_version=data_processing_consent_version,
         )
@@ -710,7 +760,11 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT user_id, phone_number, email, first_name, last_name, full_name, password_hash
+                SELECT
+                    user_id, phone_number, email, first_name, last_name, full_name,
+                    address, city, country, zip_code, tax_number, identity_card_number,
+                    date_of_birth, social_security_number,
+                    data_processing_consent_at, data_processing_consent_version, password_hash
                 FROM users
                 WHERE email = ?
                 """,
@@ -718,7 +772,7 @@ class ApiDatabaseStore:
             )
         if row is None:
             return None
-        if not _verify_password(password, row[6]):
+        if not _verify_password(password, row[16]):
             return None
         return _row_to_user(row)
 
@@ -730,7 +784,11 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT user_id, phone_number, email, first_name, last_name, full_name, data_processing_consent_at, data_processing_consent_version
+                SELECT
+                    user_id, phone_number, email, first_name, last_name, full_name,
+                    address, city, country, zip_code, tax_number, identity_card_number,
+                    date_of_birth, social_security_number,
+                    data_processing_consent_at, data_processing_consent_version
                 FROM users
                 WHERE phone_number = ?
                 """,
@@ -745,7 +803,11 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT user_id, phone_number, email, first_name, last_name, full_name, data_processing_consent_at, data_processing_consent_version
+                SELECT
+                    user_id, phone_number, email, first_name, last_name, full_name,
+                    address, city, country, zip_code, tax_number, identity_card_number,
+                    date_of_birth, social_security_number,
+                    data_processing_consent_at, data_processing_consent_version
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -760,7 +822,11 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT user_id, phone_number, email, first_name, last_name, full_name, data_processing_consent_at, data_processing_consent_version
+                SELECT
+                    user_id, phone_number, email, first_name, last_name, full_name,
+                    address, city, country, zip_code, tax_number, identity_card_number,
+                    date_of_birth, social_security_number,
+                    data_processing_consent_at, data_processing_consent_version
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -777,17 +843,37 @@ class ApiDatabaseStore:
         phone_number: str | None,
         first_name: str | None,
         last_name: str | None,
+        address: str | None = None,
+        city: str | None = None,
+        country: str | None = None,
+        zip_code: str | None = None,
+        tax_number: str | None = None,
+        identity_card_number: str | None = None,
+        date_of_birth: str | None = None,
+        social_security_number: str | None = None,
         password: str | None = None,
     ) -> User:
         normalized_phone = _normalize_phone(phone_number)
         normalized_first = _normalize_optional_text(first_name)
         normalized_last = _normalize_optional_text(last_name)
+        normalized_address = _normalize_optional_text(address)
+        normalized_city = _normalize_optional_text(city)
+        normalized_country = _normalize_optional_text(country)
+        normalized_zip_code = _normalize_optional_text(zip_code)
+        normalized_tax_number = _normalize_optional_text(tax_number)
+        normalized_identity_card_number = _normalize_optional_text(identity_card_number)
+        normalized_date_of_birth = _normalize_optional_text(date_of_birth)
+        normalized_social_security_number = _normalize_optional_text(social_security_number)
         normalized_password = _normalize_optional_text(password)
         with self._connect() as conn:
             current = self._fetchone(
                 conn,
                 """
-                SELECT user_id, phone_number, email, first_name, last_name, full_name, data_processing_consent_at, data_processing_consent_version
+                SELECT
+                    user_id, phone_number, email, first_name, last_name, full_name,
+                    address, city, country, zip_code, tax_number, identity_card_number,
+                    date_of_birth, social_security_number,
+                    data_processing_consent_at, data_processing_consent_version
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -808,7 +894,11 @@ class ApiDatabaseStore:
                     conn,
                     """
                     UPDATE users
-                    SET phone_number = ?, first_name = ?, last_name = ?, full_name = ?, password_hash = ?
+                    SET
+                        phone_number = ?, first_name = ?, last_name = ?, full_name = ?,
+                        address = ?, city = ?, country = ?, zip_code = ?, tax_number = ?,
+                        identity_card_number = ?, date_of_birth = ?, social_security_number = ?,
+                        password_hash = ?
                     WHERE user_id = ?
                     """,
                     (
@@ -816,6 +906,14 @@ class ApiDatabaseStore:
                         normalized_first,
                         normalized_last,
                         resolved_full_name,
+                        normalized_address,
+                        normalized_city,
+                        normalized_country,
+                        normalized_zip_code,
+                        normalized_tax_number,
+                        normalized_identity_card_number,
+                        normalized_date_of_birth,
+                        normalized_social_security_number,
                         _hash_password(normalized_password),
                         user_id,
                     ),
@@ -825,7 +923,10 @@ class ApiDatabaseStore:
                     conn,
                     """
                     UPDATE users
-                    SET phone_number = ?, first_name = ?, last_name = ?, full_name = ?
+                    SET
+                        phone_number = ?, first_name = ?, last_name = ?, full_name = ?,
+                        address = ?, city = ?, country = ?, zip_code = ?, tax_number = ?,
+                        identity_card_number = ?, date_of_birth = ?, social_security_number = ?
                     WHERE user_id = ?
                     """,
                     (
@@ -833,6 +934,14 @@ class ApiDatabaseStore:
                         normalized_first,
                         normalized_last,
                         resolved_full_name,
+                        normalized_address,
+                        normalized_city,
+                        normalized_country,
+                        normalized_zip_code,
+                        normalized_tax_number,
+                        normalized_identity_card_number,
+                        normalized_date_of_birth,
+                        normalized_social_security_number,
                         user_id,
                     ),
                 )
@@ -843,6 +952,14 @@ class ApiDatabaseStore:
             first_name=normalized_first,
             last_name=normalized_last,
             full_name=resolved_full_name,
+            address=normalized_address,
+            city=normalized_city,
+            country=normalized_country,
+            zip_code=normalized_zip_code,
+            tax_number=normalized_tax_number,
+            identity_card_number=normalized_identity_card_number,
+            date_of_birth=normalized_date_of_birth,
+            social_security_number=normalized_social_security_number,
             data_processing_consent_at=current_user.data_processing_consent_at,
             data_processing_consent_version=current_user.data_processing_consent_version,
         )
@@ -1503,6 +1620,22 @@ class ApiDatabaseStore:
             self._execute(conn, "ALTER TABLE users ADD COLUMN first_name TEXT")
         if "last_name" not in columns:
             self._execute(conn, "ALTER TABLE users ADD COLUMN last_name TEXT")
+        if "address" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN address TEXT")
+        if "city" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN city TEXT")
+        if "country" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN country TEXT")
+        if "zip_code" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN zip_code TEXT")
+        if "tax_number" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN tax_number TEXT")
+        if "identity_card_number" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN identity_card_number TEXT")
+        if "date_of_birth" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN date_of_birth TEXT")
+        if "social_security_number" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN social_security_number TEXT")
         if "data_processing_consent_at" not in columns:
             self._execute(conn, "ALTER TABLE users ADD COLUMN data_processing_consent_at TEXT")
         if "data_processing_consent_version" not in columns:
@@ -1810,6 +1943,8 @@ def _resolve_full_name(
 
 def _row_to_user(row: tuple[object, ...]) -> User:
     values = list(row)
+    if len(values) <= 8:
+        values = [*values[:6], None, None, None, None, None, None, None, None, *values[6:]]
     return User(
         user_id=str(values[0]),
         phone_number=str(values[1]) if values[1] is not None else None,
@@ -1817,8 +1952,16 @@ def _row_to_user(row: tuple[object, ...]) -> User:
         first_name=str(values[3]) if values[3] is not None else None,
         last_name=str(values[4]) if values[4] is not None else None,
         full_name=str(values[5]),
-        data_processing_consent_at=str(values[6]) if len(values) > 6 and values[6] is not None else None,
-        data_processing_consent_version=str(values[7]) if len(values) > 7 and values[7] is not None else None,
+        address=str(values[6]) if values[6] is not None else None,
+        city=str(values[7]) if values[7] is not None else None,
+        country=str(values[8]) if values[8] is not None else None,
+        zip_code=str(values[9]) if values[9] is not None else None,
+        tax_number=str(values[10]) if values[10] is not None else None,
+        identity_card_number=str(values[11]) if values[11] is not None else None,
+        date_of_birth=str(values[12]) if values[12] is not None else None,
+        social_security_number=str(values[13]) if values[13] is not None else None,
+        data_processing_consent_at=str(values[14]) if len(values) > 14 and values[14] is not None else None,
+        data_processing_consent_version=str(values[15]) if len(values) > 15 and values[15] is not None else None,
     )
 
 

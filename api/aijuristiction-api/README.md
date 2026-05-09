@@ -380,6 +380,9 @@ same `x-api-key` guard as the chat endpoints.
   - request: `phone_number`
 - `PATCH /v1/users/{user_id}`
   - request: `phone_number`, optional `password`, optional `first_name`, optional `last_name`
+  - optional legal-profile fields for document defaults: `address`, `city`, `country`, `zip_code`,
+    `tax_number`, `identity_card_number`, `date_of_birth`, `social_security_number`
+  - omitted legal-profile fields keep their current values; explicit `null`/empty values clear them
 - `GET /v1/users/subscriptions/plans`
   - returns seeded plans: free, case, basic, premium
 - `GET /v1/users/{user_id}/subscriptions`
@@ -524,7 +527,8 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - The summary PDF now includes generation date, API version, system core version, the latest law update date available to the system, the law-update source, the final recommendation for the user case, official law links stored by the law processor, and a dedicated case-validation section at the end with accuracy and validation summary.
 - When the user asks to review and recreate an uploaded document under current law, the summary PDF also includes a dedicated legal-basis section that states which legal dataset and official law links were used to evaluate the document.
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` now builds a document that matches the detected case topic instead of always returning a lease template.
-- Client-facing legal documents, including requests such as `potvrdenie o zaplateni`, now render with the professional JurisDicta template layout plus a footer QR code containing only generation date, API version, core system version, case ID, and document verification score. The footer also shows the document verification score; when that score is unknown or below `DOCUMENT_SHOW_DISCLAIMER` (default `50`), the PDF adds the legal-draft warning on a final standalone page.
+- Client-facing legal documents, including requests such as `potvrdenie o zaplateni`, now render with the professional JurisDicta template layout plus a footer QR code containing traceability metadata: generation date, API version, core system version, case ID, session ID when available, user ID when available, and document verification score. The footer also shows the document verification score; when that score is unknown or below `DOCUMENT_SHOW_DISCLAIMER` (default `50`), the PDF adds the legal-draft warning on a final standalone page.
+- Single-document exports derive the visible PDF title from the lawyer recommendation and detected legal document type, such as `Najomna zmluva` or `Kupno-predajna zmluva`, instead of displaying the session ID.
 - The document exporter now derives the topic from the full session context, not only from explicit lawyer draft blocks, so Slovak company share-transfer / new-owner sessions generate a targeted transfer-package draft instead of a generic memo.
 - Minimal runnable example: `python examples/share_transfer_export_demo.py`
 - Direct `POST /v1/chat/sessions/{session_id}/reply` sessions also persist a session result now, so the mobile `Real Agent` flow can download PDFs without going through the simulator stream.

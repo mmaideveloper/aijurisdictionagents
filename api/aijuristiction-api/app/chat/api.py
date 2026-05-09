@@ -47,7 +47,7 @@ from app.document_templates.store import get_document_template_store
 from app.security import require_api_key
 from app.versioning import get_api_version, get_core_version
 
-from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument
+from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument, User
 from aijurisdictionagents.llm import get_embedding_client
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
@@ -1437,6 +1437,12 @@ def _looks_like_document_title(value: str) -> bool:
         return True
     signal_groups = (
         ("prevode", "podiel"),
+        ("kupno", "predajn", "zmluv"),
+        ("kupna", "zmluv"),
+        ("predajna", "zmluv"),
+        ("darovac", "zmluv"),
+        ("potvrdenie", "zaplat"),
+        ("potvrdenie", "uhrad"),
         ("pisnica", "rozhodnut"),
         ("aktualiz", "zmluv"),
         ("inventar", "zoznam"),
@@ -2369,6 +2375,7 @@ def export_session_result(
 
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     footer_line = f"AIJ | API {_API_VERSION} | Core {_CORE_VERSION}"
+    user_profile = _document_user_profile_for_session(session)
 
     if kind == "document":
         document_assets = _build_document_export_assets(
@@ -2377,6 +2384,7 @@ def export_session_result(
             result=result,
             country=session.country,
             language=session.language,
+            user_profile=user_profile,
         )
         if len(document_assets) > 1:
             archive_name = _build_document_archive_filename(session_id=session_id)
@@ -2387,6 +2395,8 @@ def export_session_result(
                 generated_at=generated_at,
                 footer_line=footer_line,
                 case_id=session.case_id or str(session.id),
+                session_id=str(session.id),
+                user_id=str(session.user_id) if session.user_id else None,
                 verification_score=_document_verification_score(result),
             )
             return Response(
@@ -2471,6 +2481,7 @@ def _session_document_export_context(
         result=result,
         country=session.country,
         language=session.language,
+        user_profile=_document_user_profile_for_session(session),
     )
     return session, result, messages, assets
 
@@ -2490,6 +2501,8 @@ def _document_export_asset_response(
         language=session.language,
         generated_at=generated_at,
         case_id=session.case_id or str(session.id),
+        session_id=str(session.id),
+        user_id=str(session.user_id) if session.user_id else None,
         footer_line=footer_line,
         verification_score=verification_score,
         disclaimer=asset.disclaimer,
@@ -2501,6 +2514,30 @@ def _document_export_asset_response(
     )
 
 
+def _document_user_profile_for_session(session: Session) -> User | None:
+    if session.user_id is not None:
+        return _document_user_profile_for_user_id(str(session.user_id))
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return None
+    try:
+        store = ApiDatabaseStore.from_env()
+        store.initialize()
+        case = store.get_case(case_id=case_id)
+        return store.find_user_by_id(user_id=case.user_id)
+    except Exception:
+        return None
+
+
+def _document_user_profile_for_user_id(user_id: str) -> User | None:
+    try:
+        store = ApiDatabaseStore.from_env()
+        store.initialize()
+        return store.find_user_by_id(user_id=user_id)
+    except Exception:
+        return None
+
+
 def _build_professional_document_pdf(
     *,
     title: str,
@@ -2510,6 +2547,8 @@ def _build_professional_document_pdf(
     generated_at: str,
     case_id: str,
     footer_line: str,
+    session_id: str | None = None,
+    user_id: str | None = None,
     verification_score: str | None = None,
     disclaimer: tuple[str, str, str] | None = None,
 ) -> bytes:
@@ -2522,6 +2561,8 @@ def _build_professional_document_pdf(
         footer_qr_payload=_build_professional_document_qr_payload(
             generated_at=generated_at,
             case_id=case_id,
+            session_id=session_id,
+            user_id=user_id,
             document_score=verification_score,
         ),
         document_verification_score=verification_score,
@@ -2832,15 +2873,25 @@ def _draw_jurisdicta_version_block(
 
 
 def _build_professional_document_qr_payload(
-    *, generated_at: str, case_id: str, document_score: str | None
+    *,
+    generated_at: str,
+    case_id: str,
+    document_score: str | None,
+    session_id: str | None = None,
+    user_id: str | None = None,
 ) -> dict[str, str]:
-    return {
+    payload = {
         "generated_at": generated_at,
         "api_version": _API_VERSION,
         "core_system_version": _CORE_VERSION,
         "case_id": case_id,
         "document_score": document_score or "-",
     }
+    if session_id:
+        payload["session_id"] = session_id
+    if user_id:
+        payload["user_id"] = user_id
+    return payload
 
 
 def _with_document_score_qr_payload(
@@ -3102,6 +3153,8 @@ def _build_document_export_archive(
     generated_at: str,
     footer_line: str,
     case_id: str,
+    session_id: str | None,
+    user_id: str | None,
     verification_score: str | None,
 ) -> bytes:
     archive_buffer = BytesIO()
@@ -3114,6 +3167,8 @@ def _build_document_export_archive(
                 language=language,
                 generated_at=generated_at,
                 case_id=case_id,
+                session_id=session_id,
+                user_id=user_id,
                 footer_line=footer_line,
                 verification_score=verification_score,
                 disclaimer=asset.disclaimer,
@@ -3434,6 +3489,7 @@ def _build_document_export_assets(
     result: SessionResult | None,
     country: str,
     language: str | None,
+    user_profile: User | None = None,
 ) -> list[_DocumentExportAsset]:
     title, lines = _build_document_export_content(
         session_id=session_id,
@@ -3441,6 +3497,7 @@ def _build_document_export_assets(
         result=result,
         country=country,
         language=language,
+        user_profile=user_profile,
     )
     (
         _context_lines,
@@ -3453,6 +3510,8 @@ def _build_document_export_assets(
         result=result,
         language=language,
     )
+    facts = _apply_user_profile_document_defaults(facts=facts, user_profile=user_profile)
+    facts = _sanitize_missing_document_facts(facts)
     document_entries = _case_update_document_entries(case_update)
     if len(document_entries) <= 1:
         document_entries = _fallback_document_entries_for_export(
@@ -3474,7 +3533,7 @@ def _build_document_export_assets(
                     fallback_filename=_build_pdf_filename(session_id=session_id, kind="document"),
                 ),
                 title=title,
-                lines=lines,
+                lines=_strip_duplicate_body_title(title=title, lines=lines),
                 disclaimer=disclaimer,
                 use_corporate_template=_is_third_party_document(
                     document_kind=document_kind,
@@ -3629,6 +3688,7 @@ def _build_document_export_content(
     result: SessionResult | None,
     country: str,
     language: str | None,
+    user_profile: User | None = None,
 ) -> tuple[str, List[str]]:
     context_lines, _case_update, document_kind, facts, law_citation_lines = (
         _prepare_document_export_context(
@@ -3637,10 +3697,21 @@ def _build_document_export_content(
             language=language,
         )
     )
+    facts = _apply_user_profile_document_defaults(facts=facts, user_profile=user_profile)
+    facts = _sanitize_missing_document_facts(facts)
+    title = _document_export_title_from_recommendation(
+        context_lines=context_lines,
+        document_kind=document_kind,
+        language=language,
+    )
     if country.strip().upper() == "SK" and document_kind == "share_transfer":
         from app.chat.country_services.slovakia import build_slovak_share_transfer_export_lines
 
-        title = f"Generovaný dokument {session_id}"
+        title = _document_export_title_from_recommendation(
+            context_lines=context_lines,
+            document_kind=document_kind,
+            language=language,
+        )
         export_lines = build_slovak_share_transfer_export_lines(
             messages=messages,
             normalize_document_lines=_normalize_document_lines,
@@ -3655,10 +3726,15 @@ def _build_document_export_content(
             )
 
     if (language or "").strip().lower().startswith("sk"):
-        title = f"Generovaný dokument {session_id}"
+        title = _document_export_title_from_recommendation(
+            context_lines=context_lines,
+            document_kind=document_kind,
+            language=language,
+        )
         if document_kind == "rental_agreement":
             lines = _build_standard_slovak_agreement_lines(facts)
-            return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+            lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+            return title, _strip_duplicate_body_title(title=title, lines=lines)
         if document_kind == "easement_demand":
             lines = _build_slovak_easement_demand_lines(facts)
             return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
@@ -3666,20 +3742,141 @@ def _build_document_export_content(
             lines = _build_slovak_share_transfer_lines(facts)
             return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
         lines = _build_generic_slovak_case_document_lines(facts)
-        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        return title, _strip_duplicate_body_title(title=title, lines=lines)
 
-    title = f"Generated Document {session_id}"
+    title = _document_export_title_from_recommendation(
+        context_lines=context_lines,
+        document_kind=document_kind,
+        language=language,
+    )
     if document_kind == "rental_agreement":
         lines = _build_standard_english_agreement_lines(facts)
-        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        return title, _strip_duplicate_body_title(title=title, lines=lines)
     if document_kind == "easement_demand":
         lines = _build_english_easement_demand_lines(facts)
-        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        return title, _strip_duplicate_body_title(title=title, lines=lines)
     if document_kind == "share_transfer":
         lines = _build_english_share_transfer_lines(facts)
-        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        return title, _strip_duplicate_body_title(title=title, lines=lines)
     lines = _build_generic_english_case_document_lines(facts)
-    return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+    lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+    return title, _strip_duplicate_body_title(title=title, lines=lines)
+
+
+def _document_export_title_from_recommendation(
+    *,
+    context_lines: list[str],
+    document_kind: str,
+    language: str | None,
+) -> str:
+    source = _repair_common_mojibake("\n".join(context_lines))
+    for candidate in _extract_document_titles_from_text(source):
+        normalized = _canonicalize_document_text(candidate)
+        if (
+            "generovany dokument" not in normalized
+            and "generated document" not in normalized
+            and not _is_document_title_request_sentence(normalized)
+        ):
+            return candidate
+
+    lowered = _canonicalize_document_text(source)
+    is_slovak = (language or "").strip().lower().startswith("sk")
+    if is_slovak:
+        if _mentions_purchase_sale_document(lowered):
+            return "Kupno-predajna zmluva"
+        if "darovac" in lowered and "zmluv" in lowered:
+            return "Darovacia zmluva"
+        if "potvrdenie" in lowered and any(token in lowered for token in ("zaplat", "uhrad")):
+            return "Potvrdenie o zaplateni"
+        if "plnomoc" in lowered or "splnomoc" in lowered:
+            return "Plnomocenstvo"
+        if "vypoved" in lowered and ("najom" in lowered or "najm" in lowered):
+            return "Vypoved najomnej zmluvy"
+        if document_kind == "rental_agreement":
+            return "Najomna zmluva"
+        if document_kind == "share_transfer":
+            return "Zmluva o prevode obchodneho podielu"
+        if document_kind == "easement_demand":
+            return "Vyzva na zriadenie vecneho bremena"
+        return "Pravny dokument"
+
+    if _mentions_purchase_sale_document(lowered):
+        return "Purchase Agreement"
+    if "gift" in lowered and "agreement" in lowered:
+        return "Gift Agreement"
+    if "payment confirmation" in lowered or ("confirmation" in lowered and "payment" in lowered):
+        return "Payment Confirmation"
+    if document_kind == "rental_agreement":
+        return "Lease Agreement"
+    if document_kind == "share_transfer":
+        return "Share Transfer Agreement"
+    if document_kind == "easement_demand":
+        return "Easement Demand"
+    return "Legal Document"
+
+
+def _mentions_purchase_sale_document(lowered: str) -> bool:
+    return (
+        any(token in lowered for token in ("kupno predajn", "kupno-predajn", "kupnopredajn"))
+        or ("kupna" in lowered and "zmluv" in lowered)
+        or ("predajna" in lowered and "zmluv" in lowered)
+        or ("purchase" in lowered and ("agreement" in lowered or "contract" in lowered))
+        or ("sale" in lowered and ("agreement" in lowered or "contract" in lowered))
+    )
+
+
+def _is_document_title_request_sentence(normalized: str) -> bool:
+    request_prefixes = (
+        "priprav ",
+        "odporucam ",
+        "chcem ",
+        "prosim ",
+        "potrebujem ",
+        "navrhni ",
+        "vytvor ",
+        "please ",
+        "prepare ",
+        "i need ",
+    )
+    return len(normalized) > 72 or normalized.startswith(request_prefixes)
+
+
+def _strip_duplicate_body_title(*, title: str, lines: list[str]) -> list[str]:
+    if not lines:
+        return lines
+    first_content_index = next((index for index, line in enumerate(lines) if line.strip()), None)
+    if first_content_index is None:
+        return lines
+    first_line = lines[first_content_index].strip()
+    if not _document_titles_are_equivalent(title, first_line):
+        return lines
+    return [*lines[:first_content_index], *lines[first_content_index + 1 :]]
+
+
+def _document_titles_are_equivalent(left: str, right: str) -> bool:
+    left_normalized = _canonicalize_document_text(left)
+    right_normalized = _canonicalize_document_text(right)
+    if not left_normalized or not right_normalized:
+        return False
+    if left_normalized == right_normalized:
+        return True
+    if left_normalized in right_normalized or right_normalized in left_normalized:
+        return True
+    both_rental_titles = all(
+        "zmluv" in value and any(token in value for token in ("najom", "najm", "prenajom", "prenajm"))
+        for value in (left_normalized, right_normalized)
+    )
+    if both_rental_titles:
+        return True
+    both_lease_titles = all(
+        ("lease" in value or "rental" in value) and ("agreement" in value or "contract" in value)
+        for value in (left_normalized, right_normalized)
+    )
+    return both_lease_titles
 
 
 def _append_document_law_citations(
@@ -3757,7 +3954,7 @@ def _build_multi_document_export_assets(
             _DocumentExportAsset(
                 filename=unique_filename,
                 title=title,
-                lines=lines,
+                lines=_strip_duplicate_body_title(title=title, lines=lines),
                 disclaimer=disclaimer,
                 use_corporate_template=_is_third_party_document(
                     document_kind=document_kind,
@@ -4088,6 +4285,25 @@ def _extract_document_facts(
             return default
         return " ".join(match.group(1).strip().split())
 
+    def _capture_line_value(labels: tuple[str, ...], default: str) -> str:
+        for raw_line in source_lines:
+            line = _repair_common_mojibake(raw_line).strip()
+            if not line:
+                continue
+            line = re.sub(r"^[\-\*\s]+", "", line)
+            line = re.sub(r"\*\*", "", line)
+            canonical_line = _canonicalize_document_text(line)
+            for label in labels:
+                canonical_label = _canonicalize_document_text(label).rstrip(":")
+                if not canonical_line.startswith(canonical_label):
+                    continue
+                separator_index = line.find(":")
+                if separator_index < 0:
+                    continue
+                value = " ".join(line[separator_index + 1 :].strip().split())
+                return value or default
+        return default
+
     def _case_text(path: tuple[str, ...], default: str) -> str:
         node: Any = case_update
         for part in path:
@@ -4100,22 +4316,52 @@ def _extract_document_facts(
         return value or default
 
     parties_line = _capture(r"zmluvne strany:\s*(.+?)(?:\s+\d+\)|$)", "")
-    prenajimatel = _capture(r"prenajimatel\s*([^,.;]+)", "Prenajimatel [doplnit udaje]")
-    najomca = _capture(r"najomca\s*([^,.;]+)", "Najomca [doplnit udaje]")
+    prenajimatel = _capture_line_value(
+        ("prenajimatel", "prenajímateľ", "landlord", "lessor"),
+        "Prenajimatel [doplnit udaje]",
+    )
+    najomca = _capture_line_value(
+        ("najomca", "nájomca", "podnajomnik", "podnájomník", "tenant", "subtenant"),
+        "Najomca [doplnit udaje]",
+    )
     if parties_line and "doplnit" in prenajimatel.lower():
         prenajimatel = parties_line
-    predmet = _capture(
-        r"(?:predmet\s+n[áa]jmu|adresa\s+bytu|byt\s+na\s+adrese)\s*:?\s*(.+?)(?:\.|\s+\d+\)|$)",
-        "Byt [adresa a identifikácia]",
+    predmet = _capture_line_value(
+        ("adresa nehnutelnosti", "adresa nehnuteľnosti", "adresa bytu", "adresa domu"),
+        "",
     )
-    doba = _capture(
-        r"(?:doba\s+n[áa]jmu|zmluva\s+sa\s+uzatv[áa]ra\s+na\s+dobu)\s*:?\s*(.+?)(?:\.|\s+\d+\)|$)",
-        "Na dobu určitú 1 rok",
+    if not predmet:
+        predmet = _capture(
+            r"(?:predmet\s+n[áa]jmu|adresa\s+bytu|adresa\s+domu|adresa\s+nehnute[ľl]nosti|byt\s+na\s+adrese|dom\s+na\s+adrese)\s*:?\s*(.+?)(?:\.|\s+\d+\)|$)",
+            "",
+        )
+    if not predmet:
+        predmet = _capture(
+            r"nach[áa]dzaj[úu]ci\s+sa\s+na\s+adrese\s+(.+?)(?:\.|\s+\d+\)|$)",
+            "",
+        )
+    if not predmet:
+        predmet = "Nehnuteľnosť [adresa a identifikácia]"
+    elif "nachadz" not in _canonicalize_document_text(predmet) and "adrese " not in _canonicalize_document_text(predmet):
+        predmet = f"Nehnuteľnosť nachádzajúca sa na adrese {predmet}"
+    doba = _capture_line_value(
+        ("doba prenajmu", "doba prenájmu", "doba najmu", "doba nájmu"),
+        "",
     )
-    najomne = _capture(
-        r"(?:n[áa]jomn[ée]|v[ýy][šs]ka\s+n[áa]jmu|mesa[čc]n[ýy]\s+n[áa]jom)\s*(?:je\s+stanoven[ýy]\s+na|je|:)?\s*([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€)(?:\s+mesa[čc]ne)?)",
-        "Nájomné [doplniť sumu], splatné do 5. dňa v mesiaci",
+    if not doba:
+        doba = _capture(
+            r"(?:doba\s+n[áa]jmu|doba\s+pren[áa]jmu|zmluva\s+sa\s+uzatv[áa]ra\s+na\s+dobu)\s*:?\s*(.+?)(?:\.|\s+\d+\)|$)",
+            "Na dobu určitú 1 rok",
+        )
+    najomne = _capture_line_value(
+        ("mesacne najomne", "mesačné nájomné", "najomne", "nájomné", "mesacny najom", "mesačný nájom"),
+        "",
     )
+    if not najomne:
+        najomne = _capture(
+            r"(?:n[áa]jomn[ée]|v[ýy][šs]ka\s+n[áa]jmu|mesa[čc]n[ýy]\s+n[áa]jom)\s*(?:je\s+stanoven[ýy]\s+na|je|:)?\s*([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€)(?:\s+mesa[čc]ne)?)",
+            "Nájomné [doplniť sumu], splatné do 5. dňa v mesiaci",
+        )
     advance = _capture(r"platba vopred:\s*(.+?)(?:\s+\d+\)|$)", "2 mesačné nájomné vopred")
     deposit = _capture(r"kaucia:\s*(.+?)(?:\s+\d+\)|$)", "1 mesačné nájomné")
     notice = _capture(
@@ -4185,6 +4431,100 @@ def _extract_document_facts(
         "filing_authority": filing_authority,
         "estimated_timeline": estimated_timeline,
     }
+
+
+def _apply_user_profile_document_defaults(
+    *, facts: dict[str, str], user_profile: User | None
+) -> dict[str, str]:
+    if user_profile is None:
+        return facts
+    profile_identity = _format_user_profile_document_identity(user_profile)
+    if not profile_identity:
+        return facts
+    enriched = dict(facts)
+    if _is_missing_document_fact(enriched.get("prenajimatel")):
+        enriched["prenajimatel"] = profile_identity
+    if _is_missing_document_fact(enriched.get("najomca")):
+        enriched["najomca"] = profile_identity
+    if _is_missing_document_fact(enriched.get("client_name")):
+        enriched["client_name"] = profile_identity
+    if _is_missing_document_fact(enriched.get("transferor_name")):
+        enriched["transferor_name"] = profile_identity
+    return enriched
+
+
+def _sanitize_missing_document_facts(facts: dict[str, str]) -> dict[str, str]:
+    enriched = dict(facts)
+    if _is_missing_document_fact(enriched.get("prenajimatel")):
+        opponent_name = enriched.get("opponent_name")
+        enriched["prenajimatel"] = (
+            str(opponent_name)
+            if not _is_missing_document_fact(opponent_name)
+            else "Údaje prenajímateľa budú doplnené pred podpisom."
+        )
+    if _is_missing_document_fact(enriched.get("najomca")):
+        client_name = enriched.get("client_name")
+        enriched["najomca"] = (
+            str(client_name)
+            if not _is_missing_document_fact(client_name)
+            else "Údaje nájomcu budú doplnené pred podpisom."
+        )
+    if _is_missing_document_fact(enriched.get("client_name")):
+        enriched["client_name"] = "Klient bude identifikovaný pred podpisom alebo podaním."
+    if _is_missing_document_fact(enriched.get("transferor_name")):
+        enriched["transferor_name"] = "Prevodca bude identifikovaný pred podpisom alebo podaním."
+    if _is_missing_document_fact(enriched.get("transferee_name")):
+        enriched["transferee_name"] = "Nadobúdateľ bude identifikovaný pred podpisom alebo podaním."
+    return enriched
+
+
+def _format_user_profile_document_identity(user: User) -> str:
+    parts: list[str] = [user.full_name]
+    address_parts = [
+        value
+        for value in (
+            user.address,
+            " ".join(part for part in (user.zip_code, user.city) if part),
+            user.country,
+        )
+        if value
+    ]
+    if address_parts:
+        parts.append(", ".join(address_parts))
+    identity_parts = []
+    if user.date_of_birth:
+        identity_parts.append(f"datum narodenia: {user.date_of_birth}")
+    if user.social_security_number:
+        identity_parts.append(f"rodne cislo: {user.social_security_number}")
+    if user.identity_card_number:
+        identity_parts.append(f"OP: {user.identity_card_number}")
+    if user.tax_number:
+        identity_parts.append(f"DIC: {user.tax_number}")
+    if identity_parts:
+        parts.append("; ".join(identity_parts))
+    return ", ".join(part for part in parts if part.strip())
+
+
+def _is_missing_document_fact(value: str | None) -> bool:
+    if not value:
+        return True
+    lowered = _canonicalize_document_text(value)
+    placeholder_tokens = (
+        "doplnit",
+        "doplni",
+        "[",
+        "]",
+        "vase meno",
+        "vasa adresa",
+        "vasu adresu",
+        "meno prenajimatela",
+        "adresa prenajimatela",
+        "meno najomcu",
+        "adresa najomcu",
+        "protistrana",
+        "klient",
+    )
+    return any(token in lowered for token in placeholder_tokens)
 
 
 def _build_standard_slovak_agreement_lines(facts: dict[str, str]) -> List[str]:
@@ -4947,6 +5287,16 @@ def _detect_document_kind(
         "share transfer",
         "ownership transfer",
     )
+    purchase_sale_tokens = (
+        "kupno predajn",
+        "kupno-predajn",
+        "kupna zmluva",
+        "predajna zmluva",
+        "purchase agreement",
+        "sale agreement",
+    )
+    if any(token in haystack for token in purchase_sale_tokens):
+        return "generic_case_document"
     if any(token in haystack for token in rental_tokens):
         return "rental_agreement"
     if any(token in haystack for token in easement_tokens):

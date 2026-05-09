@@ -86,9 +86,41 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
             "password": "new-secret",
             "first_name": "Marek",
             "last_name": "Updated",
+            "address": "Partizanska 665",
+            "city": "Spisske Bystre",
+            "country": "SK",
+            "zip_code": "059 18",
+            "tax_number": "1070000001",
+            "identity_card_number": "AB123456",
+            "date_of_birth": "1980-01-02",
+            "social_security_number": "800102/1234",
         },
     )
     assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["full_name"] == "Marek Updated"
+    assert updated["address"] == "Partizanska 665"
+    assert updated["city"] == "Spisske Bystre"
+    assert updated["zip_code"] == "059 18"
+    assert updated["tax_number"] == "1070000001"
+    assert updated["identity_card_number"] == "AB123456"
+    assert updated["date_of_birth"] == "1980-01-02"
+    assert updated["social_security_number"] == "800102/1234"
+
+    partial_update_response = client.patch(
+        f"/v1/users/{signed_up['user_id']}",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900333444",
+            "first_name": "Marek",
+            "last_name": "Preserved",
+        },
+    )
+    assert partial_update_response.status_code == 200
+    partially_updated = partial_update_response.json()
+    assert partially_updated["full_name"] == "Marek Preserved"
+    assert partially_updated["address"] == "Partizanska 665"
+    assert partially_updated["identity_card_number"] == "AB123456"
 
 
 def test_sign_up_complete_requires_valid_email_code(monkeypatch, tmp_path: Path) -> None:

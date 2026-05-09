@@ -257,9 +257,13 @@ def test_pdf_builder_renders_professional_footer_only_when_template_enabled() ->
     qr_payload = chat_api._build_professional_document_qr_payload(
         generated_at="2026-04-21 10:00:00 UTC",
         case_id="case-123",
+        session_id="session-123",
+        user_id="user-123",
         document_score="88.4%",
     )
     assert qr_payload["document_score"] == "88.4%"
+    assert qr_payload["session_id"] == "session-123"
+    assert qr_payload["user_id"] == "user-123"
 
 
 def test_stream_core_orchestration_and_export_json_pdf() -> None:
@@ -699,6 +703,8 @@ def test_document_export_for_company_share_transfer_uses_full_session_context() 
     )
 
     lowered_lines = _canonical_text(" ".join(lines))
+    assert _canonical_text(title) == "zmluva o prevode obchodneho podielu"
+    assert str(session_id) not in title
     assert "najomna zmluva" not in lowered_lines
     assert "prevodu obchodneho podielu" in lowered_lines
     assert "esolutions sk s.r.o." in lowered_lines
@@ -776,6 +782,213 @@ def test_document_export_for_company_share_transfer_uses_verified_company_packag
     assert "navrh rozhodnutia jedineho spolocnika" in lowered_lines
     assert "navrh aktualizovaneho uplneho znenia spolocenskej zmluvy" in lowered_lines
     slovakia_service._ORSR_CACHE.clear()
+
+
+def test_document_export_title_uses_requested_legal_document_type() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content="Priprav kupno predajnu zmluvu na pozemok v katastri obce Kravany.",
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Odporucam pripravit kupno-predajnu zmluvu k prevodu pozemku.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, _lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+    )
+
+    assert title == "Kupno-predajna zmluva"
+    assert str(session_id) not in title
+
+
+def test_document_export_uses_user_profile_defaults_for_missing_party_data() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+    from aijurisdictionagents.api_db import User
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "Priprav najomnu zmluvu. Prenajimatel: Prenajimatel [doplnit udaje]. "
+                "Najomca: Najomca [doplnit udaje]."
+            ),
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Dokument je pripraveny.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+    user_profile = User(
+        user_id="user-1",
+        phone_number="+421900111222",
+        email="marek@example.com",
+        first_name="Marek",
+        last_name="Matonok",
+        full_name="Marek Matonok",
+        address="Partizanska 665",
+        city="Spisske Bystre",
+        country="SK",
+        zip_code="059 18",
+        tax_number="1070000001",
+        identity_card_number="AB123456",
+        date_of_birth="1980-01-02",
+        social_security_number="800102/1234",
+        data_processing_consent_at=None,
+        data_processing_consent_version=None,
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+        user_profile=user_profile,
+    )
+
+    normalized = _canonical_text(" ".join(lines))
+    assert _canonical_text(title) == "najomna zmluva"
+    assert not _canonical_text(lines[0]).startswith("najomna zmluva")
+    assert "marek matonok" in normalized
+    assert "partizanska 665" in normalized
+    assert "800102/1234" in normalized
+    assert "ab123456" in normalized
+
+
+def test_document_export_replaces_rental_party_placeholders_from_case_parties() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "**ZMLUVA O PRENÁJME BYTU**\n\n"
+                "Prenajímateľ: Prenajimatel [doplnit udaje]\n"
+                "Nájomca: Najomca [doplnit udaje]\n\n"
+                "CASE_UPDATE_JSON:\n"
+                "{"
+                '"case":{"parties":{"client":{"name":"Maria Kovacova"},'
+                '"opponent":{"name":"Jan Novak"}},'
+                '"matter":{"topic":"prenajom","facts_summary":"Najom bytu","client_goal":"Pripravit zmluvu"},'
+                '"documents":[],"next_discussion":{"agenda":[]}}'
+                "}"
+            ),
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Dokument je pripraveny.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+    )
+
+    normalized = _canonical_text(" ".join(lines))
+    assert _canonical_text(title) == "zmluva o prenajme bytu"
+    assert "jan novak" in normalized
+    assert "maria kovacova" in normalized
+    assert "prenajimatel [doplnit udaje]" not in normalized
+    assert "najomca [doplnit udaje]" not in normalized
+    assert not _canonical_text(lines[0]).startswith("najomna zmluva")
+
+
+def test_document_export_extracts_rental_data_from_draft_text_and_profile() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+    from aijurisdictionagents.api_db import User
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Pripravím zmluvu o prenájme.\n\n"
+                "- Adresa nehnuteľnosti: Bratislava, Slavin, Pod Radom 1234\n"
+                "- Mesačné nájomné: 5000 EUR\n"
+                "- Doba prenájmu: 1 rok (od 1. júna 2026)\n"
+                "- Podnájomník: John Kennedy, Washington, D.C., USA\n\n"
+                "**Zmluva o prenájme**\n\n"
+                "**Zmluvné strany:**\n"
+                "Prenajímateľ: [Vaše meno a adresa]\n"
+                "Podnájomník: John Kennedy, Washington, D.C., USA\n\n"
+                "**Predmet zmluvy:**\n"
+                "Prenajímateľ prenajíma podnájomníkovi dom nachádzajúci sa na adrese "
+                "Bratislava, Slavin, Pod Radom 1234."
+            ),
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Dokument je pripraveny.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+    user_profile = User(
+        user_id="user-1",
+        phone_number="+421900111222",
+        email="owner@example.com",
+        first_name="Marek",
+        last_name="Matonok",
+        full_name="Marek Matonok",
+        address="Partizanska 665",
+        city="Spisske Bystre",
+        country="SK",
+        zip_code="059 18",
+        tax_number=None,
+        identity_card_number=None,
+        date_of_birth=None,
+        social_security_number=None,
+        data_processing_consent_at=None,
+        data_processing_consent_version=None,
+    )
+
+    _title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+        user_profile=user_profile,
+    )
+
+    normalized = _canonical_text(" ".join(lines))
+    assert "marek matonok" in normalized
+    assert "partizanska 665" in normalized
+    assert "john kennedy, washington" in normalized
+    assert "bratislava, slavin, pod radom 1234" in normalized
+    assert "byt [adresa a identifikacia]" not in normalized
+    assert "protistrana" not in normalized
+    assert "klient" not in normalized
 
 
 def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:

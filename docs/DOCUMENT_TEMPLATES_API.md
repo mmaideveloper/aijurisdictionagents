@@ -91,13 +91,19 @@ For generated court-facing or client/third-party output documents, including req
 `potvrdenie o zaplateni`, the API applies the JurisDicta professional PDF document template:
 
 - branded JurisDicta header/contact/sidebar layout
-- formal centered document title and body typography
+- formal centered document title and body typography; single-document exports use the legal document type inferred from the lawyer recommendation, not the session ID
+- duplicate first body headings are removed when they repeat the professional PDF title
 - long document titles are wrapped instead of overflowing the page
 - article headings such as `Čl. I` / `Článok 1` are rendered larger and bold
 - footer with a small JurisDicta logo and the document verification score when a session validation score is available
 - legal-draft disclaimer page when the document verification score is unknown or lower than `DOCUMENT_SHOW_DISCLAIMER` (default `50`)
-- footer QR code containing minimized traceability metadata only: generation date, API version, core
-  system version, case ID, and document verification score
+- footer QR code containing traceability metadata: generation date, API version, core
+  system version, case ID, session ID when available, user ID when available, and document verification score
+- missing party details in generated documents can be filled from the signed-in user's profile by default
+  (name, address, tax number, identity card number, date of birth, and social security number); these values
+  are used in the document body only and are not added to the QR payload
+- rental exports also read common draft labels such as `Podnájomník`, `Adresa nehnuteľnosti`, and
+  `Mesačné nájomné` from the conversation when structured case JSON is incomplete
 
 Internal workflow-style outputs (for example legal summary / next-step memorandum style drafts) and
 discussion summaries intentionally keep the plain PDF style without the corporate template.
