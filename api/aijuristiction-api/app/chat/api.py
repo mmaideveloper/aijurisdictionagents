@@ -2410,15 +2410,11 @@ def export_session_result(
         lines=lines,
         country=session.country,
         language=session.language,
-        header_line=(
-            f"AI Jurisdicta Solution | Generated: {generated_at}"
-            if kind == "document" and use_corporate_template
-            else None
-        ),
-        footer_line=(footer_line if kind == "document" else None),
+        header_line=None,
+        footer_line=None,
         disclaimer=disclaimer,
-        draw_logo_mark=(kind == "document" and use_corporate_template),
-        include_title_block=(kind != "document"),
+        draw_logo_mark=False,
+        include_title_block=True,
     )
     return Response(
         content=pdf_content,
