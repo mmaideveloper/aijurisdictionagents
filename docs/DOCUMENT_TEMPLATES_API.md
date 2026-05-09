@@ -87,13 +87,14 @@ Central-European PDF font profile, so headings such as `Nájomná zmluva`, `Čl.
 
 If a chat run only asks for a single rental contract, the endpoint still returns one PDF.
 
-For generated court-facing or third-party organization output documents, the API applies the
-Jurisdicta default corporate template:
+For generated court-facing or client/third-party output documents, including requests such as
+`potvrdenie o zaplateni`, the API applies the JurisDicta professional PDF document template:
 
-- branded Jurisdicta header block
-- right-aligned corporate contact details
-- clean divider line and centered document title
-- same API/Core export footer metadata for traceability
+- empty header area for now
+- formal centered document title and body typography
+- footer with a small JurisDicta logo
+- footer QR code containing minimized traceability metadata only: generation date, API version, core
+  system version, and case ID
 
 Internal workflow-style outputs (for example legal summary / next-step memorandum style drafts) and
 discussion summaries intentionally keep the plain PDF style without the corporate template.
@@ -102,9 +103,8 @@ discussion summaries intentionally keep the plain PDF style without the corporat
 
 The template preview endpoint renders one template directly through the same PDF builder used by chat document
 exports. It fills known placeholders with realistic sample data, returns `application/pdf`, and uses a
-`Content-Disposition` filename ending in `-preview.pdf`. Preview PDFs use the Jurisdicta A4 corporate
-layout with the logo block, contact panel, blue sidebar, and API/system version block from
-`docs/generated_document_template.png`.
+`Content-Disposition` filename ending in `-preview.pdf`. Preview PDFs use the same JurisDicta
+professional document layout as generated client-facing PDFs.
 
 For Slovak templates and generated Slovak document exports, the renderer now adds a visible legal disclaimer block on
 the first page and repeats a short disclaimer in the footer so the draft status is not easy to miss.
