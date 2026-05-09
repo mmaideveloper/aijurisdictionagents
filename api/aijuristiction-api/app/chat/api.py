@@ -23,6 +23,9 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
+from reportlab.graphics import renderPDF  # type: ignore[import-untyped]
+from reportlab.graphics.barcode import qr  # type: ignore[import-untyped]
+from reportlab.graphics.shapes import Drawing  # type: ignore[import-untyped]
 from reportlab.lib import colors  # type: ignore[import-untyped]
 from reportlab.lib.pagesizes import A4  # type: ignore[import-untyped]
 from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
@@ -2381,6 +2384,7 @@ def export_session_result(
                 language=session.language,
                 generated_at=generated_at,
                 footer_line=footer_line,
+                case_id=session.case_id or str(session.id),
             )
             return Response(
                 content=archive_content,
@@ -2403,7 +2407,6 @@ def export_session_result(
         )
         filename = _build_pdf_filename(session_id=session_id, kind="summary")
         disclaimer = None
-        use_corporate_template = False
 
     pdf_content = _build_simple_pdf(
         title=title,
@@ -2486,6 +2489,10 @@ def _document_export_asset_response(
             else None
         ),
         footer_line=footer_line,
+        footer_qr_payload=_build_professional_document_qr_payload(
+            generated_at=generated_at,
+            case_id=session.case_id or str(session.id),
+        ),
         disclaimer=asset.disclaimer,
         draw_logo_mark=asset.use_corporate_template,
         include_title_block=False,
@@ -2505,6 +2512,7 @@ def _build_simple_pdf(
     language: str | None,
     header_line: str | None = None,
     footer_line: str | None = None,
+    footer_qr_payload: dict[str, str] | None = None,
     disclaimer: tuple[str, str, str] | None = None,
     draw_logo_mark: bool = False,
     include_title_block: bool = True,
@@ -2522,11 +2530,11 @@ def _build_simple_pdf(
 
     if use_corporate_template:
         margin_left = 64.0
-        margin_top = 214.0
-        margin_bottom = 44.0
+        margin_top = 92.0
+        margin_bottom = 84.0
         title_font_size = 20.0
         body_font_size = 11.0
-        body_line_height = 24.0
+        body_line_height = 18.0
 
     prefers_slovak_profile = _prefers_slovak_legal_pdf_profile(country=country, language=language)
     header_lines: list[str] = []
@@ -2574,16 +2582,7 @@ def _build_simple_pdf(
     pdf = canvas.Canvas(buffer, pagesize=(page_width, page_height), pageCompression=0)
 
     def start_page() -> float:
-        if use_corporate_template:
-            _draw_jurisdicta_corporate_header(
-                pdf=pdf,
-                page_width=page_width,
-                page_height=page_height,
-                margin_left=margin_left,
-                regular_font=regular_font,
-                bold_font=bold_font,
-            )
-        elif draw_logo_mark:
+        if draw_logo_mark and not use_corporate_template:
             pdf.setFont(bold_font, 10)
             pdf.drawRightString(page_width - margin_left, page_height - 28, "AI Jurisdicta")
         return page_height - margin_top
@@ -2598,7 +2597,19 @@ def _build_simple_pdf(
             )
         if effective_footer:
             pdf.setFont(regular_font, footer_font_size)
-            pdf.drawString(margin_left, margin_bottom - 8, effective_footer)
+            if use_corporate_template:
+                _draw_jurisdicta_professional_footer(
+                    pdf=pdf,
+                    page_width=page_width,
+                    margin_left=margin_left,
+                    margin_bottom=margin_bottom,
+                    regular_font=regular_font,
+                    bold_font=bold_font,
+                    footer_line=effective_footer,
+                    qr_payload=footer_qr_payload,
+                )
+            else:
+                pdf.drawString(margin_left, margin_bottom - 8, effective_footer)
 
     y = start_page()
     for index, line in enumerate(prepared_lines):
@@ -2762,6 +2773,106 @@ def _draw_jurisdicta_version_block(
         y -= 12.0
 
 
+def _build_professional_document_qr_payload(*, generated_at: str, case_id: str) -> dict[str, str]:
+    return {
+        "generated_at": generated_at,
+        "api_version": _API_VERSION,
+        "core_system_version": _CORE_VERSION,
+        "case_id": case_id,
+    }
+
+
+def _draw_jurisdicta_professional_footer(
+    *,
+    pdf: canvas.Canvas,
+    page_width: float,
+    margin_left: float,
+    margin_bottom: float,
+    regular_font: str,
+    bold_font: str,
+    footer_line: str,
+    qr_payload: dict[str, str] | None,
+) -> None:
+    footer_top = margin_bottom - 6.0
+    qr_size = 42.0
+    logo_size = 20.0
+    brand_color = colors.HexColor("#174A8B")
+    muted_color = colors.HexColor("#55616F")
+    line_color = colors.HexColor("#D9E2EC")
+
+    pdf.setStrokeColor(line_color)
+    pdf.setLineWidth(0.6)
+    pdf.line(margin_left, footer_top + 18.0, page_width - margin_left, footer_top + 18.0)
+
+    logo_x = margin_left
+    logo_y = footer_top - logo_size + 2.0
+    _draw_jurisdicta_footer_logo(
+        pdf=pdf,
+        x=logo_x,
+        y=logo_y,
+        size=logo_size,
+        color=brand_color,
+    )
+    pdf.setFillColor(brand_color)
+    pdf.setFont(bold_font, 8.5)
+    pdf.drawString(logo_x + logo_size + 7.0, footer_top - 2.0, "JurisDicta")
+    pdf.setFillColor(muted_color)
+    pdf.setFont(regular_font, 7.0)
+    pdf.drawString(logo_x + logo_size + 7.0, footer_top - 12.0, footer_line)
+
+    if qr_payload:
+        qr_x = logo_x + 182.0
+        qr_y = footer_top - qr_size + 8.0
+        _draw_footer_qr_code(
+            pdf=pdf,
+            payload=qr_payload,
+            x=qr_x,
+            y=qr_y,
+            size=qr_size,
+        )
+        pdf.setFillColor(muted_color)
+        pdf.setFont(regular_font, 6.5)
+        pdf.drawString(qr_x + qr_size + 7.0, footer_top - 8.0, "Verification metadata")
+
+
+def _draw_jurisdicta_footer_logo(
+    *,
+    pdf: canvas.Canvas,
+    x: float,
+    y: float,
+    size: float,
+    color: colors.Color,
+) -> None:
+    pdf.setStrokeColor(color)
+    pdf.setLineWidth(1.1)
+    pdf.rect(x, y, size, size, stroke=1, fill=0)
+    pdf.line(x + size / 2.0, y + size * 0.22, x + size / 2.0, y + size * 0.76)
+    pdf.line(x + size * 0.24, y + size * 0.48, x + size / 2.0, y + size * 0.64)
+    pdf.line(x + size / 2.0, y + size * 0.64, x + size * 0.76, y + size * 0.48)
+    pdf.setFillColor(color)
+    pdf.circle(x + size * 0.24, y + size * 0.48, size * 0.045, stroke=0, fill=1)
+    pdf.circle(x + size * 0.76, y + size * 0.48, size * 0.045, stroke=0, fill=1)
+    pdf.circle(x + size / 2.0, y + size * 0.22, size * 0.045, stroke=0, fill=1)
+
+
+def _draw_footer_qr_code(
+    *,
+    pdf: canvas.Canvas,
+    payload: dict[str, str],
+    x: float,
+    y: float,
+    size: float,
+) -> None:
+    qr_payload = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    widget = qr.QrCodeWidget(qr_payload)
+    bounds = widget.getBounds()
+    width = bounds[2] - bounds[0]
+    height = bounds[3] - bounds[1]
+    drawing = Drawing(size, size, transform=[size / width, 0, 0, size / height, 0, 0])
+    drawing.add(widget)
+    renderPDF.draw(drawing, pdf, x, y)
+
+
 def _draw_pdf_body_line(
     *,
     pdf: canvas.Canvas,
@@ -2831,6 +2942,7 @@ def _build_document_export_archive(
     language: str | None,
     generated_at: str,
     footer_line: str,
+    case_id: str,
 ) -> bytes:
     archive_buffer = BytesIO()
     with ZipFile(archive_buffer, mode="w", compression=ZIP_DEFLATED) as archive:
@@ -2846,6 +2958,10 @@ def _build_document_export_archive(
                     else None
                 ),
                 footer_line=footer_line,
+                footer_qr_payload=_build_professional_document_qr_payload(
+                    generated_at=generated_at,
+                    case_id=case_id,
+                ),
                 disclaimer=asset.disclaimer,
                 draw_logo_mark=asset.use_corporate_template,
                 include_title_block=not asset.use_corporate_template,
@@ -3523,7 +3639,22 @@ def _is_third_party_document(
         ]
     )
     lowered = _canonicalize_document_text(candidate_text)
-    if any(token in lowered for token in ("registry filing", "court filing", "contract", "agreement", "petition", "protocol")):
+    if any(
+        token in lowered
+        for token in (
+            "registry filing",
+            "court filing",
+            "contract",
+            "agreement",
+            "petition",
+            "protocol",
+            "receipt",
+            "payment confirmation",
+            "potvrdenie",
+            "zaplateni",
+            "uhrade",
+        )
+    ):
         return True
     internal_markers = (
         "legal summary and next-step memorandum",

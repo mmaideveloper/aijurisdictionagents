@@ -149,6 +149,7 @@ def test_third_party_template_classifier_marks_contract_asset_as_corporate() -> 
         ("rental_agreement", "handover_protocol", "Protokol o odovzdaní", True),
         ("share_transfer", "minutes", "Zápisnica z rozhodnutia", True),
         ("share_transfer", "registry_filing", "Podanie na ORSR", True),
+        ("general", "other", "Potvrdenie o zaplatení", True),
         ("general", "other", "Internal legal memo", False),
     ],
 )
@@ -170,7 +171,7 @@ def test_third_party_template_classifier_by_document_templates(
     assert is_third_party is expected
 
 
-def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> None:
+def test_pdf_builder_renders_professional_footer_only_when_template_enabled() -> None:
     import app.chat.api as chat_api
 
     corporate_pdf = chat_api._build_simple_pdf(
@@ -180,6 +181,12 @@ def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> No
         language="en-US",
         header_line="AI Jurisdicta Solution | Generated: 2026-04-21 10:00:00 UTC",
         footer_line="AIJ | API 1.0 | Core 1.0",
+        footer_qr_payload={
+            "generated_at": "2026-04-21 10:00:00 UTC",
+            "api_version": "1.0",
+            "core_system_version": "1.0",
+            "case_id": "case-123",
+        },
         disclaimer=("Important notice", "Draft only. Lawyer review required.", "Draft only"),
         draw_logo_mark=True,
         include_title_block=False,
@@ -197,11 +204,11 @@ def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> No
     corporate_text = _pdf_text(corporate_pdf).lower()
     plain_text = _pdf_text(plain_pdf).lower()
 
-    assert "poprad, slovakia, 05801" in corporate_text
-    assert "info@jurisdigta.eu" in corporate_text
+    assert "jurisdicta" in corporate_text
+    assert "verification metadata" in corporate_text
+    assert "poprad, slovakia, 05801" not in corporate_text
+    assert "info@jurisdigta.eu" not in corporate_text
     assert "template.net" not in corporate_text
-    assert "api version" in corporate_text
-    assert "system core version" in corporate_text
     assert "important notice" in corporate_text
     assert "lawyer review required" in corporate_text
     assert "draft only" in corporate_text
@@ -355,9 +362,10 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     document_text = _pdf_text(document_pdf.content).lower()
     assert "ai jurisdiction" in summary_text
     assert "jurisdicta" in document_text
-    assert "poprad, slovakia, 05801" in document_text
-    assert "api version" in document_text
-    assert "system core version" in document_text
+    assert "verification metadata" in document_text
+    assert "poprad, slovakia, 05801" not in document_text
+    assert "api version" not in document_text
+    assert "system core version" not in document_text
     assert "aij | api " in document_text
     assert "api " in document_text
     assert "core " in document_text

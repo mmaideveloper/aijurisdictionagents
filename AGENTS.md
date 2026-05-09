@@ -59,9 +59,11 @@ API and system core versioning rule:
 - Whenever you change system core code under `src/`, increase the revision number in `src/aijurisdictionagents/__init__.py` and keep the root package version aligned when applicable.
 - Unless the user explicitly asks otherwise, bump only the revision portion of the version, not the major or minor portion.
 
-API type-check rule:
+API validation rule:
 
-- After every API code change under `api/aijuristiction-api`, run `mypy app` from `api/aijuristiction-api` and fix type-check failures before committing.
+- After every API code change under `api/aijuristiction-api`, run `ruff check app tests` and `mypy app` from `api/aijuristiction-api` and fix lint/type-check failures before committing.
+- Use `.\scripts\validate_api.ps1` from the repository root for the local equivalent of the API CI lint/type-check gate.
+- Keep the tracked pre-commit hook under `.githooks/pre-commit` enabled with `git config core.hooksPath .githooks` so API lint/type-check failures are caught before commit and before GitHub workflows start.
 
 Ask for implementation of task.  Create for each task separate branch.
 If you start working move task to in progress.

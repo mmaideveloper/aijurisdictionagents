@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+changed_api_files="$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(api/aijuristiction-api/|AGENTS\.md|scripts/validate_api\.ps1|\.githooks/pre-commit)' || true)"
+
+if [ -n "$changed_api_files" ]; then
+  if command -v pwsh >/dev/null 2>&1; then
+    pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/validate_api.ps1
+  else
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/validate_api.ps1
+  fi
+fi

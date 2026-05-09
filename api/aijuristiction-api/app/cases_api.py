@@ -12,7 +12,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from app.chat.api import _build_simple_pdf, _load_case_documents_for_llm, _user_visible_text
+from app.chat.api import (
+    _build_professional_document_qr_payload,
+    _build_simple_pdf,
+    _load_case_documents_for_llm,
+    _user_visible_text,
+)
 from app.security import require_api_key
 
 from aijurisdictionagents.api_db import (
@@ -423,7 +428,12 @@ def download_generated_case_document_pdf(
         country="SK",
         language="SK",
         footer_line="AIJ generated case document",
-        include_title_block=True,
+        footer_qr_payload=_build_professional_document_qr_payload(
+            generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            case_id=case_id,
+        ),
+        draw_logo_mark=True,
+        include_title_block=False,
     )
     return Response(
         content=pdf_content,
