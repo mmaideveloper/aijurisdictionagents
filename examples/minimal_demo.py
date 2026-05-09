@@ -71,8 +71,10 @@ if __name__ == "__main__":
     print("=== PDF export UX note ===")
     print(
         "For Slovakia-focused document exports, the API PDF builder now uses "
-        "a JurisDicta professional document template (empty header, formal body, "
-        "footer logo, and QR traceability metadata) for court/client/third-party documents, "
+        "a JurisDicta professional document template (branded header/contact layout, "
+        "formal body, score-aware disclaimer handling for low or unknown scores, footer logo, and QR traceability metadata "
+        "including the document score) "
+        "for court/client/third-party documents, "
         "a Slovak legal header profile where needed, and Central-European font preferences. "
         "Rental packages with visible sections such as Nájomná zmluva, Inventárny zoznam, "
         "and Protokol o odovzdaní a prevzatí bytu export as a ZIP package. "

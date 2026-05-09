@@ -13,8 +13,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.chat.api import (
-    _build_professional_document_qr_payload,
-    _build_simple_pdf,
+    _build_professional_document_pdf,
     _load_case_documents_for_llm,
     _user_visible_text,
 )
@@ -422,18 +421,15 @@ def download_generated_case_document_pdf(
         )
     title = _generated_case_document_title(visible_content)
     filename = f"{Path(document.original_filename).stem or 'case-document'}.pdf"
-    pdf_content = _build_simple_pdf(
+    pdf_content = _build_professional_document_pdf(
         title=title,
         lines=visible_content.splitlines(),
         country="SK",
         language="SK",
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        case_id=case_id,
         footer_line="AIJ generated case document",
-        footer_qr_payload=_build_professional_document_qr_payload(
-            generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-            case_id=case_id,
-        ),
-        draw_logo_mark=True,
-        include_title_block=False,
+        verification_score=None,
     )
     return Response(
         content=pdf_content,

@@ -90,11 +90,14 @@ If a chat run only asks for a single rental contract, the endpoint still returns
 For generated court-facing or client/third-party output documents, including requests such as
 `potvrdenie o zaplateni`, the API applies the JurisDicta professional PDF document template:
 
-- empty header area for now
+- branded JurisDicta header/contact/sidebar layout
 - formal centered document title and body typography
-- footer with a small JurisDicta logo
+- long document titles are wrapped instead of overflowing the page
+- article headings such as `Čl. I` / `Článok 1` are rendered larger and bold
+- footer with a small JurisDicta logo and the document verification score when a session validation score is available
+- legal-draft disclaimer page when the document verification score is unknown or lower than `DOCUMENT_SHOW_DISCLAIMER` (default `50`)
 - footer QR code containing minimized traceability metadata only: generation date, API version, core
-  system version, and case ID
+  system version, case ID, and document verification score
 
 Internal workflow-style outputs (for example legal summary / next-step memorandum style drafts) and
 discussion summaries intentionally keep the plain PDF style without the corporate template.

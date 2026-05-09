@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from io import BytesIO
 import time
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from pypdf import PdfReader
 
 from app.main import app
 from aijurisdictionagents.api_db import ApiDatabaseStore
@@ -161,6 +163,13 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert generated_pdf.headers["content-disposition"].endswith(
         'filename="assistant-technical.pdf"'
     )
+    generated_pdf_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
+    )
+    assert "JurisDicta" in generated_pdf_text
+    assert "Skore overenia dokumentu: -" in generated_pdf_text
+    assert "právny návrh" in generated_pdf_text
+    assert "Poprad, Slovakia, 05801" in generated_pdf_text
 
 
 def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:

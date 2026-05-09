@@ -77,6 +77,7 @@ _LINUX_LIBERATION_FONT_DIRS = (
     Path("/usr/share/fonts/truetype/liberation2"),
 )
 _REGISTERED_PDF_FONT_FAMILIES: set[str] = set()
+DOCUMENT_SHOW_DISCLAIMER = 50.0
 
 
 @dataclass(frozen=True)
@@ -1488,12 +1489,12 @@ def _default_document_titles_for_kind(
         return [
             "Zmluva o prevode obchodneho podielu",
             "Rozhodnutie jedineho spolocnika / zapisnica",
-            "Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny",
+            "Spolocenska zmluva",
         ]
     return [
         "Share transfer agreement",
         "Sole shareholder decision / meeting minutes",
-        "Updated articles / founding deed",
+        "Articles of association",
     ]
 
 
@@ -2327,7 +2328,7 @@ def list_session_document_exports(session_id: UUID) -> DocumentExportOptionsResp
 
 @router.get("/sessions/{session_id}/export/documents/{document_index}")
 def export_session_document_pdf(session_id: UUID, document_index: int) -> Response:
-    session, _result, _messages, assets = _session_document_export_context(session_id)
+    session, result, _messages, assets = _session_document_export_context(session_id)
     if document_index < 0 or document_index >= len(assets):
         raise HTTPException(
             status_code=404,
@@ -2340,6 +2341,7 @@ def export_session_document_pdf(session_id: UUID, document_index: int) -> Respon
         session=session,
         generated_at=generated_at,
         footer_line=footer_line,
+        verification_score=_document_verification_score(result),
     )
 
 
@@ -2385,6 +2387,7 @@ def export_session_result(
                 generated_at=generated_at,
                 footer_line=footer_line,
                 case_id=session.case_id or str(session.id),
+                verification_score=_document_verification_score(result),
             )
             return Response(
                 content=archive_content,
@@ -2396,6 +2399,7 @@ def export_session_result(
             session=session,
             generated_at=generated_at,
             footer_line=footer_line,
+            verification_score=_document_verification_score(result),
         )
     else:
         title, lines = _build_summary_export_content(
@@ -2477,30 +2481,53 @@ def _document_export_asset_response(
     session: Session,
     generated_at: str,
     footer_line: str,
+    verification_score: str | None,
 ) -> Response:
-    pdf_content = _build_simple_pdf(
+    pdf_content = _build_professional_document_pdf(
         title=asset.title,
         lines=asset.lines,
         country=session.country,
         language=session.language,
-        header_line=(
-            f"AI Jurisdicta Solution | Generated: {generated_at}"
-            if asset.use_corporate_template
-            else None
-        ),
+        generated_at=generated_at,
+        case_id=session.case_id or str(session.id),
         footer_line=footer_line,
-        footer_qr_payload=_build_professional_document_qr_payload(
-            generated_at=generated_at,
-            case_id=session.case_id or str(session.id),
-        ),
+        verification_score=verification_score,
         disclaimer=asset.disclaimer,
-        draw_logo_mark=asset.use_corporate_template,
-        include_title_block=False,
     )
     return Response(
         content=pdf_content,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{asset.filename}"'},
+    )
+
+
+def _build_professional_document_pdf(
+    *,
+    title: str,
+    lines: List[str],
+    country: str,
+    language: str | None,
+    generated_at: str,
+    case_id: str,
+    footer_line: str,
+    verification_score: str | None = None,
+    disclaimer: tuple[str, str, str] | None = None,
+) -> bytes:
+    return _build_simple_pdf(
+        title=title,
+        lines=lines,
+        country=country,
+        language=language,
+        footer_line=footer_line,
+        footer_qr_payload=_build_professional_document_qr_payload(
+            generated_at=generated_at,
+            case_id=case_id,
+            document_score=verification_score,
+        ),
+        document_verification_score=verification_score,
+        disclaimer=disclaimer,
+        draw_logo_mark=True,
+        include_title_block=False,
     )
 
 
@@ -2513,6 +2540,7 @@ def _build_simple_pdf(
     header_line: str | None = None,
     footer_line: str | None = None,
     footer_qr_payload: dict[str, str] | None = None,
+    document_verification_score: str | None = None,
     disclaimer: tuple[str, str, str] | None = None,
     draw_logo_mark: bool = False,
     include_title_block: bool = True,
@@ -2530,12 +2558,17 @@ def _build_simple_pdf(
 
     if use_corporate_template:
         margin_left = 64.0
-        margin_top = 92.0
+        margin_top = 214.0
         margin_bottom = 84.0
         title_font_size = 20.0
         body_font_size = 11.0
-        body_line_height = 18.0
+        body_line_height = 24.0
 
+    show_disclaimer = _should_show_document_disclaimer(document_verification_score)
+    effective_footer_qr_payload = _with_document_score_qr_payload(
+        payload=footer_qr_payload,
+        document_score=document_verification_score,
+    )
     prefers_slovak_profile = _prefers_slovak_legal_pdf_profile(country=country, language=language)
     header_lines: list[str] = []
     if header_line and not use_corporate_template:
@@ -2550,7 +2583,7 @@ def _build_simple_pdf(
             ]
         )
 
-    if disclaimer is not None:
+    if disclaimer is not None and not use_corporate_template:
         disclaimer_title, disclaimer_text, _disclaimer_footer = disclaimer
         if disclaimer_title.strip():
             header_lines.append(disclaimer_title.strip())
@@ -2565,15 +2598,10 @@ def _build_simple_pdf(
 
     title_block: list[str] = [title, "----------------"] if include_title_block else []
     prepared_lines = header_lines + title_block + _wrap_pdf_lines(lines)
+    corporate_title_lines: list[str] = []
     if use_corporate_template:
-        prepared_lines = [title, ""]
-        if disclaimer is not None:
-            disclaimer_title, disclaimer_text, _disclaimer_footer = disclaimer
-            if disclaimer_title.strip():
-                prepared_lines.append(disclaimer_title.strip())
-            if disclaimer_text.strip():
-                prepared_lines.extend(_wrap_pdf_lines([disclaimer_text.strip()], width=54))
-            prepared_lines.append("")
+        corporate_title_lines = _wrap_pdf_lines([title], width=42)
+        prepared_lines = [*corporate_title_lines, ""]
         prepared_lines.extend(_wrap_pdf_lines(lines, width=54))
     if not prepared_lines:
         prepared_lines = [title]
@@ -2582,7 +2610,16 @@ def _build_simple_pdf(
     pdf = canvas.Canvas(buffer, pagesize=(page_width, page_height), pageCompression=0)
 
     def start_page() -> float:
-        if draw_logo_mark and not use_corporate_template:
+        if use_corporate_template:
+            _draw_jurisdicta_corporate_header(
+                pdf=pdf,
+                page_width=page_width,
+                page_height=page_height,
+                margin_left=margin_left,
+                regular_font=regular_font,
+                bold_font=bold_font,
+            )
+        elif draw_logo_mark:
             pdf.setFont(bold_font, 10)
             pdf.drawRightString(page_width - margin_left, page_height - 28, "AI Jurisdicta")
         return page_height - margin_top
@@ -2606,17 +2643,19 @@ def _build_simple_pdf(
                     regular_font=regular_font,
                     bold_font=bold_font,
                     footer_line=effective_footer,
-                    qr_payload=footer_qr_payload,
+                    qr_payload=effective_footer_qr_payload,
+                    verification_score=document_verification_score,
+                    show_disclaimer=show_disclaimer,
                 )
             else:
                 pdf.drawString(margin_left, margin_bottom - 8, effective_footer)
 
     y = start_page()
     for index, line in enumerate(prepared_lines):
-        if index == 0 and use_corporate_template:
+        if use_corporate_template and index < len(corporate_title_lines):
             pdf.setFont(bold_font, title_font_size)
             pdf.drawCentredString(page_width / 2.0, y, line)
-            y -= body_line_height * 1.6
+            y -= body_line_height * (1.35 if index < len(corporate_title_lines) - 1 else 1.6)
             continue
         if index == 0 and include_title_block:
             pdf.setFont(bold_font, title_font_size)
@@ -2632,6 +2671,11 @@ def _build_simple_pdf(
             draw_footer()
             pdf.showPage()
             y = start_page()
+        if _is_pdf_article_heading(line):
+            pdf.setFont(bold_font, body_font_size + 2.0)
+            pdf.drawString(margin_left, y, line)
+            y -= body_line_height * 1.15
+            continue
         _draw_pdf_body_line(
             pdf=pdf,
             line=line,
@@ -2644,6 +2688,20 @@ def _build_simple_pdf(
         y -= body_line_height
 
     draw_footer()
+    if show_disclaimer and disclaimer is not None:
+        pdf.showPage()
+        _draw_document_disclaimer_page(
+            pdf=pdf,
+            title=disclaimer[0] or "Dôležité upozornenie",
+            text=disclaimer[1],
+            page_width=page_width,
+            page_height=page_height,
+            margin_left=margin_left,
+            regular_font=regular_font,
+            bold_font=bold_font,
+            draw_header=use_corporate_template,
+        )
+        draw_footer()
     pdf.save()
     return buffer.getvalue()
 
@@ -2736,7 +2794,7 @@ def _draw_jurisdicta_corporate_header(
     _draw_jurisdicta_version_block(
         pdf=pdf,
         page_width=page_width,
-        margin_bottom=40.0,
+        margin_bottom=52.0,
         regular_font=regular_font,
         bold_font=bold_font,
     )
@@ -2758,7 +2816,7 @@ def _draw_jurisdicta_version_block(
     y = margin_bottom + 12.0
     version_lines = (
         ("API version:", _API_VERSION),
-        ("System core version:", _CORE_VERSION),
+        ("Core Version:", _CORE_VERSION),
     )
     for label, value in version_lines:
         pdf.setFont(regular_font, 8.2)
@@ -2773,13 +2831,49 @@ def _draw_jurisdicta_version_block(
         y -= 12.0
 
 
-def _build_professional_document_qr_payload(*, generated_at: str, case_id: str) -> dict[str, str]:
+def _build_professional_document_qr_payload(
+    *, generated_at: str, case_id: str, document_score: str | None
+) -> dict[str, str]:
     return {
         "generated_at": generated_at,
         "api_version": _API_VERSION,
         "core_system_version": _CORE_VERSION,
         "case_id": case_id,
+        "document_score": document_score or "-",
     }
+
+
+def _with_document_score_qr_payload(
+    *, payload: dict[str, str] | None, document_score: str | None
+) -> dict[str, str] | None:
+    if payload is None:
+        return None
+    return {**payload, "document_score": document_score or payload.get("document_score") or "-"}
+
+
+def _document_verification_score(result: SessionResult | None) -> str | None:
+    if result is None:
+        return None
+    return _format_validation_accuracy((result.metadata or {}).get("validation_accuracy"))
+
+
+def _document_verification_score_value(score: str | None) -> float | None:
+    if score is None:
+        return None
+    cleaned = score.strip().replace("%", "").replace(",", ".")
+    if not cleaned or cleaned == "-":
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _should_show_document_disclaimer(score: str | None) -> bool:
+    value = _document_verification_score_value(score)
+    if value is None:
+        return True
+    return value < DOCUMENT_SHOW_DISCLAIMER
 
 
 def _draw_jurisdicta_professional_footer(
@@ -2792,9 +2886,11 @@ def _draw_jurisdicta_professional_footer(
     bold_font: str,
     footer_line: str,
     qr_payload: dict[str, str] | None,
+    verification_score: str | None,
+    show_disclaimer: bool,
 ) -> None:
     footer_top = margin_bottom - 6.0
-    qr_size = 42.0
+    qr_size = 38.0
     logo_size = 20.0
     brand_color = colors.HexColor("#174A8B")
     muted_color = colors.HexColor("#55616F")
@@ -2818,11 +2914,21 @@ def _draw_jurisdicta_professional_footer(
     pdf.drawString(logo_x + logo_size + 7.0, footer_top - 2.0, "JurisDicta")
     pdf.setFillColor(muted_color)
     pdf.setFont(regular_font, 7.0)
-    pdf.drawString(logo_x + logo_size + 7.0, footer_top - 12.0, footer_line)
+    pdf.drawString(
+        logo_x + logo_size + 7.0,
+        footer_top - 12.0,
+        f"Skore overenia dokumentu: {verification_score or '-'}",
+    )
+    if show_disclaimer:
+        pdf.drawString(
+            logo_x + logo_size + 7.0,
+            footer_top - 22.0,
+            "Dokument je právny návrh; odporúčam kontrolu právnickej entity.",
+        )
 
     if qr_payload:
-        qr_x = logo_x + 182.0
-        qr_y = footer_top - qr_size + 8.0
+        qr_x = page_width - margin_left - qr_size
+        qr_y = 6.0
         _draw_footer_qr_code(
             pdf=pdf,
             payload=qr_payload,
@@ -2830,9 +2936,6 @@ def _draw_jurisdicta_professional_footer(
             y=qr_y,
             size=qr_size,
         )
-        pdf.setFillColor(muted_color)
-        pdf.setFont(regular_font, 6.5)
-        pdf.drawString(qr_x + qr_size + 7.0, footer_top - 8.0, "Verification metadata")
 
 
 def _draw_jurisdicta_footer_logo(
@@ -2871,6 +2974,62 @@ def _draw_footer_qr_code(
     drawing = Drawing(size, size, transform=[size / width, 0, 0, size / height, 0, 0])
     drawing.add(widget)
     renderPDF.draw(drawing, pdf, x, y)
+
+
+def _draw_document_disclaimer_page(
+    *,
+    pdf: canvas.Canvas,
+    title: str,
+    text: str,
+    page_width: float,
+    page_height: float,
+    margin_left: float,
+    regular_font: str,
+    bold_font: str,
+    draw_header: bool,
+) -> None:
+    if draw_header:
+        _draw_jurisdicta_corporate_header(
+            pdf=pdf,
+            page_width=page_width,
+            page_height=page_height,
+            margin_left=margin_left,
+            regular_font=regular_font,
+            bold_font=bold_font,
+        )
+        y = page_height - 214.0
+        wrap_width = 54
+    else:
+        y = page_height - 72.0
+        wrap_width = 82
+    pdf.setFont(bold_font, 18.0)
+    pdf.drawCentredString(page_width / 2.0, y, title.strip() or "Dôležité upozornenie")
+    y -= 34.0
+    pdf.setFont(regular_font, 11.0)
+    for line in _wrap_pdf_lines([text.strip()], width=wrap_width):
+        if y <= 96.0:
+            break
+        _draw_pdf_body_line(
+            pdf=pdf,
+            line=line,
+            x=margin_left,
+            y=y,
+            regular_font=regular_font,
+            bold_font=bold_font,
+            font_size=11.0,
+        )
+        y -= 18.0
+
+
+def _is_pdf_article_heading(line: str) -> bool:
+    text = line.strip()
+    return bool(
+        re.match(
+            r"^(Čl\.|Cl\.|Článok|Clanok|Article)\s+([IVXLCDM]+|\d+)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _draw_pdf_body_line(
@@ -2943,28 +3102,21 @@ def _build_document_export_archive(
     generated_at: str,
     footer_line: str,
     case_id: str,
+    verification_score: str | None,
 ) -> bytes:
     archive_buffer = BytesIO()
     with ZipFile(archive_buffer, mode="w", compression=ZIP_DEFLATED) as archive:
         for asset in assets:
-            pdf_content = _build_simple_pdf(
+            pdf_content = _build_professional_document_pdf(
                 title=asset.title,
                 lines=asset.lines,
                 country=country,
                 language=language,
-                header_line=(
-                    f"AI Jurisdicta Solution | Generated: {generated_at}"
-                    if asset.use_corporate_template
-                    else None
-                ),
+                generated_at=generated_at,
+                case_id=case_id,
                 footer_line=footer_line,
-                footer_qr_payload=_build_professional_document_qr_payload(
-                    generated_at=generated_at,
-                    case_id=case_id,
-                ),
+                verification_score=verification_score,
                 disclaimer=asset.disclaimer,
-                draw_logo_mark=asset.use_corporate_template,
-                include_title_block=not asset.use_corporate_template,
             )
             archive.writestr(asset.filename, pdf_content)
     return archive_buffer.getvalue()
@@ -3419,7 +3571,7 @@ def _fallback_document_entry_filename(title: str, *, document_kind: str, entry_t
         known_filenames = {
             "contract": "Zmluva_o_prevode_podielu.pdf",
             "minutes": "Zapisnica_z_rozhodnutia_spolocnikov.pdf",
-            "articles": "Aktualizovana_spolocenska_zmluva.pdf",
+            "articles": "Spolocenska_zmluva.pdf",
             "registry_filing": "Podanie_na_ORSR.pdf",
         }
         known_filename = known_filenames.get(entry_type)
@@ -3820,7 +3972,7 @@ def _build_share_transfer_document_asset_content(
             title = "Rozhodnutie jedineho spolocnika / zapisnica"
             lines = _build_slovak_share_transfer_minutes_lines(facts)
         elif asset_kind == "articles":
-            title = "Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny"
+            title = _share_transfer_articles_document_title(facts)
             lines = _build_slovak_share_transfer_articles_lines(facts)
         elif asset_kind == "registry_filing":
             title = "Podanie na ORSR"
@@ -3833,7 +3985,7 @@ def _build_share_transfer_document_asset_content(
             title = "Sole shareholder decision / meeting minutes"
             lines = _build_english_share_transfer_minutes_lines(facts)
         elif asset_kind == "articles":
-            title = "Updated articles / founding deed"
+            title = _share_transfer_articles_document_title(facts)
             lines = _build_english_share_transfer_articles_lines(facts)
         elif asset_kind == "registry_filing":
             title = "Registry filing package"
@@ -3842,6 +3994,13 @@ def _build_share_transfer_document_asset_content(
             title = "Share transfer agreement"
             lines = _build_english_share_transfer_agreement_lines(facts)
     return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+
+
+def _share_transfer_articles_document_title(facts: dict[str, str]) -> str:
+    haystack = _canonicalize_document_text(" ".join(str(value) for value in facts.values()))
+    if any(token in haystack for token in ("jediny spolocnik", "jedineho spolocnika", "sole shareholder")):
+        return "Zakladatelska listina"
+    return "Spolocenska zmluva"
 
 
 def _classify_share_transfer_document_asset(
@@ -4378,7 +4537,7 @@ def _build_slovak_share_transfer_registry_filing_lines(facts: dict[str, str]) ->
         "Priloha k podaniu",
         "1. Zmluva o prevode obchodneho podielu s overenymi podpismi, ak to vyzaduje zakon alebo interny rezim spolocnosti.",
         "2. Rozhodnutie jedineho spolocnika / zapisnica valneho zhromazdenia, ak je potrebna.",
-        "3. Aktualizovane uplne znenie spolocenskej zmluvy alebo zakladatelskej listiny.",
+        "3. Spolocenska zmluva alebo zakladatelska listina podla struktury spolocnosti.",
         "4. Dalsie listiny pozadovane registrovym sudom alebo formularom ORSR.",
         "",
         "Poznamka k podaniu",
@@ -4411,7 +4570,7 @@ def _build_english_share_transfer_lines(facts: dict[str, str]) -> List[str]:
         "2. Supporting filings and resolutions",
         "1. Signed share transfer agreement with completed identification details.",
         "2. Sole shareholder decision or shareholders' meeting minutes if required by the constitutional documents or if management details also change.",
-        "3. Updated articles / founding deed reflecting the new ownership structure.",
+        "3. Articles of association or founding deed reflecting the new ownership structure.",
         "4. Registry filing package with all required annexes.",
         "",
         "3. Filing steps",
@@ -4512,7 +4671,7 @@ def _build_english_share_transfer_registry_filing_lines(facts: dict[str, str]) -
         "Annex package",
         "1. Signed share transfer agreement.",
         "2. Sole shareholder decision / meeting minutes if required.",
-        "3. Updated articles or founding deed.",
+        "3. Articles of association or founding deed.",
         "4. Any additional forms or annexes required by the registry court.",
         "",
         "Filing note",

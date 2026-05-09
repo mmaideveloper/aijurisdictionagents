@@ -187,6 +187,7 @@ def test_pdf_builder_renders_professional_footer_only_when_template_enabled() ->
             "core_system_version": "1.0",
             "case_id": "case-123",
         },
+        document_verification_score="88.4%",
         disclaimer=("Important notice", "Draft only. Lawyer review required.", "Draft only"),
         draw_logo_mark=True,
         include_title_block=False,
@@ -205,18 +206,60 @@ def test_pdf_builder_renders_professional_footer_only_when_template_enabled() ->
     plain_text = _pdf_text(plain_pdf).lower()
 
     assert "jurisdicta" in corporate_text
-    assert "verification metadata" in corporate_text
-    assert "poprad, slovakia, 05801" not in corporate_text
-    assert "info@jurisdigta.eu" not in corporate_text
+    assert "skore overenia dokumentu: 88.4%" in corporate_text
+    assert "poprad, slovakia, 05801" in corporate_text
+    assert "info@jurisdigta.eu" in corporate_text
     assert "template.net" not in corporate_text
-    assert "important notice" in corporate_text
-    assert "lawyer review required" in corporate_text
-    assert "draft only" in corporate_text
+    assert "important notice" not in corporate_text
+    assert "lawyer review required" not in corporate_text
+
+    low_score_pdf = chat_api._build_simple_pdf(
+        title="Car Rental Legal Memo",
+        lines=["Subject: Liability review", "To: Example Recipient"],
+        country="US",
+        language="en-US",
+        footer_line="AIJ | API 1.0 | Core 1.0",
+        footer_qr_payload={
+            "generated_at": "2026-04-21 10:00:00 UTC",
+            "api_version": "1.0",
+            "core_system_version": "1.0",
+            "case_id": "case-123",
+        },
+        document_verification_score="49.0%",
+        disclaimer=("Important notice", "Draft only. Lawyer review required.", "Draft only"),
+        draw_logo_mark=True,
+        include_title_block=False,
+    )
+    low_score_text = _pdf_text(low_score_pdf).lower()
+    assert "important notice" in low_score_text
+    assert "lawyer review required" in low_score_text
+
+    unknown_score_pdf = chat_api._build_simple_pdf(
+        title="Car Rental Legal Memo",
+        lines=["Subject: Liability review", "To: Example Recipient"],
+        country="US",
+        language="en-US",
+        footer_line="AIJ | API 1.0 | Core 1.0",
+        document_verification_score=None,
+        disclaimer=("Important notice", "Draft only. Lawyer review required.", "Draft only"),
+        draw_logo_mark=True,
+        include_title_block=False,
+    )
+    unknown_score_text = _pdf_text(unknown_score_pdf).lower()
+    assert "skore overenia dokumentu: -" in unknown_score_text
+    assert "important notice" in unknown_score_text
+    assert "lawyer review required" in unknown_score_text
     assert "poprad, slovakia, 05801" not in plain_text
 
     reader = PdfReader(BytesIO(corporate_pdf))
     page = reader.pages[0]
     assert float(page.mediabox.width) < float(page.mediabox.height)
+    qr_payload = chat_api._build_professional_document_qr_payload(
+        generated_at="2026-04-21 10:00:00 UTC",
+        case_id="case-123",
+        document_score="88.4%",
+    )
+    assert qr_payload["document_score"] == "88.4%"
 
 
 def test_stream_core_orchestration_and_export_json_pdf() -> None:
@@ -362,13 +405,12 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     document_text = _pdf_text(document_pdf.content).lower()
     assert "ai jurisdiction" in summary_text
     assert "jurisdicta" in document_text
-    assert "verification metadata" in document_text
-    assert "poprad, slovakia, 05801" not in document_text
-    assert "api version" not in document_text
-    assert "system core version" not in document_text
-    assert "aij | api " in document_text
-    assert "api " in document_text
-    assert "core " in document_text
+    assert "skore overenia dokumentu:" in document_text
+    assert "%" in document_text
+    assert "poprad, slovakia, 05801" in document_text
+    assert "api version" in document_text
+    assert "core version" in document_text
+    assert "aij | api " not in document_text
     assert "generovany dokument podla diskusie" not in document_text
     assert "session id:" not in document_text
     assert "krajina:" not in document_text
@@ -382,8 +424,6 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     assert "podpis prenaj" in document_text
     assert "vypovedna lehota" in document_text or "lehota" in document_text
     assert "platba vopred" in document_text
-    assert "dolezite upozornenie" in _canonical_text(document_text)
-    assert "vyzaduje pravnu kontrolu" in _canonical_text(document_text)
 
 def test_document_export_returns_zip_from_visible_multi_document_sections_without_case_update_documents(
     monkeypatch,
@@ -2276,7 +2316,7 @@ def test_stream_read_user_emits_document_name_progress_before_final_message(monk
             "Pripravil som balik dokumentov.\n"
             "1. **Zmluva o prevode obchodneho podielu**: hotove.\n"
             "2. **Rozhodnutie jedineho spolocnika / zapisnica**: hotove.\n"
-            "3. **Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny**: hotove."
+            "3. **Spolocenska zmluva**: hotove."
         ),
         agent_name="LawyerSlovakia",
     )
@@ -2314,7 +2354,7 @@ def test_stream_read_user_emits_document_name_progress_before_final_message(monk
 
     first_doc = "Zmluva o prevode obchodneho podielu"
     second_doc = "Rozhodnutie jedineho spolocnika / zapisnica"
-    third_doc = "Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny"
+    third_doc = "Spolocenska zmluva"
     assert first_doc in events
     assert second_doc in events
     assert third_doc in events
@@ -2833,7 +2873,7 @@ def test_processing_placeholder_reply_is_replaced_with_document_ready_message() 
             "Pripravim nasledujuce dokumenty:\n"
             "1. Zmluva o prevode obchodneho podielu.\n"
             "2. Zapisnica z rozhodnutia spolocnika.\n"
-            "3. Aktualizovane uplne znenie spolocenskej zmluvy.\n\n"
+            "3. Spolocenska zmluva.\n\n"
             "Prosim, dajte mi chvilu."
         ),
     )

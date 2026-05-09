@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from functools import lru_cache
 import re
 
@@ -100,19 +101,20 @@ def preview_document_template_pdf(
         )
 
     # Import lazily so the template API can be tested standalone while still using
-    # the production chat PDF renderer for visual quality checks.
-    from app.chat.api import _build_simple_pdf
+    # the production document PDF renderer for visual quality checks.
+    from app.chat.api import _build_professional_document_pdf
 
     disclaimer = resolve_template_disclaimer(template)
-    pdf_content = _build_simple_pdf(
+    pdf_content = _build_professional_document_pdf(
         title=rendered.title or template.title,
         lines=lines,
         country=template.jurisdiction,
         language=template.language,
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        case_id=f"template-preview:{template.template_key}",
         footer_line=f"AIJ | Template preview | {template.template_key}",
+        verification_score=None,
         disclaimer=disclaimer,
-        draw_logo_mark=True,
-        include_title_block=False,
     )
     filename = _template_preview_filename(template)
     return Response(
