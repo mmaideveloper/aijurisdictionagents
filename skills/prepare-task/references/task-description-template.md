@@ -42,6 +42,15 @@ Use this template when preparing an existing GitHub issue/project task or creati
 - Migrations/seeds:
 - External services:
 
+### Channel Parity Matrix
+
+| Channel | In Scope | Expected Behavior | Contract/Endpoint | Auth | Error/Offline UX |
+|---|---|---|---|---|---|
+| Chat simulator |  |  |  |  |  |
+| API direct |  |  |  |  |  |
+| Mobile app |  |  |  |  |  |
+| Web frontend |  |  |  |  |  |
+
 ### Acceptance Criteria
 
 - [ ] 
