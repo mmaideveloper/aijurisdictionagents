@@ -9,6 +9,28 @@ description: Prepare an idea or GitHub Project task for implementation in this r
 
 Turn a loose idea or existing GitHub Project task into an implementation-ready task description. In chat, run an interview flow: collect the idea, review repository context, ask only necessary questions, draft the task, and ask for explicit confirmation before creating or updating a GitHub issue/project item.
 
+
+## How to Execute This Skill (VS Code, Codex Web, Codex Desktop)
+
+Use any of these invocation styles in chat:
+
+- Direct skill call: `$prepare-task`
+- Natural language trigger examples:
+  - `Here is my idea for a feature. Prepare the task.`
+  - `Turn this into a GitHub task and ask me the missing questions first.`
+  - `Read this task description and make it implementation-ready.`
+
+Platform notes:
+
+- **VS Code (Codex extension):** open repository chat and start with `$prepare-task` or a trigger phrase. Keep answering follow-up questions until readiness is reached.
+- **Codex Web:** open the repository workspace chat and start with `$prepare-task` or a trigger phrase; confirm before issue/project updates.
+- **Codex Desktop:** in the project chat, use `$prepare-task` or the same trigger phrases; workflow and output format should match web/VS Code.
+
+Execution rule:
+
+- Run this skill first for idea intake.
+- Start implementation only after the task output says it is ready and blocking questions are resolved.
+
 ## Chat Intake
 
 When the user gives a feature idea directly in chat:
@@ -61,6 +83,22 @@ Review only the areas relevant to the idea, then summarize what was learned:
 - `.github/workflows/`, `infra/`, and `docs/GITHUB_ENVIRONMENTS.md` for deployment/input changes.
 - `databases/<projectname>/` and `runs/storage/<projectname>/` rules for database-related work.
 
+
+## Cross-Channel Parity Gate (Chat Simulator / API / Mobile / Frontend)
+
+For any feature that presents or renders user-visible outputs (especially document templates, previews, and PDFs), explicitly verify expected behavior per channel before marking readiness.
+
+Required parity questions (ask when not already answered):
+
+- Which channels are in scope: chat simulator, API direct, mobile app, web frontend, or all?
+- Must behavior be identical across channels, or are differences intentional?
+- For document/PDF flows, where is rendering performed (server/client/hybrid) and which endpoint/contract is authoritative?
+- What authentication/authorization is required per channel for fetching generated outputs?
+- What is the expected UX per channel for loading/error/empty/offline states?
+- Are share/download/open-in-external-app flows required on mobile/web?
+
+If any in-scope channel behavior remains unspecified, keep the task as **Not Ready Yet** and list blockers under Open Questions.
+
 ## Question Areas
 
 Ask questions only where the answer is missing or ambiguous:
@@ -70,7 +108,7 @@ Ask questions only where the answer is missing or ambiguous:
 - Data: personal data categories, input/output records, retention, deletion, consent, and audit needs.
 - Legal-risk output: whether the feature advises, drafts, judges, scores, classifies, or automates legal decisions.
 - Architecture: components, orchestration, agents/tools, persistence, external services, and failure modes.
-- UX/API contract: screens, endpoints, request/response shape, permissions, errors, and localization.
+- UX/API contract: screens, endpoints, request/response shape, permissions, errors, localization, and channel parity expectations.
 - Testing: unit, integration, e2e, visual, migration, privacy/compliance, and deterministic mock coverage.
 - Operations: logging, telemetry, secrets, environment variables, GitHub Environment setup, and deployment.
 - Documentation: docs to update and minimal runnable example expectations.
@@ -113,6 +151,7 @@ A task is ready for implementation only when:
 - Test and documentation requirements are specific.
 - The minimal runnable example requirement is named, defaulting to `python examples/minimal_demo.py`.
 - No blocking questions remain.
+- Cross-channel parity (chat simulator/API/mobile/frontend) is explicit for all in-scope channels.
 
 ## Minimal Example
 
