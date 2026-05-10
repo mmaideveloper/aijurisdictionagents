@@ -25,7 +25,7 @@ SIMULATOR_PACKAGE = "chat-simulator-app"
 
 app = FastAPI(
     title="AI Juristiction Chat Simulator App",
-    version="0.1.24",
+    version="0.1.25",
     description="Standalone chat simulator application for validating core chat APIs.",
 )
 
@@ -44,6 +44,9 @@ class DeleteUserCasesRequest(BaseModel):
     phone_number: str | None = None
     email: str | None = None
     password: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    address: str | None = None
 
 
 class EmailTestSendRequest(BaseModel):
@@ -596,6 +599,9 @@ def _resolve_remote_user_id(payload: DeleteUserCasesRequest, *, base_url: str) -
                 "phone_number": phone_number,
                 "email": email,
                 "password": password,
+                "first_name": (payload.first_name or "").strip() or None,
+                "last_name": (payload.last_name or "").strip() or None,
+                "address": (payload.address or "").strip() or None,
             },
             allow_statuses={409},
         )

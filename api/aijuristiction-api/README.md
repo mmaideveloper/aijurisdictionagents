@@ -395,6 +395,11 @@ same `x-api-key` guard as the chat endpoints.
   - monthly plans start a 30-day window when status changes to `paid`
   - queues an email for every subscription status change (including payment failure)
 
+Generated chat documents can also be sent by email through
+`POST /v1/chat/sessions/{session_id}/documents/send-email`. Omit `recipient` to use the
+signed-in user's profile email. The first call with `confirmed=false` returns the email address
+for confirmation; call again with `confirmed=true` to queue the generated PDF attachments.
+
 ### Email notification service
 
 ### Email outbox + scheduler

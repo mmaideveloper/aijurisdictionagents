@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from io import BytesIO
 import json
 import logging
+from mimetypes import guess_type
 import os
 import re
 import time
@@ -40,11 +42,13 @@ from app.chat.intent_policy_service import (
     is_document_modernization_request,
 )
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
+from app.chat.output_validation import AILawyerOutputMessageValidationAgent, LawyerOutputUserProfile
 from app.chat.repository import InMemoryChatRepository
 from app.chat.result_metadata import build_session_result_metadata
 from app.document_templates.disclaimers import resolve_disclaimer_from_templates
 from app.document_templates.store import get_document_template_store
 from app.security import require_api_key
+from app.services.email_scheduler import EmailScheduler
 from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument, User
@@ -64,6 +68,7 @@ _FINISH_RESPONSES = {"finish", "no", "nope", "done", "exit", "quit", "stop"}
 _API_VERSION = get_api_version()
 _CORE_VERSION = get_core_version()
 _LOGGER = logging.getLogger(__name__)
+_LAWYER_OUTPUT_VALIDATOR = AILawyerOutputMessageValidationAgent()
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
@@ -105,6 +110,20 @@ class DocumentExportOption(BaseModel):
 
 class DocumentExportOptionsResponse(BaseModel):
     documents: list[DocumentExportOption]
+
+
+class SendSessionDocumentsEmailRequest(BaseModel):
+    user_id: str | None = None
+    recipient: str | None = None
+    confirmed: bool = False
+
+
+class SendSessionDocumentsEmailResponse(BaseModel):
+    needs_confirmation: bool
+    recipient: str
+    message: str
+    email_id: str | None = None
+    attachment_count: int = 0
 
 
 class CreateSessionRequest(BaseModel):
@@ -471,9 +490,10 @@ def _prepend_document_status_note(*, reply: str, processed_names: list[str], unp
         return reply
     lines: list[str] = []
     if processed_names:
-        lines.append('Processed documents available for search: ' + ', '.join(processed_names) + '.')
+        _LOGGER.info("Processed documents available for search: %s", ", ".join(processed_names))
     if unprocessed_names:
-        lines.append('Spracovanie stále prebieha: ' + ', '.join(unprocessed_names) + '.')
+        _LOGGER.info("Document processing still running: %s", ", ".join(unprocessed_names))
+        lines.append("Spracovanie stále prebieha....")
     note = '\n'.join(lines).strip()
     if not note:
         return reply
@@ -515,6 +535,384 @@ def _message_payload(message: Message) -> dict[str, object]:
     }
 
 
+def _build_case_memory_refresh_note(prior_messages: list[Message]) -> str:
+    answered_questions = _case_memory_answered_questions(prior_messages)
+    rental_address = _known_rental_property_address(prior_messages)
+    party_memory = _known_rental_parties(prior_messages)
+    document_ready = _case_memory_has_prepared_document(prior_messages)
+    if not answered_questions and not rental_address and not party_memory and not document_ready:
+        return ""
+    lines = [
+        "CASE MEMORY REFRESH:\n"
+        "- Review the full case conversation above before asking a clarification question."
+    ]
+    if document_ready:
+        lines.append("- A document draft was already prepared earlier in this case; do not restart intake.")
+    if answered_questions:
+        lines.append("- Previously answered case questions:")
+        for question, answer in answered_questions[-8:]:
+            lines.append(f"  - Q: {question} | A: {answer}")
+    if rental_address:
+        lines.append(f"- Known rental property address from prior question/answer: {rental_address}")
+    if party_memory.get("prenajimatel"):
+        lines.append(f"- Known landlord/prenajimatel: {party_memory['prenajimatel']}")
+    if party_memory.get("najomca"):
+        lines.append(f"- Known tenant/najomca: {party_memory['najomca']}")
+    lines.extend(
+        [
+            "- Do not ask again for facts that are already present in the case memory.",
+            "- If a remembered fact is ambiguous, ask only about the ambiguity.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _apply_case_memory_to_lawyer_content(*, content: str, prior_messages: list[Message]) -> str:
+    answered_questions = _case_memory_answered_questions(prior_messages)
+    repeated_answers = _matching_answered_questions(
+        content=content,
+        answered_questions=answered_questions,
+    )
+    rental_address = _known_rental_property_address(prior_messages)
+    party_memory = _known_rental_parties(prior_messages)
+    document_ready = _case_memory_has_prepared_document(prior_messages)
+    has_general_repeat = bool(repeated_answers)
+    has_address_repeat = bool(rental_address and _asks_rental_property_address(content))
+    has_party_repeat = bool((party_memory or document_ready) and _asks_rental_parties(content))
+    if not has_general_repeat and not has_address_repeat and not has_party_repeat:
+        return content
+    visible_text = _user_visible_text(content)
+    kept_lines = [
+        line
+        for line in visible_text.splitlines()
+        if not _line_repeats_answered_question(line, answered_questions)
+        and not _asks_rental_property_address(line)
+        and not _asks_rental_parties(line)
+    ]
+    reminders: list[str] = []
+    if has_general_repeat:
+        for _question, answer in repeated_answers[:3]:
+            reminders.append(f"Jednu z opakovanych otazok uz mam zodpovedanu: {answer}.")
+    if has_address_repeat:
+        reminders.append(
+            "Adresu prenajimanej nehnutelnosti mam z predchadzajucej diskusie: "
+            f"{rental_address}."
+        )
+    if has_party_repeat:
+        party_parts = []
+        if party_memory.get("prenajimatel"):
+            party_parts.append(f"prenajimatel: {party_memory['prenajimatel']}")
+        if party_memory.get("najomca"):
+            party_parts.append(f"najomca: {party_memory['najomca']}")
+        party_text = ", ".join(party_parts)
+        if party_text:
+            reminders.append(f"Zmluvne strany mam z predchadzajucej diskusie: {party_text}.")
+        else:
+            reminders.append("Dokument bol v tejto veci uz pripraveny, preto nepokracujem opakovanim intake otazok.")
+    reminder = " ".join([*reminders, "Pokracujem bez opatovneho pytania tej istej otazky."])
+    if any(line.strip() for line in kept_lines):
+        visible = "\n".join([reminder, *kept_lines]).strip()
+    else:
+        visible = reminder
+    case_update = _extract_case_update(content)
+    if case_update is not None:
+        case_update = _remove_known_case_memory_open_questions(
+            case_update,
+            answered_questions=answered_questions,
+            remove_address=has_address_repeat,
+            remove_parties=has_party_repeat,
+        )
+    return _compose_assistant_content(visible_text=visible, case_update=case_update)
+
+
+def _case_memory_answered_questions(messages: list[Message]) -> list[tuple[str, str]]:
+    answered: list[tuple[str, str]] = []
+    pending_question = ""
+    for message in messages:
+        visible_content = _user_visible_text(message.content)
+        if message.role == MessageRole.ASSISTANT:
+            questions = _extract_case_memory_questions(visible_content)
+            pending_question = questions[-1] if questions else ""
+            continue
+        if message.role != MessageRole.USER or not pending_question:
+            continue
+        answer = _clean_case_memory_answer(visible_content)
+        if answer:
+            answered.append((pending_question, answer))
+        pending_question = ""
+    return answered
+
+
+def _extract_case_memory_questions(content: str) -> list[str]:
+    questions: list[str] = []
+    for raw_line in _user_visible_text(content).splitlines():
+        line = _clean_case_memory_question(raw_line)
+        if not line or "?" not in line:
+            continue
+        if _is_technical_or_confirmation_question(line):
+            continue
+        questions.append(line)
+    return questions
+
+
+def _clean_case_memory_question(content: str) -> str:
+    line = re.sub(r"^[\-\*\d\.\)\s]+", "", " ".join(content.split()))
+    line = re.sub(r"\*\*", "", line).strip()
+    if not line:
+        return ""
+    question_index = line.find("?")
+    if question_index >= 0:
+        line = line[: question_index + 1]
+    return line[:240]
+
+
+def _is_technical_or_confirmation_question(question: str) -> bool:
+    normalized = _canonicalize_document_text(question)
+    ignored_markers = (
+        "chcete poslat",
+        "potvrdte odoslanie",
+        "confirm sending",
+        "chcete aby som pripravil",
+        "mam pripravit",
+        "pdf",
+        "download",
+        "stiahnutie",
+    )
+    return any(marker in normalized for marker in ignored_markers)
+
+
+def _matching_answered_questions(
+    *, content: str, answered_questions: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
+    current_questions = _extract_case_memory_questions(content)
+    matches: list[tuple[str, str]] = []
+    for current_question in current_questions:
+        for answered_question, answer in answered_questions:
+            if _questions_match(current_question, answered_question):
+                matches.append((answered_question, answer))
+                break
+    return matches
+
+
+def _line_repeats_answered_question(line: str, answered_questions: list[tuple[str, str]]) -> bool:
+    question = _clean_case_memory_question(line)
+    if not question or "?" not in question:
+        return False
+    return any(_questions_match(question, answered_question) for answered_question, _answer in answered_questions)
+
+
+def _questions_match(left: str, right: str) -> bool:
+    left_normalized = _canonicalize_document_text(left).rstrip("?")
+    right_normalized = _canonicalize_document_text(right).rstrip("?")
+    if not left_normalized or not right_normalized:
+        return False
+    if left_normalized == right_normalized:
+        return True
+    if left_normalized in right_normalized or right_normalized in left_normalized:
+        return True
+    left_tokens = _case_memory_question_tokens(left_normalized)
+    right_tokens = _case_memory_question_tokens(right_normalized)
+    if not left_tokens or not right_tokens:
+        return False
+    intersection = left_tokens & right_tokens
+    overlap = len(intersection) / min(len(left_tokens), len(right_tokens))
+    jaccard = len(intersection) / len(left_tokens | right_tokens)
+    return overlap >= 0.8 or jaccard >= 0.72
+
+
+def _case_memory_question_tokens(normalized_question: str) -> set[str]:
+    stopwords = {
+        "a",
+        "aby",
+        "ake",
+        "aka",
+        "aky",
+        "ale",
+        "bude",
+        "budu",
+        "este",
+        "je",
+        "kto",
+        "mi",
+        "mohol",
+        "mohla",
+        "na",
+        "niekolko",
+        "potrebujem",
+        "pre",
+        "prosim",
+        "spravne",
+        "som",
+        "zmluvu",
+    }
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", normalized_question)
+        if len(token) > 2 and token not in stopwords
+    }
+
+
+def _known_rental_property_address(messages: list[Message]) -> str:
+    known_address = ""
+    awaiting_address_answer = False
+    for message in messages:
+        visible_content = _user_visible_text(message.content)
+        if message.role == MessageRole.ASSISTANT:
+            awaiting_address_answer = _asks_rental_property_address(visible_content)
+            continue
+        if message.role != MessageRole.USER:
+            continue
+        labeled_address = _extract_rental_property_address_from_text(visible_content)
+        if labeled_address:
+            known_address = labeled_address
+            awaiting_address_answer = False
+            continue
+        if awaiting_address_answer:
+            answer = _clean_case_memory_answer(visible_content)
+            if answer:
+                known_address = answer
+            awaiting_address_answer = False
+    return known_address
+
+
+def _known_rental_parties(messages: list[Message]) -> dict[str, str]:
+    known: dict[str, str] = {}
+    awaiting_party_answer = False
+    for message in messages:
+        visible_content = _user_visible_text(message.content)
+        extracted = _extract_rental_parties_from_text(visible_content)
+        if extracted:
+            known.update(extracted)
+        if message.role == MessageRole.ASSISTANT:
+            awaiting_party_answer = _asks_rental_parties(visible_content)
+            continue
+        if message.role != MessageRole.USER:
+            continue
+        if awaiting_party_answer:
+            known.update(extracted)
+            awaiting_party_answer = False
+    return {key: value for key, value in known.items() if value}
+
+
+def _extract_rental_parties_from_text(content: str) -> dict[str, str]:
+    parties: dict[str, str] = {}
+    for line in content.splitlines():
+        cleaned = re.sub(r"^[\-\*\d\.\)\s]+", "", _repair_common_mojibake(line).strip())
+        cleaned = re.sub(r"\*\*", "", cleaned).strip()
+        if not cleaned:
+            continue
+        landlord = re.search(
+            r"\b(?:prenaj[ií]matel|prenaj[ií]mateľ|landlord|lessor)\s*(?:je|:|-)?\s*(.+?)(?=\s*(?:[,;]|\ba\b)\s*(?:n[aá]jomca|podn[aá]jomnik|podn[aá]jomník|tenant|subtenant)\b|$)",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        tenant = re.search(
+            r"\b(?:n[aá]jomca|podn[aá]jomnik|podn[aá]jomník|tenant|subtenant)\s*(?:je|:|-)?\s*(.+)$",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        if landlord is not None:
+            value = _clean_case_memory_answer(landlord.group(1))
+            if value and not _is_missing_document_fact(value):
+                parties["prenajimatel"] = value
+        if tenant is not None:
+            value = _clean_case_memory_answer(tenant.group(1))
+            if value and not _is_missing_document_fact(value):
+                parties["najomca"] = value
+    return parties
+
+
+def _case_memory_has_prepared_document(messages: list[Message]) -> bool:
+    if _document_export_ready(messages):
+        return True
+    ready_markers = (
+        "dokument je pripraveny",
+        "dokument je pripraven",
+        "dokumenty su pripravene",
+        "draft is ready",
+        "ready for download",
+        "navrh zmluvy",
+        "najomna zmluva",
+        "zmluva o najme",
+    )
+    for message in messages:
+        if message.role != MessageRole.ASSISTANT:
+            continue
+        normalized = _canonicalize_document_text(_user_visible_text(message.content))
+        if any(marker in normalized for marker in ready_markers):
+            return True
+    return False
+
+
+def _extract_rental_property_address_from_text(content: str) -> str:
+    for line in content.splitlines():
+        match = re.search(
+            r"\b(?:adresa\s+)?(?:prenajimanej\s+)?(?:nehnutelnosti|bytu|predmetu\s+najmu|predmetu\s+prenajmu)\s*[:\-]\s*(.+)$",
+            _canonicalize_document_text(line),
+        )
+        if match is None:
+            continue
+        value = _clean_case_memory_answer(match.group(1))
+        if value:
+            return value
+    return ""
+
+
+def _clean_case_memory_answer(content: str) -> str:
+    single_line = " ".join(content.split())
+    single_line = re.sub(r"^(?:odpoved|answer)\s*[:\-]\s*", "", single_line, flags=re.IGNORECASE).strip()
+    if not single_line or "?" in single_line:
+        return ""
+    if _canonicalize_document_text(single_line) in {"ano", "nie", "yes", "no", "ok", "okay"}:
+        return ""
+    return single_line[:240]
+
+
+def _asks_rental_property_address(content: str) -> bool:
+    normalized = _canonicalize_document_text(_user_visible_text(content))
+    if "adresa" not in normalized:
+        return False
+    if "prenajimanej nehnutelnosti" in normalized:
+        return True
+    return "nehnutelnosti" in normalized and any(
+        marker in normalized for marker in ("aka je", "presna", "doplnte", "chyba")
+    )
+
+
+def _asks_rental_parties(content: str) -> bool:
+    normalized = _canonicalize_document_text(_user_visible_text(content))
+    has_landlord = "prenajimatel" in normalized or "landlord" in normalized or "lessor" in normalized
+    has_tenant = "najomca" in normalized or "podnajomnik" in normalized or "tenant" in normalized
+    if not has_landlord or not has_tenant:
+        return False
+    return any(marker in normalized for marker in ("kto", "bude", "doplnte", "chyba", "potrebujem"))
+
+
+def _remove_known_case_memory_open_questions(
+    case_update: dict[str, Any],
+    *,
+    answered_questions: list[tuple[str, str]],
+    remove_address: bool,
+    remove_parties: bool,
+) -> dict[str, Any]:
+    case_payload = case_update.get("case")
+    if not isinstance(case_payload, dict):
+        return case_update
+    open_questions = case_payload.get("open_questions")
+    if not isinstance(open_questions, list):
+        return case_update
+    case_payload["open_questions"] = [
+        question
+        for question in open_questions
+        if not (
+            _line_repeats_answered_question(str(question), answered_questions)
+            or (remove_address and _asks_rental_property_address(str(question)))
+            or (remove_parties and _asks_rental_parties(str(question)))
+        )
+    ]
+    return case_update
+
+
 def _assistant_requests_user_reply(content: str) -> bool:
     return "?" in _user_visible_text(content)
 
@@ -526,6 +924,7 @@ def _persist_direct_assistant_message(
     content: str,
     agent_name: str,
 ) -> Message:
+    content = _validate_lawyer_output_message(session=session, content=content)
     content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
     persisted_lawyer = _repository.add_message(
         Message(
@@ -542,6 +941,23 @@ def _persist_direct_assistant_message(
         agent_name=agent_name,
     )
     return persisted_lawyer
+
+
+def _validate_lawyer_output_message(*, session: Session, content: str) -> str:
+    return _LAWYER_OUTPUT_VALIDATOR.validate(
+        content=content,
+        user_profile=_lawyer_output_user_profile_for_session(session),
+    )
+
+
+def _lawyer_output_user_profile_for_session(session: Session) -> LawyerOutputUserProfile | None:
+    user = _document_user_profile_for_session(session)
+    if user is None:
+        return None
+    return LawyerOutputUserProfile(
+        has_full_name=bool(_user_profile_document_display_name(user)),
+        has_address=bool(_user_profile_document_address(user)),
+    )
 
 
 def _run_direct_lawyer_turn(
@@ -598,6 +1014,9 @@ def _run_direct_lawyer_turn(
         "- Do not include summary/risk/next-step sections while waiting for that single answer.\n"
         "- Keep CASE_UPDATE_JSON.case.open_questions at maximum one item when awaiting user input."
     )
+    case_memory_note = _build_case_memory_refresh_note(prior_messages)
+    if case_memory_note:
+        prompt_override = f"{prompt_override}\n\n{case_memory_note}"
     if _user_requested_document_generation(content=content, previous_messages=prior_messages):
         prompt_override = (
             f"{prompt_override}\n\n"
@@ -679,10 +1098,13 @@ def _run_direct_lawyer_turn(
         system_prompt_override=prompt_override,
     )
     normalized_lawyer_content = _enforce_single_question_turn(
-        _prepend_document_status_note(
-            reply=lawyer_message.content,
-            processed_names=processed_names,
-            unprocessed_names=unprocessed_names,
+        _apply_case_memory_to_lawyer_content(
+            content=_prepend_document_status_note(
+                reply=lawyer_message.content,
+                processed_names=processed_names,
+                unprocessed_names=unprocessed_names,
+            ),
+            prior_messages=prior_messages,
         )
     )
     normalized_lawyer_content = _finalize_document_ready_reply_if_needed(
@@ -930,7 +1352,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
             assistant_messages_seen += 1
             content = _attach_technical_payload_to_case_if_needed(
                 session=session,
-                content=core_message.content,
+                content=_validate_lawyer_output_message(session=session, content=core_message.content),
             )
         else:
             content = core_message.content
@@ -1054,6 +1476,42 @@ def _stream_read_user_session(
     def worker() -> None:
         try:
             existing_result = _repository.get_result(session_id)
+            previous_messages = _repository.list_messages(session_id)
+            if _is_document_email_flow_message(
+                content=payload.instruction,
+                previous_messages=previous_messages,
+            ):
+                persisted_user = _repository.add_message(
+                    Message(
+                        session_id=session_id,
+                        role=MessageRole.USER,
+                        content=payload.instruction,
+                        agent_name="User",
+                    )
+                )
+                _persist_case_message_if_needed(
+                    session=session,
+                    role="user",
+                    content=payload.instruction,
+                    agent_name="User",
+                )
+                user_message_callback(persisted_user)
+                email_reply = _handle_document_email_flow(
+                    session_id=session_id,
+                    session=session,
+                    content=payload.instruction,
+                    previous_messages=previous_messages,
+                )
+                persisted_lawyer = _persist_direct_assistant_message(
+                    session_id=session_id,
+                    session=session,
+                    content=email_reply,
+                    agent_name="LawyerEmail",
+                )
+                _persist_session_history_document_if_needed(session=session, session_id=session_id)
+                event_queue.put(("message", _message_payload(persisted_lawyer)))
+                event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
+                return
             if session.state == SessionState.COMPLETED and _is_document_status_request(payload.instruction):
                 persisted_user = _repository.add_message(
                     Message(
@@ -1270,6 +1728,122 @@ def _assistant_requests_document_confirmation(content: str) -> bool:
         any(marker in lowered for marker in document_markers)
         and "?" in content
         and any(marker in lowered for marker in confirmation_markers)
+    )
+
+
+def _is_document_email_flow_message(*, content: str, previous_messages: list[Message]) -> bool:
+    normalized = _canonicalize_document_text(content)
+    if _is_document_email_request(normalized):
+        return True
+    if _last_assistant_requested_document_email_confirmation(previous_messages) and _extract_email_address(content):
+        return True
+    if not _is_affirmative_reply(normalized):
+        return False
+    return _last_assistant_requested_document_email_confirmation(previous_messages)
+
+
+def _is_document_email_request(normalized: str) -> bool:
+    document_hit = any(token in normalized for token in ("dokument", "document", "pdf", "zmluv"))
+    email_hit = any(token in normalized for token in ("email", "e-mail", "mail", "mailom"))
+    send_hit = any(
+        token in normalized
+        for token in ("poslat", "posli", "odoslat", "odosli", "send", "forward", "preposlat")
+    )
+    return document_hit and email_hit and send_hit
+
+
+def _last_assistant_requested_document_email_confirmation(messages: list[Message]) -> bool:
+    for message in reversed(messages):
+        if message.role == MessageRole.USER:
+            continue
+        if message.role != MessageRole.ASSISTANT:
+            continue
+        normalized = _canonicalize_document_text(message.content)
+        return (
+            "potvrdte odoslanie dokumentov" in normalized
+            or "confirm sending all generated documents" in normalized
+        )
+    return False
+
+
+def _last_document_email_confirmation_recipient(messages: list[Message]) -> str:
+    for message in reversed(messages):
+        if message.role == MessageRole.USER:
+            continue
+        if message.role != MessageRole.ASSISTANT:
+            continue
+        normalized = _canonicalize_document_text(message.content)
+        if (
+            "potvrdte odoslanie dokumentov" in normalized
+            or "confirm sending all generated documents" in normalized
+        ):
+            return _extract_email_address(message.content)
+        return ""
+    return ""
+
+
+def _extract_email_address(content: str) -> str:
+    match = re.search(r"[\w.!#$%&'*+/=?^`{|}~-]+@[\w-]+(?:\.[\w-]+)+", content)
+    if match is None:
+        return ""
+    return match.group(0).strip(".,;:()[]{}<>").lower()
+
+
+def _handle_document_email_flow(
+    *,
+    session_id: UUID,
+    session: Session,
+    content: str,
+    previous_messages: list[Message],
+) -> str:
+    user = _document_user_profile_for_session(session)
+    explicit_recipient = _extract_email_address(content)
+    pending_recipient = _last_document_email_confirmation_recipient(previous_messages)
+    profile_recipient = user.email.strip().lower() if user is not None else ""
+    recipient = explicit_recipient or pending_recipient or profile_recipient
+    if not recipient:
+        return (
+            "V profile nemate ulozeny e-mail. Najprv prosim doplnte e-mail v profile "
+            "a potom poziadajte o odoslanie dokumentov znova."
+        )
+    normalized = _canonicalize_document_text(content)
+    confirmation_requested = _last_assistant_requested_document_email_confirmation(previous_messages)
+    confirmed = not explicit_recipient and _is_affirmative_reply(normalized) and confirmation_requested
+    if explicit_recipient and confirmation_requested:
+        return (
+            f"Chcete poslat vsetky vygenerovane dokumenty na e-mail {recipient}? "
+            "Potvrdte odoslanie dokumentov odpovedou ano."
+        )
+    if not confirmed:
+        return (
+            f"Chcete poslat vsetky vygenerovane dokumenty na e-mail {recipient}? "
+            "Potvrdte odoslanie dokumentov odpovedou ano."
+        )
+    result = _get_or_build_session_result(session_id)
+    if result is None:
+        result = _build_direct_reply_result(
+            session_id=session_id,
+            session=session,
+            messages=previous_messages,
+            lawyer_message="",
+        )
+    assets = _build_document_export_assets(
+        session_id=session_id,
+        messages=previous_messages,
+        result=result,
+        country=session.country,
+        language=session.language,
+        user_profile=user,
+    )
+    email_id, attachment_count = _enqueue_session_documents_email(
+        session=session,
+        result=result,
+        assets=assets,
+        recipient=recipient,
+    )
+    return (
+        f"Dokumenty boli zaradene na odoslanie na e-mail {recipient}. "
+        f"Pocet priloh: {attachment_count}. ID e-mailu: {email_id}."
     )
 
 
@@ -2105,7 +2679,65 @@ def _truncate_case_update_open_questions(case_update: dict[str, Any]) -> dict[st
     return case_update
 
 
+def _ensure_missing_info_prompt_has_question(content: str) -> str:
+    visible_text = _user_visible_text(content).strip()
+    if not visible_text or "?" in visible_text or not _looks_like_missing_info_intro(visible_text):
+        return content.strip()
+    case_update = _extract_case_update(content)
+    question = _first_case_update_open_question(case_update)
+    if not question:
+        question = _fallback_missing_info_question(visible_text)
+    if not question.endswith("?"):
+        question = f"{question}?"
+    return _compose_assistant_content(
+        visible_text=f"{visible_text}\n\n{question}",
+        case_update=case_update,
+    )
+
+
+def _looks_like_missing_info_intro(visible_text: str) -> bool:
+    normalized = _canonicalize_document_text(visible_text)
+    need_markers = (
+        "potrebujem este",
+        "potrebujem potvrdit",
+        "potrebujem doplnit",
+        "chyba",
+        "chybaju",
+        "need to confirm",
+        "need more information",
+        "missing information",
+    )
+    document_markers = ("zmluv", "dokument", "document", "contract", "udaj", "detail", "informac")
+    return any(marker in normalized for marker in need_markers) and any(
+        marker in normalized for marker in document_markers
+    )
+
+
+def _first_case_update_open_question(case_update: dict[str, Any] | None) -> str:
+    if not isinstance(case_update, dict):
+        return ""
+    case_payload = case_update.get("case")
+    if not isinstance(case_payload, dict):
+        return ""
+    open_questions = case_payload.get("open_questions")
+    if not isinstance(open_questions, list):
+        return ""
+    for item in open_questions:
+        question = str(item).strip()
+        if question:
+            return question
+    return ""
+
+
+def _fallback_missing_info_question(visible_text: str) -> str:
+    normalized = _canonicalize_document_text(visible_text)
+    if any(marker in normalized for marker in ("need to", "missing information", "document", "contract")):
+        return "Which specific missing detail should I confirm first?"
+    return "Ktorý konkrétny chýbajúci údaj mám potvrdiť ako prvý?"
+
+
 def _enforce_single_question_turn(content: str) -> str:
+    content = _ensure_missing_info_prompt_has_question(content)
     visible_text = _user_visible_text(content)
     if not _assistant_requests_user_reply(visible_text):
         return content.strip()
@@ -2351,6 +2983,37 @@ def export_session_document_pdf(session_id: UUID, document_index: int) -> Respon
     )
 
 
+@router.post("/sessions/{session_id}/documents/send-email", response_model=SendSessionDocumentsEmailResponse)
+def send_session_documents_email(
+    session_id: UUID,
+    payload: SendSessionDocumentsEmailRequest,
+) -> SendSessionDocumentsEmailResponse:
+    session, result, _messages, assets = _session_document_export_context(session_id)
+    recipient = _resolve_document_email_recipient(session=session, payload=payload)
+    if not recipient:
+        raise HTTPException(status_code=409, detail="User profile email is not available.")
+    if not payload.confirmed:
+        return SendSessionDocumentsEmailResponse(
+            needs_confirmation=True,
+            recipient=recipient,
+            message=f"Confirm sending all generated documents to {recipient}.",
+            attachment_count=len(assets),
+        )
+    email_id, attachment_count = _enqueue_session_documents_email(
+        session=session,
+        result=result,
+        assets=assets,
+        recipient=recipient,
+    )
+    return SendSessionDocumentsEmailResponse(
+        needs_confirmation=False,
+        recipient=recipient,
+        message=f"Generated documents were queued for email delivery to {recipient}.",
+        email_id=email_id,
+        attachment_count=attachment_count,
+    )
+
+
 @router.get("/sessions/{session_id}/export")
 def export_session_result(
     session_id: UUID,
@@ -2511,6 +3174,126 @@ def _document_export_asset_response(
         content=pdf_content,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{asset.filename}"'},
+    )
+
+
+def _document_export_asset_pdf_bytes(
+    *,
+    asset: _DocumentExportAsset,
+    session: Session,
+    generated_at: str,
+    footer_line: str,
+    verification_score: str | None,
+) -> bytes:
+    return _build_professional_document_pdf(
+        title=asset.title,
+        lines=asset.lines,
+        country=session.country,
+        language=session.language,
+        generated_at=generated_at,
+        case_id=session.case_id or str(session.id),
+        session_id=str(session.id),
+        user_id=str(session.user_id) if session.user_id else None,
+        footer_line=footer_line,
+        verification_score=verification_score,
+        disclaimer=asset.disclaimer,
+    )
+
+
+def _resolve_document_email_recipient(
+    *, session: Session, payload: SendSessionDocumentsEmailRequest
+) -> str:
+    explicit_recipient = (payload.recipient or "").strip().lower()
+    if explicit_recipient:
+        return explicit_recipient
+    if payload.user_id:
+        user = _document_user_profile_for_user_id(payload.user_id)
+    else:
+        user = _document_user_profile_for_session(session)
+    if user is None:
+        return ""
+    return str(user.email).strip().lower()
+
+
+def _enqueue_session_documents_email(
+    *,
+    session: Session,
+    result: SessionResult,
+    assets: list[_DocumentExportAsset],
+    recipient: str,
+) -> tuple[str, int]:
+    if not assets:
+        raise HTTPException(status_code=409, detail="No generated documents available to send.")
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    footer_line = f"AIJ | API {_API_VERSION} | Core {_CORE_VERSION}"
+    verification_score = _document_verification_score(result)
+    attachments: list[dict[str, str]] = []
+    for asset in assets:
+        pdf_content = _document_export_asset_pdf_bytes(
+            asset=asset,
+            session=session,
+            generated_at=generated_at,
+            footer_line=footer_line,
+            verification_score=verification_score,
+        )
+        attachments.append(
+            {
+                "filename": asset.filename,
+                "mime_type": guess_type(asset.filename)[0] or "application/pdf",
+                "content_base64": base64.b64encode(pdf_content).decode("utf-8"),
+            }
+        )
+    subject = _session_document_email_subject(session=session, assets=assets)
+    plain = (
+        "Dobry den,\n\n"
+        "v prilohe posielame vygenerovane dokumenty k vasmu pripadu.\n\n"
+        "S pozdravom,\nJurisDigta"
+    )
+    html = _build_session_document_email_html(
+        subject=subject,
+        session=session,
+        attachment_count=len(attachments),
+        generated_at=generated_at,
+    )
+    email_id = EmailScheduler.from_env().enqueue(
+        recipient=recipient,
+        subject=subject,
+        body=plain,
+        metadata={
+            "event": "session_documents_email",
+            "session_id": str(session.id),
+            "case_id": session.case_id or "",
+            "html_body": html,
+            "attachments": attachments,
+        },
+    )
+    return email_id, len(attachments)
+
+
+def _session_document_email_subject(*, session: Session, assets: list[_DocumentExportAsset]) -> str:
+    first_title = assets[0].title.strip() if assets else ""
+    suffix = first_title or "Dokumenty"
+    if len(assets) > 1:
+        suffix = f"Balik dokumentov ({len(assets)})"
+    if session.case_id:
+        return f"JurisDigta dokumenty | {suffix} | pripad {session.case_id}"
+    return f"JurisDigta dokumenty | {suffix}"
+
+
+def _build_session_document_email_html(
+    *, subject: str, session: Session, attachment_count: int, generated_at: str
+) -> str:
+    case_line = f"<br/>Case ID: {session.case_id}" if session.case_id else ""
+    return (
+        "<html><body style='font-family:Georgia,serif;color:#1f2937'>"
+        "<p>Dobry den,</p>"
+        "<p>v prilohe posielame vygenerovane dokumenty k vasmu pripadu.</p>"
+        "<p>S pozdravom,<br/>JurisDigta</p>"
+        "<hr/>"
+        f"<p style='font-size:12px;color:#6b7280'>Subject: {subject}<br/>"
+        f"Session ID: {session.id}{case_line}<br/>"
+        f"Attachments: {attachment_count}<br/>Generated: {generated_at}</p>"
+        "</body></html>"
     )
 
 
@@ -4479,16 +5262,9 @@ def _sanitize_missing_document_facts(facts: dict[str, str]) -> dict[str, str]:
 
 
 def _format_user_profile_document_identity(user: User) -> str:
-    parts: list[str] = [user.full_name]
-    address_parts = [
-        value
-        for value in (
-            user.address,
-            " ".join(part for part in (user.zip_code, user.city) if part),
-            user.country,
-        )
-        if value
-    ]
+    display_name = _user_profile_document_display_name(user)
+    parts: list[str] = [display_name] if display_name else []
+    address_parts = _user_profile_document_address(user)
     if address_parts:
         parts.append(", ".join(address_parts))
     identity_parts = []
@@ -4503,6 +5279,36 @@ def _format_user_profile_document_identity(user: User) -> str:
     if identity_parts:
         parts.append("; ".join(identity_parts))
     return ", ".join(part for part in parts if part.strip())
+
+
+def _user_profile_document_display_name(user: User) -> str:
+    first_last = " ".join(part for part in (user.first_name, user.last_name) if part)
+    if first_last.strip():
+        return first_last.strip()
+    full_name = (user.full_name or "").strip()
+    if full_name and not _looks_like_phone_number(full_name):
+        return full_name
+    return ""
+
+
+def _user_profile_document_address(user: User) -> list[str]:
+    return [
+        value
+        for value in (
+            user.address,
+            " ".join(part for part in (user.zip_code, user.city) if part),
+            user.country,
+        )
+        if value
+    ]
+
+
+def _looks_like_phone_number(value: str) -> bool:
+    digits = re.sub(r"\D+", "", value)
+    if len(digits) < 7:
+        return False
+    remainder = re.sub(r"[\d\s+().-]+", "", value)
+    return not remainder.strip()
 
 
 def _is_missing_document_fact(value: str | None) -> bool:

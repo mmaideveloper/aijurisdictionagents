@@ -1,0 +1,16 @@
+
+{
+   "CaseTitle":  "Potrdenie",
+   "CaseDescription":"
+                Priprav potvrdenie na prijatie sumu 1000 EU odod mna.
+   
+      Primatel: Matej Mat , adresa stromova 10, poprad
+      cislo obciasnkeho: 0800988MM
+      rocne cislo: 08089/08089
+      datum: 1.1.2026, splatne do 1.1.2027
+   ",
+   "Documents:":[]
+}  
+
+
+

@@ -58,6 +58,7 @@ class SignUpRequest(BaseModel):
     password: str = Field(min_length=1)
     first_name: str | None = None
     last_name: str | None = None
+    address: str | None = None
     data_processing_consent_accepted: bool = False
     data_processing_consent_version: str | None = None
 
@@ -187,6 +188,7 @@ def sign_up(
             password=payload.password,
             first_name=payload.first_name,
             last_name=payload.last_name,
+            address=payload.address,
             data_processing_consent_at=_now_if_accepted(payload.data_processing_consent_accepted),
             data_processing_consent_version=payload.data_processing_consent_version,
         )
@@ -240,6 +242,7 @@ def complete_registration(
             password=payload.password,
             first_name=payload.first_name,
             last_name=payload.last_name,
+            address=payload.address,
             data_processing_consent_at=_now_if_accepted(payload.data_processing_consent_accepted),
             data_processing_consent_version=payload.data_processing_consent_version,
         )

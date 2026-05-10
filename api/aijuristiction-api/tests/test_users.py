@@ -46,6 +46,7 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
             "password": "secret-pass",
             "first_name": "Marek",
             "last_name": "Founder",
+            "address": "Partizanska 665",
         },
     )
     assert sign_up_response.status_code == 201
@@ -55,6 +56,7 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
     assert signed_up["first_name"] == "Marek"
     assert signed_up["last_name"] == "Founder"
     assert signed_up["full_name"] == "Marek Founder"
+    assert signed_up["address"] == "Partizanska 665"
 
     queued = _fetch_emails(tmp_path / "email.sqlite3")
     assert queued == [("founder@example.com", "Welcome to AI Jurisdiction", "pending", 0)]

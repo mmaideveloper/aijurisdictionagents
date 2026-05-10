@@ -1,0 +1,18 @@
+
+{
+   "CaseTitle":  "Splnomocnenie",
+   "CaseDescription":"
+                Splnomocnenie pre pristup k bankovemu uctu.
+
+      Priprav splnomocnenie ktorym dovolim pristup k mojmu bankovemu uctu
+      a monost vyberu hotovosti do hodnoty 1000 EU denne.
+      Pre: Matej Mat , adresa stromova 10, poprad
+      cislo obciasnkeho: 0800988MM
+      rocne cislo: 08089/08089
+      od 1.1.2026 do 1.1.2027
+   ",
+   "Documents:":[]
+}  
+
+
+
