@@ -20,16 +20,16 @@ def test_version() -> None:
     assert response.status_code == 200
     assert response.json() == {
         'service': 'chat-simulator-app',
-        'version': '0.1.24',
-        'simulator_version': '0.1.24',
+        'version': '0.1.25',
+        'simulator_version': '0.1.25',
     }
 
 
 def test_simulator_page_and_assets() -> None:
     page = client.get('/chat-simulator')
     assert page.status_code == 200
-    assert '/static/simulator.js?v=0.1.24' in page.text
-    assert '/static/simulator.css?v=0.1.24' in page.text
+    assert '/static/simulator.js?v=0.1.25' in page.text
+    assert '/static/simulator.css?v=0.1.25' in page.text
     assert '/email-tests' in page.text
     assert 'Email Validation Tests' in page.text
     assert 'Start Stream' in page.text
@@ -48,6 +48,9 @@ def test_simulator_page_and_assets() -> None:
     assert 'novalidate' in page.text
     assert 'id="preparedCase"' in page.text
     assert 'id="preparedCasesData"' in page.text
+    assert 'id="userFirstName"' in page.text
+    assert 'id="userLastName"' in page.text
+    assert 'id="userAddress"' in page.text
     assert 'Document Templates' in page.text
     assert 'id="refreshDocumentTemplates"' in page.text
     assert 'id="documentTemplatesList"' in page.text
@@ -116,6 +119,9 @@ def test_simulator_page_and_assets() -> None:
     assert 'continue the session or ask for document status' in js.text
     assert 'refreshDocumentTemplates' in js.text
     assert 'generateTemplatePdf' in js.text
+    assert 'first_name: userFirstNameInput.value.trim()' in js.text
+    assert 'last_name: userLastNameInput.value.trim()' in js.text
+    assert 'address: userAddressInput.value.trim()' in js.text
     assert '/v1/document-templates' in js.text
     assert '/preview/pdf' in js.text
     assert 'Generate PDF' in js.text
@@ -127,7 +133,7 @@ def test_simulator_page_and_assets() -> None:
 def test_email_tests_page_and_assets() -> None:
     page = client.get('/email-tests')
     assert page.status_code == 200
-    assert '/static/email-tests.js?v=0.1.24' in page.text
+    assert '/static/email-tests.js?v=0.1.25' in page.text
     assert 'Email Validation Tests' in page.text
     assert 'id="emailTransport"' in page.text
     assert '<option value="log" selected>log</option>' in page.text

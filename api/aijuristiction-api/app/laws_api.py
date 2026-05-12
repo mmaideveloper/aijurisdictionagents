@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
-from app.law_citations import read_law_source
+from app.law_citations import read_law_document_text, read_law_source
 from app.security import require_api_key
 
 router = APIRouter(prefix="/v1/laws", tags=["laws"], dependencies=[Depends(require_api_key)])
@@ -36,3 +36,13 @@ def download_law_source(
             "Content-Disposition": f'inline; filename="{filename}"',
         },
     )
+
+
+@router.get("/document-text")
+def get_law_document_text(
+    document_id: str = Query(..., min_length=1),
+) -> dict[str, str]:
+    content = read_law_document_text(document_id=document_id.strip())
+    if content is None:
+        raise HTTPException(status_code=404, detail="Law document text not found.")
+    return {"document_id": document_id.strip(), "content_text": content}

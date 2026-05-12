@@ -40,6 +40,10 @@ def main() -> None:
             missing.append(testcase_path.name)
             continue
         print(f"{testcase_path.name} -> {matched.flow_key} (v{matched.version})")
+        if testcase_path.name == "sample_potvrdenie.txt" and matched.flow_key != "sk.civil.payment_confirmation":
+            raise SystemExit(
+                f"sample_potvrdenie.txt matched {matched.flow_key}, expected sk.civil.payment_confirmation"
+            )
 
     if missing:
         raise SystemExit(f"Missing flow pack matches: {', '.join(missing)}")

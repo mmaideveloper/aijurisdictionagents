@@ -63,6 +63,7 @@ API validation rule:
 
 - After every API code change under `api/aijuristiction-api`, run `ruff check app tests` and `mypy app` from `api/aijuristiction-api` and fix lint/type-check failures before committing.
 - Use `.\scripts\validate_api.ps1` from the repository root for the local equivalent of the API CI lint/type-check gate.
+- Before preparing data for commit after API changes, also run the API unit tests with `.\conda\python.exe -m pytest api/aijuristiction-api/tests` from the repository root and fix failures before committing.
 - Keep the tracked pre-commit hook under `.githooks/pre-commit` enabled with `git config core.hooksPath .githooks` so API lint/type-check failures are caught before commit and before GitHub workflows start.
 
 Ask for implementation of task.  Create for each task separate branch.

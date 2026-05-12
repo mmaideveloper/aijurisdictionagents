@@ -190,9 +190,54 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
                     "validity_period",
                 ],
                 "outputs": ["power_of_attorney"],
+                "steps": [
+                    "collect_principal_and_agent_details",
+                    "confirm_scope_and_validity",
+                    "generate_power_of_attorney",
+                ],
+                "delivery": {"single_document": "power_of_attorney", "multi_document_bundle": "zip"},
                 "proactive_recommendations": [
                     "Pri úradných úkonoch upozorni na overenie podpisu.",
                 ],
+            },
+        },
+        {
+            "flow_key": "sk.civil.payment_confirmation",
+            "version": 1,
+            "jurisdiction": "SK",
+            "domain": "civil",
+            "title": "Potvrdenie o prijatí platby",
+            "description": "Príprava potvrdenia o prijatí alebo zaplatení sumy s identifikáciou strán a platobných údajov.",
+            "is_enabled": True,
+            "definition": {
+                "intent": {
+                    "keywords": [
+                        "potvrdenie",
+                        "potvrdenie o zaplateni",
+                        "potvrdenie o zaplatení",
+                        "potvrdenie o prijati sumy",
+                        "potvrdenie o prijatí sumy",
+                        "prijatie sumy",
+                        "prijatie sumu",
+                        "prijal sumu",
+                        "uhrada",
+                        "úhrada",
+                    ]
+                },
+                "required_facts": [
+                    "payer_identification",
+                    "recipient_identification",
+                    "amount",
+                    "payment_date",
+                    "payment_purpose",
+                ],
+                "outputs": ["payment_confirmation"],
+                "steps": [
+                    "collect_payment_confirmation_facts",
+                    "validate_party_and_amount_details",
+                    "generate_payment_confirmation",
+                ],
+                "delivery": {"single_document": "payment_confirmation", "multi_document_bundle": "zip"},
             },
         },
         {

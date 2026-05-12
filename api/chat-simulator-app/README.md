@@ -32,6 +32,7 @@ The simulator now supports:
 - showing an initial localized Jurisdicta welcome message in the End User Chat View (`SK` default, `EN`, `GE`, with `DE` accepted as alias for German)
 - submitting a case instruction and optionally uploading text documents
 - provisioning a real API user + persisted case, uploading documents through `POST /v1/cases/{case_id}/documents`, and binding new chat sessions to that case
+  - the user provisioning form includes first name, last name, and address so document-generation tests can verify profile-backed party data
 - listing existing persisted cases for the active simulator user from a dedicated dropdown, selecting one, and continuing the conversation on that case with a fresh `Create Session`
 - loading the selected case history from `GET /v1/cases/{case_id}/history` so you can review the existing conversation before continuing
 - showing the selected case documents immediately after case selection, including document metadata/status from the API
