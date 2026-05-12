@@ -213,6 +213,26 @@ def read_law_source(
     return payload, media_type, filename
 
 
+
+
+def read_law_document_text(*, document_id: str) -> str | None:
+    query = """
+        SELECT sa.content_text
+        FROM law_versions AS v
+        JOIN source_artifacts AS sa ON sa.version_id = v.version_id
+        WHERE v.document_id = {document_filter}
+          AND sa.artifact_kind = 'html'
+          AND TRIM(sa.content_text) <> ''
+        ORDER BY v.effective_from DESC, sa.fetched_at DESC
+        LIMIT 1
+    """
+    row = _fetchone_laws_query(
+        query=query.format(document_filter=_laws_param("document_id")),
+        params=(document_id,),
+    )
+    if row is None:
+        return None
+    return str(_law_row_value(row, 0))
 def _resolve_effective_on(*, messages: Sequence[Message]) -> str:
     for message in reversed(messages):
         if message.role != MessageRole.USER:
