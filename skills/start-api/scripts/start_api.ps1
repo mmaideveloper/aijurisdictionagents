@@ -19,6 +19,45 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Import-DotEnvFile {
+    param([string]$RepoRoot)
+
+    $envPath = Join-Path $RepoRoot ".env"
+    if (-not (Test-Path $envPath)) {
+        return
+    }
+
+    foreach ($line in Get-Content $envPath) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $separatorIndex = $trimmed.IndexOf("=")
+        if ($separatorIndex -le 0) {
+            continue
+        }
+
+        $name = $trimmed.Substring(0, $separatorIndex).Trim()
+        if (-not ($name -match "^[A-Za-z_][A-Za-z0-9_]*$")) {
+            continue
+        }
+        if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, "Process"))) {
+            continue
+        }
+
+        $value = $trimmed.Substring($separatorIndex + 1).Trim()
+        if (($value.Length -ge 2) -and (
+            (($value.StartsWith('"')) -and ($value.EndsWith('"'))) -or
+            (($value.StartsWith("'")) -and ($value.EndsWith("'")))
+        )) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+
+        [Environment]::SetEnvironmentVariable($name, $value, "Process")
+    }
+}
+
 function Resolve-EffectiveLlmProvider {
     param([string]$RequestedProvider)
 
@@ -262,6 +301,7 @@ $repoRoot = Resolve-Path (Join-Path $skillScriptsDir "..\\..\\..")
 $apiDir = Join-Path $repoRoot "api\\aijuristiction-api"
 $srcDir = Join-Path $repoRoot "src"
 $shellPath = Resolve-PowerShellPath
+Import-DotEnvFile -RepoRoot $repoRoot
 
 if (-not (Test-Path $apiDir)) {
     throw "API project folder not found: $apiDir"
@@ -275,6 +315,9 @@ $LlmProvider = Resolve-EffectiveLlmProvider -RequestedProvider $LlmProvider
 $env:LLM_PROVIDER = $LlmProvider
 if (-not $env:LOCAL_LLM_IO_LOGGING) {
     $env:LOCAL_LLM_IO_LOGGING = "1"
+}
+if ((-not $env:LOCAL_AUTH_ACCEPT_ANY_CODE) -and ($BindHost -in @("127.0.0.1", "localhost", "::1"))) {
+    $env:LOCAL_AUTH_ACCEPT_ANY_CODE = "1"
 }
 $pythonPathEntries = @($apiDir, $srcDir)
 if ($env:PYTHONPATH) {

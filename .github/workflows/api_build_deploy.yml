@@ -108,6 +108,10 @@ jobs:
       EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
       EMAIL_SCHEDULER_ENABLED: ${{ vars.EMAIL_SCHEDULER_ENABLED || 'true' }}
       EMAIL_SCHEDULER_INTERVAL_SECONDS: ${{ vars.EMAIL_SCHEDULER_INTERVAL_SECONDS || '60' }}
+      CONTACT_CAPTCHA_REQUIRED: ${{ vars.CONTACT_CAPTCHA_REQUIRED }}
+      CONTACT_RATE_LIMIT_MAX_REQUESTS: ${{ vars.CONTACT_RATE_LIMIT_MAX_REQUESTS }}
+      CONTACT_RATE_LIMIT_WINDOW_SECONDS: ${{ vars.CONTACT_RATE_LIMIT_WINDOW_SECONDS }}
+      TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
       CAR_VALIDATION_API_BASE_URL: ${{ vars.CAR_VALIDATION_API_BASE_URL }}
       CAR_VALIDATION_API_KEY: ${{ secrets.CAR_VALIDATION_API_KEY }}
     steps:
@@ -124,6 +128,10 @@ jobs:
           done
           if [ "${EMAIL_TRANSPORT,,}" = "smtp" ] && [ -z "${EMAIL_SMTP_PASSWORD:-}" ]; then
             echo "Missing GitHub Environment secret: EMAIL_SMTP_PASSWORD is required when EMAIL_TRANSPORT=smtp"
+            missing=1
+          fi
+          if [ "${CONTACT_CAPTCHA_REQUIRED,,}" = "true" ] && [ -z "${TURNSTILE_SECRET_KEY:-}" ]; then
+            echo "Missing GitHub Environment secret: TURNSTILE_SECRET_KEY is required when CONTACT_CAPTCHA_REQUIRED=true"
             missing=1
           fi
           if [ "$missing" -ne 0 ]; then
@@ -324,6 +332,9 @@ jobs:
           if [ -n "${CAR_VALIDATION_API_KEY:-}" ]; then
             secret_values+=("car-validation-api-key=$CAR_VALIDATION_API_KEY")
           fi
+          if [ -n "${TURNSTILE_SECRET_KEY:-}" ]; then
+            secret_values+=("turnstile-secret-key=$TURNSTILE_SECRET_KEY")
+          fi
 
           retry_containerapp_command "Preconfiguring Container App secrets" \
             az containerapp secret set \
@@ -504,6 +515,9 @@ jobs:
           if [ -n "${CAR_VALIDATION_API_KEY:-}" ]; then
             secret_values+=("car-validation-api-key=$CAR_VALIDATION_API_KEY")
           fi
+          if [ -n "${TURNSTILE_SECRET_KEY:-}" ]; then
+            secret_values+=("turnstile-secret-key=$TURNSTILE_SECRET_KEY")
+          fi
           retry_containerapp_command "Setting Container App secrets" \
             az containerapp secret set \
             --name "$AZURE_CONTAINER_APP_NAME" \
@@ -540,6 +554,18 @@ jobs:
           )
           if [ -n "${EMAIL_SMTP_PASSWORD:-}" ]; then
             env_vars+=(EMAIL_SMTP_PASSWORD=secretref:email-smtp-password)
+          fi
+          if [ -n "${CONTACT_CAPTCHA_REQUIRED:-}" ]; then
+            env_vars+=(CONTACT_CAPTCHA_REQUIRED="$CONTACT_CAPTCHA_REQUIRED")
+          fi
+          if [ -n "${CONTACT_RATE_LIMIT_MAX_REQUESTS:-}" ]; then
+            env_vars+=(CONTACT_RATE_LIMIT_MAX_REQUESTS="$CONTACT_RATE_LIMIT_MAX_REQUESTS")
+          fi
+          if [ -n "${CONTACT_RATE_LIMIT_WINDOW_SECONDS:-}" ]; then
+            env_vars+=(CONTACT_RATE_LIMIT_WINDOW_SECONDS="$CONTACT_RATE_LIMIT_WINDOW_SECONDS")
+          fi
+          if [ -n "${TURNSTILE_SECRET_KEY:-}" ]; then
+            env_vars+=(TURNSTILE_SECRET_KEY=secretref:turnstile-secret-key)
           fi
           if [ -n "${CAR_VALIDATION_API_BASE_URL:-}" ]; then
             env_vars+=(CAR_VALIDATION_API_BASE_URL="$CAR_VALIDATION_API_BASE_URL")

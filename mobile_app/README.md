@@ -95,6 +95,9 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
   - update metadata is read from `GET /version`
   - on Android, if the API advertises an APK download URL, the app now shows an inline progress card with download percentage, downloaded/total MB, APK path/URL context, permission check state, and installer handoff status before opening the Android installer after user confirmation
   - if Android blocks sideload installs for this app, the app opens the `Install unknown apps` settings page and resumes installation when the user returns
+- When the chat stream creates a case document and returns its internal `/v1/cases/.../documents/...` path before session result metadata is available, the app enables the document action and still downloads the rendered PDF export while hiding the internal technical path from the client-visible chat message.
+  - If multiple session documents are available, the document action opens a list first; tapping a row downloads and opens that specific PDF document.
+  - If the app was reopened and no active chat session exists anymore, it restores document readiness from generated `technical_payload` case-document metadata and falls back to `GET /v1/cases/{case_id}/documents/{doc_id}/pdf` so the user still receives a PDF instead of the stored JSON payload.
 - Uses the real API chat endpoints with API key auth:
   - `POST /v1/users/sign-up`
   - `POST /v1/users/sign-up/send-code`
@@ -210,6 +213,7 @@ PDF exports are downloaded through:
 Use the single `Documents` button above the message composer to download all user-requested export documents (summary + document PDF).
 If multiple export files are downloaded, the app now shows a picker list of the saved files and opens the selected file after the user taps it.
 On Android, saved PDF/case-document files are now opened through the platform file-opening flow instead of a raw `file://` launcher call, which avoids the previous `Could not open the saved file` failure for locally saved documents.
+Case-document downloads now correctly handle `Content-Disposition` variants (`filename*=UTF-8''...` and unquoted `filename=...`), which fixes failed downloads when backend filenames include UTF-8 characters.
 Buttons are enabled after AI stream emits `result`/`done` (PDF must be generated first).
 In `Real Agent` mode, when the lawyer decides a formal document is needed, the agent first asks for confirmation and the PDF buttons stay disabled until the follow-up reply actually prepares the document.
 The mobile app now also resets document-export readiness to `false` when a fresh session result is unavailable, so a previous case cannot leave the `Documents` button enabled for a new conversation.
@@ -347,3 +351,10 @@ the app.
 Reference UI snapshot prepared for review of the mobile chat layout.
 
 Open `docs/chat_ui_snapshot.html` in a browser for the updated rebrand layout preview.
+
+## Recent UI updates
+- App title updated to **Jurisdigta AI Agent**.
+- Chat composer expands to a fixed 5-line input area when focused for better keyboard visibility on mobile.
+- Speech input now waits at least 30 seconds of pause before stopping and shows a user notice when auto-stopped.
+- Documents export button is enabled when the case has processed/generated documents.
+- Tapping the microphone now auto-enables speech input instead of only showing a disabled message.

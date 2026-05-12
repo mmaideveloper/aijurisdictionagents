@@ -46,6 +46,7 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
             "password": "secret-pass",
             "first_name": "Marek",
             "last_name": "Founder",
+            "address": "Partizanska 665",
         },
     )
     assert sign_up_response.status_code == 201
@@ -55,6 +56,7 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
     assert signed_up["first_name"] == "Marek"
     assert signed_up["last_name"] == "Founder"
     assert signed_up["full_name"] == "Marek Founder"
+    assert signed_up["address"] == "Partizanska 665"
 
     queued = _fetch_emails(tmp_path / "email.sqlite3")
     assert queued == [("founder@example.com", "Welcome to AI Jurisdiction", "pending", 0)]
@@ -86,9 +88,41 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
             "password": "new-secret",
             "first_name": "Marek",
             "last_name": "Updated",
+            "address": "Partizanska 665",
+            "city": "Spisske Bystre",
+            "country": "SK",
+            "zip_code": "059 18",
+            "tax_number": "1070000001",
+            "identity_card_number": "AB123456",
+            "date_of_birth": "1980-01-02",
+            "social_security_number": "800102/1234",
         },
     )
     assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["full_name"] == "Marek Updated"
+    assert updated["address"] == "Partizanska 665"
+    assert updated["city"] == "Spisske Bystre"
+    assert updated["zip_code"] == "059 18"
+    assert updated["tax_number"] == "1070000001"
+    assert updated["identity_card_number"] == "AB123456"
+    assert updated["date_of_birth"] == "1980-01-02"
+    assert updated["social_security_number"] == "800102/1234"
+
+    partial_update_response = client.patch(
+        f"/v1/users/{signed_up['user_id']}",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900333444",
+            "first_name": "Marek",
+            "last_name": "Preserved",
+        },
+    )
+    assert partial_update_response.status_code == 200
+    partially_updated = partial_update_response.json()
+    assert partially_updated["full_name"] == "Marek Preserved"
+    assert partially_updated["address"] == "Partizanska 665"
+    assert partially_updated["identity_card_number"] == "AB123456"
 
 
 def test_sign_up_complete_requires_valid_email_code(monkeypatch, tmp_path: Path) -> None:
@@ -148,6 +182,27 @@ def test_sign_up_complete_requires_valid_email_code(monkeypatch, tmp_path: Path)
         },
     )
     assert complete_response.status_code == 201
+
+
+def test_local_auth_accepts_any_registration_code_when_enabled(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "1")
+
+    complete_response = client.post(
+        "/v1/users/sign-up/complete",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900111334",
+            "email": "local-any-code@example.com",
+            "password": "secret-pass",
+            "verification_code": "1",
+            "data_processing_consent_accepted": True,
+            "data_processing_consent_version": "2026-05-06",
+        },
+    )
+
+    assert complete_response.status_code == 201
+    assert complete_response.json()["email"] == "local-any-code@example.com"
 
 
 def test_registration_code_expires_in_thirty_minutes(monkeypatch, tmp_path: Path) -> None:
@@ -247,6 +302,34 @@ def test_device_bound_sign_in_flow(monkeypatch, tmp_path: Path) -> None:
     silent_payload = silent_login_response.json()
     assert silent_payload["user_id"] == payload["user_id"]
     assert silent_payload["device_auth_token"]
+
+
+def test_local_auth_accepts_any_sign_in_code_when_enabled(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "1")
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121315",
+            "email": "local-login-any-code@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+
+    verify_response = client.post(
+        "/v1/users/sign-in/verify-code",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121315",
+            "device_id": "local-device",
+            "verification_code": "1",
+        },
+    )
+
+    assert verify_response.status_code == 200
+    assert verify_response.json()["device_auth_token"]
 
 
 def test_sign_up_rejects_duplicate_phone_and_email(monkeypatch, tmp_path: Path) -> None:

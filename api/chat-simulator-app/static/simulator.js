@@ -29,6 +29,9 @@ const communicationMinutesInput = document.getElementById("communicationMinutes"
 const userPhoneInput = document.getElementById("userPhone");
 const userEmailInput = document.getElementById("userEmail");
 const userPasswordInput = document.getElementById("userPassword");
+const userFirstNameInput = document.getElementById("userFirstName");
+const userLastNameInput = document.getElementById("userLastName");
+const userAddressInput = document.getElementById("userAddress");
 const caseTitleInput = document.getElementById("caseTitle");
 const existingCaseInput = document.getElementById("existingCase");
 const createCaseButton = document.getElementById("createCase");
@@ -1238,6 +1241,9 @@ async function ensureUser() {
     phone_number: userPhoneInput.value.trim(),
     email: userEmailInput.value.trim(),
     password: userPasswordInput.value.trim(),
+    first_name: userFirstNameInput.value.trim(),
+    last_name: userLastNameInput.value.trim(),
+    address: userAddressInput.value.trim(),
   };
   if (!signUpPayload.phone_number || !signUpPayload.email || !signUpPayload.password) {
     throw new Error("User phone, email, and password are required.");
@@ -1357,6 +1363,9 @@ async function deleteAllCases() {
       phone_number: userPhoneInput.value.trim(),
       email: userEmailInput.value.trim(),
       password: userPasswordInput.value.trim(),
+      first_name: userFirstNameInput.value.trim(),
+      last_name: userLastNameInput.value.trim(),
+      address: userAddressInput.value.trim(),
     }),
   });
   const body = await parseResponse(response);

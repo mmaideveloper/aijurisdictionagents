@@ -12,7 +12,11 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from app.chat.api import _load_case_documents_for_llm, _user_visible_text
+from app.chat.api import (
+    _build_professional_document_pdf,
+    _load_case_documents_for_llm,
+    _user_visible_text,
+)
 from app.security import require_api_key
 
 from aijurisdictionagents.api_db import (
@@ -393,6 +397,51 @@ def download_case_document(
     )
 
 
+@router.get('/{case_id}/documents/{doc_id}/pdf')
+def download_generated_case_document_pdf(
+    case_id: str,
+    doc_id: str,
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_store),
+) -> Response:
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    try:
+        document = store.get_case_document(case_id=case_id, doc_id=doc_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    visible_content = _generated_case_document_visible_content(
+        case_id=case_id,
+        doc_id=document.doc_id,
+        store=store,
+    )
+    if not visible_content:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rendered PDF content is unavailable for document {doc_id}",
+        )
+    title = _generated_case_document_title(visible_content)
+    filename = f"{Path(document.original_filename).stem or 'case-document'}.pdf"
+    pdf_content = _build_professional_document_pdf(
+        title=title,
+        lines=visible_content.splitlines(),
+        country="SK",
+        language="SK",
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        case_id=case_id,
+        session_id=getattr(document, "session_id", None),
+        user_id=user_id,
+        footer_line="AIJ generated case document",
+        verification_score=None,
+    )
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"',
+        },
+    )
+
+
 @router.post('/{case_id}/documents/send-email', response_model=SendCaseDocumentsEmailResponse)
 def send_case_documents_email(
     case_id: str,
@@ -530,6 +579,39 @@ def _to_case_document_response(document: CaseDocument) -> CaseDocumentResponse:
         processed_at=document.processed_at,
         created_at=document.created_at,
     )
+
+
+def _generated_case_document_visible_content(
+    *, case_id: str, doc_id: str, store: ApiDatabaseStore
+) -> str:
+    marker = f"/documents/{doc_id}"
+    for communication in store.list_case_communications(case_id=case_id, limit=100, offset=0):
+        raw_content = _read_case_communication_content(
+            store=store,
+            communication=communication,
+        )
+        if marker not in raw_content:
+            continue
+        normalized = raw_content.strip()
+        upper = normalized.upper()
+        if upper.startswith('ASSISTANT:'):
+            normalized = normalized[10:].strip()
+        elif upper.startswith('USER:') or upper.startswith('SYSTEM:'):
+            continue
+        if normalized.endswith(')') and '(agent=' in normalized:
+            normalized = normalized.rpartition('(agent=')[0].strip()
+        visible = _user_visible_text(normalized).strip()
+        if visible:
+            return visible
+    return ""
+
+
+def _generated_case_document_title(content: str) -> str:
+    for line in content.splitlines():
+        stripped = line.strip().strip("*#:- ")
+        if stripped:
+            return stripped[:120]
+    return "Case document"
 
 
 def _document_context(*, case_id: str, store: ApiDatabaseStore) -> CaseDocumentContextResponse:

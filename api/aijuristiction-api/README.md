@@ -8,6 +8,12 @@ Run the API unit tests from the repo-managed Python environment:
 ..\..\.conda\python.exe -m pytest tests
 ```
 
+Run the local API lint/type-check gate before committing API changes:
+
+```powershell
+..\..\scripts\validate_api.ps1
+```
+
 Dedicated API service project for exposing `aijurisdictionagents` to frontend clients.
 
 ## Registration email verification flow
@@ -157,7 +163,7 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 - when the user resolves that transferor conflict with a short reply like `podla ORSR`, the backend now locks in the verified ORSR owner and keeps verified company identity data such as `IČO` as settled instead of asking for them again
 - once the user resolves the ORSR-vs-user transferor conflict, that choice now persists into later follow-up turns such as `ano`, so the API continues to draft the requested package instead of reopening the same transferor conflict
 - if the model returns the case payload inside a fenced ```json block instead of the required `CASE_UPDATE_JSON:` marker, the API now still extracts that payload, ignores question marks inside the machine JSON when deciding whether to wait for another reply, and keeps export/download working
-- user-facing chat text is now sanitized to remove technical persistence preambles like `Tu je JSON pre uchovanie prípadu` and fake relative file links like `documents/...pdf`; the user sees only the natural-language answer while the backend still keeps the machine payload for export/state handling
+- user-facing chat text is now sanitized to remove technical persistence preambles like `Tu je JSON pre uchovanie prípadu`, internal saved-document notices such as `/v1/cases/.../documents/...`, and fake relative file links like `documents/...pdf`; the user sees only the natural-language answer while the backend still keeps the machine payload for export/state handling
 - if a multi-document Slovak share-transfer draft is present in the visible assistant text but the model forgot to populate `CASE_UPDATE_JSON.case.documents`, the export endpoint now falls back to the detected document sections and still returns a ZIP package with one PDF per detected document instead of collapsing everything into a single `final-document.pdf`
 - the same visible-section ZIP fallback now applies to Slovak rental packages (for example `Nájomná zmluva`, `Inventárny zoznam`, `Potvrdenie o prevzatí bytu`) even when machine case-update JSON is missing, so sectioned package exports stay downloadable as ZIP
 - the fallback ZIP detector now ignores ordinary single-document section headings such as `Zmluvne strany` or `Doba najmu`, so sectioned contracts continue to export as one PDF instead of being split into a fake ZIP package
@@ -374,6 +380,9 @@ same `x-api-key` guard as the chat endpoints.
   - request: `phone_number`
 - `PATCH /v1/users/{user_id}`
   - request: `phone_number`, optional `password`, optional `first_name`, optional `last_name`
+  - optional legal-profile fields for document defaults: `address`, `city`, `country`, `zip_code`,
+    `tax_number`, `identity_card_number`, `date_of_birth`, `social_security_number`
+  - omitted legal-profile fields keep their current values; explicit `null`/empty values clear them
 - `GET /v1/users/subscriptions/plans`
   - returns seeded plans: free, case, basic, premium
 - `GET /v1/users/{user_id}/subscriptions`
@@ -385,6 +394,11 @@ same `x-api-key` guard as the chat endpoints.
   - request: `status` in (`pending`, `paying`, `paid`, `failed`, `canceled`, `expired`)
   - monthly plans start a 30-day window when status changes to `paid`
   - queues an email for every subscription status change (including payment failure)
+
+Generated chat documents can also be sent by email through
+`POST /v1/chat/sessions/{session_id}/documents/send-email`. Omit `recipient` to use the
+signed-in user's profile email. The first call with `confirmed=false` returns the email address
+for confirmation; call again with `confirmed=true` to queue the generated PDF attachments.
 
 ### Email notification service
 
@@ -430,6 +444,8 @@ User and subscription endpoints support email notifications with configurable tr
 
 - `EMAIL_TRANSPORT=log` (default): logs notifications to API logs (safe for local dev/tests)
 - `EMAIL_TRANSPORT=smtp`: sends real emails via SMTP
+
+Corporate contact requests use `POST /v1/contact` without an API key. The endpoint validates the public website payload, rejects honeypot/link spam, verifies Cloudflare Turnstile when `CONTACT_CAPTCHA_REQUIRED=true` or `TURNSTILE_SECRET_KEY` is configured, and sends an email to `info@jurisdigta.eu` through the configured backend email transport.
 
 SMTP configuration (used when `EMAIL_TRANSPORT=smtp`):
 
@@ -493,6 +509,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
+- `GET /v1/cases/{case_id}/documents/{doc_id}/pdf?user_id=...` renders the client-visible assistant draft tied to a generated technical case document as a PDF, without exposing the stored JSON payload.
 - `GET /v1/cases/{case_id}/documents/context?user_id=...` now reports processed/unprocessed memory inputs across uploaded files, chat attachments, and generated `session_history` transcripts.
 - If a transcript or document payload is missing in local storage, history responses fall back to saved summaries and document download returns `404` instead of `500`.
 - Uploaded case documents are stored as `case -> many documents`. Each processed uploaded document keeps the extracted full text plus a real embedding in `case_document_contents`, and chunk-level text/embedding rows in `case_document_chunks`.
@@ -505,6 +522,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - Direct assistant clarification turns now enforce one-question-at-a-time behavior: when extra data is required, the API keeps only the highest-priority follow-up question in that turn and truncates `CASE_UPDATE_JSON.case.open_questions` to a single item.
 - User-facing chat payloads no longer expose raw `CASE_UPDATE_JSON` or bare JSON/XML technical trailers; API stores hidden technical payloads as case documents, adds the case-document URL to the friendly assistant text, and returns only visible assistant text in `/reply`, `/messages`, case history, and streaming `message` events.
 - Local API starts through [skills/start-api/scripts/start_api.ps1](/C:/Users/maton/Projects/aijurisdictionagents/skills/start-api/scripts/start_api.ps1) now enable `LOCAL_LLM_IO_LOGGING=1` by default, so local logs include the exact model payload and raw model response for debugging without changing deployed environments.
+- Local API starts bound to `127.0.0.1`, `localhost`, or `::1` also set `LOCAL_AUTH_ACCEPT_ANY_CODE=1`, allowing any 4-8 character verification code for local registration/sign-in testing only. Keep this disabled in deployed environments.
 - The mobile app uses these endpoints to show the latest 5 saved case messages after case selection and to expose case-document download buttons.
 - If an older case-history transcript blob is missing or unreadable, the API now falls back to the stored communication summary instead of failing the history load or blocking new session creation for that case.
 
@@ -514,6 +532,8 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - The summary PDF now includes generation date, API version, system core version, the latest law update date available to the system, the law-update source, the final recommendation for the user case, official law links stored by the law processor, and a dedicated case-validation section at the end with accuracy and validation summary.
 - When the user asks to review and recreate an uploaded document under current law, the summary PDF also includes a dedicated legal-basis section that states which legal dataset and official law links were used to evaluate the document.
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` now builds a document that matches the detected case topic instead of always returning a lease template.
+- Client-facing legal documents, including requests such as `potvrdenie o zaplateni`, now render with the professional JurisDicta template layout plus a footer QR code containing traceability metadata: generation date, API version, core system version, case ID, session ID when available, user ID when available, and document verification score. The footer also shows the document verification score; when that score is unknown or below `DOCUMENT_SHOW_DISCLAIMER` (default `50`), the PDF adds the legal-draft warning on a final standalone page.
+- Single-document exports derive the visible PDF title from the lawyer recommendation and detected legal document type, such as `Najomna zmluva` or `Kupno-predajna zmluva`, instead of displaying the session ID.
 - The document exporter now derives the topic from the full session context, not only from explicit lawyer draft blocks, so Slovak company share-transfer / new-owner sessions generate a targeted transfer-package draft instead of a generic memo.
 - Minimal runnable example: `python examples/share_transfer_export_demo.py`
 - Direct `POST /v1/chat/sessions/{session_id}/reply` sessions also persist a session result now, so the mobile `Real Agent` flow can download PDFs without going through the simulator stream.
@@ -593,6 +613,7 @@ curl -X POST "http://localhost:8080/v1/chat/sessions" \
   - `http://localhost:<any-port>`
   - `http://127.x.x.x:<any-port>` for loopback IPv4 addresses
   - `http://[::1]:<any-port>` for IPv6 loopback
+  - `Origin: null` for static `file://` previews, including the corporate web contact form during local checks
 - Deployed browser clients are blocked until you set `CORS_ALLOW_ORIGINS` explicitly.
 - Native Android/iOS builds do not require `CORS_ALLOW_ORIGINS`.
 - Override allowed origins with `CORS_ALLOW_ORIGINS` (comma-separated), for example:
@@ -917,6 +938,7 @@ New endpoints:
 - `POST /v1/chat/sessions/{session_id}/stream` (SSE streaming from core orchestrator)
 - `GET /v1/chat/sessions/{session_id}/result`
 - `GET /v1/chat/sessions/{session_id}/export?format=json|pdf&kind=summary|document` (`kind` applies to `pdf`)
+- `GET /v1/chat/sessions/{session_id}/export/documents` lists individual PDF documents available for a session, and `GET /v1/chat/sessions/{session_id}/export/documents/{index}` downloads one selected PDF instead of forcing a multi-document ZIP.
 
 If `POST /v1/chat/sessions` is created with `case_id`, the API now seeds that new in-memory session with the stored case history so the next reply/stream turn can continue the existing case context instead of starting with an empty prompt.
 If one of those seeded case-history transcript files is missing, the API falls back to the saved summary text so existing cases can still create a session and continue.

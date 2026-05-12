@@ -99,3 +99,36 @@ SELECT
 WHERE NOT EXISTS (
     SELECT 1 FROM flow_packs WHERE flow_key = 'sk.probate.inheritance_proceeding' AND version = 1 AND jurisdiction = 'SK'
 );
+
+INSERT INTO flow_packs (
+    flow_id,
+    flow_key,
+    version,
+    jurisdiction,
+    domain,
+    title,
+    description,
+    definition_json,
+    is_enabled,
+    is_deleted,
+    created_at,
+    updated_at,
+    deleted_at
+)
+SELECT
+    'seed-sk-civil-payment-confirmation-v1',
+    'sk.civil.payment_confirmation',
+    1,
+    'SK',
+    'civil',
+    'Potvrdenie o prijatí platby',
+    'Príprava potvrdenia o prijatí alebo zaplatení sumy s identifikáciou strán a platobných údajov.',
+    '{"intent":{"keywords":["potvrdenie","potvrdenie o zaplateni","potvrdenie o zaplatení","potvrdenie o prijati sumy","potvrdenie o prijatí sumy","prijatie sumy","prijatie sumu","prijal sumu","uhrada","úhrada"]},"required_facts":["payer_identification","recipient_identification","amount","payment_date","payment_purpose"],"outputs":["payment_confirmation"],"steps":["collect_payment_confirmation_facts","validate_party_and_amount_details","generate_payment_confirmation"],"delivery":{"single_document":"payment_confirmation","multi_document_bundle":"zip"}}',
+    1,
+    0,
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM flow_packs WHERE flow_key = 'sk.civil.payment_confirmation' AND version = 1 AND jurisdiction = 'SK'
+);

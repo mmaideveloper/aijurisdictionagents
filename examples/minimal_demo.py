@@ -71,13 +71,25 @@ if __name__ == "__main__":
     print("=== PDF export UX note ===")
     print(
         "For Slovakia-focused document exports, the API PDF builder now uses "
-        "a Jurisdicta corporate document template (header + contact panel + centered title) "
-        "for court/third-party facing documents, "
+        "a JurisDicta professional document template (branded header/contact layout, "
+        "formal body, score-aware disclaimer handling for low or unknown scores, footer logo, and QR traceability metadata "
+        "including the document score plus session/user IDs when available, with titles inferred from the legal document type) "
+        "for court/client/third-party documents, "
+        "and fills missing party details from the signed-in user's profile when available, "
         "a Slovak legal header profile where needed, and Central-European font preferences. "
         "Rental packages with visible sections such as Nájomná zmluva, Inventárny zoznam, "
         "and Protokol o odovzdaní a prevzatí bytu export as a ZIP package. "
         "Assistant technical JSON/XML payloads are hidden from user-facing chat and saved as "
         "case documents with a view URL when the session is attached to a case. "
+        "Generated session documents can be queued as email attachments after the user confirms "
+        "the profile email recipient or a corrected email address given in chat. "
+        "User-facing document processing messages hide internal session filenames while logs retain them. "
+        "Lawyer output is validated so profile-backed name/address data is not repeated as missing, "
+        "and incomplete profiles are called out for next-time defaults. "
+        "Existing case chats refresh prior question/answer memory so answered rental-property address and party-role "
+        "questions are not repeated after a document was prepared, and repeated answered questions are filtered "
+        "from follow-up replies generally. Missing-information intros are normalized so a concrete follow-up "
+        "question is always shown to the client. "
         "Document templates can also be previewed as PDFs from the chat simulator or batch-tested with "
         ".\\skills\\testdocument\\scripts\\test_document_templates.ps1."
     )
@@ -130,3 +142,27 @@ def mobile_chat_fixes_summary() -> dict[str, str]:
 
 if __name__ == "__main__":
     print(mobile_chat_fixes_summary())
+
+
+def prepare_task_skill_summary() -> dict[str, object]:
+    """Minimal runnable summary for the prepare-task skill contract."""
+    return {
+        "skill": "prepare-task",
+        "source_modes": [
+            "chat idea intake",
+            "idea text",
+            "existing GitHub issue/task description",
+        ],
+        "readiness_checks": [
+            "repository context reviewed",
+            "GDPR and EU AI Act risks evaluated",
+            "acceptance criteria and test plan drafted",
+            "docs and minimal runnable example identified",
+        ],
+        "github_task_creation": "ask for explicit confirmation before creating or updating",
+        "default_minimal_example": "python examples/minimal_demo.py",
+    }
+
+
+if __name__ == "__main__":
+    print(prepare_task_skill_summary())

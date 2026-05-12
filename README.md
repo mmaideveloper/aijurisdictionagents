@@ -391,6 +391,10 @@ Project skill for local API startup:
 .\skills\start-api\scripts\start_api.ps1
 ```
 
+The launcher reads the repository `.env` before checking the default Azure Foundry
+settings, while keeping any variables already set in the current shell as
+overrides.
+
 Background mode:
 
 ```powershell

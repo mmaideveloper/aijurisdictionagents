@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from io import BytesIO
 import time
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from pypdf import PdfReader
 
 from app.main import app
 from aijurisdictionagents.api_db import ApiDatabaseStore
@@ -134,6 +136,40 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert document.status_code == 200
     assert document.content == b"Case evidence payload"
     assert document.headers["content-disposition"].endswith('filename="evidence.txt"')
+
+    generated_doc_id = store.add_case_text_document(
+        case_id=case_id,
+        original_filename="assistant-technical.json",
+        content='{"case":{"status":"intake_open"}}',
+        uploaded_by_user_id=user_id,
+    )
+    store.add_case_message(
+        case_id=case_id,
+        role="assistant",
+        content=(
+            "Dokument je pripraveny na stiahnutie.\n\n"
+            f"Technicke udaje som ulozil do dokumentu pripadu: /v1/cases/{case_id}/documents/{generated_doc_id}?user_id={user_id}"
+        ),
+        agent_name="LawyerSlovakia",
+    )
+
+    generated_pdf = client.get(
+        f"/v1/cases/{case_id}/documents/{generated_doc_id}/pdf?user_id={user_id}",
+        headers=_headers(),
+    )
+    assert generated_pdf.status_code == 200
+    assert generated_pdf.headers["content-type"].startswith("application/pdf")
+    assert generated_pdf.content.startswith(b"%PDF")
+    assert generated_pdf.headers["content-disposition"].endswith(
+        'filename="assistant-technical.pdf"'
+    )
+    generated_pdf_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
+    )
+    assert "JurisDicta" in generated_pdf_text
+    assert "Skore overenia dokumentu: -" in generated_pdf_text
+    assert "právny návrh" in generated_pdf_text
+    assert "Poprad, Slovakia, 05801" in generated_pdf_text
 
 
 def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:

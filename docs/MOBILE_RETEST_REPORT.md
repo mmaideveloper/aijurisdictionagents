@@ -80,3 +80,11 @@ To fully satisfy mobile citation and PDF requirements:
 - Assistant label is normalized to localized assistant text instead of internal agent labels.
 - Export documents button now enables when a generated draft reply is detected even before delayed result sync.
 - API document-processing banner now uses Slovak wording and adds guardrails to avoid unresolved placeholders in replies.
+
+## 2026-05-07 mobile build hotfix (`0.1.5+58`)
+- Fixed Flutter compile failures in `mobile_app/lib/main.dart` by restoring `_stoppingSpeechManually` state used during manual speech-stop flow.
+- Removed stale reference to `_hasGeneratedCaseDocuments` and aligned export-button enabled state with `_hasExportReady`.
+- Bumped mobile build revision from `0.1.5+57` to `0.1.5+58` per mobile revision-only versioning policy.
+
+### Minimal runnable example
+- `python examples/minimal_demo.py`

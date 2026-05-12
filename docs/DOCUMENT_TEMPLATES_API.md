@@ -87,13 +87,38 @@ Central-European PDF font profile, so headings such as `Nájomná zmluva`, `Čl.
 
 If a chat run only asks for a single rental contract, the endpoint still returns one PDF.
 
-For generated court-facing or third-party organization output documents, the API applies the
-Jurisdicta default corporate template:
+For generated court-facing or client/third-party output documents, including requests such as
+`potvrdenie o zaplateni`, the API applies the JurisDicta professional PDF document template:
 
-- branded Jurisdicta header block
-- right-aligned corporate contact details
-- clean divider line and centered document title
-- same API/Core export footer metadata for traceability
+- branded JurisDicta header/contact/sidebar layout
+- formal centered document title and body typography; single-document exports use the legal document type inferred from the lawyer recommendation, not the session ID
+- duplicate first body headings are removed when they repeat the professional PDF title
+- long document titles are wrapped instead of overflowing the page
+- article headings such as `Čl. I` / `Článok 1` are rendered larger and bold
+- footer with a small JurisDicta logo and the document verification score when a session validation score is available
+- legal-draft disclaimer page when the document verification score is unknown or lower than `DOCUMENT_SHOW_DISCLAIMER` (default `50`)
+- footer QR code containing traceability metadata: generation date, API version, core
+  system version, case ID, session ID when available, user ID when available, and document verification score
+- missing party details in generated documents can be filled from the signed-in user's profile by default
+  (name, address, tax number, identity card number, date of birth, and social security number); these values
+  are used in the document body only and are not added to the QR payload
+- rental exports also read common draft labels such as `Podnájomník`, `Adresa nehnuteľnosti`, and
+  `Mesačné nájomné` from the conversation when structured case JSON is incomplete
+- generated session documents can be emailed through `POST /v1/chat/sessions/{session_id}/documents/send-email`;
+  when the client omits `recipient`, the API uses the signed-in user's profile email and returns a confirmation
+  response before queueing attachments; if the user corrects the recipient in chat (for example `nie na other@example.com`),
+  the corrected address is confirmed and used for the queued email
+- lawyer output is validated before display so profile-backed data does not remain listed as missing; when profile
+  data is missing, the user-facing note tells the user to complete Profile for future document defaults
+- document processing status messages shown to clients hide internal `session-*.txt` filenames; those identifiers are
+  kept in API logs for troubleshooting only
+- existing case chat sessions refresh memory from prior question/answer history before asking follow-up questions, so
+  already answered rental-property address and party-role questions are not repeated; if a document was already
+  prepared in the case, follow-up chat does not restart intake
+- prior assistant questions and user answers are summarized into the case memory prompt generally; repeated answered
+  questions are removed from user-facing replies and `CASE_UPDATE_JSON.case.open_questions`
+- incomplete missing-information intros are normalized so the client always sees a concrete follow-up question, using
+  the first `CASE_UPDATE_JSON.case.open_questions` item when available
 
 Internal workflow-style outputs (for example legal summary / next-step memorandum style drafts) and
 discussion summaries intentionally keep the plain PDF style without the corporate template.
@@ -102,9 +127,8 @@ discussion summaries intentionally keep the plain PDF style without the corporat
 
 The template preview endpoint renders one template directly through the same PDF builder used by chat document
 exports. It fills known placeholders with realistic sample data, returns `application/pdf`, and uses a
-`Content-Disposition` filename ending in `-preview.pdf`. Preview PDFs use the Jurisdicta A4 corporate
-layout with the logo block, contact panel, blue sidebar, and API/system version block from
-`docs/generated_document_template.png`.
+`Content-Disposition` filename ending in `-preview.pdf`. Preview PDFs use the same JurisDicta
+professional document layout as generated client-facing PDFs.
 
 For Slovak templates and generated Slovak document exports, the renderer now adds a visible legal disclaimer block on
 the first page and repeats a short disclaimer in the footer so the draft status is not easy to miss.

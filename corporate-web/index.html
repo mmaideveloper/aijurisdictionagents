@@ -5,12 +5,12 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JurisDigta</title>
-  <meta id="meta-description" name="description" content="Firemná prezentačná stránka pre AI Jurisdiction agentov: orchestrácia právneho uvažovania s auditovateľnými výstupmi." />
+  <meta id="meta-description" name="description" content="Firemná prezentačná stránka pre AI Jurisdigta agentov: orchestrácia právneho uvažovania s auditovateľnými výstupmi." />
   <link rel="icon" type="image/png" href="assets/login-shield.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20260306-2" />
+  <link rel="stylesheet" href="styles.css?v=__CORPORATE_WEB_ASSET_VERSION__" />
 </head>
 <body>
   <div class="bg-glow"></div>
@@ -19,7 +19,7 @@
   <header class="site-header">
     <nav class="nav">
       <a class="brand" href="#top" aria-label="JurisDigta home">
-        <img src="assets/login-shield.png" alt="Logo AI Jurisdiction" data-i18n-alt="brand_logo_alt" />
+        <img src="assets/login-shield.png" alt="Logo AI Jurisdigta" data-i18n-alt="brand_logo_alt" />
         <span>JurisDigta</span>
       </a>
       <div class="nav-links">
@@ -45,7 +45,7 @@
     <section id="overview" class="hero">
       <div class="hero-content">
         <p class="eyebrow" data-i18n="hero_eyebrow">Multi-agentné právne uvažovanie</p>
-        <h1 data-i18n="hero_title">AI Jurisdiction agenti pre komplexné právne workflow.</h1>
+        <h1 data-i18n="hero_title">AI Jurisdigta agenti pre komplexné právne workflow.</h1>
         <p class="hero-lede" data-i18n="hero_lede">
           Orchestrácia právnikov, sudcov a analytikov, ktorí spracujú dôkazy, diskutujú
           predpoklady a pripravia auditovateľné výstupy pre regulované prostredia.
@@ -279,6 +279,7 @@
             <li data-i18n="plan_basic_feature_1">Mesačný plán</li>
             <li data-i18n="plan_basic_feature_2">Aktivácia po potvrdení platby</li>
             <li data-i18n="plan_basic_feature_3">Platnosť 1 mesiac od aktivácie</li>
+            <li data-i18n="plan_basic_feature_4">Revízia právnikom po doplatku</li>
           </ul>
         </article>
         <article class="pricing-card highlight">
@@ -289,6 +290,7 @@
             <li data-i18n="plan_pro_feature_1">Jednorazový plán na 1 prípad</li>
             <li data-i18n="plan_pro_feature_2">Priradené používateľovi aj prípadu</li>
             <li data-i18n="plan_pro_feature_3">Aktivácia po potvrdení platby</li>
+            <li data-i18n="plan_pro_feature_4">Revízia právnikom po doplatku</li>
           </ul>
         </article>
         <article class="pricing-card">
@@ -299,6 +301,7 @@
             <li data-i18n="plan_ultra_feature_1">Mesačný plán</li>
             <li data-i18n="plan_ultra_feature_2">Aktivácia po potvrdení platby</li>
             <li data-i18n="plan_ultra_feature_3">Platnosť 1 mesiac od aktivácie</li>
+            <li data-i18n="plan_ultra_feature_4">Revízia právnikom po doplatku</li>
           </ul>
         </article>
       </div>
@@ -308,7 +311,7 @@
     <section id="faq" class="section alt">
       <div class="section-head">
         <h2 data-i18n="faq_title">FAQ</h2>
-        <p data-i18n="faq_lede">Najčastejšie otázky o AI Jurisdiction agentoch a správe.</p>
+        <p data-i18n="faq_lede">Najčastejšie otázky o AI Jurisdigta agentoch a správe.</p>
       </div>
       <div class="faq">
         <details>
@@ -356,13 +359,20 @@
             </div>
             <div>
               <label for="contact-topic" data-i18n="contact_topic_label">Téma</label>
-              <input id="contact-topic" name="topic" required minlength="3" maxlength="120" />
+              <input id="contact-topic" name="topic" required minlength="2" maxlength="120" />
             </div>
           </div>
           <div>
             <label for="contact-message" data-i18n="contact_message_label">Správa</label>
-            <textarea id="contact-message" name="message" required minlength="20" maxlength="1200"></textarea>
+            <textarea id="contact-message" name="message" required minlength="5" maxlength="1200"></textarea>
           </div>
+          <div
+            id="contact-turnstile"
+            data-turnstile-sitekey="__TURNSTILE_SITE_KEY__"
+            data-theme="light"
+            data-size="normal"
+            hidden
+          ></div>
           <p id="contact-form-status" class="form-status" role="status" aria-live="polite"></p>
           <button class="button primary" type="submit" data-i18n="contact_cta">Odoslať požiadavku</button>
         </form>
@@ -371,54 +381,54 @@
 
     <section id="legal" class="section legal">
       <div class="section-head">
-        <h2 data-i18n="legal_title">Legal information</h2>
-        <p data-i18n="legal_lede">Policy, GDPR, EU AI Act transparency, disclaimer, and service terms for all users.</p>
+        <h2 data-i18n="legal_title">Právne informácie</h2>
+        <p data-i18n="legal_lede">Pravidlá súkromia (GDPR), transparentnosť podľa EU AI Act, upozornenie a podmienky služby pre používateľov.</p>
       </div>
       <div class="legal-grid">
         <article id="privacy" class="legal-card">
-          <h3 data-i18n="legal_privacy_title">Privacy Policy</h3>
+          <h3 data-i18n="legal_privacy_title">Zásady súkromia</h3>
           <p data-i18n="legal_privacy_body">
-            We process account and case data under GDPR principles (lawfulness, minimization, retention controls) to operate the service securely and in line with legal obligations.
+            Spracúvame údaje o účte a prípade na bezpečnú prevádzku služby a splnenie právnych povinností.
           </p>
         </article>
         <article id="disclaimer" class="legal-card">
-          <h3 data-i18n="legal_disclaimer_title">Disclaimer</h3>
+          <h3 data-i18n="legal_disclaimer_title">Upozornenie</h3>
           <ul class="legal-list">
-            <li data-i18n="legal_disclaimer_item_1">AI-generated information only, not legal advice.</li>
-            <li data-i18n="legal_disclaimer_item_2">No attorney-client relationship is created.</li>
-            <li data-i18n="legal_disclaimer_item_3">No warranty and limited liability to the extent allowed by law.</li>
-            <li data-i18n="legal_disclaimer_item_4">Jurisdictional fit must be verified by qualified legal professionals.</li>
-            <li data-i18n="legal_disclaimer_item_5">Users remain responsible for decisions and legal actions.</li>
-            <li data-i18n="legal_disclaimer_item_6">External links may change and content can be updated without notice.</li>
+            <li data-i18n="legal_disclaimer_item_1">Informácie sú AI generované a nie sú právnym poradenstvom.</li>
+            <li data-i18n="legal_disclaimer_item_2">Použitie platformy nevytvára vzťah klient-právnik.</li>
+            <li data-i18n="legal_disclaimer_item_3">Bez záruky a s obmedzením zodpovednosti v rozsahu povolenom zákonmi.</li>
+            <li data-i18n="legal_disclaimer_item_4">Jurisdikčnú vhodnosť je potrebné overiť s kvalifikovaným právnikom.</li>
+            <li data-i18n="legal_disclaimer_item_5">Používateľ nesie zodpovednosť za rozhodnutia a právne kroky.</li>
+            <li data-i18n="legal_disclaimer_item_6">Externé odkazy sa môžu meniť a obsah môžeme upraviť bez upozornenia.</li>
           </ul>
           <p class="legal-updated">
-            <strong data-i18n="legal_last_updated_label">Last Updated</strong>:
-            <span data-i18n="legal_last_updated_date">May 6, 2026</span>
+            <strong data-i18n="legal_last_updated_label">Posledná aktualizácia</strong>:
+            <span data-i18n="legal_last_updated_date">6. máj 2026</span>
           </p>
         </article>
         <article id="ai-act" class="legal-card">
-          <h3 data-i18n="legal_ai_act_title">EU AI Act Transparency</h3>
+          <h3 data-i18n="legal_ai_act_title">Transparentnosť podľa EU AI Act</h3>
           <ul class="legal-list">
-            <li data-i18n="legal_ai_act_item_1">JurisDigta provides AI-assisted legal workflow support and does not replace licensed legal counsel.</li>
-            <li data-i18n="legal_ai_act_item_2">Human review and decision-making remain required for legal conclusions and external filings.</li>
-            <li data-i18n="legal_ai_act_item_3">Users are informed when outputs are AI-generated and should validate critical facts before use.</li>
+            <li data-i18n="legal_ai_act_item_1">JurisDigta poskytuje AI asistovanú podporu právnych workflow a nenahrádza licencované právne poradenstvo.</li>
+            <li data-i18n="legal_ai_act_item_2">Ľudský dohľad a rozhodovanie sú naďalej potrebné pre právne závery a externé podania.</li>
+            <li data-i18n="legal_ai_act_item_3">Používatelia sú informovaní, keď je výstup AI generovaný, a majú overiť kľúčové fakty pred použitím.</li>
           </ul>
         </article>
 
         <article id="data-processing-consent" class="legal-card">
-          <h3 data-i18n="legal_data_processing_title">Data processing notice and consent</h3>
+          <h3 data-i18n="legal_data_processing_title">Informácia o spracúvaní údajov a súhlase</h3>
           <ul class="legal-list">
-            <li data-i18n="legal_data_processing_item_1">Users may provide personal and financial data during document preparation, including third-party data, only when they have legal basis and authority.</li>
-            <li data-i18n="legal_data_processing_item_2">JurisDigta processes provided data as a processor/controller under GDPR principles and applies security, minimization, access controls, and retention policies.</li>
-            <li data-i18n="legal_data_processing_item_3">Users remain responsible for legality, accuracy, and lawful sharing of party data and must avoid prohibited or unlawful processing.</li>
-            <li data-i18n="legal_data_processing_item_4">AI outputs support legal drafting workflows; users must review and confirm compliance with applicable law, GDPR, and EU AI Act obligations before use.</li>
+            <li data-i18n="legal_data_processing_item_1">Používatelia môžu počas prípravy dokumentov poskytnúť osobné a finančné údaje vrátane údajov tretích strán iba vtedy, keď majú právny základ a oprávnenie.</li>
+            <li data-i18n="legal_data_processing_item_2">JurisDigta spracúva poskytnuté údaje ako sprostredkovateľ / prevádzkovateľ podľa zásad GDPR a uplatňuje bezpečnosť, minimalizáciu, prístupové kontroly a retenčné pravidlá.</li>
+            <li data-i18n="legal_data_processing_item_3">Používatelia zodpovedajú za zákonnosť, presnosť a oprávnené zdieľanie údajov strán a musia sa vyhnúť zakázanému alebo nezákonnému spracúvaniu.</li>
+            <li data-i18n="legal_data_processing_item_4">AI výstupy podporujú právne návrhové workflow; používatelia musia pred použitím skontrolovať a potvrdiť súlad s príslušným právom, GDPR a povinnosťami podľa EU AI Act.</li>
           </ul>
         </article>
 
         <article id="terms" class="legal-card">
-          <h3 data-i18n="legal_terms_title">Terms of Service</h3>
+          <h3 data-i18n="legal_terms_title">Podmienky služby</h3>
           <p data-i18n="legal_terms_body">
-            By using this website and platform, you agree to lawful use requirements and current service terms.
+            Používaním webu a platformy súhlasíte so zákonnými požiadavkami používania a aktuálnymi pravidlami služby.
           </p>
         </article>
       </div>
@@ -427,7 +437,7 @@
 
   <footer class="footer">
     <div class="footer-brand">
-      <img class="footer-lockup" src="assets/brand-lockup.png" alt="AI Jurisdiction logo" data-i18n-alt="brand_logo_alt" />
+      <img class="footer-lockup" src="assets/brand-lockup.png" alt="AI Jurisdigta logo" data-i18n-alt="brand_logo_alt" />
       <p data-i18n="footer_tagline">Multi-agentná právna inteligencia pre regulované operácie.</p>
     </div>
     <div class="footer-links">
@@ -437,15 +447,15 @@
       <a href="#data-processing-consent" data-i18n="footer_link_data_processing">Data processing notice</a>
     </div>
     <div class="footer-meta">
-      <span>(c) 2026 AI Jurisdiction</span>
+      <span>(c) 2026 AI Jurisdigta</span>
       <span>info@jurisdigta.eu</span>
       <span class="footer-version">
         <span data-i18n="footer_version_api_label">API version</span>:
-        <strong>0.1.1</strong>
+        <strong data-build-version="api">1.0.260395</strong>
       </span>
       <span class="footer-version">
         <span data-i18n="footer_version_core_label">System core version</span>:
-        <strong>0.1.1</strong>
+        <strong data-build-version="core">1.0.260373</strong>
       </span>
     </div>
   </footer>
@@ -453,17 +463,18 @@
   <script>
     const translations = {
       sk: {
-        meta_description: "Firemná prezentačná stránka pre AI Jurisdiction agentov: orchestrácia právneho uvažovania s auditovateľnými výstupmi.",
-        brand_logo_alt: "Logo AI Jurisdiction",
+        meta_description: "Firemná prezentačná stránka pre AI Jurisdigta agentov: orchestrácia právneho uvažovania s auditovateľnými výstupmi.",
+        brand_logo_alt: "Logo AI Jurisdigta",
         hero_graph_alt: "Diagram orchestrácie agentov",
         nav_overview: "Prehľad",
         nav_agents: "Agenti",
         nav_architecture: "Architektúra",
         nav_assurance: "Záruky",
+        nav_pricing: "Cenník",
         nav_faq: "FAQ",
         nav_contact: "Kontakt",
         hero_eyebrow: "Multi-agentné právne uvažovanie",
-        hero_title: "AI Jurisdiction agenti pre komplexné právne workflow.",
+        hero_title: "AI Jurisdigta agenti pre komplexné právne workflow.",
         hero_lede: "Orchestrácia právnikov, sudcov a analytikov, ktorí spracujú dôkazy, diskutujú predpoklady a pripravia auditovateľné výstupy pre regulované prostredia.",
         hero_cta_primary: "Požiadať o briefing",
         hero_cta_secondary: "Spoznajte agentov",
@@ -490,16 +501,19 @@
         plan_basic_feature_1: "Mesačný plán",
         plan_basic_feature_2: "Aktivácia po potvrdení platby",
         plan_basic_feature_3: "Platnosť 1 mesiac od aktivácie",
+        plan_basic_feature_4: "Revízia právnikom po doplatku",
         plan_pro_title: "Case",
         plan_pro_body: "1 prípad bez časového limitu a 5 dokumentmi na prípad.",
         plan_pro_feature_1: "Jednorazový plán na 1 prípad",
         plan_pro_feature_2: "Priradené používateľovi aj prípadu",
         plan_pro_feature_3: "Aktivácia po potvrdení platby",
+        plan_pro_feature_4: "Revízia právnikom po doplatku",
         plan_ultra_title: "Premium",
         plan_ultra_body: "100 prípadov s neobmedzenou platnosťou a 50 dokumentmi na prípad.",
         plan_ultra_feature_1: "Mesačný plán",
         plan_ultra_feature_2: "Aktivácia po potvrdení platby",
         plan_ultra_feature_3: "Platnosť 1 mesiac od aktivácie",
+        plan_ultra_feature_4: "Revízia právnikom po doplatku",
         pricing_note: "Stavy predplatného: čaká na spracovanie, spracúva sa, aktívne, zrušené, expirované.",
         video_title: "Jurisdigta v praxi.",
         video_lede: "Pozrite si ako Jurisdigta agent komunikuje kľúčové zistenia a vedie používateľa krok za krokom.",
@@ -553,7 +567,7 @@
         assurance_card3_title: "Logovanie",
         assurance_card3_body: "Run artefakty ukladajú prompty, rozhodnutia a trace súhrny.",
         faq_title: "FAQ",
-        faq_lede: "Najčastejšie otázky o AI Jurisdiction agentoch a správe.",
+        faq_lede: "Najčastejšie otázky o AI Jurisdigta agentoch a správe.",
         faq_q1: "Aké jurisdikcie podporujete?",
         faq_a1: "Rozsah jurisdikcie sa definuje pre každý prípad. Agenti pracujú iba s akceptovanými pravidlami krajiny a cezhraničnou compliance.",
         faq_q2: "Ako predchádzate nepodloženým výstupom?",
@@ -568,48 +582,57 @@
         contact_topic_label: "Téma",
         contact_message_label: "Správa",
         contact_cta: "Odoslať požiadavku",
-        contact_status_ready: "Pripravili sme email pre info@jurisdigta.eu.",
-        contact_status_invalid: "Skontrolujte meno, email, tému a správu.",
+        contact_status_ready: "Email bol odoslaný na info@jurisdigta.eu.",
+        contact_status_send_failed: "Email sa nepodarilo odoslať. Skúste to znova alebo napíšte na info@jurisdigta.eu.",
+        contact_status_invalid: "Skontrolujte meno, email, tému a správu. Téma musí mať aspoň 2 znaky a správa aspoň 5 znakov.",
         contact_status_robot: "Požiadavku nebolo možné odoslať.",
         contact_status_links: "Správa nemôže obsahovať webové odkazy.",
+        contact_status_captcha: "Potvrďte, prosím, overenie proti spamu.",
         footer_tagline: "Multi-agentná právna inteligencia pre regulované operácie.",
-        footer_link_privacy: "Zasady sukromia",
+        footer_link_privacy: "Zásady súkromia",
         footer_link_disclaimer: "Upozornenie",
-        footer_link_terms: "Podmienky sluzby",
+        footer_link_terms: "Podmienky služby",
+        footer_link_data_processing: "Informácia o spracúvaní údajov",
         footer_version_api_label: "API verzia",
         footer_version_core_label: "Verzia system core",
-        legal_title: "Pravne informacie",
-        legal_lede: "Pravidla sukromia (GDPR), transparentnost EU AI Act, upozornenie a podmienky sluzby pre pouzivatelov.",
-        legal_privacy_title: "Zasady sukromia",
-        legal_privacy_body: "Spracuvame udaje o ucte a pripade na bezpecnu prevadzku sluzby a splnenie pravnych povinnosti.",
+        legal_title: "Právne informácie",
+        legal_lede: "Pravidlá súkromia (GDPR), transparentnosť podľa EU AI Act, upozornenie a podmienky služby pre používateľov.",
+        legal_privacy_title: "Zásady súkromia",
+        legal_privacy_body: "Spracúvame údaje o účte a prípade na bezpečnú prevádzku služby a splnenie právnych povinností.",
         legal_disclaimer_title: "Upozornenie",
-        legal_disclaimer_item_1: "Informacie su AI generovane a nie su pravnym poradenstvom.",
-        legal_disclaimer_item_2: "Pouzitie platformy nevytvara vztah klient-pravnik.",
-        legal_disclaimer_item_3: "Bez zaruky a s obmedzenim zodpovednosti v rozsahu povolenom zakonmi.",
-        legal_disclaimer_item_4: "Jurisdikcnu vhodnost je potrebne overit s kvalifikovanym pravnikom.",
-        legal_disclaimer_item_5: "Pouzivatel nesie zodpovednost za rozhodnutia a pravne kroky.",
-        legal_disclaimer_item_6: "Externe odkazy sa mozu menit a obsah mozeme upravit bez upozornenia.",
-        legal_ai_act_title: "Transparentnost podla EU AI Act",
-        legal_ai_act_item_1: "JurisDigta poskytuje AI asistovanu podporu pravnych workflow a nenahradza licencovane pravne poradenstvo.",
-        legal_ai_act_item_2: "Ludsky dohľad a rozhodovanie su nadalej potrebne pre pravne zavery a externe podania.",
-        legal_ai_act_item_3: "Pouzivatelia su informovani, ked je vystup AI generovany, a maju overit klucove fakty pred pouzitim.",
-        legal_last_updated_label: "Posledna aktualizacia",
-        legal_last_updated_date: "6. maj 2026",
-        legal_terms_title: "Podmienky sluzby",
-        legal_terms_body: "Pouzivanim webu a platformy suhlasite so zakonnyma podmienkami a aktualnymi pravidlami sluzby."
+        legal_disclaimer_item_1: "Informácie sú AI generované a nie sú právnym poradenstvom.",
+        legal_disclaimer_item_2: "Použitie platformy nevytvára vzťah klient-právnik.",
+        legal_disclaimer_item_3: "Bez záruky a s obmedzením zodpovednosti v rozsahu povolenom zákonmi.",
+        legal_disclaimer_item_4: "Jurisdikčnú vhodnosť je potrebné overiť s kvalifikovaným právnikom.",
+        legal_disclaimer_item_5: "Používateľ nesie zodpovednosť za rozhodnutia a právne kroky.",
+        legal_disclaimer_item_6: "Externé odkazy sa môžu meniť a obsah môžeme upraviť bez upozornenia.",
+        legal_ai_act_title: "Transparentnosť podľa EU AI Act",
+        legal_ai_act_item_1: "JurisDigta poskytuje AI asistovanú podporu právnych workflow a nenahrádza licencované právne poradenstvo.",
+        legal_ai_act_item_2: "Ľudský dohľad a rozhodovanie sú naďalej potrebné pre právne závery a externé podania.",
+        legal_ai_act_item_3: "Používatelia sú informovaní, keď je výstup AI generovaný, a majú overiť kľúčové fakty pred použitím.",
+        legal_data_processing_title: "Informácia o spracúvaní údajov a súhlase",
+        legal_data_processing_item_1: "Používatelia môžu počas prípravy dokumentov poskytnúť osobné a finančné údaje vrátane údajov tretích strán iba vtedy, keď majú právny základ a oprávnenie.",
+        legal_data_processing_item_2: "JurisDigta spracúva poskytnuté údaje ako sprostredkovateľ / prevádzkovateľ podľa zásad GDPR a uplatňuje bezpečnosť, minimalizáciu, prístupové kontroly a retenčné pravidlá.",
+        legal_data_processing_item_3: "Používatelia zodpovedajú za zákonnosť, presnosť a oprávnené zdieľanie údajov strán a musia sa vyhnúť zakázanému alebo nezákonnému spracúvaniu.",
+        legal_data_processing_item_4: "AI výstupy podporujú právne návrhové workflow; používatelia musia pred použitím skontrolovať a potvrdiť súlad s príslušným právom, GDPR a povinnosťami podľa EU AI Act.",
+        legal_last_updated_label: "Posledná aktualizácia",
+        legal_last_updated_date: "6. máj 2026",
+        legal_terms_title: "Podmienky služby",
+        legal_terms_body: "Používaním webu a platformy súhlasíte so zákonnými požiadavkami používania a aktuálnymi pravidlami služby."
       },
       de: {
-        meta_description: "Unternehmenspräsentation für AI Jurisdiction Agents: orchestriertes juristisches Denken mit auditierbaren Ergebnissen.",
-        brand_logo_alt: "Logo von AI Jurisdiction",
+        meta_description: "Unternehmenspräsentation für AI Jurisdigta Agents: orchestriertes juristisches Denken mit auditierbaren Ergebnissen.",
+        brand_logo_alt: "Logo von AI Jurisdigta",
         hero_graph_alt: "Diagramm der Agenten-Orchestrierung",
         nav_overview: "Überblick",
         nav_agents: "Agenten",
         nav_architecture: "Architektur",
         nav_assurance: "Absicherung",
+        nav_pricing: "Preise",
         nav_faq: "FAQ",
         nav_contact: "Kontakt",
         hero_eyebrow: "Multi-Agenten-Rechtsanalyse",
-        hero_title: "AI Jurisdiction Agents für komplexe juristische Workflows.",
+        hero_title: "AI Jurisdigta Agents für komplexe juristische Workflows.",
         hero_lede: "Orchestrierte Teams aus Anwalt, Richter und Analyst, die Beweise aufnehmen, Annahmen prüfen und auditierbare Ergebnisse für regulierte Umgebungen liefern.",
         hero_cta_primary: "Briefing anfragen",
         hero_cta_secondary: "Agenten kennenlernen",
@@ -636,16 +659,19 @@
         plan_basic_feature_1: "Monatsplan",
         plan_basic_feature_2: "Aktivierung nach Zahlungsbestätigung",
         plan_basic_feature_3: "Gültigkeit: 1 Monat ab Aktivierung",
+        plan_basic_feature_4: "Juristische Prüfung gegen Aufpreis",
         plan_pro_title: "Case",
         plan_pro_body: "1 Fall ohne Zeitlimit und 5 Dokumenten pro Fall.",
         plan_pro_feature_1: "Einmaliger Plan für 1 Fall",
         plan_pro_feature_2: "Dem Nutzer und dem Fall zugewiesen",
         plan_pro_feature_3: "Aktivierung nach Zahlungsbestätigung",
+        plan_pro_feature_4: "Juristische Prüfung gegen Aufpreis",
         plan_ultra_title: "Premium",
         plan_ultra_body: "100 Fälle mit unbegrenzter Gültigkeit und 50 Dokumenten pro Fall.",
         plan_ultra_feature_1: "Monatsplan",
         plan_ultra_feature_2: "Aktivierung nach Zahlungsbestätigung",
         plan_ultra_feature_3: "Gültigkeit: 1 Monat ab Aktivierung",
+        plan_ultra_feature_4: "Juristische Prüfung gegen Aufpreis",
         pricing_note: "Abo-Status: ausstehend, in Bearbeitung, aktiv, gekündigt, abgelaufen.",
         video_title: "Jurisdigta in Aktion.",
         video_lede: "Sehen Sie, wie der Jurisdigta-Agent zentrale Erkenntnisse vermittelt und Nutzer Schritt für Schritt begleitet.",
@@ -699,7 +725,7 @@
         assurance_card3_title: "Logging",
         assurance_card3_body: "Run-Artefakte speichern Prompts, Entscheidungen und Trace-Summaries.",
         faq_title: "FAQ",
-        faq_lede: "Häufige Fragen zu AI Jurisdiction und Governance.",
+        faq_lede: "Häufige Fragen zu AI Jurisdigta und Governance.",
         faq_q1: "Welche Jurisdiktionen werden unterstützt?",
         faq_a1: "Der Jurisdiktionsumfang wird pro Fall definiert. Agenten arbeiten nur mit akzeptierten Landesregeln und grenzüberschreitender Compliance.",
         faq_q2: "Wie vermeiden Sie unbelegte Antworten?",
@@ -714,14 +740,17 @@
         contact_topic_label: "Thema",
         contact_message_label: "Nachricht",
         contact_cta: "Anfrage senden",
-        contact_status_ready: "Die E-Mail an info@jurisdigta.eu wurde vorbereitet.",
-        contact_status_invalid: "Bitte prüfen Sie Name, E-Mail, Thema und Nachricht.",
+        contact_status_ready: "Die E-Mail wurde an info@jurisdigta.eu gesendet.",
+        contact_status_send_failed: "Die E-Mail konnte nicht gesendet werden. Bitte versuchen Sie es erneut oder schreiben Sie an info@jurisdigta.eu.",
+        contact_status_invalid: "Bitte prüfen Sie Name, E-Mail, Thema und Nachricht. Thema braucht mindestens 2 Zeichen, Nachricht mindestens 5 Zeichen.",
         contact_status_robot: "Die Anfrage konnte nicht gesendet werden.",
         contact_status_links: "Die Nachricht darf keine Weblinks enthalten.",
+        contact_status_captcha: "Bitte bestätigen Sie die Anti-Spam-Prüfung.",
         footer_tagline: "Multi-Agenten-Rechtsintelligenz für regulierte Abläufe.",
         footer_link_privacy: "Datenschutz",
         footer_link_disclaimer: "Haftungsausschluss",
         footer_link_terms: "Nutzungsbedingungen",
+        footer_link_data_processing: "Hinweis zur Datenverarbeitung",
         footer_version_api_label: "API-Version",
         footer_version_core_label: "System-Core-Version",
         legal_title: "Rechtliche Informationen",
@@ -745,17 +774,18 @@
         legal_terms_body: "Durch die Nutzung von Website und Plattform stimmen Sie den geltenden Servicebedingungen zu."
       },
       en: {
-        meta_description: "Corporate presentation site for AI Jurisdiction agents: orchestrated legal reasoning with audit-ready outputs.",
-        brand_logo_alt: "AI Jurisdiction logo",
+        meta_description: "Corporate presentation site for AI Jurisdigta agents: orchestrated legal reasoning with audit-ready outputs.",
+        brand_logo_alt: "AI Jurisdigta logo",
         hero_graph_alt: "Diagram of agent orchestration",
         nav_overview: "Overview",
         nav_agents: "Agents",
         nav_architecture: "Architecture",
         nav_assurance: "Assurance",
+        nav_pricing: "Pricing",
         nav_faq: "FAQ",
         nav_contact: "Contact",
         hero_eyebrow: "Multi-agent legal reasoning",
-        hero_title: "AI Jurisdiction agents for complex legal workflows.",
+        hero_title: "AI Jurisdigta agents for complex legal workflows.",
         hero_lede: "An orchestrated system of lawyer, judge, and analyst agents that ingest evidence, debate assumptions, and produce audit-ready outputs for regulated environments.",
         hero_cta_primary: "Request a briefing",
         hero_cta_secondary: "Meet the agents",
@@ -782,16 +812,19 @@
         plan_basic_feature_1: "Monthly plan",
         plan_basic_feature_2: "Activation after payment confirmation",
         plan_basic_feature_3: "Validity: 1 month from activation",
+        plan_basic_feature_4: "Lawyer review after extra payment",
         plan_pro_title: "Case",
         plan_pro_body: "1 case with no time limit and 5 documents per case.",
         plan_pro_feature_1: "One-time plan for 1 case",
         plan_pro_feature_2: "Assigned to both the user and the case",
         plan_pro_feature_3: "Activation after payment confirmation",
+        plan_pro_feature_4: "Lawyer review after extra payment",
         plan_ultra_title: "Premium",
         plan_ultra_body: "100 cases with unlimited validity and 50 documents per case.",
         plan_ultra_feature_1: "Monthly plan",
         plan_ultra_feature_2: "Activation after payment confirmation",
         plan_ultra_feature_3: "Validity: 1 month from activation",
+        plan_ultra_feature_4: "Lawyer review after extra payment",
         pricing_note: "Subscription states: pending, processing, active, cancelled, expired.",
         video_title: "Jurisdigta in action.",
         video_lede: "Watch how the Jurisdigta agent delivers key findings and guides users step by step.",
@@ -845,7 +878,7 @@
         assurance_card3_title: "Logging",
         assurance_card3_body: "Run artifacts are stored with prompts, decisions, and trace summaries.",
         faq_title: "FAQ",
-        faq_lede: "Common questions about AI Jurisdiction agents and governance.",
+        faq_lede: "Common questions about AI Jurisdigta agents and governance.",
         faq_q1: "What jurisdictions are supported?",
         faq_a1: "Jurisdiction scope is defined per case. Agents operate only on accepted country rules and cross-border compliance.",
         faq_q2: "How do you prevent unsupported outputs?",
@@ -860,10 +893,12 @@
         contact_topic_label: "Topic",
         contact_message_label: "Message",
         contact_cta: "Send request",
-        contact_status_ready: "Prepared an email to info@jurisdigta.eu.",
-        contact_status_invalid: "Check name, email, topic, and message.",
+        contact_status_ready: "Email sent to info@jurisdigta.eu.",
+        contact_status_send_failed: "Email could not be sent. Try again or write to info@jurisdigta.eu.",
+        contact_status_invalid: "Check name, email, topic, and message. Topic needs at least 2 characters and message at least 5.",
         contact_status_robot: "The request could not be sent.",
         contact_status_links: "The message cannot contain web links.",
+        contact_status_captcha: "Please complete the anti-spam verification.",
         footer_tagline: "Multi-agent legal intelligence for regulated operations.",
         footer_link_privacy: "Privacy Policy",
         footer_link_disclaimer: "Disclaimer",
@@ -907,10 +942,12 @@
       de: "assets/jurisdigta-ge.mp4",
       en: "assets/jurisdigta-en.mp4"
     };
-    const contactAddress = ["info", "jurisdigta.eu"].join("@");
+    const configuredContactApiUrl = "__CONTACT_API_URL__";
+    const turnstileSiteKey = "__TURNSTILE_SITE_KEY__";
     const contactForm = document.getElementById("contact-request-form");
     const contactStartedAt = document.getElementById("contact-started-at");
     const contactStatus = document.getElementById("contact-form-status");
+    const contactTurnstile = document.getElementById("contact-turnstile");
     const blockedEmailDomains = new Set([
       "example.com",
       "example.org",
@@ -920,6 +957,20 @@
       "10minutemail.com"
     ]);
     let activeLanguage = "sk";
+
+    function resolveContactApiUrl() {
+      if (configuredContactApiUrl && !configuredContactApiUrl.startsWith("__")) {
+        return configuredContactApiUrl;
+      }
+      if (configuredContactApiUrl && configuredContactApiUrl.startsWith("__")) {
+        return "http://127.0.0.1:8080/v1/contact";
+      }
+      const localHosts = new Set(["", "localhost", "127.0.0.1", "::1"]);
+      if (localHosts.has(window.location.hostname)) {
+        return "http://127.0.0.1:8080/v1/contact";
+      }
+      return "https://api.jurisdigta.eu/v1/contact";
+    }
 
     function contactText(key) {
       const dictionary = translations[activeLanguage] || translations.sk;
@@ -948,23 +999,75 @@
       return /\b(?:https?:\/\/|www\.|\.ru\b|\.cn\b)/i.test(String(value || ""));
     }
 
-    function buildContactBody(data) {
-      return [
-        `Name: ${data.get("name")}`,
-        `Email: ${data.get("email")}`,
-        `Organization: ${data.get("company") || "-"}`,
-        `Topic: ${data.get("topic")}`,
-        "",
-        String(data.get("message") || "")
-      ].join("\n");
+    function buildContactPayload(data) {
+      return {
+        name: String(data.get("name") || "").trim(),
+        email: String(data.get("email") || "").trim(),
+        company: String(data.get("company") || "").trim(),
+        topic: String(data.get("topic") || "").trim(),
+        message: String(data.get("message") || "").trim(),
+        website: String(data.get("website") || "").trim(),
+        started_at: Number(data.get("started_at") || 0),
+        turnstile_token: getTurnstileToken()
+      };
     }
 
-    function handleContactSubmit(event) {
+    function hasConfiguredTurnstile() {
+      return Boolean(turnstileSiteKey && !turnstileSiteKey.startsWith("__"));
+    }
+
+    function loadTurnstile() {
+      if (!contactTurnstile || !hasConfiguredTurnstile()) {
+        return;
+      }
+      contactTurnstile.hidden = false;
+      contactTurnstile.classList.add("cf-turnstile");
+      contactTurnstile.setAttribute("data-sitekey", turnstileSiteKey);
+      if (document.querySelector('script[data-turnstile-api="true"]')) {
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+      script.async = true;
+      script.defer = true;
+      script.dataset.turnstileApi = "true";
+      document.head.appendChild(script);
+    }
+
+    function getTurnstileToken() {
+      const responseInput = contactForm
+        ? contactForm.querySelector('input[name="cf-turnstile-response"]')
+        : null;
+      return responseInput ? String(responseInput.value || "").trim() : "";
+    }
+
+    function resetTurnstile() {
+      if (window.turnstile && contactTurnstile && hasConfiguredTurnstile()) {
+        window.turnstile.reset(contactTurnstile);
+      }
+    }
+
+    async function sendContactPayload(payload) {
+      const response = await fetch(resolveContactApiUrl(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        throw new Error(`Contact request failed with status ${response.status}`);
+      }
+      return response.json();
+    }
+
+    async function handleContactSubmit(event) {
       event.preventDefault();
       if (!contactForm) {
         return;
       }
       const data = new FormData(contactForm);
+      const submitButton = contactForm.querySelector('button[type="submit"]');
       const elapsedMs = Date.now() - Number(data.get("started_at") || 0);
       if (String(data.get("website") || "").trim() || elapsedMs < 3000) {
         setContactStatus("contact_status_robot");
@@ -978,10 +1081,28 @@
         setContactStatus("contact_status_links");
         return;
       }
-      const subject = `JurisDigta request: ${String(data.get("topic") || "").trim()}`;
-      const body = buildContactBody(data);
-      window.location.href = `mailto:${contactAddress}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      setContactStatus("contact_status_ready");
+      if (hasConfiguredTurnstile() && !getTurnstileToken()) {
+        setContactStatus("contact_status_captcha");
+        return;
+      }
+      if (submitButton) {
+        submitButton.disabled = true;
+      }
+      try {
+        await sendContactPayload(buildContactPayload(data));
+        contactForm.reset();
+        if (contactStartedAt) {
+          contactStartedAt.value = String(Date.now());
+        }
+        setContactStatus("contact_status_ready");
+      } catch {
+        resetTurnstile();
+        setContactStatus("contact_status_send_failed");
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+        }
+      }
     }
 
     function applyTranslations(lang) {
@@ -1048,6 +1169,7 @@
     if (contactForm) {
       contactForm.addEventListener("submit", handleContactSubmit);
     }
+    loadTurnstile();
 
     const storedLang = localStorage.getItem("aj_lang");
     setLanguage(storedLang || "sk");

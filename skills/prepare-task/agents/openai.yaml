@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Task"
+  short_description: "Turn chat ideas into ready GitHub Project tasks"
+  default_prompt: "Here is my idea for a new feature. Interview me for the missing details, prepare the technical task, and ask before creating or updating a GitHub Project task."

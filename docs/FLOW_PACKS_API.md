@@ -21,9 +21,12 @@ Default seeded Slovak packs include:
 - `sk.civil.lease_advisory`
 - `sk.probate.inheritance_proceeding`
 - `sk.civil.power_of_attorney`
+- `sk.civil.payment_confirmation`
 - `sk.criminal.criminal_complaint`
 - `sk.notary.notarial_process`
 - `sk.support.person_company_screening`
+
+The Slovak screening pack now advertises `dovera_debtor_check` alongside the existing screening tools so debt-risk checks can include normalized Dôvera debtor-list evidence.
 
 ## Storage
 

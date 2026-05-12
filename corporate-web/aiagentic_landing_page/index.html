@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Agentics</title>
+  <meta
+    name="description"
+    content="AI Agentics pripravuje portfólio AI agentov pre právne dokumenty, právnikov a študentov práva."
+  />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --ink: #0d2b5c;
+      --muted: #405676;
+      --blue: #126ee8;
+      --blue-strong: #075fdb;
+      --card: rgba(248, 252, 255, 0.84);
+      --line: rgba(13, 72, 137, 0.14);
+      --shadow: rgba(22, 91, 168, 0.2);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 5.2vh 24px;
+      overflow-x: hidden;
+      color: var(--ink);
+      font-family: Inter, Arial, sans-serif;
+      background:
+        radial-gradient(circle at 52% 42%, rgba(255, 255, 255, 0.94) 0 16%, rgba(195, 230, 255, 0.62) 31%, transparent 48%),
+        radial-gradient(circle at 24% 66%, rgba(171, 222, 255, 0.75), transparent 32%),
+        radial-gradient(circle at 80% 38%, rgba(154, 216, 255, 0.68), transparent 35%),
+        linear-gradient(135deg, #eef9ff 0%, #d8efff 36%, #9fd6ff 100%);
+    }
+
+    body::before,
+    body::after {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      content: "";
+    }
+
+    body::before {
+      opacity: 0.38;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.72) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.72) 1px, transparent 1px);
+      background-size: 24px 24px;
+      mask-image: radial-gradient(circle at center, transparent 0 28%, #000 58%);
+    }
+
+    body::after {
+      opacity: 0.82;
+      background:
+        radial-gradient(circle at 8% 46%, #ffffff 0 4px, transparent 5px),
+        radial-gradient(circle at 14% 62%, #ffffff 0 6px, transparent 7px),
+        radial-gradient(circle at 91% 46%, #ffffff 0 4px, transparent 5px),
+        radial-gradient(circle at 86% 72%, #ffffff 0 5px, transparent 6px),
+        radial-gradient(circle at 50% 7%, rgba(255, 255, 255, 0.95) 0 2px, transparent 3px);
+    }
+
+    .network {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .network::before,
+    .network::after {
+      position: absolute;
+      top: 13%;
+      width: min(44vw, 620px);
+      height: 74vh;
+      min-height: 620px;
+      border: 2px solid rgba(255, 255, 255, 0.62);
+      border-radius: 50%;
+      filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.8));
+      content: "";
+    }
+
+    .network::before {
+      left: 4.5%;
+      border-right-color: transparent;
+      transform: rotate(-10deg);
+    }
+
+    .network::after {
+      right: 4.5%;
+      border-left-color: transparent;
+      transform: rotate(10deg);
+    }
+
+    .main-card {
+      width: min(838px, 100%);
+      min-height: min(1074px, calc(100vh - 72px));
+      padding: clamp(32px, 3.8vw, 50px) clamp(24px, 5vw, 74px) clamp(32px, 4.8vw, 48px);
+      border: 2px solid rgba(255, 255, 255, 0.88);
+      border-radius: 34px;
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(239, 249, 255, 0.76)),
+        rgba(255, 255, 255, 0.68);
+      box-shadow:
+        0 26px 62px rgba(34, 115, 194, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+      text-align: center;
+      backdrop-filter: blur(18px);
+    }
+
+    .brand-mark {
+      display: grid;
+      justify-items: center;
+      margin-bottom: 24px;
+    }
+
+    .logo-emblem {
+      position: relative;
+      width: 188px;
+      height: 188px;
+      margin-bottom: 16px;
+    }
+
+    .logo-ring {
+      position: absolute;
+      inset: 10px;
+      border: 15px solid transparent;
+      border-top-color: #10a7e8;
+      border-left-color: #126ee8;
+      border-radius: 50%;
+      transform: rotate(-26deg);
+      filter: drop-shadow(0 10px 12px rgba(25, 106, 209, 0.2));
+    }
+
+    .logo-ring::before,
+    .logo-ring::after {
+      position: absolute;
+      width: 54px;
+      height: 15px;
+      border-radius: 999px;
+      background: #f7fbff;
+      content: "";
+    }
+
+    .logo-ring::before {
+      top: -17px;
+      left: 86px;
+    }
+
+    .logo-ring::after {
+      bottom: 25px;
+      left: -21px;
+      transform: rotate(38deg);
+    }
+
+    .logo-ai {
+      position: absolute;
+      top: 57px;
+      left: 34px;
+      z-index: 2;
+      color: #082d68;
+      font-size: 80px;
+      font-weight: 800;
+      letter-spacing: -6px;
+      line-height: 1;
+    }
+
+    .logo-head {
+      position: absolute;
+      right: 23px;
+      top: 22px;
+      width: 70px;
+      height: 145px;
+      overflow: hidden;
+      border-radius: 0 58% 58% 0 / 0 48% 48% 0;
+      background: linear-gradient(160deg, #10b7ef 0%, #126ee8 56%, #0a3f9f 100%);
+      clip-path: polygon(22% 0, 76% 12%, 93% 31%, 81% 46%, 98% 58%, 75% 62%, 82% 78%, 55% 100%, 17% 91%, 10% 14%);
+    }
+
+    .logo-head::before {
+      position: absolute;
+      inset: 0 0 0 25px;
+      background:
+        radial-gradient(circle at 18px 32px, #effbff 0 5px, transparent 6px),
+        radial-gradient(circle at 42px 42px, #effbff 0 4px, transparent 5px),
+        radial-gradient(circle at 16px 65px, #effbff 0 4px, transparent 5px),
+        linear-gradient(#effbff, #effbff) 18px 33px / 28px 4px no-repeat,
+        linear-gradient(#effbff, #effbff) 16px 66px / 34px 4px no-repeat,
+        linear-gradient(#effbff, #effbff) 16px 86px / 24px 4px no-repeat;
+      content: "";
+    }
+
+    .wordmark {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      margin: 0;
+      color: #102b60;
+      font-size: clamp(40px, 5.1vw, 59px);
+      font-weight: 600;
+      letter-spacing: 2px;
+      line-height: 1;
+    }
+
+    .wordmark span:first-child {
+      color: #136ff0;
+      font-weight: 800;
+    }
+
+    .tagline {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-top: 14px;
+      color: #2277d9;
+      font-size: 18px;
+      font-weight: 500;
+    }
+
+    .tagline::before,
+    .tagline::after {
+      width: 70px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(18, 110, 232, 0.35));
+      content: "";
+    }
+
+    .tagline::after {
+      background: linear-gradient(90deg, rgba(18, 110, 232, 0.35), transparent);
+    }
+
+    h1 {
+      margin: 0;
+      color: #102b60;
+      font-size: clamp(34px, 4.4vw, 52px);
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      line-height: 1.12;
+    }
+
+    .intro {
+      max-width: 690px;
+      margin: 20px auto 28px;
+      color: var(--muted);
+      font-size: clamp(19px, 2.3vw, 23px);
+      font-weight: 400;
+      line-height: 1.48;
+    }
+
+    .tools-card {
+      width: min(594px, 100%);
+      margin: 0 auto;
+      padding: 30px 36px 28px;
+      border-radius: 21px;
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(224, 243, 255, 0.7)),
+        rgba(255, 255, 255, 0.55);
+      box-shadow:
+        0 20px 42px rgba(32, 102, 174, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.86);
+      text-align: left;
+    }
+
+    .tools-title {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin: 0 0 25px;
+      color: #0d2b5c;
+      font-size: clamp(27px, 3vw, 32px);
+      font-weight: 800;
+      line-height: 1.15;
+    }
+
+    .robot-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 36px;
+      height: 31px;
+      border-radius: 11px;
+      color: white;
+      background: linear-gradient(180deg, #278dff, #075fdb);
+      box-shadow: 0 8px 14px rgba(18, 110, 232, 0.25);
+    }
+
+    .robot-icon svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    .tool-list {
+      display: grid;
+      gap: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .tool {
+      display: grid;
+      grid-template-columns: 97px 1fr;
+      gap: 26px;
+      align-items: center;
+      min-height: 107px;
+      padding: 0 0 16px;
+    }
+
+    .tool + .tool {
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .tool-icon {
+      display: grid;
+      place-items: center;
+      width: 97px;
+      height: 97px;
+      border-radius: 21px;
+      background: linear-gradient(145deg, rgba(198, 232, 255, 0.95), rgba(255, 255, 255, 0.88));
+      box-shadow: 0 13px 24px rgba(17, 100, 213, 0.14);
+    }
+
+    .tool-icon svg {
+      width: 62px;
+      height: 62px;
+      filter: drop-shadow(0 9px 10px rgba(12, 86, 203, 0.22));
+    }
+
+    .tool-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 7px;
+      color: #0d2b5c;
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    .tool-title a {
+      color: var(--blue);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-thickness: 2px;
+    }
+
+    .external-icon {
+      width: 22px;
+      height: 22px;
+      color: var(--blue);
+      flex: 0 0 auto;
+    }
+
+    .tool-description {
+      margin: 0;
+      color: #344b70;
+      font-size: 20px;
+      line-height: 1.32;
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 18px;
+      }
+
+      .main-card {
+        min-height: auto;
+        border-radius: 26px;
+      }
+
+      .logo-emblem {
+        width: 158px;
+        height: 158px;
+      }
+
+      .logo-ai {
+        top: 49px;
+        left: 30px;
+        font-size: 66px;
+        letter-spacing: -5px;
+      }
+
+      .logo-head {
+        right: 18px;
+        top: 18px;
+        width: 60px;
+        height: 120px;
+      }
+
+      .wordmark {
+        gap: 10px;
+        letter-spacing: 0;
+      }
+
+      .tagline {
+        font-size: 15px;
+      }
+
+      .tagline::before,
+      .tagline::after {
+        width: 34px;
+      }
+
+      .tools-card {
+        padding: 24px 20px;
+      }
+
+      .tool {
+        grid-template-columns: 72px 1fr;
+        gap: 16px;
+        min-height: 86px;
+      }
+
+      .tool-icon {
+        width: 72px;
+        height: 72px;
+        border-radius: 18px;
+      }
+
+      .tool-icon svg {
+        width: 48px;
+        height: 48px;
+      }
+
+      .tool-title {
+        font-size: 20px;
+      }
+
+      .tool-description {
+        font-size: 17px;
+      }
+    }
+
+    @media (max-width: 460px) {
+      .tool {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        text-align: center;
+      }
+
+      .tool-title {
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="network" aria-hidden="true"></div>
+  <main class="main-card" aria-labelledby="page-title">
+    <section class="brand-mark" aria-label="AI Agentics">
+      <div class="logo-emblem" aria-hidden="true">
+        <div class="logo-ring"></div>
+        <div class="logo-ai">AI</div>
+        <div class="logo-head"></div>
+      </div>
+      <p class="wordmark"><span>AI</span><span>AGENTICS</span></p>
+      <p class="tagline">Inteligencia. Automatizácia. Budúcnosť.</p>
+    </section>
+
+    <h1 id="page-title">Vitajte na AI Agentics.</h1>
+    <p class="intro">
+      Naši členovia tímu (ľudskí aj virtuálni) pracujú na stránke a riešení,
+      aby sme vám priniesli množstvo zaujímavých AI agentov.
+    </p>
+
+    <section class="tools-card" aria-labelledby="tools-title">
+      <h2 id="tools-title" class="tools-title">
+        <span class="robot-icon" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M16 3v5" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+            <path d="M9 13h14a5 5 0 0 1 5 5v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5v-5a5 5 0 0 1 5-5Z" fill="currentColor" />
+            <path d="M4 20H1m30 0h-3" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+            <circle cx="12" cy="20" r="2.2" fill="white" />
+            <circle cx="20" cy="20" r="2.2" fill="white" />
+            <path d="M13 25h6" stroke="white" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </span>
+        Naše AI nástroje
+      </h2>
+
+      <ul class="tool-list">
+        <li class="tool">
+          <span class="tool-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none">
+              <path d="M32 5 54 14v15c0 14.7-8.6 24.6-22 30C18.6 53.6 10 43.7 10 29V14L32 5Z" fill="url(#shieldGradient)" />
+              <path d="M32 15v34M19 28h26M22 28l-5 11h10l-5-11Zm20 0-5 11h10l-5-11Z" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+              <defs>
+                <linearGradient id="shieldGradient" x1="13" x2="54" y1="8" y2="57" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#148DFF" />
+                  <stop offset="1" stop-color="#0757D5" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </span>
+          <div>
+            <h3 class="tool-title">
+              <a href="https://www.jurisdigta.eu" target="_blank" rel="noopener">Jurisdigta</a>
+              <svg class="external-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M14 4h6v6M10 14 20 4M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </h3>
+            <p class="tool-description">generátor právnych dokumentov<br />pre bežných používateľov</p>
+          </div>
+        </li>
+
+        <li class="tool">
+          <span class="tool-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none">
+              <rect x="12" y="22" width="40" height="29" rx="5" fill="url(#briefcaseGradient)" />
+              <path d="M24 22v-6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v6M12 32h40M29 32v6h6v-6" stroke="white" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+              <defs>
+                <linearGradient id="briefcaseGradient" x1="13" x2="53" y1="14" y2="52" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#1AA5FF" />
+                  <stop offset="1" stop-color="#0758D8" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </span>
+          <div>
+            <h3 class="tool-title">Jurisdigta Lawyers</h3>
+            <p class="tool-description">AI nástroj pre prípravu na advokátske, notárske skúšky</p>
+          </div>
+        </li>
+
+        <li class="tool">
+          <span class="tool-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none">
+              <path d="M32 12 58 25 32 38 6 25 32 12Z" fill="url(#studentGradient)" />
+              <path d="M18 32v12c5 5 23 5 28 0V32M54 27v16" stroke="#0862DF" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+              <defs>
+                <linearGradient id="studentGradient" x1="9" x2="55" y1="13" y2="38" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#1EAFFF" />
+                  <stop offset="1" stop-color="#0758D8" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </span>
+          <div>
+            <h3 class="tool-title">Jurisdigta Student</h3>
+            <p class="tool-description">AI nástroj pre študentov práva<br />na prípravu skúšok</p>
+          </div>
+        </li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

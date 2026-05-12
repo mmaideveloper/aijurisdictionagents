@@ -42,6 +42,7 @@ If started with `-Background`, stop via:
 ## Environment Notes
 
 - Default provider is `azurefoundry`.
+- The launcher loads repository `.env` before validating Azure Foundry settings; already-set process environment variables take priority over `.env` values.
 - Azure Foundry default is strict: if `AZURE_OPENAI_*` settings are incomplete, startup fails instead of silently falling back to `mock`.
 - Local starts now enable `LOCAL_LLM_IO_LOGGING=1` by default, so the API logs the exact model request payload and raw model answer in local runs only.
 - Default document processing mode is direct in-API processing (`DOCUMENT_PROCESSOR_OPTION=api`, with `local` kept only as a legacy alias).

@@ -1,4 +1,5 @@
 import json
+import base64
 from io import BytesIO
 from pathlib import Path
 import re
@@ -149,6 +150,7 @@ def test_third_party_template_classifier_marks_contract_asset_as_corporate() -> 
         ("rental_agreement", "handover_protocol", "Protokol o odovzdaní", True),
         ("share_transfer", "minutes", "Zápisnica z rozhodnutia", True),
         ("share_transfer", "registry_filing", "Podanie na ORSR", True),
+        ("general", "other", "Potvrdenie o zaplatení", True),
         ("general", "other", "Internal legal memo", False),
     ],
 )
@@ -170,7 +172,7 @@ def test_third_party_template_classifier_by_document_templates(
     assert is_third_party is expected
 
 
-def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> None:
+def test_pdf_builder_renders_professional_footer_only_when_template_enabled() -> None:
     import app.chat.api as chat_api
 
     corporate_pdf = chat_api._build_simple_pdf(
@@ -180,6 +182,13 @@ def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> No
         language="en-US",
         header_line="AI Jurisdicta Solution | Generated: 2026-04-21 10:00:00 UTC",
         footer_line="AIJ | API 1.0 | Core 1.0",
+        footer_qr_payload={
+            "generated_at": "2026-04-21 10:00:00 UTC",
+            "api_version": "1.0",
+            "core_system_version": "1.0",
+            "case_id": "case-123",
+        },
+        document_verification_score="88.4%",
         disclaimer=("Important notice", "Draft only. Lawyer review required.", "Draft only"),
         draw_logo_mark=True,
         include_title_block=False,
@@ -197,19 +206,65 @@ def test_pdf_builder_renders_corporate_header_only_when_template_enabled() -> No
     corporate_text = _pdf_text(corporate_pdf).lower()
     plain_text = _pdf_text(plain_pdf).lower()
 
+    assert "jurisdicta" in corporate_text
+    assert "skore overenia dokumentu: 88.4%" in corporate_text
     assert "poprad, slovakia, 05801" in corporate_text
     assert "info@jurisdigta.eu" in corporate_text
     assert "template.net" not in corporate_text
-    assert "api version" in corporate_text
-    assert "system core version" in corporate_text
-    assert "important notice" in corporate_text
-    assert "lawyer review required" in corporate_text
-    assert "draft only" in corporate_text
+    assert "important notice" not in corporate_text
+    assert "lawyer review required" not in corporate_text
+
+    low_score_pdf = chat_api._build_simple_pdf(
+        title="Car Rental Legal Memo",
+        lines=["Subject: Liability review", "To: Example Recipient"],
+        country="US",
+        language="en-US",
+        footer_line="AIJ | API 1.0 | Core 1.0",
+        footer_qr_payload={
+            "generated_at": "2026-04-21 10:00:00 UTC",
+            "api_version": "1.0",
+            "core_system_version": "1.0",
+            "case_id": "case-123",
+        },
+        document_verification_score="49.0%",
+        disclaimer=("Important notice", "Draft only. Lawyer review required.", "Draft only"),
+        draw_logo_mark=True,
+        include_title_block=False,
+    )
+    low_score_text = _pdf_text(low_score_pdf).lower()
+    assert "important notice" in low_score_text
+    assert "lawyer review required" in low_score_text
+
+    unknown_score_pdf = chat_api._build_simple_pdf(
+        title="Car Rental Legal Memo",
+        lines=["Subject: Liability review", "To: Example Recipient"],
+        country="US",
+        language="en-US",
+        footer_line="AIJ | API 1.0 | Core 1.0",
+        document_verification_score=None,
+        disclaimer=("Important notice", "Draft only. Lawyer review required.", "Draft only"),
+        draw_logo_mark=True,
+        include_title_block=False,
+    )
+    unknown_score_text = _pdf_text(unknown_score_pdf).lower()
+    assert "skore overenia dokumentu: -" in unknown_score_text
+    assert "important notice" in unknown_score_text
+    assert "lawyer review required" in unknown_score_text
     assert "poprad, slovakia, 05801" not in plain_text
 
     reader = PdfReader(BytesIO(corporate_pdf))
     page = reader.pages[0]
     assert float(page.mediabox.width) < float(page.mediabox.height)
+    qr_payload = chat_api._build_professional_document_qr_payload(
+        generated_at="2026-04-21 10:00:00 UTC",
+        case_id="case-123",
+        session_id="session-123",
+        user_id="user-123",
+        document_score="88.4%",
+    )
+    assert qr_payload["document_score"] == "88.4%"
+    assert qr_payload["session_id"] == "session-123"
+    assert qr_payload["user_id"] == "user-123"
 
 
 def test_stream_core_orchestration_and_export_json_pdf() -> None:
@@ -269,6 +324,24 @@ def test_stream_core_orchestration_and_export_json_pdf() -> None:
     doc_disposition = export_doc_pdf.headers.get("content-disposition", "")
     assert f"{session_id}-" in doc_disposition
     assert "-final-document.pdf" in doc_disposition
+
+    export_documents = client.get(
+        f"/v1/chat/sessions/{session_id}/export/documents",
+        headers=AUTH_HEADERS,
+    )
+    assert export_documents.status_code == 200
+    documents_payload = export_documents.json()
+    assert documents_payload["documents"]
+    first_document = documents_payload["documents"][0]
+    assert first_document["filename"].endswith(".pdf")
+
+    selected_document_pdf = client.get(
+        f"/v1/chat/sessions/{session_id}/export/documents/{first_document['index']}",
+        headers=AUTH_HEADERS,
+    )
+    assert selected_document_pdf.status_code == 200
+    assert selected_document_pdf.headers["content-type"].startswith("application/pdf")
+    assert selected_document_pdf.content.startswith(b"%PDF")
 
 
 def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
@@ -337,12 +410,12 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     document_text = _pdf_text(document_pdf.content).lower()
     assert "ai jurisdiction" in summary_text
     assert "jurisdicta" in document_text
+    assert "skore overenia dokumentu:" in document_text
+    assert "%" in document_text
     assert "poprad, slovakia, 05801" in document_text
     assert "api version" in document_text
-    assert "system core version" in document_text
-    assert "aij | api " in document_text
-    assert "api " in document_text
-    assert "core " in document_text
+    assert "core version" in document_text
+    assert "aij | api " not in document_text
     assert "generovany dokument podla diskusie" not in document_text
     assert "session id:" not in document_text
     assert "krajina:" not in document_text
@@ -356,8 +429,6 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     assert "podpis prenaj" in document_text
     assert "vypovedna lehota" in document_text or "lehota" in document_text
     assert "platba vopred" in document_text
-    assert "dolezite upozornenie" in _canonical_text(document_text)
-    assert "vyzaduje pravnu kontrolu" in _canonical_text(document_text)
 
 def test_document_export_returns_zip_from_visible_multi_document_sections_without_case_update_documents(
     monkeypatch,
@@ -633,6 +704,8 @@ def test_document_export_for_company_share_transfer_uses_full_session_context() 
     )
 
     lowered_lines = _canonical_text(" ".join(lines))
+    assert _canonical_text(title) == "zmluva o prevode obchodneho podielu"
+    assert str(session_id) not in title
     assert "najomna zmluva" not in lowered_lines
     assert "prevodu obchodneho podielu" in lowered_lines
     assert "esolutions sk s.r.o." in lowered_lines
@@ -710,6 +783,623 @@ def test_document_export_for_company_share_transfer_uses_verified_company_packag
     assert "navrh rozhodnutia jedineho spolocnika" in lowered_lines
     assert "navrh aktualizovaneho uplneho znenia spolocenskej zmluvy" in lowered_lines
     slovakia_service._ORSR_CACHE.clear()
+
+
+def test_document_export_title_uses_requested_legal_document_type() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content="Priprav kupno predajnu zmluvu na pozemok v katastri obce Kravany.",
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Odporucam pripravit kupno-predajnu zmluvu k prevodu pozemku.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, _lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+    )
+
+    assert title == "Kupno-predajna zmluva"
+    assert str(session_id) not in title
+
+
+def test_document_export_uses_user_profile_defaults_for_missing_party_data() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+    from aijurisdictionagents.api_db import User
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "Priprav najomnu zmluvu. Prenajimatel: Prenajimatel [doplnit udaje]. "
+                "Najomca: Najomca [doplnit udaje]."
+            ),
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Dokument je pripraveny.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+    user_profile = User(
+        user_id="user-1",
+        phone_number="+421900111222",
+        email="marek@example.com",
+        first_name="Marek",
+        last_name="Matonok",
+        full_name="Marek Matonok",
+        address="Partizanska 665",
+        city="Spisske Bystre",
+        country="SK",
+        zip_code="059 18",
+        tax_number="1070000001",
+        identity_card_number="AB123456",
+        date_of_birth="1980-01-02",
+        social_security_number="800102/1234",
+        data_processing_consent_at=None,
+        data_processing_consent_version=None,
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+        user_profile=user_profile,
+    )
+
+    normalized = _canonical_text(" ".join(lines))
+    assert _canonical_text(title) == "najomna zmluva"
+    assert not _canonical_text(lines[0]).startswith("najomna zmluva")
+    assert "marek matonok" in normalized
+    assert "partizanska 665" in normalized
+    assert "800102/1234" in normalized
+    assert "ab123456" in normalized
+
+
+def test_document_export_replaces_rental_party_placeholders_from_case_parties() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "**ZMLUVA O PRENÁJME BYTU**\n\n"
+                "Prenajímateľ: Prenajimatel [doplnit udaje]\n"
+                "Nájomca: Najomca [doplnit udaje]\n\n"
+                "CASE_UPDATE_JSON:\n"
+                "{"
+                '"case":{"parties":{"client":{"name":"Maria Kovacova"},'
+                '"opponent":{"name":"Jan Novak"}},'
+                '"matter":{"topic":"prenajom","facts_summary":"Najom bytu","client_goal":"Pripravit zmluvu"},'
+                '"documents":[],"next_discussion":{"agenda":[]}}'
+                "}"
+            ),
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Dokument je pripraveny.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+    )
+
+    normalized = _canonical_text(" ".join(lines))
+    assert _canonical_text(title) == "zmluva o prenajme bytu"
+    assert "jan novak" in normalized
+    assert "maria kovacova" in normalized
+    assert "prenajimatel [doplnit udaje]" not in normalized
+    assert "najomca [doplnit udaje]" not in normalized
+    assert not _canonical_text(lines[0]).startswith("najomna zmluva")
+
+
+def test_document_export_extracts_rental_data_from_draft_text_and_profile() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+    from aijurisdictionagents.api_db import User
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Pripravím zmluvu o prenájme.\n\n"
+                "- Adresa nehnuteľnosti: Bratislava, Slavin, Pod Radom 1234\n"
+                "- Mesačné nájomné: 5000 EUR\n"
+                "- Doba prenájmu: 1 rok (od 1. júna 2026)\n"
+                "- Podnájomník: John Kennedy, Washington, D.C., USA\n\n"
+                "**Zmluva o prenájme**\n\n"
+                "**Zmluvné strany:**\n"
+                "Prenajímateľ: [Vaše meno a adresa]\n"
+                "Podnájomník: John Kennedy, Washington, D.C., USA\n\n"
+                "**Predmet zmluvy:**\n"
+                "Prenajímateľ prenajíma podnájomníkovi dom nachádzajúci sa na adrese "
+                "Bratislava, Slavin, Pod Radom 1234."
+            ),
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Dokument je pripraveny.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+    user_profile = User(
+        user_id="user-1",
+        phone_number="+421900111222",
+        email="owner@example.com",
+        first_name="Marek",
+        last_name="Matonok",
+        full_name="Marek Matonok",
+        address="Partizanska 665",
+        city="Spisske Bystre",
+        country="SK",
+        zip_code="059 18",
+        tax_number=None,
+        identity_card_number=None,
+        date_of_birth=None,
+        social_security_number=None,
+        data_processing_consent_at=None,
+        data_processing_consent_version=None,
+    )
+
+    _title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+        user_profile=user_profile,
+    )
+
+    normalized = _canonical_text(" ".join(lines))
+    assert "marek matonok" in normalized
+    assert "partizanska 665" in normalized
+    assert "john kennedy, washington" in normalized
+    assert "bratislava, slavin, pod radom 1234" in normalized
+    assert "byt [adresa a identifikacia]" not in normalized
+    assert "protistrana" not in normalized
+    assert "klient" not in normalized
+
+
+def test_document_export_does_not_use_phone_number_as_profile_name() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+    from aijurisdictionagents.api_db import User
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "**Zmluva o prenájme**\n"
+                "Prenajímateľ: [Vaše meno a adresa]\n"
+                "Podnájomník: John Kennedy\n"
+                "Adresa nehnuteľnosti: Bratislava"
+            ),
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Dokument je pripraveny.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+    user_profile = User(
+        user_id="user-1",
+        phone_number="+421900111222",
+        email="owner@example.com",
+        first_name=None,
+        last_name=None,
+        full_name="+421900111222",
+        address="Partizanska 665",
+        city="Spisske Bystre",
+        country="SK",
+        zip_code="059 18",
+        tax_number=None,
+        identity_card_number=None,
+        date_of_birth=None,
+        social_security_number=None,
+        data_processing_consent_at=None,
+        data_processing_consent_version=None,
+    )
+
+    _title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+        user_profile=user_profile,
+    )
+
+    normalized = _canonical_text(" ".join(lines))
+    assert "+421900111222" not in normalized
+    assert "partizanska 665" in normalized
+
+
+def test_lawyer_output_validation_removes_profile_missing_message_when_profile_complete() -> None:
+    from app.chat.output_validation import AILawyerOutputMessageValidationAgent, LawyerOutputUserProfile
+
+    content = (
+        "Zmluva je pripravená.\n\n"
+        "**Chýbajúce informácie / dokumenty:**\n"
+        "- Vaše meno a adresa\n\n"
+        "**Riziká / slabé miesta:**\n"
+        "- Skontrolovať podpisy.\n\n"
+        "CASE_UPDATE_JSON:\n{\"case\": {}}"
+    )
+
+    validated = AILawyerOutputMessageValidationAgent().validate(
+        content=content,
+        user_profile=LawyerOutputUserProfile(has_full_name=True, has_address=True),
+    )
+
+    visible = _canonical_text(validated)
+    assert "vase meno a adresa" not in visible
+    assert "chybajuce informacie / dokumenty" not in visible
+    assert "rizika / slabe miesta" in visible
+    assert "case_update_json" in visible
+
+
+def test_lawyer_output_validation_tells_user_to_update_profile_when_missing() -> None:
+    from app.chat.output_validation import AILawyerOutputMessageValidationAgent, LawyerOutputUserProfile
+
+    content = (
+        "Zmluva je pripravená.\n\n"
+        "**Chýbajúce informácie / dokumenty:**\n"
+        "- Vaše meno a adresa\n"
+    )
+
+    validated = AILawyerOutputMessageValidationAgent().validate(
+        content=content,
+        user_profile=LawyerOutputUserProfile(has_full_name=True, has_address=False),
+    )
+
+    visible = _canonical_text(validated)
+    assert "chyba adresu" in visible
+    assert "profile" in visible
+    assert "vase meno a adresa" not in visible
+
+
+def test_session_documents_email_uses_profile_email_after_confirmation(monkeypatch, tmp_path: Path) -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    from aijurisdictionagents.api_db import ApiDatabaseStore
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv("EMAIL_DB_OPTION", "local")
+    monkeypatch.setenv("EMAIL_DB_LOCAL", str(tmp_path / "email.sqlite3"))
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    user = store.create_user(
+        email="client@example.com",
+        password="secret",
+        phone_number="+421900123456",
+        full_name="Marek Matonok",
+        address="Partizanska 665",
+        city="Spisske Bystre",
+        zip_code="059 18",
+        country="SK",
+    )
+    case = store.create_case(user_id=user.user_id, company_id=None, title="Najomna zmluva")
+    session = chat_api._repository.create_session(
+        Session(user_id=UUID(user.user_id), case_id=case.case_id, country="SK", language="SK")
+    )
+    chat_api._repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content="Priprav zmluvu o prenajme a potom ju posli emailom.",
+        )
+    )
+    chat_api._repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "**Zmluva o prenájme**\n"
+                "Prenajímateľ: [Vaše meno a adresa]\n"
+                "Podnájomník: John Kennedy, Washington, D.C., USA\n"
+                "Adresa nehnuteľnosti: Bratislava, Slavin, Pod Radom 1234\n"
+                "Mesačné nájomné: 5000 EUR"
+            ),
+        )
+    )
+    chat_api._repository.set_result(
+        session.id,
+        SessionResult(
+            final_recommendation="Dokument je pripraveny.",
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={"document_ready": True},
+        ),
+    )
+
+    confirmation = client.post(
+        f"/v1/chat/sessions/{session.id}/documents/send-email",
+        headers=AUTH_HEADERS,
+        json={},
+    )
+    assert confirmation.status_code == 200
+    assert confirmation.json()["needs_confirmation"] is True
+    assert confirmation.json()["recipient"] == "client@example.com"
+
+    sent = client.post(
+        f"/v1/chat/sessions/{session.id}/documents/send-email",
+        headers=AUTH_HEADERS,
+        json={"confirmed": True},
+    )
+    assert sent.status_code == 200
+    payload = sent.json()
+    assert payload["needs_confirmation"] is False
+    assert payload["recipient"] == "client@example.com"
+    assert payload["attachment_count"] >= 1
+
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        row = conn.execute(
+            "SELECT recipient, subject, metadata_json FROM email_outbox ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "client@example.com"
+    assert "JurisDigta dokumenty" in row[1]
+    metadata = json.loads(row[2])
+    attachments = metadata["attachments"]
+    assert attachments
+    assert base64.b64decode(attachments[0]["content_base64"]).startswith(b"%PDF")
+
+
+def test_chat_document_email_flow_confirms_before_queueing(monkeypatch, tmp_path: Path) -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    from aijurisdictionagents.api_db import ApiDatabaseStore
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv("EMAIL_DB_OPTION", "local")
+    monkeypatch.setenv("EMAIL_DB_LOCAL", str(tmp_path / "email.sqlite3"))
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    user = store.create_user(email="flow@example.com", password="secret", phone_number="+421900000111")
+    case = store.create_case(user_id=user.user_id, company_id=None, title="Email flow")
+    session = chat_api._repository.create_session(
+        Session(user_id=UUID(user.user_id), case_id=case.case_id, country="SK", language="SK")
+    )
+    previous = [
+        chat_api._repository.add_message(
+            Message(
+                session_id=session.id,
+                role=MessageRole.ASSISTANT,
+                agent_name="LawyerSlovakia",
+                content="**Zmluva o prenájme**\nPodnájomník: John Kennedy\nAdresa nehnuteľnosti: Bratislava",
+            )
+        )
+    ]
+    chat_api._repository.set_result(
+        session.id,
+        SessionResult(
+            final_recommendation="Dokument je pripraveny.",
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={"document_ready": True},
+        ),
+    )
+
+    first_reply = chat_api._handle_document_email_flow(
+        session_id=session.id,
+        session=session,
+        content="Chcem poslat dokumenty emailom",
+        previous_messages=previous,
+    )
+    assert "flow@example.com" in first_reply
+    assert "Potvrdte odoslanie" in first_reply
+
+    confirmation_message = chat_api._repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerEmail",
+            content=first_reply,
+        )
+    )
+    second_reply = chat_api._handle_document_email_flow(
+        session_id=session.id,
+        session=session,
+        content="ano",
+        previous_messages=[*previous, confirmation_message],
+    )
+    assert "Dokumenty boli zaradene na odoslanie" in second_reply
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        count = conn.execute("SELECT COUNT(*) FROM email_outbox WHERE recipient='flow@example.com'").fetchone()[0]
+    assert count == 1
+
+
+def test_chat_document_email_flow_confirms_explicit_recipient_from_initial_request(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    from aijurisdictionagents.api_db import ApiDatabaseStore
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv("EMAIL_DB_OPTION", "local")
+    monkeypatch.setenv("EMAIL_DB_LOCAL", str(tmp_path / "email.sqlite3"))
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    user = store.create_user(email="simulator.case@example.com", password="secret", phone_number="+421900000333")
+    case = store.create_case(user_id=user.user_id, company_id=None, title="Explicit email flow")
+    session = chat_api._repository.create_session(
+        Session(user_id=UUID(user.user_id), case_id=case.case_id, country="SK", language="SK")
+    )
+    previous = [
+        chat_api._repository.add_message(
+            Message(
+                session_id=session.id,
+                role=MessageRole.ASSISTANT,
+                agent_name="LawyerSlovakia",
+                content="**Zmluva o prenÃ¡jme**\nPodnÃ¡jomnÃ­k: John Kennedy\nAdresa nehnuteÄ¾nosti: Bratislava",
+            )
+        )
+    ]
+    chat_api._repository.set_result(
+        session.id,
+        SessionResult(
+            final_recommendation="Dokument je pripraveny.",
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={"document_ready": True},
+        ),
+    )
+
+    reply = chat_api._handle_document_email_flow(
+        session_id=session.id,
+        session=session,
+        content="send document by email to matonok@hotmail.com",
+        previous_messages=previous,
+    )
+
+    assert "matonok@hotmail.com" in reply
+    assert "simulator.case@example.com" not in reply
+    assert "Potvrdte odoslanie" in reply
+
+
+def test_chat_document_email_flow_uses_corrected_recipient_before_queueing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    from aijurisdictionagents.api_db import ApiDatabaseStore
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv("EMAIL_DB_OPTION", "local")
+    monkeypatch.setenv("EMAIL_DB_LOCAL", str(tmp_path / "email.sqlite3"))
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    user = store.create_user(email="profile@example.com", password="secret", phone_number="+421900000222")
+    case = store.create_case(user_id=user.user_id, company_id=None, title="Email correction flow")
+    session = chat_api._repository.create_session(
+        Session(user_id=UUID(user.user_id), case_id=case.case_id, country="SK", language="SK")
+    )
+    draft_message = chat_api._repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="**Zmluva o prenÃ¡jme**\nPodnÃ¡jomnÃ­k: John Kennedy\nAdresa nehnuteÄ¾nosti: Bratislava",
+        )
+    )
+    chat_api._repository.set_result(
+        session.id,
+        SessionResult(
+            final_recommendation="Dokument je pripraveny.",
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={"document_ready": True},
+        ),
+    )
+
+    first_reply = chat_api._handle_document_email_flow(
+        session_id=session.id,
+        session=session,
+        content="Chcem poslat dokumenty emailom",
+        previous_messages=[draft_message],
+    )
+    assert "profile@example.com" in first_reply
+    confirmation_message = chat_api._repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerEmail",
+            content=first_reply,
+        )
+    )
+
+    corrected_reply = chat_api._handle_document_email_flow(
+        session_id=session.id,
+        session=session,
+        content="nie na matonok@hotmail.com",
+        previous_messages=[draft_message, confirmation_message],
+    )
+    assert "matonok@hotmail.com" in corrected_reply
+    assert "profile@example.com" not in corrected_reply
+    assert "Potvrdte odoslanie" in corrected_reply
+    corrected_confirmation = chat_api._repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerEmail",
+            content=corrected_reply,
+        )
+    )
+
+    sent_reply = chat_api._handle_document_email_flow(
+        session_id=session.id,
+        session=session,
+        content="ano",
+        previous_messages=[draft_message, confirmation_message, corrected_confirmation],
+    )
+    assert "matonok@hotmail.com" in sent_reply
+    assert "profile@example.com" not in sent_reply
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        recipients = [
+            row[0]
+            for row in conn.execute(
+                "SELECT recipient FROM email_outbox ORDER BY created_at"
+            ).fetchall()
+        ]
+    assert recipients == ["matonok@hotmail.com"]
 
 
 def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:
@@ -2250,7 +2940,7 @@ def test_stream_read_user_emits_document_name_progress_before_final_message(monk
             "Pripravil som balik dokumentov.\n"
             "1. **Zmluva o prevode obchodneho podielu**: hotove.\n"
             "2. **Rozhodnutie jedineho spolocnika / zapisnica**: hotove.\n"
-            "3. **Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny**: hotove."
+            "3. **Spolocenska zmluva**: hotove."
         ),
         agent_name="LawyerSlovakia",
     )
@@ -2288,7 +2978,7 @@ def test_stream_read_user_emits_document_name_progress_before_final_message(monk
 
     first_doc = "Zmluva o prevode obchodneho podielu"
     second_doc = "Rozhodnutie jedineho spolocnika / zapisnica"
-    third_doc = "Aktualizovane uplne znenie spolocenskej zmluvy / zakladatelskej listiny"
+    third_doc = "Spolocenska zmluva"
     assert first_doc in events
     assert second_doc in events
     assert third_doc in events
@@ -2379,6 +3069,204 @@ def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> 
     assert conversation[1].content == "Existing answer from history"
     assert conversation[2].role == MessageRole.USER.value
     assert conversation[2].content == "Please continue with this case."
+
+
+def test_case_memory_refresh_note_remembers_prior_rental_address() -> None:
+    from app.chat.models import Message, MessageRole
+    import app.chat.api as chat_api
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="1. Aka je presna adresa prenajimanej nehnutelnosti?",
+            agent_name="LawyerSlovakia",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Bratislava, Slavin, Pod Radom 1234",
+            agent_name="User",
+        ),
+    ]
+
+    note = chat_api._build_case_memory_refresh_note(messages)
+
+    assert "CASE MEMORY REFRESH" in note
+    assert "Bratislava, Slavin, Pod Radom 1234" in note
+    assert "Do not ask again" in note
+
+
+def test_case_memory_refresh_note_remembers_prepared_document_and_parties() -> None:
+    from app.chat.models import Message, MessageRole
+    import app.chat.api as chat_api
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content=(
+                "**Najomna zmluva**\n"
+                "Prenajimatel: Jana Novotna, Partizanska 1\n"
+                "Najomca: Tomas Hlavaty, Dunajska 12\n"
+                "Dokument je pripraveny na stiahnutie."
+            ),
+            agent_name="LawyerSlovakia",
+        ),
+    ]
+
+    note = chat_api._build_case_memory_refresh_note(messages)
+
+    assert "document draft was already prepared" in note
+    assert "Jana Novotna" in note
+    assert "Tomas Hlavaty" in note
+    assert "do not restart intake" in note
+
+
+def test_case_memory_removes_repeated_rental_address_question() -> None:
+    from app.chat.models import Message, MessageRole
+    import app.chat.api as chat_api
+
+    session_id = uuid4()
+    prior_messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Aka je presna adresa prenajimanej nehnutelnosti?",
+            agent_name="LawyerSlovakia",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Bratislava, Slavin, Pod Radom 1234",
+            agent_name="User",
+        ),
+    ]
+    content = (
+        "1. Aka je presna adresa prenajimanej nehnutelnosti?\n\n"
+        "CASE_UPDATE_JSON:\n"
+        '{"case":{"open_questions":["Aka je presna adresa prenajimanej nehnutelnosti?"]}}'
+    )
+
+    cleaned = chat_api._apply_case_memory_to_lawyer_content(
+        content=content,
+        prior_messages=prior_messages,
+    )
+
+    visible = chat_api._user_visible_text(cleaned)
+    assert "Bratislava, Slavin, Pod Radom 1234" in visible
+    assert "Aka je presna adresa" not in visible
+    case_update = chat_api._extract_case_update(cleaned)
+    assert case_update is not None
+    assert case_update["case"]["open_questions"] == []
+
+
+def test_case_memory_removes_repeated_rental_party_question_after_document_prepared() -> None:
+    from app.chat.models import Message, MessageRole
+    import app.chat.api as chat_api
+
+    session_id = uuid4()
+    prior_messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content=(
+                "**Najomna zmluva**\n"
+                "Prenajimatel: Jana Novotna, Partizanska 1\n"
+                "Najomca: Tomas Hlavaty, Dunajska 12\n"
+                "Dokument je pripraveny na stiahnutie."
+            ),
+            agent_name="LawyerSlovakia",
+        ),
+    ]
+    content = (
+        "Aby som mohol zmluvu spravne vypracovat, potrebujem este niekolko detailov:\n\n"
+        "2. Kto bude prenajimatel a kto najomca?\n\n"
+        "CASE_UPDATE_JSON:\n"
+        '{"case":{"open_questions":["Kto bude prenajimatel a kto najomca?"]}}'
+    )
+
+    cleaned = chat_api._apply_case_memory_to_lawyer_content(
+        content=content,
+        prior_messages=prior_messages,
+    )
+
+    visible = chat_api._user_visible_text(cleaned)
+    assert "Jana Novotna" in visible
+    assert "Tomas Hlavaty" in visible
+    assert "Kto bude prenajimatel" not in visible
+    assert "Pokracujem bez opatovneho pytania" in visible
+    case_update = chat_api._extract_case_update(cleaned)
+    assert case_update is not None
+    assert case_update["case"]["open_questions"] == []
+
+
+def test_case_memory_removes_any_previously_answered_question() -> None:
+    from app.chat.models import Message, MessageRole
+    import app.chat.api as chat_api
+
+    session_id = uuid4()
+    prior_messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Aka je vyska mesacneho najomneho?",
+            agent_name="LawyerSlovakia",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Mesacne najomne je 500 EUR.",
+            agent_name="User",
+        ),
+    ]
+    content = (
+        "Na pripravu dokumentu este potrebujem odpoved:\n"
+        "1. Aka je vyska mesacneho najomneho?\n\n"
+        "CASE_UPDATE_JSON:\n"
+        '{"case":{"open_questions":["Aka je vyska mesacneho najomneho?"]}}'
+    )
+
+    cleaned = chat_api._apply_case_memory_to_lawyer_content(
+        content=content,
+        prior_messages=prior_messages,
+    )
+
+    visible = chat_api._user_visible_text(cleaned)
+    assert "Mesacne najomne je 500 EUR." in visible
+    assert "Aka je vyska mesacneho najomneho" not in visible
+    case_update = chat_api._extract_case_update(cleaned)
+    assert case_update is not None
+    assert case_update["case"]["open_questions"] == []
+
+
+def test_case_memory_refresh_note_lists_previous_questions_and_answers() -> None:
+    from app.chat.models import Message, MessageRole
+    import app.chat.api as chat_api
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Aka je vyska mesacneho najomneho?",
+            agent_name="LawyerSlovakia",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="500 EUR mesacne",
+            agent_name="User",
+        ),
+    ]
+
+    note = chat_api._build_case_memory_refresh_note(messages)
+
+    assert "Previously answered case questions" in note
+    assert "Aka je vyska mesacneho najomneho?" in note
+    assert "500 EUR mesacne" in note
 
 
 def test_existing_case_history_falls_back_to_summary_when_transcript_missing(monkeypatch) -> None:
@@ -2807,7 +3695,7 @@ def test_processing_placeholder_reply_is_replaced_with_document_ready_message() 
             "Pripravim nasledujuce dokumenty:\n"
             "1. Zmluva o prevode obchodneho podielu.\n"
             "2. Zapisnica z rozhodnutia spolocnika.\n"
-            "3. Aktualizovane uplne znenie spolocenskej zmluvy.\n\n"
+            "3. Spolocenska zmluva.\n\n"
             "Prosim, dajte mi chvilu."
         ),
     )
@@ -3010,9 +3898,78 @@ def test_assistant_technical_payload_is_saved_as_case_document_and_linked(monkey
     assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
     stored_payload = json.loads(str(stored_documents[0]["payload"]))
     assert stored_payload["case"]["status"] == "intake_open"
-    assert "Technick" in visible
-    assert f"/v1/cases/case-123/documents/doc-technical?user_id={user_id}" in visible
+    assert "Technick" not in visible
+    assert f"/v1/cases/case-123/documents/doc-technical?user_id={user_id}" not in visible
     assert '"case"' not in visible
+
+
+def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None:
+    from app.chat.api import _build_direct_reply_result
+    from app.chat.models import Message, MessageRole, Session
+
+    session_id = uuid4()
+    user_id = uuid4()
+    session = Session(
+        id=session_id,
+        user_id=user_id,
+        case_id="case-123",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="Chcete, aby som pripravil dokument na stiahnutie?",
+        ),
+        Message(session_id=session_id, role=MessageRole.USER, content="ano"),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Dokument je pripraveny na stiahnutie.\n\n"
+                "Technicke udaje som ulozil do dokumentu pripadu: "
+                f"/v1/cases/case-123/documents/doc-technical?user_id={user_id}\n\n"
+                '{"case":{"status":"intake_open"}}'
+            ),
+        ),
+    ]
+
+    result = _build_direct_reply_result(
+        session_id=session_id,
+        session=session,
+        messages=messages,
+        lawyer_message=messages[-1].content,
+    )
+
+    assert result.metadata["document_ready"] is True
+    assert "/v1/cases/" not in result.final_recommendation
+
+
+def test_document_processing_status_hides_internal_filenames_from_user(caplog) -> None:
+    import logging
+
+    import app.chat.api as chat_api
+
+    with caplog.at_level(logging.INFO, logger=chat_api._LOGGER.name):
+        visible = chat_api._prepend_document_status_note(
+            reply="Dokument pripravujem.",
+            processed_names=["session-ready.txt"],
+            unprocessed_names=[
+                "session-a82ef605-e915-4286-9016-7e2063554c83.txt",
+                "session-9af30e7a-8039-46fd-9158-57399d9b600e.txt",
+            ],
+        )
+
+    assert visible == "Spracovanie stále prebieha....\n\nDokument pripravujem."
+    assert "session-a82ef605-e915-4286-9016-7e2063554c83.txt" not in visible
+    assert "session-ready.txt" not in visible
+    assert "Technicke udaje" not in visible
+    assert "session-a82ef605-e915-4286-9016-7e2063554c83.txt" in caplog.text
+    assert "session-ready.txt" in caplog.text
 
 
 def test_stream_read_user_completes_when_bare_technical_json_contains_question(monkeypatch) -> None:
@@ -3896,6 +4853,25 @@ def test_enforce_single_question_turn_keeps_only_first_question() -> None:
     case_payload = case_update.get("case")
     assert isinstance(case_payload, dict)
     assert case_payload.get("open_questions") == ["Potvrdite prevodcu?"]
+
+
+def test_enforce_single_question_turn_adds_missing_question_from_case_update() -> None:
+    from app.chat.api import _enforce_single_question_turn, _extract_case_update, _user_visible_text
+
+    raw_reply = (
+        "Na dokoncenie zmluvy potrebujem este potvrdit niektore zakladne udaje:\n\n"
+        "CASE_UPDATE_JSON:\n"
+        '{"case":{"open_questions":["Kto bude najomca?"]}}'
+    )
+
+    normalized = _enforce_single_question_turn(raw_reply)
+    visible = _user_visible_text(normalized)
+
+    assert "Na dokoncenie zmluvy potrebujem este potvrdit" in visible
+    assert "Kto bude najomca?" in visible
+    case_update = _extract_case_update(normalized)
+    assert isinstance(case_update, dict)
+    assert case_update["case"]["open_questions"] == ["Kto bude najomca?"]
 
 
 def test_thinking_status_message_is_localized_by_country_or_language() -> None:
