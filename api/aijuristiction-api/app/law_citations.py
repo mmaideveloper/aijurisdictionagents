@@ -322,7 +322,7 @@ def _search_semantic_candidates(*, query: str, country_code: str, limit: int) ->
             store=store,
             embedding_client=get_embedding_client(),
         )
-        return service.search_semantic(query, limit=limit)
+        return cast(Sequence[Any], service.search_semantic(query, limit=limit))
     except Exception:
         return ()
 

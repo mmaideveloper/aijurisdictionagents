@@ -14,6 +14,10 @@ Run the local API lint/type-check gate before committing API changes:
 ..\..\scripts\validate_api.ps1
 ```
 
+`mypy app` is intentionally scoped to the API package. Shared repository modules imported through
+`aijurisdictionagents` and `services` are treated as external dependencies for this gate so unrelated
+type debt outside `api/aijuristiction-api` does not block API CI.
+
 Dedicated API service project for exposing `aijurisdictionagents` to frontend clients.
 
 ## Registration email verification flow

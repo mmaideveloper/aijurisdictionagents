@@ -51,5 +51,9 @@ mypy_path = ["../../src"]
 module = ["aijurisdictionagents", "aijurisdictionagents.*"]
 follow_imports = "skip"
 
+[[tool.mypy.overrides]]
+module = ["services", "services.*"]
+follow_imports = "skip"
+
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
