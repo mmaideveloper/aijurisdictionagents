@@ -125,3 +125,70 @@ def test_download_law_source_streams_local_html_artifact(monkeypatch, tmp_path: 
     assert response.status_code == 200
     assert response.text == "<html><body>Law text</body></html>"
     assert response.headers["content-type"].startswith("text/html")
+
+
+def test_get_law_document_text_by_record_id(monkeypatch, tmp_path: Path) -> None:
+    laws_db = tmp_path / "laws.sqlite3"
+
+    with sqlite3.connect(laws_db) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE law_versions (
+                version_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                version_token TEXT NOT NULL,
+                effective_from TEXT NOT NULL
+            );
+            CREATE TABLE source_artifacts (
+                artifact_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                version_id TEXT NOT NULL,
+                artifact_kind TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                storage_backend TEXT NOT NULL,
+                storage_path TEXT NOT NULL,
+                content_text TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO law_versions(version_id, document_id, version_token, effective_from)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("ver-1", "doc-1", "19930101", "1993-01-01"),
+        )
+        conn.execute(
+            """
+            INSERT INTO source_artifacts(
+                artifact_id, document_id, version_id, artifact_kind, source_url, storage_backend, storage_path, content_text, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "art-1",
+                "doc-1",
+                "ver-1",
+                "html",
+                "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1993/1/",
+                "local_file",
+                "ignored",
+                "Latest law text for record doc-1",
+                "2026-05-07T12:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+    monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
+    monkeypatch.setenv("LAWS_DB_LOCAL", str(laws_db))
+    monkeypatch.setattr(law_citations, "_REPO_ROOT", tmp_path)
+
+    client = TestClient(app)
+    response = client.get(
+        "/v1/laws/document-text",
+        params={"document_id": "doc-1"},
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"document_id": "doc-1", "content_text": "Latest law text for record doc-1"}
