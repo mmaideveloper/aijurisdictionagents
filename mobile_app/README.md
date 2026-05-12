@@ -358,3 +358,12 @@ Open `docs/chat_ui_snapshot.html` in a browser for the updated rebrand layout pr
 - Speech input now waits at least 30 seconds of pause before stopping and shows a user notice when auto-stopped.
 - Documents export button is enabled when the case has processed/generated documents.
 - Tapping the microphone now auto-enables speech input instead of only showing a disabled message.
+
+## Audio command completion behavior
+
+When voice input is active, the app keeps listening until one of these happens:
+- user taps **Send**,
+- user says a finish command (`to je vsetko`, `vsetko`, `I am done`, `alles`), or
+- the speech service stop flow is triggered manually.
+
+Jurisdicta now also says and shows this finish guidance in the initial listening message.

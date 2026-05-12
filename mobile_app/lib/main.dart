@@ -6330,6 +6330,11 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
 
+    if (isSpokenDoneCommand(normalizedText)) {
+      await _stopSpeechListening(submitAfterStop: true, processStoppedInput: false);
+      return;
+    }
+
     final handledCommand = await _tryHandleUserCommand(
       normalizedText,
       appendUserMessage: true,

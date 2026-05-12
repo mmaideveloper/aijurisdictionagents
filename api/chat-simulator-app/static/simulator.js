@@ -2042,3 +2042,33 @@ if (existingCaseInput) {
 }
 
 initializeSimulator();
+
+
+const toolModeInput = document.getElementById("toolMode");
+const toolTypeInput = document.getElementById("toolType");
+const toolCommandInput = document.getElementById("toolCommand");
+const runToolValidationButton = document.getElementById("runToolValidation");
+const toolValidationLog = document.getElementById("toolValidationLog");
+
+function validateToolCommand() {
+  const command = String(toolCommandInput?.value || "").trim().toLowerCase();
+  const mode = String(toolModeInput?.value || "audio");
+  const tool = String(toolTypeInput?.value || "company");
+  if (!command) {
+    toolValidationLog.textContent = 'Ask command?';
+    return;
+  }
+  if (mode === 'audio') {
+    if (command.includes('validate company') || command.includes('company')) {
+      toolValidationLog.textContent = 'Audio -> text recognized. Action tool: ValidationCompany (ORSK). Ask for company name or ICO.';
+      return;
+    }
+  }
+  if (tool === 'car' && !(command.includes('vin') || command.includes('spz'))) {
+    toolValidationLog.textContent = 'Action tool ValidationCar selected. Ask for SPZ or VIN.';
+    return;
+  }
+  toolValidationLog.textContent = `Action tool ${tool} recognized and command processed.`;
+}
+
+if (runToolValidationButton) runToolValidationButton.addEventListener('click', validateToolCommand);

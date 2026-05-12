@@ -661,3 +661,18 @@ int _skipCaseTitleIntro(List<String> tokens, int startIndex) {
   }
   return startIndex;
 }
+
+
+bool isSpokenDoneCommand(String spokenText) {
+  final tokens = _tokenizeSpeechCommand(spokenText);
+  if (tokens.isEmpty) return false;
+  final normalized = tokens.map(_normalizeSpeechCommandToken).toList(growable: false);
+  return _doneCommandPatterns.any((pattern) => _matchesExactPattern(normalized, pattern));
+}
+
+const List<List<String>> _doneCommandPatterns = <List<String>>[
+  <String>['to', 'je', 'vsetko'],
+  <String>['vsetko'],
+  <String>['i', 'am', 'done'],
+  <String>['alles'],
+];

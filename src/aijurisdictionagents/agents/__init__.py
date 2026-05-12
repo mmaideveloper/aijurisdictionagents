@@ -8,6 +8,7 @@ from .lawyer import create_lawyer
 from .slovakia import create_lawyer_slovakia
 from .user_simulator import AIUserSimulatorAgent
 from .validator import AIAgentsValidator, ValidationReport, ValidatorInputs
+from .audio_action_tools import AIAudioToolRecognizerAgent, AIActionToolRecognizerAgent
 from ..jurisdiction import is_slovakia
 from ..llm import LLMClient
 
@@ -31,6 +32,8 @@ __all__ = [
     "AIAgentsValidator",
     "ValidationReport",
     "ValidatorInputs",
+    "AIAudioToolRecognizerAgent",
+    "AIActionToolRecognizerAgent",
     "create_judge",
     "create_lawyer",
     "create_lawyer_agent",

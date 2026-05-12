@@ -167,6 +167,19 @@
             </div>
           </section>
 
+          
+          <section class="row">
+            <h2>Tools Validation</h2>
+            <div class="grid">
+              <div><label for="toolMode">Tool mode</label><select id="toolMode"><option value="audio">Audio tools</option><option value="action">Action tools</option></select></div>
+              <div><label for="toolType">Tool</label><select id="toolType"><option value="company">Validate company</option><option value="address">Validate address</option><option value="car">Validate car</option></select></div>
+            </div>
+            <label for="toolCommand">Prompt message / command</label>
+            <input id="toolCommand" placeholder="I want to validate company" />
+            <button id="runToolValidation" class="secondary" type="button">Validate Tool Command</button>
+            <pre id="toolValidationLog">No tool validation yet.</pre>
+          </section>
+
           <section class="row">
             <label for="instruction">Case instruction</label>
             <textarea id="instruction" placeholder="Describe your case and request legal support..."></textarea>
