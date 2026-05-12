@@ -425,6 +425,7 @@ class SlovLexZipImportRunner:
             source_system="slov-lex",
             initial_year=self.config.initial_import_from.year,
         )
+        highest_processed_law = _highest_progress_key(collector_progress)
         if resume_entry is not None:
             _log_zip(
                 "resuming import "
@@ -457,6 +458,18 @@ class SlovLexZipImportRunner:
                     stopped_due_to_max_running_time=True,
                 )
             snapshot = load_snapshot_from_entry_file(entry)
+            if snapshot.year < self.config.historical_import_from.year:
+                entries_processed += 1
+                last_state = last_state.evolve(
+                    status="in_progress",
+                    last_processed_at=_now_iso(),
+                    last_processed_entry=relative_entry,
+                    last_processed_law_year=snapshot.year,
+                    last_processed_law_number=snapshot.number,
+                    metadata=metadata,
+                )
+                self.store.upsert_import_state(last_state)
+                continue
             sync_summary = sync_summary.merge(self.service.sync((snapshot,)))
             entries_processed += 1
             last_state = last_state.evolve(
@@ -471,9 +484,16 @@ class SlovLexZipImportRunner:
             collector_progress = collector_progress.evolve(
                 last_collector_run_at=last_state.last_processed_at,
                 last_processed_at=last_state.last_processed_at,
-                last_processed_law_year=snapshot.year,
-                last_processed_law_number=snapshot.number,
             )
+            current_law = (snapshot.year, snapshot.number)
+            if current_law >= highest_processed_law:
+                highest_processed_law = current_law
+                collector_progress = collector_progress.evolve(
+                    last_processed_law_year=snapshot.year,
+                    last_processed_law_number=snapshot.number,
+                    next_probe_law_year=snapshot.year,
+                    next_probe_law_number=snapshot.number + 1,
+                )
             self.store.save_collector_progress(collector_progress)
 
         completed_state = last_state.evolve(
@@ -779,7 +799,18 @@ def _extract_archive_bundle(*, download_root: Path, extract_root: Path) -> None:
         return
     command = _resolve_7zip_command()
     if command is None:
-        raise RuntimeError("7-Zip is required for split SlovLex archive extraction but was not found.")
+        combined_zip = _combine_split_zip_archive(
+            download_root=download_root,
+            split_parts=split_parts,
+            final_zip=final_zip,
+        )
+        _log_zip(
+            f"extract combined split archive source={combined_zip} destination={extract_root}"
+        )
+        with zipfile.ZipFile(combined_zip) as archive:
+            archive.extractall(extract_root)
+        _write_extract_marker(marker=marker, signature=signature)
+        return
     _log_zip(
         f"extract split archive source={final_zip} destination={extract_root} tool={command[0]}"
     )
@@ -809,6 +840,22 @@ def _resolve_7zip_command() -> list[str] | None:
     return None
 
 
+def _combine_split_zip_archive(*, download_root: Path, split_parts: tuple[Path, ...], final_zip: Path) -> Path:
+    if not final_zip.exists():
+        raise RuntimeError(f"Split SlovLex archive final ZIP part was not found: {final_zip}")
+    if not split_parts:
+        raise RuntimeError("Split SlovLex archive has no split parts to combine.")
+
+    combined_zip = download_root / "export-combined.zip"
+    temporary_path = combined_zip.with_suffix(".zip.part")
+    with temporary_path.open("wb") as output:
+        for path in (*split_parts, final_zip):
+            with path.open("rb") as input_file:
+                shutil.copyfileobj(input_file, output, length=1024 * 1024)
+    temporary_path.replace(combined_zip)
+    return combined_zip
+
+
 def _archive_snapshot_date(state: CollectorImportState | None) -> str | None:
     if state is None:
         return None
@@ -822,6 +869,12 @@ def _format_monthly_range(export: SlovLexMonthlyExport | None) -> str:
     if export is None:
         return ""
     return f"{export.range_start}..{export.range_end}"
+
+
+def _highest_progress_key(progress: CollectorProgress) -> tuple[int, int]:
+    if progress.last_processed_law_year is None or progress.last_processed_law_number is None:
+        return (progress.next_probe_law_year, max(0, progress.next_probe_law_number - 1))
+    return (progress.last_processed_law_year, progress.last_processed_law_number)
 
 
 def _log_zip(message: str) -> None:

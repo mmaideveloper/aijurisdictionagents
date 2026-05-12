@@ -541,6 +541,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - Explicit document-revision requests that mention uploaded documents plus update/fix wording such as reviewing a contract against newer laws are also treated as document-preparation requests, so the API can prepare an updated export without waiting for a separate summary-only path.
 - `GET /v1/chat/sessions/{session_id}/result` metadata now also includes `last_law_update_date`, `last_law_update_source`, `model_knowledge_cutoff_date`, `model_knowledge_cutoff_source`, `law_reference_links`, `law_citations`, `api_version`, and the backward-compatible `knowledge_last_updated_at` alias.
 - `GET /v1/laws/source?...` streams the stored full-law source for a resolved citation. For local imports it reads the persisted local file, and for Azure imports it reads the same artifact from Blob storage.
+- `GET /v1/laws/statistics?country_code=SK` returns law collector progress and corpus counters, including the last processed law/date, total imported/finalized laws, total versions, versions without embeddings, laws without embeddings, archive asset counts, and year coverage.
 
 Citation payload demo:
 

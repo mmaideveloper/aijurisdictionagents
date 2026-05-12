@@ -26,8 +26,8 @@ def main() -> None:
         storage_local="./runs/storage/laws-collector/files/sk",
         storage_cloud="",
         delta_poll_hours=3,
-        initial_import_from=date(1993, 1, 1),
-        historical_import_from=date(1993, 1, 1),
+        initial_import_from=date(1945, 1, 1),
+        historical_import_from=date(1945, 1, 1),
     )
     store = PostgresLawStore.from_config(config)
     service = SlovakLawsCollectorService(config=config, store=store)

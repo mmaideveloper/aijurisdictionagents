@@ -141,6 +141,23 @@ function Open-LogTailWindow {
     return $true
 }
 
+function Stop-LogTailWindow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WindowTitle
+    )
+
+    Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowTitle -eq $WindowTitle } |
+        ForEach-Object {
+            try {
+                Stop-Process -Id $_.Id -Force -ErrorAction Stop
+            }
+            catch {
+            }
+        }
+}
+
 function Get-LocalPostgresSettingsFromConnectionString {
     param([string]$ConnectionString)
 
@@ -316,7 +333,9 @@ if ($Background) {
     $stdoutLog = Join-Path $runsDir "laws-collector-local.log"
     $stderrLog = Join-Path $runsDir "laws-collector-local.err.log"
     $pidFile = Join-Path $runsDir "laws-collector-local.pid"
+    $logWindowTitle = "AI Jurisdiction Laws Collector Logs"
 
+    Stop-LogTailWindow -WindowTitle $logWindowTitle
     if (Test-Path $stdoutLog) { Remove-Item $stdoutLog -Force }
     if (Test-Path $stderrLog) { Remove-Item $stderrLog -Force }
 
@@ -348,7 +367,7 @@ if ($Background) {
         -ShellPath $shellPath `
         -RepoRoot $repoRoot `
         -Paths @($stdoutLog, $stderrLog) `
-        -WindowTitle "AI Jurisdiction Laws Collector Logs"
+        -WindowTitle $logWindowTitle
     if ($openedLogs) {
         Write-Output "Log tail window started."
     }

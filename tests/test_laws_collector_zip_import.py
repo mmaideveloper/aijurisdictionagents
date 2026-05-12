@@ -27,8 +27,8 @@ def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorS
         storage_local=str(tmp_path / "files"),
         storage_cloud="",
         delta_poll_hours=3,
-        initial_import_from=date(1993, 1, 1),
-        historical_import_from=date(1993, 1, 1),
+        initial_import_from=date(1945, 1, 1),
+        historical_import_from=date(1945, 1, 1),
         import_mode="zip",
     )
     store = SqliteLawStore.from_config(config)
@@ -397,6 +397,38 @@ def test_zip_import_runner_processes_archive_seed(tmp_path: Path) -> None:
     assert store.get_counts().documents == 2
 
 
+def test_zip_import_runner_skips_laws_before_historical_baseline(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    archive_zip = tmp_path / "fixtures" / "export.zip"
+    _create_monthly_zip(
+        archive_zip,
+        laws=[
+            (1944, 1, "Pred baseline", "1944-01-01"),
+            (1945, 1, "Baseline", "1945-01-01"),
+        ],
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-03",
+                    part_urls=(archive_zip.resolve().as_uri(),),
+                ),
+                monthly_export=None,
+            )
+
+    summary = SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    assert summary.archive_completed is True
+    assert store.get_counts().documents == 1
+
+
 def test_zip_import_runner_updates_collector_progress(tmp_path: Path) -> None:
     store, service, config = _build_service(tmp_path)
     archive_zip = tmp_path / "fixtures" / "export.zip"
@@ -433,6 +465,44 @@ def test_zip_import_runner_updates_collector_progress(tmp_path: Path) -> None:
     assert progress.last_processed_law == "2/1993"
     assert progress.last_processed_at is not None
     assert progress.last_collector_run_at is not None
+    assert progress.next_probe_law == "3/1993"
+
+
+def test_zip_import_runner_sets_progress_to_highest_law_not_last_sorted_entry(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    archive_zip = tmp_path / "fixtures" / "export.zip"
+    _create_monthly_zip(
+        archive_zip,
+        laws=[
+            (2026, 100, "Stovka", "2026-01-01"),
+            (2026, 9, "Deviatka", "2026-01-01"),
+        ],
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-02",
+                    part_urls=(archive_zip.resolve().as_uri(),),
+                ),
+                monthly_export=None,
+            )
+
+    SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    progress = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=1945,
+    )
+    assert progress.last_processed_law == "100/2026"
+    assert progress.next_probe_law == "101/2026"
 
 
 def test_zip_import_runner_reextracts_when_marker_signature_does_not_match(tmp_path: Path) -> None:

@@ -127,6 +127,29 @@ def run_worker() -> None:
                             time.monotonic() - started_at,
                         )
                         return
+                    if summary.archive_completed and summary.monthly_completed:
+                        tail_summary = SlovLexSequentialImportRunner(
+                            config=config,
+                            store=store,
+                            service=service,
+                        ).run(max_probes=options.max_probes, max_running_seconds=max_running_seconds)
+                        logger.info(
+                            f"[laws-collector] collector={collector_definition.collector_name} "
+                            f"country={config.country_code} cycle={cycle} fixture=live import_mode=zip_tail_probe "
+                            f"probes={tail_summary.probes} max_probes={options.max_probes} "
+                            f"laws_found={tail_summary.laws_found} years_advanced={tail_summary.years_advanced} "
+                            f"stopped_on_current_year_gap={str(tail_summary.stopped_on_current_year_gap).lower()} "
+                            f"last_processed_law={tail_summary.last_processed_law or ''} "
+                            f"next_law_to_check={tail_summary.next_law_to_check}"
+                        )
+                        if tail_summary.stopped_due_to_max_running_time:
+                            logger.info(
+                                "[laws-collector] worker stopped during zip tail probe after max running time "
+                                "max_running_minutes=%s elapsed_seconds=%.1f",
+                                options.max_running_minutes,
+                                time.monotonic() - started_at,
+                            )
+                            return
                 else:
                     summary = SlovLexSequentialImportRunner(
                         config=config,

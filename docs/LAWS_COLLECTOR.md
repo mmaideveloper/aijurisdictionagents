@@ -230,8 +230,8 @@ The Slovak collector now keeps a persisted sequential crawl state in `collector_
 
 Rules:
 
-- the starting year is fixed to `1993`
-- the first target is `1/1993`
+- the starting year is fixed to `1945`
+- the first target is `1/1945`
 - within a year the next probe is `number + 1`
 - when a missing law is hit in a past year, the collector jumps to `1/<next year>`
 - when a missing law is hit in the current year, the run stops and keeps that missing law as the next probe target
@@ -266,7 +266,8 @@ Flow:
 5. Download each monthly `exportZmeny.zip` into `./archivelaws/laws-collection-sk/monthly/<range-end>/download/`
 6. Extract and ingest only the changed law versions from that monthly ZIP
 7. Persist the monthly cursor and resume from the last processed entry on restart
-8. Skip archive bootstrap forever after the first completed archive seed, and only look for newer monthly bundles afterward
+8. Advance `collector_progress` to the highest imported law number/year so the live probe can continue after the archive/monthly import
+9. Skip archive bootstrap forever after the first completed archive seed, and only look for newer monthly bundles afterward
 
 The ZIP importer now also keeps immutable source-bundle inventory rows in `archive_import_assets`. Each downloaded archive part or monthly ZIP records:
 
@@ -288,6 +289,17 @@ Run the default ZIP importer locally:
 conda activate .\.conda
 python -m services.laws_collector --run-zip-import
 ```
+
+Clean PostgreSQL full-import deployment rehearsal:
+
+```powershell
+.\skills\start-postgres\scripts\start_postgres.ps1 -ProjectName laws-collector
+$env:LAWS_COLLECTOR_IMPORT = "zip"
+$env:LAWS_COLLECTOR_MAX_RUNNING_TIME = "0"
+.\skills\laws-collector\scripts\start_laws_collector.ps1 -Fixture live -DatabaseOption postgres -PollSeconds 300 -MaxCycles 0 -MaxProbes 50 -Background
+```
+
+In `zip` mode the worker downloads the Slov-Lex full archive first, imports the latest monthly `exportZmeny.zip` when it is not already covered by the archive snapshot, then probes from the highest stored law every cycle. With `-PollSeconds 300`, the background worker checks for new laws every five minutes after the backfill catches up.
 
 Minimal local demo:
 
@@ -353,7 +365,7 @@ Example startup log:
 
 ## Live SlovLex probe test (year/number)
 
-To prove the collector can resolve SlovLex entries by legal act **number/year** starting at **1/1993** and probing forward up to the current date, run:
+To prove the collector can resolve SlovLex entries by legal act **number/year** starting at **1/1945** and probing forward up to the current date, run:
 
 ```bash
 RUN_SLOVLEX_LIVE_TEST=1 python -m pytest tests/test_slovlex_live_probe.py -q
@@ -391,7 +403,7 @@ Add these to `.env` when you start wiring the service into real runs:
 For Slovakia:
 
 - `zip` is the default import mode and stores downloaded bundles under `./archivelaws/laws-collection-sk`
-- `one_law_url` keeps the older sequential Slov-Lex crawl that always starts from `1/1993`
+- `one_law_url` keeps the older sequential Slov-Lex crawl that always starts from `1/1945`
 
 For PostgreSQL naming, keep the database mapping country-specific:
 
@@ -558,7 +570,7 @@ $env:LAWS_SEARCH_PHRASE = "nájomna zmluva"
 
 The search normalizes Slovak diacritics before matching, so `nájomna zmluva` also matches stored text containing `nájomná zmluva`.
 
-To verify the very first Slovak law (`1/1993`) is downloaded, stored as text, embedded, and reflected in `collector_progress`, run:
+To verify a live Slovak law is downloaded, stored as text, embedded, and reflected in `collector_progress`, run:
 
 ```powershell
 $env:LAWS_DB_CLOUD = "postgresql://postgres:postgres@127.0.0.1:5433/laws_sk"

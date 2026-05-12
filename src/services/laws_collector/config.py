@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_SLOVAK_INITIAL_IMPORT_DATE = date(1993, 1, 1)
+_SLOVAK_INITIAL_IMPORT_DATE = date(1945, 1, 1)
 
 
 @dataclass(frozen=True)
@@ -72,9 +72,9 @@ class LawsCollectorConfig:
             raise ValueError("LAWS_DELTA_POLL_HOURS must be >= 1")
         if self.country_code == "SK":
             if self.initial_import_from != _SLOVAK_INITIAL_IMPORT_DATE:
-                raise ValueError("Slovak laws collector initial import date is fixed at 1993-01-01")
+                raise ValueError("Slovak laws collector initial import date is fixed at 1945-01-01")
             if self.historical_import_from != _SLOVAK_INITIAL_IMPORT_DATE:
-                raise ValueError("Slovak laws collector historical import date is fixed at 1993-01-01")
+                raise ValueError("Slovak laws collector historical import date is fixed at 1945-01-01")
 
     @property
     def db_path(self) -> Path:
