@@ -58,6 +58,13 @@ python scripts/sync_codex_skills.py --force
 
 For details, see `docs/PROJECT_SKILLS.md`.
 
+Audio/action recognizer architecture and action-agent mapping:
+
+```bash
+cat docs/AUDIO_ACTION_TOOLING.md
+```
+
+
 Project polling automation (local scripts):
 
 ```bash
