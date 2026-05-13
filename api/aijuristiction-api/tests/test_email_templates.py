@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from app.services.email import EmailNotificationService
-from app.services.email_queue import QueuedEmail
+from app.services.email_queue import EmailQueueStore, QueuedEmail
 from app.services.email_scheduler import EmailScheduler
 from app.services.email_templates import (
     FOOTER_CID,
@@ -72,8 +72,8 @@ def test_scheduler_brands_legacy_non_otp_email_and_keeps_code_plain() -> None:
             sent.append(kwargs)
 
     scheduler = EmailScheduler(
-        queue_store=FakeQueueStore(),
-        email_service=FakeEmailService(),  # type: ignore[arg-type]
+        queue_store=cast(EmailQueueStore, FakeQueueStore()),
+        email_service=cast(EmailNotificationService, FakeEmailService()),
     )
 
     assert scheduler.run_once(limit=10) == 2
