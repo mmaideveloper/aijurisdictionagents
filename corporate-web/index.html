@@ -27,6 +27,7 @@
         <a href="#agents" data-i18n="nav_agents">Agenti</a>
         <a href="#architecture" data-i18n="nav_architecture">Architektúra</a>
         <a href="#assurance" data-i18n="nav_assurance">Záruky</a>
+        <a href="#articles" data-i18n="nav_articles">Články</a>
         <a href="#pricing" data-i18n="nav_pricing">Cenník</a>
         <a href="#faq" data-i18n="nav_faq">FAQ</a>
         <a href="#contact" class="nav-cta" data-i18n="nav_contact">Kontakt</a>
@@ -255,6 +256,53 @@
       </div>
     </section>
 
+    <section id="articles" class="section articles" aria-labelledby="articles-title">
+      <div id="articles-overview-view" class="articles-layout">
+        <div class="articles-main">
+          <div class="section-head">
+            <p class="eyebrow" data-i18n="articles_eyebrow">Novinky a produktové články</p>
+            <h2 id="articles-title" data-i18n="articles_title">Články o nových funkciách JurisDigta.</h2>
+            <p data-i18n="articles_lede">
+              Krátke vysvetlenia pripravovaných integrácií, prístupu cez AI asistentov a bezpečnostného rámca
+              služby bez nového zberu údajov alebo externých sledovacích skriptov.
+            </p>
+          </div>
+          <div id="article-feature-list" class="article-feature-list"></div>
+        </div>
+
+        <aside class="article-sidebar" aria-labelledby="articles-sidebar-title">
+          <div class="article-sidebar-inner">
+            <h3 id="articles-sidebar-title" data-i18n="articles_sidebar_title">Zoznam článkov</h3>
+            <p data-i18n="articles_sidebar_body">Vyberte článok podľa názvu a dátumu.</p>
+            <nav id="article-overview-nav" class="article-list-nav" aria-label="Zoznam článkov" data-i18n-aria="articles_nav_aria"></nav>
+          </div>
+        </aside>
+      </div>
+
+      <article id="article-detail-view" class="article-detail" hidden>
+        <div class="article-detail-grid">
+          <div class="article-body">
+            <a class="article-back" href="#articles" data-i18n="articles_back_main">Späť na hlavnú stránku</a>
+            <p id="article-detail-date" class="article-date"></p>
+            <h2 id="article-detail-title"></h2>
+            <p id="article-detail-standfirst" class="article-standfirst"></p>
+            <p id="article-language-note" class="article-language-note" hidden data-i18n="articles_language_note">
+              Prvá verzia textu článku je dostupná v slovenčine. Preklady budú doplnené po finálnej revízii.
+            </p>
+            <div id="article-detail-content" class="article-copy"></div>
+          </div>
+
+          <aside class="article-sidebar detail-sidebar" aria-labelledby="article-detail-menu-title">
+            <div class="article-sidebar-inner">
+              <a class="article-back-link" href="#articles" data-i18n="articles_back_main">Späť na hlavnú stránku</a>
+              <h3 id="article-detail-menu-title" data-i18n="articles_sidebar_title">Zoznam článkov</h3>
+              <nav id="article-detail-nav" class="article-list-nav" aria-label="Zoznam článkov" data-i18n-aria="articles_nav_aria"></nav>
+            </div>
+          </aside>
+        </div>
+      </article>
+    </section>
+
     <section id="pricing" class="section pricing">
       <div class="section-head">
         <h2 data-i18n="pricing_title">Cenník</h2>
@@ -470,6 +518,7 @@
         nav_agents: "Agenti",
         nav_architecture: "Architektúra",
         nav_assurance: "Záruky",
+        nav_articles: "Články",
         nav_pricing: "Cenník",
         nav_faq: "FAQ",
         nav_contact: "Kontakt",
@@ -566,6 +615,17 @@
         assurance_card2_body: "Vrstvený ingest podporuje štruktúrované dáta, PDF a jurisdikčné metadáta.",
         assurance_card3_title: "Logovanie",
         assurance_card3_body: "Run artefakty ukladajú prompty, rozhodnutia a trace súhrny.",
+        articles_eyebrow: "Novinky a produktové články",
+        articles_title: "Články o nových funkciách JurisDigta.",
+        articles_lede: "Krátke vysvetlenia pripravovaných integrácií, prístupu cez AI asistentov a bezpečnostného rámca služby bez nového zberu údajov alebo externých sledovacích skriptov.",
+        articles_sidebar_title: "Zoznam článkov",
+        articles_sidebar_body: "Vyberte článok podľa názvu a dátumu.",
+        articles_nav_aria: "Zoznam článkov",
+        articles_back_main: "Späť na hlavnú stránku",
+        articles_language_note: "Prvá verzia textu článku je dostupná v slovenčine. Preklady budú doplnené po finálnej revízii.",
+        articles_read_more: "Otvoriť článok",
+        articles_not_found_title: "Článok sa nenašiel",
+        articles_not_found_body: "Vyberte článok zo zoznamu alebo sa vráťte na hlavnú stránku.",
         faq_title: "FAQ",
         faq_lede: "Najčastejšie otázky o AI Jurisdigta agentoch a správe.",
         faq_q1: "Aké jurisdikcie podporujete?",
@@ -628,6 +688,7 @@
         nav_agents: "Agenten",
         nav_architecture: "Architektur",
         nav_assurance: "Absicherung",
+        nav_articles: "Artikel",
         nav_pricing: "Preise",
         nav_faq: "FAQ",
         nav_contact: "Kontakt",
@@ -724,6 +785,17 @@
         assurance_card2_body: "Mehrstufiger Intake unterstützt strukturierte Daten, PDFs und Jurisdiktionsmetadaten.",
         assurance_card3_title: "Logging",
         assurance_card3_body: "Run-Artefakte speichern Prompts, Entscheidungen und Trace-Summaries.",
+        articles_eyebrow: "Neuigkeiten und Produktartikel",
+        articles_title: "Artikel zu neuen JurisDigta-Funktionen.",
+        articles_lede: "Kurze Erläuterungen zu geplanten Integrationen, KI-Assistenten-Zugriff und dem Sicherheitsrahmen des Dienstes ohne neue Datenerhebung oder zusätzliche Tracking-Skripte.",
+        articles_sidebar_title: "Artikelliste",
+        articles_sidebar_body: "Wählen Sie einen Artikel nach Titel und Datum.",
+        articles_nav_aria: "Artikelliste",
+        articles_back_main: "Zurück zur Hauptseite",
+        articles_language_note: "Die erste Version des Artikels ist auf Slowakisch verfügbar. Übersetzungen folgen nach der finalen Prüfung.",
+        articles_read_more: "Artikel öffnen",
+        articles_not_found_title: "Artikel nicht gefunden",
+        articles_not_found_body: "Wählen Sie einen Artikel aus der Liste oder kehren Sie zur Hauptseite zurück.",
         faq_title: "FAQ",
         faq_lede: "Häufige Fragen zu AI Jurisdigta und Governance.",
         faq_q1: "Welche Jurisdiktionen werden unterstützt?",
@@ -781,6 +853,7 @@
         nav_agents: "Agents",
         nav_architecture: "Architecture",
         nav_assurance: "Assurance",
+        nav_articles: "Articles",
         nav_pricing: "Pricing",
         nav_faq: "FAQ",
         nav_contact: "Contact",
@@ -877,6 +950,17 @@
         assurance_card2_body: "Layered ingestion supports structured data, PDFs, and jurisdiction metadata.",
         assurance_card3_title: "Logging",
         assurance_card3_body: "Run artifacts are stored with prompts, decisions, and trace summaries.",
+        articles_eyebrow: "News and product articles",
+        articles_title: "Articles about new JurisDigta features.",
+        articles_lede: "Short explainers for planned integrations, AI-assistant access, and the service security framework without new data collection or additional tracking scripts.",
+        articles_sidebar_title: "Article list",
+        articles_sidebar_body: "Choose an article by title and date.",
+        articles_nav_aria: "Article list",
+        articles_back_main: "Back to main page",
+        articles_language_note: "The first article body version is available in Slovak. Translations will follow after final review.",
+        articles_read_more: "Open article",
+        articles_not_found_title: "Article not found",
+        articles_not_found_body: "Choose an article from the list or return to the main page.",
         faq_title: "FAQ",
         faq_lede: "Common questions about AI Jurisdigta agents and governance.",
         faq_q1: "What jurisdictions are supported?",
@@ -948,6 +1032,18 @@
     const contactStartedAt = document.getElementById("contact-started-at");
     const contactStatus = document.getElementById("contact-form-status");
     const contactTurnstile = document.getElementById("contact-turnstile");
+    const articleFeatureList = document.getElementById("article-feature-list");
+    const articleOverviewView = document.getElementById("articles-overview-view");
+    const articleDetailView = document.getElementById("article-detail-view");
+    const articleDetailDate = document.getElementById("article-detail-date");
+    const articleDetailTitle = document.getElementById("article-detail-title");
+    const articleDetailStandfirst = document.getElementById("article-detail-standfirst");
+    const articleLanguageNote = document.getElementById("article-language-note");
+    const articleDetailContent = document.getElementById("article-detail-content");
+    const articleNavTargets = [
+      document.getElementById("article-overview-nav"),
+      document.getElementById("article-detail-nav")
+    ].filter(Boolean);
     const blockedEmailDomains = new Set([
       "example.com",
       "example.org",
@@ -957,6 +1053,176 @@
       "10minutemail.com"
     ]);
     let activeLanguage = "sk";
+    const articles = [
+      {
+        slug: "mcp-ai-assistants",
+        dateLabel: {
+          sk: "13. máj 2026",
+          de: "13. Mai 2026",
+          en: "May 13, 2026"
+        },
+        title: {
+          sk: "MCP server pre AI asistentov",
+          de: "MCP-Server für KI-Assistenten",
+          en: "MCP server for AI assistants"
+        },
+        summary: {
+          sk: "Plánovaný prístup pre Claude, Perplexity, Copilot a Codex cez prvý JurisDigta MCP endpoint.",
+          de: "Geplanter Zugriff für Claude, Perplexity, Copilot und Codex über den ersten JurisDigta-MCP-Endpunkt.",
+          en: "Planned access for Claude, Perplexity, Copilot, and Codex through the first JurisDigta MCP endpoint."
+        },
+        standfirst: {
+          sk: "Externí AI asistenti budú môcť čítať prípady, zákony a dokumenty cez kontrolovaný MCP kanál, až keď bude backendová úloha nasadená.",
+          de: "Externe KI-Assistenten sollen Fälle, Gesetze und Dokumente über einen kontrollierten MCP-Kanal lesen können, sobald die Backend-Aufgabe ausgeliefert ist.",
+          en: "External AI assistants will be able to read cases, laws, and documents through a controlled MCP channel once the backend task is shipped."
+        },
+        body: [
+          {
+            type: "note",
+            text: "Stav: plánované. Tento článok neoznamuje živú produkčnú dostupnosť MCP servera; endpoint bude použiteľný až po dokončení backendovej úlohy a správy API kľúčov."
+          },
+          {
+            type: "p",
+            text: "JurisDigta pripravuje MCP server pre AI asistentov ako Claude, Perplexity, Copilot a Codex. Cieľom je, aby používateľ mohol bezpečne sprístupniť vybrané dáta svojmu asistentovi bez manuálneho kopírovania dokumentov a bez obchádzania vlastníctva prípadov."
+          },
+          {
+            type: "p",
+            text: "Plánovaná URL endpointu je https://api.jurisdigta.eu/mcp. Prístup má byť viazaný na používateľom vytvorený MCP API kľúč s expiráciou, rozsahmi oprávnení a možnosťou okamžitého zrušenia."
+          },
+          {
+            type: "h3",
+            text: "Prvý podporovaný rozsah"
+          },
+          {
+            type: "ul",
+            items: [
+              "ReadOnly nástroje pre vyhľadanie zákona podľa čísla a roku.",
+              "Vyhľadanie relevantných zákonov podľa otázky.",
+              "Zoznam vlastných prípadov a čítanie metadát, histórie a dokumentov prípadu.",
+              "Bez zápisu, mazania alebo hromadného exportu mimo rozsahu súhlasu používateľa."
+            ]
+          },
+          {
+            type: "p",
+            text: "Nástroje s vyšším rizikom, napríklad validácia osoby, firmy, vozidla alebo katastra, budú oddelené do rozšíreného rozsahu oprávnení. Pred ich spustením musí byť jasné, aký externý zdroj sa použije, aký právny základ alebo súhlas používateľ uvádza a aké údaje sa odošlú."
+          },
+          {
+            type: "p",
+            text: "MCP odpovede majú poskytovať štruktúrované dáta, citácie a upozornenia. Nemajú predstavovať finálne právne rozhodnutie. Výstupy pripravené externým AI asistentom musí používateľ alebo právnik skontrolovať pred podaním, podpisom alebo iným právne významným použitím."
+          }
+        ]
+      },
+      {
+        slug: "slovak-service-integrations",
+        dateLabel: {
+          sk: "13. máj 2026",
+          de: "13. Mai 2026",
+          en: "May 13, 2026"
+        },
+        title: {
+          sk: "Plánované prepojenie služieb na Slovensku",
+          de: "Geplante Verknüpfung slowakischer Dienste",
+          en: "Planned Slovak service integrations"
+        },
+        summary: {
+          sk: "Prehľad smerovania k jednému miestu pre verejné registre, validácie a právne workflow s GDPR kontrolami.",
+          de: "Überblick über ein zentrales Arbeitsumfeld für Register, Validierungen und juristische Workflows mit DSGVO-Kontrollen.",
+          en: "A direction toward one place for public registers, validations, and legal workflows with GDPR controls."
+        },
+        standfirst: {
+          sk: "JurisDigta má postupne spájať existujúce slovenské služby do jedného kontrolovaného pracovného priestoru.",
+          de: "JurisDigta soll bestehende slowakische Dienste schrittweise in einem kontrollierten Arbeitsbereich bündeln.",
+          en: "JurisDigta is planned to bring existing Slovak services into one controlled workspace."
+        },
+        body: [
+          {
+            type: "p",
+            text: "Mnohé právne a administratívne úlohy dnes vyžadujú prácu naprieč viacerými portálmi. Používateľ najprv zistí údaje v registri, potom ich overuje v ďalšej službe, následne pripravuje dokumenty a nakoniec kontroluje, či má dostatok dôkazov pre ďalší krok."
+          },
+          {
+            type: "p",
+            text: "Plánovaná vízia JurisDigta je spojiť tieto kroky do jedného pracovného toku. Služba má pomôcť s orientáciou v obchodnom registri, živnostenskom registri, katastri, validácii adresy, validácii vozidla a vybraných verejných kontrolách, ak budú dostupné a právne použiteľné."
+          },
+          {
+            type: "h3",
+            text: "Kontroly, ktoré majú byť súčasťou návrhu"
+          },
+          {
+            type: "ul",
+            items: [
+              "GDPR minimalizácia: spracovať iba údaje potrebné pre konkrétny krok.",
+              "Transparentnosť: používateľ má vidieť, ktorý register alebo zdroj sa použije.",
+              "Súhlas a právny základ: citlivé alebo osobné kontroly sa nespustia bez jasného dôvodu.",
+              "Auditná stopa: systém uloží bezpečný záznam o type kontroly, výsledku a čase bez ukladania nadbytočných osobných údajov.",
+              "EU AI Act dohľad: AI sumarizácia zostáva pod ľudskou kontrolou a nepredstavuje samostatné právne rozhodnutie."
+            ]
+          },
+          {
+            type: "p",
+            text: "Cieľom nie je nahradiť verejné služby ani právnika. Cieľom je znížiť počet manuálnych krokov, pomôcť používateľovi pochopiť stav prípadu a pripraviť prehľad dôkazov tak, aby bolo jasné, čo je overené, čo je iba návrh a čo ešte vyžaduje ľudskú kontrolu."
+          }
+        ]
+      },
+      {
+        slug: "security-gdpr-ai-act",
+        dateLabel: {
+          sk: "13. máj 2026",
+          de: "13. Mai 2026",
+          en: "May 13, 2026"
+        },
+        title: {
+          sk: "Bezpečnosť, GDPR a EU AI Act v JurisDigta",
+          de: "Sicherheit, DSGVO und EU AI Act in JurisDigta",
+          en: "Security, GDPR, and the EU AI Act in JurisDigta"
+        },
+        summary: {
+          sk: "Stručný A4 prehľad toho, ako služba pristupuje k ochrane údajov, transparentnosti a ľudskému dohľadu.",
+          de: "Kurzer Überblick über Datenschutz, Transparenz und menschliche Aufsicht.",
+          en: "A concise overview of data protection, transparency, and human oversight."
+        },
+        standfirst: {
+          sk: "Právne workflow často obsahujú osobné údaje, finančné informácie a citlivé skutkové okolnosti. JurisDigta preto používa zásady bezpečnosti a minimalizácie už v návrhu.",
+          de: "Juristische Workflows enthalten häufig personenbezogene Daten, Finanzinformationen und sensible Sachverhalte. JurisDigta setzt deshalb auf Sicherheit und Minimierung by Design.",
+          en: "Legal workflows often contain personal data, financial information, and sensitive facts. JurisDigta applies security and minimization by design."
+        },
+        body: [
+          {
+            type: "p",
+            text: "JurisDigta je navrhovaná ako pracovný priestor pre AI asistované právne úlohy, nie ako automatický rozhodovací orgán. Systém pomáha triediť fakty, dokumenty a návrhy ďalších krokov, no právne závery, podania a podpisy musia zostať pod ľudskou kontrolou."
+          },
+          {
+            type: "p",
+            text: "Pri ochrane údajov sa uplatňuje prístup privacy by design. Používateľ má poskytovať iba údaje potrebné pre konkrétny prípad. Systém má obmedzovať prístup podľa vlastníctva prípadu, používať bezpečné konfiguračné tajomstvá, neukladať nadbytočné dáta a podporovať retenčné a výmazové pravidlá podľa účelu spracúvania."
+          },
+          {
+            type: "h3",
+            text: "GDPR zásady"
+          },
+          {
+            type: "ul",
+            items: [
+              "Zákonnosť a transparentnosť: používateľ má vedieť, prečo sa údaje spracúvajú.",
+              "Minimalizácia: dokumenty a registre sa používajú iba v rozsahu potrebnom pre prípad.",
+              "Obmedzenie prístupu: prípadové údaje patria konkrétnemu používateľovi alebo oprávnenému tímu.",
+              "Bezpečnosť: tajomstvá, API kľúče a technické logy nesmú odhaľovať osobné údaje nad rámec prevádzky.",
+              "Retencia a výmaz: údaje majú mať jasný účel, dobu uchovania a možnosť odstránenia podľa pravidiel služby."
+            ]
+          },
+          {
+            type: "h3",
+            text: "EU AI Act a ľudský dohľad"
+          },
+          {
+            type: "p",
+            text: "AI výstupy sú označené ako asistované návrhy. Používateľ musí skontrolovať fakty, citácie, jurisdikčnú vhodnosť a následky pred tým, ako výstup použije mimo platformy. Pri právne rizikových výstupoch je potrebná kvalifikovaná ľudská revízia."
+          },
+          {
+            type: "p",
+            text: "Bezpečnostná a compliance architektúra nemá byť marketingovým tvrdením o certifikácii. Je to praktický rámec: jasné oprávnenia, auditovateľné kroky, opatrné logovanie, žiadne nové sledovacie skripty v článkoch a transparentné upozornenia tam, kde AI len pripravuje podklad pre človeka."
+          }
+        ]
+      }
+    ];
 
     function resolveContactApiUrl() {
       if (configuredContactApiUrl && !configuredContactApiUrl.startsWith("__")) {
@@ -1105,6 +1371,175 @@
       }
     }
 
+    function clearNode(node) {
+      while (node && node.firstChild) {
+        node.removeChild(node.firstChild);
+      }
+    }
+
+    function translatedArticleValue(article, fieldName) {
+      const values = article[fieldName] || {};
+      return values[activeLanguage] || values.sk || values.en || "";
+    }
+
+    function getActiveArticleSlug() {
+      const hash = decodeURIComponent(window.location.hash || "");
+      return hash.startsWith("#article-") ? hash.slice("#article-".length) : "";
+    }
+
+    function createArticleListLink(article, activeSlug) {
+      const link = document.createElement("a");
+      link.href = `#article-${article.slug}`;
+      link.className = "article-list-link";
+      if (article.slug === activeSlug) {
+        link.classList.add("active");
+        link.setAttribute("aria-current", "page");
+      }
+
+      const title = document.createElement("span");
+      title.className = "article-list-title";
+      title.textContent = translatedArticleValue(article, "title");
+
+      const date = document.createElement("span");
+      date.className = "article-list-date";
+      date.textContent = translatedArticleValue(article, "dateLabel");
+
+      link.append(title, date);
+      return link;
+    }
+
+    function renderArticleNavigation(activeSlug = getActiveArticleSlug()) {
+      articleNavTargets.forEach((nav) => {
+        clearNode(nav);
+        articles.forEach((article) => {
+          nav.appendChild(createArticleListLink(article, activeSlug));
+        });
+      });
+
+      if (!articleFeatureList) {
+        return;
+      }
+      clearNode(articleFeatureList);
+      articles.forEach((article) => {
+        const card = document.createElement("article");
+        card.className = "article-feature-card";
+
+        const date = document.createElement("p");
+        date.className = "article-date";
+        date.textContent = translatedArticleValue(article, "dateLabel");
+
+        const title = document.createElement("h3");
+        title.textContent = translatedArticleValue(article, "title");
+
+        const summary = document.createElement("p");
+        summary.textContent = translatedArticleValue(article, "summary");
+
+        const link = document.createElement("a");
+        link.className = "article-read-link";
+        link.href = `#article-${article.slug}`;
+        link.textContent = contactText("articles_read_more");
+
+        card.append(date, title, summary, link);
+        articleFeatureList.appendChild(card);
+      });
+    }
+
+    function appendArticleBlock(block) {
+      if (!articleDetailContent) {
+        return;
+      }
+      if (block.type === "h3") {
+        const heading = document.createElement("h3");
+        heading.textContent = block.text;
+        articleDetailContent.appendChild(heading);
+        return;
+      }
+      if (block.type === "ul") {
+        const list = document.createElement("ul");
+        (block.items || []).forEach((item) => {
+          const listItem = document.createElement("li");
+          listItem.textContent = item;
+          list.appendChild(listItem);
+        });
+        articleDetailContent.appendChild(list);
+        return;
+      }
+      const paragraph = document.createElement("p");
+      paragraph.textContent = block.text || "";
+      if (block.type === "note") {
+        paragraph.className = "article-warning";
+      }
+      articleDetailContent.appendChild(paragraph);
+    }
+
+    function renderArticleDetail(article) {
+      if (!articleDetailView || !articleOverviewView) {
+        return;
+      }
+      articleOverviewView.hidden = true;
+      articleDetailView.hidden = false;
+      if (articleDetailDate) {
+        articleDetailDate.textContent = translatedArticleValue(article, "dateLabel");
+      }
+      if (articleDetailTitle) {
+        articleDetailTitle.textContent = translatedArticleValue(article, "title");
+      }
+      if (articleDetailStandfirst) {
+        articleDetailStandfirst.textContent = translatedArticleValue(article, "standfirst");
+      }
+      if (articleLanguageNote) {
+        articleLanguageNote.hidden = activeLanguage === "sk";
+      }
+      clearNode(articleDetailContent);
+      article.body.forEach(appendArticleBlock);
+      document.title = `${translatedArticleValue(article, "title")} | JurisDigta`;
+    }
+
+    function renderArticleNotFound() {
+      if (!articleDetailView || !articleOverviewView) {
+        return;
+      }
+      articleOverviewView.hidden = true;
+      articleDetailView.hidden = false;
+      if (articleDetailDate) {
+        articleDetailDate.textContent = "";
+      }
+      if (articleDetailTitle) {
+        articleDetailTitle.textContent = contactText("articles_not_found_title");
+      }
+      if (articleDetailStandfirst) {
+        articleDetailStandfirst.textContent = contactText("articles_not_found_body");
+      }
+      if (articleLanguageNote) {
+        articleLanguageNote.hidden = true;
+      }
+      clearNode(articleDetailContent);
+      document.title = "JurisDigta";
+    }
+
+    function renderArticleRoute(options = {}) {
+      const activeSlug = getActiveArticleSlug();
+      renderArticleNavigation(activeSlug);
+      if (!articleDetailView || !articleOverviewView) {
+        return;
+      }
+      if (!activeSlug) {
+        articleOverviewView.hidden = false;
+        articleDetailView.hidden = true;
+        document.title = "JurisDigta";
+        return;
+      }
+      const article = articles.find((item) => item.slug === activeSlug);
+      if (article) {
+        renderArticleDetail(article);
+      } else {
+        renderArticleNotFound();
+      }
+      if (options.scroll && articleDetailView) {
+        articleDetailView.scrollIntoView({ block: "start" });
+      }
+    }
+
     function applyTranslations(lang) {
       const dictionary = translations[lang] || translations.sk;
       document.documentElement.lang = lang;
@@ -1158,11 +1593,13 @@
       });
       applyTranslations(next);
       updateVideoSource(next);
+      renderArticleRoute();
     }
 
     languageButtons.forEach((button) => {
       button.addEventListener("click", () => setLanguage(button.dataset.lang));
     });
+    window.addEventListener("hashchange", () => renderArticleRoute({ scroll: true }));
     if (contactStartedAt) {
       contactStartedAt.value = String(Date.now());
     }

@@ -489,6 +489,160 @@ main {
   color: #fff;
 }
 
+.articles-layout,
+.article-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 2rem;
+  align-items: start;
+}
+
+.article-feature-list {
+  display: grid;
+  gap: 1.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.article-feature-card,
+.article-sidebar-inner,
+.article-body {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(6, 57, 122, 0.1);
+  border-radius: 20px;
+  box-shadow: 0 12px 30px rgba(4, 22, 52, 0.1);
+}
+
+.article-feature-card {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  padding: 1.6rem;
+}
+
+.article-feature-card p,
+.article-feature-card h3 {
+  margin: 0;
+}
+
+.article-date,
+.article-list-date {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 0.82rem;
+  color: rgba(8, 32, 70, 0.68);
+}
+
+.article-read-link,
+.article-back,
+.article-back-link {
+  width: fit-content;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  color: var(--navy);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.article-sidebar {
+  position: sticky;
+  top: 6rem;
+}
+
+.article-sidebar-inner {
+  padding: 1.4rem;
+}
+
+.article-sidebar-inner h3 {
+  margin-bottom: 0.35rem;
+}
+
+.article-sidebar-inner p {
+  margin-bottom: 1rem;
+}
+
+.article-list-nav {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.article-list-link {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(6, 57, 122, 0.12);
+  background: rgba(237, 243, 251, 0.7);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.article-list-link:hover,
+.article-list-link:focus-visible,
+.article-list-link.active {
+  border-color: rgba(27, 116, 201, 0.55);
+  background: rgba(219, 234, 255, 0.95);
+}
+
+.article-list-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.article-detail[hidden],
+.articles-layout[hidden] {
+  display: none;
+}
+
+.article-body {
+  padding: 2rem;
+}
+
+.article-body .article-date {
+  margin-top: 1.2rem;
+}
+
+.article-standfirst {
+  font-size: 1.1rem;
+  color: rgba(8, 32, 70, 0.8);
+}
+
+.article-language-note,
+.article-warning {
+  padding: 0.95rem 1rem;
+  border-left: 4px solid var(--teal);
+  border-radius: 10px;
+  background: rgba(237, 243, 251, 0.9);
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 0.92rem;
+}
+
+.article-copy {
+  display: grid;
+  gap: 1rem;
+}
+
+.article-copy p,
+.article-copy ul,
+.article-copy h3 {
+  margin: 0;
+}
+
+.article-copy h3 {
+  margin-top: 0.4rem;
+}
+
+.article-copy ul {
+  padding-left: 1.2rem;
+}
+
+.article-copy li {
+  margin-bottom: 0.45rem;
+}
+
+.detail-sidebar .article-back-link {
+  display: inline-flex;
+  margin-bottom: 1rem;
+}
+
 .pricing-grid {
   display: grid;
   gap: 1.5rem;
@@ -766,6 +920,19 @@ main {
 @media (max-width: 840px) {
   .nav-links {
     display: none;
+  }
+
+  .articles-layout,
+  .article-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .article-sidebar {
+    position: static;
+  }
+
+  .article-body {
+    padding: 1.5rem;
   }
 
   .section.alt {
