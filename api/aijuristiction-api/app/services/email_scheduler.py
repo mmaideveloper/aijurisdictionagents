@@ -110,7 +110,7 @@ def _decode_attachments(raw: object) -> list[dict[str, Any]]:
     return decoded
 
 
-def _optional_metadata_str(item: dict[str, object], key: str) -> str | None:
+def _optional_metadata_str(item: dict[Any, Any], key: str) -> str | None:
     value = item.get(key)
     if not isinstance(value, str):
         return None
