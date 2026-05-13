@@ -86,8 +86,8 @@ def test_scheduler_brands_legacy_non_otp_email_and_keeps_code_plain() -> None:
     assert second_email["attachments"] == []
 
 
-def test_smtp_sender_attaches_inline_assets_as_related(monkeypatch) -> None:
-    delivered = []
+def test_smtp_sender_attaches_inline_assets_as_related(monkeypatch: Any) -> None:
+    delivered: list[Any] = []
 
     class FakeSMTP:
         def __init__(self, host: str, port: int, timeout: int) -> None:
@@ -98,7 +98,7 @@ def test_smtp_sender_attaches_inline_assets_as_related(monkeypatch) -> None:
         def __enter__(self) -> "FakeSMTP":
             return self
 
-        def __exit__(self, exc_type, exc, traceback) -> None:  # type: ignore[no-untyped-def]
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
             return None
 
         def starttls(self) -> None:
@@ -107,7 +107,7 @@ def test_smtp_sender_attaches_inline_assets_as_related(monkeypatch) -> None:
         def login(self, username: str, password: str) -> None:
             return None
 
-        def send_message(self, message) -> None:  # type: ignore[no-untyped-def]
+        def send_message(self, message: Any) -> None:
             delivered.append(message)
 
     monkeypatch.setattr("app.services.email.smtplib.SMTP", FakeSMTP)
