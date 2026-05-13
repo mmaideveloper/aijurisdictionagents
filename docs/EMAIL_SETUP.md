@@ -16,7 +16,27 @@ EMAIL_SMTP_USERNAME=no-reply@jurisdigta.eu
 EMAIL_SMTP_PASSWORD=<set from environment or secret store>
 ```
 
-For local queue-only testing, keep `EMAIL_TRANSPORT=log`. The API still writes messages to the email outbox, but the scheduler logs the email instead of sending it.
+For local queue-only testing, keep `EMAIL_TRANSPORT=log`. The API still writes messages to the email outbox, but the scheduler logs only safe delivery metadata instead of the full email body.
+
+## Branded non-OTP templates
+
+Non-OTP outbound emails use the JurisDigta branded HTML template in `api/aijuristiction-api/app/services/email_templates.py` with a readable plain-text fallback. The template uses inline CID SVG header and footer assets so mail clients do not load remote tracking images.
+
+Styled templates currently cover:
+
+- account welcome / registration-complete notification
+- subscription change requested
+- subscription status and payment notifications
+- generated case-document package delivery
+- legacy non-OTP outbox messages normalized by the email scheduler before delivery
+
+OTP and one-time-code emails remain plain text. This avoids placing verification codes in richer HTML previews or related image payloads and keeps code messages minimal.
+
+Privacy and compliance rules for templates:
+
+- Do not include SMTP secrets, API keys, raw legal document text, or unnecessary special-category personal data in templates.
+- Keep generated legal-document emails limited to package metadata and attachments; the footer reminds recipients that AI-assisted legal documents require review before filing, signing, or reliance.
+- The log transport records recipient, subject, body length, HTML presence, and attachment count, not full HTML or OTP body content.
 
 ## Local scheduler
 
@@ -87,6 +107,7 @@ The page can trigger:
 - registration test email
 - mobile-app OTP test email
 - payment confirmation test email
+- generated documents email
 
 Use **Transport** to choose how the simulator sends the test message:
 
