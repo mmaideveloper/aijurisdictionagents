@@ -5,6 +5,10 @@ This repository uses local polling scripts to drive Project V2 automation.
 Automatic polling/pooling GitHub workflow execution is disabled/removed.
 Reason: project automation is kept local/manual for predictable control of task transitions and comments.
 
+Codex Desktop automation templates are tracked separately under `.codex/automations/`.
+Install or refresh them with `scripts/sync_codex_automations.ps1`; see
+`docs/CODEX_AUTOMATIONS.md`.
+
 ## Local automation
 
 - Purpose: fetch Project V2 items and write snapshot JSON files, then move Ready tasks with PRs to In review.
