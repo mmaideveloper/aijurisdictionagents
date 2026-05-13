@@ -33,6 +33,23 @@ The pricing cards and FAQ mirror the backend subscription limits for document up
 - `Basic`: 5 documents per case
 - `Premium`: 50 documents per case
 
+## News and articles
+
+The homepage includes a static articles section at `#articles`. Article detail views are hash-routed
+inside the same static page, for example:
+
+- `#article-mcp-ai-assistants`
+- `#article-slovak-service-integrations`
+- `#article-security-gdpr-ai-act`
+
+Maintain article metadata and Slovak article bodies in the `articles` array inside `index.html`.
+The right-side context menu is rendered from the same data on the overview and detail views, so new
+articles only need one data entry. The first article-body version is Slovak-only by design; DE/EN
+visitors see a translated UI note until reviewed translations are added.
+
+Article content must not add third-party trackers, remote embeds, or claims of live MCP production
+availability before the backend endpoint is actually shipped.
+
 ## Branding assets
 
 The site now uses `assets/branding.png` as the source sheet for:
