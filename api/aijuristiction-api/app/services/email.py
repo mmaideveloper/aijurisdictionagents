@@ -6,7 +6,7 @@ import logging
 import os
 import smtplib
 from email.message import EmailMessage
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger("aijuristiction-api.email")
 
@@ -85,7 +85,7 @@ class EmailNotificationService:
         html_part: EmailMessage | None = None
         if html_body:
             message.add_alternative(html_body, subtype="html")
-            html_part = message.get_body(preferencelist=("html",))
+            html_part = cast(EmailMessage | None, message.get_body(preferencelist=("html",)))
         for attachment in attachments:
             _add_attachment(message=message, html_part=html_part, attachment=attachment)
 
