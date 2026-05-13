@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
 import logging
 import os
 import smtplib
@@ -46,22 +47,25 @@ class EmailNotificationService:
         html_body: str | None = None,
         attachments: list[dict[str, Any]] | None = None,
     ) -> None:
+        prepared_attachments = attachments or []
         if self.transport == "smtp":
             self._send_via_smtp(
                 recipient=recipient,
                 subject=subject,
                 body=body,
                 html_body=html_body,
-                attachments=attachments or [],
+                attachments=prepared_attachments,
             )
             return
         logger.info(
-            "Email notification (%s): from=%s to=%s subject=%s body=%s",
+            "Email notification (%s): from=%s to=%s subject=%s body_chars=%s html=%s attachments=%s",
             self.transport,
             self.sender,
             recipient,
             subject,
-            body,
+            len(body),
+            bool(html_body),
+            len(prepared_attachments),
         )
 
     def _send_via_smtp(
@@ -78,16 +82,12 @@ class EmailNotificationService:
         message["To"] = recipient
         message["Subject"] = subject
         message.set_content(body)
+        html_part: EmailMessage | None = None
         if html_body:
             message.add_alternative(html_body, subtype="html")
+            html_part = message.get_body(preferencelist=("html",))
         for attachment in attachments:
-            filename = str(attachment.get("filename") or "attachment.bin")
-            mime_type = str(attachment.get("mime_type") or "application/octet-stream")
-            payload = attachment.get("content")
-            if not isinstance(payload, (bytes, bytearray)):
-                continue
-            maintype, _, subtype = mime_type.partition("/")
-            message.add_attachment(bytes(payload), maintype=maintype or "application", subtype=subtype or "octet-stream", filename=filename)
+            _add_attachment(message=message, html_part=html_part, attachment=attachment)
 
         with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=10) as smtp:
             if self.smtp_use_tls:
@@ -95,6 +95,63 @@ class EmailNotificationService:
             if self.smtp_username and self.smtp_password:
                 smtp.login(self.smtp_username, self.smtp_password)
             smtp.send_message(message)
+
+
+def _add_attachment(
+    *,
+    message: EmailMessage,
+    html_part: EmailMessage | None,
+    attachment: dict[str, Any],
+) -> None:
+    filename = str(attachment.get("filename") or "attachment.bin")
+    mime_type = str(attachment.get("mime_type") or "application/octet-stream")
+    payload = _attachment_payload(attachment)
+    if payload is None:
+        return
+    maintype, subtype = _split_mime_type(mime_type)
+    content_id = _attachment_content_id(attachment)
+    if html_part is not None and content_id:
+        html_part.add_related(
+            payload,
+            maintype=maintype,
+            subtype=subtype,
+            cid=_format_content_id(content_id),
+            filename=filename,
+        )
+        return
+    message.add_attachment(payload, maintype=maintype, subtype=subtype, filename=filename)
+
+
+def _attachment_payload(attachment: dict[str, Any]) -> bytes | None:
+    payload = attachment.get("content")
+    if isinstance(payload, (bytes, bytearray)):
+        return bytes(payload)
+    encoded = attachment.get("content_base64")
+    if isinstance(encoded, str) and encoded.strip():
+        try:
+            return base64.b64decode(encoded.encode("utf-8"), validate=True)
+        except Exception:
+            return None
+    return None
+
+
+def _split_mime_type(mime_type: str) -> tuple[str, str]:
+    maintype, separator, subtype = mime_type.partition("/")
+    if not separator:
+        return "application", "octet-stream"
+    return maintype or "application", subtype or "octet-stream"
+
+
+def _attachment_content_id(attachment: dict[str, Any]) -> str | None:
+    raw = attachment.get("content_id")
+    if not isinstance(raw, str):
+        return None
+    content_id = raw.strip().strip("<>")
+    return content_id or None
+
+
+def _format_content_id(content_id: str) -> str:
+    return f"<{content_id.strip().strip('<>')}>"
 
 
 def _optional_env(name: str) -> str | None:
