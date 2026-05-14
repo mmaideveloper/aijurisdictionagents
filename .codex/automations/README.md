@@ -45,6 +45,7 @@ prints token values.
 
 ## Current Automations
 
+- `idea-task-agent`: interactive idea shaping pass for `/idea-task` prompts; asks focused questions, performs repository/compliance review, and outputs a draft ready for `prepare-task`.
 - `implementation-agent`: selects ready implementation tasks, moves them through project status, implements, fixes required validation failures, opens a PR, and moves successful work to In review.
 - `deployment-agent`: monitors failed deployment/build workflows and creates implementation-ready GitHub tasks for distinct unresolved failures.
 - `merge-agent`: closes out safe PRs by checking review status, checks, mergeability, linked task state, merge, issue comments, branch cleanup, and project status.
