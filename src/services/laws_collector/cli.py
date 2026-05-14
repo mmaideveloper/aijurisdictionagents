@@ -103,7 +103,7 @@ def main() -> None:
         return
 
     if args.run_zip_import:
-        summary = SlovLexZipImportRunner(config=config, store=store, service=service).run()
+        summary = SlovLexZipImportRunner(config=config, store=store, service=service).run(run_live_probe=True)
         print("country:", config.country_code)
         print("database_name:", config.country_db_name)
         print("import_mode:", config.import_mode)
@@ -119,6 +119,10 @@ def main() -> None:
         print("monthly_completed:", str(summary.monthly_completed).lower())
         print("last_processed_law:", summary.last_processed_law or "")
         print("last_processed_entry:", summary.last_processed_entry or "")
+        if summary.live_probe_summary is not None:
+            print("live_probe_probes:", summary.live_probe_summary.probes)
+            print("live_probe_laws_found:", summary.live_probe_summary.laws_found)
+            print("live_probe_next_law_to_check:", summary.live_probe_summary.next_law_to_check)
         return
 
     if args.check_updates:

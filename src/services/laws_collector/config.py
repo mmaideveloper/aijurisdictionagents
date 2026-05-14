@@ -21,6 +21,7 @@ class LawsCollectorConfig:
     initial_import_from: date
     historical_import_from: date
     import_mode: str = "zip"
+    import_zip_max_threads: int = 4
 
     @classmethod
     def from_env(cls) -> "LawsCollectorConfig":
@@ -45,6 +46,7 @@ class LawsCollectorConfig:
             delta_poll_hours=int(os.getenv("LAWS_DELTA_POLL_HOURS", "3")),
             initial_import_from=_SLOVAK_INITIAL_IMPORT_DATE,
             historical_import_from=_SLOVAK_INITIAL_IMPORT_DATE,
+            import_zip_max_threads=int(os.getenv("LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS", "4")),
         )
 
     @staticmethod
@@ -70,6 +72,8 @@ class LawsCollectorConfig:
             raise ValueError("LAWS_DB_CLOUD must be set for postgres backend")
         if self.delta_poll_hours < 1:
             raise ValueError("LAWS_DELTA_POLL_HOURS must be >= 1")
+        if self.import_zip_max_threads < 1:
+            raise ValueError("LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS must be >= 1")
         if self.country_code == "SK":
             if self.initial_import_from != _SLOVAK_INITIAL_IMPORT_DATE:
                 raise ValueError("Slovak laws collector initial import date is fixed at 1993-01-01")
