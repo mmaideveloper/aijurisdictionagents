@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GITHUB_HOST="${GITHUB_HOST:-github.com}"
+PROJECT_OWNER="${PROJECT_OWNER:-mmaideveloper}"
+PROJECT_NUMBER="${PROJECT_NUMBER:-5}"
+PROJECT_ITEM_LIMIT="${PROJECT_ITEM_LIMIT:-1}"
+
+log() {
+  printf '%s\n' "$*"
+}
+
+fail() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+repo_root() {
+  git rev-parse --show-toplevel 2>/dev/null || pwd
+}
+
+normalize_path() {
+  local path="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$path" 2>/dev/null || printf '%s\n' "$path"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+
+dotenv_value() {
+  local file="$1"
+  local key="$2"
+  local line value
+
+  line="$(
+    grep -E "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" "$file" 2>/dev/null \
+      | tail -n 1 \
+      || true
+  )"
+  if [ -z "$line" ]; then
+    return 1
+  fi
+
+  line="${line#export }"
+  value="${line#*=}"
+  value="$(printf '%s' "$value" | sed -e 's/\r$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+  case "$value" in
+    \"*\")
+      value="${value#\"}"
+      value="${value%\"}"
+      ;;
+    \'*\')
+      value="${value#\'}"
+      value="${value%\'}"
+      ;;
+  esac
+
+  if [ -z "$value" ]; then
+    return 1
+  fi
+
+  printf '%s\n' "$value"
+}
+
+find_dotenv() {
+  local root="$1"
+  local candidate explicit
+  shift || true
+
+  for explicit in "$@"; do
+    if [ -n "$explicit" ] && [ -f "$(normalize_path "$explicit")" ]; then
+      normalize_path "$explicit"
+      return 0
+    fi
+  done
+
+  for candidate in \
+    "$root/.env" \
+    "$PWD/.env" \
+    "../.env" \
+    "/c/Projects/aijuristiction/aijurisdictionagents/.env" \
+    "C:/Projects/aijuristiction/aijurisdictionagents/.env"
+  do
+    candidate="$(normalize_path "$candidate")"
+    if [ -f "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+token_from_dotenv() {
+  local file="$1"
+  local key value
+
+  for key in GH_TOKEN GITHUB_TOKEN GH_PROJECT_TOKEN; do
+    value="$(dotenv_value "$file" "$key" || true)"
+    if [ -n "$value" ]; then
+      printf '%s\t%s\n' "$key" "$value"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not available on PATH."
+
+ROOT="$(repo_root)"
+DOTENV_FILE="$(find_dotenv "$ROOT" "$@" || true)"
+TOKEN_SOURCE=""
+TOKEN_VALUE=""
+
+if [ -n "${GH_TOKEN:-}" ]; then
+  TOKEN_SOURCE="GH_TOKEN environment"
+  TOKEN_VALUE="$GH_TOKEN"
+elif [ -n "${GITHUB_TOKEN:-}" ]; then
+  TOKEN_SOURCE="GITHUB_TOKEN environment"
+  TOKEN_VALUE="$GITHUB_TOKEN"
+elif [ -n "${DOTENV_FILE:-}" ]; then
+  TOKEN_PAIR="$(token_from_dotenv "$DOTENV_FILE" || true)"
+  if [ -n "$TOKEN_PAIR" ]; then
+    TOKEN_SOURCE="${TOKEN_PAIR%%$'\t'*} from $DOTENV_FILE"
+    TOKEN_VALUE="${TOKEN_PAIR#*$'\t'}"
+  fi
+fi
+
+if [ -n "$TOKEN_VALUE" ]; then
+  log "GitHub token source: $TOKEN_SOURCE"
+  if [ "$TOKEN_SOURCE" != "GH_TOKEN environment" ] && [ "$TOKEN_SOURCE" != "GITHUB_TOKEN environment" ]; then
+    if ! printf '%s\n' "$TOKEN_VALUE" | gh auth login --hostname "$GITHUB_HOST" --with-token; then
+      log "Token login failed; falling back to existing GitHub CLI credentials if available."
+    fi
+  fi
+else
+  log "No token found in environment or .env; using existing GitHub CLI credentials."
+fi
+
+gh auth status -h "$GITHUB_HOST"
+ACTIVE_USER="$(gh api user --jq .login)"
+log "GitHub CLI active user: $ACTIVE_USER"
+
+gh project item-list "$PROJECT_NUMBER" \
+  --owner "$PROJECT_OWNER" \
+  --format json \
+  --limit "$PROJECT_ITEM_LIMIT" >/dev/null
+
+log "GitHub Project V2 access verified: owner=$PROJECT_OWNER project=$PROJECT_NUMBER"

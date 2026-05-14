@@ -33,6 +33,16 @@ gh project item-list 5 --owner mmaideveloper --format json --limit 1
 If Project V2 cannot be read, the implementation agent must stop and must not
 select tasks from issue text alone.
 
+If Codex Desktop cannot store environment variables directly, use the repository
+setup helper to read a local `.env` token and verify `gh` access:
+
+```bash
+bash .automation/codexdesktopsetup /c/Projects/aijuristiction/aijurisdictionagents/.env
+```
+
+The helper accepts `GH_TOKEN`, `GITHUB_TOKEN`, or `GH_PROJECT_TOKEN` and never
+prints token values.
+
 ## Current Automations
 
 - `implementation-agent`: selects ready implementation tasks, moves them through project status, implements, fixes required validation failures, opens a PR, and moves successful work to In review.

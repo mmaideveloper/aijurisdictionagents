@@ -30,6 +30,21 @@ The implementation agent treats Project V2 access as a hard prerequisite. If the
 Project V2 read fails, it must stop instead of selecting work from issue text or
 comments.
 
+If Codex Desktop cannot store environment variables directly, use the local
+setup helper in the environment setup script. It reads `GH_TOKEN`,
+`GITHUB_TOKEN`, or `GH_PROJECT_TOKEN` from `.env`, stores credentials through the
+GitHub CLI, and verifies Project V2 access without printing the token:
+
+```bash
+bash .automation/codexdesktopsetup /c/Projects/aijuristiction/aijurisdictionagents/.env
+```
+
+For temporary worktrees that already contain `.env`, the argument can be omitted:
+
+```bash
+bash .automation/codexdesktopsetup
+```
+
 ## Install or Refresh
 
 Preview the automations that would be installed:
