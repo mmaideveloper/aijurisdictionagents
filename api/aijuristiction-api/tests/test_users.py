@@ -658,3 +658,36 @@ def test_subscription_checkout_accepts_google_pay(monkeypatch, tmp_path: Path) -
     )
     assert checkout_response.status_code == 201
     assert checkout_response.json()["checkout_url"].startswith("https://pay.google.com")
+
+def test_user_can_create_and_delete_mcp_api_key_and_call_mcp(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421 900 111 225",
+            "email": "mcp@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+
+    create_key_response = client.post(
+        f"/v1/users/{user_id}/mcp-api-key",
+        headers=AUTH_HEADERS,
+        json={"expires_in_days": 30},
+    )
+    assert create_key_response.status_code == 200
+    mcp_key = create_key_response.json()["mcp_api_key"]
+
+    mcp_response = client.get("/MCP", headers={"x-mcp-api-key": mcp_key})
+    assert mcp_response.status_code == 200
+    assert mcp_response.json()["user_id"] == user_id
+
+    delete_key_response = client.delete(f"/v1/users/{user_id}/mcp-api-key", headers=AUTH_HEADERS)
+    assert delete_key_response.status_code == 200
+
+    expired_response = client.get("/MCP", headers={"x-mcp-api-key": mcp_key})
+    assert expired_response.status_code == 401

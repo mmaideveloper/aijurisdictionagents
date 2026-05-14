@@ -41,6 +41,8 @@ class User:
     social_security_number: str | None
     data_processing_consent_at: str | None
     data_processing_consent_version: str | None
+    mcp_api_key_hash: str | None
+    mcp_api_key_expires_at: str | None
 
 
 @dataclass(frozen=True)
@@ -203,6 +205,8 @@ class ApiDatabaseStore:
                     social_security_number TEXT,
                     data_processing_consent_at TEXT,
                     data_processing_consent_version TEXT,
+                    mcp_api_key_hash TEXT,
+                    mcp_api_key_expires_at TEXT,
                     password_hash TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
@@ -454,9 +458,9 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, password_hash, created_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, password_hash, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -475,6 +479,8 @@ class ApiDatabaseStore:
                     normalized_social_security_number,
                     data_processing_consent_at,
                     data_processing_consent_version,
+                    None,
+                    None,
                     password_hash,
                     now,
                 ),
@@ -506,6 +512,8 @@ class ApiDatabaseStore:
             social_security_number=normalized_social_security_number,
             data_processing_consent_at=data_processing_consent_at,
             data_processing_consent_version=data_processing_consent_version,
+            mcp_api_key_hash=None,
+            mcp_api_key_expires_at=None,
         )
 
     def save_registration_code(
@@ -764,7 +772,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, password_hash
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, password_hash
                 FROM users
                 WHERE email = ?
                 """,
@@ -772,7 +780,7 @@ class ApiDatabaseStore:
             )
         if row is None:
             return None
-        if not _verify_password(password, row[16]):
+        if not _verify_password(password, row[18]):
             return None
         return _row_to_user(row)
 
@@ -788,7 +796,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
                 FROM users
                 WHERE phone_number = ?
                 """,
@@ -807,7 +815,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -826,7 +834,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -873,7 +881,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -962,7 +970,56 @@ class ApiDatabaseStore:
             social_security_number=normalized_social_security_number,
             data_processing_consent_at=current_user.data_processing_consent_at,
             data_processing_consent_version=current_user.data_processing_consent_version,
+            mcp_api_key_hash=current_user.mcp_api_key_hash,
+            mcp_api_key_expires_at=current_user.mcp_api_key_expires_at,
         )
+
+
+    def set_user_mcp_api_key(self, *, user_id: str, api_key: str, expires_at: str) -> User:
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE users
+                SET mcp_api_key_hash = ?, mcp_api_key_expires_at = ?
+                WHERE user_id = ?
+                """,
+                (_hash_password(api_key), expires_at, user_id),
+            )
+        return self.get_user(user_id=user_id)
+
+    def clear_user_mcp_api_key(self, *, user_id: str) -> User:
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE users
+                SET mcp_api_key_hash = NULL, mcp_api_key_expires_at = NULL
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+        return self.get_user(user_id=user_id)
+
+    def find_user_by_mcp_api_key(self, *, api_key: str) -> User | None:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT user_id, phone_number, email, first_name, last_name, full_name,
+                       address, city, country, zip_code, tax_number, identity_card_number,
+                       date_of_birth, social_security_number,
+                       data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                FROM users
+                WHERE mcp_api_key_hash IS NOT NULL
+                """,
+            ).fetchall()
+        for row in rows:
+            if row[16] and _verify_password(api_key, str(row[16])):
+                expires_at = str(row[17]) if row[17] is not None else None
+                if expires_at and expires_at > _now_iso():
+                    return _row_to_user(row)
+        return None
 
     def create_company(self, *, legal_name: str, profile_json: str = "{}") -> Company:
         company_id = str(uuid.uuid4())
@@ -1640,6 +1697,10 @@ class ApiDatabaseStore:
             self._execute(conn, "ALTER TABLE users ADD COLUMN data_processing_consent_at TEXT")
         if "data_processing_consent_version" not in columns:
             self._execute(conn, "ALTER TABLE users ADD COLUMN data_processing_consent_version TEXT")
+        if "mcp_api_key_hash" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN mcp_api_key_hash TEXT")
+        if "mcp_api_key_expires_at" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN mcp_api_key_expires_at TEXT")
         self._execute(
             conn,
             """
@@ -1962,6 +2023,8 @@ def _row_to_user(row: tuple[object, ...]) -> User:
         social_security_number=str(values[13]) if values[13] is not None else None,
         data_processing_consent_at=str(values[14]) if len(values) > 14 and values[14] is not None else None,
         data_processing_consent_version=str(values[15]) if len(values) > 15 and values[15] is not None else None,
+        mcp_api_key_hash=str(values[16]) if len(values) > 16 and values[16] is not None else None,
+        mcp_api_key_expires_at=str(values[17]) if len(values) > 17 and values[17] is not None else None,
     )
 
 
