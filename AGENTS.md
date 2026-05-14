@@ -94,6 +94,9 @@ If the user asks to close a task:
 
 Custom project skills:
 
+- `idea-task` at `skills/idea-task/SKILL.md`
+  - Purpose: shape rough ideas into a validated draft, ask focused clarification questions, and hand off to `prepare-task` once ready.
+  - Script: chat skill (no launcher script required)
 - `api` at `skills/api/SKILL.md`
   - Purpose: start and health-check local `aijuristiction-api` (delegates to `juris-api` defaults: postgres + azurefoundry on port 8080).
   - Script: `.\skills\juris-api\scripts\start_juris_api.ps1`
