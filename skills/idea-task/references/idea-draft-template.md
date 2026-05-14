@@ -43,3 +43,4 @@
 
 ## Status
 - Ready for prepare-task | Blocked
+- Idea Task Status: Ready for prepare-task. (include this exact line only when ready)

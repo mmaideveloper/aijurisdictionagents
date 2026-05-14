@@ -1,6 +1,6 @@
 ---
 name: prepare-task
-description: Prepare an idea or GitHub Project task for implementation in this repository. Use when the user asks to refine an idea, prepare a task, make a GitHub Project item ready, update a task description, create a task from an idea, or ask the necessary technical/product/compliance questions before implementation. Also use in normal chat when the user starts with slash-style triggers such as "/prepare-task [description]", "/prepare-task -url [issue-url]", the accepted typo "/prepar-task [description]", "/prepar-task -url [issue-url]", or phrases like "here is my idea", "I have an idea for a feature", "new feature idea", "can you prepare this task", or "turn this into a GitHub task". Works with conversational idea intake, existing GitHub issue/project task descriptions, or new ideas that need to become implementation-ready work items.
+description: Convert an already shaped idea into an implementation-ready GitHub Project task. Prefer tasks reviewed by `/idea-task` first. Use when the user asks to finalize a prepared idea, validate readiness, or mark a project task Ready after technical/compliance details are complete. Accepts `/prepare-task [description]` and `/prepare-task -url [issue-url]`, but if the idea was not reviewed by `/idea-task`, run the idea-task interview subset first and mark the task as not ready until that gap is resolved.
 ---
 
 # Prepare Task
@@ -8,6 +8,17 @@ description: Prepare an idea or GitHub Project task for implementation in this r
 ## Overview
 
 Turn a loose idea or existing GitHub Project task into an implementation-ready task description. In chat, run an interview flow: collect the idea, review repository context, ask only necessary questions, draft the task, and ask for explicit confirmation before creating or updating a GitHub issue/project item.
+
+## Consistency Contract with `/idea-task`
+
+- `prepare-task` is phase 2; `idea-task` is phase 1.
+- Accepted sources for `prepare-task`:
+  1. `/idea-task` output draft (`Status: Ready for prepare-task`).
+  2. Existing issue URL that already contains an idea-task prepared section.
+  3. Raw idea text only if `prepare-task` first runs the missing idea-task questions inline.
+- Do not mark implementation readiness until both lines exist in the prepared section:
+  - `Idea Task Status: Ready for prepare-task.`
+  - `Status: Ready for implementation.`
 
 
 ## How to Execute This Skill (VS Code, Codex Web, Codex Desktop)
@@ -175,6 +186,7 @@ A task is ready for implementation only when:
 - Test and documentation requirements are specific.
 - The minimal runnable example requirement is named, defaulting to `python examples/minimal_demo.py`.
 - No blocking questions remain.
+- Idea phase evidence is present: `Idea Task Status: Ready for prepare-task.`
 - Cross-channel parity (chat simulator/API/mobile/frontend) is explicit for all in-scope channels.
 
 ## Minimal Example

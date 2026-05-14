@@ -45,6 +45,8 @@ prints token values.
 
 ## Current Automations
 
+Automation chain contract: `idea-task-agent` -> `prepare-task` -> `implementation-agent` -> review/merge -> `deployment-agent`. Implementation must start only from tasks that contain both readiness markers (`Idea Task Status: Ready for prepare-task.` and `Status: Ready for implementation.`).
+
 - `idea-task-agent`: interactive idea shaping pass for `/idea-task` prompts; asks focused questions, performs repository/compliance review, and outputs a draft ready for `prepare-task`.
 - `implementation-agent`: selects ready implementation tasks, moves them through project status, implements, fixes required validation failures, opens a PR, and moves successful work to In review.
 - `deployment-agent`: monitors failed deployment/build workflows and creates implementation-ready GitHub tasks for distinct unresolved failures.

@@ -16,13 +16,14 @@ Use this skill before `prepare-task` when an idea is still ambiguous.
 
 - `$idea-task`
 - `/idea-task [description]`
+- `/idea-task -url "https://github.com/mmaideveloper/aijurisdictionagents/issues/<id>"`
 - `I have an idea, help me shape it first`
 
 Works in VS Code, Codex Web, and Codex Desktop repository chat.
 
 ## Workflow
 
-1. Parse the idea and restate it in one paragraph.
+1. Determine source: free-text idea or `-url` existing issue/task, then restate the idea in one paragraph.
 2. Review repository context relevant to the idea.
 3. Run GDPR + EU AI Act pre-check before suggesting implementation details.
 4. Ask up to three focused questions at a time.
@@ -37,7 +38,9 @@ Works in VS Code, Codex Web, and Codex Desktop repository chat.
 7. Decide status:
    - `Ready for prepare-task`
    - `Blocked` (with reasons)
-8. If ready, recommend running `$prepare-task` with the generated draft.
+8. Emit exact marker line for downstream automations:
+   - `Idea Task Status: Ready for prepare-task.` when ready.
+9. If ready, recommend running `$prepare-task` with the generated draft or task URL.
 
 ## Question Priorities
 

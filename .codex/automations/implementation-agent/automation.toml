@@ -9,7 +9,7 @@ Task source and hard eligibility gate:
 - Look at GitHub Project V2 https://github.com/users/mmaideveloper/projects/5.
 - Before selecting any task, verify GitHub CLI can read Project V2 metadata with `gh project item-list 5 --owner mmaideveloper --format json --limit 200`.
 - If Project V2 cannot be read, including missing `read:project` or `project` scopes, stop. Report the exact blocker and the command needed to refresh scopes, for example `gh auth refresh -s read:project -s project`. Do not select a task from issue search, issue comments, labels, title text, or readiness text alone.
-- A task is eligible only when the Project V2 Status field is exactly `Ready` and the issue readiness section contains exactly `Status: Ready for implementation.`.
+- A task is eligible only when the Project V2 Status field is exactly `Ready`, the prepared section contains exactly `Idea Task Status: Ready for prepare-task.`, and the issue readiness section contains exactly `Status: Ready for implementation.`.
 - Ignore and do not implement tasks in any other project status, including Backlog, In progress, In review, Done, Ready For Solution, or blank/missing status.
 - If a specific issue number is found or mentioned but its Project V2 Status is not exactly `Ready`, skip it and report that it was skipped because its status is not Ready.
 - Immediately before claiming a task, re-read its Project V2 item and confirm the Status is still exactly `Ready`.
