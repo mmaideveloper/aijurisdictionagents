@@ -8,3 +8,8 @@ for text in [
 ]:
     result = agent.recognize(text)
     print(text, "=>", result)
+
+print(
+    "email_templates => non-OTP outbound emails use branded HTML with plain-text fallback; "
+    "OTP/code emails remain plain text."
+)

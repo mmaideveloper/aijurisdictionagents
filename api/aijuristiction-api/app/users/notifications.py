@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from app.services.email_scheduler import EmailScheduler
+from app.services.email_templates import (
+    build_subscription_change_email,
+    build_subscription_status_email,
+    build_welcome_email,
+)
 
 from aijurisdictionagents.api_db import User, UserSubscription
 
@@ -10,72 +16,54 @@ logger = logging.getLogger("aijuristiction-api.users.notifications")
 
 
 def queue_registration_email(*, scheduler: EmailScheduler, user: User) -> None:
+    email = build_welcome_email(full_name=user.full_name)
     _queue_email_safely(
         scheduler=scheduler,
         recipient=user.email,
-        subject="Welcome to AI Jurisdiction",
-        body=(
-            f"Hello {user.full_name},\n\n"
-            "your account was created successfully. "
-            "You can now sign in and start working with your legal assistant.\n"
-        ),
+        subject=email.subject,
+        body=email.text_body,
         context="registration",
-        metadata={"event": "registration", "user_id": user.user_id},
+        metadata=email.metadata(event="registration", user_id=user.user_id),
     )
 
 
 def queue_subscription_change_email(*, scheduler: EmailScheduler, user: User, item: UserSubscription) -> None:
+    email = build_subscription_change_email(full_name=user.full_name, plan_code=item.plan_code)
     _queue_email_safely(
         scheduler=scheduler,
         recipient=user.email,
-        subject="Subscription change requested",
-        body=(
-            f"Hello {user.full_name},\n\n"
-            f"your subscription change request to plan '{item.plan_code}' was recorded and is now pending.\n"
-        ),
+        subject=email.subject,
+        body=email.text_body,
         context="subscription_change",
-        metadata={"event": "subscription_change", "subscription_id": item.subscription_id},
+        metadata=email.metadata(event="subscription_change", subscription_id=item.subscription_id),
     )
 
 
 def queue_subscription_status_email(*, scheduler: EmailScheduler, user: User, item: UserSubscription) -> None:
+    email = build_subscription_status_email(
+        full_name=user.full_name,
+        plan_code=item.plan_code,
+        status=item.status,
+    )
     if item.status == "paid":
-        _queue_email_safely(
-            scheduler=scheduler,
-            recipient=user.email,
-            subject="Payment confirmed",
-            body=(
-                f"Hello {user.full_name},\n\n"
-                f"payment for your '{item.plan_code}' subscription was confirmed and your plan is active.\n"
-            ),
-            context="subscription_payment",
-            metadata={"event": "subscription_payment", "subscription_id": item.subscription_id},
-        )
-        return
-    if item.status == "failed":
-        _queue_email_safely(
-            scheduler=scheduler,
-            recipient=user.email,
-            subject="Payment failed",
-            body=(
-                f"Hello {user.full_name},\n\n"
-                f"payment for your '{item.plan_code}' subscription failed. Please retry your payment method.\n"
-            ),
-            context="subscription_payment_failed",
-            metadata={"event": "subscription_payment_failed", "subscription_id": item.subscription_id},
-        )
-        return
-
+        event = "subscription_payment"
+        context = "subscription_payment"
+    elif item.status == "failed":
+        event = "subscription_payment_failed"
+        context = "subscription_payment_failed"
+    else:
+        event = "subscription_status"
+        context = "subscription_status"
+    metadata = email.metadata(event=event, subscription_id=item.subscription_id)
+    if item.status not in {"paid", "failed"}:
+        metadata["status"] = item.status
     _queue_email_safely(
         scheduler=scheduler,
         recipient=user.email,
-        subject="Subscription status changed",
-        body=(
-            f"Hello {user.full_name},\n\n"
-            f"your subscription '{item.plan_code}' status changed to '{item.status}'.\n"
-        ),
-        context="subscription_status",
-        metadata={"event": "subscription_status", "subscription_id": item.subscription_id, "status": item.status},
+        subject=email.subject,
+        body=email.text_body,
+        context=context,
+        metadata=metadata,
     )
 
 
@@ -85,7 +73,7 @@ def _queue_email_safely(
     recipient: str,
     subject: str,
     body: str,
-    metadata: dict[str, str],
+    metadata: dict[str, Any],
     context: str,
 ) -> None:
     try:
