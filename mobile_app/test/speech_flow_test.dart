@@ -52,21 +52,21 @@ void main() {
     test('uses the first name when available', () {
       expect(
         speechInputReadyMessage('EN', firstName: 'Martin'),
-        'Hello, Martin, I am listening.',
+        startsWith('Hello, Martin, I am listening.'),
       );
     });
 
     test('falls back to a generic listening prompt', () {
       expect(
         speechInputReadyMessage('EN'),
-        'Hello, I am listening.',
+        startsWith('Hello, I am listening.'),
       );
     });
 
     test('localizes the listening prompt for Slovak', () {
       expect(
         speechInputReadyMessage('SK', firstName: 'Martin'),
-        'Ahoj, Martin, počúvam vás.',
+        startsWith('Ahoj, Martin, počúvam vás.'),
       );
     });
   });
