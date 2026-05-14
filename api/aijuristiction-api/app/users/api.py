@@ -5,6 +5,7 @@ import os
 import sqlite3
 from types import ModuleType
 from uuid import uuid4
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -50,6 +51,7 @@ class UserProfileResponse(BaseModel):
     social_security_number: str | None = None
     data_processing_consent_at: str | None = None
     data_processing_consent_version: str | None = None
+    mcp_api_key_expires_at: str | None = None
 
 
 class SignUpRequest(BaseModel):
@@ -61,6 +63,7 @@ class SignUpRequest(BaseModel):
     address: str | None = None
     data_processing_consent_accepted: bool = False
     data_processing_consent_version: str | None = None
+    mcp_api_key_expires_at: str | None = None
 
 
 class SendRegistrationCodeRequest(BaseModel):
@@ -159,6 +162,16 @@ class SubscriptionPaymentConfirmationRequest(BaseModel):
 
 class DeviceAuthUserProfileResponse(UserProfileResponse):
     device_auth_token: str | None = None
+
+
+class MCPApiKeyCreateRequest(BaseModel):
+    expires_in_days: int = Field(default=30, ge=1, le=365)
+
+
+class MCPApiKeyCreateResponse(BaseModel):
+    user_id: str
+    mcp_api_key: str
+    mcp_api_key_expires_at: str
 
 
 _payment_sessions: dict[str, dict[str, str | int]] = {}
@@ -382,6 +395,34 @@ def update_user_profile(
     return _to_user_profile_response(user)
 
 
+@router.post("/{user_id}/mcp-api-key", response_model=MCPApiKeyCreateResponse)
+def create_user_mcp_api_key(
+    user_id: str,
+    payload: MCPApiKeyCreateRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> MCPApiKeyCreateResponse:
+    _ = store.get_user(user_id=user_id)
+    raw_key = f"mcp_{uuid4().hex}{uuid4().hex}"
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days)).replace(
+        microsecond=0
+    ).isoformat()
+    store.set_user_mcp_api_key(user_id=user_id, api_key=raw_key, expires_at=expires_at)
+    return MCPApiKeyCreateResponse(
+        user_id=user_id,
+        mcp_api_key=raw_key,
+        mcp_api_key_expires_at=expires_at,
+    )
+
+
+@router.delete("/{user_id}/mcp-api-key", response_model=UserProfileResponse)
+def delete_user_mcp_api_key(
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> UserProfileResponse:
+    user = store.clear_user_mcp_api_key(user_id=user_id)
+    return _to_user_profile_response(user)
+
+
 @router.get("/subscriptions/plans", response_model=list[SubscriptionPlanResponse])
 def list_subscription_plans(
     store: ApiDatabaseStore = Depends(get_user_store),
@@ -551,6 +592,7 @@ def _to_user_profile_response(user: User) -> UserProfileResponse:
         social_security_number=user.social_security_number,
         data_processing_consent_at=user.data_processing_consent_at,
         data_processing_consent_version=user.data_processing_consent_version,
+        mcp_api_key_expires_at=user.mcp_api_key_expires_at,
     )
 
 
