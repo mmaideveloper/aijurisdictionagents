@@ -20,6 +20,19 @@ To sync one automation:
 The `__REPO_ROOT__` placeholder is replaced with the absolute path of the current
 checkout. Automation memory files are intentionally not tracked or copied.
 
+## Codex Desktop Initial Setup
+
+Codex Desktop uses the local GitHub CLI authentication for the same Windows user.
+Refresh project scopes once per machine before relying on Project V2 automations:
+
+```powershell
+gh auth refresh -s read:project -s project
+gh project item-list 5 --owner mmaideveloper --format json --limit 1
+```
+
+If Project V2 cannot be read, the implementation agent must stop and must not
+select tasks from issue text alone.
+
 ## Current Automations
 
 - `implementation-agent`: selects ready implementation tasks, moves them through project status, implements, fixes required validation failures, opens a PR, and moves successful work to In review.
