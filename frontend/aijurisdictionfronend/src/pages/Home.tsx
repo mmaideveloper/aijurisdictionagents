@@ -2,6 +2,12 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
 import { ApiRequestError } from "../api/chatClient";
+import {
+  isBrowserSpeechAvailable,
+  languageToSpeechLocale,
+  recognizeOnce,
+  SpeechToTextError
+} from "../audio/speechToText";
 import { useAuth } from "../auth/mockAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import WorkspaceWelcome from "../components/WorkspaceWelcome";
@@ -21,7 +27,7 @@ type ApiErrorState =
   | null;
 
 const Home: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { isAuthenticated, user } = useAuth();
   const {
     cases,
@@ -38,6 +44,8 @@ const Home: React.FC = () => {
   const [modeDraftMessage, setModeDraftMessage] = React.useState("");
   const [isSendingMessage, setIsSendingMessage] = React.useState(false);
   const [apiError, setApiError] = React.useState<ApiErrorState>(null);
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [speechStatus, setSpeechStatus] = React.useState<string | null>(null);
   const roleOptions = React.useMemo(
     () => [
       {
@@ -151,6 +159,32 @@ const Home: React.FC = () => {
       const sent = await submitMessageToApi("Chat", draftMessage);
       if (sent) {
         setDraftMessage("");
+      }
+    };
+
+
+    const handleVoiceCapture = async () => {
+      if (!isBrowserSpeechAvailable()) {
+        setSpeechStatus(t("workspaceSpeechUnavailable"));
+        return;
+      }
+      setIsRecording(true);
+      const speechLocale = languageToSpeechLocale(language);
+      setSpeechStatus(
+        `${t("workspaceSpeechListening")} ${t("workspaceSpeechRuntimeBrowser")} (${speechLocale}).`
+      );
+      try {
+        const result = await recognizeOnce(speechLocale);
+        setModeDraftMessage((current) => [current.trim(), result.transcript].filter(Boolean).join(" ").trim());
+        setSpeechStatus(t("workspaceSpeechReviewBeforeSend", { runtime: result.runtime }));
+      } catch (error) {
+        if (error instanceof SpeechToTextError) {
+          setSpeechStatus(t("workspaceSpeechError", { code: error.code }));
+        } else {
+          setSpeechStatus(t("workspaceSpeechError", { code: "unknown" }));
+        }
+      } finally {
+        setIsRecording(false);
       }
     };
 
@@ -278,18 +312,29 @@ const Home: React.FC = () => {
                             }
                             disabled={isSendingMessage}
                           />
-                          <button
-                            type="button"
-                            className="button primary"
-                            onClick={handleModeMessageSend}
-                            disabled={isSendingMessage || !modeDraftMessage.trim()}
-                          >
-                            {isSendingMessage
-                              ? t("workspaceSending")
-                              : activeCase?.selectedCommunicationMode === "Voice"
-                                ? t("workspaceSendVoiceTranscript")
-                                : t("workspaceSendVideoTranscript")}
-                          </button>
+                          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              className="button secondary"
+                              onClick={handleVoiceCapture}
+                              disabled={isSendingMessage || isRecording}
+                            >
+                              {isRecording ? t("workspaceSpeechListeningShort") : t("workspaceSpeechCapture")}
+                            </button>
+                            <button
+                              type="button"
+                              className="button primary"
+                              onClick={handleModeMessageSend}
+                              disabled={isSendingMessage || !modeDraftMessage.trim()}
+                            >
+                              {isSendingMessage
+                                ? t("workspaceSending")
+                                : activeCase?.selectedCommunicationMode === "Voice"
+                                  ? t("workspaceSendVoiceTranscript")
+                                  : t("workspaceSendVideoTranscript")}
+                            </button>
+                          </div>
+                          {speechStatus ? <p className="hint">{speechStatus}</p> : null}
                           {apiError ? (
                             <p className="workspace-chat__status workspace-chat__status--error">
                               {t("workspaceApiErrorLabel")}: {t(apiError.key, { detail: apiError.detail })}
