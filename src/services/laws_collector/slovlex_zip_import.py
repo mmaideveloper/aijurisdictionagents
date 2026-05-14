@@ -21,6 +21,7 @@ from .archive_storage import ArchiveObjectStore, build_archive_object_store
 from .config import LawsCollectorConfig
 from .domain import ArchiveImportAsset, CollectorImportState, CollectorProgress, LawSnapshot, SyncSummary
 from .service import LawsCollectorService
+from .slovlex_process import SlovLexSequentialImportRunner
 from .slovlex_live_source import (
     _build_metadata_record,
     _normalize_date_value,
@@ -123,6 +124,7 @@ class SlovLexZipImportSummary:
     last_processed_law: str | None
     stopped_due_to_max_running_time: bool = False
     skipped_as_already_completed: bool = False
+    live_probe_summary: object | None = None
 
 
 class SlovLexExportIndexLoader:
@@ -156,7 +158,7 @@ class SlovLexZipImportRunner:
         self.archive_object_store = archive_object_store or build_archive_object_store(config)
         self._monotonic_time = monotonic_time_provider
 
-    def run(self, *, max_running_seconds: float = 0) -> SlovLexZipImportSummary:
+    def run(self, *, max_running_seconds: float = 0, run_live_probe: bool = False) -> SlovLexZipImportSummary:
         started_at = self._monotonic_time()
         index = self.export_index_loader.load()
         _log_zip(
@@ -267,11 +269,42 @@ class SlovLexZipImportRunner:
             "monthly import starting "
             f"range={index.monthly_export.range_start}..{index.monthly_export.range_end}"
         )
-        return self._process_monthly(
+        monthly_summary = self._process_monthly(
             export=index.monthly_export,
             max_running_seconds=max_running_seconds,
             started_at=started_at,
             archive_completed=archive_completed,
+        )
+        if monthly_summary.stopped_due_to_max_running_time or not run_live_probe:
+            return monthly_summary
+        return self._run_live_probe(monthly_summary)
+
+    def _run_live_probe(self, summary: SlovLexZipImportSummary) -> SlovLexZipImportSummary:
+        runner = SlovLexSequentialImportRunner(
+            config=self.config,
+            store=self.store,
+            service=self.service,
+        )
+        live_probe_summary = runner.run(max_probes=1)
+        _log_zip(
+            "live probe completed "
+            f"probes={live_probe_summary.probes} "
+            f"laws_found={live_probe_summary.laws_found} "
+            f"next_law_to_check={live_probe_summary.next_law_to_check}"
+        )
+        return SlovLexZipImportSummary(
+            phase=summary.phase,
+            import_key=summary.import_key,
+            import_label=summary.import_label,
+            entries_processed=summary.entries_processed,
+            sync_summary=summary.sync_summary,
+            archive_completed=summary.archive_completed,
+            monthly_completed=summary.monthly_completed,
+            last_processed_entry=summary.last_processed_entry,
+            last_processed_law=summary.last_processed_law,
+            stopped_due_to_max_running_time=summary.stopped_due_to_max_running_time,
+            skipped_as_already_completed=summary.skipped_as_already_completed,
+            live_probe_summary=live_probe_summary,
         )
 
     def _process_archive(
