@@ -855,6 +855,8 @@ def test_document_export_uses_user_profile_defaults_for_missing_party_data() -> 
         social_security_number="800102/1234",
         data_processing_consent_at=None,
         data_processing_consent_version=None,
+        mcp_api_key_hash=None,
+        mcp_api_key_expires_at=None,
     )
 
     title, lines = _build_document_export_content(
@@ -971,6 +973,8 @@ def test_document_export_extracts_rental_data_from_draft_text_and_profile() -> N
         social_security_number=None,
         data_processing_consent_at=None,
         data_processing_consent_version=None,
+        mcp_api_key_hash=None,
+        mcp_api_key_expires_at=None,
     )
 
     _title, lines = _build_document_export_content(
@@ -1033,6 +1037,8 @@ def test_document_export_does_not_use_phone_number_as_profile_name() -> None:
         social_security_number=None,
         data_processing_consent_at=None,
         data_processing_consent_version=None,
+        mcp_api_key_hash=None,
+        mcp_api_key_expires_at=None,
     )
 
     _title, lines = _build_document_export_content(
