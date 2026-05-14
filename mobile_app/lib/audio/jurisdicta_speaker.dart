@@ -286,7 +286,19 @@ class _FlutterTtsJurisdictaSpeaker implements JurisdictaSpeaker {
       (left, right) =>
           _voiceRank(right, locale).compareTo(_voiceRank(left, locale)),
     );
+    if (preferred.isEmpty && normalizedLocale == 'sk-sk') {
+      return <JurisdictaSpeakerVoice>[_buildGuaranteedSlovakVoice()];
+    }
     return preferred;
+  }
+
+  JurisdictaSpeakerVoice _buildGuaranteedSlovakVoice() {
+    return const JurisdictaSpeakerVoice(
+      id: 'local-fallback::sk-sk',
+      name: 'Slovak local default',
+      locale: 'sk-SK',
+      config: <String, String>{},
+    );
   }
 
   JurisdictaSpeakerVoice _preferDefaultVoice(

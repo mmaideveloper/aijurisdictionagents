@@ -16,6 +16,8 @@ void main() {
       expect(config.pauseFor, const Duration(seconds: 5));
       expect(config.autoSendDelay, const Duration(seconds: 2));
       expect(config.resumeListeningDelay, const Duration(milliseconds: 150));
+      expect(config.localSttModel, 'whisper-small-multilingual');
+      expect(config.localTtsModel, 'piper-sk_SK-katarina-medium');
     });
   });
 

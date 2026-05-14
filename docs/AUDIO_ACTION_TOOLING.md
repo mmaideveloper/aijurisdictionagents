@@ -32,3 +32,15 @@
 - Add consent-gated execution hooks for high-risk registry lookups.
 - Add policy checks before email/document actions (recipient verification + retention policy labels).
 - Expose same recognizer contracts through API endpoints for mobile/web parity.
+
+## Browser-native STT fallback (Issue #225)
+- Web workspace voice/video transcript composer now supports browser-native microphone capture via Web Speech API when available.
+- Audio is processed by the browser recognition runtime and only transcript text is inserted into the draft for user review before sending.
+- If unavailable or denied, typed transcript input remains available.
+
+
+## Slovak-first STT model recommendation
+- **Primary target language:** Slovak (`sk-SK`) for both mobile and web voice capture.
+- **Mobile recommendation:** on-device Whisper-family runtime (`whisper.cpp` integration) with Slovak-capable multilingual checkpoints (`small` or `base` depending on latency/device profile).
+- **Web recommendation:** browser-native STT with locale preference `sk-SK`; keep typed-input fallback and add WASM offline recognizer in later phase for unsupported browsers.
+- **Privacy baseline:** no raw audio persistence by default; only user-reviewed transcript text is submitted.

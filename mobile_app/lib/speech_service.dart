@@ -51,6 +51,14 @@ const String _azureSpeechSttEndpointDefine = String.fromEnvironment(
   'AIJ_AZURE_SPEECH_STT_ENDPOINT',
   defaultValue: '',
 );
+const String _localSttModelDefine = String.fromEnvironment(
+  'AIJ_LOCAL_STT_MODEL',
+  defaultValue: 'whisper-small-multilingual',
+);
+const String _localTtsModelDefine = String.fromEnvironment(
+  'AIJ_LOCAL_TTS_MODEL',
+  defaultValue: 'piper-sk_SK-katarina-medium',
+);
 
 enum SpeechMode { local, azure }
 
@@ -95,6 +103,8 @@ class SpeechServiceConfig {
     this.azureEndpoint,
     this.azureTtsEndpoint,
     this.azureSttEndpoint,
+    this.localSttModel = 'whisper-small-multilingual',
+    this.localTtsModel = 'piper-sk_SK-katarina-medium',
     this.listenFor = const Duration(minutes: 30),
     this.pauseFor = const Duration(seconds: 5),
     this.autoSendDelay = const Duration(seconds: 2),
@@ -112,6 +122,12 @@ class SpeechServiceConfig {
       azureEndpoint: _emptyToNull(_azureSpeechEndpointDefine),
       azureTtsEndpoint: _emptyToNull(_azureSpeechTtsEndpointDefine),
       azureSttEndpoint: _emptyToNull(_azureSpeechSttEndpointDefine),
+      localSttModel: _localSttModelDefine.trim().isEmpty
+          ? 'whisper-small-multilingual'
+          : _localSttModelDefine.trim(),
+      localTtsModel: _localTtsModelDefine.trim().isEmpty
+          ? 'piper-sk_SK-katarina-medium'
+          : _localTtsModelDefine.trim(),
     );
   }
 
@@ -121,6 +137,8 @@ class SpeechServiceConfig {
   final String? azureEndpoint;
   final String? azureTtsEndpoint;
   final String? azureSttEndpoint;
+  final String localSttModel;
+  final String localTtsModel;
   final Duration listenFor;
   final Duration pauseFor;
   final Duration autoSendDelay;
