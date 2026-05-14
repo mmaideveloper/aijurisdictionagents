@@ -38,6 +38,14 @@ from .source_artifact_storage import (
 class LawStore(Protocol):
     def upsert_document(self, snapshot: LawSnapshot) -> tuple[str, bool]: ...
 
+
+    def get_version_content_fingerprint(
+        self,
+        *,
+        document_id: str,
+        version_token: str,
+    ) -> tuple[str, str, str] | None: ...
+
     def upsert_version(
         self,
         *,
@@ -143,16 +151,28 @@ class LawsCollectorService:
             document_status = "created" if document_created else "updated"
             _log(f"database upload law={law_id} document_status={document_status}")
 
-            _log(f"vector start law={law_id}")
-            embedding_model, embedding_dimensions, embedding_vector = _embed_snapshot(
-                snapshot=snapshot,
-                embedding_client=self.embedding_client,
-            )
             html_source_content = snapshot.html_source_content or snapshot.html_content.encode("utf-8")
+            version_checksum = snapshot.version_checksum()
+            fingerprint = self.store.get_version_content_fingerprint(
+                document_id=document_id,
+                version_token=snapshot.version_token,
+            )
+            should_vectorize = fingerprint is None or fingerprint != (version_checksum, html_checksum, pdf_checksum)
+            if should_vectorize:
+                _log(f"vector start law={law_id}")
+                embedding_model, embedding_dimensions, embedding_vector = _embed_snapshot(
+                    snapshot=snapshot,
+                    embedding_client=self.embedding_client,
+                )
+            else:
+                _log(f"vector skipped law={law_id} reason=unchanged_content")
+                embedding_model = ""
+                embedding_dimensions = 0
+                embedding_vector = ""
             stored_version = self.store.upsert_version(
                 document_id=document_id,
                 snapshot=snapshot,
-                version_checksum=snapshot.version_checksum(),
+                version_checksum=version_checksum,
                 html_checksum=html_checksum,
                 pdf_checksum=pdf_checksum,
                 html_bytes=len(snapshot.html_content.encode("utf-8")),
