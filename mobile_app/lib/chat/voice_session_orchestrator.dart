@@ -37,21 +37,26 @@ class VoiceSessionOrchestrator {
   Timer? _silenceTimer;
   String? _lastTranscriptId;
   bool _awaitingConfirmation = false;
+  bool _isListening = false;
   String? _pendingIntent;
 
   VoiceSessionState get state => VoiceSessionState(
-        isListening: _silenceTimer != null,
+        isListening: _isListening,
         awaitingConfirmation: _awaitingConfirmation,
         pendingIntent: _pendingIntent,
         lastTranscriptId: _lastTranscriptId,
       );
 
   void startListening() {
+    _isListening = true;
+    _awaitingConfirmation = false;
     _restartTimer();
     _emit(const VoiceSessionEvent('listening_started'));
   }
 
   void stopListening() {
+    _isListening = false;
+    _awaitingConfirmation = false;
     _silenceTimer?.cancel();
     _silenceTimer = null;
     _emit(const VoiceSessionEvent('listening_stopped'));
@@ -63,12 +68,17 @@ class VoiceSessionOrchestrator {
     required int timestampMs,
     bool isFinal = true,
   }) {
+    if (!_isListening) {
+      return const IgnoreRuleAction();
+    }
+
     final normalized = transcript.trim().toLowerCase();
     final transcriptId = '$timestampMs:$normalized';
     if (_lastTranscriptId == transcriptId) {
       return const IgnoreRuleAction();
     }
     _lastTranscriptId = transcriptId;
+    _awaitingConfirmation = false;
     _restartTimer();
 
     if (!isFinal) {
@@ -76,16 +86,17 @@ class VoiceSessionOrchestrator {
     }
 
     final action = ruleEngine.evaluate(input: transcript, context: context);
-    if (action is CreateCaseRuleAction) {
-      _pendingIntent = 'create_case';
-    }
-    if (action is SubmitMessageRuleAction) {
-      _pendingIntent = 'submit_message';
+    _pendingIntent = _resolvePendingIntent(action);
+    if (_pendingIntent != null) {
+      _emit(VoiceSessionEvent('intent_detected', payload: _pendingIntent));
     }
     return action;
   }
 
   void confirmPendingIntent(bool confirmed) {
+    if (!_isListening) {
+      return;
+    }
     _awaitingConfirmation = false;
     _emit(VoiceSessionEvent(
       confirmed ? 'intent_confirmed' : 'intent_rejected',
@@ -98,15 +109,35 @@ class VoiceSessionOrchestrator {
   }
 
   void dispose() {
+    _isListening = false;
     _silenceTimer?.cancel();
   }
 
   void _restartTimer() {
     _silenceTimer?.cancel();
+    if (!_isListening) {
+      return;
+    }
     _silenceTimer = Timer(silenceThreshold, () {
+      if (!_isListening) {
+        return;
+      }
       _awaitingConfirmation = true;
       _emit(const VoiceSessionEvent('silence_threshold_reached'));
     });
+  }
+
+  String? _resolvePendingIntent(RuleEngineAction action) {
+    if (action is CreateCaseRuleAction) {
+      return 'create_case';
+    }
+    if (action is SubmitMessageRuleAction || action is SendCurrentDraftRuleAction) {
+      return 'submit_message';
+    }
+    if (action is StoreProfileNameRuleAction) {
+      return 'update_profile_name';
+    }
+    return null;
   }
 
   void _emit(VoiceSessionEvent event) {
