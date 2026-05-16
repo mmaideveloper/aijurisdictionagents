@@ -24,8 +24,10 @@ import 'audio/jurisdicta_speaker.dart';
 import 'speech_service.dart';
 import 'auth/local_auth_store.dart';
 import 'chat/generated_document_message.dart';
+import 'chat/profile_service.dart';
 import 'chat/rule_engine.dart';
 import 'chat/speech_flow.dart';
+import 'chat/voice_session_orchestrator.dart';
 import 'logging/app_logger.dart';
 import 'platform/app_updater.dart';
 import 'platform/device_phone_number.dart';
@@ -79,13 +81,44 @@ String _sessionExpiredMessageForLanguage(String languageCode) {
 }
 
 String _defaultApiBaseUrl() {
-  if (_apiBaseUrlOverride.trim().isNotEmpty) {
-    return _apiBaseUrlOverride.trim();
+  return defaultApiBaseUrlForEnvironment(
+    override: _apiBaseUrlOverride,
+    isWeb: kIsWeb,
+    targetPlatform: defaultTargetPlatform,
+  );
+}
+
+@visibleForTesting
+String defaultApiBaseUrlForEnvironment({
+  required String override,
+  required bool isWeb,
+  required TargetPlatform targetPlatform,
+}) {
+  if (override.trim().isNotEmpty) {
+    return normalizeApiBaseUrlForEnvironment(override.trim());
   }
-  if (kIsWeb) {
+  if (isWeb || targetPlatform != TargetPlatform.android) {
     return 'http://127.0.0.1:8080';
   }
   return 'http://10.0.2.2:8080';
+}
+
+@visibleForTesting
+String normalizeApiBaseUrlForEnvironment(String value) {
+  final trimmed = value.trim();
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || !uri.hasScheme) {
+    return trimmed;
+  }
+  final host = uri.host.toLowerCase();
+  final isLoopback = host == '127.0.0.1' ||
+      host == 'localhost' ||
+      host == '10.0.2.2' ||
+      host == '0.0.0.0';
+  if (uri.scheme.toLowerCase() != 'https' || !isLoopback) {
+    return trimmed;
+  }
+  return uri.replace(scheme: 'http').toString();
 }
 
 final Random _correlationIdRandom = Random();
@@ -197,6 +230,14 @@ class AppStrings {
       'profile_update_failed': 'Aktualizácia profilu zlyhala: {{error}}',
       'profile_name_changed':
           'Vidím, že ste zmenili meno. Dobrý deň, {{name}}.',
+      'profile_voice_patch_invalid':
+          'Zmenu profilu som nerozpoznala. Povedzte napríklad: Zmeň adresu na Hlavná 12.',
+      'profile_voice_patch_recap':
+          'Mám zmeniť {{field}} na {{value}}? Ak áno, povedzte Áno. Ak nie, povedzte Nie.',
+      'profile_voice_patch_cancelled': 'Zmenu profilu som zrušila.',
+      'profile_voice_patch_confirm_first_name': 'meno',
+      'profile_voice_patch_confirm_last_name': 'priezvisko',
+      'profile_voice_patch_confirm_address': 'adresu',
       'debug_mode': 'Debug režim',
       'debug_mode_description':
           'V debug režime sa všetky logy ukladajú do súboru na Android zariadení.',
@@ -247,7 +288,10 @@ class AppStrings {
       'speech_input_disabled_message':
           'Vstup hlasom je vypnutý. Zapnite ho tlačidlom Vstup hlasom.',
       'speech_input_auto_stopped':
-          'Hlasový vstup bol po 30 sekundách ticha zastavený. Klepnite na mikrofón pre pokračovanie.',
+          'Hlasový vstup sa pozastavil. Klepnite na mikrofón pre pokračovanie.',
+      'speech_send_confirmation_prompt':
+          'Už minútu som nezachytila ďalšiu reč. Ak chcete správu odoslať, povedzte Posli. Ak ju chcete zmazať, povedzte Zrus vsetko.',
+      'speech_draft_cancelled': 'Rozpracovanú hlasovú správu som zmazala.',
       'speaker_output': 'Hlasový výstup asistenta',
       'speaker_voice_label': 'Hlas asistenta',
       'speaker_voice_unavailable': 'Pre zvolený jazyk nie je dostupný hlas.',
@@ -451,6 +495,14 @@ class AppStrings {
       'update_sign_in_profile': 'Update sign in profile',
       'profile_update_failed': 'Profile update failed: {{error}}',
       'profile_name_changed': 'I see you changed a name, hello {{name}}.',
+      'profile_voice_patch_invalid':
+          'I did not recognize the profile change. For example, say: Change address to Main Street 12.',
+      'profile_voice_patch_recap':
+          'Should I change {{field}} to {{value}}? Say Yes to confirm, or No to cancel.',
+      'profile_voice_patch_cancelled': 'I cancelled the profile change.',
+      'profile_voice_patch_confirm_first_name': 'first name',
+      'profile_voice_patch_confirm_last_name': 'last name',
+      'profile_voice_patch_confirm_address': 'address',
       'debug_mode': 'Debug mode',
       'debug_mode_description':
           'In debug mode, all logs are written to a file on Android.',
@@ -499,7 +551,10 @@ class AppStrings {
       'speech_input_disabled_message':
           'Speech input is turned off. Use the Speech input button to enable it.',
       'speech_input_auto_stopped':
-          'Speech input paused for 30 seconds and was stopped. Tap the microphone to continue.',
+          'Speech input paused. Tap the microphone to continue.',
+      'speech_send_confirmation_prompt':
+          'I have not heard anything else for one minute. Say Send to send the message, or say Cancel everything to clear it.',
+      'speech_draft_cancelled': 'I cleared the dictated message.',
       'speaker_output': 'Assistant voice output',
       'speaker_voice_label': 'Assistant voice',
       'speaker_voice_unavailable':
@@ -704,6 +759,15 @@ class AppStrings {
       'profile_update_failed': 'Profilaktualisierung fehlgeschlagen: {{error}}',
       'profile_name_changed':
           'Ich sehe, dass Sie den Namen geändert haben. Hallo {{name}}.',
+      'profile_voice_patch_invalid':
+          'Ich habe die Profiländerung nicht erkannt. Sagen Sie zum Beispiel: Ändere meine Adresse zu Hauptstrasse 12.',
+      'profile_voice_patch_recap':
+          'Soll ich {{field}} zu {{value}} ändern? Sagen Sie Ja zum Bestätigen oder Nein zum Abbrechen.',
+      'profile_voice_patch_cancelled':
+          'Ich habe die Profiländerung abgebrochen.',
+      'profile_voice_patch_confirm_first_name': 'Vorname',
+      'profile_voice_patch_confirm_last_name': 'Nachname',
+      'profile_voice_patch_confirm_address': 'Adresse',
       'debug_mode': 'Debug-Modus',
       'debug_mode_description':
           'Im Debug-Modus werden alle Logs in eine Datei auf Android geschrieben.',
@@ -754,6 +818,11 @@ class AppStrings {
       'speech_input_disabled': 'Spracheingabe aus',
       'speech_input_disabled_message':
           'Spracheingabe ist ausgeschaltet. Aktivieren Sie sie mit der Schaltfläche Spracheingabe.',
+      'speech_input_auto_stopped':
+          'Die Spracheingabe wurde pausiert. Tippen Sie auf das Mikrofon, um fortzufahren.',
+      'speech_send_confirmation_prompt':
+          'Ich habe eine Minute lang nichts Weiteres gehört. Sagen Sie Senden, um die Nachricht zu senden, oder Alles abbrechen, um sie zu löschen.',
+      'speech_draft_cancelled': 'Ich habe die diktierte Nachricht gelöscht.',
       'speaker_output': 'Sprachausgabe des Assistenten',
       'speaker_voice_label': 'Assistentenstimme',
       'speaker_voice_unavailable':
@@ -1720,10 +1789,13 @@ class ApiClient {
       'API request',
       <String, Object?>{
         'action': action,
+        'processing_purpose': action,
+        'trace_id': _flowCorrelationId,
+        'request_id': requestId,
         'method': 'POST',
         'url': uri.toString(),
         'headers': _headersForLog(requestId),
-        'payload': payload,
+        'payload_metadata': _payloadMetadata(payload),
       },
     );
     try {
@@ -1737,8 +1809,12 @@ class ApiClient {
         'API response',
         <String, Object?>{
           'action': action,
+          'processing_purpose': action,
+          'trace_id': _lastCorrelationId ?? _flowCorrelationId,
+          'request_id': requestId,
           'status_code': response.statusCode,
-          'body': response.body,
+          'content_type': response.headers['content-type'],
+          'bytes': response.bodyBytes.length,
           'correlation_id': _lastCorrelationId,
         },
       );
@@ -1750,7 +1826,9 @@ class ApiClient {
         stackTrace,
         <String, Object?>{
           'action': action,
+          'processing_purpose': action,
           'url': uri.toString(),
+          'trace_id': _flowCorrelationId,
           'correlation_id': _flowCorrelationId,
           'request_id': requestId,
         },
@@ -1770,6 +1848,9 @@ class ApiClient {
       'API request',
       <String, Object?>{
         'action': action,
+        'processing_purpose': action,
+        'trace_id': _flowCorrelationId,
+        'request_id': requestId,
         'method': 'GET',
         'url': uri.toString(),
         'headers': _headersForLog(requestId),
@@ -1782,6 +1863,9 @@ class ApiClient {
         'API response',
         <String, Object?>{
           'action': action,
+          'processing_purpose': action,
+          'trace_id': _lastCorrelationId ?? _flowCorrelationId,
+          'request_id': requestId,
           'status_code': response.statusCode,
           'content_type': response.headers['content-type'],
           'bytes': response.bodyBytes.length,
@@ -1796,13 +1880,26 @@ class ApiClient {
         stackTrace,
         <String, Object?>{
           'action': action,
+          'processing_purpose': action,
           'url': uri.toString(),
+          'trace_id': _flowCorrelationId,
           'correlation_id': _flowCorrelationId,
           'request_id': requestId,
         },
       );
       rethrow;
     }
+  }
+
+  Map<String, Object?> _payloadMetadata(Map<String, Object?> payload) {
+    return <String, Object?>{
+      'field_count': payload.length,
+      'fields': payload.keys.toList(growable: false),
+      if (payload['content'] is String)
+        'content_length': (payload['content'] as String).length,
+      if (payload['message'] is String)
+        'message_length': (payload['message'] as String).length,
+    };
   }
 
   Future<ApiHealthCheckResult> checkHealth() async {
@@ -4527,12 +4624,15 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const double _questionTimeoutSeconds = 3600;
   static const double _maxDiscussionMinutes = 60;
   static const double _communicationMinutes = 60;
-  static const Duration _speechSilenceTimeout = Duration(seconds: 30);
+  static const Duration _speechSilenceTimeout = Duration(minutes: 10);
+  static const Duration _speechSendPromptDelay = Duration(seconds: 10);
   static const Duration _speechMaxListenDuration = Duration(minutes: 30);
 
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _inputFocusNode = FocusNode();
   final RuleEngine _ruleEngine = const RuleEngine();
+  late final VoiceSessionOrchestrator _voiceSessionOrchestrator;
+  late final ProfileService _profileService;
   late final JurisdictaSpeechService _speechService;
   final ScrollController _messagesScrollController = ScrollController();
 
@@ -4564,6 +4664,9 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _isListening = false;
   bool _stoppingSpeechManually = false;
   bool _awaitingSpokenName = false;
+  bool _awaitingProfileField = false;
+  bool _awaitingProfilePatchConfirmation = false;
+  SpokenProfilePatch? _pendingProfilePatch;
   bool _awaitingCaseArchiveConfirmation = false;
   bool _awaitingSpokenCaseTitle = false;
   bool _isSavingSpokenName = false;
@@ -4588,9 +4691,12 @@ class _ChatHomePageState extends State<ChatHomePage>
   String? _pendingNewCaseTitle;
   String? _lastFinalSpeechResult;
   String? _lastHandledSpeechText;
+  DateTime? _speechRecognitionStartedAt;
   Completer<void>? _speechStopCompleter;
+  Timer? _speechSendPromptTimer;
   bool _submitSpeechOnStop = true;
   bool _processSpeechOnStop = true;
+  bool _resumeSpeechInputAfterSend = false;
   bool _updateCheckInProgress = false;
   bool _documentAutoAnalysisInProgress = false;
   int _localMessageSequence = 0;
@@ -4600,7 +4706,8 @@ class _ChatHomePageState extends State<ChatHomePage>
     return _isLocalApiBaseUrl(widget.apiBaseUrl);
   }
 
-  bool get _isInputComposerExpanded => _inputComposerExpanded || _isListening;
+  bool get _isInputComposerExpanded =>
+      _inputComposerExpanded || (_isListening && !_speakerOutputEnabled);
 
   AppStrings get _strings => AppStrings(_selectedLocale.languageCode);
 
@@ -4626,6 +4733,77 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
+  void _scheduleSpeechSendPrompt() {
+    _speechSendPromptTimer?.cancel();
+    _speechSendPromptTimer = null;
+  }
+
+  void _cancelSpeechSendPrompt() {
+    _speechSendPromptTimer?.cancel();
+    _speechSendPromptTimer = null;
+  }
+
+  Future<void> _onVoiceSilenceThresholdReached(
+    VoiceSilenceThresholdEvent event,
+  ) async {
+    if (!mounted || !_speechInputEnabled) {
+      return;
+    }
+    if (_isListening) {
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
+      if (!mounted) {
+        return;
+      }
+    }
+    _appendAssistantMessage(event.prompt, speak: false);
+    await _speaker.stop();
+    await _speakAssistantMessage(
+      event.prompt,
+      resumeSpeechInputOnCompletion: true,
+    );
+  }
+
+  String? _voiceSessionStatusLabel() {
+    if (!_speechInputEnabled && !_isListening) {
+      return null;
+    }
+    final labels = switch (_voiceSessionOrchestrator.phase) {
+      VoiceSessionPhase.listening => <String, String>{
+          'SK': 'počúvam',
+          'EN': 'listening',
+          'GE': 'ich höre zu',
+        },
+      VoiceSessionPhase.processing => <String, String>{
+          'SK': 'spracovávam',
+          'EN': 'processing',
+          'GE': 'verarbeite',
+        },
+      VoiceSessionPhase.awaitingConfirmation => <String, String>{
+          'SK': 'čakám na potvrdenie',
+          'EN': 'waiting for confirmation',
+          'GE': 'warte auf Bestätigung',
+        },
+      VoiceSessionPhase.idle => <String, String>{
+          'SK': 'hlas pripravený',
+          'EN': 'voice ready',
+          'GE': 'Sprache bereit',
+        },
+    };
+    final languageCode = _normalizeLanguageCode(_selectedLocale.languageCode);
+    return labels[languageCode] ?? labels[fallbackAppLanguageCode];
+  }
+
+  void _clearSpeechDraft() {
+    _cancelSpeechSendPrompt();
+    _inputController.clear();
+    _lastDictatedSpeechDraft = null;
+    _lastFinalSpeechResult = null;
+    _lastHandledSpeechText = null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -4645,9 +4823,30 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
     _fileSaver = createFileSaver();
     _appUpdater = createAppUpdater();
-    _speechService = const SpeechServiceFactory().create();
+    _profileService = ProfileService.localAuthStore(
+      authStore: widget.authStore,
+    );
+    final voiceConsentGiven =
+        (_signedInUser.dataProcessingConsentAt ?? '').trim().isNotEmpty;
+    _speechService = const SpeechServiceFactory().create(
+      config: SpeechServiceConfig.fromEnvironment().copyWith(
+        consentGiven: voiceConsentGiven,
+        storeAudioEnabled: false,
+        redactSensitiveEntitiesBeforeSend: true,
+      ),
+    );
     _speaker = _speechService.speaker;
     _speechRecognizer = _speechService.recognizer;
+    _voiceSessionOrchestrator = VoiceSessionOrchestrator(
+      ruleEngine: _ruleEngine,
+      silenceThreshold: _speechSendPromptDelay,
+      onSilenceThresholdReached: _onVoiceSilenceThresholdReached,
+      onStateChanged: () {
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
     _inputFocusNode.addListener(_handleInputFocusChanged);
     _apiClient.setSignedInUser(_signedInUser.userId);
     final welcomeLanguage =
@@ -4668,6 +4867,10 @@ class _ChatHomePageState extends State<ChatHomePage>
           'api_base_url': widget.apiBaseUrl,
           'log_file': widget.logger.logFilePath,
           'language': welcomeLanguage,
+          'trace_id': _apiClient.flowCorrelationId,
+          'processing_purpose': 'mobile_chat_voice_session',
+          'voice_compliance':
+              _speechService.config.complianceFlags.toLogContext(),
         },
       ),
     );
@@ -5490,7 +5693,12 @@ class _ChatHomePageState extends State<ChatHomePage>
     });
     _scrollToLatest();
     if (speak) {
-      unawaited(_speakAssistantMessage(content));
+      unawaited(
+        _speakAssistantMessage(
+          content,
+          resumeSpeechInputOnCompletion: _speakerOutputEnabled,
+        ),
+      );
     }
   }
 
@@ -5718,6 +5926,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         'enabled': enabled,
         'speech_mode': _speechService.modeLabel,
         'speech_runtime_mode': _speechService.runtimeModeLabel,
+        ..._voiceLogContext('speech_recognition_initialization'),
       },
     );
   }
@@ -5734,8 +5943,17 @@ class _ChatHomePageState extends State<ChatHomePage>
         'enabled': _speakerOutputEnabled,
         'speech_mode': _speechService.modeLabel,
         'speech_runtime_mode': _speechService.runtimeModeLabel,
+        ..._voiceLogContext('assistant_speech_initialization'),
       },
     );
+  }
+
+  Map<String, Object?> _voiceLogContext(String processingPurpose) {
+    return <String, Object?>{
+      'trace_id': _apiClient.flowCorrelationId,
+      'processing_purpose': processingPurpose,
+      'voice_compliance': _speechService.config.complianceFlags.toLogContext(),
+    };
   }
 
   Future<void> _loadSpeakerVoices() async {
@@ -5784,27 +6002,46 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     if (resumeSpeechInputOnCompletion) {
+      if (_isSending) {
+        _resumeSpeechInputAfterSend = true;
+        return;
+      }
       await _resumeSpeechListeningAfterAssistantSpeech(
         reason: 'assistant_message',
       );
     }
   }
 
+  Future<bool> _ensureSpeechInputEnabledForVoiceMode() async {
+    if (!_speakerOutputEnabled || !_speechEnabled) {
+      return false;
+    }
+    if (!_speechInputEnabled && mounted) {
+      setState(() {
+        _speechInputEnabled = true;
+      });
+      await widget.logger.info(
+        'Speech input enabled for assistant voice mode',
+      );
+    }
+    return _speechInputEnabled;
+  }
+
   Future<void> _resumeSpeechListeningAfterAssistantSpeech({
     required String reason,
   }) async {
+    final speechInputReady = await _ensureSpeechInputEnabledForVoiceMode();
     if (!mounted ||
-        !_speechEnabled ||
-        !_speechInputEnabled ||
+        !speechInputReady ||
         !_speakerOutputEnabled ||
         _isListening ||
         _isSending) {
       return;
     }
     await Future<void>.delayed(_speechService.config.resumeListeningDelay);
+    final stillReady = await _ensureSpeechInputEnabledForVoiceMode();
     if (!mounted ||
-        !_speechEnabled ||
-        !_speechInputEnabled ||
+        !stillReady ||
         !_speakerOutputEnabled ||
         _isListening ||
         _isSending) {
@@ -5881,13 +6118,16 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     final recognizedText = result.recognizedWords.trim();
+    final speechStartedAt = _speechRecognitionStartedAt ?? DateTime.now();
     if (result.finalResult && recognizedText.isNotEmpty) {
       _lastFinalSpeechResult = recognizedText;
     }
     if (recognizedText.isNotEmpty &&
         !isSpokenSendCommand(recognizedText) &&
+        !isSpokenClearDraftCommand(recognizedText) &&
         parseSpokenCaseCreationCommand(recognizedText) == null) {
       _lastDictatedSpeechDraft = recognizedText;
+      _scheduleSpeechSendPrompt();
     }
     setState(() {
       _inputController.text = result.recognizedWords;
@@ -5895,9 +6135,91 @@ class _ChatHomePageState extends State<ChatHomePage>
         TextPosition(offset: _inputController.text.length),
       );
     });
-    if (!result.finalResult) {
+    final shouldProcessImmediately = result.finalResult &&
+        _shouldProcessFinalSpeechResultImmediately(
+          recognizedText,
+        );
+    final wasAwaitingVoiceConfirmation =
+        _voiceSessionOrchestrator.awaitingConfirmation;
+    final spokenConfirmation = wasAwaitingVoiceConfirmation
+        ? parseSpokenConfirmation(recognizedText)
+        : null;
+    final transcriptResult = _voiceSessionOrchestrator.acceptTranscript(
+      transcript: recognizedText,
+      isFinal: result.finalResult,
+      speechStartedAt: speechStartedAt,
+      context: _buildRuleEngineContext(
+        submitMessageWhenNoRuleMatches: shouldProcessImmediately,
+      ),
+      submitMessageWhenNoRuleMatches: shouldProcessImmediately,
+    );
+    if (transcriptResult.queuedAction != null) {
+      unawaited(_processQueuedSpeechActionsImmediately());
+    } else if (spokenConfirmation != null) {
+      unawaited(_finishAnsweredVoiceConfirmation());
+    }
+  }
+
+  bool _shouldProcessFinalSpeechResultImmediately(String recognizedText) {
+    if (recognizedText.isEmpty) {
+      return false;
+    }
+    return isSpokenSendCommand(recognizedText) ||
+        _shouldRouteProfilePatchViaRule(recognizedText) ||
+        isSpokenClearDraftCommand(recognizedText) ||
+        hasTrailingSpokenSendCommand(recognizedText) ||
+        parseSpokenCaseCreationCommand(recognizedText) != null;
+  }
+
+  Future<void> _processFinalSpeechResultImmediately(
+    String recognizedText,
+  ) async {
+    final normalizedText = recognizedText.trim();
+    if (normalizedText.isEmpty || _lastHandledSpeechText == normalizedText) {
       return;
     }
+    _cancelSpeechSendPrompt();
+    if (_isListening) {
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
+      if (!mounted) {
+        return;
+      }
+    }
+    await _handleCompletedSpeechInput(
+      normalizedText,
+      submitAfterRecognition: true,
+    );
+  }
+
+  Future<void> _processQueuedSpeechActionsImmediately() async {
+    _cancelSpeechSendPrompt();
+    if (_isListening) {
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
+      if (!mounted) {
+        return;
+      }
+    }
+    await _drainVoiceActionQueue();
+  }
+
+  Future<void> _finishAnsweredVoiceConfirmation() async {
+    _cancelSpeechSendPrompt();
+    if (_isListening) {
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
+      if (!mounted) {
+        return;
+      }
+    }
+    setState(_clearSpeechDraft);
   }
 
   void _onSpeechStatus(String status) {
@@ -5908,6 +6230,13 @@ class _ChatHomePageState extends State<ChatHomePage>
     setState(() {
       _isListening = isListening;
     });
+    if (isListening) {
+      _voiceSessionOrchestrator.startListening(
+        now: _speechRecognitionStartedAt,
+      );
+    } else {
+      _voiceSessionOrchestrator.stopListening();
+    }
     unawaited(
       widget.logger.info(
         'Speech status changed',
@@ -5915,6 +6244,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       ),
     );
     if (!isListening) {
+      _cancelSpeechSendPrompt();
       if (!_stoppingSpeechManually &&
           _speechInputEnabled &&
           _lastFinalSpeechResult == null) {
@@ -5943,6 +6273,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     setState(() {
       _isListening = false;
     });
+    _voiceSessionOrchestrator.stopListening();
     _showSnackbar(_strings.t('speech_recognition_error', <String, String>{
       'error': error.errorMsg,
     }));
@@ -5951,7 +6282,10 @@ class _ChatHomePageState extends State<ChatHomePage>
         'Speech recognition error',
         Exception(error.errorMsg),
         StackTrace.current,
-        <String, Object?>{'permanent': error.permanent},
+        <String, Object?>{
+          'permanent': error.permanent,
+          ..._voiceLogContext('speech_recognition_error'),
+        },
       ),
     );
     _speechStopCompleter?.complete();
@@ -5994,6 +6328,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     required bool submitAfterStop,
     bool processStoppedInput = true,
   }) async {
+    _cancelSpeechSendPrompt();
     _submitSpeechOnStop = submitAfterStop;
     _processSpeechOnStop = processStoppedInput;
     if (!_isListening) {
@@ -6252,16 +6587,158 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
   }
 
+  String _profilePatchFieldLabel(ProfilePatchField field) {
+    final key = switch (field) {
+      ProfilePatchField.firstName => 'profile_voice_patch_confirm_first_name',
+      ProfilePatchField.lastName => 'profile_voice_patch_confirm_last_name',
+      ProfilePatchField.address => 'profile_voice_patch_confirm_address',
+    };
+    return _strings.t(key);
+  }
+
+  Future<void> _requestProfilePatchConfirmation(
+    SpokenProfilePatch? patch,
+  ) async {
+    _lastDictatedSpeechDraft = null;
+    _inputController.clear();
+    if (patch == null) {
+      final message = _strings.t('profile_voice_patch_invalid');
+      _showSnackbar(message);
+      _appendAssistantMessage(message);
+      return;
+    }
+
+    final message = _strings.t(
+      'profile_voice_patch_recap',
+      <String, String>{
+        'field': _profilePatchFieldLabel(patch.field),
+        'value': patch.value,
+      },
+    );
+    setState(() {
+      _awaitingProfileField = false;
+      _awaitingProfilePatchConfirmation = true;
+      _pendingProfilePatch = patch;
+    });
+    _appendAssistantMessage(message, speak: false);
+    await widget.logger.info(
+      'Voice profile patch pending confirmation',
+      <String, Object?>{
+        'user_id': _signedInUser.userId,
+        'field': patch.apiFieldName,
+        'value_length': patch.value.length,
+      },
+    );
+    await _speaker.stop();
+    await _speakAssistantMessage(
+      message,
+      resumeSpeechInputOnCompletion: _speakerOutputEnabled,
+    );
+  }
+
+  Future<void> _handleProfilePatchConfirmation(
+    SpokenConfirmationChoice? confirmation,
+    SpokenProfilePatch? patch,
+  ) async {
+    if (confirmation == null) {
+      final pending = patch ?? _pendingProfilePatch;
+      await _requestProfilePatchConfirmation(pending);
+      return;
+    }
+    if (confirmation == SpokenConfirmationChoice.no) {
+      setState(() {
+        _awaitingProfilePatchConfirmation = false;
+        _pendingProfilePatch = null;
+        _inputController.clear();
+      });
+      final message = _strings.t('profile_voice_patch_cancelled');
+      _showSnackbar(message);
+      _appendAssistantMessage(message);
+      return;
+    }
+
+    final confirmedPatch = patch ?? _pendingProfilePatch;
+    if (confirmedPatch == null) {
+      final message = _strings.t('profile_voice_patch_invalid');
+      _showSnackbar(message);
+      _appendAssistantMessage(message);
+      return;
+    }
+
+    setState(() {
+      _isSavingSpokenName = true;
+    });
+    try {
+      final previousUser = _signedInUser;
+      final updated = await _profileService.patchProfileFromVoice(
+        currentUser: _signedInUser,
+        patch: confirmedPatch,
+        requestedBy: _signedInUser.userId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _signedInUser = updated;
+        _awaitingProfileField = false;
+        _awaitingProfilePatchConfirmation = false;
+        _pendingProfilePatch = null;
+        _inputController.clear();
+        _updateWelcomeMessageForLocale();
+      });
+      widget.onProfileUpdated(updated);
+      final successMessage = _strings.t('profile_updated_success');
+      _showSnackbar(successMessage);
+      _appendAssistantMessage(successMessage);
+      _appendProfileNameChangedMessage(
+        previousUser: previousUser,
+        updated: updated,
+      );
+      await widget.logger.info(
+        'Voice profile patch committed',
+        <String, Object?>{
+          'user_id': updated.userId,
+          'field': confirmedPatch.apiFieldName,
+          'source': 'voice',
+        },
+      );
+    } catch (error, stackTrace) {
+      _showSnackbar(_strings.t('profile_update_failed', <String, String>{
+        'error': '$error',
+      }));
+      await widget.logger.error(
+        'Voice profile patch failed',
+        error,
+        stackTrace,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingSpokenName = false;
+        });
+      }
+    }
+  }
+
   RuleEngineContext _buildRuleEngineContext({
     required bool submitMessageWhenNoRuleMatches,
   }) {
     return RuleEngineContext(
       awaitingProfileName: _awaitingSpokenName,
+      awaitingProfileField: _awaitingProfileField,
+      awaitingProfilePatchConfirmation: _awaitingProfilePatchConfirmation,
       awaitingCaseArchiveConfirmation: _awaitingCaseArchiveConfirmation,
       awaitingCaseTitle: _awaitingSpokenCaseTitle,
       submitMessageWhenNoRuleMatches: submitMessageWhenNoRuleMatches,
+      pendingProfilePatch: _pendingProfilePatch,
       currentDraft: _inputController.text,
       lastDictatedDraft: _lastDictatedSpeechDraft,
+      correlationId: _apiClient.flowCorrelationId,
+      caseId: _selectedCase?.caseId,
+      userId: _signedInUser.userId,
+      languageCode: _selectedLocale.languageCode,
+      redactSensitiveEntitiesBeforeSend:
+          _speechService.config.redactSensitiveEntitiesBeforeSend,
     );
   }
 
@@ -6272,6 +6749,10 @@ class _ChatHomePageState extends State<ChatHomePage>
     switch (action) {
       case IgnoreRuleAction():
         return;
+      case ConfirmProfilePatchRuleAction(:final confirmation, :final patch):
+        _lastHandledSpeechText = originalInput;
+        await _handleProfilePatchConfirmation(confirmation, patch);
+        return;
       case ConfirmCaseArchiveRuleAction(:final confirmation):
         _lastHandledSpeechText = originalInput;
         await _handleCaseArchiveConfirmation(confirmation);
@@ -6280,10 +6761,27 @@ class _ChatHomePageState extends State<ChatHomePage>
         _lastHandledSpeechText = originalInput;
         await _storeSpokenName(profileName);
         return;
-      case SendCurrentDraftRuleAction(:final message):
+      case RequestProfilePatchRuleAction(:final patch):
         _lastHandledSpeechText = originalInput;
         if (_isListening) {
-          await _stopSpeechListening(submitAfterStop: false);
+          await _stopSpeechListening(
+            submitAfterStop: false,
+            processStoppedInput: false,
+          );
+          if (!mounted) {
+            return;
+          }
+        }
+        await _requestProfilePatchConfirmation(patch);
+        return;
+      case SendCurrentDraftRuleAction(:final message):
+        _lastHandledSpeechText = originalInput;
+        _cancelSpeechSendPrompt();
+        if (_isListening) {
+          await _stopSpeechListening(
+            submitAfterStop: false,
+            processStoppedInput: false,
+          );
           if (!mounted) {
             return;
           }
@@ -6300,8 +6798,29 @@ class _ChatHomePageState extends State<ChatHomePage>
         );
         await _submitMessageText(message);
         return;
+      case ClearCurrentDraftRuleAction():
+        _lastHandledSpeechText = originalInput;
+        if (_isListening) {
+          await _stopSpeechListening(
+            submitAfterStop: false,
+            processStoppedInput: false,
+          );
+          if (!mounted) {
+            return;
+          }
+        }
+        setState(_clearSpeechDraft);
+        _showSnackbar(_strings.t('speech_draft_cancelled'));
+        await widget.logger.info('Speech draft cleared by voice command');
+        if (_speechInputEnabled && _speakerOutputEnabled) {
+          await _resumeSpeechListeningAfterAssistantSpeech(
+            reason: 'draft_cleared',
+          );
+        }
+        return;
       case SubmitMessageRuleAction(:final message):
         _lastHandledSpeechText = originalInput;
+        _cancelSpeechSendPrompt();
         if (_awaitingSpokenCaseTitle) {
           await _createCaseFromVoice(message);
           return;
@@ -6318,6 +6837,27 @@ class _ChatHomePageState extends State<ChatHomePage>
         _lastDictatedSpeechDraft = null;
         await _requestNewCaseFromCommand(title: title);
         return;
+      case ToolInvocationRuleAction(:final request):
+        _lastHandledSpeechText = originalInput;
+        await widget.logger.info(
+          'Speech tool intent mapped',
+          request.toJson(),
+        );
+        await _submitMessageText(originalInput);
+        return;
+    }
+  }
+
+  Future<void> _drainVoiceActionQueue() async {
+    while (mounted) {
+      final queued = _voiceSessionOrchestrator.dequeueAction();
+      if (queued == null) {
+        return;
+      }
+      await _applyRuleEngineAction(
+        queued.action,
+        originalInput: queued.originalTranscript,
+      );
     }
   }
 
@@ -6330,8 +6870,19 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
 
-    if (isSpokenDoneCommand(normalizedText)) {
-      await _stopSpeechListening(submitAfterStop: true, processStoppedInput: false);
+    if (_shouldRouteProfilePatchViaRule(normalizedText)) {
+      final action = _ruleEngine.evaluate(
+        input: normalizedText,
+        context: _buildRuleEngineContext(
+          submitMessageWhenNoRuleMatches: false,
+        ),
+      );
+      _voiceSessionOrchestrator.enqueueActionForTranscript(
+        action: action,
+        transcript: normalizedText,
+        speechStartedAt: _speechRecognitionStartedAt ?? DateTime.now(),
+      );
+      await _drainVoiceActionQueue();
       return;
     }
 
@@ -6350,15 +6901,27 @@ class _ChatHomePageState extends State<ChatHomePage>
         submitMessageWhenNoRuleMatches: submitAfterRecognition,
       ),
     );
-    await _applyRuleEngineAction(
-      action,
-      originalInput: normalizedText,
+    _voiceSessionOrchestrator.enqueueActionForTranscript(
+      action: action,
+      transcript: normalizedText,
+      speechStartedAt: _speechRecognitionStartedAt ?? DateTime.now(),
     );
+    await _drainVoiceActionQueue();
+  }
+
+  bool _shouldRouteProfilePatchViaRule(String normalizedText) {
+    return _awaitingProfileField ||
+        _awaitingProfilePatchConfirmation ||
+        parseSpokenProfilePatchCommand(normalizedText) != null;
   }
 
   Future<void> _toggleSpeechInput() async {
-    _setInputComposerExpanded(true);
-    _inputFocusNode.requestFocus();
+    if (!_speakerOutputEnabled) {
+      _setInputComposerExpanded(true);
+      _inputFocusNode.requestFocus();
+    } else {
+      _setInputComposerExpanded(false, unfocus: true);
+    }
     _lastHandledSpeechText = null;
     await _speaker.stop();
     if (!_speechEnabled) {
@@ -6649,6 +7212,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       <String, Object?>{
         'enabled': nextValue,
         'speaker_output_enabled': _speakerOutputEnabled,
+        ..._voiceLogContext('speech_input_toggle'),
       },
     );
   }
@@ -6670,6 +7234,8 @@ class _ChatHomePageState extends State<ChatHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _updateCheckTimer?.cancel();
+    _cancelSpeechSendPrompt();
+    _voiceSessionOrchestrator.dispose();
     unawaited(_speaker.stop());
     _submitSpeechOnStop = false;
     _processSpeechOnStop = false;
@@ -6992,6 +7558,22 @@ class _ChatHomePageState extends State<ChatHomePage>
 
     _lastHandledSpeechText = null;
     _setInputComposerExpanded(false, unfocus: true);
+    if (_shouldRouteProfilePatchViaRule(text)) {
+      final action = _ruleEngine.evaluate(
+        input: text,
+        context: _buildRuleEngineContext(
+          submitMessageWhenNoRuleMatches: true,
+        ),
+      );
+      _voiceSessionOrchestrator.enqueueActionForTranscript(
+        action: action,
+        transcript: text,
+        speechStartedAt: DateTime.now(),
+      );
+      await _drainVoiceActionQueue();
+      return;
+    }
+
     final handledCommand = await _tryHandleUserCommand(
       text,
       appendUserMessage: true,
@@ -7006,27 +7588,12 @@ class _ChatHomePageState extends State<ChatHomePage>
         submitMessageWhenNoRuleMatches: true,
       ),
     );
-    switch (action) {
-      case IgnoreRuleAction():
-        return;
-      case ConfirmCaseArchiveRuleAction(:final confirmation):
-        await _handleCaseArchiveConfirmation(confirmation);
-        return;
-      case StoreProfileNameRuleAction(:final profileName):
-        await _storeSpokenName(profileName);
-        return;
-      case CreateCaseRuleAction(:final title):
-        _inputController.clear();
-        _lastDictatedSpeechDraft = null;
-        await _requestNewCaseFromCommand(title: title);
-        return;
-      case SendCurrentDraftRuleAction(:final message):
-        await _submitMessageText(message);
-        return;
-      case SubmitMessageRuleAction(:final message):
-        await _submitMessageText(message);
-        return;
-    }
+    _voiceSessionOrchestrator.enqueueActionForTranscript(
+      action: action,
+      transcript: text,
+      speechStartedAt: DateTime.now(),
+    );
+    await _drainVoiceActionQueue();
   }
 
   Future<void> _submitMessageText(
@@ -7141,7 +7708,12 @@ class _ChatHomePageState extends State<ChatHomePage>
             });
             _scrollToLatest();
             if (role == 'assistant' && speakAssistantReply) {
-              unawaited(_speakAssistantMessage(visibleContent));
+              unawaited(
+                _speakAssistantMessage(
+                  visibleContent,
+                  resumeSpeechInputOnCompletion: _speakerOutputEnabled,
+                ),
+              );
             }
           }
           if (event.event == 'result' && event.data is Map) {
@@ -7229,7 +7801,12 @@ class _ChatHomePageState extends State<ChatHomePage>
             });
             _scrollToLatest();
             if (role == 'assistant' && speakAssistantReply) {
-              unawaited(_speakAssistantMessage(visibleContent));
+              unawaited(
+                _speakAssistantMessage(
+                  visibleContent,
+                  resumeSpeechInputOnCompletion: _speakerOutputEnabled,
+                ),
+              );
             }
           }
           if (event.event == 'result' && event.data is Map) {
@@ -7274,6 +7851,12 @@ class _ChatHomePageState extends State<ChatHomePage>
         setState(() {
           _isSending = false;
         });
+      }
+      if (_resumeSpeechInputAfterSend && mounted) {
+        _resumeSpeechInputAfterSend = false;
+        await _resumeSpeechListeningAfterAssistantSpeech(
+          reason: 'message_submission_finished',
+        );
       }
     }
   }
@@ -7709,12 +8292,23 @@ class _ChatHomePageState extends State<ChatHomePage>
     _lastFinalSpeechResult = null;
     _submitSpeechOnStop = true;
     _processSpeechOnStop = true;
+    _speechRecognitionStartedAt = DateTime.now();
+    _voiceSessionOrchestrator.startListening(
+      now: _speechRecognitionStartedAt,
+    );
     await _speechRecognizer.listen(
       onResult: _onSpeechResult,
       listenFor: _speechMaxListenDuration,
       pauseFor: _speechSilenceTimeout,
       localeId: _localeIdForSpeech(_selectedLocale),
       listenMode: ListenMode.dictation,
+    );
+    await widget.logger.info(
+      'Speech listening started',
+      <String, Object?>{
+        'locale': _localeIdForSpeech(_selectedLocale),
+        ..._voiceLogContext('speech_to_text'),
+      },
     );
   }
 
@@ -8677,6 +9271,21 @@ class _ChatHomePageState extends State<ChatHomePage>
                           ],
                         ),
                       const SizedBox(height: 6),
+                      if (_voiceSessionStatusLabel() != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            _voiceSessionStatusLabel()!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                          ),
+                        ),
+                      if (_voiceSessionStatusLabel() != null)
+                        const SizedBox(height: 6),
                       _buildUpgradeProgressCard(Theme.of(context), strings),
                       const SizedBox(height: 6),
                       Padding(

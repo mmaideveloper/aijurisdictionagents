@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'app_logger_base.dart';
+import 'app_logger_sanitizer.dart';
 
 class WebConsoleLogger implements AppLogger {
   @override
@@ -21,7 +22,7 @@ class WebConsoleLogger implements AppLogger {
       'timestamp': DateTime.now().toIso8601String(),
       'level': 'INFO',
       'message': message,
-      'context': context,
+      'context': sanitizeLogContext(context),
     };
     debugPrint(jsonEncode(entry));
   }
@@ -37,11 +38,11 @@ class WebConsoleLogger implements AppLogger {
       'timestamp': DateTime.now().toIso8601String(),
       'level': 'ERROR',
       'message': message,
-      'context': <String, Object?>{
+      'context': sanitizeLogContext(<String, Object?>{
         ...context,
         'error': error.toString(),
         'stack_trace': stackTrace.toString(),
-      },
+      }),
     };
     debugPrint(jsonEncode(entry));
   }

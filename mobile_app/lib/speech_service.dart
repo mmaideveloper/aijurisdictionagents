@@ -13,6 +13,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import 'audio/azure_speech_speaker.dart';
 import 'audio/jurisdicta_speaker.dart';
+import 'voice_compliance.dart';
 
 typedef JurisdictaSpeakerFactory = JurisdictaSpeaker Function();
 typedef AzureJurisdictaSpeakerFactory = JurisdictaSpeaker Function(
@@ -106,9 +107,13 @@ class SpeechServiceConfig {
     this.localSttModel = 'whisper-small-multilingual',
     this.localTtsModel = 'piper-sk_SK-katarina-medium',
     this.listenFor = const Duration(minutes: 30),
-    this.pauseFor = const Duration(seconds: 5),
+    this.pauseFor = const Duration(minutes: 10),
     this.autoSendDelay = const Duration(seconds: 2),
     this.resumeListeningDelay = const Duration(milliseconds: 150),
+    this.consentGiven = defaultVoiceConsentGiven,
+    this.storeAudioEnabled = defaultStoreAudioEnabled,
+    this.redactSensitiveEntitiesBeforeSend =
+        defaultRedactSensitiveEntitiesBeforeSend,
   });
 
   factory SpeechServiceConfig.fromEnvironment() {
@@ -143,6 +148,50 @@ class SpeechServiceConfig {
   final Duration pauseFor;
   final Duration autoSendDelay;
   final Duration resumeListeningDelay;
+  final bool consentGiven;
+  final bool storeAudioEnabled;
+  final bool redactSensitiveEntitiesBeforeSend;
+
+  VoiceComplianceFlags get complianceFlags {
+    return VoiceComplianceFlags(
+      consentGiven: consentGiven,
+      storeAudioEnabled: storeAudioEnabled,
+      redactSensitiveEntitiesBeforeSend: redactSensitiveEntitiesBeforeSend,
+    );
+  }
+
+  SpeechServiceConfig copyWith({
+    SpeechMode? mode,
+    String? azureKey,
+    String? azureRegion,
+    String? azureEndpoint,
+    String? azureTtsEndpoint,
+    String? azureSttEndpoint,
+    Duration? listenFor,
+    Duration? pauseFor,
+    Duration? autoSendDelay,
+    Duration? resumeListeningDelay,
+    bool? consentGiven,
+    bool? storeAudioEnabled,
+    bool? redactSensitiveEntitiesBeforeSend,
+  }) {
+    return SpeechServiceConfig(
+      mode: mode ?? this.mode,
+      azureKey: azureKey ?? this.azureKey,
+      azureRegion: azureRegion ?? this.azureRegion,
+      azureEndpoint: azureEndpoint ?? this.azureEndpoint,
+      azureTtsEndpoint: azureTtsEndpoint ?? this.azureTtsEndpoint,
+      azureSttEndpoint: azureSttEndpoint ?? this.azureSttEndpoint,
+      listenFor: listenFor ?? this.listenFor,
+      pauseFor: pauseFor ?? this.pauseFor,
+      autoSendDelay: autoSendDelay ?? this.autoSendDelay,
+      resumeListeningDelay: resumeListeningDelay ?? this.resumeListeningDelay,
+      consentGiven: consentGiven ?? this.consentGiven,
+      storeAudioEnabled: storeAudioEnabled ?? this.storeAudioEnabled,
+      redactSensitiveEntitiesBeforeSend: redactSensitiveEntitiesBeforeSend ??
+          this.redactSensitiveEntitiesBeforeSend,
+    );
+  }
 
   bool get hasAzureTtsConfig {
     return (azureKey != null && azureKey!.isNotEmpty) &&
@@ -351,11 +400,15 @@ class PlatformSpeechRecognizer implements JurisdictaSpeechRecognizer {
 class AzureSpeechRecognizerConfig {
   const AzureSpeechRecognizerConfig({
     required this.key,
+    required this.consentGiven,
+    required this.storeAudioEnabled,
     this.region,
     this.endpoint,
   });
 
   final String key;
+  final bool consentGiven;
+  final bool storeAudioEnabled;
   final String? region;
   final String? endpoint;
 
@@ -410,7 +463,7 @@ class AzureSpeechRecognizer implements JurisdictaSpeechRecognizer {
   BytesBuilder _audioBuffer = BytesBuilder(copy: false);
   String _localeId = 'en_US';
   bool _isListening = false;
-  Duration _pauseFor = const Duration(seconds: 5);
+  Duration _pauseFor = const Duration(minutes: 10);
   Timer? _silenceTimer;
 
   @override
@@ -421,6 +474,9 @@ class AzureSpeechRecognizer implements JurisdictaSpeechRecognizer {
     _onError = onError;
     _onStatus = onStatus;
     if (!_config.isConfigured || kIsWeb) {
+      return false;
+    }
+    if (!_config.consentGiven) {
       return false;
     }
     return _recorder.hasPermission();
@@ -438,9 +494,16 @@ class AzureSpeechRecognizer implements JurisdictaSpeechRecognizer {
   }) async {
     _onResult = onResult;
     _localeId = localeId;
-    _pauseFor = pauseFor ?? const Duration(seconds: 5);
+    _pauseFor = pauseFor ?? const Duration(minutes: 10);
     if (!_config.isConfigured) {
       _emitError('Azure Speech STT is not configured.', permanent: true);
+      return;
+    }
+    if (!_config.consentGiven) {
+      _emitError(
+        'Voice consent is required before raw audio can be sent to Azure Speech STT.',
+        permanent: true,
+      );
       return;
     }
     if (_isListening) {
@@ -498,6 +561,13 @@ class AzureSpeechRecognizer implements JurisdictaSpeechRecognizer {
       _audioSubscription = null;
 
       final audioBytes = _audioBuffer.takeBytes();
+      if (!_config.consentGiven) {
+        _emitError(
+          'Voice consent was revoked before raw audio upload.',
+          permanent: true,
+        );
+        return;
+      }
       if (audioBytes.isEmpty) {
         _onResult?.call(
           const JurisdictaSpeechRecognitionResult(
@@ -640,6 +710,8 @@ JurisdictaSpeechRecognizer _defaultSpeechRecognizerFactory(
     return AzureSpeechRecognizer(
       config: AzureSpeechRecognizerConfig(
         key: config.azureKey ?? '',
+        consentGiven: config.consentGiven,
+        storeAudioEnabled: config.storeAudioEnabled,
         region: config.azureRegion,
         endpoint: config.azureSttEndpoint,
       ),

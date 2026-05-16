@@ -46,9 +46,11 @@ const Map<String, String> _nameRetryMessagesByLanguage = <String, String>{
 };
 
 const Map<String, String> _inputReadyMessagesByLanguage = <String, String>{
-  'SK': 'Ahoj{{name_part}}, počúvam vás. Ak chcete dokončiť, povedzte „To je všetko“ alebo kliknite na Odoslať.',
-  'EN': 'Hello{{name_part}}, I am listening. To finish, say “I am done” or tap Send.',
-  'GE': 'Hallo{{name_part}}, ich höre zu. Zum Beenden sagen Sie „Alles“ oder tippen Sie auf Senden.',
+  'SK':
+      'Ahoj{{name_part}}, počúvam vás. Ak chcete odoslať správu, povedzte „Pošli“ alebo „To je všetko“.',
+  'EN':
+      'Hello{{name_part}}, I am listening. To send the message, say “Send” or “I am done”.',
+  'GE': 'Hallo{{name_part}}, ich höre zu. Zum Senden sagen Sie „Senden“.',
 };
 
 String? resolveStoredProfileName({

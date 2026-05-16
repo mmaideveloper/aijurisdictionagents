@@ -32,6 +32,7 @@ from app.versioning import (
     get_mobile_app_release_url,
     get_mobile_app_version,
 )
+from app.voice_intent_api import router as voice_intent_router
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.db_migrations import apply_sql_migrations
@@ -149,6 +150,7 @@ app.include_router(flow_packs_router)
 app.include_router(laws_router)
 app.include_router(users_router)
 app.include_router(cases_router)
+app.include_router(voice_intent_router)
 app.include_router(observability_router)
 app.include_router(mcp_router)
 instrument_fastapi(app)

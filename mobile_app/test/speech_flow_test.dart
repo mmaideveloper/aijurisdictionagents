@@ -52,21 +52,21 @@ void main() {
     test('uses the first name when available', () {
       expect(
         speechInputReadyMessage('EN', firstName: 'Martin'),
-        startsWith('Hello, Martin, I am listening.'),
+        'Hello, Martin, I am listening. To send the message, say “Send” or “I am done”.',
       );
     });
 
     test('falls back to a generic listening prompt', () {
       expect(
         speechInputReadyMessage('EN'),
-        startsWith('Hello, I am listening.'),
+        'Hello, I am listening. To send the message, say “Send” or “I am done”.',
       );
     });
 
     test('localizes the listening prompt for Slovak', () {
       expect(
         speechInputReadyMessage('SK', firstName: 'Martin'),
-        startsWith('Ahoj, Martin, počúvam vás.'),
+        'Ahoj, Martin, počúvam vás. Ak chcete odoslať správu, povedzte „Pošli“ alebo „To je všetko“.',
       );
     });
   });
@@ -108,6 +108,66 @@ void main() {
 
       expect(parsed, isNotNull);
       expect(parsed!.title, 'splnomocnenie');
+      expect(parsed.requiresTitlePrompt, isFalse);
+    });
+
+    test('extracts a Slovak case title without an explicit title marker', () {
+      final parsed = parseSpokenCaseCreationCommand(
+        'Vytvor novy case splnomocnenie',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, 'splnomocnenie');
+      expect(parsed.requiresTitlePrompt, isFalse);
+    });
+
+    test('removes a trailing spoken send command from a Slovak case title', () {
+      final parsed = parseSpokenCaseCreationCommand(
+        'Vytvor novy pripad s nazvom splnomocnenie posli',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, 'splnomocnenie');
+      expect(parsed.requiresTitlePrompt, isFalse);
+    });
+
+    test('extracts Slovak case title from want-create wording', () {
+      final parsed = parseSpokenCaseCreationCommand(
+        'chcem vytvoriť prípad s nazovom splnomocnenie 1.0, pošli',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, 'splnomocnenie 1.0');
+      expect(parsed.requiresTitlePrompt, isFalse);
+    });
+
+    test('extracts Slovak case title after repeat prefix', () {
+      final parsed = parseSpokenCaseCreationCommand(
+        'Ešte raz vytvor nový prípad test',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, 'test');
+      expect(parsed.requiresTitlePrompt, isFalse);
+    });
+
+    test('extracts a case title from a polite Slovak infinitive command', () {
+      final parsed = parseSpokenCaseCreationCommand(
+        'dobre potrebujem vytvorit novy pripad s nazvom splnomocnenie to je vsetko',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, 'splnomocnenie');
+      expect(parsed.requiresTitlePrompt, isFalse);
+    });
+
+    test('removes a trailing polite send command from a case title', () {
+      final parsed = parseSpokenCaseCreationCommand(
+        'Create a new case with name tenant dispute please send',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, 'tenant dispute');
       expect(parsed.requiresTitlePrompt, isFalse);
     });
 
@@ -157,11 +217,19 @@ void main() {
     test('matches English send command', () {
       expect(isSpokenSendCommand('Send'), isTrue);
       expect(isSpokenSendCommand('please send message'), isTrue);
+      expect(isSpokenSendCommand('send the message'), isTrue);
+      expect(isSpokenSendCommand('end'), isTrue);
+      expect(isSpokenSendCommand('I am done'), isTrue);
+      expect(isSpokenSendCommand('this is end'), isTrue);
+      expect(isSpokenSendCommand('this is the end'), isTrue);
     });
 
     test('matches Slovak send command', () {
       expect(isSpokenSendCommand('Prosim odosli spravu'), isTrue);
       expect(isSpokenSendCommand('Posli'), isTrue);
+      expect(isSpokenSendCommand('koniec'), isTrue);
+      expect(isSpokenSendCommand('to je vsetko'), isTrue);
+      expect(isSpokenSendCommand('cakam na odpoved'), isTrue);
     });
 
     test('matches German send command', () {
@@ -171,6 +239,35 @@ void main() {
 
     test('does not match normal dictated content', () {
       expect(isSpokenSendCommand('I need help with my contract'), isFalse);
+    });
+
+    test('detects and strips a send command at the end of dictated content',
+        () {
+      expect(
+        hasTrailingSpokenSendCommand('Potrebujem splnomocnenie posli'),
+        isTrue,
+      );
+      expect(
+        stripTrailingSpokenSendCommand('Potrebujem splnomocnenie posli'),
+        'Potrebujem splnomocnenie',
+      );
+      expect(
+        stripTrailingSpokenSendCommand('Potrebujem splnomocnenie koniec'),
+        'Potrebujem splnomocnenie',
+      );
+    });
+  });
+
+  group('isSpokenClearDraftCommand', () {
+    test('matches Slovak clear draft command', () {
+      expect(isSpokenClearDraftCommand('zrus vsetko'), isTrue);
+      expect(isSpokenClearDraftCommand('prosím zruš všetko'), isTrue);
+      expect(isSpokenClearDraftCommand('clean message'), isTrue);
+      expect(isSpokenClearDraftCommand('clean last message'), isTrue);
+    });
+
+    test('does not match normal dictated content', () {
+      expect(isSpokenClearDraftCommand('zrusenie pracovnej zmluvy'), isFalse);
     });
   });
 
@@ -241,7 +338,7 @@ void main() {
 
     test('routes send commands to the current dictated draft', () {
       final action = engine.evaluate(
-        input: 'please send',
+        input: 'I am done',
         context: const RuleEngineContext(
           awaitingProfileName: false,
           awaitingCaseArchiveConfirmation: false,
@@ -256,6 +353,91 @@ void main() {
       expect(
         (action as SendCurrentDraftRuleAction).message,
         'Need help with contract termination',
+      );
+    });
+
+    test('routes send command to current non-command draft', () {
+      final action = engine.evaluate(
+        input: 'send',
+        context: const RuleEngineContext(
+          awaitingProfileName: false,
+          awaitingCaseArchiveConfirmation: false,
+          awaitingCaseTitle: false,
+          submitMessageWhenNoRuleMatches: true,
+          currentDraft: 'Need help with contract termination',
+        ),
+      );
+
+      expect(action, isA<SendCurrentDraftRuleAction>());
+      expect(
+        (action as SendCurrentDraftRuleAction).message,
+        'Need help with contract termination',
+      );
+    });
+
+    test('routes clear commands to clear draft action', () {
+      final action = engine.evaluate(
+        input: 'clean message',
+        context: const RuleEngineContext(
+          awaitingProfileName: false,
+          awaitingCaseArchiveConfirmation: false,
+          awaitingCaseTitle: false,
+          submitMessageWhenNoRuleMatches: true,
+          currentDraft: 'zrus vsetko',
+          lastDictatedDraft: 'Draft that should be cleared',
+        ),
+      );
+
+      expect(action, isA<ClearCurrentDraftRuleAction>());
+    });
+
+    test('routes a case command with trailing send to clean case creation', () {
+      final action = engine.evaluate(
+        input: 'Vytvor novy case splnomocnenie posli',
+        context: const RuleEngineContext(
+          awaitingProfileName: false,
+          awaitingCaseArchiveConfirmation: false,
+          awaitingCaseTitle: false,
+          submitMessageWhenNoRuleMatches: true,
+        ),
+      );
+
+      expect(action, isA<CreateCaseRuleAction>());
+      expect((action as CreateCaseRuleAction).title, 'splnomocnenie');
+    });
+
+    test('routes a case command with trailing end word to clean case creation',
+        () {
+      final action = engine.evaluate(
+        input: 'Este raz vytvor novy pripad test koniec',
+        context: const RuleEngineContext(
+          awaitingProfileName: false,
+          awaitingCaseArchiveConfirmation: false,
+          awaitingCaseTitle: false,
+          submitMessageWhenNoRuleMatches: true,
+        ),
+      );
+
+      expect(action, isA<CreateCaseRuleAction>());
+      expect((action as CreateCaseRuleAction).title, 'test');
+    });
+
+    test('routes dictated content with trailing send to submit clean content',
+        () {
+      final action = engine.evaluate(
+        input: 'Potrebujem poradit so splnomocnenim posli',
+        context: const RuleEngineContext(
+          awaitingProfileName: false,
+          awaitingCaseArchiveConfirmation: false,
+          awaitingCaseTitle: false,
+          submitMessageWhenNoRuleMatches: true,
+        ),
+      );
+
+      expect(action, isA<SubmitMessageRuleAction>());
+      expect(
+        (action as SubmitMessageRuleAction).message,
+        'Potrebujem poradit so splnomocnenim',
       );
     });
   });

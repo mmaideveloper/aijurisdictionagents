@@ -14,16 +14,23 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
 - Assistant voice output is also off by default after login; the user must enable it manually in `Account`.
 - Turning on speech input with the microphone button also enables assistant voice output for that session, so spoken replies follow voice interaction automatically.
 - When a spoken assistant reply finishes in voice mode, the app automatically reopens the microphone so the user can continue speaking hands-free.
-- Normal dictated messages now keep listening through short 1-2 second pauses and stop only after about 5 seconds of silence. When the microphone session stops, the current dictated message is submitted automatically.
-- The speech flow also understands spoken send commands such as `Send`, `please send`, `Posli`, `Prosim odosli spravu`, `Senden`, or `Nachricht senden`, and submits the current dictated message immediately.
+- Normal dictated messages now keep the recognizer pause window open for up to 10 minutes. After 10 seconds without more speech, Jurisdicta asks whether to execute the current dictated request and waits for a spoken confirmation. When the user answers `yes`/`no`/`áno`/`nie`, the app consumes that answer immediately: `yes` starts the pending action and `no` cancels it without waiting for another prompt.
+- Voice session handling now runs through `VoiceSessionOrchestrator`, which tracks listening, processing, and confirmation states, applies idempotency keys to STT transcripts, and dispatches `RuleEngineAction` values through an action queue.
+- The speech flow also understands spoken send commands such as `Send`, `send message`, `I am done`, `this is end`, `this is the end`, `Posli`, `Prosim odosli spravu`, `to je vsetko`, `cakam na odpoved`, `Senden`, or `Nachricht senden`, and submits the current dictated message immediately.
+- Saying `clean message`, `clean last message`, or `zrus vsetko` clears the current dictated message without sending it.
+- When assistant audio is enabled, assistant replies automatically return the user to speech input without expanding the text composer.
+- Explicit spoken commands are executed as soon as the recognizer returns a final phrase, so `Vytvor novy case splnomocnenie` can create the case without waiting for the long dictation timeout.
+- Trailing send words are treated as completion markers instead of content. For example, `Vytvor novy pripad s nazvom splnomocnenie posli` creates a case named `splnomocnenie`, not `splnomocnenie posli`.
 - When the user says a spoken command like `please create a new case` while another case is active, the app now asks for confirmation before archiving the current case. After confirmation it creates and switches to the new case, and if no new case name was spoken yet it asks for the name first.
 - The Slovak and German localizations were also cleaned up so user-facing system prompts and settings use proper localized text instead of ASCII-only fallbacks.
 - Speech and text command rules now go through a dedicated `RuleEngine` component so future request rules can be added without growing `main.dart` command branching.
+- Voice tool intents are normalized by `IntentMapper` into backend-ready tool payloads with `correlation_id`, `case_id`, `user_id`, structured inputs, raw transcript metadata, and a `generic_tool_request` fallback for future tools.
+- Mobile voice compliance now uses explicit `consentGiven`, `storeAudioEnabled`, and `redactSensitiveEntitiesBeforeSend` flags. Azure STT raw-audio upload is blocked when voice consent is missing, raw audio storage stays disabled by default, and voice logs keep trace/purpose metadata without full PII content. See `docs/mobile_voice_compliance.md` and `docs/VOICE_FLOW_CHANGE_CHECKLIST.md`.
 - Generated legal documents are no longer shown back into chat as plain text or JSON payloads; instead, the app asks the user whether they want to see the document as PDF and keeps the PDF export action available.
 - If the user starts a discussion without any selected case, the app now creates a case automatically, generates a short title from the discussion text, selects that case, and then sends the original message to the backend.
 - The automatic upgrade dialog now includes a session-only `Skip to new start` checkbox. When checked, the app stops version monitoring for the rest of the current app run and resumes only after the next launch.
 - When the user turns speech input on, Jurisdicta first says `Hallo, <first name>, I am listening.` if the profile contains a first name, otherwise `Hallo, I am listening.`.
-- Speech input can now create a new case from spoken commands in Slovak, English, or German, for example `Create a new case with name ...`, `Vytvor novy pripad s nazvom ...`, `Vytvor mi novy case s nazvom ...`, or `Erstelle einen neuen Fall mit Namen ...`.
+- Speech input can now create a new case from spoken commands in Slovak, English, or German, for example `Create a new case with name ...`, `Vytvor novy pripad s nazvom ...`, `Chcem vytvorit pripad s nazovom ...`, `Vytvor mi novy case s nazvom ...`, or `Erstelle einen neuen Fall mit Namen ...`.
 - If the spoken create-case command does not include a case title, the app asks for the new case name and then creates/selects the case after the next spoken title.
 - Jurisdicta now speaks assistant messages aloud through text-to-speech, including the welcome message, speech prompts, and backend replies.
 - Assistant speech output is intentionally slowed down for clearer playback in both local-device TTS and Azure Speech TTS mode.
@@ -41,6 +48,7 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
 - Speech routing now goes through a provider-based speech factory/service layer with `AIJ_SPEECH_MODE=local|azure`. `local` is the default and applies the speech timing directly to the device runtime: higher TTS speed, 5-second silence detection for STT, and shorter resume delay after assistant playback.
 - `azure` mode now supports both Azure Speech TTS and Azure Speech STT. The app can derive both service URLs from `AIJ_AZURE_SPEECH_REGION`, or you can pass explicit split endpoints with `AIJ_AZURE_SPEECH_TTS_ENDPOINT` and `AIJ_AZURE_SPEECH_STT_ENDPOINT`.
 - The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.
+- Voice profile updates support Slovak, English, and German commands such as `Zmeň meno na Martina`, `change last name to Novak`, and `ändere meine Adresse zu Hauptstrasse 12`. Before the profile PATCH is sent, Jurisdicta reads a TTS recap and requires an explicit `yes`/`áno`/`ja` confirmation; `no`/`nie`/`nein` cancels the pending change.
 - When the user changes the stored first or last name, the chat now appends a fresh assistant message greeting the updated full name.
 - The chat input is now single-line; pressing `Enter` sends the message immediately (same as the send button).
 - Message area is centered between login header and selectors.
@@ -115,6 +123,8 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
   - `POST /v1/chat/sessions/{session_id}/stream` (AI User Simulator mode)
   - Header: `x-api-key: aijuris`
 - Default local API base URL for Android emulator: `http://10.0.2.2:8080`.
+- Default local API base URL for web and desktop targets: `http://127.0.0.1:8080`.
+- Local loopback API URLs must use `http`, not `https`; the local Uvicorn API does not serve TLS on port `8080`.
 - Uses refreshed branding assets from provided logo/footer/icons set.
 - Assistant machine payloads such as `CASE_UPDATE_JSON` are hidden from the chat UI; the app shows only the user-facing text.
 - Local AI User Simulator defaults now allow up to 60 minutes for question timeout, discussion duration, and communication window.
@@ -134,7 +144,14 @@ flutter pub get
 flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
 ```
 
-For iOS simulator/local device, override `AIJ_API_BASE_URL` with your host IP, for example:
+Minimal runnable example for the voice profile update parser and transport audit:
+
+```bash
+cd mobile_app
+flutter test test/profile_voice_update_test.dart
+```
+
+For iOS simulator/local device, override `AIJ_API_BASE_URL` with your host IP when `127.0.0.1` does not point at the development machine, for example:
 
 ```bash
 flutter run --dart-define=AIJ_API_BASE_URL=http://127.0.0.1:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
@@ -163,7 +180,7 @@ Android note:
 
 ### Speech input
 
-Use the `Speech input` button in the top control area to enable speech-to-text. When it is on, use the microphone icon in the chat composer to dictate a message. The app now keeps the session open through short pauses, then stops and submits after about 5 seconds of silence. Clicking the send button or clicking the microphone while it is already listening also stops the session and submits the current dictated message. In Azure mode, the app records microphone audio and sends it to Azure Speech STT when the recording stops.
+Use the `Speech input` button in the top control area to enable speech-to-text. When it is on, use the microphone icon in the chat composer to dictate a message. The app keeps the recognizer pause window open for up to 10 minutes. If no more speech is detected for 10 seconds after a dictated draft, Jurisdicta asks whether to execute it and waits for `ano/yes` or `nie/no`; answering `ano/yes` runs the pending action immediately, while `nie/no` cancels it and stops waiting. Say `Send`, `send message`, `I am done`, `this is end`, `Posli`, `to je vsetko`, or `cakam na odpoved` to submit the current dictated message; when these words appear at the end of a longer phrase, they are removed before the command or message is executed. Say `clean message`, `clean last message`, or `zrus vsetko` to clear it. Clicking the send button or clicking the microphone while it is already listening also stops the session and submits the current dictated message. In Azure mode, the app records microphone audio and sends it to Azure Speech STT when the recording stops.
 
 When `Speech input` is turned off, the microphone action in the composer is disabled until you turn speech back on.
 
@@ -174,6 +191,20 @@ If the profile has no name yet, the first speech interaction asks for the name, 
 Assistant responses are also spoken aloud. When the microphone starts listening, the app stops playback first so Jurisdicta's voice is not fed back into speech recognition.
 
 ## Local API contract
+
+Minimal intent mapper example:
+
+```bash
+cd mobile_app
+dart run examples/intent_mapper_demo.dart
+```
+
+Voice compliance regression checks:
+
+```bash
+cd mobile_app
+flutter test test/speech_service_test.dart test/intent_mapper_test.dart
+```
 
 The app creates a chat session:
 

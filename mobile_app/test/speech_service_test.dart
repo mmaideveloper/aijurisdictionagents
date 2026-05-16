@@ -13,11 +13,29 @@ void main() {
       final config = SpeechServiceConfig.fromEnvironment();
 
       expect(config.mode, SpeechMode.local);
-      expect(config.pauseFor, const Duration(seconds: 5));
+      expect(config.pauseFor, const Duration(minutes: 10));
       expect(config.autoSendDelay, const Duration(seconds: 2));
       expect(config.resumeListeningDelay, const Duration(milliseconds: 150));
       expect(config.localSttModel, 'whisper-small-multilingual');
       expect(config.localTtsModel, 'piper-sk_SK-katarina-medium');
+      expect(config.consentGiven, isFalse);
+      expect(config.storeAudioEnabled, isFalse);
+      expect(config.redactSensitiveEntitiesBeforeSend, isTrue);
+    });
+
+    test('copies voice compliance flags for runtime consent', () {
+      final config = const SpeechServiceConfig(mode: SpeechMode.azure).copyWith(
+        consentGiven: true,
+        storeAudioEnabled: false,
+        redactSensitiveEntitiesBeforeSend: true,
+      );
+
+      expect(config.consentGiven, isTrue);
+      expect(config.complianceFlags.toLogContext(), <String, Object?>{
+        'consent_given': true,
+        'store_audio_enabled': false,
+        'redact_sensitive_entities_before_send': true,
+      });
     });
   });
 

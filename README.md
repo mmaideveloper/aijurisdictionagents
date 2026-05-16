@@ -79,6 +79,14 @@ For details, see `docs/CODEX_AUTOMATIONS.md`.
 
 Audio/action recognizer architecture and action-agent mapping:
 
+Voice intent router for web and mobile STT commands:
+
+```bash
+python examples/voice_intent_router_demo.py
+```
+
+See `docs/VOICE_INTENT_ROUTER.md`.
+
 ```bash
 cat docs/AUDIO_ACTION_TOOLING.md
 ```
