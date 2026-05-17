@@ -25,7 +25,7 @@ SIMULATOR_PACKAGE = "chat-simulator-app"
 
 app = FastAPI(
     title="AI Juristiction Chat Simulator App",
-    version="0.1.25",
+    version="0.1.26",
     description="Standalone chat simulator application for validating core chat APIs.",
 )
 
@@ -103,6 +103,11 @@ def simulator_page() -> HTMLResponse:
 @app.get("/email-tests", include_in_schema=False)
 def email_tests_page() -> HTMLResponse:
     return _render_static_page("email-tests.html")
+
+
+@app.get("/speech-to-text", include_in_schema=False)
+def speech_to_text_page() -> HTMLResponse:
+    return _render_static_page("speech-to-text.html")
 
 
 @app.post("/internal/email-tests/send")

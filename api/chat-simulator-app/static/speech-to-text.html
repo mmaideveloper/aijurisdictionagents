@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Speech to Text Tester</title>
+    <link rel="stylesheet" href="/static/simulator.css?v=__SIMULATOR_VERSION__" />
+  </head>
+  <body>
+    <main class="shell">
+      <div class="simulator-layout">
+        <div class="simulator-controls">
+          <h1>Speech to Text Tester</h1>
+          <p>Fast browser-only speech check for command phrases and transcript quality.</p>
+          <section class="quick-actions" aria-label="Simulator pages">
+            <a class="page-action" href="/chat-simulator">Back to Chat Simulator</a>
+          </section>
+          <section class="row">
+            <button id="startListening" type="button">Start Listening</button>
+            <button id="stopListening" class="secondary" type="button">Stop</button>
+            <pre id="sttStatus">Idle.</pre>
+          </section>
+          <section class="row">
+            <label for="sttTranscript">Transcript</label>
+            <textarea id="sttTranscript" placeholder="Speech transcript appears here..."></textarea>
+          </section>
+          <section class="row">
+            <h2>Command Hints</h2>
+            <pre>Try: Send, send message, I am done, this is the end, Posli, to je vsetko, cakam na odpoved.</pre>
+          </section>
+        </div>
+      </div>
+    </main>
+    <script>
+      const statusEl = document.getElementById('sttStatus');
+      const transcriptEl = document.getElementById('sttTranscript');
+      const startBtn = document.getElementById('startListening');
+      const stopBtn = document.getElementById('stopListening');
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        statusEl.textContent = 'SpeechRecognition API is unavailable in this browser.';
+        startBtn.disabled = true;
+        stopBtn.disabled = true;
+      } else {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = true;
+        recognition.continuous = true;
+        recognition.onstart = () => { statusEl.textContent = 'Listening...'; };
+        recognition.onend = () => { statusEl.textContent = 'Stopped.'; };
+        recognition.onerror = (event) => { statusEl.textContent = `Error: ${event.error}`; };
+        recognition.onresult = (event) => {
+          let text = '';
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            text += event.results[i][0].transcript;
+          }
+          transcriptEl.value = `${transcriptEl.value} ${text}`.trim();
+        };
+        startBtn.addEventListener('click', () => recognition.start());
+        stopBtn.addEventListener('click', () => recognition.stop());
+      }
+    </script>
+  </body>
+</html>
