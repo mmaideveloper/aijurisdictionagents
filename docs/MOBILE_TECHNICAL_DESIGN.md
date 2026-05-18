@@ -62,6 +62,7 @@ GitHub Actions workflow `.github/workflows/mobile_flutter_build.yml`:
 - Trigger on changes in `mobile_app/**` and workflow file.
 - Build Android APK artifact for download.
 - Build web output artifact as deployable static package.
+- Run `flutter analyze --no-fatal-infos`; keep analyzer warnings at zero because warnings fail the workflow.
 
 This provides quick distribution for testers and a deployable web preview while native store deployment credentials are not configured.
 

@@ -6171,29 +6171,6 @@ class _ChatHomePageState extends State<ChatHomePage>
         parseSpokenCaseCreationCommand(recognizedText) != null;
   }
 
-  Future<void> _processFinalSpeechResultImmediately(
-    String recognizedText,
-  ) async {
-    final normalizedText = recognizedText.trim();
-    if (normalizedText.isEmpty || _lastHandledSpeechText == normalizedText) {
-      return;
-    }
-    _cancelSpeechSendPrompt();
-    if (_isListening) {
-      await _stopSpeechListening(
-        submitAfterStop: false,
-        processStoppedInput: false,
-      );
-      if (!mounted) {
-        return;
-      }
-    }
-    await _handleCompletedSpeechInput(
-      normalizedText,
-      submitAfterRecognition: true,
-    );
-  }
-
   Future<void> _processQueuedSpeechActionsImmediately() async {
     _cancelSpeechSendPrompt();
     if (_isListening) {
