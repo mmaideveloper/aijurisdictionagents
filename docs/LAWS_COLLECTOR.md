@@ -610,7 +610,7 @@ $env:LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS="10"
 
 ### Case 2: interrupted during archive processing
 1. Resume from `collector_import_state.last_processed_entry` for the same archive import key.
-2. Finish remaining archive entries.
+2. Stream remaining archive entries and persist the cursor after each processed law.
 3. Continue with monthly import and then live probing.
 4. Run consistency pass and persist the consistency cursor.
 

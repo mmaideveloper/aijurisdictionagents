@@ -9,6 +9,7 @@ from aijurisdictionagents.llm.embeddings import MockEmbeddingClient
 from services.laws_collector.archive_storage import StoredArchiveObject
 from services.laws_collector import LawsCollectorConfig, SqliteLawStore, SlovakLawsCollectorService
 from services.laws_collector.domain import CollectorImportState
+import services.laws_collector.slovlex_zip_import as zip_import
 from services.laws_collector.slovlex_zip_import import (
     SlovLexArchiveExport,
     SlovLexExportIndex,
@@ -195,7 +196,7 @@ def test_zip_import_runner_persists_html_source_artifact_references(tmp_path: Pa
     assert "Ustanovenie pre Prvy zakon." in str(row["content_text"])
 
 
-def test_zip_import_runner_resumes_after_timeout(tmp_path: Path) -> None:
+def test_zip_import_runner_resumes_after_timeout(tmp_path: Path, monkeypatch) -> None:
     store, service, config = _build_service(tmp_path)
     monthly_zip = tmp_path / "fixtures" / "exportZmeny.zip"
     _create_monthly_zip(
@@ -217,17 +218,29 @@ def test_zip_import_runner_resumes_after_timeout(tmp_path: Path) -> None:
                 ),
             )
 
+    original_loader = zip_import.load_snapshot_from_entry_file
+    loaded_entries: list[str] = []
+
+    def counting_loader(entry: Path):
+        loaded_entries.append(entry.name)
+        return original_loader(entry)
+
+    monkeypatch.setattr(zip_import, "load_snapshot_from_entry_file", counting_loader)
+
     first_runner = SlovLexZipImportRunner(
         config=config,
         store=store,
         service=service,
         export_index_loader=FakeIndexLoader(),
-        monotonic_time_provider=iter([0.0, 0.0, 50.0, 50.0]).__next__,
+        monotonic_time_provider=iter([0.0, 0.0, 50.0]).__next__,
     )
     first_summary = first_runner.run(max_running_seconds=30)
 
     assert first_summary.stopped_due_to_max_running_time is True
     assert first_summary.entries_processed == 1
+    assert loaded_entries == ["19930101.html"]
+
+    monkeypatch.setattr(zip_import, "load_snapshot_from_entry_file", original_loader)
 
     second_summary = SlovLexZipImportRunner(
         config=config,

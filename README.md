@@ -601,6 +601,7 @@ $env:LAWS_COLLECTOR_MAX_RUNNING_TIME = "0"
 
 This starts or reuses the local `laws_sk` PostgreSQL database, imports the full Slov-Lex archive when needed, then continues with monthly `exportZmeny.zip` updates. After archive/monthly import completes, use the sequential mode when you need to probe new laws from the last stored `law_number/law_year` cursor:
 In zip mode the worker also advances the live probe cursor to the highest imported law and, with `-PollSeconds 300`, checks for new laws every five minutes after the archive/monthly import catches up.
+If archive import was interrupted, the ZIP importer resumes after `collector_import_state.last_processed_entry` and streams the remaining entries so progress is persisted after each processed law.
 
 ```powershell
 $env:LAWS_COLLECTOR_IMPORT = "one_law_url"

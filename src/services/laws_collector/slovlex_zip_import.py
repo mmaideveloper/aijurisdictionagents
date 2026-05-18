@@ -476,30 +476,9 @@ class SlovLexZipImportRunner:
                 continue
             pending_entries.append(entry)
 
-        max_workers = 1 if max_running_seconds > 0 else max(1, self.config.import_zip_max_threads)
-        if max_workers == 1:
-            snapshot_items = [(entry, load_snapshot_from_entry_file(entry)) for entry in pending_entries]
-        else:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                loaded = list(executor.map(load_snapshot_from_entry_file, pending_entries))
-            snapshot_items = list(zip(pending_entries, loaded, strict=True))
-
-        for entry, snapshot in snapshot_items:
+        def process_entry_snapshot(entry: Path, snapshot: LawSnapshot) -> None:
+            nonlocal collector_progress, entries_processed, highest_processed_law, last_state, sync_summary
             relative_entry = entry.relative_to(extract_root).as_posix()
-            if max_running_seconds > 0 and (self._monotonic_time() - started_at) >= max_running_seconds:
-                return SlovLexZipImportSummary(
-                    phase=str(metadata.get("phase", "zip")),
-                    import_key=import_key,
-                    import_label=import_label,
-                    entries_processed=entries_processed,
-                    sync_summary=sync_summary,
-                    archive_completed=archive_completed,
-                    monthly_completed=False,
-                    last_processed_entry=last_state.last_processed_entry,
-                    last_processed_law=last_state.last_processed_law,
-                    stopped_due_to_max_running_time=True,
-                )
-            snapshot = load_snapshot_from_entry_file(entry)
             if snapshot.year < self.config.historical_import_from.year:
                 entries_processed += 1
                 last_state = last_state.evolve(
@@ -511,7 +490,7 @@ class SlovLexZipImportRunner:
                     metadata=metadata,
                 )
                 self.store.upsert_import_state(last_state)
-                continue
+                return
             sync_summary = sync_summary.merge(self.service.sync((snapshot,)))
             entries_processed += 1
             last_state = last_state.evolve(
@@ -537,6 +516,32 @@ class SlovLexZipImportRunner:
                     next_probe_law_number=snapshot.number + 1,
                 )
             self.store.save_collector_progress(collector_progress)
+
+        max_workers = 1 if max_running_seconds > 0 else max(1, self.config.import_zip_max_threads)
+        if max_workers == 1:
+            for entry in pending_entries:
+                if max_running_seconds > 0 and (self._monotonic_time() - started_at) >= max_running_seconds:
+                    return SlovLexZipImportSummary(
+                        phase=str(metadata.get("phase", "zip")),
+                        import_key=import_key,
+                        import_label=import_label,
+                        entries_processed=entries_processed,
+                        sync_summary=sync_summary,
+                        archive_completed=archive_completed,
+                        monthly_completed=False,
+                        last_processed_entry=last_state.last_processed_entry,
+                        last_processed_law=last_state.last_processed_law,
+                        stopped_due_to_max_running_time=True,
+                    )
+                process_entry_snapshot(entry, load_snapshot_from_entry_file(entry))
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                for entry, snapshot in zip(
+                    pending_entries,
+                    executor.map(load_snapshot_from_entry_file, pending_entries),
+                    strict=True,
+                ):
+                    process_entry_snapshot(entry, snapshot)
 
         completed_state = last_state.evolve(
             status="completed",
