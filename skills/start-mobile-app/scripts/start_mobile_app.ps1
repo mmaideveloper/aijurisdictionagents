@@ -152,6 +152,28 @@ function Test-ApiReady {
     }
 }
 
+function Normalize-ApiBaseUrl {
+    param([string]$Url)
+
+    if (-not $Url) {
+        return $Url
+    }
+
+    try {
+        $uri = [System.Uri]$Url.Trim()
+    } catch {
+        return $Url.Trim()
+    }
+
+    if ($uri.Scheme -eq "https" -and $uri.Host -in @("127.0.0.1", "localhost", "10.0.2.2", "0.0.0.0")) {
+        $builder = [System.UriBuilder]::new($uri)
+        $builder.Scheme = "http"
+        return $builder.Uri.ToString().TrimEnd("/")
+    }
+
+    return $Url.Trim().TrimEnd("/")
+}
+
 function Resolve-ApiMode {
     param([string]$RequestedMode)
 
@@ -400,6 +422,7 @@ if (-not (Test-Path $appDir)) {
 $flutter = Resolve-FlutterPath
 $ApiMode = Resolve-ApiMode -RequestedMode $ApiMode
 $ApiBaseUrl = Resolve-ApiBaseUrl -Mode $ApiMode -RequestedApiBaseUrl $ApiBaseUrl -RequestedPublicDevApiBaseUrl $PublicDevApiBaseUrl
+$ApiBaseUrl = Normalize-ApiBaseUrl -Url $ApiBaseUrl
 $SpeechMode = Resolve-SpeechMode -RequestedMode $SpeechMode
 
 if ($ApiMode -eq "localApi") {
@@ -419,7 +442,8 @@ if ($ApiMode -eq "localApi") {
     Write-Output "Requested storage: $StorageOption"
     if (-not (Test-ApiReady -Url $ApiBaseUrl)) {
         $apiStartArgs = @{
-            ConsoleWindow = $true
+            Background = $true
+            SkipLogTail = $true
             DatabaseOption = $DatabaseOption
             StorageOption = $StorageOption
         }
@@ -435,7 +459,7 @@ if ($ApiMode -eq "localApi") {
         if ($StoreCloud) {
             $apiStartArgs["StoreCloud"] = $StoreCloud
         }
-        Write-Output "Launching local API with visible console logs..."
+        Write-Output "Launching local API in background..."
         & (Join-Path $repoRoot "skills\start-api\scripts\start_api.ps1") @apiStartArgs
         Start-Sleep -Seconds 4
         Write-Output "Waiting for local API health at $ApiBaseUrl/health"
@@ -524,10 +548,6 @@ try {
         "--dart-define=AIJ_API_KEY=$ApiKey"
     )
 
-    $dartDefineFile = Join-Path $repoRoot ".env"
-    if (Test-Path $dartDefineFile) {
-        $flutterArgs += "--dart-define-from-file=..\.env"
-    }
     if ($SpeechMode) {
         $flutterArgs += "--dart-define=AIJ_SPEECH_MODE=$SpeechMode"
     }

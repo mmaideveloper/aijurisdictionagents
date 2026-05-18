@@ -32,8 +32,9 @@ class _FakeEmailService:
         )
 
 
-def test_contact_request_queues_email_to_public_contact_address() -> None:
+def test_contact_request_queues_email_to_public_contact_address(monkeypatch) -> None:
     _rate_limit_hits.clear()
+    monkeypatch.setenv("CONTACT_CAPTCHA_REQUIRED", "false")
     email_service = _FakeEmailService()
     app.dependency_overrides[get_contact_email_service] = lambda: email_service
     try:
@@ -67,8 +68,9 @@ def test_contact_request_queues_email_to_public_contact_address() -> None:
     assert "Please contact me about the corporate demo request." in sent["body"]
 
 
-def test_contact_request_accepts_short_test_message() -> None:
+def test_contact_request_accepts_short_test_message(monkeypatch) -> None:
     _rate_limit_hits.clear()
+    monkeypatch.setenv("CONTACT_CAPTCHA_REQUIRED", "false")
     email_service = _FakeEmailService()
     app.dependency_overrides[get_contact_email_service] = lambda: email_service
     try:
@@ -162,6 +164,7 @@ def test_contact_request_verifies_captcha_before_sending(monkeypatch) -> None:
 
 def test_contact_request_rate_limits_by_client_ip(monkeypatch) -> None:
     _rate_limit_hits.clear()
+    monkeypatch.setenv("CONTACT_CAPTCHA_REQUIRED", "false")
     monkeypatch.setenv("CONTACT_RATE_LIMIT_MAX_REQUESTS", "1")
     monkeypatch.setenv("CONTACT_RATE_LIMIT_WINDOW_SECONDS", "600")
     email_service = _FakeEmailService()

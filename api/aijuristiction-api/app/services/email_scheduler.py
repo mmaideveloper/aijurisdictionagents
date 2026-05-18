@@ -8,6 +8,7 @@ from typing import Any
 
 from app.services.email import EmailNotificationService
 from app.services.email_queue import EmailQueueStore
+from app.services.email_templates import ensure_branded_email_metadata
 
 logger = logging.getLogger("aijuristiction-api.email.scheduler")
 
@@ -39,12 +40,17 @@ class EmailScheduler:
         processed = 0
         for item in queued:
             try:
+                metadata = ensure_branded_email_metadata(
+                    subject=item.subject,
+                    body=item.body,
+                    metadata=item.metadata,
+                )
                 self.email_service.send_email(
                     recipient=item.recipient,
                     subject=item.subject,
                     body=item.body,
-                    html_body=_metadata_str(item.metadata, "html_body"),
-                    attachments=_decode_attachments(item.metadata.get("attachments")),
+                    html_body=_metadata_str(metadata, "html_body"),
+                    attachments=_decode_attachments(metadata.get("attachments")),
                 )
                 self.queue_store.mark_sent(email_id=item.email_id)
                 processed += 1
@@ -75,10 +81,10 @@ def _metadata_str(metadata: object, key: str) -> str | None:
     return str(value) if isinstance(value, str) and value.strip() else None
 
 
-def _decode_attachments(raw: object) -> list[dict[str, object]]:
+def _decode_attachments(raw: object) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
-    decoded: list[dict[str, object]] = []
+    decoded: list[dict[str, Any]] = []
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -89,11 +95,24 @@ def _decode_attachments(raw: object) -> list[dict[str, object]]:
             payload = base64.b64decode(content.encode("utf-8"), validate=True)
         except Exception:
             continue
-        decoded.append(
-            {
-                "filename": str(item.get("filename") or "attachment.bin"),
-                "mime_type": str(item.get("mime_type") or "application/octet-stream"),
-                "content": payload,
-            }
-        )
+        decoded_item: dict[str, Any] = {
+            "filename": str(item.get("filename") or "attachment.bin"),
+            "mime_type": str(item.get("mime_type") or "application/octet-stream"),
+            "content": payload,
+        }
+        content_id = _optional_metadata_str(item, "content_id")
+        if content_id is not None:
+            decoded_item["content_id"] = content_id
+        disposition = _optional_metadata_str(item, "disposition")
+        if disposition is not None:
+            decoded_item["disposition"] = disposition
+        decoded.append(decoded_item)
     return decoded
+
+
+def _optional_metadata_str(item: dict[Any, Any], key: str) -> str | None:
+    value = item.get(key)
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None

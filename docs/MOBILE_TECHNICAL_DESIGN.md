@@ -62,6 +62,7 @@ GitHub Actions workflow `.github/workflows/mobile_flutter_build.yml`:
 - Trigger on changes in `mobile_app/**` and workflow file.
 - Build Android APK artifact for download.
 - Build web output artifact as deployable static package.
+- Run `flutter analyze --no-fatal-infos`; keep analyzer warnings at zero because warnings fail the workflow.
 
 This provides quick distribution for testers and a deployable web preview while native store deployment credentials are not configured.
 
@@ -82,3 +83,14 @@ Minimal runnable example:
 ```bash
 python examples/minimal_demo.py
 ```
+
+## Slovak-first local model validation
+- Recommended local STT model: `whisper-small-multilingual` (fallback `whisper-base-multilingual` for weaker devices).
+- Recommended local TTS model: `piper-sk_SK-katarina-medium`.
+- Runtime hints can be set through `AIJ_LOCAL_STT_MODEL` and `AIJ_LOCAL_TTS_MODEL`.
+- Test locally with:
+  - `cd mobile_app && flutter test test/speech_service_test.dart`
+  - `cd mobile_app && flutter test test/speech_flow_test.dart`
+  - run app and confirm speech logs include selected `speech_runtime_mode` and transcript review before send.
+
+- Profile voice selector now guarantees at least one Slovak voice option (`Slovak local default`, locale `sk-SK`) even when OS voice inventory does not expose Slovak voices.

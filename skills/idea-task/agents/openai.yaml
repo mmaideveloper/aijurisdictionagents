@@ -1,0 +1,4 @@
+interface:
+  display_name: "Idea Task"
+  short_description: "Shape rough ideas before prepare-task"
+  default_prompt: "Use /idea-task to review my idea, inspect repository context, ask the missing questions, identify risks/compliance gaps, and output an idea draft that is ready for /prepare-task."

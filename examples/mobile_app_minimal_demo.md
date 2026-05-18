@@ -8,7 +8,9 @@ flutter pub get
 flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris
 ```
 
-After launch, use the microphone icon in the chat input row to dictate a question or answer and then press send.
+Use `http://127.0.0.1:8080` for Flutter web/desktop runs on the development machine. `https://127.0.0.1:8080` will fail because the local API does not serve TLS. `http://10.0.2.2:8080` is only the Android emulator gateway to the host API.
+
+After launch, use the microphone icon in the chat input row to dictate a question or answer and then press send. In Azure Speech mode, raw audio upload is blocked unless the signed-in account has accepted the current data-processing consent; local/device speech recognition does not persist raw audio through the app.
 
 If you want to test Android in-app upgrades from a GitHub Release APK, make sure
 every published release build is signed with the same release keystore; otherwise

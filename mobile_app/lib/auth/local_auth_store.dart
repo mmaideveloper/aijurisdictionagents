@@ -231,6 +231,7 @@ class UpdateProfileInput {
     this.identityCardNumber,
     this.dateOfBirth,
     this.socialSecurityNumber,
+    this.auditPayload,
   });
 
   final String phoneNumber;
@@ -245,6 +246,7 @@ class UpdateProfileInput {
   final String? identityCardNumber;
   final String? dateOfBirth;
   final String? socialSecurityNumber;
+  final Map<String, Object?>? auditPayload;
 }
 
 class LocalAuthStore {
@@ -604,6 +606,7 @@ class LocalAuthStore {
             _normalizeOptionalText(input.dateOfBirth ?? current.dateOfBirth),
         'social_security_number': _normalizeOptionalText(
             input.socialSecurityNumber ?? current.socialSecurityNumber),
+        if (input.auditPayload != null) 'audit': input.auditPayload,
       },
     );
     if (response.statusCode != 200) {

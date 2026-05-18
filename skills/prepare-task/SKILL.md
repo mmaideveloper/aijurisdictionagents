@@ -1,6 +1,6 @@
 ---
 name: prepare-task
-description: Prepare an idea or GitHub Project task for implementation in this repository. Use when the user asks to refine an idea, prepare a task, make a GitHub Project item ready, update a task description, create a task from an idea, or ask the necessary technical/product/compliance questions before implementation. Also use in normal chat when the user starts with phrases like "here is my idea", "I have an idea for a feature", "new feature idea", "can you prepare this task", or "turn this into a GitHub task". Works with conversational idea intake, existing GitHub issue/project task descriptions, or new ideas that need to become implementation-ready work items.
+description: Convert an already shaped idea into an implementation-ready GitHub Project task. Prefer tasks reviewed by `/idea-task` first. Use when the user asks to finalize a prepared idea, validate readiness, or mark a project task Ready after technical/compliance details are complete. Accepts `/prepare-task [description]` and `/prepare-task -url [issue-url]`, but if the idea was not reviewed by `/idea-task`, run the idea-task interview subset first and mark the task as not ready until that gap is resolved.
 ---
 
 # Prepare Task
@@ -9,12 +9,27 @@ description: Prepare an idea or GitHub Project task for implementation in this r
 
 Turn a loose idea or existing GitHub Project task into an implementation-ready task description. In chat, run an interview flow: collect the idea, review repository context, ask only necessary questions, draft the task, and ask for explicit confirmation before creating or updating a GitHub issue/project item.
 
+## Consistency Contract with `/idea-task`
+
+- `prepare-task` is phase 2; `idea-task` is phase 1.
+- Accepted sources for `prepare-task`:
+  1. `/idea-task` output draft (`Status: Ready for prepare-task`).
+  2. Existing issue URL that already contains an idea-task prepared section.
+  3. Raw idea text only if `prepare-task` first runs the missing idea-task questions inline.
+- Do not mark implementation readiness until both lines exist in the prepared section:
+  - `Idea Task Status: Ready for prepare-task.`
+  - `Status: Ready for implementation.`
+
 
 ## How to Execute This Skill (VS Code, Codex Web, Codex Desktop)
 
 Use any of these invocation styles in chat:
 
 - Direct skill call: `$prepare-task`
+- Slash trigger: `/prepare-task [description]`
+- Accepted typo trigger: `/prepar-task [description]`
+- Existing issue URL: `/prepare-task -url "https://github.com/mmaideveloper/aijurisdictionagents/issues/318"`
+- Existing issue URL with accepted typo: `/prepar-task -url "https://github.com/mmaideveloper/aijurisdictionagents/issues/318"`
 - Natural language trigger examples:
   - `Here is my idea for a feature. Prepare the task.`
   - `Turn this into a GitHub task and ask me the missing questions first.`
@@ -26,10 +41,15 @@ Platform notes:
 - **Codex Web:** open the repository workspace chat and start with `$prepare-task` or a trigger phrase; confirm before issue/project updates.
 - **Codex Desktop:** in the project chat, use `$prepare-task` or the same trigger phrases; workflow and output format should match web/VS Code.
 
-Execution rule:
+Execution rules:
 
 - Run this skill first for idea intake.
 - Start implementation only after the task output says it is ready and blocking questions are resolved.
+- When the prompt uses `/prepare-task [description]` or `/prepar-task [description]`, treat the text after the trigger as the idea source and prepare it for a GitHub Project task.
+- When the prompt uses `/prepare-task -url [issue-url]` or `/prepar-task -url [issue-url]`, read the GitHub issue URL as the authoritative idea source, including the issue body, comments, labels, project fields, and linked PRs when available.
+- If the slash-triggered idea is ready after repository and compliance review, create the GitHub issue/project task without asking whether the user wants a task created, because the slash command already requested that outcome.
+- If the slash-triggered URL points to an existing issue and the prepared task becomes ready, write the prepared technical details back to that issue without asking whether to update it, because the URL command already requested that outcome.
+- If required details are missing, ask up to three focused questions first and create the GitHub task only after the missing details are answered or the user explicitly accepts a task with open questions.
 
 ## Chat Intake
 
@@ -39,14 +59,25 @@ When the user gives a feature idea directly in chat:
 2. Acknowledge that the goal is task preparation, not implementation.
 3. Review relevant repository context before asking detailed follow-up questions.
 4. Ask up to three focused questions at a time until the ready criteria are met.
-5. Show a concise draft task summary and ask: "Create a GitHub task for this in the appropriate project?"
-6. Create or update a GitHub task only after the user explicitly confirms.
-7. If the user says not yet, keep the drafted task details in the conversation and list the remaining blockers.
+5. Show a concise draft task summary.
+6. For slash-triggered requests, create or update the GitHub task once the task is ready, or once the user confirms that a task with open questions should be created.
+7. For non-slash conversational ideas, ask: "Create a GitHub task for this in the appropriate project?"
+8. If the user says not yet, keep the drafted task details in the conversation and list the remaining blockers.
+
+When the user gives an existing GitHub issue URL with `-url`:
+
+1. Read the issue title/body/comments/labels/project status before asking questions.
+2. Treat the issue's current wording as the basic idea source and preserve it.
+3. Review relevant repository context and compliance requirements.
+4. Ask up to three focused missing-detail questions when the issue does not contain enough information for implementation readiness.
+5. Draft the prepared technical details in chat after the answers are collected.
+6. Write the prepared section back to the same issue at the end of the conversation, preserving original user-provided content unless it is obsolete.
 
 ## Workflow
 
 1. Identify the source.
    - If the user gives a task or issue URL/number, read the issue body, comments, labels, project fields, and linked PRs when available.
+   - If the user gives `-url` followed by a quoted or unquoted GitHub issue URL, parse that URL as the existing task to prepare.
    - If the user gives only an idea, treat it as the source text and ask whether to update an existing task only when a matching task cannot be confidently found.
    - If the user asks to read ideas from a task description, use that description as the authoritative idea source.
 2. Review repository context before asking detailed questions.
@@ -64,7 +95,8 @@ When the user gives a feature idea directly in chat:
    - Avoid asking questions already answered by repository context or the task description.
 5. Draft or update the task description.
    - If an issue/task exists, insert the prepared details into that issue description.
-   - If no task exists, ask for confirmation before creating a new GitHub issue in the repository and adding it to the appropriate GitHub Project.
+   - If no task exists and the request was slash-triggered, create a new GitHub issue in the repository and add it to the appropriate GitHub Project after readiness is reached.
+   - If no task exists and the request was conversational rather than slash-triggered, ask for confirmation before creating a new GitHub issue in the repository and adding it to the appropriate GitHub Project.
    - Keep the existing description content unless it is obsolete; add a structured "Prepared Technical Details" section.
 6. Mark readiness clearly.
    - Do not move the task to Ready unless the user asks or the repository workflow requires it and all readiness criteria are met.
@@ -133,8 +165,11 @@ Always include:
 ## GitHub Handling
 
 - Prefer `gh issue view`, `gh issue edit`, and GitHub Project commands over manual browser updates when available.
+- For `-url` issue preparation, use `gh issue view` to read the issue and `gh issue edit` to write the prepared task description back to the same issue when ready.
+- Preserve the original issue description and append or refresh a clearly named prepared section instead of replacing the whole idea.
 - For backend/system tasks, use project `https://github.com/users/mmaideveloper/projects/5`.
 - For frontend tasks, use project `https://github.com/users/mmaideveloper/projects/6`.
+- For mobile app tasks, use the backend/system project unless the task is exclusively frontend web work.
 - If creating a new issue, use a clear title, the prepared body, and add it to the matching project/status when possible.
 - If updating an existing issue, preserve user-provided idea text and append or refresh the prepared technical section.
 - Comment when meaningful decisions are made, but avoid noisy comments for every small edit.
@@ -151,6 +186,7 @@ A task is ready for implementation only when:
 - Test and documentation requirements are specific.
 - The minimal runnable example requirement is named, defaulting to `python examples/minimal_demo.py`.
 - No blocking questions remain.
+- Idea phase evidence is present: `Idea Task Status: Ready for prepare-task.`
 - Cross-channel parity (chat simulator/API/mobile/frontend) is explicit for all in-scope channels.
 
 ## Minimal Example

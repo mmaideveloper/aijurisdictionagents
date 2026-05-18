@@ -20,18 +20,20 @@ def test_version() -> None:
     assert response.status_code == 200
     assert response.json() == {
         'service': 'chat-simulator-app',
-        'version': '0.1.25',
-        'simulator_version': '0.1.25',
+        'version': '0.1.26',
+        'simulator_version': '0.1.26',
     }
 
 
 def test_simulator_page_and_assets() -> None:
     page = client.get('/chat-simulator')
     assert page.status_code == 200
-    assert '/static/simulator.js?v=0.1.25' in page.text
-    assert '/static/simulator.css?v=0.1.25' in page.text
+    assert '/static/simulator.js?v=0.1.26' in page.text
+    assert '/static/simulator.css?v=0.1.26' in page.text
     assert '/email-tests' in page.text
     assert 'Email Validation Tests' in page.text
+    assert '/speech-to-text' in page.text
+    assert 'Speech to Text' in page.text
     assert 'Start Stream' in page.text
     assert 'Upload documents' in page.text
     assert 'Persisted Case Debug' in page.text
@@ -133,7 +135,7 @@ def test_simulator_page_and_assets() -> None:
 def test_email_tests_page_and_assets() -> None:
     page = client.get('/email-tests')
     assert page.status_code == 200
-    assert '/static/email-tests.js?v=0.1.25' in page.text
+    assert '/static/email-tests.js?v=0.1.26' in page.text
     assert 'Email Validation Tests' in page.text
     assert 'id="emailTransport"' in page.text
     assert '<option value="log" selected>log</option>' in page.text
@@ -237,3 +239,12 @@ def test_read_testcase_supports_case_descripton_typo_and_embeds_documents() -> N
     assert document['sourcePath'] == 'najomna-zmluva-byt-sample.pdf'
     assert document['mimeType'] == 'application/pdf'
     assert len(document['contentBase64']) > 100
+
+
+def test_speech_to_text_page() -> None:
+    page = client.get('/speech-to-text')
+    assert page.status_code == 200
+    assert 'Speech to Text Tester' in page.text
+    assert 'id="startListening"' in page.text
+    assert 'id="sttTranscript"' in page.text
+    assert 'SpeechRecognition' in page.text

@@ -1,6 +1,6 @@
 [project]
 name = "aijuristiction-api"
-version = "1.0.260426"
+version = "1.0.260430"
 description = "Dedicated API service for aijurisdictionagents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -49,6 +49,10 @@ mypy_path = ["../../src"]
 
 [[tool.mypy.overrides]]
 module = ["aijurisdictionagents", "aijurisdictionagents.*"]
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = ["services", "services.*"]
 follow_imports = "skip"
 
 [tool.hatch.build.targets.wheel]

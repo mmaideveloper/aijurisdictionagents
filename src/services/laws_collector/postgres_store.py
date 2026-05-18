@@ -142,6 +142,26 @@ class PostgresLawStore:
             conn.commit()
             return document_id, False
 
+
+    def get_version_content_fingerprint(
+        self,
+        *,
+        document_id: str,
+        version_token: str,
+    ) -> tuple[str, str, str] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT version_checksum, html_checksum, pdf_checksum
+                FROM law_versions
+                WHERE document_id = %(document_id)s AND version_token = %(version_token)s
+                """,
+                {"document_id": document_id, "version_token": version_token},
+            ).fetchone()
+            if row is None:
+                return None
+            return (str(row["version_checksum"]), str(row["html_checksum"]), str(row["pdf_checksum"]))
+
     def upsert_version(
         self,
         *,
@@ -207,6 +227,9 @@ class PostgresLawStore:
                 return StoredVersion(version_id=version_id, state="created")
 
             version_id = str(row["version_id"])
+            effective_embedding_model = embedding_model or str(row["embedding_model"])
+            effective_embedding_dimensions = embedding_dimensions or int(row["embedding_dimensions"])
+            effective_embedding_vector = embedding_vector or str(row["embedding_vector"])
             changed = any(
                 (
                     row["version_checksum"] != version_checksum,
@@ -216,9 +239,9 @@ class PostgresLawStore:
                     row["html_bytes"] != html_bytes,
                     row["pdf_bytes"] != pdf_bytes,
                     row["normalized_json"] != normalized_json,
-                    row["embedding_model"] != embedding_model,
-                    row["embedding_dimensions"] != embedding_dimensions,
-                    row["embedding_vector"] != embedding_vector,
+                    row["embedding_model"] != effective_embedding_model,
+                    row["embedding_dimensions"] != effective_embedding_dimensions,
+                    row["embedding_vector"] != effective_embedding_vector,
                     row["status"] != snapshot.status,
                 )
             )
@@ -244,9 +267,9 @@ class PostgresLawStore:
                         "html_bytes": html_bytes,
                         "pdf_bytes": pdf_bytes,
                         "normalized_json": normalized_json,
-                        "embedding_model": embedding_model,
-                        "embedding_dimensions": embedding_dimensions,
-                        "embedding_vector": embedding_vector,
+                        "embedding_model": effective_embedding_model,
+                        "embedding_dimensions": effective_embedding_dimensions,
+                        "embedding_vector": effective_embedding_vector,
                         "now": now,
                         "version_id": version_id,
                     },

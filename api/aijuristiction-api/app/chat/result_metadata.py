@@ -638,6 +638,9 @@ def _persist_model_knowledge_cutoff_snapshot(
 def _resolve_model_knowledge_cutoff_via_web_search(model_name: str) -> tuple[str, str] | None:
     if not model_name or model_name == "unknown":
         return None
+    fast_snapshot = _known_model_knowledge_cutoff_fast_path(model_name)
+    if fast_snapshot is not None:
+        return fast_snapshot
     agent = AIWebSearchAgent()
     for lookup_candidate in _model_lookup_candidates(model_name):
         try:
@@ -671,6 +674,13 @@ def _resolve_model_knowledge_cutoff_via_web_search(model_name: str) -> tuple[str
         known_snapshot = _KNOWN_MODEL_KNOWLEDGE_CUTOFFS.get(lookup_candidate)
         if known_snapshot is not None:
             return known_snapshot
+    return None
+
+
+def _known_model_knowledge_cutoff_fast_path(model_name: str) -> tuple[str, str] | None:
+    for lookup_candidate in _model_lookup_candidates(model_name):
+        if lookup_candidate == "gpt-4o-mini":
+            return _KNOWN_MODEL_KNOWLEDGE_CUTOFFS[lookup_candidate]
     return None
 
 

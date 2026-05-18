@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import 'app_logger_base.dart';
+import 'app_logger_sanitizer.dart';
 
 class FileAppLogger implements AppLogger {
   FileAppLogger._(this._file, {required bool debugModeEnabled})
@@ -22,8 +23,8 @@ class FileAppLogger implements AppLogger {
   @override
   Future<void> setDebugModeEnabled(bool enabled) async {
     _debugModeEnabled = enabled;
-    final marker =
-        File('${_file.parent.path}${Platform.pathSeparator}$_debugModeFileName');
+    final marker = File(
+        '${_file.parent.path}${Platform.pathSeparator}$_debugModeFileName');
     if (enabled) {
       await marker.writeAsString('1', flush: true);
     } else if (await marker.exists()) {
@@ -79,7 +80,7 @@ class FileAppLogger implements AppLogger {
       'timestamp': DateTime.now().toIso8601String(),
       'level': level,
       'message': message,
-      'context': context,
+      'context': sanitizeLogContext(context),
     };
     final line = '${jsonEncode(entry)}\n';
     _writeQueue = _writeQueue.then(
@@ -117,8 +118,7 @@ Future<AppLogger> createAppLogger() async {
   final debugModeFile =
       File('${logDirectory.path}${Platform.pathSeparator}$_debugModeFileName');
   final debugModeEnabled = await debugModeFile.exists();
-  final logger =
-      FileAppLogger._(file, debugModeEnabled: debugModeEnabled);
+  final logger = FileAppLogger._(file, debugModeEnabled: debugModeEnabled);
   await logger.info(
     'Logger initialized',
     {'log_file': file.path, 'debug_mode_enabled': debugModeEnabled},

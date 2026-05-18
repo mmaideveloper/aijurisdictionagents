@@ -21,6 +21,7 @@ from app.document_templates.api import router as document_templates_router
 from app.flow_packs.api import router as flow_packs_router
 from app.laws_api import router as laws_router
 from app.logging_config import configure_logging
+from app.mcp_api import router as mcp_router
 from app.observability_api import router as observability_router
 from app.telemetry import configure_telemetry, instrument_fastapi
 from app.users.api import router as users_router
@@ -31,6 +32,7 @@ from app.versioning import (
     get_mobile_app_release_url,
     get_mobile_app_version,
 )
+from app.voice_intent_api import router as voice_intent_router
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.db_migrations import apply_sql_migrations
@@ -148,7 +150,9 @@ app.include_router(flow_packs_router)
 app.include_router(laws_router)
 app.include_router(users_router)
 app.include_router(cases_router)
+app.include_router(voice_intent_router)
 app.include_router(observability_router)
+app.include_router(mcp_router)
 instrument_fastapi(app)
 
 

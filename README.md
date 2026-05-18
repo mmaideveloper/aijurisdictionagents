@@ -58,6 +58,40 @@ python scripts/sync_codex_skills.py --force
 
 For details, see `docs/PROJECT_SKILLS.md`.
 
+## Portable Codex Automations
+
+Repo-owned Codex automation templates are versioned under `.codex/automations/`.
+They can be synced into the local Codex profile for the selected checkout.
+
+Preview the automations that would be synced:
+
+```powershell
+.\scripts\sync_codex_automations.ps1 -DryRun
+```
+
+Install or refresh all repo automations:
+
+```powershell
+.\scripts\sync_codex_automations.ps1
+```
+
+For details, see `docs/CODEX_AUTOMATIONS.md`.
+
+Audio/action recognizer architecture and action-agent mapping:
+
+Voice intent router for web and mobile STT commands:
+
+```bash
+python examples/voice_intent_router_demo.py
+```
+
+See `docs/VOICE_INTENT_ROUTER.md`.
+
+```bash
+cat docs/AUDIO_ACTION_TOOLING.md
+```
+
+
 Project polling automation (local scripts):
 
 ```bash

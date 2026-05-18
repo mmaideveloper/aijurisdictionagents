@@ -282,6 +282,7 @@ Storage rules:
 - local dev/test keeps ZIPs under `./archivelaws/laws-collection-sk`
 - when `LAWS_STORAGE_CLOUD` is configured, the worker also persists those ZIPs to Azure Blob and records the blob URL in `archive_import_assets.storage_path`
 - Azure deployments now default that blob target to `https://<AZURE_STORAGE_ACCOUNT_NAME>.blob.core.windows.net/laws-collection-sk`
+- **implementation parity rule**: every laws-collector database/schema/behavior change must be implemented for both SQLite and PostgreSQL stores in the same change (including migrations, store methods, and tests/validation)
 
 Run the default ZIP importer locally:
 
@@ -521,6 +522,7 @@ The deploy script builds the image in ACR and deploys it to Azure Container Apps
 The Azure job now runs the real sequential live collector path (`LAWS_WORKER_FIXTURE=live`) and uses:
 
 - `LAWS_COLLECTOR_IMPORT` to choose the live ingestion path; default `zip`, optional `one_law_url`
+- `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` to control parallel zip entry decoding/import workers for archive and monthly bundles (default `4`; example `10`)
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES` to control how many Slov-Lex probes execute in each scheduled run (default `1`)
 - `LAWS_COLLECTOR_MAX_RUNNING_TIME` to cap a single Azure run in minutes (default `60`, set `0` for unlimited)
 
@@ -587,3 +589,74 @@ For interactive debugging of the real sequential collector with logs visible in 
   runs the same local PostgreSQL ingest path with `LLM_PROVIDER=mock`, which is the easiest way to debug collector flow without stepping into the OpenAI SDK or waiting on provider limits.
 - `Attach Laws Collector`:
   attaches to an already running `debugpy` listener on `127.0.0.1:5678`; logs stay in whichever terminal launched that process.
+
+
+Minimal local config check for parallel zip import:
+
+```powershell
+$env:LAWS_COLLECTOR_IMPORT="zip"
+$env:LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS="10"
+.\.conda\python.exe examples/laws_collector_zip_parallel_demo.py
+```
+
+
+## Operational run cases (archive/monthly/live probe/consistency)
+
+### Case 1: brand new collector with empty database
+1. Run archive import (`LAWS_COLLECTOR_IMPORT=zip`) and process full archive bundles.
+2. Continue with latest monthly delta (`exportZmeny.zip`).
+3. Probe and ingest live laws after the last imported law (`last_number/year + 1`).
+4. Run consistency pass from the configured first law through the latest known imported law.
+
+### Case 2: interrupted during archive processing
+1. Resume from `collector_import_state.last_processed_entry` for the same archive import key.
+2. Finish remaining archive entries.
+3. Continue with monthly import and then live probing.
+4. Run consistency pass and persist the consistency cursor.
+
+### Case 3: archive already complete
+1. Skip archive import when `slov-lex:zip:archive-seed` state is `completed`.
+2. Process the newest monthly bundle if not yet completed.
+3. Probe live for next law after the highest imported law.
+4. Run consistency pass from saved cursor to latest imported law.
+
+### Case 4: consistency scan behavior
+- First consistency pass scans from `1/1945` to current highest imported law.
+- For each missing law in local DB, try live download+ingest+vectorization.
+- If live download fails, record error and continue.
+- Save last checked law so next run continues from saved cursor.
+
+### Recommended validation set
+- Re-running same monthly ZIP is idempotent (no duplicates).
+- Content-changed law version re-vectorizes.
+- Content-unchanged law version skips re-vectorization.
+- Archive resume after interruption continues at next unprocessed entry.
+- Consistency pass survives transient download failures and continues.
+
+## Azure deployment recommendations
+
+### A) DEV database already contains fully processed archive
+Use a monthly+live maintenance profile (avoid unnecessary archive replay):
+
+- `LAWS_COLLECTOR_IMPORT=zip`
+- `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS=4` (or `2` for low CPU plans)
+- `AZURE_LAWS_COLLECTOR_MAX_PROBES=5` (or higher for faster catch-up)
+- `LAWS_COLLECTOR_MAX_RUNNING_TIME=60`
+- `LAWS_WORKER_FIXTURE=live`
+
+Operational guidance:
+- Keep archive state marked `completed` in DB for `slov-lex:zip:archive-seed`.
+- Collector will skip archive and continue monthly + live probing.
+
+### B) Empty or partially processed archive database
+Use a bootstrap profile with stronger ZIP throughput:
+
+- `LAWS_COLLECTOR_IMPORT=zip`
+- `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS=10`
+- `AZURE_LAWS_COLLECTOR_MAX_PROBES=1` during bootstrap (most work comes from ZIP import)
+- `LAWS_COLLECTOR_MAX_RUNNING_TIME=120` (or `0` for unlimited dedicated bootstrap runs)
+- `LAWS_WORKER_FIXTURE=live`
+
+Operational guidance:
+- Run repeated scheduled jobs until archive state and monthly state are both `completed`.
+- After bootstrap finishes, switch to maintenance profile from scenario A.

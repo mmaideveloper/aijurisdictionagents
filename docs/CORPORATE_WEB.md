@@ -28,6 +28,20 @@ Then open `http://localhost:8000` in a browser.
 - Legal section content is translated for `sk`, `de`, and `en`.
 - Disclaimer includes a visible `Last Updated` date.
 
+## News and articles
+
+- The homepage exposes a discoverable articles section at `#articles`.
+- Article detail views use static hash routes in `index.html`, such as
+  `#article-mcp-ai-assistants`, `#article-slovak-service-integrations`, and
+  `#article-security-gdpr-ai-act`.
+- The overview and detail pages both render a right-side context menu from the same `articles`
+  array in `corporate-web/index.html`; it shows each article name and date.
+- Article body copy is currently maintained in Slovak. The section UI has SK/DE/EN labels and shows
+  a translated notice on DE/EN pages until reviewed body translations are added.
+- The MCP article must stay marked as planned/upcoming until the backend `/mcp` endpoint and
+  user-generated MCP API-key management are actually deployed.
+- Do not add analytics, remote embeds, or third-party trackers to article content.
+
 ## Deployment (GitHub Actions)
 
 Workflow: `.github/workflows/corporate_web_deploy.yml`

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -20,6 +21,7 @@ from .archive_storage import ArchiveObjectStore, build_archive_object_store
 from .config import LawsCollectorConfig
 from .domain import ArchiveImportAsset, CollectorImportState, CollectorProgress, LawSnapshot, SyncSummary
 from .service import LawsCollectorService
+from .slovlex_process import SlovLexSequentialImportRunner
 from .slovlex_live_source import (
     _build_metadata_record,
     _normalize_date_value,
@@ -122,6 +124,7 @@ class SlovLexZipImportSummary:
     last_processed_law: str | None
     stopped_due_to_max_running_time: bool = False
     skipped_as_already_completed: bool = False
+    live_probe_summary: object | None = None
 
 
 class SlovLexExportIndexLoader:
@@ -155,7 +158,7 @@ class SlovLexZipImportRunner:
         self.archive_object_store = archive_object_store or build_archive_object_store(config)
         self._monotonic_time = monotonic_time_provider
 
-    def run(self, *, max_running_seconds: float = 0) -> SlovLexZipImportSummary:
+    def run(self, *, max_running_seconds: float = 0, run_live_probe: bool = False) -> SlovLexZipImportSummary:
         started_at = self._monotonic_time()
         index = self.export_index_loader.load()
         _log_zip(
@@ -266,11 +269,42 @@ class SlovLexZipImportRunner:
             "monthly import starting "
             f"range={index.monthly_export.range_start}..{index.monthly_export.range_end}"
         )
-        return self._process_monthly(
+        monthly_summary = self._process_monthly(
             export=index.monthly_export,
             max_running_seconds=max_running_seconds,
             started_at=started_at,
             archive_completed=archive_completed,
+        )
+        if monthly_summary.stopped_due_to_max_running_time or not run_live_probe:
+            return monthly_summary
+        return self._run_live_probe(monthly_summary)
+
+    def _run_live_probe(self, summary: SlovLexZipImportSummary) -> SlovLexZipImportSummary:
+        runner = SlovLexSequentialImportRunner(
+            config=self.config,
+            store=self.store,
+            service=self.service,
+        )
+        live_probe_summary = runner.run(max_probes=1)
+        _log_zip(
+            "live probe completed "
+            f"probes={live_probe_summary.probes} "
+            f"laws_found={live_probe_summary.laws_found} "
+            f"next_law_to_check={live_probe_summary.next_law_to_check}"
+        )
+        return SlovLexZipImportSummary(
+            phase=summary.phase,
+            import_key=summary.import_key,
+            import_label=summary.import_label,
+            entries_processed=summary.entries_processed,
+            sync_summary=summary.sync_summary,
+            archive_completed=summary.archive_completed,
+            monthly_completed=summary.monthly_completed,
+            last_processed_entry=summary.last_processed_entry,
+            last_processed_law=summary.last_processed_law,
+            stopped_due_to_max_running_time=summary.stopped_due_to_max_running_time,
+            skipped_as_already_completed=summary.skipped_as_already_completed,
+            live_probe_summary=live_probe_summary,
         )
 
     def _process_archive(
@@ -433,18 +467,26 @@ class SlovLexZipImportRunner:
                 f"resume_after={resume_entry}"
             )
 
+        pending_entries: list[Path] = []
         for entry in entries:
             relative_entry = entry.relative_to(extract_root).as_posix()
             if not resume_reached:
                 if relative_entry == resume_entry:
                     resume_reached = True
                 continue
+            pending_entries.append(entry)
+
+        max_workers = 1 if max_running_seconds > 0 else max(1, self.config.import_zip_max_threads)
+        if max_workers == 1:
+            snapshot_items = [(entry, load_snapshot_from_entry_file(entry)) for entry in pending_entries]
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                loaded = list(executor.map(load_snapshot_from_entry_file, pending_entries))
+            snapshot_items = list(zip(pending_entries, loaded, strict=True))
+
+        for entry, snapshot in snapshot_items:
+            relative_entry = entry.relative_to(extract_root).as_posix()
             if max_running_seconds > 0 and (self._monotonic_time() - started_at) >= max_running_seconds:
-                _log_zip(
-                    "max running time reached "
-                    f"phase={metadata.get('phase', 'zip')} import_key={import_key} "
-                    f"last_processed_law={last_state.last_processed_law or ''}"
-                )
                 return SlovLexZipImportSummary(
                     phase=str(metadata.get("phase", "zip")),
                     import_key=import_key,
