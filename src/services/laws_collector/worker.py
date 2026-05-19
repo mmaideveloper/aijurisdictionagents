@@ -81,7 +81,8 @@ def run_worker() -> None:
         f"country={config.country_code} db_backend={config.db_backend} "
         f"import_mode={import_mode} "
         f"embedding_option={embedding_runtime.option} "
-        f"embedding_model={embedding_runtime.model}"
+        f"embedding_model={embedding_runtime.model} "
+        f"embedding_device={embedding_runtime.device or ''}"
     )
 
     try:

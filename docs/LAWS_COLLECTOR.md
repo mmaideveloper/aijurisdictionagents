@@ -331,6 +331,7 @@ The shared embedding switch now supports:
 
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default runtime mode
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2` as the default local sentence-transformer model
+- `SYSTEM_EMBEDDING_DEVICE=auto` so local embeddings use CUDA/MPS when available and fall back to CPU on missing GPU support or runtime errors
 - repo-local model caching under `aimodels/`
 - Azure deployment prefetches the configured local model into `aimodels/` before the ACR build and bakes it into the worker image under `/app/aimodels`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default for Azure worker deployments
@@ -351,6 +352,7 @@ The service also exposes semantic ranking over persisted law vectors through `La
 Local execution logs now show:
 
 - the startup embedding runtime line with `embedding_option` and `embedding_model`
+- the resolved local embedding device as `embedding_device`
 - when a law starts processing
 - when the document upload reaches the database and its status
 - when vectorization starts
@@ -360,7 +362,7 @@ Local execution logs now show:
 
 Example startup log:
 
-- `[laws-collector] startup country=SK db_backend=postgres embedding_option=local embedding_model=all-MiniLM-L6-v2`
+- `[laws-collector] startup country=SK db_backend=postgres embedding_option=local embedding_model=all-MiniLM-L6-v2 embedding_device=cpu`
 - When the Azure ACA job receives `APPLICATIONINSIGHTS_CONNECTION_STRING`, the same worker logs are exported to Application Insights under application name `laws_collector`, which lets the API observability endpoint filter them separately from `api` and `document_processor`.
 
 
@@ -417,6 +419,7 @@ Azure deployments default the worker embeddings to the local sentence-transforme
 
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
+- `SYSTEM_EMBEDDING_DEVICE=auto`
 
 Future cloud settings:
 
@@ -522,7 +525,7 @@ The deploy script builds the image in ACR and deploys it to Azure Container Apps
 The Azure job now runs the real sequential live collector path (`LAWS_WORKER_FIXTURE=live`) and uses:
 
 - `LAWS_COLLECTOR_IMPORT` to choose the live ingestion path; default `zip`, optional `one_law_url`
-- `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` to control parallel zip entry decoding/import workers for archive and monthly bundles (default `4`; example `10`)
+- `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` to control parallel zip entry decoding/import workers for archive and monthly bundles (default `4`; local example `5`; bootstrap example `10`)
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES` to control how many Slov-Lex probes execute in each scheduled run (default `1`)
 - `LAWS_COLLECTOR_MAX_RUNNING_TIME` to cap a single Azure run in minutes (default `60`, set `0` for unlimited)
 
@@ -610,7 +613,7 @@ $env:LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS="10"
 
 ### Case 2: interrupted during archive processing
 1. Resume from `collector_import_state.last_processed_entry` for the same archive import key.
-2. Stream remaining archive entries and persist the cursor after each processed law.
+2. Stream remaining archive entries through parallel law-group workers and persist the cursor in archive order after each processed law.
 3. Continue with monthly import and then live probing.
 4. Run consistency pass and persist the consistency cursor.
 

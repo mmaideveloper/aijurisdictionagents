@@ -577,6 +577,7 @@ def test_laws_collector_logs_embedding_runtime_on_startup(monkeypatch, caplog) -
     assert "[laws-collector] startup" in output
     assert "embedding_option=local" in output
     assert "embedding_model=all-MiniLM-L6-v2" in output
+    assert "embedding_device=" in output
 
 
 def test_laws_collector_splits_large_laws_into_multiple_embedding_chunks(tmp_path: Path) -> None:

@@ -127,6 +127,14 @@ class SlovLexZipImportSummary:
     live_probe_summary: object | None = None
 
 
+@dataclass(frozen=True)
+class _ZipEntryImportResult:
+    relative_entry: str
+    snapshot: LawSnapshot
+    sync_summary: SyncSummary
+    skipped_by_history: bool = False
+
+
 class SlovLexExportIndexLoader:
     def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
         request = Request(_EXPORT_INDEX_URL, headers=_REQUEST_HEADERS)
@@ -476,27 +484,31 @@ class SlovLexZipImportRunner:
                 continue
             pending_entries.append(entry)
 
-        def process_entry_snapshot(entry: Path, snapshot: LawSnapshot) -> None:
-            nonlocal collector_progress, entries_processed, highest_processed_law, last_state, sync_summary
+        def import_entry(entry: Path) -> _ZipEntryImportResult:
+            snapshot = load_snapshot_from_entry_file(entry)
             relative_entry = entry.relative_to(extract_root).as_posix()
             if snapshot.year < self.config.historical_import_from.year:
-                entries_processed += 1
-                last_state = last_state.evolve(
-                    status="in_progress",
-                    last_processed_at=_now_iso(),
-                    last_processed_entry=relative_entry,
-                    last_processed_law_year=snapshot.year,
-                    last_processed_law_number=snapshot.number,
-                    metadata=metadata,
+                return _ZipEntryImportResult(
+                    relative_entry=relative_entry,
+                    snapshot=snapshot,
+                    sync_summary=SyncSummary(),
+                    skipped_by_history=True,
                 )
-                self.store.upsert_import_state(last_state)
-                return
-            sync_summary = sync_summary.merge(self.service.sync((snapshot,)))
+            return _ZipEntryImportResult(
+                relative_entry=relative_entry,
+                snapshot=snapshot,
+                sync_summary=self.service.sync((snapshot,)),
+            )
+
+        def acknowledge_import_result(result: _ZipEntryImportResult) -> None:
+            nonlocal collector_progress, entries_processed, highest_processed_law, last_state, sync_summary
+            snapshot = result.snapshot
+            sync_summary = sync_summary.merge(result.sync_summary)
             entries_processed += 1
             last_state = last_state.evolve(
                 status="in_progress",
                 last_processed_at=_now_iso(),
-                last_processed_entry=relative_entry,
+                last_processed_entry=result.relative_entry,
                 last_processed_law_year=snapshot.year,
                 last_processed_law_number=snapshot.number,
                 metadata=metadata,
@@ -533,15 +545,23 @@ class SlovLexZipImportRunner:
                         last_processed_law=last_state.last_processed_law,
                         stopped_due_to_max_running_time=True,
                     )
-                process_entry_snapshot(entry, load_snapshot_from_entry_file(entry))
+                acknowledge_import_result(import_entry(entry))
         else:
+            entry_groups = _group_entries_by_law(pending_entries, extract_root=extract_root)
+            _log_zip(
+                "parallel import starting "
+                f"phase={metadata.get('phase', 'zip')} import_key={import_key} "
+                f"workers={max_workers} groups={len(entry_groups)} entries={len(pending_entries)}"
+            )
+
+            def import_group(group: tuple[Path, ...]) -> tuple[_ZipEntryImportResult, ...]:
+                return tuple(import_entry(entry) for entry in group)
+
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                for entry, snapshot in zip(
-                    pending_entries,
-                    executor.map(load_snapshot_from_entry_file, pending_entries),
-                    strict=True,
-                ):
-                    process_entry_snapshot(entry, snapshot)
+                group_futures = [executor.submit(import_group, group) for group in entry_groups]
+                for future in group_futures:
+                    for result in future.result():
+                        acknowledge_import_result(result)
 
         completed_state = last_state.evolve(
             status="completed",
@@ -659,6 +679,22 @@ def iter_slovlex_entry_files(extract_root: Path) -> tuple[Path, ...]:
             continue
         entries.append(candidate)
     return tuple(entries)
+
+
+def _group_entries_by_law(entries: list[Path], *, extract_root: Path) -> tuple[tuple[Path, ...], ...]:
+    groups: list[list[Path]] = []
+    group_keys: list[tuple[int, int]] = []
+    for entry in entries:
+        parsed = _parse_entry_path(entry, extract_root=extract_root)
+        if parsed is None:
+            continue
+        key = (parsed[0], parsed[1])
+        if groups and group_keys[-1] == key:
+            groups[-1].append(entry)
+            continue
+        groups.append([entry])
+        group_keys.append(key)
+    return tuple(tuple(group) for group in groups)
 
 
 def load_snapshot_from_entry_file(entry_file: Path) -> LawSnapshot:
