@@ -404,6 +404,7 @@ Shared embedding runtime:
 - default runtime mode is `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 - default local model is `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
 - default local device selection is `SYSTEM_EMBEDDING_DEVICE=auto`, which tries CUDA/MPS and falls back to CPU if GPU support is unavailable or fails at runtime
+- local NVIDIA GPU use requires a CUDA-enabled PyTorch build; use `scripts/install_cuda_torch.ps1` for the repo conda environment
 - local model files are cached in `aimodels/`
 - Azure worker deployments default `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 

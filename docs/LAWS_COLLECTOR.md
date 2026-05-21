@@ -335,6 +335,14 @@ The shared embedding switch now supports:
 - repo-local model caching under `aimodels/`
 - Azure deployment prefetches the configured local model into `aimodels/` before the ACR build and bakes it into the worker image under `/app/aimodels`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` as the default for Azure worker deployments
+
+On Windows laptops with NVIDIA GPUs, install a CUDA-enabled PyTorch build into the repo conda environment before expecting `embedding_device=cuda`:
+
+```powershell
+.\scripts\install_cuda_torch.ps1 -CudaWheel cu124
+```
+
+If Windows sees an NVIDIA GPU but the Python environment still has CPU-only PyTorch, startup logs keep `embedding_device=cpu` and emit a warning that CUDA PyTorch is unavailable.
 The same live HTML source now also persists structured metadata from the `Informácie o predpise` panel into `law_metadata` and stores dependency edges from the `Vzťahy predpisu` panel in `law_metadata_relations`. That includes:
 
 - law identifier, title, type, approval/publication/effective dates, author, issue reference, legal areas

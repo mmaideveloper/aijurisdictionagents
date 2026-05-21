@@ -145,6 +145,14 @@ Conda notes:
 - Conda manages the interpreter and system packages; `pyproject.toml` defines the Python project metadata,
   dependencies, and tooling (needed for `pip install -e .`).
 
+Enable NVIDIA GPU embeddings in the local conda environment:
+
+```powershell
+.\scripts\install_cuda_torch.ps1 -CudaWheel cu124
+```
+
+Then restart the laws collector. `SYSTEM_EMBEDDING_DEVICE=auto` will select `cuda` when PyTorch reports CUDA support; otherwise the runtime falls back to CPU and logs the reason.
+
 
 
 ## Local model builder service

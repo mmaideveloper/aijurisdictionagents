@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import subprocess
 import time
 from typing import Any, Callable, Protocol, Sequence
 
@@ -425,8 +426,19 @@ def _resolve_local_embedding_device(requested_device: str) -> str:
         try:
             if torch.cuda.is_available():
                 return "cuda"
+            nvidia_gpu_name = _detect_nvidia_gpu_name()
+            if nvidia_gpu_name:
+                _LOGGER.warning(
+                    "NVIDIA GPU detected (%s), but PyTorch CUDA is unavailable; "
+                    "falling back to CPU. Install a CUDA-enabled PyTorch build to use GPU "
+                    "embeddings.",
+                    nvidia_gpu_name,
+                )
             if requested == "cuda":
-                _LOGGER.warning("SYSTEM_EMBEDDING_DEVICE=cuda requested but CUDA is unavailable; falling back to CPU.")
+                _LOGGER.warning(
+                    "SYSTEM_EMBEDDING_DEVICE=cuda requested but CUDA is unavailable; "
+                    "falling back to CPU."
+                )
         except Exception as exc:
             _LOGGER.warning("CUDA detection failed; falling back to CPU. Error: %s", exc)
         if requested == "cuda":
@@ -443,6 +455,27 @@ def _resolve_local_embedding_device(requested_device: str) -> str:
             _LOGGER.warning("MPS detection failed; falling back to CPU. Error: %s", exc)
 
     return "cpu"
+
+
+def _detect_nvidia_gpu_name() -> str | None:
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name",
+                "--format=csv,noheader",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    first_line = result.stdout.splitlines()[0].strip() if result.stdout.splitlines() else ""
+    return first_line or None
 
 
 def _coerce_local_vectors(raw_vectors: Any) -> list[list[float]]:

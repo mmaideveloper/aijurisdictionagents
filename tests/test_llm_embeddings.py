@@ -106,10 +106,29 @@ def test_resolve_local_embedding_device_falls_back_when_cuda_unavailable(monkeyp
         backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
     )
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(embeddings, "_detect_nvidia_gpu_name", lambda: None)
 
     device = embeddings._resolve_local_embedding_device("cuda")
 
     assert device == "cpu"
+
+
+def test_resolve_local_embedding_device_logs_when_nvidia_gpu_has_cpu_torch(
+    monkeypatch,
+    caplog,
+) -> None:
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(embeddings, "_detect_nvidia_gpu_name", lambda: "NVIDIA GeForce GTX 1660 Ti")
+
+    device = embeddings._resolve_local_embedding_device("auto")
+
+    assert device == "cpu"
+    assert "NVIDIA GPU detected" in caplog.text
+    assert "PyTorch CUDA is unavailable" in caplog.text
 
 
 def test_sentence_transformer_backend_falls_back_to_cpu_after_gpu_encode_error() -> None:
