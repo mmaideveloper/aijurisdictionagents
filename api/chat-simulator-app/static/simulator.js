@@ -21,6 +21,8 @@ const documentDebugEl = document.getElementById("documentDebug");
 const chatTranscriptEl = document.getElementById("chatTranscript");
 const chatReplyForm = document.getElementById("chatReplyForm");
 const userReplyInput = document.getElementById("userReplyInput");
+const toggleMicButton = document.getElementById("toggleMic");
+const toggleAudioButton = document.getElementById("toggleAudio");
 const userSimulationModeInput = document.getElementById("userSimulationMode");
 const sendUserReplyButton = document.getElementById("sendUserReply");
 const replyStatus = document.getElementById("replyStatus");
@@ -76,6 +78,73 @@ let processingStatusTimerId = null;
 let processingStatusBaseMessage = "";
 let processingStatusStartedAt = 0;
 let activeCaseSelectionMode = null;
+let recognition = null;
+let micEnabled = false;
+let audioEnabled = true;
+let pauseConfirmationTimerId = null;
+let lastSpeechAt = 0;
+const pauseConfirmationMs = 10_000;
+const bargeInThresholdMs = 500;
+const finishPromptByLanguage = {
+  SK: "Dokončili ste otázku?",
+  EN: "Did you finish?",
+  GE: "Haben Sie fertig gesprochen?",
+};
+
+function finishPromptForLanguage() {
+  return finishPromptByLanguage[normalizeLanguageCode(languageInput?.value || defaultLanguageCode)] || finishPromptByLanguage.SK;
+}
+
+function stopAssistantSpeech() {
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+function speakAssistantText(text) {
+  if (!audioEnabled || !("speechSynthesis" in window)) return;
+  const content = String(text || "").trim();
+  if (!content) return;
+  const utterance = new SpeechSynthesisUtterance(content);
+  utterance.lang = normalizeLanguageCode(languageInput?.value || defaultLanguageCode) === "SK" ? "sk-SK" : "en-US";
+  window.speechSynthesis.speak(utterance);
+}
+
+function schedulePauseConfirmation() {
+  if (pauseConfirmationTimerId) clearTimeout(pauseConfirmationTimerId);
+  pauseConfirmationTimerId = setTimeout(async () => {
+    const prompt = finishPromptForLanguage();
+    appendChatMessage({ role: "assistant", content: prompt, agent_name: "System/Voice" });
+    speakAssistantText(prompt);
+  }, pauseConfirmationMs);
+}
+
+function setupBrowserSpeechRecognition() {
+  const BrowserSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!BrowserSpeechRecognition) return null;
+  const speech = new BrowserSpeechRecognition();
+  speech.continuous = true;
+  speech.interimResults = true;
+  speech.lang = normalizeLanguageCode(languageInput?.value || defaultLanguageCode) === "SK" ? "sk-SK" : "en-US";
+  speech.onresult = (event) => {
+    const now = Date.now();
+    const result = event.results[event.results.length - 1];
+    const transcript = String(result?.[0]?.transcript || "").trim();
+    if (!transcript) return;
+    if (now - lastSpeechAt >= bargeInThresholdMs) {
+      stopAssistantSpeech();
+    }
+    lastSpeechAt = now;
+    userReplyInput.value = `${userReplyInput.value.trim()} ${transcript}`.trim();
+    schedulePauseConfirmation();
+  };
+  speech.onend = () => {
+    if (micEnabled) {
+      speech.start();
+    }
+  };
+  return speech;
+}
 
 function decodeBase64ToBytes(base64Value) {
   const normalized = String(base64Value || "").trim();
@@ -583,6 +652,9 @@ function appendChatMessage(message) {
   clearChatPlaceholder();
   chatTranscriptEl.appendChild(buildChatMessageNode(message));
   chatTranscriptEl.scrollTop = chatTranscriptEl.scrollHeight;
+  if (message && message.role === "assistant") {
+    speakAssistantText(message.content);
+  }
 }
 
 function localizedThinkingMessage() {
@@ -2042,6 +2114,36 @@ if (existingCaseInput) {
 }
 
 initializeSimulator();
+
+if (toggleAudioButton) {
+  toggleAudioButton.addEventListener("click", () => {
+    audioEnabled = !audioEnabled;
+    toggleAudioButton.textContent = audioEnabled ? "🔊 Audio" : "🔈 Audio Off";
+    if (!audioEnabled) {
+      stopAssistantSpeech();
+    }
+  });
+}
+
+if (toggleMicButton) {
+  recognition = setupBrowserSpeechRecognition();
+  toggleMicButton.addEventListener("click", () => {
+    if (!recognition) {
+      appendStream("error: Browser speech recognition is unavailable.");
+      return;
+    }
+    micEnabled = !micEnabled;
+    toggleMicButton.textContent = micEnabled ? "🛑 Stop mic" : "🎤 Mic";
+    if (micEnabled) {
+      lastSpeechAt = Date.now();
+      recognition.start();
+      schedulePauseConfirmation();
+    } else {
+      recognition.stop();
+      if (pauseConfirmationTimerId) clearTimeout(pauseConfirmationTimerId);
+    }
+  });
+}
 
 
 const toolModeInput = document.getElementById("toolMode");

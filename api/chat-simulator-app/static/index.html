@@ -263,6 +263,10 @@
             <input id="communicationMinutes" type="number" min="1" value="30" />
 
             <label for="userReplyInput">End user answer</label>
+            <div class="voice-toolbar">
+              <button id="toggleMic" class="secondary" type="button" title="Toggle microphone">🎤 Mic</button>
+              <button id="toggleAudio" class="secondary" type="button" title="Toggle assistant audio">🔊 Audio</button>
+            </div>
             <textarea id="userReplyInput" placeholder="Type end user response..."></textarea>
             <small id="replyStatus">Manual Send answer is available only in ReadUser mode.</small>
             <button id="sendUserReply" type="submit">Send answer</button>
