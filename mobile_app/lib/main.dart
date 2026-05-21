@@ -291,6 +291,7 @@ class AppStrings {
           'Hlasový vstup sa pozastavil. Klepnite na mikrofón pre pokračovanie.',
       'speech_send_confirmation_prompt':
           'Už minútu som nezachytila ďalšiu reč. Ak chcete správu odoslať, povedzte Posli. Ak ju chcete zmazať, povedzte Zrus vsetko.',
+      'speech_finish_confirmation_prompt': 'Dokončili ste otázku?',
       'speech_draft_cancelled': 'Rozpracovanú hlasovú správu som zmazala.',
       'speaker_output': 'Hlasový výstup asistenta',
       'speaker_voice_label': 'Hlas asistenta',
@@ -554,6 +555,7 @@ class AppStrings {
           'Speech input paused. Tap the microphone to continue.',
       'speech_send_confirmation_prompt':
           'I have not heard anything else for one minute. Say Send to send the message, or say Cancel everything to clear it.',
+      'speech_finish_confirmation_prompt': 'Did you finish?',
       'speech_draft_cancelled': 'I cleared the dictated message.',
       'speaker_output': 'Assistant voice output',
       'speaker_voice_label': 'Assistant voice',
@@ -822,6 +824,8 @@ class AppStrings {
           'Die Spracheingabe wurde pausiert. Tippen Sie auf das Mikrofon, um fortzufahren.',
       'speech_send_confirmation_prompt':
           'Ich habe eine Minute lang nichts Weiteres gehört. Sagen Sie Senden, um die Nachricht zu senden, oder Alles abbrechen, um sie zu löschen.',
+      'speech_finish_confirmation_prompt':
+          'Haben Sie Ihre Frage fertig gesprochen?',
       'speech_draft_cancelled': 'Ich habe die diktierte Nachricht gelöscht.',
       'speaker_output': 'Sprachausgabe des Assistenten',
       'speaker_voice_label': 'Assistentenstimme',
@@ -4692,6 +4696,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   String? _lastFinalSpeechResult;
   String? _lastHandledSpeechText;
   DateTime? _speechRecognitionStartedAt;
+  DateTime? _speechDraftStartedAt;
   Completer<void>? _speechStopCompleter;
   Timer? _speechSendPromptTimer;
   bool _submitSpeechOnStop = true;
@@ -4840,6 +4845,8 @@ class _ChatHomePageState extends State<ChatHomePage>
     _voiceSessionOrchestrator = VoiceSessionOrchestrator(
       ruleEngine: _ruleEngine,
       silenceThreshold: _speechSendPromptDelay,
+      confirmationPromptForLanguage: (_) =>
+          _strings.t('speech_finish_confirmation_prompt'),
       onSilenceThresholdReached: _onVoiceSilenceThresholdReached,
       onStateChanged: () {
         if (mounted) {
@@ -6118,6 +6125,16 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     final recognizedText = result.recognizedWords.trim();
+    if (recognizedText.isNotEmpty && _speechDraftStartedAt == null) {
+      _speechDraftStartedAt = DateTime.now();
+    }
+    if (_speakerOutputEnabled &&
+        recognizedText.isNotEmpty &&
+        _speechDraftStartedAt != null &&
+        DateTime.now().difference(_speechDraftStartedAt!) >=
+            const Duration(milliseconds: 500)) {
+      unawaited(_speaker.stop());
+    }
     final speechStartedAt = _speechRecognitionStartedAt ?? DateTime.now();
     if (result.finalResult && recognizedText.isNotEmpty) {
       _lastFinalSpeechResult = recognizedText;
@@ -6130,7 +6147,15 @@ class _ChatHomePageState extends State<ChatHomePage>
       _scheduleSpeechSendPrompt();
     }
     setState(() {
-      _inputController.text = result.recognizedWords;
+      final currentDraft = _inputController.text.trim();
+      if (currentDraft.isEmpty) {
+        _inputController.text = result.recognizedWords;
+      } else if (result.recognizedWords.trim().startsWith(currentDraft)) {
+        _inputController.text = result.recognizedWords;
+      } else {
+        _inputController.text =
+            '$currentDraft ${result.recognizedWords.trim()}'.trim();
+      }
       _inputController.selection = TextSelection.fromPosition(
         TextPosition(offset: _inputController.text.length),
       );
@@ -8267,6 +8292,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _lastHandledSpeechText = null;
     }
     _lastFinalSpeechResult = null;
+    _speechDraftStartedAt = null;
     _submitSpeechOnStop = true;
     _processSpeechOnStop = true;
     _speechRecognitionStartedAt = DateTime.now();
