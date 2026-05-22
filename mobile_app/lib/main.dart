@@ -279,6 +279,8 @@ class AppStrings {
           'Nainštalovaná aplikácia má iný podpis ako aktualizácia. Odinštalujte aktuálnu aplikáciu a potom nainštalujte novú verziu.',
       'allow_install_unknown_apps':
           'V nastaveniach Androidu povoľte inštalácie z tejto aplikácie a vráťte sa späť.',
+      'speech_no_input_detected':
+          'Nepočul som žiadnu reč. Skúste hovoriť bližšie k mikrofónu.',
       'speech_recognition_error': 'Chyba rozpoznávania reči: {{error}}',
       'speech_unavailable':
           'Rozpoznávanie reči na tomto zariadení nie je dostupné.',
@@ -291,6 +293,8 @@ class AppStrings {
           'Hlasový vstup sa pozastavil. Klepnite na mikrofón pre pokračovanie.',
       'speech_send_confirmation_prompt':
           'Už minútu som nezachytila ďalšiu reč. Ak chcete správu odoslať, povedzte Posli. Ak ju chcete zmazať, povedzte Zrus vsetko.',
+      'speech_answer_confirmation_prompt':
+          'Môžem už odpovedať na otázku? Povedzte áno alebo nie.',
       'speech_draft_cancelled': 'Rozpracovanú hlasovú správu som zmazala.',
       'speaker_output': 'Hlasový výstup asistenta',
       'speaker_voice_label': 'Hlas asistenta',
@@ -311,6 +315,10 @@ class AppStrings {
       'api_health_failed': 'API hlási chybu: {{error}}',
       'failed_to_reach_api_with_correlation':
           'Nepodarilo sa spojiť s API na adrese {{url}}: {{error}} (ID: {{id}})',
+      'assistant_response_failed':
+          'API je dostupné, ale odpoveď asistenta zlyhala. Skúste to znova.',
+      'assistant_response_failed_with_correlation':
+          'API je dostupné, ale odpoveď asistenta zlyhala. Skúste to znova. (ID: {{id}})',
       'checking_api': 'Kontrolujem API...',
       'api_unavailable_title': 'API nie je dostupné',
       'api_retry_in': 'Ďalší pokus o {{seconds}} s',
@@ -543,6 +551,8 @@ class AppStrings {
           'The installed app signature differs from the update APK. Uninstall the current app, then install the new version.',
       'allow_install_unknown_apps':
           'Allow installs from this app in Android settings, then return to continue the update.',
+      'speech_no_input_detected':
+          'I did not hear any speech. Try speaking closer to the microphone.',
       'speech_recognition_error': 'Speech recognition error: {{error}}',
       'speech_unavailable': 'Speech recognition is unavailable on this device.',
       'speech_input_toggle_label': 'Speech input',
@@ -554,6 +564,8 @@ class AppStrings {
           'Speech input paused. Tap the microphone to continue.',
       'speech_send_confirmation_prompt':
           'I have not heard anything else for one minute. Say Send to send the message, or say Cancel everything to clear it.',
+      'speech_answer_confirmation_prompt':
+          'May I answer the question now? Please say yes or no.',
       'speech_draft_cancelled': 'I cleared the dictated message.',
       'speaker_output': 'Assistant voice output',
       'speaker_voice_label': 'Assistant voice',
@@ -574,6 +586,10 @@ class AppStrings {
       'api_health_failed': 'API reported an unhealthy state: {{error}}',
       'failed_to_reach_api_with_correlation':
           'Failed to reach API at {{url}}: {{error}} (ID: {{id}})',
+      'assistant_response_failed':
+          'The API is reachable, but the assistant response failed. Try again.',
+      'assistant_response_failed_with_correlation':
+          'The API is reachable, but the assistant response failed. Try again. (ID: {{id}})',
       'checking_api': 'Checking API...',
       'api_unavailable_title': 'API unavailable',
       'api_retry_in': 'Retrying in {{seconds}} s',
@@ -810,6 +826,8 @@ class AppStrings {
           'Die Signatur der installierten App unterscheidet sich von der Update-APK. Deinstallieren Sie die aktuelle App und installieren Sie dann die neue Version.',
       'allow_install_unknown_apps':
           'Erlauben Sie Installationen aus dieser App in den Android-Einstellungen und kehren Sie dann zur App zurück.',
+      'speech_no_input_detected':
+          'Ich habe keine Sprache gehört. Bitte sprechen Sie näher am Mikrofon.',
       'speech_recognition_error': 'Fehler bei der Spracherkennung: {{error}}',
       'speech_unavailable':
           'Spracherkennung ist auf diesem Gerät nicht verfügbar.',
@@ -822,6 +840,8 @@ class AppStrings {
           'Die Spracheingabe wurde pausiert. Tippen Sie auf das Mikrofon, um fortzufahren.',
       'speech_send_confirmation_prompt':
           'Ich habe eine Minute lang nichts Weiteres gehört. Sagen Sie Senden, um die Nachricht zu senden, oder Alles abbrechen, um sie zu löschen.',
+      'speech_answer_confirmation_prompt':
+          'Darf ich die Frage jetzt beantworten? Bitte sagen Sie Ja oder Nein.',
       'speech_draft_cancelled': 'Ich habe die diktierte Nachricht gelöscht.',
       'speaker_output': 'Sprachausgabe des Assistenten',
       'speaker_voice_label': 'Assistentenstimme',
@@ -843,6 +863,10 @@ class AppStrings {
       'api_health_failed': 'API meldet einen ungesunden Status: {{error}}',
       'failed_to_reach_api_with_correlation':
           'API unter {{url}} konnte nicht erreicht werden: {{error}} (ID: {{id}})',
+      'assistant_response_failed':
+          'Die API ist erreichbar, aber die Antwort des Assistenten ist fehlgeschlagen. Versuchen Sie es erneut.',
+      'assistant_response_failed_with_correlation':
+          'Die API ist erreichbar, aber die Antwort des Assistenten ist fehlgeschlagen. Versuchen Sie es erneut. (ID: {{id}})',
       'checking_api': 'API wird geprüft...',
       'api_unavailable_title': 'API ist nicht verfügbar',
       'api_retry_in': 'Nächster Versuch in {{seconds}} s',
@@ -1729,6 +1753,25 @@ class SessionExpiredException implements Exception {
   String toString() => 'Session expired and was recreated.';
 }
 
+class ApiStreamException implements Exception {
+  const ApiStreamException(this.message, {this.statusCode});
+
+  factory ApiStreamException.fromEvent(String streamName, Object? data) {
+    if (data is Map) {
+      final detail = (data['message'] ?? data['detail'] ?? data).toString();
+      return ApiStreamException('$streamName stream reported error: $detail');
+    }
+    return ApiStreamException('$streamName stream reported error: $data');
+  }
+
+  final String message;
+  final int? statusCode;
+
+  @override
+  String toString() =>
+      statusCode == null ? message : '$message (HTTP status $statusCode)';
+}
+
 class ApiClient {
   ApiClient(
       {required this.baseUri, required this.apiKey, required this.logger});
@@ -2455,8 +2498,9 @@ class ApiClient {
             }
             throw const SessionExpiredException();
           }
-          throw Exception(
-            'Discussion stream failed with status ${response.statusCode}: $detail',
+          throw ApiStreamException(
+            'Discussion stream failed: $detail',
+            statusCode: response.statusCode,
           );
         }
         var buffer = '';
@@ -2584,8 +2628,9 @@ class ApiClient {
             }
             throw const SessionExpiredException();
           }
-          throw Exception(
-            'ReadUser turn stream failed with status ${response.statusCode}: $detail',
+          throw ApiStreamException(
+            'ReadUser turn stream failed: $detail',
+            statusCode: response.statusCode,
           );
         }
         var buffer = '';
@@ -3312,7 +3357,7 @@ class _AuthEntryPageState extends State<AuthEntryPage>
   bool _showPhoneOtpSignIn = false;
   bool _dataProcessingConsentAccepted = false;
   bool _isBusy = false;
-  String _appVersionLabel = 'v0.1.5+43';
+  String _appVersionLabel = '';
   String? _devicePhoneNumber;
   String? _deviceBindingId;
 
@@ -3624,16 +3669,18 @@ class _AuthEntryPageState extends State<AuthEntryPage>
                                         ),
                                       ),
                                     ),
-                                    Text(
-                                      _appVersionLabel,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: const Color(0xFF4A628A),
-                                          ),
-                                    ),
-                                    const SizedBox(width: 12),
+                                    if (_appVersionLabel.isNotEmpty) ...[
+                                      Text(
+                                        _appVersionLabel,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: const Color(0xFF4A628A),
+                                            ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                    ],
                                     FilledButton.tonal(
                                       onPressed: () {
                                         final nextIndex =
@@ -4624,7 +4671,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const double _questionTimeoutSeconds = 3600;
   static const double _maxDiscussionMinutes = 60;
   static const double _communicationMinutes = 60;
-  static const Duration _speechSilenceTimeout = Duration(minutes: 10);
+  static const Duration _speechSilenceTimeout = Duration(seconds: 10);
   static const Duration _speechSendPromptDelay = Duration(seconds: 10);
   static const Duration _speechMaxListenDuration = Duration(minutes: 30);
 
@@ -4649,7 +4696,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _isDownloading = false;
   bool _hasExportReady = false;
   String? _latestGeneratedCaseDocumentId;
-  String _appVersionLabel = 'v0.1.5+41';
+  String _appVersionLabel = '';
   String? _systemLastLawUpdateDate;
   String? _systemModelKnowledgeCutoffDate;
   bool _updateDialogShown = false;
@@ -4691,6 +4738,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   String? _pendingNewCaseTitle;
   String? _lastFinalSpeechResult;
   String? _lastHandledSpeechText;
+  String? _lastAssistantSpokenContent;
   DateTime? _speechRecognitionStartedAt;
   Completer<void>? _speechStopCompleter;
   Timer? _speechSendPromptTimer;
@@ -4758,10 +4806,11 @@ class _ChatHomePageState extends State<ChatHomePage>
         return;
       }
     }
-    _appendAssistantMessage(event.prompt, speak: false);
+    final prompt = _strings.t('speech_answer_confirmation_prompt');
+    _appendAssistantMessage(prompt, speak: false);
     await _speaker.stop();
     await _speakAssistantMessage(
-      event.prompt,
+      prompt,
       resumeSpeechInputOnCompletion: true,
     );
   }
@@ -5990,6 +6039,16 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (visibleContent.isEmpty) {
       return;
     }
+    if (resumeSpeechInputOnCompletion &&
+        !_isListening &&
+        !_awaitingSpokenName &&
+        !_awaitingSpokenCaseTitle) {
+      final speechInputReady = await _ensureSpeechInputEnabledForVoiceMode();
+      if (mounted && speechInputReady && !_isListening) {
+        await _startSpeechListening(resetHandledText: true);
+      }
+    }
+    _lastAssistantSpokenContent = visibleContent;
     final spoke = await _speaker.speak(
       text: visibleContent,
       languageCode: _selectedLocale.languageCode,
@@ -6010,6 +6069,42 @@ class _ChatHomePageState extends State<ChatHomePage>
         reason: 'assistant_message',
       );
     }
+  }
+
+  void _stopAssistantSpeechForUserSpeech(String trigger) {
+    unawaited(_speaker.stop());
+    unawaited(
+      widget.logger.info(
+        'Assistant speech stopped for user speech',
+        <String, Object?>{
+          'trigger': trigger,
+          ..._voiceLogContext('assistant_speech_barge_in'),
+        },
+      ),
+    );
+  }
+
+  bool _isLikelyAssistantSpeechEcho(String recognizedText) {
+    final assistantSpeech = (_lastAssistantSpokenContent ?? '').trim();
+    if (assistantSpeech.isEmpty || recognizedText.trim().length < 8) {
+      return false;
+    }
+    final assistant = _normalizeVoiceEchoText(assistantSpeech);
+    final recognized = _normalizeVoiceEchoText(recognizedText);
+    if (assistant.isEmpty || recognized.isEmpty) {
+      return false;
+    }
+    return assistant == recognized ||
+        assistant.startsWith(recognized) ||
+        recognized.startsWith(assistant);
+  }
+
+  String _normalizeVoiceEchoText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^0-9a-zA-ZÀ-ž\s]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   Future<bool> _ensureSpeechInputEnabledForVoiceMode() async {
@@ -6119,6 +6214,21 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     final recognizedText = result.recognizedWords.trim();
     final speechStartedAt = _speechRecognitionStartedAt ?? DateTime.now();
+    if (_isLikelyAssistantSpeechEcho(recognizedText)) {
+      unawaited(
+        widget.logger.info(
+          'Ignored assistant speech echo from STT',
+          <String, Object?>{
+            'recognized_length': recognizedText.length,
+            ..._voiceLogContext('assistant_speech_echo_ignored'),
+          },
+        ),
+      );
+      return;
+    }
+    if (recognizedText.isNotEmpty) {
+      _stopAssistantSpeechForUserSpeech('recognized_speech');
+    }
     if (result.finalResult && recognizedText.isNotEmpty) {
       _lastFinalSpeechResult = recognizedText;
     }
@@ -6129,12 +6239,6 @@ class _ChatHomePageState extends State<ChatHomePage>
       _lastDictatedSpeechDraft = recognizedText;
       _scheduleSpeechSendPrompt();
     }
-    setState(() {
-      _inputController.text = result.recognizedWords;
-      _inputController.selection = TextSelection.fromPosition(
-        TextPosition(offset: _inputController.text.length),
-      );
-    });
     final shouldProcessImmediately = result.finalResult &&
         _shouldProcessFinalSpeechResultImmediately(
           recognizedText,
@@ -6153,10 +6257,18 @@ class _ChatHomePageState extends State<ChatHomePage>
       ),
       submitMessageWhenNoRuleMatches: shouldProcessImmediately,
     );
+    final displayDraft =
+        _voiceSessionOrchestrator.draftMessage ?? result.recognizedWords;
+    setState(() {
+      _inputController.text = displayDraft;
+      _inputController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _inputController.text.length),
+      );
+    });
     if (transcriptResult.queuedAction != null) {
       unawaited(_processQueuedSpeechActionsImmediately());
     } else if (spokenConfirmation != null) {
-      unawaited(_finishAnsweredVoiceConfirmation());
+      unawaited(_finishAnsweredVoiceConfirmation(spokenConfirmation));
     }
   }
 
@@ -6169,29 +6281,6 @@ class _ChatHomePageState extends State<ChatHomePage>
         isSpokenClearDraftCommand(recognizedText) ||
         hasTrailingSpokenSendCommand(recognizedText) ||
         parseSpokenCaseCreationCommand(recognizedText) != null;
-  }
-
-  Future<void> _processFinalSpeechResultImmediately(
-    String recognizedText,
-  ) async {
-    final normalizedText = recognizedText.trim();
-    if (normalizedText.isEmpty || _lastHandledSpeechText == normalizedText) {
-      return;
-    }
-    _cancelSpeechSendPrompt();
-    if (_isListening) {
-      await _stopSpeechListening(
-        submitAfterStop: false,
-        processStoppedInput: false,
-      );
-      if (!mounted) {
-        return;
-      }
-    }
-    await _handleCompletedSpeechInput(
-      normalizedText,
-      submitAfterRecognition: true,
-    );
   }
 
   Future<void> _processQueuedSpeechActionsImmediately() async {
@@ -6208,7 +6297,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     await _drainVoiceActionQueue();
   }
 
-  Future<void> _finishAnsweredVoiceConfirmation() async {
+  Future<void> _finishAnsweredVoiceConfirmation(
+    SpokenConfirmationChoice confirmation,
+  ) async {
     _cancelSpeechSendPrompt();
     if (_isListening) {
       await _stopSpeechListening(
@@ -6219,7 +6310,14 @@ class _ChatHomePageState extends State<ChatHomePage>
         return;
       }
     }
-    setState(_clearSpeechDraft);
+    if (confirmation == SpokenConfirmationChoice.yes) {
+      _voiceSessionOrchestrator.clearDraft();
+      setState(_clearSpeechDraft);
+      return;
+    }
+    if (_speechInputEnabled && mounted) {
+      await _startSpeechListening(resetHandledText: true);
+    }
   }
 
   void _onSpeechStatus(String status) {
@@ -6230,11 +6328,20 @@ class _ChatHomePageState extends State<ChatHomePage>
     setState(() {
       _isListening = isListening;
     });
+    var promptedBeforeStop = false;
     if (isListening) {
       _voiceSessionOrchestrator.startListening(
         now: _speechRecognitionStartedAt,
       );
     } else {
+      if (!_stoppingSpeechManually && _speechInputEnabled) {
+        promptedBeforeStop = _voiceSessionOrchestrator.checkInactivity(
+          now: DateTime.now(),
+          context: _buildRuleEngineContext(
+            submitMessageWhenNoRuleMatches: true,
+          ),
+        );
+      }
       _voiceSessionOrchestrator.stopListening();
     }
     unawaited(
@@ -6245,13 +6352,17 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
     if (!isListening) {
       _cancelSpeechSendPrompt();
-      if (!_stoppingSpeechManually &&
-          _speechInputEnabled &&
-          _lastFinalSpeechResult == null) {
-        _showSnackbar(_strings.t('speech_input_auto_stopped'));
+      final stoppedAutomatically = !_stoppingSpeechManually;
+      var shouldProcess = _processSpeechOnStop;
+      var shouldSubmit = _submitSpeechOnStop;
+      if (stoppedAutomatically && _speechInputEnabled) {
+        if (promptedBeforeStop) {
+          shouldProcess = false;
+          shouldSubmit = false;
+        } else if (_lastFinalSpeechResult == null) {
+          _showSnackbar(_strings.t('speech_input_auto_stopped'));
+        }
       }
-      final shouldProcess = _processSpeechOnStop;
-      final shouldSubmit = _submitSpeechOnStop;
       _processSpeechOnStop = true;
       _submitSpeechOnStop = true;
       _speechStopCompleter?.complete();
@@ -6274,6 +6385,21 @@ class _ChatHomePageState extends State<ChatHomePage>
       _isListening = false;
     });
     _voiceSessionOrchestrator.stopListening();
+    if (error.isNoSpeechDetected) {
+      _showSnackbar(_strings.t('speech_no_input_detected'));
+      unawaited(
+        widget.logger.info(
+          'Speech recognition ended without detected speech',
+          <String, Object?>{
+            'permanent': error.permanent,
+            ..._voiceLogContext('speech_no_input_detected'),
+          },
+        ),
+      );
+      _speechStopCompleter?.complete();
+      _speechStopCompleter = null;
+      return;
+    }
     _showSnackbar(_strings.t('speech_recognition_error', <String, String>{
       'error': error.errorMsg,
     }));
@@ -7182,6 +7308,9 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
 
+    if (!nextValue) {
+      _voiceSessionOrchestrator.clearDraft();
+    }
     setState(() {
       _speechInputEnabled = nextValue;
       if (nextValue) {
@@ -7733,7 +7862,7 @@ class _ChatHomePageState extends State<ChatHomePage>
             await _refreshSessionResultDetails();
           }
           if (event.event == 'error') {
-            throw Exception('Discussion stream reported error: ${event.data}');
+            throw ApiStreamException.fromEvent('Discussion', event.data);
           }
         }
       } else {
@@ -7826,7 +7955,7 @@ class _ChatHomePageState extends State<ChatHomePage>
             await _refreshSessionResultDetails();
           }
           if (event.event == 'error') {
-            throw Exception('ReadUser stream reported error: ${event.data}');
+            throw ApiStreamException.fromEvent('ReadUser', event.data);
           }
         }
       }
@@ -8289,6 +8418,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (resetHandledText) {
       _lastHandledSpeechText = null;
     }
+    _stopAssistantSpeechForUserSpeech('start_listening');
     _lastFinalSpeechResult = null;
     _submitSpeechOnStop = true;
     _processSpeechOnStop = true;
@@ -8679,7 +8809,8 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   void _showApiError(Object error, {required String apiBaseUrl}) {
-    if (_isOfflineError(error)) {
+    final isStreamFailure = error is ApiStreamException;
+    if (!isStreamFailure && _isOfflineError(error)) {
       if (mounted) {
         setState(() {
           _lastErrorCorrelationId = null;
@@ -8698,6 +8829,19 @@ class _ChatHomePageState extends State<ChatHomePage>
       });
     } else {
       _lastErrorCorrelationId = correlationId;
+    }
+    if (isStreamFailure) {
+      if (correlationId.isNotEmpty) {
+        _showSnackbar(
+          _strings.t(
+            'assistant_response_failed_with_correlation',
+            <String, String>{'id': correlationId},
+          ),
+        );
+        return;
+      }
+      _showSnackbar(_strings.t('assistant_response_failed'));
+      return;
     }
     if (correlationId.isNotEmpty) {
       _showSnackbar(
@@ -9292,13 +9436,14 @@ class _ChatHomePageState extends State<ChatHomePage>
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Row(
                           children: [
-                            Text(
-                              _appVersionLabel,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: const Color(0xFF4A628A)),
-                            ),
+                            if (_appVersionLabel.isNotEmpty)
+                              Text(
+                                _appVersionLabel,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: const Color(0xFF4A628A)),
+                              ),
                             const Spacer(),
                             Text(
                               '${strings.t('law_date_label')}: ${_formatFooterLawDate(_effectiveSystemLawDate())}',

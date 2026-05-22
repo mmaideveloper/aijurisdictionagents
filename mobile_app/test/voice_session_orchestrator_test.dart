@@ -37,8 +37,8 @@ void main() {
       );
 
       expect(partial.queuedAction, isNull);
-      expect(orchestrator.draftMessage, 'Potrebujem poradit so zmluvou posli');
       expect(finalResult.queuedAction?.action, isA<SubmitMessageRuleAction>());
+      expect(orchestrator.draftMessage, isNull);
       expect(orchestrator.queuedActionCount, 1);
 
       final queued = orchestrator.dequeueAction();
@@ -115,11 +115,11 @@ void main() {
     test('uses explicit confirmation wording for silent drafts', () {
       expect(
         voiceSessionConfirmationPrompt,
-        'Potvrď vykonanie požiadavky, povedz áno.',
+        'Môžem už odpovedať na otázku? Povedzte áno alebo nie.',
       );
     });
 
-    test('queues pending intent on yes and cancels it on no', () {
+    test('queues pending intent on yes and continues the draft on no', () {
       final startedAt = DateTime.utc(2026, 5, 15, 12);
       final yesOrchestrator = VoiceSessionOrchestrator();
 
@@ -175,9 +175,53 @@ void main() {
       );
 
       expect(no.queuedAction, isNull);
+      expect(no.confirmation, SpokenConfirmationChoice.no);
       expect(noOrchestrator.awaitingConfirmation, isFalse);
       expect(noOrchestrator.pendingIntent, isNull);
       expect(noOrchestrator.queuedActionCount, 0);
+      expect(noOrchestrator.draftMessage, 'Potrebujem poradit so zmluvou');
+    });
+
+    test('continues the same draft after no confirmation answer', () {
+      final startedAt = DateTime.utc(2026, 5, 15, 12, 30);
+      final orchestrator = VoiceSessionOrchestrator();
+
+      orchestrator.startListening(now: startedAt);
+      orchestrator.acceptTranscript(
+        transcript: 'Potrebujem poradit so zmluvou',
+        isFinal: false,
+        speechStartedAt: startedAt,
+        context: context,
+        submitMessageWhenNoRuleMatches: false,
+        receivedAt: startedAt,
+      );
+      orchestrator.checkInactivity(
+        now: startedAt.add(const Duration(seconds: 10)),
+        context: context,
+      );
+      orchestrator.acceptTranscript(
+        transcript: 'nie',
+        isFinal: true,
+        speechStartedAt: startedAt,
+        context: context,
+        submitMessageWhenNoRuleMatches: true,
+        receivedAt: startedAt.add(const Duration(seconds: 11)),
+      );
+
+      final continued = orchestrator.acceptTranscript(
+        transcript: 'a este o vypovednej lehote',
+        isFinal: false,
+        speechStartedAt: startedAt.add(const Duration(seconds: 12)),
+        context: context,
+        submitMessageWhenNoRuleMatches: false,
+        receivedAt: startedAt.add(const Duration(seconds: 13)),
+      );
+
+      expect(continued.queuedAction, isNull);
+      expect(
+        orchestrator.draftMessage,
+        'Potrebujem poradit so zmluvou a este o vypovednej lehote',
+      );
     });
 
     test('repeats timeout prompt without duplicating the pending action', () {

@@ -38,4 +38,8 @@ assistant speech output, voice intent mapping, or voice-triggered legal actions.
   minimization, and legal-output review expectations.
 - [ ] Confirm legal-risk actions still require human/user confirmation before
   execution.
+- [ ] Confirm 10-second silence prompts preserve the draft on `no` and submit
+  only on explicit `yes` or send command.
+- [ ] Confirm assistant TTS barge-in ignores likely self-transcripts before
+  treating STT text as user input.
 - [ ] Confirm failure states do not silently switch to less compliant behavior.

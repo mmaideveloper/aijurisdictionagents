@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import base64
+import threading
 from mimetypes import guess_type
 from pathlib import Path
 from datetime import datetime, timezone
@@ -32,6 +33,8 @@ from app.services.email_scheduler import EmailScheduler
 router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key)])
 _MAX_ACTIVE_CASES = 5
 _LOGGER = logging.getLogger(__name__)
+_STORE_LOCK = threading.Lock()
+_STORE_CACHE: dict[tuple[str, str, str, str, str], ApiDatabaseStore] = {}
 
 
 def _document_processor_mode() -> str:
@@ -152,10 +155,25 @@ class CaseDocumentDebugResponse(BaseModel):
     prompt_preview: str
 
 
+def _store_cache_key() -> tuple[str, str, str, str, str]:
+    return (
+        os.getenv("DB_OPTION", "local").strip().lower(),
+        os.getenv("DB_LOCAL", "").strip(),
+        os.getenv("DB_CLOUD", "").strip(),
+        os.getenv("STORAGE_OPTION", "local").strip().lower(),
+        os.getenv("STORE_LOCAL", "").strip(),
+    )
+
+
 def get_store() -> ApiDatabaseStore:
-    store = ApiDatabaseStore.from_env()
-    store.initialize()
-    return store
+    cache_key = _store_cache_key()
+    with _STORE_LOCK:
+        store = _STORE_CACHE.get(cache_key)
+        if store is None:
+            store = ApiDatabaseStore.from_env()
+            store.initialize()
+            _STORE_CACHE[cache_key] = store
+        return store
 
 
 @router.get('', response_model=list[CaseResponse])

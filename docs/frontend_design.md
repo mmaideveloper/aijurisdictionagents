@@ -10,7 +10,10 @@ This document describes the proposed frontend design located in `frontend_design
 - `/app/case` Case creation and document intake
 - `/app/workspace` Lawyer preparation (AI judge + opposing counsel)
 - `/app/advice` Multi-agent printable advice summary
-- `/app/communications` Chat, voice, video modes
+- `/app/communications` Chat, voice, video modes. Browser voice capture uses
+  browser-native speech recognition when available, keeps a reviewable
+  transcript draft, asks after 10 seconds of silence whether to answer, submits
+  on `yes`, and preserves the draft on `no` so the user can continue.
 - `/app/law-validation` New law validation
 - `/app/law-recommendation` Law recommendation
 - `/app/profile` Profile and subscription management

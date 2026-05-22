@@ -6,7 +6,11 @@ Tento dokument popisuje hlasovy orchestrator pre mobilnu aplikaciu:
 - deduplikuje partial/final vstupy
 - explicitne ukoncenie diktovania (`posli`, `to je vsetko`) vykona akciu hned
 - po 10 sekundach neaktivity bez explicitneho ukoncenia pyta potvrdenie:
-  `Potvrd vykonanie poziadavky, povedz ano.`
+  `Mozem uz odpovedat na otazku? Povedzte ano alebo nie.`
+- odpoved `ano` zastavi mikrofon pocas spracovania a odosle pending draft
+- odpoved `nie` ponecha rovnaky draft a znovu pocuva dalsie pokracovanie
+- pocas TTS odpovede sa mikrofon zapne hned, aby pouzivatel mohol odpoved
+  prerusit; rozpoznany echo text asistenta sa ignoruje
 - mapuje prikazy cez existujuci RuleEngine
 
 ## GDPR + EU AI Act baseline

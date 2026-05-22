@@ -35,6 +35,9 @@ _CASE_PREFIX_PATTERNS: tuple[tuple[str, ...], ...] = (
     ("new", "case"),
     ("vytvor", "mi", "novy", "pripad"),
     ("vytvor", "mi", "pripad"),
+    ("vytvor", "mi", "prosim", "novy", "pripad"),
+    ("vytvor", "prosim", "novy", "pripad"),
+    ("vytvor", "prosim", "pripad"),
     ("vytvor", "mi", "novy", "case"),
     ("vytvor", "mi", "case"),
     ("vytvor", "novy", "pripad"),
@@ -45,6 +48,13 @@ _CASE_PREFIX_PATTERNS: tuple[tuple[str, ...], ...] = (
     ("vytvorit", "novy", "case"),
     ("vytvorit", "pripad"),
     ("vytvorit", "case"),
+    ("vytvor", "novy", "pripad", "prosim"),
+    ("chcem", "zalozit", "novy", "pripad"),
+    ("chcem", "zalozit", "pripad"),
+    ("chcel", "by", "som", "vytvorit", "novy", "pripad"),
+    ("chcel", "by", "som", "vytvorit", "pripad"),
+    ("chcela", "by", "som", "vytvorit", "novy", "pripad"),
+    ("chcela", "by", "som", "vytvorit", "pripad"),
     ("chcem", "vytvorit", "novy", "pripad"),
     ("chcem", "vytvorit", "novy", "case"),
     ("chcem", "vytvorit", "pripad"),
@@ -71,8 +81,15 @@ _TITLE_INTRO_PATTERNS: tuple[tuple[str, ...], ...] = (
     ("s", "nazvom"),
     ("s", "nazovom"),
     ("s", "menom"),
+    ("pod", "nazvom"),
+    ("pod", "nazovom"),
+    ("meno", "pripadu"),
+    ("nazov", "pripadu"),
     ("nazov",),
     ("nazovom",),
+    ("bude", "sa", "volat"),
+    ("vola", "sa"),
+    ("je",),
 )
 
 _SEND_PATTERNS: tuple[tuple[str, ...], ...] = (
@@ -111,7 +128,20 @@ _CONFIRM_NO_PATTERNS: tuple[tuple[str, ...], ...] = (
     ("nie",),
 )
 
-_POLITE_PREFIXES = {"dobre", "ok", "okay", "please", "prosim", "bitte", "este", "raz"}
+_POLITE_PREFIXES = {
+    "dobre",
+    "hej",
+    "ok",
+    "okay",
+    "poprosim",
+    "please",
+    "prosim",
+    "ta",
+    "vas",
+    "bitte",
+    "este",
+    "raz",
+}
 _EDGE_CHARS = " \t\r\n-_,.?!;:\"'`()[]{}"
 
 

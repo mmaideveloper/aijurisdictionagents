@@ -40,12 +40,16 @@ Provide a mobile-first chat assistant app that supports legal conversation flows
 
 ## Local testing assumptions
 
-- Android emulator uses host API at `10.0.2.2`.
+- Local browser/desktop debugging uses host API at `http://127.0.0.1:8080`.
+- Android emulator builds may still need the emulator host gateway unless an
+  explicit `AIJ_API_BASE_URL=http://127.0.0.1:8080` tunnel/reverse mapping is
+  configured for that device.
 - Local backend should expose `/v1/chat/*` and accept `x-api-key`.
 - App runtime config is set via Dart defines:
   - `AIJ_API_BASE_URL` (default `http://10.0.2.2:8080`)
   - `AIJ_API_KEY` (default `aijuris`)
-- Flutter web local run can target `http://127.0.0.1:8080` and expects API CORS to allow local origin (for example `http://localhost:7357`).
+- Flutter web local run targets `http://127.0.0.1:8080` and expects API CORS to
+  allow local origin (for example `http://127.0.0.1:7357`).
 
 ## Logging design
 
@@ -55,6 +59,10 @@ Provide a mobile-first chat assistant app that supports legal conversation flows
   - Persist request/response/error entries as JSON lines.
 - Web target:
   - Emit the same log entries to browser console because file write is unavailable.
+- Stream failures are separated from network failures in user-facing mobile
+  messages. If `/v1/chat/sessions/{session_id}/stream` is reachable but the
+  backend/model response fails, the app reports an assistant response failure
+  with the correlation ID instead of saying that the API cannot be reached.
 
 ## Build & deploy preparation
 
@@ -87,6 +95,11 @@ python examples/minimal_demo.py
 - Recommended local STT model: `whisper-small-multilingual` (fallback `whisper-base-multilingual` for weaker devices).
 - Recommended local TTS model: `piper-sk_SK-katarina-medium`.
 - Runtime hints can be set through `AIJ_LOCAL_STT_MODEL` and `AIJ_LOCAL_TTS_MODEL`.
+- Assistant TTS supports voice barge-in: starting speech input or receiving a
+  non-empty STT transcript stops current assistant speech so the user can
+  interrupt long spoken answers.
+- Browser `no-speech` STT timeouts are treated as soft no-input events instead
+  of hard recognition failures.
 - Test locally with:
   - `cd mobile_app && flutter test test/speech_service_test.dart`
   - `cd mobile_app && flutter test test/speech_flow_test.dart`

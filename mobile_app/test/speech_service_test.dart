@@ -39,6 +39,26 @@ void main() {
     });
   });
 
+  group('JurisdictaSpeechRecognitionError', () {
+    test('classifies browser no-speech as soft no-input timeout', () {
+      const error = JurisdictaSpeechRecognitionError(
+        errorMsg: 'no-speech',
+        permanent: false,
+      );
+
+      expect(error.isNoSpeechDetected, isTrue);
+    });
+
+    test('does not classify permission errors as no-input timeout', () {
+      const error = JurisdictaSpeechRecognitionError(
+        errorMsg: 'not-allowed',
+        permanent: true,
+      );
+
+      expect(error.isNoSpeechDetected, isFalse);
+    });
+  });
+
   group('AzureSpeechConfig', () {
     test('builds regional TTS and voices endpoints', () {
       const config = AzureSpeechConfig(key: 'key', region: 'westeurope');

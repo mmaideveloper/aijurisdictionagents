@@ -94,6 +94,10 @@ class JurisdictaSpeechRecognitionError {
 
   final String errorMsg;
   final bool permanent;
+
+  bool get isNoSpeechDetected {
+    return errorMsg.trim().toLowerCase() == 'no-speech';
+  }
 }
 
 class SpeechServiceConfig {

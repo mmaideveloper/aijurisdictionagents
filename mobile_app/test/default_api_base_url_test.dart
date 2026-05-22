@@ -72,4 +72,35 @@ void main() {
       );
     });
   });
+
+  group('API error messages', () {
+    test('has a separate assistant stream failure message', () {
+      final strings = app.AppStrings('SK');
+
+      expect(
+        strings.t(
+          'assistant_response_failed_with_correlation',
+          <String, String>{'id': 'mbl-flow-test'},
+        ),
+        contains('API je dostupné'),
+      );
+      expect(
+        strings.t(
+          'assistant_response_failed_with_correlation',
+          <String, String>{'id': 'mbl-flow-test'},
+        ),
+        isNot(contains('Nepodarilo sa spojiť')),
+      );
+    });
+
+    test('stream exceptions preserve sanitized operation context', () {
+      final error = app.ApiStreamException.fromEvent(
+        'ReadUser',
+        <String, Object?>{'message': 'model timeout'},
+      );
+
+      expect(error.toString(), contains('ReadUser stream reported error'));
+      expect(error.toString(), contains('model timeout'));
+    });
+  });
 }

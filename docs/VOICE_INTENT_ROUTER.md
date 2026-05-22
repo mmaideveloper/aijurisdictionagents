@@ -6,6 +6,12 @@ The backend exposes a client-agnostic voice intent endpoint for web, mobile, and
 POST /v1/voice/intent
 ```
 
+The router and mobile rule engine both recognize common Slovak STT variants for
+case creation, including filler words inside the command (`vytvor prosim novy
+pripad`), conditional phrasing (`chcel by som vytvorit pripad`), and title
+markers such as `s nazvom je`, `pod nazvom`, and `meno pripadu`. Only the
+extracted title is stored as the case name.
+
 The endpoint accepts a raw STT transcript and returns a structured action decision. Clients should call this endpoint before sending STT text into normal chat when the user may be issuing a command.
 
 Example request:

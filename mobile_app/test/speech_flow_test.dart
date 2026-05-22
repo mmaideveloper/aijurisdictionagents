@@ -151,6 +151,36 @@ void main() {
       expect(parsed.requiresTitlePrompt, isFalse);
     });
 
+    test('extracts Slovak case title from conditional STT phrasing', () {
+      final parsed = parseSpokenCaseCreationCommand(
+        'chcel by som vytvorit novy pripad s nazvom je dopravna nehoda koniec',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, 'dopravna nehoda');
+      expect(parsed.requiresTitlePrompt, isFalse);
+    });
+
+    test('extracts Slovak case title when prosim is inside command', () {
+      final parsed = parseSpokenCaseCreationCommand(
+        'vytvor prosim novy pripad pod nazvom reklamacia auta posli',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, 'reklamacia auta');
+      expect(parsed.requiresTitlePrompt, isFalse);
+    });
+
+    test('extracts Slovak case title from case-name wording', () {
+      final parsed = parseSpokenCaseCreationCommand(
+        'poprosim vytvor novy pripad meno pripadu najomna zmluva',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.title, 'najomna zmluva');
+      expect(parsed.requiresTitlePrompt, isFalse);
+    });
+
     test('extracts a case title from a polite Slovak infinitive command', () {
       final parsed = parseSpokenCaseCreationCommand(
         'dobre potrebujem vytvorit novy pripad s nazvom splnomocnenie to je vsetko',
