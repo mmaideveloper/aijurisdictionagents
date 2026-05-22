@@ -172,6 +172,63 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert "Poprad, Slovakia, 05801" in generated_pdf_text
 
 
+def test_generated_case_document_pdf_falls_back_to_latest_document_message(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=22)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Payment confirmation"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    old_doc_id = store.add_case_text_document(
+        case_id=case_id,
+        original_filename="assistant-technical-old.json",
+        content='{"case":{"status":"intake_open"}}',
+        uploaded_by_user_id=user_id,
+    )
+    store.add_case_message(
+        case_id=case_id,
+        role="assistant",
+        content=(
+            "LawyerSlovakia: Tu je konečná verzia dokumentu:\n\n"
+            "---\n\n"
+            "**Potvrdenie o zaplatení**\n\n"
+            "Ja, Marek Novak, bytom Poprad, týmto potvrdzujem, že som dňa "
+            "1. júna 2026 zaplatil sumu 5000 eur Jano Mrkvička.\n\n"
+            "Dátum: 1. júna 2026\n\n"
+            "Podpis: ________________________\n\n"
+            "---\n\n"
+            "Dokument je pripravený na stiahnutie vo formáte PDF."
+        ),
+        agent_name="LawyerSlovakia",
+    )
+
+    generated_pdf = client.get(
+        f"/v1/cases/{case_id}/documents/{old_doc_id}/pdf?user_id={user_id}",
+        headers=_headers(),
+    )
+    assert generated_pdf.status_code == 200
+    generated_pdf_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
+    )
+    assert "Potvrdenie o zaplatení" in generated_pdf_text
+    assert "Marek Novak" in generated_pdf_text
+    assert "5000 eur" in generated_pdf_text
+    assert "Dokument je pripravený na stiahnutie" not in generated_pdf_text
+
+
 def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:
     import app.cases_api as cases_api
 

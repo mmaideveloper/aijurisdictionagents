@@ -526,6 +526,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
 - `GET /v1/cases/{case_id}/documents/{doc_id}/pdf?user_id=...` renders the client-visible assistant draft tied to a generated technical case document as a PDF, without exposing the stored JSON payload.
+- If the original technical-payload marker is no longer present in the latest case history window, the generated case-document PDF endpoint falls back to the newest assistant message that contains a finalized document body and renders only that document body, not the surrounding chat text.
 - `GET /v1/cases/{case_id}/documents/context?user_id=...` now reports processed/unprocessed memory inputs across uploaded files, chat attachments, and generated `session_history` transcripts.
 - If a transcript or document payload is missing in local storage, history responses fall back to saved summaries and document download returns `404` instead of `500`.
 - Uploaded case documents are stored as `case -> many documents`. Each processed uploaded document keeps the extracted full text plus a real embedding in `case_document_contents`, and chunk-level text/embedding rows in `case_document_chunks`.

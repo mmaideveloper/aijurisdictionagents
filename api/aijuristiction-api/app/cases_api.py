@@ -620,7 +620,30 @@ def _generated_case_document_visible_content(
             normalized = normalized.rpartition('(agent=')[0].strip()
         visible = _user_visible_text(normalized).strip()
         if visible:
-            return visible
+            return _extract_generated_case_document_body(visible) or visible
+    return _latest_generated_case_document_visible_content(case_id=case_id, store=store)
+
+
+def _latest_generated_case_document_visible_content(
+    *, case_id: str, store: ApiDatabaseStore
+) -> str:
+    for communication in store.list_case_communications(case_id=case_id, limit=100, offset=0):
+        raw_content = _read_case_communication_content(
+            store=store,
+            communication=communication,
+        )
+        normalized = raw_content.strip()
+        upper = normalized.upper()
+        if upper.startswith('ASSISTANT:'):
+            normalized = normalized[10:].strip()
+        elif upper.startswith('USER:') or upper.startswith('SYSTEM:'):
+            continue
+        if normalized.endswith(')') and '(agent=' in normalized:
+            normalized = normalized.rpartition('(agent=')[0].strip()
+        visible = _user_visible_text(normalized).strip()
+        if not _looks_like_generated_case_document_message(visible):
+            continue
+        return _extract_generated_case_document_body(visible) or visible
     return ""
 
 
@@ -630,6 +653,99 @@ def _generated_case_document_title(content: str) -> str:
         if stripped:
             return stripped[:120]
     return "Case document"
+
+
+def _looks_like_generated_case_document_message(content: str) -> bool:
+    normalized = " ".join(content.lower().split())
+    if not normalized:
+        return False
+    document_markers = (
+        "potvrdenie o zaplaten",
+        "potvrdenie o platbe",
+        "predžalobná výzva",
+        "predzalobna vyzva",
+        "nájomná zmluva",
+        "najomna zmluva",
+        "zmluva",
+        "žaloba",
+        "zaloba",
+        "návrh",
+        "navrh",
+    )
+    ready_markers = (
+        "konečná verzia dokumentu",
+        "konecna verzia dokumentu",
+        "dokument je pripraven",
+        "pripravený na stiahnutie",
+        "pripraveny na stiahnutie",
+        "vygenerujem vo formáte pdf",
+        "vygenerujem vo formate pdf",
+    )
+    payment_sentence = (
+        ("týmto potvrdzujem" in normalized or "tymto potvrdzujem" in normalized)
+        and ("zaplatil" in normalized or "uhradil" in normalized)
+    )
+    return (
+        any(marker in normalized for marker in document_markers)
+        and any(marker in normalized for marker in ready_markers)
+    ) or payment_sentence
+
+
+def _extract_generated_case_document_body(content: str) -> str:
+    sections: list[list[str]] = []
+    current: list[str] = []
+    saw_separator = False
+    for line in content.splitlines():
+        if line.strip() in {"---", "—", "___"}:
+            saw_separator = True
+            if current:
+                sections.append(current)
+                current = []
+            continue
+        if line.strip().strip("-—_ ") == "":
+            current.append(line)
+            continue
+        current.append(line)
+    if current:
+        sections.append(current)
+    if not saw_separator:
+        return ""
+    candidates: list[str] = []
+    for section in sections:
+        cleaned = "\n".join(line.strip().strip("*") for line in section).strip()
+        if _looks_like_generated_case_document_body(cleaned):
+            candidates.append(cleaned)
+    if not candidates:
+        return ""
+    return max(candidates, key=len).strip()
+
+
+def _looks_like_generated_case_document_body(content: str) -> bool:
+    normalized = " ".join(content.lower().split())
+    title_markers = (
+        "potvrdenie",
+        "zmluva",
+        "výzva",
+        "vyzva",
+        "žaloba",
+        "zaloba",
+        "návrh",
+        "navrh",
+    )
+    body_markers = (
+        "ja,",
+        "týmto",
+        "tymto",
+        "dátum",
+        "datum",
+        "podpis",
+        "zmluvné strany",
+        "zmluvne strany",
+        "predmet",
+    )
+    return any(marker in normalized for marker in title_markers) and any(
+        marker in normalized for marker in body_markers
+    )
 
 
 def _document_context(*, case_id: str, store: ApiDatabaseStore) -> CaseDocumentContextResponse:
