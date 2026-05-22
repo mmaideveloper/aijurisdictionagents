@@ -15,6 +15,7 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
 - Turning on speech input with the microphone button also enables assistant voice output for that session, so spoken replies follow voice interaction automatically.
 - During spoken assistant replies, the app keeps the microphone closed so breathing or room noise cannot interrupt TTS. Tap the microphone button in the composer to stop the assistant and start dictating your response.
 - Normal dictated messages now use a 5-second silence pause. After 5 seconds without more speech, Jurisdicta asks whether it may answer the current dictated request and waits for a spoken confirmation. When the user answers `yes`/`áno`, the app stops the microphone during processing and submits the pending draft. When the user answers `no`/`nie`, the app keeps the same draft and reopens listening so the next speech continues the same question.
+- Confirmation parsing also accepts common corrupted STT/encoding forms such as `�no` and `Ã¡no`, so a spoken Slovak yes clears the pending prompt instead of leaving the app waiting and asking again later.
 - While waiting for that confirmation, the prompt is not repeated automatically; the app waits for `yes`/`áno` or `no`/`nie` so assistant TTS cannot loop on its own echo.
 - Tapping the microphone while listening or waiting for confirmation is treated as an explicit user stop: speech input is disabled and will not auto-restart until the user enables it again.
 - During assistant speech, STT fragments are not used for automatic barge-in. The assistant finishes unless the user explicitly taps the microphone button.
@@ -24,7 +25,7 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
 - When assistant audio is enabled, assistant replies keep speaking until completion or until the user taps the composer microphone button.
 - Explicit spoken commands are executed as soon as the recognizer returns a final phrase, so `Vytvor novy case splnomocnenie` can create the case without waiting for the long dictation timeout.
 - Trailing send words are treated as completion markers instead of content. For example, `Vytvor novy pripad s nazvom splnomocnenie posli` creates a case named `splnomocnenie`, not `splnomocnenie posli`.
-- When the user says a spoken command like `please create a new case` while another case is active, the app now asks for confirmation before archiving the current case. After confirmation it creates and switches to the new case, and if no new case name was spoken yet it asks for the name first.
+- When the user says a spoken command like `please create a new case` while another case is active, the app now automatically archives the current case and creates/switches to the new case without asking for a separate archive confirmation. If no new case name was spoken yet, it still asks only for the missing case name.
 - The Slovak and German localizations were also cleaned up so user-facing system prompts and settings use proper localized text instead of ASCII-only fallbacks.
 - Speech and text command rules now go through a dedicated `RuleEngine` component so future request rules can be added without growing `main.dart` command branching.
 - Voice tool intents are normalized by `IntentMapper` into backend-ready tool payloads with `correlation_id`, `case_id`, `user_id`, structured inputs, raw transcript metadata, and a `generic_tool_request` fallback for future tools.
@@ -397,6 +398,7 @@ Open `docs/chat_ui_snapshot.html` in a browser for the updated rebrand layout pr
 - Documents export button is enabled when the case has processed/generated documents.
 - Tapping the microphone now auto-enables speech input instead of only showing a disabled message.
 - The Documents picker shows a concise `Dokumenty` title, hides secondary status text, and filters internal technical JSON/session transcript files from user download choices. If a local API restart expires an in-memory chat export session, the app reports the expired session instead of falling back to internal case files.
+- Assistant TTS is no longer interrupted by STT noise or breathing while the assistant is speaking. The assistant finishes the current spoken response and stops only when the user explicitly taps the microphone control.
 
 ## Audio command completion behavior
 

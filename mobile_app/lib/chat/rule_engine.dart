@@ -977,7 +977,9 @@ String _sanitizeCaseTitleToken(String token) {
 }
 
 String _normalizeSpeechCommandToken(String token) {
-  final lowered = _trimSpeechCommandTokenEdges(token).toLowerCase();
+  final lowered = _repairCommonSpeechMojibake(
+    _trimSpeechCommandTokenEdges(token).toLowerCase(),
+  );
   if (lowered.isEmpty) {
     return lowered;
   }
@@ -1003,13 +1005,40 @@ String _normalizeSpeechCommandToken(String token) {
     'ý': 'y',
     'ž': 'z',
     'ß': 'ss',
+    '�': 'a',
   };
   final buffer = StringBuffer();
   for (final rune in lowered.runes) {
     final character = String.fromCharCode(rune);
-    buffer.write(replacements[character] ?? character);
+    final replacement = replacements[character];
+    if (replacement != null) {
+      buffer.write(replacement);
+      continue;
+    }
+    if (RegExp(r'[a-z0-9]').hasMatch(character)) {
+      buffer.write(character);
+    }
   }
   return buffer.toString();
+}
+
+String _repairCommonSpeechMojibake(String token) {
+  return token
+      .replaceAll('ã¡', 'á')
+      .replaceAll('ã¤', 'ä')
+      .replaceAll('ä', 'č')
+      .replaceAll('ä', 'ď')
+      .replaceAll('ã©', 'é')
+      .replaceAll('ã­', 'í')
+      .replaceAll('ä¾', 'ľ')
+      .replaceAll('åˆ', 'ň')
+      .replaceAll('ã³', 'ó')
+      .replaceAll('ã´', 'ô')
+      .replaceAll('å¡', 'š')
+      .replaceAll('å¥', 'ť')
+      .replaceAll('ãº', 'ú')
+      .replaceAll('ã½', 'ý')
+      .replaceAll('å¾', 'ž');
 }
 
 String _trimSpeechCommandTokenEdges(String token) {

@@ -1011,12 +1011,6 @@ def _run_direct_lawyer_turn(
     )
     _warn_if_flow_pack_missing(session_id=session_id, session=session, request_text=content)
 
-    from aijurisdictionagents.agents import create_lawyer_agent
-    from aijurisdictionagents.llm import get_llm_client
-
-    llm = get_llm_client()
-    lawyer = create_lawyer_agent(llm, session.country)
-
     history = _repository.list_messages(session_id)
     prior_messages = history[:-1]
     conversation = [
@@ -1028,6 +1022,35 @@ def _run_direct_lawyer_turn(
         for msg in history
     ]
 
+    if _should_reply_with_ready_document_status(content=content, previous_messages=prior_messages):
+        status_reply = _document_package_ready_message(
+            country=session.country,
+            language=session.language,
+            document_names=_document_progress_names(
+                messages=prior_messages,
+                lawyer_message="",
+                country=session.country,
+                language=session.language,
+            ),
+        )
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id,
+            session=session,
+            content=status_reply,
+            agent_name="LawyerStatus",
+        )
+        return (
+            persisted_user,
+            persisted_lawyer,
+            _user_visible_text(persisted_lawyer.content),
+            [],
+        )
+
+    from aijurisdictionagents.agents import create_lawyer_agent
+    from aijurisdictionagents.llm import get_llm_client
+
+    llm = get_llm_client()
+    lawyer = create_lawyer_agent(llm, session.country)
     prompt_override = lawyer.system_prompt
     if session.language and session.language.strip():
         prompt_override = f"{lawyer.system_prompt}\nRespond in {session.language.strip()}."
@@ -1666,22 +1689,16 @@ def _is_pdf_format_question(prompt: str) -> bool:
 
 
 def _user_requested_document_generation(*, content: str, previous_messages: list[Message]) -> bool:
-    normalized = " ".join(content.lower().split())
+    normalized = _canonicalize_document_text(content)
     if _is_explicit_document_request(normalized):
         return True
     if not _is_affirmative_reply(normalized):
         return False
-    for message in reversed(previous_messages):
-        if message.role != MessageRole.ASSISTANT:
-            continue
-        if _assistant_requests_document_confirmation(message.content):
-            return True
-        if message.role == MessageRole.ASSISTANT:
-            break
-    return False
+    return _has_unanswered_document_confirmation(previous_messages)
 
 
 def _is_explicit_document_request(normalized: str) -> bool:
+    normalized = _canonicalize_document_text(normalized)
     document_markers = (
         "pdf",
         "document",
@@ -1726,9 +1743,10 @@ def _is_explicit_document_request(normalized: str) -> bool:
 
 
 def _is_affirmative_reply(normalized: str) -> bool:
+    normalized = _canonicalize_document_text(normalized)
+    replacement_repaired = normalized.replace("\ufffd", "a")
     affirmatives = (
         "ano",
-        "áno",
         "yes",
         "sure",
         "ok",
@@ -1738,7 +1756,51 @@ def _is_affirmative_reply(normalized: str) -> bool:
         "chcem",
         "potvrdzujem",
     )
-    return any(token in normalized for token in affirmatives)
+    return any(
+        token in candidate
+        for candidate in (normalized, replacement_repaired)
+        for token in affirmatives
+    )
+
+
+def _is_standalone_affirmative_reply(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    replacement_repaired = normalized.replace("\ufffd", "a")
+    standalone_affirmatives = {
+        "ano",
+        "yes",
+        "sure",
+        "ok",
+        "okay",
+        "prosim",
+        "please",
+        "potvrdzujem",
+        "user: ano",
+        "user ano",
+    }
+    return normalized in standalone_affirmatives or replacement_repaired in standalone_affirmatives
+
+
+def _has_unanswered_document_confirmation(messages: list[Message]) -> bool:
+    awaiting_confirmation = False
+    for message in messages:
+        if message.role == MessageRole.ASSISTANT and _assistant_requests_document_confirmation(message.content):
+            awaiting_confirmation = True
+            continue
+        if message.role != MessageRole.USER or not awaiting_confirmation:
+            continue
+        normalized = _canonicalize_document_text(message.content)
+        if _is_affirmative_reply(normalized) or _is_explicit_document_request(normalized):
+            awaiting_confirmation = False
+    return awaiting_confirmation
+
+
+def _should_reply_with_ready_document_status(*, content: str, previous_messages: list[Message]) -> bool:
+    if not _is_standalone_affirmative_reply(content):
+        return False
+    if _has_unanswered_document_confirmation(previous_messages):
+        return False
+    return _document_export_ready(previous_messages)
 
 
 def _assistant_requests_document_confirmation(content: str) -> bool:
@@ -2253,11 +2315,8 @@ def _current_turn_confirms_document_generation(
     content: str,
     previous_messages: list[Message],
 ) -> bool:
-    normalized = " ".join(content.lower().split())
-    if not any(
-        message.role == MessageRole.ASSISTANT and _assistant_requests_document_confirmation(message.content)
-        for message in previous_messages
-    ):
+    normalized = _canonicalize_document_text(content)
+    if not _has_unanswered_document_confirmation(previous_messages):
         return False
     return _is_affirmative_reply(normalized) or _is_explicit_document_request(normalized)
 
@@ -2402,7 +2461,7 @@ def _document_generation_confirmed(messages: list[Message]) -> bool:
             for prior in previous_messages
         ):
             continue
-        normalized = " ".join(message.content.lower().split())
+        normalized = _canonicalize_document_text(message.content)
         if _is_affirmative_reply(normalized) or _is_explicit_document_request(normalized):
             return True
     return False
@@ -3478,6 +3537,9 @@ def _build_simple_pdf(
 
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=(page_width, page_height), pageCompression=0)
+    pdf.setTitle(title.strip() or "Dokument")
+    pdf.setAuthor("JurisDicta")
+    pdf.setSubject(title.strip() or "Generated legal document")
 
     def start_page() -> float:
         if use_corporate_template:

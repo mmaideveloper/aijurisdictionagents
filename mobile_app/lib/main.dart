@@ -4743,7 +4743,6 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _speechInputExplicitlyDisabled = false;
   bool _isListening = false;
   bool _assistantSpeechInProgress = false;
-  DateTime? _assistantSpeechStartedAt;
   bool _stoppingSpeechManually = false;
   bool _awaitingSpokenName = false;
   bool _awaitingProfileField = false;
@@ -6084,7 +6083,6 @@ class _ChatHomePageState extends State<ChatHomePage>
     _lastAssistantSpokenContent = visibleContent;
     bool spoke;
     _assistantSpeechInProgress = true;
-    _assistantSpeechStartedAt = DateTime.now();
     try {
       spoke = await _speaker.speak(
         text: visibleContent,
@@ -6092,7 +6090,6 @@ class _ChatHomePageState extends State<ChatHomePage>
       );
     } finally {
       _assistantSpeechInProgress = false;
-      _assistantSpeechStartedAt = null;
     }
     if (!spoke) {
       await widget.logger.info(
@@ -6114,7 +6111,6 @@ class _ChatHomePageState extends State<ChatHomePage>
 
   void _stopAssistantSpeechForUserSpeech(String trigger) {
     _assistantSpeechInProgress = false;
-    _assistantSpeechStartedAt = null;
     unawaited(_speaker.stop());
     unawaited(
       widget.logger.info(
@@ -6143,37 +6139,8 @@ class _ChatHomePageState extends State<ChatHomePage>
         assistant.contains(recognized);
   }
 
-  bool _shouldStopAssistantSpeechForTranscript(
-    String recognizedText, {
-    required bool isFinal,
-  }) {
-    if (!_assistantSpeechInProgress) {
-      return recognizedText.isNotEmpty;
-    }
-    final normalized = _normalizeVoiceEchoText(recognizedText);
-    if (normalized.isEmpty) {
-      return false;
-    }
-    if (isFinal && normalized.length >= 2) {
-      return true;
-    }
-    if (normalized.length < 12) {
-      return false;
-    }
-    final wordCount =
-        normalized.split(' ').where((word) => word.trim().isNotEmpty).length;
-    if (wordCount < 2) {
-      return false;
-    }
-    if (isFinal) {
-      return true;
-    }
-    final speechStartedAt = _assistantSpeechStartedAt;
-    if (speechStartedAt == null) {
-      return false;
-    }
-    return DateTime.now().difference(speechStartedAt) >=
-        const Duration(milliseconds: 900);
+  bool _shouldStopAssistantSpeechForTranscript(String recognizedText) {
+    return !_assistantSpeechInProgress && recognizedText.isNotEmpty;
   }
 
   String _normalizeVoiceEchoText(String value) {
@@ -6306,18 +6273,16 @@ class _ChatHomePageState extends State<ChatHomePage>
       );
       return;
     }
-    final shouldStopAssistantSpeech = _shouldStopAssistantSpeechForTranscript(
-      recognizedText,
-      isFinal: result.finalResult,
-    );
-    if (_assistantSpeechInProgress && !shouldStopAssistantSpeech) {
+    final shouldStopAssistantSpeech =
+        _shouldStopAssistantSpeechForTranscript(recognizedText);
+    if (_assistantSpeechInProgress) {
       unawaited(
         widget.logger.info(
-          'Ignored weak STT fragment during assistant speech',
+          'Ignored STT fragment during assistant speech',
           <String, Object?>{
             'recognized_length': recognizedText.length,
             'final_result': result.finalResult,
-            ..._voiceLogContext('assistant_speech_fragment_ignored'),
+            ..._voiceLogContext('assistant_speech_stt_ignored'),
           },
         ),
       );
@@ -6579,46 +6544,24 @@ class _ChatHomePageState extends State<ChatHomePage>
   Future<void> _requestNewCaseFromCommand({
     String? title,
   }) async {
-    if (_cases.length >= 5) {
+    if (_cases.length >= 5 && _selectedCase == null) {
       _showSnackbar(_strings.t('maximum_cases'));
       return;
     }
 
     final normalizedTitle = title?.trim();
-    if (_selectedCase == null) {
-      if (normalizedTitle == null || normalizedTitle.isEmpty) {
-        await _promptForSpokenCaseTitle();
-        return;
-      }
-      await _createCaseWithTitle(
-        normalizedTitle,
-        successMessage:
-            _strings.t('case_voice_created_continue', <String, String>{
-          'name': normalizedTitle,
-        }),
-      );
+    if (normalizedTitle == null || normalizedTitle.isEmpty) {
+      await _promptForSpokenCaseTitle();
       return;
     }
 
-    final currentCase = _selectedCase!;
-    final prompt = normalizedTitle != null && normalizedTitle.isNotEmpty
-        ? _strings.t('case_archive_confirmation_named', <String, String>{
-            'current': currentCase.title,
-            'name': normalizedTitle,
-          })
-        : _strings.t('case_archive_confirmation', <String, String>{
-            'name': currentCase.title,
-          });
-
-    setState(() {
-      _awaitingCaseArchiveConfirmation = true;
-      _pendingNewCaseTitle = normalizedTitle;
-      _inputController.clear();
-    });
-
-    _appendAssistantMessage(prompt, speak: false);
-    await _speaker.stop();
-    await _speakAssistantMessage(prompt, resumeSpeechInputOnCompletion: true);
+    await _createCaseWithTitle(
+      normalizedTitle,
+      successMessage:
+          _strings.t('case_voice_created_continue', <String, String>{
+        'name': normalizedTitle,
+      }),
+    );
   }
 
   Future<void> _handleCaseArchiveConfirmation(
@@ -8623,9 +8566,6 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (resetHandledText) {
       _lastHandledSpeechText = null;
     }
-    if (_assistantSpeechInProgress) {
-      _stopAssistantSpeechForUserSpeech('start_listening');
-    }
     _lastFinalSpeechResult = null;
     _speechDraftStartedAt = null;
     _submitSpeechOnStop = true;
@@ -8707,11 +8647,18 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (normalizedTitle.isEmpty) {
       return null;
     }
-    if (_cases.length >= 5) {
+    final previousCase = _selectedCase;
+    if (_cases.length >= 5 && previousCase == null) {
       _showSnackbar(_strings.t('maximum_cases'));
       return null;
     }
     try {
+      if (previousCase != null) {
+        await _archiveCaseBeforeCreatingNewCase(previousCase);
+        if (!mounted) {
+          return null;
+        }
+      }
       final created = await _apiClient.createCase(
         userId: _signedInUser.userId,
         title: normalizedTitle,
@@ -8748,6 +8695,32 @@ class _ChatHomePageState extends State<ChatHomePage>
       _showSnackbar('$error');
       return null;
     }
+  }
+
+  Future<void> _archiveCaseBeforeCreatingNewCase(
+      CaseSummary previousCase) async {
+    await _apiClient.deleteCase(
+      caseId: previousCase.caseId,
+      userId: _signedInUser.userId,
+    );
+    if (!mounted) {
+      return;
+    }
+    final remainingCases =
+        _cases.where((c) => c.caseId != previousCase.caseId).toList();
+    setState(() {
+      _cases = remainingCases;
+      _awaitingCaseArchiveConfirmation = false;
+      _pendingNewCaseTitle = null;
+    });
+    await _selectCase(remainingCases.isNotEmpty ? remainingCases.first : null);
+    await widget.logger.info(
+      'Previous case archived automatically before creating a new case',
+      <String, Object?>{
+        'archived_case_id': previousCase.caseId,
+        'archived_case_title': previousCase.title,
+      },
+    );
   }
 
   Future<void> _renameSelectedCase() async {

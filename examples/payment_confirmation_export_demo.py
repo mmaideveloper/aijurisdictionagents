@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "api" / "aijuristiction-api"))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from app.chat.api import _build_document_export_content  # noqa: E402
+from app.chat.api import _build_document_export_content, _current_turn_confirms_document_generation  # noqa: E402
 from app.chat.models import Message, MessageRole, SessionResult  # noqa: E402
 
 
@@ -33,8 +33,20 @@ def main() -> None:
                 "Príjemca: Marek Matonok. Suma: 120 EUR. "
                 "Dátum platby: 22.05.2026. Účel platby: úhrada nájomného."
             ),
-        )
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="Chcete, aby som tento dokument teraz vygeneroval vo formáte PDF?",
+        ),
     ]
+    print(
+        "Confirmation recognized:",
+        _current_turn_confirms_document_generation("�no", messages),
+    )
+    print()
+
     result = SessionResult(
         final_recommendation="Pripravil som Potvrdenie o zaplatení.",
         judge_rationale="Demo session result",

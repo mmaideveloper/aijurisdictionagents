@@ -161,11 +161,12 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert generated_pdf.headers["content-type"].startswith("application/pdf")
     assert generated_pdf.content.startswith(b"%PDF")
     assert generated_pdf.headers["content-disposition"].endswith(
-        'filename="assistant-technical.pdf"'
+        f'filename="history-case_{generated_doc_id}_dokument.pdf"'
     )
     generated_pdf_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
     )
+    assert PdfReader(BytesIO(generated_pdf.content)).metadata.title == "Dokument"
     assert "JurisDicta" in generated_pdf_text
     assert "Skore overenia dokumentu: -" in generated_pdf_text
     assert "právny návrh" in generated_pdf_text
@@ -220,9 +221,14 @@ def test_generated_case_document_pdf_falls_back_to_latest_document_message(
         headers=_headers(),
     )
     assert generated_pdf.status_code == 200
+    assert generated_pdf.headers["content-disposition"].endswith(
+        f'filename="payment-confirmation_{old_doc_id}_potvrdenie.pdf"'
+    )
     generated_pdf_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
     )
+    assert PdfReader(BytesIO(generated_pdf.content)).metadata.title == "Potvrdenie"
+    assert "Potvrdenie\n" in generated_pdf_text
     assert "Potvrdenie o zaplatení" in generated_pdf_text
     assert "Marek Novak" in generated_pdf_text
     assert "5000 eur" in generated_pdf_text

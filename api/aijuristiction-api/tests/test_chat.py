@@ -3955,6 +3955,81 @@ def test_explicit_slovak_document_update_request_is_recognized() -> None:
     ) is True
 
 
+def test_mojibake_affirmative_reply_confirms_pending_document_generation() -> None:
+    from app.chat.api import _current_turn_confirms_document_generation
+    from app.chat.models import Message, MessageRole
+
+    session_id = uuid4()
+    previous_messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Chcete, aby som tento dokument teraz vygeneroval vo formate PDF?",
+        )
+    ]
+
+    assert _current_turn_confirms_document_generation("�no", previous_messages) is True
+
+
+def test_standalone_affirmative_after_ready_document_returns_status_without_llm(monkeypatch) -> None:
+    from app.chat import api as chat_api
+    from app.chat.models import Message, MessageRole, Session
+    from app.chat.repository import InMemoryChatRepository
+
+    repository = InMemoryChatRepository()
+    monkeypatch.setattr(chat_api, "_repository", repository)
+
+    session_id = uuid4()
+    session = repository.create_session(
+        Session(id=session_id, country="SK", language="SK", discussion_type="court")
+    )
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Chcem potvrdenie o zaplateni 5000 eur.",
+        )
+    )
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Chcete, aby som tento dokument teraz vygeneroval vo formate PDF?",
+        )
+    )
+    repository.add_message(
+        Message(session_id=session_id, role=MessageRole.USER, content="Ano, vygeneruj PDF."),
+    )
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content=(
+                "Tu je konecna verzia dokumentu:\n\n"
+                "---\n\n"
+                "**Potvrdenie o zaplateni**\n\n"
+                "Dokument je pripraveny na stiahnutie vo formate PDF."
+            ),
+        )
+    )
+
+    def _unexpected_lawyer_agent(*_args, **_kwargs):
+        raise AssertionError("LLM should not be called for ready-document yes/status acknowledgement")
+
+    monkeypatch.setattr("aijurisdictionagents.agents.create_lawyer_agent", _unexpected_lawyer_agent)
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    _user, lawyer, visible, events = chat_api._run_direct_lawyer_turn(
+        session_id=session_id,
+        session=session,
+        content="�no",
+    )
+
+    assert events == []
+    assert lawyer.agent_name == "LawyerStatus"
+    assert "pripraveny na export" in visible.lower()
+
+
 def test_document_export_ready_after_confirmation_with_prior_case_update() -> None:
     from app.chat.api import _build_direct_reply_result
     from app.chat.models import Message, MessageRole, Session

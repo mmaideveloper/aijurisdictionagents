@@ -152,6 +152,8 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 - if the register shows exactly one current stakeholder, the API can reuse that stakeholder as the likely transferor instead of asking for the transferor again
 - if the requested main document usually requires related resolutions, updated articles, or registry attachments, the assistant explicitly offers to prepare that fuller package too
 - if the user later says `áno` / `show me the draft`, the API returns the working draft directly instead of looping back into the same intake questions
+- short confirmation replies now pass through Slovak/mojibake-safe normalization, so `áno`, `ano`, and common corrupted STT/log forms like `�no` confirm an unanswered PDF-generation prompt instead of causing the assistant to ask the same question again
+- when a document is already ready and the user sends only a short confirmation such as `áno`, the API returns the ready/export status directly without calling the LLM for another intake turn
 - for direct register-information questions like `kto je majiteľ firmy ...`, the API now returns ORSR-backed owner/statutory summary directly (without falling back to stale share-transfer prompts from earlier turns in the same session)
 - repeated ORSR lookups for the same company query are now reused from in-memory API cache during the conversation, so follow-up turns do not keep revalidating identical company data
 - short follow-up replies such as `ano`, `50%`, or `nie` now keep the Slovak share-transfer workflow active when an earlier turn already established the company context
@@ -527,6 +529,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
 - `GET /v1/cases/{case_id}/documents/{doc_id}/pdf?user_id=...` renders the client-visible assistant draft tied to a generated technical case document as a PDF, without exposing the stored JSON payload.
 - If the original technical-payload marker is no longer present in the latest case history window, the generated case-document PDF endpoint falls back to the newest assistant message that contains a finalized document body and renders only that document body, not the surrounding chat text.
+- Generated case-document PDF downloads use a user-facing filename format: normalized case title, document GUID, and normalized document type, for example `payment-confirmation_<doc_id>_potvrdenie.pdf`; the visible PDF heading and PDF metadata title also use the detected document type such as `Potvrdenie`, so browser PDF tabs do not show `untitled`.
 - `GET /v1/cases/{case_id}/documents/context?user_id=...` now reports processed/unprocessed memory inputs across uploaded files, chat attachments, and generated `session_history` transcripts.
 - If a transcript or document payload is missing in local storage, history responses fall back to saved summaries and document download returns `404` instead of `500`.
 - Uploaded case documents are stored as `case -> many documents`. Each processed uploaded document keeps the extracted full text plus a real embedding in `case_document_contents`, and chunk-level text/embedding rows in `case_document_chunks`.

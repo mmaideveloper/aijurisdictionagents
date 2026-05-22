@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import os
 import base64
+import re
 import threading
+import unicodedata
 from mimetypes import guess_type
 from pathlib import Path
 from datetime import datetime, timezone
@@ -422,7 +424,7 @@ def download_generated_case_document_pdf(
     user_id: str,
     store: ApiDatabaseStore = Depends(get_store),
 ) -> Response:
-    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    case = _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
     try:
         document = store.get_case_document(case_id=case_id, doc_id=doc_id)
     except KeyError as exc:
@@ -438,7 +440,12 @@ def download_generated_case_document_pdf(
             detail=f"Rendered PDF content is unavailable for document {doc_id}",
         )
     title = _generated_case_document_title(visible_content)
-    filename = f"{Path(document.original_filename).stem or 'case-document'}.pdf"
+    document_type = _generated_case_document_type(visible_content)
+    filename = _generated_case_document_filename(
+        case_title=case.title,
+        doc_id=document.doc_id,
+        document_type=document_type,
+    )
     pdf_content = _build_professional_document_pdf(
         title=title,
         lines=visible_content.splitlines(),
@@ -648,11 +655,51 @@ def _latest_generated_case_document_visible_content(
 
 
 def _generated_case_document_title(content: str) -> str:
+    document_type = _generated_case_document_type(content)
+    if document_type:
+        return document_type
     for line in content.splitlines():
         stripped = line.strip().strip("*#:- ")
         if stripped:
             return stripped[:120]
     return "Case document"
+
+
+def _generated_case_document_type(content: str) -> str:
+    normalized = _normalize_for_filename(content)
+    type_markers = (
+        ("potvrdenie", "Potvrdenie"),
+        ("predzalobna vyzva", "Predžalobná výzva"),
+        ("najomna zmluva", "Nájomná zmluva"),
+        ("zaloba", "Žaloba"),
+        ("navrh", "Návrh"),
+        ("zmluva", "Zmluva"),
+    )
+    for marker, display_name in type_markers:
+        if marker in normalized:
+            return display_name
+    return "Dokument"
+
+
+def _generated_case_document_filename(
+    *, case_title: str, doc_id: str, document_type: str
+) -> str:
+    case_slug = _filename_slug(case_title, fallback="case")
+    type_slug = _filename_slug(document_type, fallback="document")
+    guid = doc_id.strip() or str(uuid4())
+    return f"{case_slug}_{guid}_{type_slug}.pdf"
+
+
+def _filename_slug(value: str, *, fallback: str) -> str:
+    normalized = _normalize_for_filename(value)
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return slug[:80].strip("-") or fallback
+
+
+def _normalize_for_filename(value: str) -> str:
+    without_accents = unicodedata.normalize("NFKD", value)
+    ascii_text = without_accents.encode("ascii", "ignore").decode("ascii")
+    return ascii_text.lower()
 
 
 def _looks_like_generated_case_document_message(content: str) -> bool:

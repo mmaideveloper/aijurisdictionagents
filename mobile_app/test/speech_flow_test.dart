@@ -235,6 +235,17 @@ void main() {
       );
     });
 
+    test('matches corrupted Slovak confirmation tokens', () {
+      expect(
+        parseSpokenConfirmation('�no'),
+        SpokenConfirmationChoice.yes,
+      );
+      expect(
+        parseSpokenConfirmation('Ã¡no'),
+        SpokenConfirmationChoice.yes,
+      );
+    });
+
     test('does not treat normal content as a confirmation', () {
       expect(
         parseSpokenConfirmation('I need help with my contract'),

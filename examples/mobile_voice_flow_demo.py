@@ -1,6 +1,10 @@
 """Minimal runnable demo for mobile voice flow behavior."""
 
 from dataclasses import dataclass
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 
 @dataclass
@@ -18,6 +22,7 @@ def run_demo() -> None:
     print("Listening...")
     if explicit_terminator:
         print("Explicit terminator detected -> create_case title=splnomocnenie 1.0")
+        print("Current case exists -> archive it automatically, then create the new case")
         state.awaiting_confirmation = False
     else:
         print("No speech for 5s -> Mozem uz odpovedat na otazku? Povedzte ano alebo nie.")
@@ -26,9 +31,10 @@ def run_demo() -> None:
 
     state.awaiting_confirmation = True
     state.pending_intent = "submit_message"
-    for answer in ("ano", "nie"):
-        if answer == "ano":
-            print("User answered ano -> stop mic during processing and run submit_message")
+    for answer in ("ano", "�no", "Ã¡no", "nie"):
+        normalized_answer = answer.replace("�", "a").replace("Ã¡", "a")
+        if normalized_answer == "ano":
+            print(f"User answered {answer} -> stop mic during processing and run submit_message")
             state.awaiting_confirmation = False
             state.pending_intent = None
         else:
