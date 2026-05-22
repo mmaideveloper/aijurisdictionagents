@@ -44,6 +44,7 @@ def test_document_processor_logs_embedding_runtime_on_startup(monkeypatch, caplo
     assert "[document-processor] startup" in output
     assert "embedding_option=local" in output
     assert "embedding_model=all-MiniLM-L6-v2" in output
+    assert "embedding_device=" in output
 
 
 def test_document_processor_reads_azure_max_running_time(monkeypatch) -> None:

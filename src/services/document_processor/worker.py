@@ -24,7 +24,8 @@ def run_document_processor(*, limit: int = 20) -> list[ProcessedDocumentResult]:
         "[document-processor] startup "
         f"telemetry_mode={telemetry_mode} "
         f"embedding_option={embedding_runtime.option} "
-        f"embedding_model={embedding_runtime.model}"
+        f"embedding_model={embedding_runtime.model} "
+        f"embedding_device={embedding_runtime.device or ''}"
     )
     max_running_minutes = _load_max_running_minutes()
     max_running_seconds = max_running_minutes * 60 if _is_azure_runtime() and max_running_minutes > 0 else 0

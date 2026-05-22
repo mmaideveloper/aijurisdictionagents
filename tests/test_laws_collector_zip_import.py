@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 import sqlite3
+import threading
+import time
 import zipfile
 
 from aijurisdictionagents.llm.embeddings import MockEmbeddingClient
 from services.laws_collector.archive_storage import StoredArchiveObject
 from services.laws_collector import LawsCollectorConfig, SqliteLawStore, SlovakLawsCollectorService
-from services.laws_collector.domain import CollectorImportState
+from services.laws_collector.domain import CollectorImportState, SyncSummary
+import services.laws_collector.slovlex_zip_import as zip_import
 from services.laws_collector.slovlex_zip_import import (
     SlovLexArchiveExport,
     SlovLexExportIndex,
@@ -27,8 +31,8 @@ def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorS
         storage_local=str(tmp_path / "files"),
         storage_cloud="",
         delta_poll_hours=3,
-        initial_import_from=date(1993, 1, 1),
-        historical_import_from=date(1993, 1, 1),
+        initial_import_from=date(1945, 1, 1),
+        historical_import_from=date(1945, 1, 1),
         import_mode="zip",
     )
     store = SqliteLawStore.from_config(config)
@@ -121,8 +125,8 @@ def test_zip_import_runner_imports_monthly_zip_and_marks_state_complete(tmp_path
             return SlovLexExportIndex(
                 archive_export=None,
                 monthly_export=SlovLexMonthlyExport(
-                    range_start="2026-03-01",
-                    range_end="2026-04-01",
+                    range_start="2098-01-01",
+                    range_end="2098-02-01",
                     zip_url=monthly_zip.resolve().as_uri(),
                 ),
             )
@@ -136,7 +140,7 @@ def test_zip_import_runner_imports_monthly_zip_and_marks_state_complete(tmp_path
 
     state = store.get_import_state(
         country_code="SK",
-        import_key="slov-lex:zip:monthly:2026-03-01_2026-04-01",
+        import_key="slov-lex:zip:monthly:2098-01-01_2098-02-01",
     )
 
     assert summary.phase == "monthly"
@@ -162,8 +166,8 @@ def test_zip_import_runner_persists_html_source_artifact_references(tmp_path: Pa
             return SlovLexExportIndex(
                 archive_export=None,
                 monthly_export=SlovLexMonthlyExport(
-                    range_start="2026-03-01",
-                    range_end="2026-04-01",
+                    range_start="2098-03-01",
+                    range_end="2098-04-01",
                     zip_url=monthly_zip.resolve().as_uri(),
                 ),
             )
@@ -195,7 +199,7 @@ def test_zip_import_runner_persists_html_source_artifact_references(tmp_path: Pa
     assert "Ustanovenie pre Prvy zakon." in str(row["content_text"])
 
 
-def test_zip_import_runner_resumes_after_timeout(tmp_path: Path) -> None:
+def test_zip_import_runner_resumes_after_timeout(tmp_path: Path, monkeypatch) -> None:
     store, service, config = _build_service(tmp_path)
     monthly_zip = tmp_path / "fixtures" / "exportZmeny.zip"
     _create_monthly_zip(
@@ -217,17 +221,29 @@ def test_zip_import_runner_resumes_after_timeout(tmp_path: Path) -> None:
                 ),
             )
 
+    original_loader = zip_import.load_snapshot_from_entry_file
+    loaded_entries: list[str] = []
+
+    def counting_loader(entry: Path):
+        loaded_entries.append(entry.name)
+        return original_loader(entry)
+
+    monkeypatch.setattr(zip_import, "load_snapshot_from_entry_file", counting_loader)
+
     first_runner = SlovLexZipImportRunner(
         config=config,
         store=store,
         service=service,
         export_index_loader=FakeIndexLoader(),
-        monotonic_time_provider=iter([0.0, 0.0, 50.0, 50.0]).__next__,
+        monotonic_time_provider=iter([0.0, 0.0, 50.0]).__next__,
     )
     first_summary = first_runner.run(max_running_seconds=30)
 
     assert first_summary.stopped_due_to_max_running_time is True
     assert first_summary.entries_processed == 1
+    assert loaded_entries == ["19930101.html"]
+
+    monkeypatch.setattr(zip_import, "load_snapshot_from_entry_file", original_loader)
 
     second_summary = SlovLexZipImportRunner(
         config=config,
@@ -397,6 +413,38 @@ def test_zip_import_runner_processes_archive_seed(tmp_path: Path) -> None:
     assert store.get_counts().documents == 2
 
 
+def test_zip_import_runner_skips_laws_before_historical_baseline(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    archive_zip = tmp_path / "fixtures" / "export.zip"
+    _create_monthly_zip(
+        archive_zip,
+        laws=[
+            (1944, 1, "Pred baseline", "1944-01-01"),
+            (1945, 1, "Baseline", "1945-01-01"),
+        ],
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-03",
+                    part_urls=(archive_zip.resolve().as_uri(),),
+                ),
+                monthly_export=None,
+            )
+
+    summary = SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    assert summary.archive_completed is True
+    assert store.get_counts().documents == 1
+
+
 def test_zip_import_runner_updates_collector_progress(tmp_path: Path) -> None:
     store, service, config = _build_service(tmp_path)
     archive_zip = tmp_path / "fixtures" / "export.zip"
@@ -433,6 +481,102 @@ def test_zip_import_runner_updates_collector_progress(tmp_path: Path) -> None:
     assert progress.last_processed_law == "2/1993"
     assert progress.last_processed_at is not None
     assert progress.last_collector_run_at is not None
+    assert progress.next_probe_law == "3/1993"
+
+
+def test_zip_import_runner_sets_progress_to_highest_law_not_last_sorted_entry(tmp_path: Path) -> None:
+    store, service, config = _build_service(tmp_path)
+    archive_zip = tmp_path / "fixtures" / "export.zip"
+    _create_monthly_zip(
+        archive_zip,
+        laws=[
+            (2026, 100, "Stovka", "2026-01-01"),
+            (2026, 9, "Deviatka", "2026-01-01"),
+        ],
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-02",
+                    part_urls=(archive_zip.resolve().as_uri(),),
+                ),
+                monthly_export=None,
+            )
+
+    SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    progress = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=1945,
+    )
+    assert progress.last_processed_law == "100/2026"
+    assert progress.next_probe_law == "101/2026"
+
+
+def test_zip_import_runner_imports_law_groups_in_parallel(tmp_path: Path) -> None:
+    store, _, base_config = _build_service(tmp_path)
+    config = replace(base_config, import_zip_max_threads=3)
+    monthly_zip = tmp_path / "fixtures" / "exportZmeny.zip"
+    _create_monthly_zip(
+        monthly_zip,
+        laws=[
+            (1993, 1, "Prvy zakon", "1993-01-01"),
+            (1993, 2, "Druhy zakon", "1993-02-01"),
+            (1993, 3, "Treti zakon", "1993-03-01"),
+        ],
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=None,
+                monthly_export=SlovLexMonthlyExport(
+                    range_start="2099-01-01",
+                    range_end="2099-01-03",
+                    zip_url=monthly_zip.resolve().as_uri(),
+                ),
+            )
+
+    active_syncs = 0
+    max_active_syncs = 0
+    lock = threading.Lock()
+    all_workers_started = threading.Event()
+
+    class BlockingService:
+        def sync(self, snapshots):
+            nonlocal active_syncs, max_active_syncs
+            with lock:
+                active_syncs += 1
+                max_active_syncs = max(max_active_syncs, active_syncs)
+                if active_syncs == 3:
+                    all_workers_started.set()
+            all_workers_started.wait(timeout=2)
+            time.sleep(0.01)
+            with lock:
+                active_syncs -= 1
+            return SyncSummary(processed=len(tuple(snapshots)))
+
+    summary = SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=BlockingService(),
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    assert summary.entries_processed == 3
+    assert max_active_syncs == 3
+    state = store.get_import_state(country_code="SK", import_key="slov-lex:zip:monthly:2099-01-01_2099-01-03")
+    assert state is not None
+    assert state.status == "completed"
+    assert state.last_processed_law == "3/1993"
 
 
 def test_zip_import_runner_reextracts_when_marker_signature_does_not_match(tmp_path: Path) -> None:

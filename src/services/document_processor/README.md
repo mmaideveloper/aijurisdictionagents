@@ -20,12 +20,14 @@ Embedding model env vars:
 
 - `SYSTEM_EMBEDDING_MODEL_OPTION`: shared embedding mode switch. Use `local` for the built-in local sentence-transformer path, `cloud` to keep Azure/OpenAI embeddings.
 - `SYSTEM_EMBEDDING_MODEL`: shared local embedding model name. Default: `all-MiniLM-L6-v2`. Local models are cached under `aimodels/` locally and baked into Azure worker images under `/app/aimodels` during deployment.
+- `SYSTEM_EMBEDDING_DEVICE`: local embedding device selector. Default: `auto`, which tries CUDA/MPS and falls back to CPU when GPU support is unavailable or a GPU runtime error occurs.
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`: Azure OpenAI embedding deployment name. Recommended for Jurisdicta: `text-embedding-3-large`.
 - `OPENAI_EMBEDDINGS_MODEL`: OpenAI embedding model name. Recommended default: `text-embedding-3-large`.
 - Local tests and the minimal demo use `LLM_PROVIDER=mock`, which keeps embeddings deterministic and offline.
 - Deployed Azure jobs default to:
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
+- `SYSTEM_EMBEDDING_DEVICE=auto`
 - You can still set `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` explicitly to keep Azure/OpenAI embeddings
 - When the Azure job runs in `local` mode, the worker no longer requires Azure OpenAI embedding settings.
 
@@ -55,7 +57,7 @@ python examples/local_embedding_cache_demo.py
 
 Startup logs now print the resolved embedding runtime before processing begins, for example:
 
-- `[document-processor] startup embedding_option=local embedding_model=all-MiniLM-L6-v2`
+- `[document-processor] startup embedding_option=local embedding_model=all-MiniLM-L6-v2 embedding_device=cpu`
 - `[document-processor] startup embedding_option=cloud embedding_model=text-embedding-3-large`
 - `[document-processor] batch_results={...}` is emitted as a single-line JSON payload so Azure Container Apps does not split one batch summary into many log rows.
 - When `APPLICATIONINSIGHTS_CONNECTION_STRING` is present on the Azure ACA job, those startup and processing logs are also exported to Application Insights under application name `document_processor`.

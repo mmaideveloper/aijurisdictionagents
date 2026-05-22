@@ -103,7 +103,7 @@ The live Slovakia path now has two runners:
 
 Rules implemented today:
 
-- start at `1/1993`
+- start at `1/1945`
 - probe laws sequentially by `number/year`
 - if a law exists, load and ingest it
 - if a gap is found in a past year, move to `1/<next year>`
@@ -113,6 +113,8 @@ State is now persisted in two places:
 
 - `collector_progress` for the legacy sequential probe cursor
 - `collector_import_state` for ZIP archive/monthly resume state and archive completion tracking
+
+After a ZIP archive/monthly import, `collector_progress` is advanced to the highest imported law number/year. That lets the five-minute live probe continue from the newest known Slov-Lex act instead of replaying old archive entries.
 
 ### 4. Snapshot Loading
 
@@ -401,6 +403,8 @@ Shared embedding runtime:
 
 - default runtime mode is `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 - default local model is `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
+- default local device selection is `SYSTEM_EMBEDDING_DEVICE=auto`, which tries CUDA/MPS and falls back to CPU if GPU support is unavailable or fails at runtime
+- local NVIDIA GPU use requires a CUDA-enabled PyTorch build; use `scripts/install_cuda_torch.ps1` for the repo conda environment
 - local model files are cached in `aimodels/`
 - Azure worker deployments default `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 

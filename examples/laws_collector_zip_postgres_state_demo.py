@@ -253,8 +253,8 @@ def _build_postgres_service():
         storage_local="",
         storage_cloud="",
         delta_poll_hours=3,
-        initial_import_from=date(1993, 1, 1),
-        historical_import_from=date(1993, 1, 1),
+        initial_import_from=date(1945, 1, 1),
+        historical_import_from=date(1945, 1, 1),
         import_mode="zip",
     )
     store = PostgresLawStore.from_config(config)

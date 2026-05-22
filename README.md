@@ -145,6 +145,14 @@ Conda notes:
 - Conda manages the interpreter and system packages; `pyproject.toml` defines the Python project metadata,
   dependencies, and tooling (needed for `pip install -e .`).
 
+Enable NVIDIA GPU embeddings in the local conda environment:
+
+```powershell
+.\scripts\install_cuda_torch.ps1 -CudaWheel cu124
+```
+
+Then restart the laws collector. `SYSTEM_EMBEDDING_DEVICE=auto` will select `cuda` when PyTorch reports CUDA support; otherwise the runtime falls back to CPU and logs the reason.
+
 
 
 ## Local model builder service
@@ -565,9 +573,10 @@ The laws collector package lives in `src/services/laws_collector`.
 It now selects a country-specific implementation by `LAWS_COUNTRY`.
 Only `slovak_laws_collector` is implemented today, and it keeps using PostgreSQL database `laws_sk`.
 For Slovak records, the collector persists law year/number and also stores an optional parent law year/number when the imported act is an amendment of another law.
-The Slovak sequential crawl now starts hardcoded at `1/1993`, persists the last collector run timestamp, and remembers the last processed law plus the next `number/year` probe target.
+The Slovak sequential crawl now starts hardcoded at `1/1945`, persists the last collector run timestamp, and remembers the last processed law plus the next `number/year` probe target.
 The live ingest path downloads the law from SlovLex, stores the text in the local database, computes a real embedding vector through the shared embedding client, chunk-embeds long laws to stay within model limits, and logs each processing step in the console.
 The live SlovLex ingest also stores normalized law metadata in `law_metadata` and dependency links in `law_metadata_relations`, including `Predpis mení`, `Predpis je menený`, `Vykonávacie predpisy`, and `Predpis ruší`.
+Local embeddings use `SYSTEM_EMBEDDING_DEVICE=auto` by default: CUDA is selected when PyTorch can use an NVIDIA GPU, Apple MPS is selected when available, and any unavailable GPU/runtime error falls back to CPU with a warning log.
 For debugger use, the VS Code laws-collector launch profiles now load `.env`, target the correct local Postgres port `5433`, limit each run to one live probe, and include a mock-embeddings option that avoids stepping into the OpenAI SDK.
 
 Quick start:
@@ -589,6 +598,24 @@ Run a live Slov-Lex sequential probe loop:
 ```powershell
 conda activate .\.conda
 python -m services.laws_collector --run-sequential-import --max-probes 25
+```
+
+Run the local laws collector against the local Docker PostgreSQL database:
+
+```powershell
+$env:LAWS_COLLECTOR_IMPORT = "zip"
+$env:LAWS_COLLECTOR_MAX_RUNNING_TIME = "0"
+.\skills\laws-collector\scripts\start_laws_collector.ps1 -Fixture live -DatabaseOption postgres -MaxCycles 0 -Background
+```
+
+This starts or reuses the local `laws_sk` PostgreSQL database, imports the full Slov-Lex archive when needed, then continues with monthly `exportZmeny.zip` updates. After archive/monthly import completes, use the sequential mode when you need to probe new laws from the last stored `law_number/law_year` cursor:
+In zip mode the worker also advances the live probe cursor to the highest imported law and, with `-PollSeconds 300`, checks for new laws every five minutes after the archive/monthly import catches up.
+If archive import was interrupted, the ZIP importer resumes after `collector_import_state.last_processed_entry` and streams the remaining entries so progress is persisted after each processed law.
+`LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` controls parallel law-group import workers for the archive/monthly ZIP phase; local runs currently use `5` in `.env`.
+
+```powershell
+$env:LAWS_COLLECTOR_IMPORT = "one_law_url"
+.\skills\laws-collector\scripts\start_laws_collector.ps1 -Fixture live -DatabaseOption postgres -MaxCycles 0 -MaxProbes 25 -Background
 ```
 
 Inspect parsed metadata/relations for the canonical `461/2003` Slovak law:

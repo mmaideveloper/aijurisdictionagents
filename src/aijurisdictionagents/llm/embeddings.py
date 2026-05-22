@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
+import logging
 import os
 from pathlib import Path
 import re
+import subprocess
 import time
 from typing import Any, Callable, Protocol, Sequence
 
@@ -20,6 +22,10 @@ class EmbeddingBatchResult:
 class EmbeddingRuntimeSummary:
     option: str
     model: str
+    device: str = ""
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class EmbeddingClient(Protocol):
@@ -111,20 +117,45 @@ class AzureFoundryEmbeddingClient:
 class LocalEmbeddingConfig:
     model: str
     model_directory: Path
+    device: str = "auto"
 
 
 class SentenceTransformerEmbeddingBackend:
-    def __init__(self, model: Any) -> None:
+    def __init__(self, model: Any, *, requested_device: str, selected_device: str) -> None:
         self._model = model
+        self.requested_device = requested_device
+        self.selected_device = selected_device
 
     def encode_texts(self, texts: Sequence[str]) -> list[list[float]]:
-        encoded = self._model.encode(
-            list(texts),
-            convert_to_numpy=False,
-            normalize_embeddings=True,
-            show_progress_bar=False,
-        )
+        try:
+            encoded = self._model.encode(
+                list(texts),
+                convert_to_numpy=False,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )
+        except Exception as exc:
+            if self.selected_device == "cpu":
+                raise
+            _LOGGER.warning(
+                "Local embedding encode failed on device '%s'; falling back to CPU. Error: %s",
+                self.selected_device,
+                exc,
+            )
+            self._move_model_to_cpu()
+            self.selected_device = "cpu"
+            encoded = self._model.encode(
+                list(texts),
+                convert_to_numpy=False,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )
         return _coerce_local_vectors(encoded)
+
+    def _move_model_to_cpu(self) -> None:
+        to_method = getattr(self._model, "to", None)
+        if callable(to_method):
+            to_method("cpu")
 
 
 class LocalEmbeddingClient:
@@ -139,6 +170,10 @@ class LocalEmbeddingClient:
     @property
     def model_name(self) -> str:
         return self._config.model
+
+    @property
+    def selected_device(self) -> str:
+        return getattr(self._backend, "selected_device", "")
 
     def embed_texts(self, texts: Sequence[str]) -> EmbeddingBatchResult:
         normalized_inputs = [_normalize_embedding_input(text) for text in texts]
@@ -173,9 +208,11 @@ def get_embedding_client() -> EmbeddingClient:
 def load_embedding_runtime_summary_from_env() -> EmbeddingRuntimeSummary:
     option = load_embedding_model_option_from_env()
     if option == "local":
+        config = load_local_embedding_config_from_env()
         return EmbeddingRuntimeSummary(
             option=option,
-            model=load_local_embedding_config_from_env().model,
+            model=config.model,
+            device=_resolve_local_embedding_device(config.device),
         )
 
     provider = os.getenv("LLM_PROVIDER", "azurefoundry").strip().lower()
@@ -200,9 +237,14 @@ def load_embedding_model_option_from_env() -> str:
 
 def load_local_embedding_config_from_env() -> LocalEmbeddingConfig:
     model = os.getenv("SYSTEM_EMBEDDING_MODEL", "").strip() or "all-MiniLM-L6-v2"
+    device = os.getenv("SYSTEM_EMBEDDING_DEVICE", "").strip().lower() or "auto"
+    if device not in {"auto", "cpu", "cuda", "mps"}:
+        _LOGGER.warning("Unsupported SYSTEM_EMBEDDING_DEVICE='%s'; falling back to auto.", device)
+        device = "auto"
     return LocalEmbeddingConfig(
         model=model,
         model_directory=_default_local_embedding_root() / _sanitize_model_directory_name(model),
+        device=device,
     )
 
 
@@ -316,21 +358,124 @@ def _load_local_embedding_backend(config: LocalEmbeddingConfig) -> LocalEmbeddin
     return _cached_local_embedding_backend(
         model_name=config.model,
         model_directory=str(config.model_directory),
+        requested_device=config.device,
     )
 
 
-@lru_cache(maxsize=4)
-def _cached_local_embedding_backend(*, model_name: str, model_directory: str) -> LocalEmbeddingBackend:
+@lru_cache(maxsize=8)
+def _cached_local_embedding_backend(
+    *,
+    model_name: str,
+    model_directory: str,
+    requested_device: str,
+) -> LocalEmbeddingBackend:
     model_path = Path(model_directory)
     model_path.parent.mkdir(parents=True, exist_ok=True)
     sentence_transformer_type = _load_sentence_transformer_type()
+    selected_device = _resolve_local_embedding_device(requested_device)
     if (model_path / "modules.json").exists():
-        return SentenceTransformerEmbeddingBackend(sentence_transformer_type(str(model_path)))
+        try:
+            model = sentence_transformer_type(str(model_path), device=selected_device)
+        except Exception as exc:
+            _LOGGER.warning(
+                "Local embedding model load failed on device '%s'; falling back to CPU. Error: %s",
+                selected_device,
+                exc,
+            )
+            selected_device = "cpu"
+            model = sentence_transformer_type(str(model_path), device=selected_device)
+        return SentenceTransformerEmbeddingBackend(
+            model,
+            requested_device=requested_device,
+            selected_device=selected_device,
+        )
 
     source_name = _resolve_local_embedding_source_name(model_name)
-    model = sentence_transformer_type(source_name)
+    try:
+        model = sentence_transformer_type(source_name, device=selected_device)
+    except Exception as exc:
+        _LOGGER.warning(
+            "Local embedding model load failed on device '%s'; falling back to CPU. Error: %s",
+            selected_device,
+            exc,
+        )
+        selected_device = "cpu"
+        model = sentence_transformer_type(source_name, device=selected_device)
     model.save(str(model_path))
-    return SentenceTransformerEmbeddingBackend(model)
+    return SentenceTransformerEmbeddingBackend(
+        model,
+        requested_device=requested_device,
+        selected_device=selected_device,
+    )
+
+
+def _resolve_local_embedding_device(requested_device: str) -> str:
+    requested = (requested_device or "auto").strip().lower()
+    if requested == "cpu":
+        return "cpu"
+    try:
+        import torch
+    except Exception as exc:
+        _LOGGER.warning(
+            "PyTorch is unavailable for embedding device detection; falling back to CPU. Error: %s",
+            exc,
+        )
+        return "cpu"
+
+    if requested in {"auto", "cuda"}:
+        try:
+            if torch.cuda.is_available():
+                return "cuda"
+            nvidia_gpu_name = _detect_nvidia_gpu_name()
+            if nvidia_gpu_name:
+                _LOGGER.warning(
+                    "NVIDIA GPU detected (%s), but PyTorch CUDA is unavailable; "
+                    "falling back to CPU. Install a CUDA-enabled PyTorch build to use GPU "
+                    "embeddings.",
+                    nvidia_gpu_name,
+                )
+            if requested == "cuda":
+                _LOGGER.warning(
+                    "SYSTEM_EMBEDDING_DEVICE=cuda requested but CUDA is unavailable; "
+                    "falling back to CPU."
+                )
+        except Exception as exc:
+            _LOGGER.warning("CUDA detection failed; falling back to CPU. Error: %s", exc)
+        if requested == "cuda":
+            return "cpu"
+
+    if requested in {"auto", "mps"}:
+        try:
+            mps_backend = getattr(torch.backends, "mps", None)
+            if mps_backend is not None and mps_backend.is_available():
+                return "mps"
+            if requested == "mps":
+                _LOGGER.warning("SYSTEM_EMBEDDING_DEVICE=mps requested but MPS is unavailable; falling back to CPU.")
+        except Exception as exc:
+            _LOGGER.warning("MPS detection failed; falling back to CPU. Error: %s", exc)
+
+    return "cpu"
+
+
+def _detect_nvidia_gpu_name() -> str | None:
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name",
+                "--format=csv,noheader",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    first_line = result.stdout.splitlines()[0].strip() if result.stdout.splitlines() else ""
+    return first_line or None
 
 
 def _coerce_local_vectors(raw_vectors: Any) -> list[list[float]]:

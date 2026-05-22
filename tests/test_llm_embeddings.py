@@ -1,3 +1,6 @@
+import sys
+from types import SimpleNamespace
+
 import httpx
 from openai import RateLimitError
 
@@ -50,7 +53,9 @@ def test_retry_delay_seconds_parses_rate_limit_message_without_headers() -> None
 def test_local_embedding_defaults_apply_when_env_vars_are_missing(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("SYSTEM_EMBEDDING_MODEL_OPTION", raising=False)
     monkeypatch.delenv("SYSTEM_EMBEDDING_MODEL", raising=False)
+    monkeypatch.delenv("SYSTEM_EMBEDDING_DEVICE", raising=False)
     monkeypatch.setattr(embeddings, "_default_local_embedding_root", lambda: tmp_path / "aimodels")
+    monkeypatch.setattr(embeddings, "_resolve_local_embedding_device", lambda _device: "cpu")
 
     config = embeddings.load_local_embedding_config_from_env()
     option = embeddings.load_embedding_model_option_from_env()
@@ -59,8 +64,100 @@ def test_local_embedding_defaults_apply_when_env_vars_are_missing(monkeypatch, t
     assert option == "local"
     assert config.model == "all-MiniLM-L6-v2"
     assert config.model_directory == tmp_path / "aimodels" / "all-MiniLM-L6-v2"
+    assert config.device == "auto"
     assert summary.option == "local"
     assert summary.model == "all-MiniLM-L6-v2"
+    assert summary.device == "cpu"
+
+
+def test_local_embedding_device_can_be_configured(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("SYSTEM_EMBEDDING_DEVICE", "cuda")
+    monkeypatch.setattr(embeddings, "_default_local_embedding_root", lambda: tmp_path / "aimodels")
+
+    config = embeddings.load_local_embedding_config_from_env()
+
+    assert config.device == "cuda"
+
+
+def test_invalid_local_embedding_device_falls_back_to_auto(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("SYSTEM_EMBEDDING_DEVICE", "tpu")
+    monkeypatch.setattr(embeddings, "_default_local_embedding_root", lambda: tmp_path / "aimodels")
+
+    config = embeddings.load_local_embedding_config_from_env()
+
+    assert config.device == "auto"
+
+
+def test_resolve_local_embedding_device_uses_cuda_when_available(monkeypatch) -> None:
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: True),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    device = embeddings._resolve_local_embedding_device("auto")
+
+    assert device == "cuda"
+
+
+def test_resolve_local_embedding_device_falls_back_when_cuda_unavailable(monkeypatch) -> None:
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(embeddings, "_detect_nvidia_gpu_name", lambda: None)
+
+    device = embeddings._resolve_local_embedding_device("cuda")
+
+    assert device == "cpu"
+
+
+def test_resolve_local_embedding_device_logs_when_nvidia_gpu_has_cpu_torch(
+    monkeypatch,
+    caplog,
+) -> None:
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(embeddings, "_detect_nvidia_gpu_name", lambda: "NVIDIA GeForce GTX 1660 Ti")
+
+    device = embeddings._resolve_local_embedding_device("auto")
+
+    assert device == "cpu"
+    assert "NVIDIA GPU detected" in caplog.text
+    assert "PyTorch CUDA is unavailable" in caplog.text
+
+
+def test_sentence_transformer_backend_falls_back_to_cpu_after_gpu_encode_error() -> None:
+    class FakeModel:
+        def __init__(self) -> None:
+            self.device = "cuda"
+            self.encode_calls = 0
+
+        def encode(self, texts: list[str], **_kwargs: object) -> list[list[float]]:
+            self.encode_calls += 1
+            if self.device == "cuda":
+                raise RuntimeError("CUDA out of memory")
+            return [[1, 2, 3] for _text in texts]
+
+        def to(self, device: str) -> None:
+            self.device = device
+
+    fake_model = FakeModel()
+    backend = embeddings.SentenceTransformerEmbeddingBackend(
+        fake_model,
+        requested_device="auto",
+        selected_device="cuda",
+    )
+
+    vectors = backend.encode_texts(["first", "second"])
+
+    assert vectors == [[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]
+    assert fake_model.encode_calls == 2
+    assert backend.selected_device == "cpu"
 
 
 def test_embedding_runtime_summary_uses_cloud_model_when_requested(monkeypatch) -> None:

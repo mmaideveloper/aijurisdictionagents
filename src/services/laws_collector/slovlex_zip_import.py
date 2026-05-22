@@ -127,6 +127,14 @@ class SlovLexZipImportSummary:
     live_probe_summary: object | None = None
 
 
+@dataclass(frozen=True)
+class _ZipEntryImportResult:
+    relative_entry: str
+    snapshot: LawSnapshot
+    sync_summary: SyncSummary
+    skipped_by_history: bool = False
+
+
 class SlovLexExportIndexLoader:
     def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
         request = Request(_EXPORT_INDEX_URL, headers=_REQUEST_HEADERS)
@@ -459,6 +467,7 @@ class SlovLexZipImportRunner:
             source_system="slov-lex",
             initial_year=self.config.initial_import_from.year,
         )
+        highest_processed_law = _highest_progress_key(collector_progress)
         if resume_entry is not None:
             _log_zip(
                 "resuming import "
@@ -475,35 +484,31 @@ class SlovLexZipImportRunner:
                 continue
             pending_entries.append(entry)
 
-        max_workers = 1 if max_running_seconds > 0 else max(1, self.config.import_zip_max_threads)
-        if max_workers == 1:
-            snapshot_items = [(entry, load_snapshot_from_entry_file(entry)) for entry in pending_entries]
-        else:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                loaded = list(executor.map(load_snapshot_from_entry_file, pending_entries))
-            snapshot_items = list(zip(pending_entries, loaded, strict=True))
-
-        for entry, snapshot in snapshot_items:
+        def import_entry(entry: Path) -> _ZipEntryImportResult:
+            snapshot = load_snapshot_from_entry_file(entry)
             relative_entry = entry.relative_to(extract_root).as_posix()
-            if max_running_seconds > 0 and (self._monotonic_time() - started_at) >= max_running_seconds:
-                return SlovLexZipImportSummary(
-                    phase=str(metadata.get("phase", "zip")),
-                    import_key=import_key,
-                    import_label=import_label,
-                    entries_processed=entries_processed,
-                    sync_summary=sync_summary,
-                    archive_completed=archive_completed,
-                    monthly_completed=False,
-                    last_processed_entry=last_state.last_processed_entry,
-                    last_processed_law=last_state.last_processed_law,
-                    stopped_due_to_max_running_time=True,
+            if snapshot.year < self.config.historical_import_from.year:
+                return _ZipEntryImportResult(
+                    relative_entry=relative_entry,
+                    snapshot=snapshot,
+                    sync_summary=SyncSummary(),
+                    skipped_by_history=True,
                 )
-            sync_summary = sync_summary.merge(self.service.sync((snapshot,)))
+            return _ZipEntryImportResult(
+                relative_entry=relative_entry,
+                snapshot=snapshot,
+                sync_summary=self.service.sync((snapshot,)),
+            )
+
+        def acknowledge_import_result(result: _ZipEntryImportResult) -> None:
+            nonlocal collector_progress, entries_processed, highest_processed_law, last_state, sync_summary
+            snapshot = result.snapshot
+            sync_summary = sync_summary.merge(result.sync_summary)
             entries_processed += 1
             last_state = last_state.evolve(
                 status="in_progress",
                 last_processed_at=_now_iso(),
-                last_processed_entry=relative_entry,
+                last_processed_entry=result.relative_entry,
                 last_processed_law_year=snapshot.year,
                 last_processed_law_number=snapshot.number,
                 metadata=metadata,
@@ -512,12 +517,51 @@ class SlovLexZipImportRunner:
             collector_progress = collector_progress.evolve(
                 last_collector_run_at=last_state.last_processed_at,
                 last_processed_at=last_state.last_processed_at,
-                last_processed_law_year=snapshot.year,
-                last_processed_law_number=snapshot.number,
-                next_probe_law_year=snapshot.year,
-                next_probe_law_number=snapshot.number + 1,
             )
+            current_law = (snapshot.year, snapshot.number)
+            if current_law >= highest_processed_law:
+                highest_processed_law = current_law
+                collector_progress = collector_progress.evolve(
+                    last_processed_law_year=snapshot.year,
+                    last_processed_law_number=snapshot.number,
+                    next_probe_law_year=snapshot.year,
+                    next_probe_law_number=snapshot.number + 1,
+                )
             self.store.save_collector_progress(collector_progress)
+
+        max_workers = 1 if max_running_seconds > 0 else max(1, self.config.import_zip_max_threads)
+        if max_workers == 1:
+            for entry in pending_entries:
+                if max_running_seconds > 0 and (self._monotonic_time() - started_at) >= max_running_seconds:
+                    return SlovLexZipImportSummary(
+                        phase=str(metadata.get("phase", "zip")),
+                        import_key=import_key,
+                        import_label=import_label,
+                        entries_processed=entries_processed,
+                        sync_summary=sync_summary,
+                        archive_completed=archive_completed,
+                        monthly_completed=False,
+                        last_processed_entry=last_state.last_processed_entry,
+                        last_processed_law=last_state.last_processed_law,
+                        stopped_due_to_max_running_time=True,
+                    )
+                acknowledge_import_result(import_entry(entry))
+        else:
+            entry_groups = _group_entries_by_law(pending_entries, extract_root=extract_root)
+            _log_zip(
+                "parallel import starting "
+                f"phase={metadata.get('phase', 'zip')} import_key={import_key} "
+                f"workers={max_workers} groups={len(entry_groups)} entries={len(pending_entries)}"
+            )
+
+            def import_group(group: tuple[Path, ...]) -> tuple[_ZipEntryImportResult, ...]:
+                return tuple(import_entry(entry) for entry in group)
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                group_futures = [executor.submit(import_group, group) for group in entry_groups]
+                for future in group_futures:
+                    for result in future.result():
+                        acknowledge_import_result(result)
 
         completed_state = last_state.evolve(
             status="completed",
@@ -635,6 +679,22 @@ def iter_slovlex_entry_files(extract_root: Path) -> tuple[Path, ...]:
             continue
         entries.append(candidate)
     return tuple(entries)
+
+
+def _group_entries_by_law(entries: list[Path], *, extract_root: Path) -> tuple[tuple[Path, ...], ...]:
+    groups: list[list[Path]] = []
+    group_keys: list[tuple[int, int]] = []
+    for entry in entries:
+        parsed = _parse_entry_path(entry, extract_root=extract_root)
+        if parsed is None:
+            continue
+        key = (parsed[0], parsed[1])
+        if groups and group_keys[-1] == key:
+            groups[-1].append(entry)
+            continue
+        groups.append([entry])
+        group_keys.append(key)
+    return tuple(tuple(group) for group in groups)
 
 
 def load_snapshot_from_entry_file(entry_file: Path) -> LawSnapshot:
@@ -822,7 +882,18 @@ def _extract_archive_bundle(*, download_root: Path, extract_root: Path) -> None:
         return
     command = _resolve_7zip_command()
     if command is None:
-        raise RuntimeError("7-Zip is required for split SlovLex archive extraction but was not found.")
+        combined_zip = _combine_split_zip_archive(
+            download_root=download_root,
+            split_parts=split_parts,
+            final_zip=final_zip,
+        )
+        _log_zip(
+            f"extract combined split archive source={combined_zip} destination={extract_root}"
+        )
+        with zipfile.ZipFile(combined_zip) as archive:
+            archive.extractall(extract_root)
+        _write_extract_marker(marker=marker, signature=signature)
+        return
     _log_zip(
         f"extract split archive source={final_zip} destination={extract_root} tool={command[0]}"
     )
@@ -852,6 +923,22 @@ def _resolve_7zip_command() -> list[str] | None:
     return None
 
 
+def _combine_split_zip_archive(*, download_root: Path, split_parts: tuple[Path, ...], final_zip: Path) -> Path:
+    if not final_zip.exists():
+        raise RuntimeError(f"Split SlovLex archive final ZIP part was not found: {final_zip}")
+    if not split_parts:
+        raise RuntimeError("Split SlovLex archive has no split parts to combine.")
+
+    combined_zip = download_root / "export-combined.zip"
+    temporary_path = combined_zip.with_suffix(".zip.part")
+    with temporary_path.open("wb") as output:
+        for path in (*split_parts, final_zip):
+            with path.open("rb") as input_file:
+                shutil.copyfileobj(input_file, output, length=1024 * 1024)
+    temporary_path.replace(combined_zip)
+    return combined_zip
+
+
 def _archive_snapshot_date(state: CollectorImportState | None) -> str | None:
     if state is None:
         return None
@@ -865,6 +952,12 @@ def _format_monthly_range(export: SlovLexMonthlyExport | None) -> str:
     if export is None:
         return ""
     return f"{export.range_start}..{export.range_end}"
+
+
+def _highest_progress_key(progress: CollectorProgress) -> tuple[int, int]:
+    if progress.last_processed_law_year is None or progress.last_processed_law_number is None:
+        return (progress.next_probe_law_year, max(0, progress.next_probe_law_number - 1))
+    return (progress.last_processed_law_year, progress.last_processed_law_number)
 
 
 def _log_zip(message: str) -> None:

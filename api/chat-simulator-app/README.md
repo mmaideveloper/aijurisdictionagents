@@ -38,6 +38,12 @@ The simulator now supports:
 - showing the selected case documents immediately after case selection, including document metadata/status from the API
 - previewing selected existing case documents inline in the simulator (`PDF` iframe preview for PDFs, text preview for text-based files, open/download fallback for binary files)
 - listing API document templates in the **Document Templates** panel and generating a preview PDF from each template through `GET /v1/document-templates/{template_key}/preview/pdf`
+- opening a dedicated **Speech to Text** page (`/speech-to-text`) for fast manual microphone checks before mobile app changes
+- testing full browser conversation speech in the main chat simulator using:
+  - `🎤 Mic` button for browser STT input into the end-user answer box,
+  - `🔊 Audio` button for assistant TTS playback toggle,
+  - auto pause confirmation prompt (default 10 seconds) asking if user has finished speaking.
+  - works in-browser via Web Speech API and gives instant transcript/output without starting full mobile runtime
 - deleting all persisted cases for the active simulator user with one button when the API reaches the active-case limit (`Maximum number of cases reached (5)`)
   - this action now runs through the internal simulator backend, so it does not depend on browser-side cross-origin delete requests
 - inspecting persisted document debug data from the API, including stored vectors, chunk counts, and the exact prompt chunks selected for the current query

@@ -105,6 +105,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `LLM_PROVIDER` | Runtime LLM provider, keep `azurefoundry` for deployed Azure environments |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for API + workers; worker deployments now default to `local`, while `cloud` remains available when you want Azure/OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, recommended default `all-MiniLM-L6-v2` |
+| `SYSTEM_EMBEDDING_DEVICE` | Local embedding device selector, default `auto`; workers try CUDA/MPS when supported and fall back to CPU on unavailable GPU support or runtime errors |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used by chat and document embeddings |
 | `AZURE_OPENAI_DEPLOYMENT` | Azure OpenAI chat deployment name used by the API |
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Azure OpenAI embedding deployment name used for document chunk embeddings, recommended `text-embedding-3-large` |
@@ -121,7 +122,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_LAWS_STORAGE_CONTAINER_NAME` | Optional blob container for immutable Slov-Lex ZIP source bundles, default `laws-collection-sk` |
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional Slovak laws collector PostgreSQL database name, default `laws_sk`; the API deploy also uses it to inject `LAWS_DB_CLOUD` so `/version` can read the latest collector metadata |
 | `LAWS_COLLECTOR_IMPORT` | Laws collector import mode. Default `zip`; set `one_law_url` to keep the older sequential per-law probe importer |
-| `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` | Optional ZIP import worker count for archive/monthly bundle entry decoding. Default `4`; bootstrap recommendation `10` |
+| `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` | Optional ZIP import worker count for archive/monthly bundle law-group import. Default `4`; bootstrap recommendation `10` |
 | `LAWS_STORAGE_CLOUD` | Optional explicit blob container URL override for laws source storage. When unset, the deploy derives `https://<AZURE_STORAGE_ACCOUNT_NAME>.blob.core.windows.net/<AZURE_LAWS_STORAGE_CONTAINER_NAME or laws-collection-sk>` |
 | `AZURE_DOCUMENT_PROCESSOR_JOB_NAME` | Optional ACA job name for the document processor, default `document-processor` |
 | `AZURE_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | Optional ACA job schedule, default `*/15 * * * *`; comma-list values such as `0,15,30,45 * * * *` are supported |
@@ -209,6 +210,7 @@ These are used by the document processor deployment workflow and by `infra_deplo
 | `LLM_PROVIDER` | Runtime provider for the job, keep `azurefoundry` in Azure deployments |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; default `local`, or set `cloud` for Azure OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name; keep default `all-MiniLM-L6-v2` unless you intentionally switch models. In `local` mode the deploy prefetches that model into the worker image before `az acr build` |
+| `SYSTEM_EMBEDDING_DEVICE` | Local embedding device selector for `local` mode, default `auto`; use `cpu` to force CPU-only execution |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used for embeddings |
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Embedding deployment name used by the job, recommended `text-embedding-3-large` |
 | `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version for embeddings |
@@ -233,10 +235,11 @@ These are used by the laws collector deployment workflow:
 | `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK` | Optional PostgreSQL database name for the Slovak laws corpus, default `laws_sk`; the laws deployment applies schema migrations to this database before updating the ACA job |
 | `AZURE_LAWS_STORAGE_CONTAINER_NAME` | Optional blob container that stores immutable Slov-Lex ZIP source bundles, default `laws-collection-sk` |
 | `LAWS_COLLECTOR_IMPORT` | Import mode for the live laws collector job. Default `zip`, which bootstraps from the full Slov-Lex archive and then continues from monthly `exportZmeny.zip` deltas |
-| `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` | Optional ZIP import worker count for archive/monthly bundle entry decoding. Default `4`; bootstrap recommendation `10` |
+| `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` | Optional ZIP import worker count for archive/monthly bundle law-group import. Default `4`; bootstrap recommendation `10` |
 | `LAWS_STORAGE_CLOUD` | Optional explicit blob container URL override for laws source storage. Normally leave this unset and let the deploy derive it from `AZURE_STORAGE_ACCOUNT_NAME` plus `AZURE_LAWS_STORAGE_CONTAINER_NAME` |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; default `local`, or set `cloud` for Azure OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, default `all-MiniLM-L6-v2`. In `local` mode the deploy prefetches that model into the worker image before `az acr build` |
+| `SYSTEM_EMBEDDING_DEVICE` | Local embedding device selector for `local` mode, default `auto`; use `cpu` to force CPU-only execution |
 
 The laws collector workflow reuses these shared Azure deployment variables:
 
@@ -335,6 +338,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
+- `SYSTEM_EMBEDDING_DEVICE=auto`
 - `AZURE_POSTGRES_SERVER_NAME`
 - `AZURE_STORAGE_ACCOUNT_NAME`
 - `AZURE_APPLICATION_INSIGHTS_NAME`
@@ -385,6 +389,7 @@ Recommended deployed value:
 
 - `DOCUMENT_PROCESSOR_OPTION=azure` for `dev`, `test`, and `prod`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local` for `dev`, `test`, and `prod` unless you explicitly want Azure/OpenAI embeddings
+- `SYSTEM_EMBEDDING_DEVICE=auto` for `dev`, `test`, and `prod` unless you need to force `cpu`
 - Keep `DOCUMENT_PROCESSOR_OPTION=local` only in local workstation `.env` files when you want the API process to extract documents immediately without waiting for the ACA job
 - When `Email Scheduler Build and Deploy` is used, set `EMAIL_SCHEDULER_ENABLED=false` on the API Container App so the API only queues emails and the ACA job delivers them on schedule
 

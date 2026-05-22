@@ -4740,6 +4740,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   String? _lastHandledSpeechText;
   String? _lastAssistantSpokenContent;
   DateTime? _speechRecognitionStartedAt;
+  DateTime? _speechDraftStartedAt;
   Completer<void>? _speechStopCompleter;
   Timer? _speechSendPromptTimer;
   bool _submitSpeechOnStop = true;
@@ -4889,6 +4890,8 @@ class _ChatHomePageState extends State<ChatHomePage>
     _voiceSessionOrchestrator = VoiceSessionOrchestrator(
       ruleEngine: _ruleEngine,
       silenceThreshold: _speechSendPromptDelay,
+      confirmationPromptForLanguage: (_) =>
+          _strings.t('speech_answer_confirmation_prompt'),
       onSilenceThresholdReached: _onVoiceSilenceThresholdReached,
       onStateChanged: () {
         if (mounted) {
@@ -6213,6 +6216,16 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     final recognizedText = result.recognizedWords.trim();
+    if (recognizedText.isNotEmpty && _speechDraftStartedAt == null) {
+      _speechDraftStartedAt = DateTime.now();
+    }
+    if (_speakerOutputEnabled &&
+        recognizedText.isNotEmpty &&
+        _speechDraftStartedAt != null &&
+        DateTime.now().difference(_speechDraftStartedAt!) >=
+            const Duration(milliseconds: 500)) {
+      unawaited(_speaker.stop());
+    }
     final speechStartedAt = _speechRecognitionStartedAt ?? DateTime.now();
     if (_isLikelyAssistantSpeechEcho(recognizedText)) {
       unawaited(
@@ -8420,6 +8433,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     _stopAssistantSpeechForUserSpeech('start_listening');
     _lastFinalSpeechResult = null;
+    _speechDraftStartedAt = null;
     _submitSpeechOnStop = true;
     _processSpeechOnStop = true;
     _speechRecognitionStartedAt = DateTime.now();

@@ -59,12 +59,14 @@ class VoiceSessionOrchestrator {
   VoiceSessionOrchestrator({
     RuleEngine ruleEngine = const RuleEngine(),
     this.silenceThreshold = const Duration(seconds: 10),
+    this.confirmationPromptForLanguage,
     this.onSilenceThresholdReached,
     this.onStateChanged,
   }) : _ruleEngine = ruleEngine;
 
   final RuleEngine _ruleEngine;
   final Duration silenceThreshold;
+  final String Function(String? languageCode)? confirmationPromptForLanguage;
   final VoiceSessionSilenceCallback? onSilenceThresholdReached;
   final VoidCallback? onStateChanged;
 
@@ -324,7 +326,8 @@ class VoiceSessionOrchestrator {
     if (awaitingConfirmation) {
       onSilenceThresholdReached?.call(
         VoiceSilenceThresholdEvent(
-          prompt: voiceSessionConfirmationPrompt,
+          prompt: confirmationPromptForLanguage?.call(context.languageCode) ??
+              voiceSessionConfirmationPrompt,
           draftMessage: draft,
           repeatedPrompt: repeatedPrompt,
         ),

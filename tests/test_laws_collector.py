@@ -43,8 +43,8 @@ def _build_service(tmp_path: Path) -> tuple[SqliteLawStore, SlovakLawsCollectorS
         storage_local=str(tmp_path / "files"),
         storage_cloud="",
         delta_poll_hours=3,
-        initial_import_from=date(1993, 1, 1),
-        historical_import_from=date(1993, 1, 1),
+        initial_import_from=date(1945, 1, 1),
+        historical_import_from=date(1945, 1, 1),
     )
     store = SqliteLawStore.from_config(config)
     store.initialize()
@@ -202,8 +202,8 @@ def test_laws_collector_config_resolves_relative_db_from_repo_root(monkeypatch) 
     assert config.db_path.parent.parent.parent.parent.name == "runs"
     assert config.db_path.parent.parent.parent.parent.parent == Path(__file__).resolve().parents[1]
     assert config.country_db_name == "laws_sk"
-    assert config.initial_import_from == date(1993, 1, 1)
-    assert config.historical_import_from == date(1993, 1, 1)
+    assert config.initial_import_from == date(1945, 1, 1)
+    assert config.historical_import_from == date(1945, 1, 1)
 
 
 def test_laws_collector_update_plan_detects_changes(tmp_path: Path) -> None:
@@ -236,7 +236,7 @@ def test_laws_collector_worker_options_default_to_single_live_probe(monkeypatch)
     assert options.max_running_minutes == 60
 
 
-def test_slovlex_import_planner_starts_from_1_1993_without_progress(tmp_path: Path) -> None:
+def test_slovlex_import_planner_starts_from_1_1945_without_progress(tmp_path: Path) -> None:
     store, service = _build_service(tmp_path)
     planner = SlovLexImportPlanner(config=service.config)
     progress = store.get_or_create_collector_progress(
@@ -247,8 +247,8 @@ def test_slovlex_import_planner_starts_from_1_1993_without_progress(tmp_path: Pa
 
     plan = planner.build_plan(progress=progress, today=date(2026, 3, 30))
 
-    assert plan.initial_year == 1993
-    assert plan.next_target == ImportTarget(year=1993, number=1)
+    assert plan.initial_year == 1945
+    assert plan.next_target == ImportTarget(year=1945, number=1)
     assert plan.last_processed_law is None
     assert plan.stop_when_missing_current_year is False
 
@@ -577,6 +577,7 @@ def test_laws_collector_logs_embedding_runtime_on_startup(monkeypatch, caplog) -
     assert "[laws-collector] startup" in output
     assert "embedding_option=local" in output
     assert "embedding_model=all-MiniLM-L6-v2" in output
+    assert "embedding_device=" in output
 
 
 def test_laws_collector_splits_large_laws_into_multiple_embedding_chunks(tmp_path: Path) -> None:
@@ -855,14 +856,14 @@ def test_slovlex_sequential_import_runner_ingests_before_advancing_progress(tmp_
     runner = SlovLexSequentialImportRunner(config=service.config, store=store, service=service)
     snapshot = replace(
         baseline_snapshots()[0],
-        year=1993,
+        year=1945,
         number=1,
-        publication_date="1993-01-01",
-        effective_from="1993-01-01",
-        version_token="19930101",
-        source_url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1993/1/",
-        html_url="https://static.slov-lex.sk/static/SK/ZZ/1993/1/vyhlasene_znenie.html",
-        pdf_url="https://static.slov-lex.sk/pdf/SK/ZZ/1993/1/19930101.pdf",
+        publication_date="1945-01-01",
+        effective_from="1945-01-01",
+        version_token="19450101",
+        source_url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1945/1/",
+        html_url="https://static.slov-lex.sk/static/SK/ZZ/1945/1/vyhlasene_znenie.html",
+        pdf_url="https://static.slov-lex.sk/pdf/SK/ZZ/1945/1/19450101.pdf",
     )
 
     def fake_probe(*, target: ImportTarget, timeout_seconds: float) -> object:
@@ -885,7 +886,7 @@ def test_slovlex_sequential_import_runner_ingests_before_advancing_progress(tmp_
     runner._probe_target = fake_probe  # type: ignore[method-assign]
     runner.snapshot_loader = RecordingLoader()
 
-    summary = runner.run(max_probes=1, today=date(1993, 1, 2))
+    summary = runner.run(max_probes=1, today=date(1945, 1, 2))
     embedding_model, embedding_dimensions, embedding_vector = _get_embedding_metadata(
         store,
         law_year=snapshot.year,
@@ -894,8 +895,8 @@ def test_slovlex_sequential_import_runner_ingests_before_advancing_progress(tmp_
 
     assert len(captured) == 1
     assert summary.laws_found == 1
-    assert summary.last_processed_law == "1/1993"
-    assert summary.next_law_to_check == "2/1993"
+    assert summary.last_processed_law == "1/1945"
+    assert summary.next_law_to_check == "2/1945"
     assert embedding_model == "mock-embedding-32d"
     assert embedding_dimensions == 32
     assert len(embedding_vector) == 32
@@ -918,8 +919,8 @@ def test_country_db_name_uses_laws_prefix_for_future_countries() -> None:
         storage_local="",
         storage_cloud="",
         delta_poll_hours=3,
-        initial_import_from=date(1993, 1, 1),
-        historical_import_from=date(1993, 1, 1),
+        initial_import_from=date(1945, 1, 1),
+        historical_import_from=date(1945, 1, 1),
     )
 
     assert config.country_db_name == "laws_cz"
@@ -955,8 +956,8 @@ def test_laws_collector_local_embedding_mode_supports_semantic_search(
         storage_local=str(tmp_path / "files"),
         storage_cloud="",
         delta_poll_hours=3,
-        initial_import_from=date(1993, 1, 1),
-        historical_import_from=date(1993, 1, 1),
+        initial_import_from=date(1945, 1, 1),
+        historical_import_from=date(1945, 1, 1),
     )
     store = SqliteLawStore.from_config(config)
     store.initialize()

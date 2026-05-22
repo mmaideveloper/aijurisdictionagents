@@ -6,7 +6,7 @@ from datetime import date
 from .config import LawsCollectorConfig
 from .domain import CollectorProgress
 
-SLOVAK_INITIAL_IMPORT_YEAR = 1993
+SLOVAK_INITIAL_IMPORT_YEAR = 1945
 
 
 @dataclass(frozen=True)

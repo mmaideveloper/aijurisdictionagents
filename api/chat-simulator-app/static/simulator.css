@@ -206,6 +206,14 @@ pre {
   background: #0f172a;
   color: #cbd5e1;
 }
+.voice-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+}
+.voice-toolbar button {
+  flex: 1;
+}
 
 .chat-message {
   width: fit-content;
