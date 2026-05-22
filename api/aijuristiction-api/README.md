@@ -404,6 +404,18 @@ Generated chat documents can also be sent by email through
 signed-in user's profile email. The first call with `confirmed=false` returns the email address
 for confirmation; call again with `confirmed=true` to queue the generated PDF attachments.
 
+Chat sessions with a signed-in user also pass a data-minimized profile note to the lawyer
+agent: only the available client name and address are used as default party details in the
+prompt. This prevents the assistant from asking again for profile-backed name/address fields
+or showing `[nebolo poskytnute]` for them, while keeping stronger identifiers limited to
+document-export defaults.
+
+Minimal runnable example:
+
+```powershell
+python examples/profile_prompt_defaults_demo.py
+```
+
 ### Email notification service
 
 ### Email outbox + scheduler

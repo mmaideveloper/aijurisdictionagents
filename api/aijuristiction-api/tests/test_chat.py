@@ -1055,6 +1055,93 @@ def test_document_export_does_not_use_phone_number_as_profile_name() -> None:
     assert "partizanska 665" in normalized
 
 
+def test_signed_in_user_profile_prompt_note_uses_profile_name_and_address(monkeypatch) -> None:
+    from app.chat.api import _build_signed_in_user_profile_prompt_note
+    from app.chat.models import Session
+    import app.chat.api as chat_api
+    from aijurisdictionagents.api_db import User
+
+    user_profile = User(
+        user_id="user-1",
+        phone_number="+421900111222",
+        email="owner@example.com",
+        first_name="Marek",
+        last_name="Matonok",
+        full_name="Marek Matonok",
+        address="Partizanska 665",
+        city="Spisske Bystre",
+        country="SK",
+        zip_code="059 18",
+        tax_number="1070000001",
+        identity_card_number="AB123456",
+        date_of_birth="1980-01-02",
+        social_security_number="800102/1234",
+        data_processing_consent_at=None,
+        data_processing_consent_version=None,
+        mcp_api_key_hash=None,
+        mcp_api_key_expires_at=None,
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "_document_user_profile_for_session",
+        lambda session: user_profile,
+    )
+
+    note = _build_signed_in_user_profile_prompt_note(Session(country="SK", language="SK"))
+
+    assert "SIGNED-IN USER PROFILE DEFAULTS" in note
+    assert "Client full name: Marek Matonok" in note
+    assert "Client address: Partizanska 665, 059 18 Spisske Bystre, SK" in note
+    assert "1070000001" not in note
+    assert "AB123456" not in note
+    assert "800102/1234" not in note
+
+
+def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_REPLY", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(
+        chat_api,
+        "_build_signed_in_user_profile_prompt_note",
+        lambda session: "SIGNED-IN USER PROFILE DEFAULTS:\n- Client full name: Marek Matonok",
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Priprav najomnu zmluvu."},
+        headers=AUTH_HEADERS,
+    )
+
+    assert reply_response.status_code == 200
+    assert captured_prompts
+    assert "SIGNED-IN USER PROFILE DEFAULTS" in captured_prompts[-1]
+    assert "Client full name: Marek Matonok" in captured_prompts[-1]
+
+
 def test_lawyer_output_validation_removes_profile_missing_message_when_profile_complete() -> None:
     from app.chat.output_validation import AILawyerOutputMessageValidationAgent, LawyerOutputUserProfile
 

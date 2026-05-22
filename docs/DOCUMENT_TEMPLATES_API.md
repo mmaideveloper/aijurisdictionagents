@@ -102,6 +102,8 @@ For generated court-facing or client/third-party output documents, including req
 - missing party details in generated documents can be filled from the signed-in user's profile by default
   (name, address, tax number, identity card number, date of birth, and social security number); these values
   are used in the document body only and are not added to the QR payload
+- lawyer prompts receive a minimal signed-in profile note with only the available client name and address, so
+  chat replies do not ask again for those fields or render `[nebolo poskytnute]` when the profile already has them
 - rental exports also read common draft labels such as `Podnájomník`, `Adresa nehnuteľnosti`, and
   `Mesačné nájomné` from the conversation when structured case JSON is incomplete
 - generated session documents can be emailed through `POST /v1/chat/sessions/{session_id}/documents/send-email`;

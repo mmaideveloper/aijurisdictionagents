@@ -20,7 +20,7 @@ def run_demo() -> None:
         print("Explicit terminator detected -> create_case title=splnomocnenie 1.0")
         state.awaiting_confirmation = False
     else:
-        print("No speech for 10s -> Mozem uz odpovedat na otazku? Povedzte ano alebo nie.")
+        print("No speech for 5s -> Mozem uz odpovedat na otazku? Povedzte ano alebo nie.")
         state.awaiting_confirmation = True
     print(f"Awaiting confirmation: {state.awaiting_confirmation}")
 

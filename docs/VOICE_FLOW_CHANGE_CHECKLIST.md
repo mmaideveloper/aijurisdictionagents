@@ -38,8 +38,13 @@ assistant speech output, voice intent mapping, or voice-triggered legal actions.
   minimization, and legal-output review expectations.
 - [ ] Confirm legal-risk actions still require human/user confirmation before
   execution.
-- [ ] Confirm 10-second silence prompts preserve the draft on `no` and submit
+- [ ] Confirm 5-second silence prompts preserve the draft on `no` and submit
   only on explicit `yes` or send command.
-- [ ] Confirm assistant TTS barge-in ignores likely self-transcripts before
-  treating STT text as user input.
+- [ ] Confirm the confirmation prompt does not loop while awaiting `yes/no`.
+- [ ] Confirm microphone click during listening/confirmation disables speech
+  input and prevents auto-restart until explicitly enabled again.
+- [ ] Confirm assistant TTS is not interrupted by automatic STT fragments,
+  breathing, or room noise.
+- [ ] Confirm clicking the composer microphone during assistant TTS stops
+  playback and starts user dictation.
 - [ ] Confirm failure states do not silently switch to less compliant behavior.

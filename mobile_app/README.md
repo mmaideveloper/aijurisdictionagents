@@ -13,12 +13,15 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
 - Speech input is off by default and is toggled by a microphone icon button next to `Account`.
 - Assistant voice output is also off by default after login; the user must enable it manually in `Account`.
 - Turning on speech input with the microphone button also enables assistant voice output for that session, so spoken replies follow voice interaction automatically.
-- When a spoken assistant reply finishes in voice mode, the app automatically reopens the microphone so the user can continue speaking hands-free.
-- Normal dictated messages now use a 10-second silence pause. After 10 seconds without more speech, Jurisdicta asks whether it may answer the current dictated request and waits for a spoken confirmation. When the user answers `yes`/`áno`, the app stops the microphone during processing and submits the pending draft. When the user answers `no`/`nie`, the app keeps the same draft and reopens listening so the next speech continues the same question.
+- During spoken assistant replies, the app keeps the microphone closed so breathing or room noise cannot interrupt TTS. Tap the microphone button in the composer to stop the assistant and start dictating your response.
+- Normal dictated messages now use a 5-second silence pause. After 5 seconds without more speech, Jurisdicta asks whether it may answer the current dictated request and waits for a spoken confirmation. When the user answers `yes`/`áno`, the app stops the microphone during processing and submits the pending draft. When the user answers `no`/`nie`, the app keeps the same draft and reopens listening so the next speech continues the same question.
+- While waiting for that confirmation, the prompt is not repeated automatically; the app waits for `yes`/`áno` or `no`/`nie` so assistant TTS cannot loop on its own echo.
+- Tapping the microphone while listening or waiting for confirmation is treated as an explicit user stop: speech input is disabled and will not auto-restart until the user enables it again.
+- During assistant speech, STT fragments are not used for automatic barge-in. The assistant finishes unless the user explicitly taps the microphone button.
 - Voice session handling now runs through `VoiceSessionOrchestrator`, which tracks listening, processing, and confirmation states, applies idempotency keys to STT transcripts, and dispatches `RuleEngineAction` values through an action queue.
 - The speech flow also understands spoken send commands such as `Send`, `send message`, `I am done`, `this is end`, `this is the end`, `Posli`, `Prosim odosli spravu`, `to je vsetko`, `cakam na odpoved`, `Senden`, or `Nachricht senden`, and submits the current dictated message immediately.
 - Saying `clean message`, `clean last message`, or `zrus vsetko` clears the current dictated message without sending it.
-- When assistant audio is enabled, assistant replies turn the microphone on as soon as TTS starts, so the user can interrupt long spoken answers. Likely assistant echo transcripts are ignored.
+- When assistant audio is enabled, assistant replies keep speaking until completion or until the user taps the composer microphone button.
 - Explicit spoken commands are executed as soon as the recognizer returns a final phrase, so `Vytvor novy case splnomocnenie` can create the case without waiting for the long dictation timeout.
 - Trailing send words are treated as completion markers instead of content. For example, `Vytvor novy pripad s nazvom splnomocnenie posli` creates a case named `splnomocnenie`, not `splnomocnenie posli`.
 - When the user says a spoken command like `please create a new case` while another case is active, the app now asks for confirmation before archiving the current case. After confirmation it creates and switches to the new case, and if no new case name was spoken yet it asks for the name first.
@@ -50,6 +53,7 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
 - The speech flow now personalizes Jurisdicta's welcome with the stored user name; if the profile has no name yet, the first speech interaction asks for it and saves it to the signed-in profile.
 - Voice profile updates support Slovak, English, and German commands such as `Zmeň meno na Martina`, `change last name to Novak`, and `ändere meine Adresse zu Hauptstrasse 12`. Before the profile PATCH is sent, Jurisdicta reads a TTS recap and requires an explicit `yes`/`áno`/`ja` confirmation; `no`/`nie`/`nein` cancels the pending change.
 - When the user changes the stored first or last name, the chat now appends a fresh assistant message greeting the updated full name.
+- When profile address fields change, the active mobile chat state is refreshed too, so new legal answers and document drafts can use the signed-in user's stored name/address defaults instead of showing `[nebolo poskytnuté]`.
 - The chat input is now single-line; pressing `Enter` sends the message immediately (same as the send button).
 - Message area is centered between login header and selectors.
 - The top header now uses a single compact line with `AIJurisDigta`, the app version, and the current auth action (`Login` or `Sign up` on the auth screen, `Sign out` after login).
@@ -60,7 +64,7 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
   - `Sign in`: app first tries silent login with a device-bound token; if not available/expired, app sends a one-time sign-in code and verifies it.
   - first successful OTP sign-in stores a device-bound token; subsequent sign-ins on the same device are silent for 8 hours, then OTP is required again.
   - explicit `Sign out` clears the device-bound token and forces OTP on the next sign-in.
-  - after sign-in, `Account` page shows the stored phone number and email as read-only fields, and allows updating only password, first name, and last name
+  - after sign-in, `Account` page shows the stored phone number and email as read-only fields, and allows updating password, name, address, and legal-profile identifiers
   - browser/local web remembers the last signed-in phone number and pre-fills the sign-in form
   - local runs also prefill `+421944400166` when no phone was remembered yet
   - Android builds now read the device phone number first on the auth screen and use it for both sign-in and sign-up phone fields
@@ -180,7 +184,7 @@ Android note:
 
 ### Speech input
 
-Use the `Speech input` button in the top control area to enable speech-to-text. When it is on, use the microphone icon in the chat composer to dictate a message. If no more speech is detected for 10 seconds after a dictated draft, Jurisdicta asks whether it may answer and waits for `ano/yes` or `nie/no`; answering `ano/yes` runs the pending action immediately, while `nie/no` preserves the current draft and keeps listening for more speech. Say `Send`, `send message`, `I am done`, `this is end`, `Posli`, `to je vsetko`, or `cakam na odpoved` to submit the current dictated message; when these words appear at the end of a longer phrase, they are removed before the command or message is executed. Say `clean message`, `clean last message`, or `zrus vsetko` to clear it. Clicking the send button or clicking the microphone while it is already listening also stops the session and submits the current dictated message. In Azure mode, the app records microphone audio and sends it to Azure Speech STT when the recording stops.
+Use the `Speech input` button in the top control area to enable speech-to-text. When it is on, use the microphone icon in the chat composer to dictate a message. If no more speech is detected for 5 seconds after a dictated draft, Jurisdicta asks whether it may answer and waits for `ano/yes` or `nie/no`; answering `ano/yes` runs the pending action immediately, while `nie/no` preserves the current draft and keeps listening for more speech. Say `Send`, `send message`, `I am done`, `this is end`, `Posli`, `to je vsetko`, or `cakam na odpoved` to submit the current dictated message; when these words appear at the end of a longer phrase, they are removed before the command or message is executed. Say `clean message`, `clean last message`, or `zrus vsetko` to clear it. Clicking the send button submits the current dictated message; clicking the microphone while it is already listening disables speech input and prevents auto-restart until the user enables it again. In Azure mode, the app records microphone audio and sends it to Azure Speech STT when the recording stops.
 
 When `Speech input` is turned off, the microphone action in the composer is disabled until you turn speech back on.
 
@@ -188,7 +192,7 @@ Use the assistant voice dropdown to switch between installed speaker persons for
 
 If the signed-in profile already has a name, Jurisdicta uses it in the welcome message.
 If the profile has no name yet, the first speech interaction asks for the name, stores it in the profile, and then the user can continue dictating the actual question.
-Assistant responses are also spoken aloud. In voice mode the microphone is opened while TTS starts; user speech stops playback, and likely assistant echo transcripts are ignored so Jurisdicta's own prompt is not submitted as user input.
+Assistant responses are also spoken aloud. In voice mode, TTS is not interrupted by automatic STT fragments; tap the composer microphone button to stop playback and dictate the next user response.
 
 ## Local API contract
 

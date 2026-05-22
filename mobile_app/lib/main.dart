@@ -4672,7 +4672,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   static const double _maxDiscussionMinutes = 60;
   static const double _communicationMinutes = 60;
   static const Duration _speechSilenceTimeout = Duration(seconds: 10);
-  static const Duration _speechSendPromptDelay = Duration(seconds: 10);
+  static const Duration _speechSendPromptDelay = Duration(seconds: 5);
   static const Duration _speechMaxListenDuration = Duration(minutes: 30);
 
   final TextEditingController _inputController = TextEditingController();
@@ -4708,7 +4708,10 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool _speakerOutputEnabled = false;
   bool _speechEnabled = false;
   bool _speechInputEnabled = false;
+  bool _speechInputExplicitlyDisabled = false;
   bool _isListening = false;
+  bool _assistantSpeechInProgress = false;
+  DateTime? _assistantSpeechStartedAt;
   bool _stoppingSpeechManually = false;
   bool _awaitingSpokenName = false;
   bool _awaitingProfileField = false;
@@ -4957,7 +4960,11 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (oldWidget.signedInUser.phoneNumber != widget.signedInUser.phoneNumber ||
         oldWidget.signedInUser.email != widget.signedInUser.email ||
         oldWidget.signedInUser.firstName != widget.signedInUser.firstName ||
-        oldWidget.signedInUser.lastName != widget.signedInUser.lastName) {
+        oldWidget.signedInUser.lastName != widget.signedInUser.lastName ||
+        oldWidget.signedInUser.address != widget.signedInUser.address ||
+        oldWidget.signedInUser.city != widget.signedInUser.city ||
+        oldWidget.signedInUser.country != widget.signedInUser.country ||
+        oldWidget.signedInUser.zipCode != widget.signedInUser.zipCode) {
       setState(() {
         _signedInUser = widget.signedInUser;
         _updateWelcomeMessageForLocale();
@@ -6042,20 +6049,19 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (visibleContent.isEmpty) {
       return;
     }
-    if (resumeSpeechInputOnCompletion &&
-        !_isListening &&
-        !_awaitingSpokenName &&
-        !_awaitingSpokenCaseTitle) {
-      final speechInputReady = await _ensureSpeechInputEnabledForVoiceMode();
-      if (mounted && speechInputReady && !_isListening) {
-        await _startSpeechListening(resetHandledText: true);
-      }
-    }
     _lastAssistantSpokenContent = visibleContent;
-    final spoke = await _speaker.speak(
-      text: visibleContent,
-      languageCode: _selectedLocale.languageCode,
-    );
+    bool spoke;
+    _assistantSpeechInProgress = true;
+    _assistantSpeechStartedAt = DateTime.now();
+    try {
+      spoke = await _speaker.speak(
+        text: visibleContent,
+        languageCode: _selectedLocale.languageCode,
+      );
+    } finally {
+      _assistantSpeechInProgress = false;
+      _assistantSpeechStartedAt = null;
+    }
     if (!spoke) {
       await widget.logger.info(
         'Assistant speech output skipped',
@@ -6075,6 +6081,8 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   void _stopAssistantSpeechForUserSpeech(String trigger) {
+    _assistantSpeechInProgress = false;
+    _assistantSpeechStartedAt = null;
     unawaited(_speaker.stop());
     unawaited(
       widget.logger.info(
@@ -6099,7 +6107,41 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     return assistant == recognized ||
         assistant.startsWith(recognized) ||
-        recognized.startsWith(assistant);
+        recognized.startsWith(assistant) ||
+        assistant.contains(recognized);
+  }
+
+  bool _shouldStopAssistantSpeechForTranscript(
+    String recognizedText, {
+    required bool isFinal,
+  }) {
+    if (!_assistantSpeechInProgress) {
+      return recognizedText.isNotEmpty;
+    }
+    final normalized = _normalizeVoiceEchoText(recognizedText);
+    if (normalized.isEmpty) {
+      return false;
+    }
+    if (isFinal && normalized.length >= 2) {
+      return true;
+    }
+    if (normalized.length < 12) {
+      return false;
+    }
+    final wordCount =
+        normalized.split(' ').where((word) => word.trim().isNotEmpty).length;
+    if (wordCount < 2) {
+      return false;
+    }
+    if (isFinal) {
+      return true;
+    }
+    final speechStartedAt = _assistantSpeechStartedAt;
+    if (speechStartedAt == null) {
+      return false;
+    }
+    return DateTime.now().difference(speechStartedAt) >=
+        const Duration(milliseconds: 900);
   }
 
   String _normalizeVoiceEchoText(String value) {
@@ -6112,6 +6154,9 @@ class _ChatHomePageState extends State<ChatHomePage>
 
   Future<bool> _ensureSpeechInputEnabledForVoiceMode() async {
     if (!_speakerOutputEnabled || !_speechEnabled) {
+      return false;
+    }
+    if (_speechInputExplicitlyDisabled) {
       return false;
     }
     if (!_speechInputEnabled && mounted) {
@@ -6216,16 +6261,6 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     final recognizedText = result.recognizedWords.trim();
-    if (recognizedText.isNotEmpty && _speechDraftStartedAt == null) {
-      _speechDraftStartedAt = DateTime.now();
-    }
-    if (_speakerOutputEnabled &&
-        recognizedText.isNotEmpty &&
-        _speechDraftStartedAt != null &&
-        DateTime.now().difference(_speechDraftStartedAt!) >=
-            const Duration(milliseconds: 500)) {
-      unawaited(_speaker.stop());
-    }
     final speechStartedAt = _speechRecognitionStartedAt ?? DateTime.now();
     if (_isLikelyAssistantSpeechEcho(recognizedText)) {
       unawaited(
@@ -6239,7 +6274,27 @@ class _ChatHomePageState extends State<ChatHomePage>
       );
       return;
     }
-    if (recognizedText.isNotEmpty) {
+    final shouldStopAssistantSpeech = _shouldStopAssistantSpeechForTranscript(
+      recognizedText,
+      isFinal: result.finalResult,
+    );
+    if (_assistantSpeechInProgress && !shouldStopAssistantSpeech) {
+      unawaited(
+        widget.logger.info(
+          'Ignored weak STT fragment during assistant speech',
+          <String, Object?>{
+            'recognized_length': recognizedText.length,
+            'final_result': result.finalResult,
+            ..._voiceLogContext('assistant_speech_fragment_ignored'),
+          },
+        ),
+      );
+      return;
+    }
+    if (recognizedText.isNotEmpty && _speechDraftStartedAt == null) {
+      _speechDraftStartedAt = DateTime.now();
+    }
+    if (recognizedText.isNotEmpty && shouldStopAssistantSpeech) {
       _stopAssistantSpeechForUserSpeech('recognized_speech');
     }
     if (result.finalResult && recognizedText.isNotEmpty) {
@@ -7055,6 +7110,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _toggleSpeechInput() async {
+    final wasAssistantSpeaking = _assistantSpeechInProgress;
     if (!_speakerOutputEnabled) {
       _setInputComposerExpanded(true);
       _inputFocusNode.requestFocus();
@@ -7062,19 +7118,25 @@ class _ChatHomePageState extends State<ChatHomePage>
       _setInputComposerExpanded(false, unfocus: true);
     }
     _lastHandledSpeechText = null;
-    await _speaker.stop();
     if (!_speechEnabled) {
       _showSnackbar(_strings.t('speech_unavailable'));
       return;
     }
+    if (_assistantSpeechInProgress) {
+      _stopAssistantSpeechForUserSpeech('microphone_button');
+    } else {
+      await _speaker.stop();
+    }
     if (!_speechInputEnabled) {
-      await _toggleSpeechInputEnabled();
+      await _toggleSpeechInputEnabled(
+        speakReadyMessage: !wasAssistantSpeaking,
+      );
       if (!_speechInputEnabled || !mounted) {
         return;
       }
     }
-    if (_isListening) {
-      await _stopSpeechListening(submitAfterStop: true);
+    if (_isListening || _voiceSessionOrchestrator.awaitingConfirmation) {
+      await _disableSpeechInputByUser();
       return;
     }
     if (_awaitingSpokenName) {
@@ -7300,7 +7362,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     return created != null;
   }
 
-  Future<void> _toggleSpeechInputEnabled() async {
+  Future<void> _toggleSpeechInputEnabled({
+    bool speakReadyMessage = true,
+  }) async {
     if (!_speechEnabled) {
       _showSnackbar(_strings.t('speech_unavailable'));
       return;
@@ -7326,6 +7390,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     setState(() {
       _speechInputEnabled = nextValue;
+      _speechInputExplicitlyDisabled = !nextValue;
       if (nextValue) {
         _speakerOutputEnabled = true;
       }
@@ -7338,7 +7403,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
     });
 
-    if (nextValue) {
+    if (nextValue && speakReadyMessage) {
       await _speaker.stop();
       await _speakAssistantMessage(
         speechInputReadyMessage(
@@ -7355,6 +7420,38 @@ class _ChatHomePageState extends State<ChatHomePage>
         'enabled': nextValue,
         'speaker_output_enabled': _speakerOutputEnabled,
         ..._voiceLogContext('speech_input_toggle'),
+      },
+    );
+  }
+
+  Future<void> _disableSpeechInputByUser() async {
+    _resumeSpeechInputAfterSend = false;
+    _cancelSpeechSendPrompt();
+    if (_isListening) {
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
+    }
+    await _speaker.stop();
+    if (!mounted) {
+      return;
+    }
+    _voiceSessionOrchestrator.clearDraft();
+    setState(() {
+      _speechInputEnabled = false;
+      _speechInputExplicitlyDisabled = true;
+      _awaitingSpokenName = false;
+      _awaitingCaseArchiveConfirmation = false;
+      _awaitingSpokenCaseTitle = false;
+      _pendingNewCaseTitle = null;
+      _lastDictatedSpeechDraft = null;
+    });
+    await widget.logger.info(
+      'Speech input disabled by microphone control',
+      <String, Object?>{
+        'speaker_output_enabled': _speakerOutputEnabled,
+        ..._voiceLogContext('speech_input_user_disabled'),
       },
     );
   }
@@ -8431,7 +8528,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (resetHandledText) {
       _lastHandledSpeechText = null;
     }
-    _stopAssistantSpeechForUserSpeech('start_listening');
+    if (_assistantSpeechInProgress) {
+      _stopAssistantSpeechForUserSpeech('start_listening');
+    }
     _lastFinalSpeechResult = null;
     _speechDraftStartedAt = null;
     _submitSpeechOnStop = true;
@@ -9347,7 +9446,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                               onPressed:
                                   _speechEnabled ? _toggleSpeechInput : null,
                               icon: Icon(
-                                _isListening ? Icons.mic : Icons.mic_none,
+                                Icons.mic,
                                 color: _isListening
                                     ? Theme.of(context).colorScheme.primary
                                     : null,
@@ -9400,7 +9499,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                               onPressed:
                                   _speechEnabled ? _toggleSpeechInput : null,
                               icon: Icon(
-                                _isListening ? Icons.mic : Icons.mic_none,
+                                Icons.mic,
                                 color: _isListening
                                     ? Theme.of(context).colorScheme.primary
                                     : null,

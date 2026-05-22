@@ -66,7 +66,7 @@ void main() {
       );
 
       final reached = orchestrator.checkInactivity(
-        now: startedAt.add(const Duration(seconds: 10)),
+        now: startedAt.add(const Duration(seconds: 5)),
         context: context,
       );
 
@@ -97,7 +97,7 @@ void main() {
         receivedAt: startedAt.add(const Duration(seconds: 1)),
       );
       final reached = orchestrator.checkInactivity(
-        now: startedAt.add(const Duration(seconds: 12)),
+        now: startedAt.add(const Duration(seconds: 7)),
         context: context,
       );
 
@@ -133,7 +133,7 @@ void main() {
         receivedAt: startedAt,
       );
       yesOrchestrator.checkInactivity(
-        now: startedAt.add(const Duration(seconds: 10)),
+        now: startedAt.add(const Duration(seconds: 5)),
         context: context,
       );
       final yes = yesOrchestrator.acceptTranscript(
@@ -142,7 +142,7 @@ void main() {
         speechStartedAt: startedAt,
         context: context,
         submitMessageWhenNoRuleMatches: true,
-        receivedAt: startedAt.add(const Duration(seconds: 11)),
+        receivedAt: startedAt.add(const Duration(seconds: 6)),
       );
 
       expect(yes.queuedAction?.action, isA<SubmitMessageRuleAction>());
@@ -162,7 +162,7 @@ void main() {
         receivedAt: startedAt,
       );
       noOrchestrator.checkInactivity(
-        now: startedAt.add(const Duration(seconds: 10)),
+        now: startedAt.add(const Duration(seconds: 5)),
         context: context,
       );
       final no = noOrchestrator.acceptTranscript(
@@ -171,7 +171,7 @@ void main() {
         speechStartedAt: startedAt,
         context: context,
         submitMessageWhenNoRuleMatches: true,
-        receivedAt: startedAt.add(const Duration(seconds: 11)),
+        receivedAt: startedAt.add(const Duration(seconds: 6)),
       );
 
       expect(no.queuedAction, isNull);
@@ -196,7 +196,7 @@ void main() {
         receivedAt: startedAt,
       );
       orchestrator.checkInactivity(
-        now: startedAt.add(const Duration(seconds: 10)),
+        now: startedAt.add(const Duration(seconds: 5)),
         context: context,
       );
       orchestrator.acceptTranscript(
@@ -205,16 +205,16 @@ void main() {
         speechStartedAt: startedAt,
         context: context,
         submitMessageWhenNoRuleMatches: true,
-        receivedAt: startedAt.add(const Duration(seconds: 11)),
+        receivedAt: startedAt.add(const Duration(seconds: 6)),
       );
 
       final continued = orchestrator.acceptTranscript(
         transcript: 'a este o vypovednej lehote',
         isFinal: false,
-        speechStartedAt: startedAt.add(const Duration(seconds: 12)),
+        speechStartedAt: startedAt.add(const Duration(seconds: 7)),
         context: context,
         submitMessageWhenNoRuleMatches: false,
-        receivedAt: startedAt.add(const Duration(seconds: 13)),
+        receivedAt: startedAt.add(const Duration(seconds: 8)),
       );
 
       expect(continued.queuedAction, isNull);
@@ -224,7 +224,7 @@ void main() {
       );
     });
 
-    test('repeats timeout prompt without duplicating the pending action', () {
+    test('does not repeat confirmation prompt while awaiting an answer', () {
       final prompts = <VoiceSilenceThresholdEvent>[];
       final startedAt = DateTime.utc(2026, 5, 15, 13);
       final orchestrator = VoiceSessionOrchestrator(
@@ -242,17 +242,16 @@ void main() {
       );
 
       orchestrator.checkInactivity(
-        now: startedAt.add(const Duration(seconds: 10)),
+        now: startedAt.add(const Duration(seconds: 5)),
         context: context,
       );
       orchestrator.checkInactivity(
-        now: DateTime.now().add(const Duration(seconds: 11)),
+        now: DateTime.now().add(const Duration(seconds: 6)),
         context: context,
       );
 
-      expect(prompts, hasLength(2));
+      expect(prompts, hasLength(1));
       expect(prompts.first.repeatedPrompt, isFalse);
-      expect(prompts.last.repeatedPrompt, isTrue);
       expect(orchestrator.pendingIntent, isA<SubmitMessageRuleAction>());
       expect(orchestrator.queuedActionCount, 0);
     });

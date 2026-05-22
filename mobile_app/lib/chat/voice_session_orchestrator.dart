@@ -58,7 +58,7 @@ typedef VoiceSessionSilenceCallback = void Function(
 class VoiceSessionOrchestrator {
   VoiceSessionOrchestrator({
     RuleEngine ruleEngine = const RuleEngine(),
-    this.silenceThreshold = const Duration(seconds: 10),
+    this.silenceThreshold = const Duration(seconds: 5),
     this.confirmationPromptForLanguage,
     this.onSilenceThresholdReached,
     this.onStateChanged,
@@ -291,36 +291,35 @@ class VoiceSessionOrchestrator {
       _scheduleSilenceTimer();
       return;
     }
+    if (awaitingConfirmation) {
+      return;
+    }
 
-    final repeatedPrompt = awaitingConfirmation;
-    if (!awaitingConfirmation) {
-      final action = _ruleEngine.evaluate(
-        input: draft,
-        context: RuleEngineContext(
-          awaitingProfileName: context.awaitingProfileName,
-          awaitingProfileField: context.awaitingProfileField,
-          awaitingProfilePatchConfirmation:
-              context.awaitingProfilePatchConfirmation,
-          awaitingCaseArchiveConfirmation:
-              context.awaitingCaseArchiveConfirmation,
-          awaitingCaseTitle: context.awaitingCaseTitle,
-          submitMessageWhenNoRuleMatches: true,
-          pendingProfilePatch: context.pendingProfilePatch,
-          currentDraft: context.currentDraft ?? draft,
-          lastDictatedDraft: context.lastDictatedDraft ?? draft,
-          correlationId: context.correlationId,
-          caseId: context.caseId,
-          userId: context.userId,
-          languageCode: context.languageCode,
-          redactSensitiveEntitiesBeforeSend:
-              context.redactSensitiveEntitiesBeforeSend,
-        ),
-      );
-      if (action is! IgnoreRuleAction) {
-        pendingIntent = action;
-        awaitingConfirmation = true;
-        _setPhase(VoiceSessionPhase.awaitingConfirmation);
-      }
+    final action = _ruleEngine.evaluate(
+      input: draft,
+      context: RuleEngineContext(
+        awaitingProfileName: context.awaitingProfileName,
+        awaitingProfileField: context.awaitingProfileField,
+        awaitingProfilePatchConfirmation:
+            context.awaitingProfilePatchConfirmation,
+        awaitingCaseArchiveConfirmation: context.awaitingCaseArchiveConfirmation,
+        awaitingCaseTitle: context.awaitingCaseTitle,
+        submitMessageWhenNoRuleMatches: true,
+        pendingProfilePatch: context.pendingProfilePatch,
+        currentDraft: context.currentDraft ?? draft,
+        lastDictatedDraft: context.lastDictatedDraft ?? draft,
+        correlationId: context.correlationId,
+        caseId: context.caseId,
+        userId: context.userId,
+        languageCode: context.languageCode,
+        redactSensitiveEntitiesBeforeSend:
+            context.redactSensitiveEntitiesBeforeSend,
+      ),
+    );
+    if (action is! IgnoreRuleAction) {
+      pendingIntent = action;
+      awaitingConfirmation = true;
+      _setPhase(VoiceSessionPhase.awaitingConfirmation);
     }
 
     if (awaitingConfirmation) {
@@ -329,7 +328,7 @@ class VoiceSessionOrchestrator {
           prompt: confirmationPromptForLanguage?.call(context.languageCode) ??
               voiceSessionConfirmationPrompt,
           draftMessage: draft,
-          repeatedPrompt: repeatedPrompt,
+          repeatedPrompt: false,
         ),
       );
     }
@@ -402,7 +401,10 @@ class VoiceSessionOrchestrator {
 
   void _scheduleSilenceTimer() {
     _silenceTimer?.cancel();
-    if (!isListening || draftMessage == null || draftMessage!.trim().isEmpty) {
+    if (!isListening ||
+        awaitingConfirmation ||
+        draftMessage == null ||
+        draftMessage!.trim().isEmpty) {
       return;
     }
     _silenceTimer = Timer(silenceThreshold, () {

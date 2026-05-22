@@ -960,6 +960,31 @@ def _lawyer_output_user_profile_for_session(session: Session) -> LawyerOutputUse
     )
 
 
+def _build_signed_in_user_profile_prompt_note(session: Session) -> str:
+    user = _document_user_profile_for_session(session)
+    if user is None:
+        return ""
+    display_name = _user_profile_document_display_name(user)
+    address_parts = _user_profile_document_address(user)
+    if not display_name and not address_parts:
+        return ""
+
+    lines = [
+        "SIGNED-IN USER PROFILE DEFAULTS:",
+        "- Use these profile values as the client/default party details when the user asks "
+        "for a legal document or when the response needs the user's name/address.",
+        "- Do not ask again for a field listed here. Ask only for missing profile fields or "
+        "opponent/recipient details.",
+        "- Do not output placeholders such as [nebolo poskytnute] or [Vase meno a adresa] "
+        "for fields listed here.",
+    ]
+    if display_name:
+        lines.append(f"- Client full name: {display_name}")
+    if address_parts:
+        lines.append(f"- Client address: {', '.join(address_parts)}")
+    return "\n".join(lines)
+
+
 def _run_direct_lawyer_turn(
     *,
     session_id: UUID,
@@ -1017,6 +1042,9 @@ def _run_direct_lawyer_turn(
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
     if case_memory_note:
         prompt_override = f"{prompt_override}\n\n{case_memory_note}"
+    user_profile_note = _build_signed_in_user_profile_prompt_note(session)
+    if user_profile_note:
+        prompt_override = f"{prompt_override}\n\n{user_profile_note}"
     if _user_requested_document_generation(content=content, previous_messages=prior_messages):
         prompt_override = (
             f"{prompt_override}\n\n"
