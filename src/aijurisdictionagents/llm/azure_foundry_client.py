@@ -3,9 +3,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 import logging
+import ssl
 from typing import Iterable, Sequence
 
+import httpx
 from openai import AzureOpenAI
+import truststore
 
 from .base import log_llm_request, log_llm_response
 from ..schemas import Document, Message
@@ -27,17 +30,20 @@ class AzureFoundryClient:
     def __init__(self, config: AzureFoundryConfig) -> None:
         self._config = config
         _clear_blank_azure_openai_auth_env()
+        http_client = _build_system_trust_http_client()
         if config.azure_ad_token:
             self._client = AzureOpenAI(
                 azure_endpoint=config.endpoint,
                 api_version=config.api_version,
                 azure_ad_token=config.azure_ad_token,
+                http_client=http_client,
             )
         else:
             self._client = AzureOpenAI(
                 azure_endpoint=config.endpoint,
                 api_version=config.api_version,
                 api_key=config.api_key,
+                http_client=http_client,
             )
 
     def complete(
@@ -138,6 +144,11 @@ def _optional_env(name: str) -> str | None:
 def _clear_blank_azure_openai_auth_env() -> None:
     _optional_env("AZURE_OPENAI_API_KEY")
     _optional_env("AZURE_OPENAI_AD_TOKEN")
+
+
+def _build_system_trust_http_client() -> httpx.Client:
+    context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    return httpx.Client(verify=context)
 
 
 def _render_documents(documents: Iterable[Document], max_chars: int = 4000) -> str:

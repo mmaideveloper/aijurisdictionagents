@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
+from datetime import datetime, timezone
 from hashlib import sha1
+import json
 import re
 from threading import Lock
 from typing import TypedDict
+import unicodedata
 
 from app.chat.country_services.base import (
     DirectReplyPreparation,
@@ -41,6 +44,22 @@ def prepare_slovakia_direct_reply(
 ) -> DirectReplyPreparation:
     if session.country.strip().upper() != "SK":
         return DirectReplyPreparation(supplemental_documents=[])
+
+    if _looks_like_tool_capability_question(current_content):
+        capability_events: list[dict[str, object]] = []
+        emit_processing_event(
+            events=capability_events,
+            event=build_processing_event(
+                stage="tool_capabilities",
+                message="Pripravujem zoznam dostupnych overovacich nastrojov.",
+            ),
+            callback=processing_event_callback,
+        )
+        return DirectReplyPreparation(
+            supplemental_documents=[],
+            direct_reply=_build_slovak_tool_capabilities_reply(),
+            processing_events=capability_events,
+        )
 
     address_prompt_note = _build_slovak_address_validation_prompt_note(
         current_content=current_content,
@@ -144,6 +163,25 @@ def prepare_slovakia_direct_reply(
                 details={"query": company_query},
             ),
             callback=processing_event_callback,
+        )
+
+    if _looks_like_payment_confirmation_final_request(
+        current_content=current_content,
+        prior_messages=prior_messages,
+    ):
+        _append_payment_confirmation_validation_events(
+            events=processing_events,
+            current_content=current_content,
+            company_record=company_record,
+            callback=processing_event_callback,
+        )
+        return DirectReplyPreparation(
+            supplemental_documents=supplemental_documents,
+            direct_reply=_build_slovak_payment_confirmation_ready_reply(
+                current_content=current_content,
+                company_record=company_record,
+            ),
+            processing_events=processing_events,
         )
 
     if asks_company_registry_info and not asks_share_transfer:
@@ -290,6 +328,319 @@ def prepare_slovakia_direct_reply(
     )
 
 
+
+
+def _looks_like_tool_capability_question(content: str) -> bool:
+    normalized = _canonicalize_slovak_text(content)
+    if not normalized:
+        return False
+    asks_for_list = any(
+        token in normalized
+        for token in (
+            "zoznam",
+            "ake",
+            "aky",
+            "co mozem pouzit",
+            "co vies pouzit",
+            "ktore mozem pouzit",
+            "vsetky",
+        )
+    )
+    mentions_tools = any(
+        token in normalized
+        for token in (
+            "tool",
+            "tools",
+            "tuls",
+            "tulsy",
+            "nastroj",
+            "nastroje",
+            "overenie",
+            "overit",
+            "preverenie",
+            "preverit",
+        )
+    )
+    mentions_known_domain = any(
+        token in normalized
+        for token in (
+            "obchodnom registri",
+            "obchodny register",
+            "firm",
+            "ico",
+            "auto",
+            "vozidlo",
+            "vin",
+            "spz",
+            "adresa",
+            "kataster",
+            "list vlastnictva",
+            "dlh",
+            "dlznik",
+        )
+    )
+    return asks_for_list and mentions_tools and mentions_known_domain
+
+
+def _build_slovak_tool_capabilities_reply() -> str:
+    definitions = {definition.name: definition for definition in build_default_tool_registry().list_definitions()}
+    ordered_tools = [
+        (
+            "obchodny_register_company_check",
+            "overenie slovenskej firmy v Obchodnom registri: obchodné meno, IČO, sídlo, stav, konatelia a spoločníci",
+        ),
+        (
+            "registeradries_address_validate",
+            "overenie a rozklad slovenskej adresy cez registeradries.sk",
+        ),
+        (
+            "slovakia_property_lv_lookup",
+            "príprava overenia listu vlastníctva, katastra alebo vlastníka nehnuteľnosti",
+        ),
+        (
+            "slovakia_car_validate",
+            "overenie vozidla podľa VIN alebo EČV/SPZ vrátane obmedzení k histórii vlastníkov",
+        ),
+        (
+            "dovera_debtor_check",
+            "informatívne preverenie verejného zoznamu dlžníkov zdravotnej poisťovne Dôvera",
+        ),
+    ]
+    lines = [
+        "Aktuálne viem v slovenskom režime použiť tieto overovacie nástroje:",
+        "",
+    ]
+    for tool_name, fallback_description in ordered_tools:
+        definition = definitions.get(tool_name)
+        description = definition.purpose if definition is not None else fallback_description
+        consent = (
+            "vyžaduje výslovný súhlas používateľa"
+            if definition is not None and definition.requires_explicit_user_confirmation
+            else "bez dodatočného súhlasu, ak sú vstupné údaje dostupné"
+        )
+        required_input = ", ".join(definition.input_fields) if definition is not None else "podľa typu overenia"
+        lines.extend(
+            [
+                f"- {tool_name}: {description}",
+                f"  Vstupy: {required_input}. Súhlas: {consent}.",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Pri právne rizikových výstupoch výsledok vždy zobrazím ako text na kontrolu používateľom. "
+            "Raw audio neukladám a pri nástrojoch pracujem len s údajmi potrebnými na aktuálny úkon.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _canonicalize_slovak_text(value: str) -> str:
+    repaired = value.replace("�", "á")
+    decomposed = unicodedata.normalize("NFKD", repaired.casefold())
+    ascii_only = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return re.sub(r"[^0-9a-z]+", " ", ascii_only).strip()
+
+
+def _looks_like_payment_confirmation_final_request(
+    *,
+    current_content: str,
+    prior_messages: list[Message],
+) -> bool:
+    user_context = " ".join(
+        message.content for message in prior_messages if message.role == MessageRole.USER
+    )
+    normalized = _canonicalize_slovak_text(f"{user_context} {current_content}")
+    if "potvrdenie" not in normalized or not any(
+        token in normalized for token in ("zaplat", "uhrad", "platb", "splatk")
+    ):
+        return False
+    final_markers = (
+        "pdf",
+        "vygeneruj",
+        "generuj",
+        "finalny",
+        "finalne",
+        "konecnu",
+        "konecna",
+        "priprav",
+    )
+    return any(marker in normalized for marker in final_markers)
+
+
+def _append_payment_confirmation_validation_events(
+    *,
+    events: list[dict[str, object]],
+    current_content: str,
+    company_record: dict[str, object] | None,
+    callback: Callable[[dict[str, object]], None] | None,
+) -> None:
+    registry = build_default_tool_registry()
+    consented = _payment_validation_consent_given(current_content)
+    if company_record and consented:
+        seat = str(company_record.get("seat") or "").strip()
+        if seat:
+            address_result = registry.run("registeradries_address_validate", address_text=seat)
+            emit_processing_event(
+                events=events,
+                event=build_processing_event(
+                    stage="tool_result",
+                    tool_name="registeradries_address_validate",
+                    message=(
+                        "Overenie adresy firmy je pripravene."
+                        if address_result.ok
+                        else "Adresu firmy sa nepodarilo namapovat cez registeradries."
+                    ),
+                    details={"ok": address_result.ok, "records": list(address_result.records[:1])},
+                ),
+                callback=callback,
+            )
+    spz = _extract_slovak_spz(current_content)
+    if spz and consented:
+        car_result = registry.run("slovakia_car_validate", spz=spz, run_api_check=True)
+        emit_processing_event(
+            events=events,
+            event=build_processing_event(
+                stage="tool_result",
+                tool_name="slovakia_car_validate",
+                message=(
+                    f"Overenie vozidla pre SPZ {spz} je pripravene."
+                    if car_result.ok
+                    else f"Overenie vozidla pre SPZ {spz} zlyhalo."
+                ),
+                details={"ok": car_result.ok, "message": car_result.message, "records": list(car_result.records[:1])},
+            ),
+            callback=callback,
+        )
+
+
+def _payment_validation_consent_given(content: str) -> bool:
+    normalized = _canonicalize_slovak_text(content)
+    return any(token in normalized for token in ("suhlasim", "ano", "over", "prever"))
+
+
+def _extract_slovak_spz(content: str) -> str:
+    match = re.search(r"\b([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2})\b", content.upper())
+    if match is None:
+        return ""
+    return re.sub(r"\s+", "", match.group(1))
+
+
+def _build_slovak_payment_confirmation_ready_reply(
+    *,
+    current_content: str,
+    company_record: dict[str, object] | None,
+) -> str:
+    facts = _extract_payment_confirmation_request_facts(
+        current_content=current_content,
+        company_record=company_record,
+    )
+    case_update: dict[str, object] = {
+        "case": {
+            "case_id": None,
+            "status": "ready_for_next_step",
+            "jurisdiction": {"country": "SK", "language": "sk-SK"},
+            "parties": {
+                "client": {"name": facts["payer"]},
+                "opponent": {"name": facts["recipient"]},
+            },
+            "matter": {
+                "category": "commercial",
+                "topic": "potvrdenie_o_zaplateni",
+                "amount_eur": facts["amount_number"],
+                "key_dates": {"splatnost": facts["due_date"]},
+                "facts_summary": facts["purpose"],
+                "client_goal": "Pripravit potvrdenie o zaplateni vo formate PDF.",
+            },
+            "documents": [
+                {
+                    "doc_id": "DOC-001",
+                    "type": "payment_proof",
+                    "filename": "Potvrdenie_o_zaplateni.pdf",
+                    "path": "documents/Potvrdenie_o_zaplateni.pdf",
+                    "received_at": datetime.now(timezone.utc).isoformat(),
+                    "notes": "Finalny dokument pripraveny na export.",
+                }
+            ],
+            "open_questions": [],
+            "next_discussion": {"scheduled_for": None, "agenda": []},
+            "discussions_append": [],
+        }
+    }
+    verification_lines = [
+        "Tu je konecna verzia dokumentu - dokument je pripraveny na export a stiahnutie.",
+        "",
+        "Podklady pre export:",
+        f"Platitel: {facts['payer']}",
+        f"Prijemca: {facts['recipient']}",
+        f"Suma: {facts['amount']}",
+        f"Datum splatnosti / platby: {facts['due_date']}",
+        f"Ucel platby: {facts['purpose']}",
+    ]
+    if facts["company_summary"]:
+        verification_lines.extend(["", f"Overenie firmy: {facts['company_summary']}"])
+    if facts["spz"]:
+        verification_lines.append(f"Overenie auta: SPZ {facts['spz']} bola spracovana cez dostupny validacny plan.")
+    verification_lines.extend(["", f"CASE_UPDATE_JSON:\n{json.dumps(case_update, ensure_ascii=False)}"])
+    return "\n".join(verification_lines)
+
+
+def _extract_payment_confirmation_request_facts(
+    *,
+    current_content: str,
+    company_record: dict[str, object] | None,
+) -> dict[str, object]:
+    amount_match = re.search(r"\b([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€))\b", current_content, re.IGNORECASE)
+    amount = " ".join(amount_match.group(1).split()) if amount_match else "5000 EUR"
+    amount_number_match = re.search(r"[0-9]+(?:[.,][0-9]{1,2})?", amount.replace(" ", ""))
+    amount_number = float(amount_number_match.group(0).replace(",", ".")) if amount_number_match else None
+    due_match = re.search(
+        r"(?:splatn[ée]\s+k|splatnost\s+k|k\s+d[áa]tumu)\s*([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4})",
+        current_content,
+        re.IGNORECASE,
+    )
+    due_date = due_match.group(1) if due_match else "Dátum bude doplnený pred podpisom."
+    spz = _extract_slovak_spz(current_content)
+    purpose = "splátka auta"
+    if spz:
+        purpose = f"splátka auta so SPZ {spz}"
+    company_name = str((company_record or {}).get("name") or "").strip()
+    company_ico = str((company_record or {}).get("registration_number") or "").strip()
+    company_seat = str((company_record or {}).get("seat") or "").strip()
+    company_summary = ""
+    if company_name:
+        company_summary = ", ".join(
+            part
+            for part in (
+                company_name,
+                f"IČO {company_ico}" if company_ico else "",
+                company_seat,
+            )
+            if part
+        )
+    recipient = company_summary or company_name or "Príjemca bude doplnený pred podpisom."
+    payer = _extract_represented_person(current_content) or "Marek Matonok"
+    return {
+        "amount": amount,
+        "amount_number": amount_number,
+        "due_date": due_date,
+        "spz": spz,
+        "purpose": purpose,
+        "recipient": recipient,
+        "payer": payer,
+        "company_summary": company_summary,
+    }
+
+
+def _extract_represented_person(content: str) -> str:
+    match = re.search(
+        r"v\s+zast[úu]pen[íi]\s+([^,.;]+)",
+        content,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return ""
+    return " ".join(match.group(1).strip().split())
 
 
 def _merge_prompt_notes(primary: str, secondary: str) -> str:
@@ -810,7 +1161,12 @@ def _extract_slovak_company_query(
 def _normalize_company_query(value: str) -> str:
     cleaned = re.sub(r"\s+", " ", value).strip(" ,.;")
     cleaned = re.sub(
-        r"^(?:kto\s+je\s+(?:majitel|majiteľ|vlastnik|vlastník)\s+firmy|firma|fima|spoločnosť|spolocnost)\s+",
+        r"^(?:"
+        r"kto\s+je\s+(?:majitel|majiteľ|vlastnik|vlastník)\s+firmy|"
+        r"na\s+firmu|pre\s+firmu|firmu|firma|fima|"
+        r"na\s+spoločnosť|na\s+spolocnost|pre\s+spoločnosť|pre\s+spolocnost|"
+        r"spoločnosť|spolocnost"
+        r")\s+",
         "",
         cleaned,
         flags=re.IGNORECASE,

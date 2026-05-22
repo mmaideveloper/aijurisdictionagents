@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aijurisdictionagents"
-version = "1.0.260381"
+version = "1.0.260382"
 description = "Multi-agent legal discussion scaffold."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,6 +12,7 @@ dependencies = [
   "azure-identity>=1.23.0",
   "azure-storage-blob>=12.26.0",
   "azure-monitor-opentelemetry>=1.8.6",
+  "httpx>=0.28.1",
   "numpy>=2.1",
   "openai>=1.0",
   "Pillow>=11.0",
@@ -21,6 +22,7 @@ dependencies = [
   "psycopg[binary]>=3.2",
   "rapidocr-onnxruntime>=1.4.4",
   "sentence-transformers>=3.0",
+  "truststore>=0.10.0",
 ]
 
 [project.optional-dependencies]

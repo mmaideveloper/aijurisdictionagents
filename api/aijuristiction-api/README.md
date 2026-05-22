@@ -152,6 +152,9 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
 - if the register shows exactly one current stakeholder, the API can reuse that stakeholder as the likely transferor instead of asking for the transferor again
 - if the requested main document usually requires related resolutions, updated articles, or registry attachments, the assistant explicitly offers to prepare that fuller package too
 - if the user later says `áno` / `show me the draft`, the API returns the working draft directly instead of looping back into the same intake questions
+- questions asking for the available Slovak verification tools, including noisy STT forms such as `zoznam tulsov`, are answered deterministically from the registered tool definitions before the API initializes the LLM client; this avoids Azure retries for simple capability/help turns
+- Slovak payment-confirmation requests that already contain a final PDF command, amount, company, due date, and vehicle SPZ now take a deterministic tool-first path: ORSR is checked first, consented address/car validation progress is emitted, and the assistant returns only a short document-ready message while the PDF export uses the captured facts.
+- Local Azure Foundry LLM calls use the operating-system certificate trust store, which avoids Windows corporate/root CA failures such as `SSL: CERTIFICATE_VERIFY_FAILED` during mobile voice tests.
 - short confirmation replies now pass through Slovak/mojibake-safe normalization, so `áno`, `ano`, and common corrupted STT/log forms like `�no` confirm an unanswered PDF-generation prompt instead of causing the assistant to ask the same question again
 - when a document is already ready and the user sends only a short confirmation such as `áno`, the API returns the ready/export status directly without calling the LLM for another intake turn
 - for direct register-information questions like `kto je majiteľ firmy ...`, the API now returns ORSR-backed owner/statutory summary directly (without falling back to stale share-transfer prompts from earlier turns in the same session)
@@ -184,10 +187,12 @@ Current behavior for `s.r.o.` / `a.s.` drafting flows:
   - after the result/export is actually ready, the backend emits a final document-package-ready processing event so clients can show a definitive completion state instead of ending on a generic `please wait` sentence
   - after ORSR lookup: localized ORSR completion message (for example `Overenie spolocnosti v ORSR je hotove: ...`, `Unternehmenspruefung im ORSR abgeschlossen: ...`, `Verification of company done in ORSR: ...`)
   This lets clients show small progress updates while waiting for the final assistant answer.
+- stream workers now log unexpected failures server-side with session id and exception type before sending the SSE `error` event. The log intentionally avoids raw transcript content so operational debugging stays compatible with the repository GDPR/data-minimization baseline.
 
 Minimal runnable example:
 
 ```bash
+python examples/api_tool_capabilities_demo.py
 python examples/share_transfer_related_documents_demo.py
 python examples/share_transfer_tool_first_demo.py
 python examples/api_tool_progress_stream_demo.py

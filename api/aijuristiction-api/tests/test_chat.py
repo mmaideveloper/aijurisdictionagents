@@ -707,6 +707,61 @@ def test_document_export_payment_confirmation_keeps_requested_template_with_stal
     assert "predzalobna vyzva" not in normalized_lines
 
 
+def test_document_export_payment_confirmation_extracts_voice_case_facts() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "Vytvor potvrdenie o zaplatení na sumu 5000 EUR, splatné k 1.7.2028, "
+                "na firmu Esolutions SK s.r.o., v zastúpení Marek Matonok, "
+                "na splátku auta so SPZ PP472DT."
+            ),
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="Assistant",
+            content=(
+                "Tu je konecna verzia dokumentu - dokument je pripraveny na export a stiahnutie.\n\n"
+                "Podklady pre export:\n"
+                "Platitel: Marek Matonok\n"
+                "Prijemca: ESolutions SK s.r.o., IČO: 46491261, Partizánska 665, 059 18 Spišské Bystré\n"
+                "Suma: 5000 EUR\n"
+                "Datum splatnosti / platby: 1.7.2028\n"
+                "Ucel platby: splátka auta so SPZ PP472DT"
+            ),
+        ),
+    ]
+    result = SessionResult(
+        final_recommendation="Tu je konecna verzia dokumentu - dokument je pripraveny na export a stiahnutie.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="sk-SK",
+    )
+
+    normalized = _canonical_text(" ".join([title, *lines]))
+    assert "potvrdenie o zaplateni" in normalized
+    assert "marek matonok" in normalized
+    assert "esolutions sk" in normalized
+    assert "46491261" in normalized
+    assert "5000 eur" in normalized
+    assert "1.7.2028" in normalized
+    assert "pp472dt" in normalized
+
+
 def test_document_pdf_wrap_repairs_slovak_mojibake_before_rendering() -> None:
     from app.chat.api import _build_simple_pdf
 
@@ -2216,6 +2271,163 @@ def test_prepare_country_direct_reply_skips_unconfigured_countries() -> None:
     assert preparation.prompt_note == ""
     assert preparation.direct_reply is None
     assert preparation.processing_events == []
+
+
+def test_prepare_slovakia_direct_reply_answers_tool_capability_question_without_model() -> None:
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Session
+
+    events: list[dict[str, object]] = []
+    preparation = prepare_slovakia_direct_reply(
+        session=Session(country="SK", language="sk-SK"),
+        messages=[],
+        current_content=(
+            "Chcem vediet zoznam vsetkych tulsov ktore mozem pouzit ako "
+            "overenie firmy v obchodnom registri, overenie auta a dalsie."
+        ),
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+        processing_event_callback=events.append,
+    )
+
+    assert preparation.prompt_note == ""
+    assert preparation.supplemental_documents == []
+    assert preparation.direct_reply is not None
+    assert "obchodny_register_company_check" in preparation.direct_reply
+    assert "slovakia_car_validate" in preparation.direct_reply
+    assert "registeradries_address_validate" in preparation.direct_reply
+    assert "Raw audio neuklad" in preparation.direct_reply
+    assert events
+    assert events[0]["stage"] == "tool_capabilities"
+
+
+def test_slovak_company_query_removes_case_preposition_prefix() -> None:
+    from app.chat.country_services.slovakia import _extract_slovak_company_query
+
+    assert (
+        _extract_slovak_company_query(
+            messages=[],
+            current_content=(
+                "Vytvor potvrdenie na sumu 5000 EUR, splatne k 1.7.2028, "
+                "na firmu Esolutions SK s.r.o."
+            ),
+        )
+        == "Esolutions SK s.r.o."
+    )
+
+
+def test_slovak_payment_confirmation_final_request_uses_tool_first_direct_reply(monkeypatch) -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    class _FakeRegistry:
+        def list_definitions(self):
+            return ()
+
+        def run(self, name: str, **kwargs):
+            if name == "obchodny_register_company_check":
+                return SimpleNamespace(
+                    ok=True,
+                    records=(
+                        {
+                            "name": "ESolutions SK s.r.o.",
+                            "registration_number": "46491261",
+                            "seat": "Partizánska 665, 059 18 Spišské Bystré",
+                            "status": "Aktívna",
+                            "stakeholders": [],
+                            "statutory_representatives": [],
+                        },
+                    ),
+                    message="found",
+                )
+            return SimpleNamespace(ok=True, records=({"tool": name, "kwargs": kwargs},), message="ok")
+
+    monkeypatch.setattr(slovakia_service, "build_default_tool_registry", lambda: _FakeRegistry())
+    session = Session(country="SK", language="sk-SK")
+    current_content = (
+        "Vytvor potvrdenie o zaplatení na sumu 5000 EUR, splatné k 1.7.2028, "
+        "na firmu Esolutions SK s.r.o., v zastúpení Marek Matonok, "
+        "na splátku auta so SPZ PP472DT. Súhlasím s overením firmy, adresy firmy a auta. "
+        "Vygeneruj PDF."
+    )
+    messages = [Message(session_id=session.id, role=MessageRole.USER, content=current_content)]
+    events: list[dict[str, object]] = []
+
+    preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=messages,
+        current_content=current_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+        processing_event_callback=events.append,
+    )
+
+    assert preparation.direct_reply is not None
+    assert "Tu je konecna verzia dokumentu" in preparation.direct_reply
+    assert "CASE_UPDATE_JSON" in preparation.direct_reply
+    assert "ESolutions SK s.r.o." in preparation.direct_reply
+    assert "PP472DT" in preparation.direct_reply
+    assert any(event.get("tool_name") == "registeradries_address_validate" for event in events)
+    assert any(event.get("tool_name") == "slovakia_car_validate" for event in events)
+
+
+def test_first_turn_final_pdf_payment_request_counts_as_export_ready() -> None:
+    from app.chat.api import _document_export_ready, _document_generation_confirmed
+    from app.chat.models import Message, MessageRole, Session
+
+    session = Session(country="SK", language="sk-SK")
+    user_content = (
+        "Vytvorenie noveho pripadu pre potvrdenie na 5000 EUR, splatne k 1.7.2028 "
+        "na firmu Esolutions SK s.r.o. v zastupeni Marek Matonok na splatku auta z SPZ PP472DT. "
+        "Priprav finalny dokument vo formate PDF."
+    )
+    assistant_content = (
+        "Tu je konecna verzia dokumentu - dokument je pripraveny na export a stiahnutie.\n\n"
+        "CASE_UPDATE_JSON:\n"
+        '{"documents":[{"title":"Potvrdenie o zaplatení","content":"Platiteľ: Marek Matonok"}]}'
+    )
+
+    messages = [
+        Message(session_id=session.id, role=MessageRole.USER, content=user_content),
+        Message(session_id=session.id, role=MessageRole.ASSISTANT, content=assistant_content),
+    ]
+
+    assert _document_generation_confirmed(messages)
+    assert _document_export_ready(messages)
+
+
+def test_run_direct_lawyer_turn_does_not_initialize_llm_for_tool_capability_question(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.repository import InMemoryChatRepository
+    from app.chat.models import Session
+
+    session = Session(country="SK", language="sk-SK")
+    repository = InMemoryChatRepository()
+    repository.create_session(session)
+
+    def fail_get_llm_client() -> object:
+        raise AssertionError("LLM should not be initialized for deterministic tool capability replies")
+
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", fail_get_llm_client)
+
+    _user_message, assistant_message, visible_text, processing_events = chat_api._run_direct_lawyer_turn(
+        session_id=session.id,
+        session=session,
+        content="Ake tools mozem pouzit na overenie firmy, auta, adresy a katastra?",
+    )
+
+    assert assistant_message.agent_name == "Assistant"
+    assert "obchodny_register_company_check" in visible_text
+    assert "slovakia_property_lv_lookup" in visible_text
+    assert any(event.get("stage") == "tool_capabilities" for event in processing_events)
 
 
 def test_reply_endpoint_share_transfer_asks_only_for_missing_items(monkeypatch) -> None:

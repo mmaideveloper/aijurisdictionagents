@@ -1046,6 +1046,36 @@ def _run_direct_lawyer_turn(
             [],
         )
 
+    preparation = prepare_country_direct_reply(
+        session=session,
+        messages=history,
+        current_content=content,
+        prior_messages=prior_messages,
+        normalize_document_lines=_normalize_document_lines,
+        extract_document_facts=_extract_document_facts,
+        current_turn_confirms_document_generation=_current_turn_confirms_document_generation,
+        build_share_transfer_lines=_build_slovak_share_transfer_lines,
+        processing_event_callback=processing_event_callback,
+    )
+    if preparation.direct_reply is not None:
+        normalized_direct_reply = _finalize_document_ready_reply_if_needed(
+            session=session,
+            messages=history,
+            lawyer_content=_enforce_single_question_turn(preparation.direct_reply),
+        )
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id,
+            session=session,
+            content=normalized_direct_reply,
+            agent_name="Assistant",
+        )
+        return (
+            persisted_user,
+            persisted_lawyer,
+            _user_visible_text(persisted_lawyer.content),
+            preparation.processing_events,
+        )
+
     from aijurisdictionagents.agents import create_lawyer_agent
     from aijurisdictionagents.llm import get_llm_client
 
@@ -1082,35 +1112,6 @@ def _run_direct_lawyer_turn(
             "- Include CASE_UPDATE_JSON after the user-facing content.\n"
             "- Never output unresolved placeholders in square brackets (for example [Vase meno], [address], [ico]).\n"
             "- If any required field is missing, ask for it explicitly instead of using placeholders."
-        )
-    preparation = prepare_country_direct_reply(
-        session=session,
-        messages=history,
-        current_content=content,
-        prior_messages=prior_messages,
-        normalize_document_lines=_normalize_document_lines,
-        extract_document_facts=_extract_document_facts,
-        current_turn_confirms_document_generation=_current_turn_confirms_document_generation,
-        build_share_transfer_lines=_build_slovak_share_transfer_lines,
-        processing_event_callback=processing_event_callback,
-    )
-    if preparation.direct_reply is not None:
-        normalized_direct_reply = _finalize_document_ready_reply_if_needed(
-            session=session,
-            messages=history,
-            lawyer_content=_enforce_single_question_turn(preparation.direct_reply),
-        )
-        persisted_lawyer = _persist_direct_assistant_message(
-            session_id=session_id,
-            session=session,
-            content=normalized_direct_reply,
-            agent_name="Assistant",
-        )
-        return (
-            persisted_user,
-            persisted_lawyer,
-            _user_visible_text(persisted_lawyer.content),
-            preparation.processing_events,
         )
     if preparation.prompt_note:
         prompt_override = f"{prompt_override}\n\n{preparation.prompt_note}"
@@ -1492,6 +1493,11 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
             event_queue.put(("done", {"session_id": str(session_id)}))
         except Exception as exc:  # noqa: BLE001
             _repository.mark_failed(session_id)
+            _LOGGER.exception(
+                "Discussion stream worker failed | session_id=%s error_type=%s",
+                session_id,
+                type(exc).__name__,
+            )
             event_queue.put(("error", {"message": str(exc)}))
         finally:
             event_queue.put(None)
@@ -1661,6 +1667,11 @@ def _stream_read_user_session(
                 event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
         except Exception as exc:  # noqa: BLE001
             _repository.mark_failed(session_id)
+            _LOGGER.exception(
+                "ReadUser stream worker failed | session_id=%s error_type=%s",
+                session_id,
+                type(exc).__name__,
+            )
             event_queue.put(("error", {"message": str(exc)}))
         finally:
             event_queue.put(None)
@@ -2456,15 +2467,26 @@ def _document_generation_confirmed(messages: list[Message]) -> bool:
         if message.role != MessageRole.USER:
             continue
         previous_messages = messages[:index]
+        normalized = _canonicalize_document_text(message.content)
+        if _is_final_document_generation_command(normalized) and _document_generation_requested(messages[: index + 1]):
+            return True
         if not any(
             prior.role == MessageRole.ASSISTANT and _assistant_requests_document_confirmation(prior.content)
             for prior in previous_messages
         ):
             continue
-        normalized = _canonicalize_document_text(message.content)
         if _is_affirmative_reply(normalized) or _is_explicit_document_request(normalized):
             return True
     return False
+
+
+def _is_final_document_generation_command(normalized: str) -> bool:
+    normalized = _canonicalize_document_text(normalized)
+    final_markers = ("vygeneruj", "generuj", "priprav", "konecnu", "konecna", "finalny", "finalnu", "finalne")
+    document_markers = ("pdf", "dokument", "document")
+    return any(token in normalized for token in final_markers) and any(
+        token in normalized for token in document_markers
+    )
 
 
 def _document_export_ready(messages: list[Message]) -> bool:
@@ -2475,6 +2497,8 @@ def _document_export_ready(messages: list[Message]) -> bool:
         return False
     last_assistant = assistant_messages[-1]
     if _assistant_requests_document_confirmation(last_assistant.content):
+        return False
+    if _looks_like_processing_placeholder_reply(last_assistant.content):
         return False
     if any(_extract_case_update(message.content) is not None for message in assistant_messages):
         return True
@@ -5304,13 +5328,28 @@ def _extract_document_facts(
             "Suma bude doplnená pred podpisom.",
         )
     payment_date = _capture_line_value(
-        ("datum platby", "dátum platby", "payment date", "uhradene dna", "uhradené dňa"),
+        (
+            "datum platby",
+            "dátum platby",
+            "datum splatnosti / platby",
+            "dátum splatnosti / platby",
+            "datum splatnosti",
+            "dátum splatnosti",
+            "payment date",
+            "uhradene dna",
+            "uhradené dňa",
+        ),
         "Dátum platby bude doplnený pred podpisom.",
     )
     if "bude doplnen" in _canonicalize_document_text(payment_date):
         payment_date = _capture(
             r"(?:d[áa]tum platby|payment date|uhraden[ée] d[ňn]a)\s*:\s*(.+?)(?=\s+(?:[úu]čel platby|payment purpose|sp[ôo]sob platby|payment method)\s*:|$)",
             "Dátum platby bude doplnený pred podpisom.",
+        )
+    if "bude doplnen" in _canonicalize_document_text(payment_date):
+        payment_date = _capture(
+            r"(?:d[áa]tum splatnosti / platby|d[áa]tum splatnosti|splatnos[ťt]|splatn[ée]\s+k)\s*:?\s*([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4})",
+            payment_date,
         )
     payment_purpose = _capture_line_value(
         ("ucel platby", "účel platby", "payment purpose", "dovod platby", "dôvod platby"),
@@ -5325,6 +5364,11 @@ def _extract_document_facts(
         payment_purpose = _capture(
             r"(?:za|na)\s+([^.;\n]+?(?:fakt[úu]r[ua]|n[áa]jom|p[ôo]j[čc]k[au]|sl[uú][žz]b[uy]|tovar|dielo)[^.;\n]*)",
             "Účel platby bude doplnený pred podpisom.",
+        )
+    if _is_missing_document_fact(payment_purpose) or "bude doplnen" in _canonicalize_document_text(payment_purpose):
+        payment_purpose = _capture(
+            r"(?:[úu]čel platby|na)\s*:?\s*([^.;\n]*spl[áa]tk[au]\s+auta[^.;\n]*)",
+            payment_purpose,
         )
     payment_method = _capture_line_value(
         ("sposob platby", "spôsob platby", "payment method"),
@@ -5348,14 +5392,31 @@ def _extract_document_facts(
     agenda_items = next_discussion.get("agenda", []) if isinstance(next_discussion, dict) else []
     agenda = ", ".join(str(item).strip() for item in agenda_items if str(item).strip())
     company_name = _capture(
-        r"(?:firma|fima|spoloÄnosÅ¥|spolocnost)\s+([^,.;\n]+?(?:s\.r\.o\.|a\.s\.|s\. r\. o\.))",
+        r"(?:firma|firmu|fima|spoloÄnosÅ¥|spolocnost|spoločnosť)\s+([^,.;\n]+?(?:s\.r\.o\.|a\.s\.|s\. r\. o\.))",
         "SpoloÄnosÅ¥ [doplnit obchodnÃ© meno]",
     )
+    if _is_missing_document_fact(company_name):
+        company_name = _capture(
+            r"Verified company name:\s*([^.;\n]+?(?:s\.r\.o\.|a\.s\.|s\. r\. o\.))",
+            company_name,
+        )
     company_seat = _capture(
         r"(?:s\.r\.o\.|a\.s\.|s\. r\. o\.)\s*,\s*([^.;\n]+)",
         "SÃ­dlo spoloÄnosti [doplnit]",
     )
-    company_identifier = _capture(r"iÄo\s*[:=]?\s*([0-9]{6,10})", "[doplnit IÄŒO]")
+    if _is_missing_document_fact(company_seat):
+        company_seat = _capture(r"Verified seat:\s*([^.;\n]+)", company_seat)
+    company_identifier = _capture(
+        r"(?:iÄo|ičo|ico|Verified registration number)\s*[:=]?\s*([0-9]{6,10})",
+        "[doplnit IÄŒO]",
+    )
+    if _is_missing_document_fact(payment_recipient) and not _is_missing_document_fact(company_name):
+        company_parts = [
+            company_name,
+            f"IČO: {company_identifier}" if not _is_missing_document_fact(company_identifier) else "",
+            company_seat if not _is_missing_document_fact(company_seat) else "",
+        ]
+        payment_recipient = ", ".join(part for part in company_parts if part)
     transfer_share = _capture(r"(\d{1,3}\s*%)", "50 %")
     transfer_price = _capture(
         r"(?:cena prevodu(?: podielu)?(?: je)?|kÃºpna cena|kupna cena|odplata(?: za prevod)?)\s*[:=]?\s*([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|â‚¬))",
@@ -5462,8 +5523,8 @@ def _apply_user_profile_document_defaults(
         enriched["client_name"] = profile_identity
     if _is_missing_document_fact(enriched.get("transferor_name")):
         enriched["transferor_name"] = profile_identity
-    if _is_missing_document_fact(enriched.get("payment_recipient")):
-        enriched["payment_recipient"] = profile_identity
+    if _is_missing_document_fact(enriched.get("payment_payer")):
+        enriched["payment_payer"] = profile_identity
     return enriched
 
 
