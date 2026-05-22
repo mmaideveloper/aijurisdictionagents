@@ -655,6 +655,154 @@ def test_document_export_for_easement_case_is_not_lease_template() -> None:
     assert "najomna zmluva" not in lowered
 
 
+def test_document_export_payment_confirmation_keeps_requested_template_with_stale_context() -> None:
+    from app.chat.api import _build_document_export_content
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Skorší kontext prípadu spomína nájomnú zmluvu a vecné bremeno, "
+                "ale toto nemá byť finálny typ dokumentu."
+            ),
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "Chcem potvrdenie o zaplateni. Platiteľ: Ján Novák. "
+                "Príjemca: Marek Matonok. Suma: 120 EUR. "
+                "Dátum platby: 22.05.2026. Účel platby: úhrada nájomného."
+            ),
+        ),
+    ]
+    result = SessionResult(
+        final_recommendation=(
+            "Pripravil som Potvrdenie o zaplatení podľa zadaných údajov, "
+            "nie nájomnú zmluvu ani predžalobnú výzvu."
+        ),
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+    )
+
+    normalized_title = _canonical_text(title)
+    normalized_lines = _canonical_text(" ".join(lines))
+    assert normalized_title == "potvrdenie o zaplateni"
+    assert "jan novak" in normalized_lines
+    assert "120 eur" in normalized_lines
+    assert "najomna zmluva" not in normalized_lines
+    assert "predzalobna vyzva" not in normalized_lines
+
+
+def test_document_pdf_wrap_repairs_slovak_mojibake_before_rendering() -> None:
+    from app.chat.api import _build_simple_pdf
+
+    pdf_bytes = _build_simple_pdf(
+        title="Potvrdenie o zaplatení",
+        lines=["PredÅ¾alobnÃ¡ vÃ½zva", "PrÃ­jemca: Marek Matonok"],
+        country="SK",
+        language="SK",
+        header_line="AI Jurisdicta Solution | Generated: 2026-05-22 10:00:00 UTC",
+        footer_line="AIJ | API 0.1.0 | Core 0.1.0",
+        draw_logo_mark=True,
+        include_title_block=True,
+    )
+
+    extracted = _pdf_text(pdf_bytes)
+    assert "Predžalobná výzva" in extracted
+    assert "Príjemca:" in extracted and "Marek Matonok" in extracted
+    assert not any(marker in extracted for marker in ("Ã", "Â", "Ä", "Å", "â"))
+
+
+def test_payment_confirmation_export_uses_latest_visible_draft_sentence() -> None:
+    from app.chat.api import _build_document_export_content, _build_simple_pdf
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Potvrdenie o zaplatení\n\n"
+                "Ja, Marek Novak, bytom iiiiii, 8098098 mmmmmm, Slovensko, "
+                "týmto potvrdzujem, že som dňa [dátum] zaplatil sumu 5000 eur "
+                "svojmu susedovi, [Meno suseda], bytom Testova 21, Poprad, 051 01, "
+                "prevodom na účet."
+            ),
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "Tu je konečná verzia dokumentu:\n\n"
+                "---\n\n"
+                "**Potvrdenie o zaplatení**\n\n"
+                "Ja, Marek Novak, bytom iiiiii, 8098098 mmmmmm, Slovensko, "
+                "týmto potvrdzujem, že som dňa 1. júna 2026 zaplatil sumu "
+                "5000 eur (päťtisíc eur) svojmu susedovi, Jano Mrkvička, "
+                "bytom Testova 21, Poprad, 051 01, prevodom na účet.\n\n"
+                "Dátum: 1. júna 2026\n\n"
+                "Podpis: ________________________"
+            ),
+        ),
+    ]
+    result = SessionResult(
+        final_recommendation=messages[-1].content,
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, lines = _build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="SK",
+    )
+
+    normalized = _canonical_text(" ".join(lines))
+    assert _canonical_text(title) == "potvrdenie o zaplateni"
+    assert "marek novak" in normalized
+    assert "iiiiii, 8098098 mmmmmm, slovensko" in normalized
+    assert "jano mrkvicka" in normalized
+    assert "testova 21, poprad, 051 01" in normalized
+    assert "1. juna 2026" in normalized
+    assert "prevodom na ucet" in normalized
+    assert "meno suseda" not in normalized
+    assert "bude identifikovany" not in normalized
+
+    pdf_text = _pdf_text(
+        _build_simple_pdf(
+            title=title,
+            lines=lines,
+            country="SK",
+            language="SK",
+            header_line="AI Jurisdicta Solution | Generated: 2026-05-22 10:00:00 UTC",
+            footer_line="AIJ | API 0.1.0 | Core 0.1.0",
+            draw_logo_mark=True,
+            include_title_block=True,
+        )
+    )
+    assert "Jano Mrkvička" in pdf_text
+    assert "1. júna 2026" in pdf_text
+
+
 def test_document_export_for_company_share_transfer_uses_full_session_context() -> None:
     from app.chat.api import _build_document_export_content
     from app.chat.models import Message, MessageRole, SessionResult
@@ -3862,6 +4010,50 @@ def test_document_export_ready_after_confirmation_with_prior_case_update() -> No
     assert result.metadata["document_requested"] is True
     assert result.metadata["document_confirmed"] is True
     assert result.metadata["document_ready"] is True
+
+
+def test_stale_result_refreshes_when_later_messages_make_document_ready() -> None:
+    from app.chat.api import _session_result_is_stale
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Chcem potvrdenie o zaplateni 5000 eur.",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Chcete, aby som pripravil dokument aj vo formate PDF?",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content="Ano, vyzera to dobre, vygeneruj dokument.",
+        ),
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content=(
+                "Potvrdenie o zaplatení\n\n"
+                "Dokument je pripravený na stiahnutie vo formáte PDF."
+            ),
+        ),
+    ]
+    stale_result = SessionResult(
+        final_recommendation="Dokument sa pripravuje.",
+        judge_rationale="Old cached result",
+        metadata={
+            "message_count": 3,
+            "document_requested": True,
+            "document_confirmed": True,
+            "document_ready": False,
+        },
+    )
+
+    assert _session_result_is_stale(result=stale_result, messages=messages) is True
 
 
 def test_extract_case_update_parses_fenced_json_without_case_update_marker() -> None:

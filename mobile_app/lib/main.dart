@@ -333,7 +333,7 @@ class AppStrings {
       'pdf_download_started': 'Sťahovanie PDF spustené: {{filename}}',
       'pdf_download_failed': 'Sťahovanie PDF zlyhalo: {{error}}',
       'document_pdf_offer':
-          'Návrh dokumentu som do chatu nezobrazila. Chcete ho vidieť vo formáte PDF? Použite tlačidlo PDF dokument.',
+          'Tu je konečná verzia dokumentu. Dokument je pripravený na stiahnutie.',
       'open_saved_file_failed': 'Súbor sa nepodarilo otvoriť.',
       'downloaded_files_title': 'Stiahnuté súbory',
       'downloaded_files_subtitle': 'Vyberte súbor, ktorý chcete teraz otvoriť.',
@@ -604,7 +604,7 @@ class AppStrings {
       'pdf_download_started': 'PDF download started: {{filename}}',
       'pdf_download_failed': 'Failed to download PDF: {{error}}',
       'document_pdf_offer':
-          'I did not show the generated document in chat. Do you want to see it as PDF? Use the Document PDF button.',
+          'Here is the final version of the document. The document is ready to download.',
       'open_saved_file_failed': 'Could not open the saved file.',
       'downloaded_files_title': 'Downloaded files',
       'downloaded_files_subtitle': 'Choose the file you want to open now.',
@@ -881,7 +881,7 @@ class AppStrings {
       'pdf_download_started': 'PDF-Download gestartet: {{filename}}',
       'pdf_download_failed': 'PDF-Download fehlgeschlagen: {{error}}',
       'document_pdf_offer':
-          'Ich habe den erzeugten Dokumententext nicht im Chat angezeigt. Möchten Sie ihn als PDF sehen? Verwenden Sie die Schaltfläche PDF Dokument.',
+          'Hier ist die endgültige Version des Dokuments. Das Dokument ist zum Download bereit.',
       'open_saved_file_failed':
           'Gespeicherte Datei konnte nicht geöffnet werden.',
       'downloaded_files_title': 'Heruntergeladene Dateien',
@@ -1342,8 +1342,18 @@ bool _looksLikeGeneratedDocumentDraft(String content) {
   final hasDocumentKeyword = <String>[
     'splnomocnenie',
     'plna moc',
+    'potvrdenie',
+    'potvrdenie o zaplat',
+    'potvrdenie o platbe',
+    'potvrdenie o prijati',
+    'predzalobna vyzva',
+    'predžalobná výzva',
     'zmluva',
     'dohoda',
+    'zaloba',
+    'žaloba',
+    'navrh',
+    'návrh',
     'agreement',
     'power of attorney',
     'contract',
@@ -1366,7 +1376,14 @@ bool _looksLikeGeneratedDocumentDraft(String content) {
         'abschnitt',
       ].where(lowered.contains).length >=
       2;
-  return trimmed.length >= 350 && (hasDocumentKeyword || hasStructuredSections);
+  final hasPaymentConfirmationSentence =
+      lowered.contains('tymto potvrdzujem') ||
+          lowered.contains('týmto potvrdzujem') ||
+          (lowered.contains('zaplatil') && lowered.contains('prevodom'));
+  return trimmed.length >= 220 &&
+      (hasDocumentKeyword ||
+          hasStructuredSections ||
+          hasPaymentConfirmationSentence);
 }
 
 String _documentAutoAnalysisPrompt({
@@ -1660,9 +1677,21 @@ class _DocumentDownloadOption {
   final CaseDocumentItem? caseDocument;
 
   String get title => export?.title ?? caseDocument?.originalFilename ?? '';
+}
 
-  String get subtitle =>
-      export?.filename ?? caseDocument?.processingStatus ?? '';
+bool _isUserVisibleCaseDocument(CaseDocumentItem document) {
+  final kind = document.kind.trim().toLowerCase();
+  final filename = document.originalFilename.trim().toLowerCase();
+  if (kind == 'technical_payload') {
+    return false;
+  }
+  if (filename.startsWith('assistant-technical-')) {
+    return false;
+  }
+  if (filename.startsWith('session-') && filename.endsWith('.txt')) {
+    return false;
+  }
+  return filename.isNotEmpty;
 }
 
 class SessionResultDetails {
@@ -2826,6 +2855,9 @@ class ApiClient {
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = _extractErrorDetail(response);
+      if (_isMissingSessionDetail(detail)) {
+        throw const SessionExpiredException();
+      }
       throw Exception(
         'Document export list failed with status ${response.statusCode}: $detail',
       );
@@ -6222,7 +6254,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     final shouldSuppressDocumentBody =
         _containsDocumentPayloadMarkers(rawReply) ||
-            (exportReady && _looksLikeGeneratedDocumentDraft(visibleReply));
+            _looksLikeGeneratedDocumentDraft(visibleReply);
     if (!shouldSuppressDocumentBody) {
       return visibleReply;
     }
@@ -7156,6 +7188,12 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _downloadRequestedDocuments() async {
+    if (_isSending) {
+      await _waitForSendChannelToBeIdle();
+      if (!mounted) {
+        return;
+      }
+    }
     final sessionId = _apiClient.sessionId;
     if (sessionId != null && sessionId.isNotEmpty) {
       try {
@@ -7177,6 +7215,17 @@ class _ChatHomePageState extends State<ChatHomePage>
           }
           return;
         }
+      } on SessionExpiredException {
+        if (mounted) {
+          setState(() {
+            _hasExportReady = false;
+            _latestGeneratedCaseDocumentId = null;
+          });
+        }
+        _showSnackbar(
+          _sessionExpiredMessageForLanguage(_selectedLocale.languageCode),
+        );
+        return;
       } catch (error, stackTrace) {
         await widget.logger.error(
           'Failed to list document export options',
@@ -7198,9 +7247,12 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
       return;
     }
-    if (_caseDocuments.length > 1) {
+    final visibleCaseDocuments = _caseDocuments
+        .where(_isUserVisibleCaseDocument)
+        .toList(growable: false);
+    if (visibleCaseDocuments.length > 1) {
       final selected = await _showDocumentDownloadPicker(
-        _caseDocuments
+        visibleCaseDocuments
             .map(_DocumentDownloadOption.caseDocument)
             .toList(growable: false),
       );
@@ -7219,6 +7271,14 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
       return;
     }
+    if (visibleCaseDocuments.length == 1) {
+      await _downloadCaseDocument(visibleCaseDocuments.single);
+      return;
+    }
+    if (_caseDocuments.isNotEmpty) {
+      _showSnackbar(_strings.t('pdf_not_ready'));
+      return;
+    }
 
     final savedFile = await _downloadPdf('document');
     if (!mounted || savedFile == null) {
@@ -7228,9 +7288,10 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<_SavedLocalFile?> _downloadDocumentExportPdf(
-    DocumentExportOption option,
-  ) async {
-    if (_isDownloading) {
+    DocumentExportOption option, {
+    bool allowDuringActiveDownload = false,
+  }) async {
+    if (_isDownloading && !allowDuringActiveDownload) {
       return null;
     }
     setState(() {
@@ -7332,6 +7393,10 @@ class _ChatHomePageState extends State<ChatHomePage>
         stackTrace,
         <String, Object?>{'case_id': selected.caseId, 'doc_id': docId},
       );
+      final fallback = await _downloadFirstAvailableSessionExport();
+      if (fallback != null) {
+        return fallback;
+      }
       _showSnackbar(_strings.t('pdf_download_failed', <String, String>{
         'error': '$error',
       }));
@@ -7343,6 +7408,38 @@ class _ChatHomePageState extends State<ChatHomePage>
       }
     }
     return null;
+  }
+
+  Future<_SavedLocalFile?> _downloadFirstAvailableSessionExport() async {
+    final sessionId = _apiClient.sessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return null;
+    }
+    try {
+      final exportOptions = await _apiClient.listDocumentExportOptions();
+      if (exportOptions.isEmpty) {
+        return null;
+      }
+      await widget.logger.info(
+        'Falling back to session document export after case document PDF failure',
+        <String, Object?>{
+          'session_id': sessionId,
+          'export_count': exportOptions.length,
+        },
+      );
+      return _downloadDocumentExportPdf(
+        exportOptions.first,
+        allowDuringActiveDownload: true,
+      );
+    } catch (fallbackError, fallbackStackTrace) {
+      await widget.logger.error(
+        'Session document export fallback failed',
+        fallbackError,
+        fallbackStackTrace,
+        <String, Object?>{'session_id': sessionId},
+      );
+      return null;
+    }
   }
 
   Future<bool> _ensureCaseSelectedForOutgoingMessage(String message) async {
@@ -7869,8 +7966,6 @@ class _ChatHomePageState extends State<ChatHomePage>
 
     setState(() {
       _isSending = true;
-      _hasExportReady = false;
-      _latestGeneratedCaseDocumentId = null;
       if (appendUserMessage && _selectedCase != null) {
         _caseHistoryOffset += 1;
       }
@@ -8829,13 +8924,8 @@ class _ChatHomePageState extends State<ChatHomePage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _strings.t('available_documents_title'),
+                      _strings.t('export_documents'),
                       style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _strings.t('available_documents_subtitle'),
-                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
@@ -8850,7 +8940,6 @@ class _ChatHomePageState extends State<ChatHomePage>
                     return ListTile(
                       leading: const Icon(Icons.picture_as_pdf_outlined),
                       title: Text(document.title),
-                      subtitle: Text(document.subtitle),
                       onTap: () => Navigator.of(context).pop(document),
                     );
                   },
@@ -9382,10 +9471,13 @@ class _ChatHomePageState extends State<ChatHomePage>
                         label: Text(strings.t('account')),
                       ),
                       FilledButton.tonalIcon(
-                        onPressed:
-                            (_isDownloading || _isSending || !_hasExportReady)
-                                ? null
-                                : _downloadRequestedDocuments,
+                        onPressed: (_isDownloading ||
+                                (!_hasExportReady &&
+                                    !_caseDocuments.any(
+                                      _isUserVisibleCaseDocument,
+                                    )))
+                            ? null
+                            : _downloadRequestedDocuments,
                         icon: _isDownloading
                             ? const SizedBox(
                                 width: 14,

@@ -30,6 +30,9 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
 - Voice tool intents are normalized by `IntentMapper` into backend-ready tool payloads with `correlation_id`, `case_id`, `user_id`, structured inputs, raw transcript metadata, and a `generic_tool_request` fallback for future tools.
 - Mobile voice compliance now uses explicit `consentGiven`, `storeAudioEnabled`, and `redactSensitiveEntitiesBeforeSend` flags. Azure STT raw-audio upload is blocked when voice consent is missing, raw audio storage stays disabled by default, and voice logs keep trace/purpose metadata without full PII content. See `docs/mobile_voice_compliance.md` and `docs/VOICE_FLOW_CHANGE_CHECKLIST.md`.
 - Generated legal documents are no longer shown back into chat as plain text or JSON payloads; instead, the app asks the user whether they want to see the document as PDF and keeps the PDF export action available.
+- When a backend reply contains a full generated document body, the app keeps that raw content for PDF export but shows and speaks only a short final-version/ready message, so large documents are not read aloud in chat.
+- Document downloads prefer the active chat session export endpoint. If an older assistant message still contains an internal generated case-document URL and that PDF endpoint returns 404, the app falls back to the current session document export before showing an error.
+- The `Dokumenty` action stays enabled while a document exists, including while microphone input or a new message is being processed; if tapped during processing, it waits for the latest turn to finish and then downloads the newest available session export.
 - If the user starts a discussion without any selected case, the app now creates a case automatically, generates a short title from the discussion text, selects that case, and then sends the original message to the backend.
 - The automatic upgrade dialog now includes a session-only `Skip to new start` checkbox. When checked, the app stops version monitoring for the rest of the current app run and resumes only after the next launch.
 - When the user turns speech input on, Jurisdicta first says `Hallo, <first name>, I am listening.` if the profile contains a first name, otherwise `Hallo, I am listening.`.
@@ -393,6 +396,7 @@ Open `docs/chat_ui_snapshot.html` in a browser for the updated rebrand layout pr
 - Speech input now waits at least 30 seconds of pause before stopping and shows a user notice when auto-stopped.
 - Documents export button is enabled when the case has processed/generated documents.
 - Tapping the microphone now auto-enables speech input instead of only showing a disabled message.
+- The Documents picker shows a concise `Dokumenty` title, hides secondary status text, and filters internal technical JSON/session transcript files from user download choices. If a local API restart expires an in-memory chat export session, the app reports the expired session instead of falling back to internal case files.
 
 ## Audio command completion behavior
 

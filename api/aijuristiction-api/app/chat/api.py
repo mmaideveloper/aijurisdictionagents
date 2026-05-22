@@ -1503,7 +1503,7 @@ def _stream_read_user_session(
 
     def worker() -> None:
         try:
-            existing_result = _repository.get_result(session_id)
+            existing_result = _get_or_build_session_result(session_id)
             previous_messages = _repository.list_messages(session_id)
             if _is_document_email_flow_message(
                 content=payload.instruction,
@@ -1556,6 +1556,7 @@ def _stream_read_user_session(
                     agent_name="User",
                 )
                 user_message_callback(persisted_user)
+                existing_result = _get_or_build_session_result(session_id) or existing_result
                 status_reply = _build_document_status_reply(
                     session=session,
                     messages=_repository.list_messages(session_id),
@@ -2068,16 +2069,23 @@ def _looks_like_document_title(value: str) -> bool:
 
 
 def _repair_common_mojibake(value: str) -> str:
-    if not any(marker in value for marker in ("Ã", "Â", "Ä", "Å", "â")):
-        return value
-    for source_encoding in ("latin-1", "cp1252"):
-        try:
-            repaired = value.encode(source_encoding, errors="ignore").decode("utf-8", errors="ignore").strip()
-        except UnicodeError:
-            continue
-        if repaired:
+    repaired = value
+    for _ in range(3):
+        if not any(marker in repaired for marker in ("Ã", "Â", "Ä", "Å", "â")):
             return repaired
-    return value
+        next_value = ""
+        for source_encoding in ("latin-1", "cp1252"):
+            try:
+                candidate = repaired.encode(source_encoding, errors="ignore").decode("utf-8", errors="ignore").strip()
+            except UnicodeError:
+                continue
+            if candidate:
+                next_value = candidate
+                break
+        if not next_value or next_value == repaired:
+            return repaired
+        repaired = next_value
+    return repaired
 
 
 def _canonicalize_document_text(value: str) -> str:
@@ -3132,20 +3140,20 @@ def export_session_result(
 
 
 def _get_or_build_session_result(session_id: UUID) -> SessionResult | None:
-    result = _repository.get_result(session_id)
-    if result is not None:
-        return result
     session = _repository.get_session(session_id)
     if session is None:
         return None
     messages = _repository.list_messages(session_id)
+    result = _repository.get_result(session_id)
+    if result is not None and not _session_result_is_stale(result=result, messages=messages):
+        return result
     assistant_messages = [message for message in messages if message.role == MessageRole.ASSISTANT]
     if not assistant_messages:
-        return None
+        return result
     latest_assistant = assistant_messages[-1]
     visible_text = _user_visible_text(latest_assistant.content)
     if _assistant_requests_user_reply(visible_text) and not _document_export_ready(messages):
-        return None
+        return result
     result = _build_direct_reply_result(
         session_id=session_id,
         session=session,
@@ -3154,6 +3162,16 @@ def _get_or_build_session_result(session_id: UUID) -> SessionResult | None:
     )
     _repository.set_result(session_id, result)
     return result
+
+
+def _session_result_is_stale(*, result: SessionResult, messages: list[Message]) -> bool:
+    metadata = result.metadata if isinstance(result.metadata, dict) else {}
+    message_count = metadata.get("message_count")
+    if isinstance(message_count, int) and message_count < len(messages):
+        return True
+    if _document_export_ready(messages) and metadata.get("document_ready") is not True:
+        return True
+    return False
 
 
 def _session_document_export_context(
@@ -3926,7 +3944,7 @@ def _draw_pdf_body_line(
 def _wrap_pdf_lines(lines: List[str], width: int = 90) -> List[str]:
     wrapped: List[str] = []
     for line in lines:
-        text = line.strip()
+        text = _repair_common_mojibake(line).strip()
         if not text:
             wrapped.append("")
             continue
@@ -4280,7 +4298,8 @@ def _law_citation_export_lines(*, metadata: dict[str, object], language: str | N
             if version_token:
                 detail += f", verzia {version_token}"
             if effective_from:
-                detail += f", ÃºÄinnÃ¡ od {effective_from}"
+                detail += f", účinná od {effective_from}"
+            detail += ", zdroj: laws connector DB, skóre zdroja 1.0"
         else:
             detail = f"- {identifier}"
             if title:
@@ -4289,6 +4308,7 @@ def _law_citation_export_lines(*, metadata: dict[str, object], language: str | N
                 detail += f", version {version_token}"
             if effective_from:
                 detail += f", effective from {effective_from}"
+            detail += ", source: laws connector DB, source score 1.0"
         lines.append(detail)
     return lines
 
@@ -4542,6 +4562,10 @@ def _build_document_export_content(
             document_kind=document_kind,
             language=language,
         )
+        if document_kind == "payment_confirmation":
+            lines = _build_slovak_payment_confirmation_lines(facts)
+            lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+            return title, _strip_duplicate_body_title(title=title, lines=lines)
         if document_kind == "rental_agreement":
             lines = _build_standard_slovak_agreement_lines(facts)
             lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
@@ -4563,6 +4587,10 @@ def _build_document_export_content(
     )
     if document_kind == "rental_agreement":
         lines = _build_standard_english_agreement_lines(facts)
+        lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+        return title, _strip_duplicate_body_title(title=title, lines=lines)
+    if document_kind == "payment_confirmation":
+        lines = _build_english_payment_confirmation_lines(facts)
         lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
         return title, _strip_duplicate_body_title(title=title, lines=lines)
     if document_kind == "easement_demand":
@@ -4601,8 +4629,10 @@ def _document_export_title_from_recommendation(
             return "Kupno-predajna zmluva"
         if "darovac" in lowered and "zmluv" in lowered:
             return "Darovacia zmluva"
-        if "potvrdenie" in lowered and any(token in lowered for token in ("zaplat", "uhrad")):
-            return "Potvrdenie o zaplateni"
+        if document_kind == "payment_confirmation" or (
+            "potvrdenie" in lowered and any(token in lowered for token in ("zaplat", "uhrad", "platb"))
+        ):
+            return "Potvrdenie o zaplatení"
         if "plnomoc" in lowered or "splnomoc" in lowered:
             return "Plnomocenstvo"
         if "vypoved" in lowered and ("najom" in lowered or "najm" in lowered):
@@ -4619,6 +4649,10 @@ def _document_export_title_from_recommendation(
         return "Purchase Agreement"
     if "gift" in lowered and "agreement" in lowered:
         return "Gift Agreement"
+    if document_kind == "payment_confirmation" or (
+        "confirmation" in lowered and any(token in lowered for token in ("payment", "paid"))
+    ):
+        return "Payment Confirmation"
     if "payment confirmation" in lowered or ("confirmation" in lowered and "payment" in lowered):
         return "Payment Confirmation"
     if document_kind == "rental_agreement":
@@ -4643,7 +4677,11 @@ def _mentions_purchase_sale_document(lowered: str) -> bool:
 def _is_document_title_request_sentence(normalized: str) -> bool:
     request_prefixes = (
         "priprav ",
+        "pripravil som ",
+        "pripravim ",
+        "pripravím ",
         "odporucam ",
+        "odporúčam ",
         "chcem ",
         "prosim ",
         "potrebujem ",
@@ -5179,6 +5217,65 @@ def _extract_document_facts(
         r"((?:v[ýy]povedn[áa]\s+lehota|v[ýy]povednou\s+lehotou|vypovedou|v[ýy]pove[ďd]ou)[^.]+)",
         "Výpovedná lehota 1 mesiac, doručenie písomne aj emailom",
     )
+    payment_payer = _capture_line_value(
+        ("platitel", "platiteľ", "payer", "dlznik", "dlžník"),
+        "Platiteľ bude identifikovaný pred podpisom.",
+    )
+    if _is_missing_document_fact(payment_payer) or "bude identifikov" in _canonicalize_document_text(payment_payer):
+        payment_payer = _capture(
+            r"(?:platite[ľl]|payer|dl[žz]n[íi]k)\s*:\s*([^.;\n]+)",
+            "Platiteľ bude identifikovaný pred podpisom.",
+        )
+    payment_recipient = _capture_line_value(
+        ("prijemca", "príjemca", "recipient", "veritel", "veriteľ"),
+        "Príjemca bude identifikovaný pred podpisom.",
+    )
+    if _is_missing_document_fact(payment_recipient) or "bude identifikov" in _canonicalize_document_text(payment_recipient):
+        payment_recipient = _capture(
+            r"(?:pr[íi]jemca|recipient|verite[ľl])\s*:\s*([^.;\n]+)",
+            "Príjemca bude identifikovaný pred podpisom.",
+        )
+    payment_amount = _capture_line_value(("suma", "ciastka", "čiastka", "amount"), "")
+    if not payment_amount:
+        payment_amount = _capture(
+            r"\b([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€))\b",
+            "Suma bude doplnená pred podpisom.",
+        )
+    payment_date = _capture_line_value(
+        ("datum platby", "dátum platby", "payment date", "uhradene dna", "uhradené dňa"),
+        "Dátum platby bude doplnený pred podpisom.",
+    )
+    if "bude doplnen" in _canonicalize_document_text(payment_date):
+        payment_date = _capture(
+            r"(?:d[áa]tum platby|payment date|uhraden[ée] d[ňn]a)\s*:\s*(.+?)(?=\s+(?:[úu]čel platby|payment purpose|sp[ôo]sob platby|payment method)\s*:|$)",
+            "Dátum platby bude doplnený pred podpisom.",
+        )
+    payment_purpose = _capture_line_value(
+        ("ucel platby", "účel platby", "payment purpose", "dovod platby", "dôvod platby"),
+        "",
+    )
+    if not payment_purpose:
+        payment_purpose = _capture(
+            r"(?:[úu]čel platby|payment purpose|d[ôo]vod platby)\s*:\s*(.+?)(?=\s+(?:sp[ôo]sob platby|payment method)\s*:|\s+Pripravil som\b|\s+Prepared\b|$)",
+            "",
+        )
+    if not payment_purpose:
+        payment_purpose = _capture(
+            r"(?:za|na)\s+([^.;\n]+?(?:fakt[úu]r[ua]|n[áa]jom|p[ôo]j[čc]k[au]|sl[uú][žz]b[uy]|tovar|dielo)[^.;\n]*)",
+            "Účel platby bude doplnený pred podpisom.",
+        )
+    payment_method = _capture_line_value(
+        ("sposob platby", "spôsob platby", "payment method"),
+        "Spôsob platby bude doplnený pred podpisom.",
+    )
+    payment_sentence_facts = _extract_payment_confirmation_sentence_facts(text)
+    if payment_sentence_facts:
+        payment_payer = payment_sentence_facts.get("payment_payer", payment_payer)
+        payment_recipient = payment_sentence_facts.get("payment_recipient", payment_recipient)
+        payment_amount = payment_sentence_facts.get("payment_amount", payment_amount)
+        payment_date = payment_sentence_facts.get("payment_date", payment_date)
+        payment_purpose = payment_sentence_facts.get("payment_purpose", payment_purpose)
+        payment_method = payment_sentence_facts.get("payment_method", payment_method)
 
     client_name = _case_text(("case", "parties", "client", "name"), "Klient")
     opponent_name = _case_text(("case", "parties", "opponent", "name"), "Protistrana")
@@ -5225,6 +5322,12 @@ def _extract_document_facts(
         "advance": advance,
         "deposit": deposit,
         "notice": notice,
+        "payment_payer": payment_payer,
+        "payment_recipient": payment_recipient,
+        "payment_amount": payment_amount,
+        "payment_date": payment_date,
+        "payment_purpose": payment_purpose,
+        "payment_method": payment_method,
         "client_name": client_name,
         "opponent_name": opponent_name,
         "topic": topic,
@@ -5244,6 +5347,42 @@ def _extract_document_facts(
     }
 
 
+def _extract_payment_confirmation_sentence_facts(text: str) -> dict[str, str]:
+    normalized = " ".join(_repair_common_mojibake(text).split())
+    pattern = re.compile(
+        r"Ja,\s*(?P<payer>.+?),\s*bytom\s*(?P<payer_address>.+?),\s*"
+        r"t[ýy]mto\s+potvrdzujem,\s*[žz]e\s+som\s+d[ňn]a\s*"
+        r"(?P<payment_date>.+?)\s+zaplatil\s+sumu\s*"
+        r"(?P<payment_amount>[0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€)(?:\s*\([^)]*\))?)\s+"
+        r"(?:svojmu\s+susedovi|pr[íi]jemcovi|verite[ľl]ovi),\s*"
+        r"(?P<recipient>.+?),\s*bytom\s*(?P<recipient_address>.+?),\s*"
+        r"(?P<payment_method>prevodom\s+na\s+[úu]čet|bankov[ýy]m\s+prevodom|v\s+hotovosti)",
+        flags=re.IGNORECASE,
+    )
+    matches = list(pattern.finditer(normalized))
+    if not matches:
+        return {}
+    for match in reversed(matches):
+        values = {key: " ".join(value.strip().split()) for key, value in match.groupdict().items()}
+        if any("[" in value or "]" in value for value in values.values()):
+            continue
+        payer = values["payer"].strip(" ,.")
+        payer_address = values["payer_address"].strip(" ,.")
+        recipient = values["recipient"].strip(" ,.")
+        recipient_address = values["recipient_address"].strip(" ,.")
+        amount = values["payment_amount"].strip(" ,.")
+        method = values["payment_method"].strip(" ,.")
+        return {
+            "payment_payer": f"{payer}, bytom {payer_address}",
+            "payment_recipient": f"{recipient}, bytom {recipient_address}",
+            "payment_amount": amount,
+            "payment_date": values["payment_date"].strip(" ,."),
+            "payment_purpose": f"zaplatenie sumy {amount}",
+            "payment_method": method,
+        }
+    return {}
+
+
 def _apply_user_profile_document_defaults(
     *, facts: dict[str, str], user_profile: User | None
 ) -> dict[str, str]:
@@ -5261,6 +5400,8 @@ def _apply_user_profile_document_defaults(
         enriched["client_name"] = profile_identity
     if _is_missing_document_fact(enriched.get("transferor_name")):
         enriched["transferor_name"] = profile_identity
+    if _is_missing_document_fact(enriched.get("payment_recipient")):
+        enriched["payment_recipient"] = profile_identity
     return enriched
 
 
@@ -5286,6 +5427,20 @@ def _sanitize_missing_document_facts(facts: dict[str, str]) -> dict[str, str]:
         enriched["transferor_name"] = "Prevodca bude identifikovaný pred podpisom alebo podaním."
     if _is_missing_document_fact(enriched.get("transferee_name")):
         enriched["transferee_name"] = "Nadobúdateľ bude identifikovaný pred podpisom alebo podaním."
+    if _is_missing_document_fact(enriched.get("payment_payer")):
+        opponent_name = enriched.get("opponent_name")
+        enriched["payment_payer"] = (
+            str(opponent_name)
+            if not _is_missing_document_fact(opponent_name)
+            else "Platiteľ bude identifikovaný pred podpisom."
+        )
+    if _is_missing_document_fact(enriched.get("payment_recipient")):
+        client_name = enriched.get("client_name")
+        enriched["payment_recipient"] = (
+            str(client_name)
+            if not _is_missing_document_fact(client_name)
+            else "Príjemca bude identifikovaný pred podpisom."
+        )
     return enriched
 
 
@@ -5477,6 +5632,60 @@ def _build_standard_english_agreement_lines(facts: dict[str, str]) -> List[str]:
         "",
         "Landlord signature: ____________________________",
         "Tenant signature: ______________________________",
+    ]
+
+
+def _build_slovak_payment_confirmation_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Potvrdenie o zaplatení",
+        "",
+        f"Platiteľ: {facts['payment_payer']}",
+        f"Príjemca: {facts['payment_recipient']}",
+        f"Suma: {facts['payment_amount']}",
+        f"Dátum platby: {facts['payment_date']}",
+        f"Účel platby: {facts['payment_purpose']}",
+        f"Spôsob platby: {facts['payment_method']}",
+        "",
+        "Vyhlásenie:",
+        (
+            "Príjemca týmto potvrdzuje, že od platiteľa prijal vyššie uvedenú platbu "
+            "v uvedenej sume a na uvedený účel."
+        ),
+        (
+            "Toto potvrdenie slúži ako písomný doklad o prijatí platby; pred podpisom "
+            "je potrebné doplniť alebo overiť všetky chýbajúce identifikačné údaje."
+        ),
+        "",
+        "V [mesto], dňa [dátum vystavenia]",
+        "",
+        "Podpis príjemcu: _______________________________",
+    ]
+
+
+def _build_english_payment_confirmation_lines(facts: dict[str, str]) -> List[str]:
+    return [
+        "Payment Confirmation",
+        "",
+        f"Payer: {facts['payment_payer']}",
+        f"Recipient: {facts['payment_recipient']}",
+        f"Amount: {facts['payment_amount']}",
+        f"Payment date: {facts['payment_date']}",
+        f"Payment purpose: {facts['payment_purpose']}",
+        f"Payment method: {facts['payment_method']}",
+        "",
+        "Statement:",
+        (
+            "The recipient confirms receipt of the payment identified above from the "
+            "payer in the stated amount and for the stated purpose."
+        ),
+        (
+            "This confirmation is a written payment record; any missing identification "
+            "details should be completed or verified before signature."
+        ),
+        "",
+        "Signed at [city], on [date of issue]",
+        "",
+        "Recipient signature: ____________________________",
     ]
 
 
@@ -6076,13 +6285,13 @@ def _extract_json_value(content: str, start_index: int) -> str | None:
 def _detect_document_kind(
     source_lines: List[str],
     case_update: dict[str, Any] | None,
-) -> Literal["rental_agreement", "easement_demand", "share_transfer", "generic_case_document"]:
-    combined = " ".join(source_lines).lower()
+) -> Literal["rental_agreement", "easement_demand", "share_transfer", "payment_confirmation", "generic_case_document"]:
+    combined = _canonicalize_document_text(" ".join(source_lines))
     case = case_update.get("case", {}) if isinstance(case_update, dict) else {}
     matter = case.get("matter", {}) if isinstance(case, dict) else {}
-    topic = str(matter.get("topic", "")).lower()
-    facts_summary = str(matter.get("facts_summary", "")).lower()
-    client_goal = str(matter.get("client_goal", "")).lower()
+    topic = _canonicalize_document_text(str(matter.get("topic", "")))
+    facts_summary = _canonicalize_document_text(str(matter.get("facts_summary", "")))
+    client_goal = _canonicalize_document_text(str(matter.get("client_goal", "")))
     haystack = " ".join(part for part in (combined, topic, facts_summary, client_goal) if part)
 
     rental_tokens = (
@@ -6129,8 +6338,22 @@ def _detect_document_kind(
         "purchase agreement",
         "sale agreement",
     )
+    payment_confirmation_tokens = (
+        "potvrdenie o zaplat",
+        "potvrdenie o platbe",
+        "potvrdenie o uhrad",
+        "potvrdenie o prijati plat",
+        "potvrdenie prijatia plat",
+        "doklad o zaplat",
+        "doklad o uhrad",
+        "payment confirmation",
+        "confirmation of payment",
+        "receipt of payment",
+    )
     if any(token in haystack for token in purchase_sale_tokens):
         return "generic_case_document"
+    if any(token in haystack for token in payment_confirmation_tokens):
+        return "payment_confirmation"
     if any(token in haystack for token in rental_tokens):
         return "rental_agreement"
     if any(token in haystack for token in easement_tokens):

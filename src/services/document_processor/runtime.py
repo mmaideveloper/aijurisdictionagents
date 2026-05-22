@@ -6,6 +6,9 @@ import io
 import json
 import math
 import re
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -139,6 +142,16 @@ def render_documents_for_prompt(
     return "\n".join(chunks)
 
 
+def render_pdf_pages_with_poppler(
+    payload: bytes,
+    *,
+    dpi: int = 180,
+    max_pages: int = 20,
+) -> list[bytes]:
+    """Render PDF pages to PNG bytes with Poppler's pdftoppm when it is installed."""
+    return _render_pdf_pages_with_poppler(payload, dpi=dpi, max_pages=max_pages)
+
+
 def chunk_document_text(
     text: str,
     *,
@@ -214,24 +227,23 @@ def _extract_pdf_text_with_ocr(payload: bytes) -> str:
     try:
         from PIL import Image
 
-        fitz = importlib.import_module("fitz")
         np = importlib.import_module("numpy")
         rapidocr_module = importlib.import_module("rapidocr_onnxruntime")
         rapidocr_factory = getattr(rapidocr_module, "RapidOCR")
     except Exception:
         return ""
 
-    try:
-        document = fitz.open(stream=payload, filetype="pdf")
-    except Exception:
+    rendered_pages = render_pdf_pages_with_poppler(payload)
+    if not rendered_pages:
+        rendered_pages = _render_pdf_pages_with_pymupdf(payload)
+    if not rendered_pages:
         return ""
 
     ocr_engine = rapidocr_factory()
     text_parts: list[str] = []
-    for page in document:
+    for page_png in rendered_pages:
         try:
-            pixmap = page.get_pixmap(dpi=180, alpha=False)
-            image = Image.open(io.BytesIO(pixmap.tobytes("png")))
+            image = Image.open(io.BytesIO(page_png))
             image_array = np.array(image)
             result, _elapsed = ocr_engine(image_array)
             if not result:
@@ -243,3 +255,68 @@ def _extract_pdf_text_with_ocr(payload: bytes) -> str:
         except Exception:
             continue
     return "\n".join(text_parts).strip()
+
+
+def _render_pdf_pages_with_poppler(
+    payload: bytes,
+    *,
+    dpi: int = 180,
+    max_pages: int = 20,
+) -> list[bytes]:
+    pdftoppm_path = shutil.which("pdftoppm")
+    if not pdftoppm_path:
+        return []
+
+    with tempfile.TemporaryDirectory(prefix="document-pdf-render-") as temp_dir:
+        temp_path = Path(temp_dir)
+        pdf_path = temp_path / "input.pdf"
+        output_prefix = temp_path / "page"
+        pdf_path.write_bytes(payload)
+        command = [
+            pdftoppm_path,
+            "-png",
+            "-r",
+            str(dpi),
+            "-f",
+            "1",
+            "-l",
+            str(max_pages),
+            str(pdf_path),
+            str(output_prefix),
+        ]
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+
+        pages = sorted(temp_path.glob("page-*.png"))
+        return [page_path.read_bytes() for page_path in pages]
+
+
+def _render_pdf_pages_with_pymupdf(
+    payload: bytes,
+    *,
+    dpi: int = 180,
+    max_pages: int = 20,
+) -> list[bytes]:
+    try:
+        fitz = importlib.import_module("fitz")
+        document = fitz.open(stream=payload, filetype="pdf")
+    except Exception:
+        return []
+
+    pages: list[bytes] = []
+    for page_index in range(min(len(document), max_pages)):
+        try:
+            page = document[page_index]
+            pixmap = page.get_pixmap(dpi=dpi, alpha=False)
+            pages.append(pixmap.tobytes("png"))
+        except Exception:
+            continue
+    return pages

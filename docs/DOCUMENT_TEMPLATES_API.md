@@ -92,6 +92,9 @@ For generated court-facing or client/third-party output documents, including req
 
 - branded JurisDicta header/contact/sidebar layout
 - formal centered document title and body typography; single-document exports use the legal document type inferred from the lawyer recommendation, not the session ID
+- `potvrdenie o zaplateni` / `potvrdenie o platbe` requests are classified as payment confirmations before older
+  rental or easement context is considered, so stale case memory cannot turn the export into a lease agreement or
+  pre-litigation demand
 - duplicate first body headings are removed when they repeat the professional PDF title
 - long document titles are wrapped instead of overflowing the page
 - article headings such as `Čl. I` / `Článok 1` are rendered larger and bold
@@ -124,6 +127,17 @@ For generated court-facing or client/third-party output documents, including req
 
 Internal workflow-style outputs (for example legal summary / next-step memorandum style drafts) and
 discussion summaries intentionally keep the plain PDF style without the corporate template.
+
+When no managed document-template body is available, the intended source order is:
+
+1. Managed template catalog metadata/body for the detected document type.
+2. Laws connector DB / law-citation metadata already attached to the session; exported citations are marked as
+   `laws connector DB` with source score `1.0`.
+3. `AIWebSearchAgent` internet source discovery only when the local laws corpus has no relevant support; external
+   sources must be logged with the URL/title and source score `0.9`.
+
+Generated document PDFs repair common UTF-8 mojibake before text wrapping/rendering, so Slovak text returned as
+`PredÅ¾alobnÃ¡ vÃ½zva` is normalized before it reaches the PDF canvas.
 
 ## PDF Preview
 

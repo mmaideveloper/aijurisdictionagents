@@ -38,6 +38,7 @@ GitHub workflow / infra environment rule:
 
 - Whenever you add new parameters to a GitHub workflow, or change infrastructure inputs/required settings, update the documented setup steps for `test` and `prod` GitHub Environments in the same change.
 - Keep `docs/GITHUB_ENVIRONMENTS.md` aligned with workflow inputs, required GitHub Environment variables, required secrets, and any new manual setup steps.
+- Whenever a task requires manual infrastructure setup outside the repository, update `docs/manual_infrastucture_setup.md` in the same change with the exact future installation/configuration steps, required owners/accounts, secrets, environments, validation steps, and rollback notes.
 
 
 Software Development Life Cycle:
