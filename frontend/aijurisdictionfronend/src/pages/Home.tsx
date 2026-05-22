@@ -2,10 +2,11 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
 import { ApiRequestError } from "../api/chatClient";
+import type { BrowserSpeechSession } from "../audio/speechToText";
 import {
   isBrowserSpeechAvailable,
   languageToSpeechLocale,
-  recognizeOnce,
+  startBrowserSpeechSession,
   SpeechToTextError
 } from "../audio/speechToText";
 import { useAuth } from "../auth/mockAuth";
@@ -26,6 +27,24 @@ type ApiErrorState =
     }
   | null;
 
+type WorkspaceVoiceConfirmation = "yes" | "no" | null;
+
+const parseWorkspaceVoiceConfirmation = (transcript: string): WorkspaceVoiceConfirmation => {
+  const normalized = transcript
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return null;
+  const tokens = normalized.split(" ");
+  if (tokens.some((token) => ["ano", "yes", "ja"].includes(token))) return "yes";
+  if (tokens.some((token) => ["nie", "no", "nein"].includes(token))) return "no";
+  return null;
+};
+
 const Home: React.FC = () => {
   const { t, language } = useLanguage();
   const { isAuthenticated, user } = useAuth();
@@ -45,7 +64,12 @@ const Home: React.FC = () => {
   const [isSendingMessage, setIsSendingMessage] = React.useState(false);
   const [apiError, setApiError] = React.useState<ApiErrorState>(null);
   const [isRecording, setIsRecording] = React.useState(false);
+  const [isAwaitingVoiceConfirmation, setIsAwaitingVoiceConfirmation] = React.useState(false);
   const [speechStatus, setSpeechStatus] = React.useState<string | null>(null);
+  const speechSessionRef = React.useRef<BrowserSpeechSession | null>(null);
+  const silenceTimerRef = React.useRef<number | null>(null);
+  const modeDraftMessageRef = React.useRef("");
+  const awaitingVoiceConfirmationRef = React.useRef(false);
   const roleOptions = React.useMemo(
     () => [
       {
@@ -86,6 +110,23 @@ const Home: React.FC = () => {
     ],
     [t]
   );
+
+  React.useEffect(() => {
+    modeDraftMessageRef.current = modeDraftMessage;
+  }, [modeDraftMessage]);
+
+  React.useEffect(() => {
+    awaitingVoiceConfirmationRef.current = isAwaitingVoiceConfirmation;
+  }, [isAwaitingVoiceConfirmation]);
+
+  React.useEffect(() => {
+    return () => {
+      speechSessionRef.current?.stop();
+      if (silenceTimerRef.current != null) {
+        window.clearTimeout(silenceTimerRef.current);
+      }
+    };
+  }, []);
 
   if (isAuthenticated) {
     const activeMatterCount = cases.filter((caseItem) => caseItem.status !== "Completed").length;
@@ -163,38 +204,118 @@ const Home: React.FC = () => {
     };
 
 
-    const handleVoiceCapture = async () => {
-      if (!isBrowserSpeechAvailable()) {
-        setSpeechStatus(t("workspaceSpeechUnavailable"));
+    const clearVoiceSilenceTimer = () => {
+      if (silenceTimerRef.current != null) {
+        window.clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+    };
+
+    const scheduleVoiceSilencePrompt = () => {
+      clearVoiceSilenceTimer();
+      if (!modeDraftMessageRef.current.trim()) {
         return;
       }
-      setIsRecording(true);
-      const speechLocale = languageToSpeechLocale(language);
-      setSpeechStatus(
-        `${t("workspaceSpeechListening")} ${t("workspaceSpeechRuntimeBrowser")} (${speechLocale}).`
-      );
-      try {
-        const result = await recognizeOnce(speechLocale);
-        setModeDraftMessage((current) => [current.trim(), result.transcript].filter(Boolean).join(" ").trim());
-        setSpeechStatus(t("workspaceSpeechReviewBeforeSend", { runtime: result.runtime }));
-      } catch (error) {
-        if (error instanceof SpeechToTextError) {
-          setSpeechStatus(t("workspaceSpeechError", { code: error.code }));
-        } else {
-          setSpeechStatus(t("workspaceSpeechError", { code: "unknown" }));
-        }
-      } finally {
-        setIsRecording(false);
-      }
+      silenceTimerRef.current = window.setTimeout(() => {
+        setIsAwaitingVoiceConfirmation(true);
+        setSpeechStatus(t("workspaceSpeechAnswerConfirmationPrompt"));
+      }, 10_000);
+    };
+
+    const stopVoiceCapture = () => {
+      clearVoiceSilenceTimer();
+      speechSessionRef.current?.stop();
+      speechSessionRef.current = null;
+      setIsRecording(false);
+      setIsAwaitingVoiceConfirmation(false);
+    };
+
+    const appendVoiceTranscript = (transcript: string) => {
+      setModeDraftMessage((current) => {
+        const next = [current.trim(), transcript.trim()].filter(Boolean).join(" ").trim();
+        modeDraftMessageRef.current = next;
+        return next;
+      });
     };
 
     const handleModeMessageSend = async () => {
       if (!activeCase) {
         return;
       }
-      const sent = await submitMessageToApi(activeCase.selectedCommunicationMode, modeDraftMessage);
+      stopVoiceCapture();
+      const sent = await submitMessageToApi(
+        activeCase.selectedCommunicationMode,
+        modeDraftMessageRef.current
+      );
       if (sent) {
+        modeDraftMessageRef.current = "";
         setModeDraftMessage("");
+      }
+    };
+
+    const handleVoiceConfirmationTranscript = async (transcript: string) => {
+      const confirmation = parseWorkspaceVoiceConfirmation(transcript);
+      if (confirmation === "yes") {
+        stopVoiceCapture();
+        await handleModeMessageSend();
+        return;
+      }
+      if (confirmation === "no") {
+        setIsAwaitingVoiceConfirmation(false);
+        setSpeechStatus(t("workspaceSpeechContinueDraft"));
+        scheduleVoiceSilencePrompt();
+        return;
+      }
+      setSpeechStatus(t("workspaceSpeechAnswerConfirmationPrompt"));
+    };
+
+    const handleVoiceCapture = async () => {
+      if (isRecording) {
+        stopVoiceCapture();
+        setSpeechStatus(t("workspaceSpeechReviewBeforeSend", { runtime: "browser-native" }));
+        return;
+      }
+      if (!isBrowserSpeechAvailable()) {
+        setSpeechStatus(t("workspaceSpeechUnavailable"));
+        return;
+      }
+      setIsRecording(true);
+      setIsAwaitingVoiceConfirmation(false);
+      const speechLocale = languageToSpeechLocale(language);
+      setSpeechStatus(
+        `${t("workspaceSpeechListening")} ${t("workspaceSpeechRuntimeBrowser")} (${speechLocale}).`
+      );
+      try {
+        speechSessionRef.current = startBrowserSpeechSession({
+          lang: speechLocale,
+          onTranscript: (result) => {
+            if (awaitingVoiceConfirmationRef.current) {
+              void handleVoiceConfirmationTranscript(result.transcript);
+              return;
+            }
+            appendVoiceTranscript(result.transcript);
+            setSpeechStatus(t("workspaceSpeechReviewBeforeSend", { runtime: result.runtime }));
+            scheduleVoiceSilencePrompt();
+          },
+          onError: (error) => {
+            if (error.code === "no-speech") {
+              scheduleVoiceSilencePrompt();
+              return;
+            }
+            setSpeechStatus(t("workspaceSpeechError", { code: error.code }));
+          },
+          onEnd: () => {
+            speechSessionRef.current = null;
+            setIsRecording(false);
+          }
+        });
+      } catch (error) {
+        if (error instanceof SpeechToTextError) {
+          setSpeechStatus(t("workspaceSpeechError", { code: error.code }));
+        } else {
+          setSpeechStatus(t("workspaceSpeechError", { code: "unknown" }));
+        }
+        setIsRecording(false);
       }
     };
 
@@ -317,9 +438,9 @@ const Home: React.FC = () => {
                               type="button"
                               className="button secondary"
                               onClick={handleVoiceCapture}
-                              disabled={isSendingMessage || isRecording}
+                              disabled={isSendingMessage}
                             >
-                              {isRecording ? t("workspaceSpeechListeningShort") : t("workspaceSpeechCapture")}
+                              {isRecording ? t("workspaceSpeechStopCapture") : t("workspaceSpeechCapture")}
                             </button>
                             <button
                               type="button"

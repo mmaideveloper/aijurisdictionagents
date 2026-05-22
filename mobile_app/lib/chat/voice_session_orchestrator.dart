@@ -4,7 +4,7 @@ import 'dart:collection';
 import 'rule_engine.dart';
 
 const String voiceSessionConfirmationPrompt =
-    'Potvrď vykonanie požiadavky, povedz áno.';
+    'Môžem už odpovedať na otázku? Povedzte áno alebo nie.';
 
 enum VoiceSessionPhase {
   idle,
@@ -42,11 +42,13 @@ class VoiceTranscriptResult {
     required this.accepted,
     required this.duplicate,
     required this.queuedAction,
+    this.confirmation,
   });
 
   final bool accepted;
   final bool duplicate;
   final QueuedVoiceSessionAction? queuedAction;
+  final SpokenConfirmationChoice? confirmation;
 }
 
 typedef VoiceSessionSilenceCallback = void Function(
@@ -76,6 +78,7 @@ class VoiceSessionOrchestrator {
   RuleEngineAction? pendingIntent;
   String? draftMessage;
   bool awaitingConfirmation = false;
+  bool _continueDraftAfterNo = false;
   VoiceSessionPhase phase = VoiceSessionPhase.idle;
 
   int get queuedActionCount => _actionQueue.length;
@@ -94,6 +97,10 @@ class VoiceSessionOrchestrator {
     if (!awaitingConfirmation && phase == VoiceSessionPhase.listening) {
       _setPhase(VoiceSessionPhase.idle);
     }
+  }
+
+  void clearDraft() {
+    _clearPendingIntent();
   }
 
   void dispose() {
@@ -131,11 +138,12 @@ class VoiceSessionOrchestrator {
         );
       }
       if (confirmation == SpokenConfirmationChoice.no) {
-        _clearPendingIntent();
+        _continuePendingDraft();
         return const VoiceTranscriptResult(
           accepted: true,
           duplicate: false,
           queuedAction: null,
+          confirmation: SpokenConfirmationChoice.no,
         );
       }
       _scheduleSilenceTimer();
@@ -146,7 +154,8 @@ class VoiceSessionOrchestrator {
       );
     }
 
-    draftMessage = transcript.trim();
+    draftMessage = _resolveDraftTranscript(transcript.trim());
+    _continueDraftAfterNo = false;
     _setPhase(VoiceSessionPhase.listening);
     _scheduleSilenceTimer();
     final shouldExecuteImmediately =
@@ -221,6 +230,8 @@ class VoiceSessionOrchestrator {
     _actionQueue.add(queued);
     awaitingConfirmation = false;
     pendingIntent = null;
+    draftMessage = null;
+    _continueDraftAfterNo = false;
     _silenceTimer?.cancel();
     _silenceTimer = null;
     _setPhase(VoiceSessionPhase.processing);
@@ -346,10 +357,44 @@ class VoiceSessionOrchestrator {
   void _clearPendingIntent() {
     awaitingConfirmation = false;
     pendingIntent = null;
+    _continueDraftAfterNo = false;
     draftMessage = null;
     _setPhase(
         isListening ? VoiceSessionPhase.listening : VoiceSessionPhase.idle);
     _scheduleSilenceTimer();
+  }
+
+  void _continuePendingDraft() {
+    awaitingConfirmation = false;
+    pendingIntent = null;
+    _continueDraftAfterNo = true;
+    _setPhase(
+        isListening ? VoiceSessionPhase.listening : VoiceSessionPhase.idle);
+    lastUserSpeechAt = DateTime.now();
+    _scheduleSilenceTimer();
+  }
+
+  String _resolveDraftTranscript(String transcript) {
+    if (!_continueDraftAfterNo) {
+      return transcript;
+    }
+    final existing = (draftMessage ?? '').trim();
+    if (existing.isEmpty) {
+      return transcript;
+    }
+    if (transcript.isEmpty) {
+      return existing;
+    }
+    final normalizedExisting = _normalizeTranscript(existing);
+    final normalizedTranscript = _normalizeTranscript(transcript);
+    if (normalizedTranscript == normalizedExisting ||
+        normalizedTranscript.startsWith(normalizedExisting)) {
+      return transcript;
+    }
+    if (normalizedExisting.endsWith(normalizedTranscript)) {
+      return existing;
+    }
+    return '$existing $transcript';
   }
 
   void _scheduleSilenceTimer() {
