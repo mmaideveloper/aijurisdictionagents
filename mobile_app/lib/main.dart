@@ -290,7 +290,7 @@ class AppStrings {
       'speech_input_disabled_message':
           'Vstup hlasom je vypnutý. Zapnite ho tlačidlom Vstup hlasom.',
       'speech_input_auto_stopped':
-          'Hlasový vstup sa pozastavil. Klepnite na mikrofón pre pokračovanie.',
+          'Hlasový vstup sa krátko prerušil. Pokračujem v počúvaní.',
       'speech_send_confirmation_prompt':
           'Už minútu som nezachytila ďalšiu reč. Ak chcete správu odoslať, povedzte Posli. Ak ju chcete zmazať, povedzte Zrus vsetko.',
       'speech_answer_confirmation_prompt':
@@ -561,7 +561,7 @@ class AppStrings {
       'speech_input_disabled_message':
           'Speech input is turned off. Use the Speech input button to enable it.',
       'speech_input_auto_stopped':
-          'Speech input paused. Tap the microphone to continue.',
+          'Speech input paused briefly. I am continuing to listen.',
       'speech_send_confirmation_prompt':
           'I have not heard anything else for one minute. Say Send to send the message, or say Cancel everything to clear it.',
       'speech_answer_confirmation_prompt':
@@ -837,7 +837,7 @@ class AppStrings {
       'speech_input_disabled_message':
           'Spracheingabe ist ausgeschaltet. Aktivieren Sie sie mit der Schaltfläche Spracheingabe.',
       'speech_input_auto_stopped':
-          'Die Spracheingabe wurde pausiert. Tippen Sie auf das Mikrofon, um fortzufahren.',
+          'Die Spracheingabe wurde kurz unterbrochen. Ich höre weiter zu.',
       'speech_send_confirmation_prompt':
           'Ich habe eine Minute lang nichts Weiteres gehört. Sagen Sie Senden, um die Nachricht zu senden, oder Alles abbrechen, um sie zu löschen.',
       'speech_answer_confirmation_prompt':
@@ -4816,6 +4816,17 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
+  Future<void> _resumeSpeechListeningAfterAutoStop() async {
+    if (!mounted || !_speechInputEnabled || _isListening) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (!mounted || !_speechInputEnabled || _isListening) {
+      return;
+    }
+    await _startSpeechListening(resetHandledText: false);
+  }
+
   void _scheduleSpeechSendPrompt() {
     _speechSendPromptTimer?.cancel();
     _speechSendPromptTimer = null;
@@ -6426,6 +6437,7 @@ class _ChatHomePageState extends State<ChatHomePage>
           shouldSubmit = false;
         } else if (_lastFinalSpeechResult == null) {
           _showSnackbar(_strings.t('speech_input_auto_stopped'));
+          unawaited(_resumeSpeechListeningAfterAutoStop());
         }
       }
       _processSpeechOnStop = true;
@@ -7442,6 +7454,14 @@ class _ChatHomePageState extends State<ChatHomePage>
         _lastDictatedSpeechDraft = null;
       }
     });
+
+    if (nextValue) {
+      _setInputComposerExpanded(true);
+      _inputFocusNode.requestFocus();
+      if (!_isListening) {
+        await _startSpeechListening(resetHandledText: true);
+      }
+    }
 
     if (nextValue && speakReadyMessage) {
       await _speaker.stop();
