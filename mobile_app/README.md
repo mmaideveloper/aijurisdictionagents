@@ -18,6 +18,9 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
 - Confirmation parsing also accepts common corrupted STT/encoding forms such as `�no` and `Ã¡no`, so a spoken Slovak yes clears the pending prompt instead of leaving the app waiting and asking again later.
 - While waiting for that confirmation, the prompt is not repeated automatically; the app waits for `yes`/`áno` or `no`/`nie` so assistant TTS cannot loop on its own echo.
 - Tapping the microphone while listening or waiting for confirmation is treated as an explicit user stop: speech input is disabled and will not auto-restart until the user enables it again.
+- On Android, when the speech recognizer auto-stops unexpectedly while speech input remains enabled, the app now shows a short polite status message and re-starts listening automatically.
+- Enabling the microphone now opens/expands the input box immediately (same visual behavior as tapping the input), keeps partial dictated transcript, and appends recognized speech to existing typed text.
+- While microphone mode is enabled, the expanded input stays open until the user disables microphone, sends the message, or taps outside the input area.
 - During assistant speech, STT fragments are not used for automatic barge-in. The assistant finishes unless the user explicitly taps the microphone button.
 - Voice session handling now runs through `VoiceSessionOrchestrator`, which tracks listening, processing, and confirmation states, applies idempotency keys to STT transcripts, and dispatches `RuleEngineAction` values through an action queue.
 - The speech flow also understands spoken send commands such as `Send`, `send message`, `I am done`, `this is end`, `this is the end`, `Posli`, `Prosim odosli spravu`, `to je vsetko`, `cakam na odpoved`, `Senden`, or `Nachricht senden`, and submits the current dictated message immediately.
