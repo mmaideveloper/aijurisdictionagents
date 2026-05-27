@@ -217,6 +217,24 @@ cd mobile_app
 flutter test test/speech_service_test.dart test/intent_mapper_test.dart
 ```
 
+Recurring deterministic voice loopback check:
+
+```powershell
+.\scripts\run_mobile_voice_loopback.ps1 -IncludeAzure
+```
+
+The runner verifies local PostgreSQL through the API health endpoint, starts or
+checks the local API on `http://127.0.0.1:8080`, starts or checks the local
+Flutter web mobile app on `http://127.0.0.1:7357`, and then runs the
+deterministic AI Simulator Agent voice loopback regression for 10
+question/answer pairs. It writes JSON artifacts under
+`runs\voice-simulator-tests\` with source text, TTS input, STT transcript,
+similarity score, truncation/interruption flags, runtime mode, and the generated
+`simulacia <random-number>` case title. The mandatory gate does not persist raw
+audio. If Azure Speech settings are missing, `-IncludeAzure` records an explicit
+skipped artifact; use `-RequireAzure` when missing Azure Speech settings should
+fail the run.
+
 The app creates a chat session:
 
 ```json

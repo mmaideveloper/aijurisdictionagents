@@ -38,6 +38,10 @@ controls, user transparency, and human oversight.
   recognition completes or fails.
 - Mobile debug logs should contain operational metadata only and should not
   include full PII content.
+- Deterministic local voice loopback artifacts may contain test transcripts for
+  regression review, but not raw audio. Store those artifacts under
+  `runs/voice-simulator-tests/` and delete them when they are no longer needed
+  for local debugging or CI artifact review.
 - Case messages and generated legal documents follow the case retention policy
   configured by the backend subscription and case lifecycle.
 - Users must be able to delete a case from the mobile app; deleting a case must
@@ -72,3 +76,17 @@ Use short, direct UI text near the voice toggle or consent surface:
 - Logs must retain traceability metadata (`trace_id`, `request_id`, processing
   purpose, action type) so a human reviewer can reconstruct the workflow without
   exposing full PII content.
+
+## Recurring Voice Test Baseline
+
+- The mandatory recurring AI Simulator voice regression uses deterministic
+  STT/TTS loopback so no microphone hardware, speaker output, or raw audio
+  storage is required.
+- The test covers both `local-device` and `azure` runtime labels. Azure Speech
+  settings must be reported explicitly when missing; the test must not silently
+  claim Azure coverage from the local/device runtime.
+- Test artifacts may include source text, TTS text, STT transcript, similarity
+  score, truncation/interruption flags, and runtime metadata. They must mark
+  `raw_audio_persisted=false`.
+- Live microphone/speaker smoke testing is optional and must not become the only
+  recurring gate because device and browser audio behavior is not deterministic.
