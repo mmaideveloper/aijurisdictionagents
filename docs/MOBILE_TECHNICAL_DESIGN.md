@@ -137,3 +137,15 @@ text, TTS text, STT transcript, similarity score, truncation/interruption flags,
 runtime mode, timestamps, and `raw_audio_persisted=false`. They do not contain
 raw audio. Azure Speech settings are checked explicitly by the runner; missing
 settings are reported as skipped unless the run uses `-RequireAzure`.
+
+For a local listenable smoke test of the real AI Simulator Agent stream, run:
+
+```powershell
+.\scripts\run_mobile_voice_loopback.ps1 -SkipStart -LiveDiscussion -SpeakLiveDiscussion
+```
+
+That mode calls the real local `/v1/chat/sessions/{id}/stream` API with
+`AIUserSimulatorAgent`, writes `voice-live-discussion.json`, and speaks each
+received simulator/system turn sequentially through Windows SAPI. It is a manual
+smoke check, not the only scheduled reliability gate, because live LLM timing
+and host audio differ between machines.

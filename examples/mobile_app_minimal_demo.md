@@ -23,6 +23,12 @@ mobile app, then runs a 10 question/answer AI Simulator Agent voice loopback
 check. The mandatory path uses deterministic STT/TTS loopback, writes artifacts
 under `runs\voice-simulator-tests\`, and does not persist raw audio.
 
+To hear a real local AI Simulator Agent stream spoken aloud on Windows:
+
+```powershell
+.\scripts\run_mobile_voice_loopback.ps1 -SkipStart -LiveDiscussion -SpeakLiveDiscussion
+```
+
 If you want to test Android in-app upgrades from a GitHub Release APK, make sure
 every published release build is signed with the same release keystore; otherwise
 Android rejects the upgrade with a signature mismatch.

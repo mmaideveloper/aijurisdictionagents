@@ -235,6 +235,19 @@ audio. If Azure Speech settings are missing, `-IncludeAzure` records an explicit
 skipped artifact; use `-RequireAzure` when missing Azure Speech settings should
 fail the run.
 
+To listen to a real local AI Simulator Agent discussion, add live discussion
+speech output:
+
+```powershell
+.\scripts\run_mobile_voice_loopback.ps1 -SkipStart -LiveDiscussion -SpeakLiveDiscussion
+```
+
+This calls the local API `/v1/chat/sessions/{id}/stream` endpoint with
+`AIUserSimulatorAgent`, buffers the real discussion turns, and speaks them
+sequentially with Windows SAPI. Speech is blocking, so the next simulator/system
+turn is not spoken until the current sentence finishes. The live smoke artifact
+is written to `runs\voice-simulator-tests\voice-live-discussion.json`.
+
 The app creates a chat session:
 
 ```json

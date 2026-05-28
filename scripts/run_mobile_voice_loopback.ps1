@@ -5,6 +5,8 @@ param(
     [switch]$SkipStart,
     [switch]$IncludeAzure,
     [switch]$RequireAzure,
+    [switch]$LiveDiscussion,
+    [switch]$SpeakLiveDiscussion,
     [switch]$NoOpen
 )
 
@@ -135,6 +137,175 @@ function Invoke-LoopbackTest {
     }
 }
 
+function ConvertFrom-SseContent {
+    param([string]$Content)
+
+    $events = @()
+    $blocks = $Content -split "(`r?`n){2,}"
+    foreach ($block in $blocks) {
+        $eventName = $null
+        $dataLines = @()
+        foreach ($line in ($block -split "`r?`n")) {
+            $trimmed = $line.Trim()
+            if ($trimmed.StartsWith("event:")) {
+                $eventName = $trimmed.Substring("event:".Length).Trim()
+            } elseif ($trimmed.StartsWith("data:")) {
+                $dataLines += $trimmed.Substring("data:".Length).Trim()
+            }
+        }
+        if (-not $eventName -or $dataLines.Count -eq 0) {
+            continue
+        }
+        $dataRaw = $dataLines -join "`n"
+        try {
+            $data = $dataRaw | ConvertFrom-Json
+        } catch {
+            $data = [ordered]@{ raw = $dataRaw }
+        }
+        $events += [ordered]@{
+            event = $eventName
+            data = $data
+        }
+    }
+    return $events
+}
+
+function Invoke-BlockingSpeech {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Text,
+        [string]$Role = "unknown"
+    )
+
+    if (-not $script:SpeechSynthesizer) {
+        Add-Type -AssemblyName System.Speech
+        $script:SpeechSynthesizer = [System.Speech.Synthesis.SpeechSynthesizer]::new()
+        $script:SpeechSynthesizer.Rate = -1
+        $script:SpeechSynthesizer.Volume = 100
+    }
+
+    Write-Output "Speaking [$Role]: $Text"
+    $script:SpeechSynthesizer.Speak($Text)
+}
+
+function Invoke-LiveDiscussion {
+    param(
+        [string]$ApiBaseUrl,
+        [int]$ExpectedPairs,
+        [switch]$Speak
+    )
+
+    $caseTitle = "simulacia $(Get-Random -Minimum 100000 -Maximum 999999)"
+    $headers = @{
+        "x-api-key" = "aijuris"
+        "Content-Type" = "application/json"
+    }
+
+    $sessionPayload = @{
+        country = "SK"
+        language = "sk"
+        discussion_type = "advice"
+    } | ConvertTo-Json -Depth 5
+    $session = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/v1/chat/sessions" `
+        -Method Post `
+        -Headers $headers `
+        -Body $sessionPayload `
+        -TimeoutSec 30
+
+    $instruction = "Vytvor novy pripad s nazvom $caseTitle. Spusti hlasovu simulaciu. Pytaj sa kratke otazky a odpovedaj ako AI Simulator Agent, kym vznikne 10 otazok a 10 odpovedi."
+    $streamPayload = @{
+        instruction = $instruction
+        question_timeout_seconds = 1
+        max_discussion_minutes = 6
+        communication_minutes = 6
+        user_simulation_mode = "AIUserSimulatorAgent"
+        documents = @()
+    } | ConvertTo-Json -Depth 8
+
+    $streamResponse = Invoke-WebRequest `
+        -Uri "$ApiBaseUrl/v1/chat/sessions/$($session.id)/stream" `
+        -Method Post `
+        -Headers $headers `
+        -Body $streamPayload `
+        -TimeoutSec 420 `
+        -UseBasicParsing
+
+    $events = @(ConvertFrom-SseContent -Content $streamResponse.Content)
+    $messages = @(
+        $events |
+            Where-Object { $_.event -eq "message" -and $_.data.content } |
+            ForEach-Object {
+                [ordered]@{
+                    role = [string]$_.data.role
+                    content = [string]$_.data.content
+                    received_at_utc = [DateTime]::UtcNow.ToString("o")
+                }
+            }
+    )
+
+    $systemTurns = @($messages | Where-Object { $_.role -ne "user" })
+    $simulatorTurns = @($messages | Where-Object { $_.role -eq "user" })
+    $pairCount = [Math]::Min($systemTurns.Count, $simulatorTurns.Count)
+    $spoken = @()
+
+    foreach ($message in $messages) {
+        if ($spoken.Count -ge ($ExpectedPairs * 2)) {
+            break
+        }
+        $text = $message.content.Trim()
+        if ([string]::IsNullOrWhiteSpace($text)) {
+            continue
+        }
+
+        $speechStarted = [DateTime]::UtcNow
+        if ($Speak) {
+            Invoke-BlockingSpeech -Text $text -Role $message.role
+        }
+        $speechCompleted = [DateTime]::UtcNow
+        $spoken += [ordered]@{
+            role = $message.role
+            text = $text
+            text_length = $text.Length
+            speech_started_at_utc = $speechStarted.ToString("o")
+            speech_completed_at_utc = $speechCompleted.ToString("o")
+            interrupted = $false
+            speak_mode = if ($Speak) { "windows-sapi-blocking" } else { "artifact-only" }
+        }
+    }
+
+    $passed = ($pairCount -ge $ExpectedPairs) -and ($spoken.Count -ge ($ExpectedPairs * 2))
+    $artifact = [ordered]@{
+        schema_version = 1
+        mode = "live-ai-simulator-discussion"
+        case_title = $caseTitle
+        session_id = $session.id
+        api_base_url = $ApiBaseUrl
+        expected_question_answer_pairs = $ExpectedPairs
+        observed_question_answer_pairs = $pairCount
+        stream_message_count = $messages.Count
+        spoken_turn_count = $spoken.Count
+        passed = $passed
+        raw_audio_persisted = $false
+        speech_output = if ($Speak) { "spoken" } else { "not-spoken" }
+        interruption_policy = "blocking sequential speech; next turn is not spoken until current Speak() returns"
+        created_at_utc = [DateTime]::UtcNow.ToString("o")
+        messages = $messages
+        spoken_turns = $spoken
+    }
+    $artifactPath = Join-Path $artifactDir "voice-live-discussion.json"
+    $artifact | ConvertTo-Json -Depth 10 | Out-File -FilePath $artifactPath -Encoding utf8
+
+    if (-not $passed) {
+        throw "Live AI Simulator discussion did not reach $ExpectedPairs question/answer pairs. Observed pairs: $pairCount. Artifact: $artifactPath"
+    }
+
+    Write-Output "Live AI Simulator discussion completed."
+    Write-Output "Case title: $caseTitle"
+    Write-Output "Observed pairs: $pairCount"
+    Write-Output "Artifact: $artifactPath"
+}
+
 if ($TurnCount -ne 10) {
     throw "This recurring regression test is defined for exactly 10 question/answer pairs. Received: $TurnCount"
 }
@@ -192,6 +363,10 @@ if ($IncludeAzure -or $RequireAzure) {
         }
         Write-Warning $message
     }
+}
+
+if ($LiveDiscussion) {
+    Invoke-LiveDiscussion -ApiBaseUrl $ApiBaseUrl -ExpectedPairs $TurnCount -Speak:$SpeakLiveDiscussion
 }
 
 Write-Output "Mobile voice loopback test completed."

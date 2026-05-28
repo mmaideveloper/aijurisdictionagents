@@ -90,3 +90,6 @@ Use short, direct UI text near the voice toggle or consent surface:
   `raw_audio_persisted=false`.
 - Live microphone/speaker smoke testing is optional and must not become the only
   recurring gate because device and browser audio behavior is not deterministic.
+- The optional listenable AI Simulator smoke test may speak real API stream
+  messages sequentially through local OS TTS, but it must still persist only
+  text/debug artifacts and must not record or store microphone audio.
