@@ -107,3 +107,45 @@ python examples/minimal_demo.py
   - run app and confirm speech logs include selected `speech_runtime_mode` and transcript review before send.
 
 - Profile voice selector now guarantees at least one Slovak voice option (`Slovak local default`, locale `sk-SK`) even when OS voice inventory does not expose Slovak voices.
+
+## Recurring AI Simulator Voice Loopback
+
+The required scheduled regression for spoken AI Simulator communication uses a
+deterministic loopback harness instead of real microphone/speaker hardware. This
+keeps the recurring gate stable while still validating the mobile voice state
+machine, TTS/STT text round trip, transcript similarity checks, truncation
+detection, and privacy metadata for both `local-device` and `azure` runtime
+labels.
+
+Local runner:
+
+```powershell
+.\scripts\run_mobile_voice_loopback.ps1 -IncludeAzure
+```
+
+The runner verifies:
+
+- local API health at `http://127.0.0.1:8080/health`;
+- `llm.provider=azurefoundry`;
+- `database.backend=postgres`;
+- local Flutter web mobile app availability at `http://127.0.0.1:7357`;
+- 10 deterministic question/answer pairs for a generated `simulacia <number>`
+  case title.
+
+Artifacts are written to `runs\voice-simulator-tests\`. They contain source
+text, TTS text, STT transcript, similarity score, truncation/interruption flags,
+runtime mode, timestamps, and `raw_audio_persisted=false`. They do not contain
+raw audio. Azure Speech settings are checked explicitly by the runner; missing
+settings are reported as skipped unless the run uses `-RequireAzure`.
+
+For a local listenable smoke test of the real AI Simulator Agent stream, run:
+
+```powershell
+.\scripts\run_mobile_voice_loopback.ps1 -SkipStart -LiveDiscussion -SpeakLiveDiscussion
+```
+
+That mode calls the real local `/v1/chat/sessions/{id}/stream` API with
+`AIUserSimulatorAgent`, writes `voice-live-discussion.json`, and speaks each
+received simulator/system turn sequentially through Windows SAPI. It is a manual
+smoke check, not the only scheduled reliability gate, because live LLM timing
+and host audio differ between machines.
