@@ -551,6 +551,8 @@ The Azure job now runs the real sequential live collector path (`LAWS_WORKER_FIX
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES` to control how many Slov-Lex probes execute in each scheduled run (default `1`)
 - `LAWS_COLLECTOR_MAX_RUNNING_TIME` to cap a single Azure run in minutes (default `60`, set `0` for unlimited)
 
+For local PostgreSQL backup, Azure PostgreSQL restore, and the one-law-at-a-time Azure maintenance profile, use `docs/AZURE_POSTGRES_MIGRATION.md`.
+
 
 ## Local PostgreSQL debugging
 

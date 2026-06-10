@@ -16,6 +16,76 @@ Whenever a task adds or changes manual infrastructure requirements, update this 
 
 Do not commit real secrets, private keys, certificates, Firebase config files containing sensitive project data, or Apple credentials.
 
+## Azure PostgreSQL Laws Collector Migration
+
+Related runbook: `docs/AZURE_POSTGRES_MIGRATION.md`
+
+Purpose: migrate the existing local PostgreSQL laws collector database into Azure PostgreSQL Flexible Server and run the laws collector as an Azure Container Apps Job that resumes from completed archive/monthly ZIP state, probes one sequential Slovak law per run, and exits when no new law exists.
+
+### Provider And Owner
+
+- Provider: Microsoft Azure.
+- Required owner: repository Azure service principal from `.env`; do not use a personally signed-in Azure CLI account for repository Azure work.
+- Target environments: `test` first, then `prod` after backup restore and job validation.
+
+### Manual Setup Steps
+
+1. Authenticate with `.\infra\scripts\login_service_principal.ps1 -EnvFilePath .env`.
+2. Confirm Azure subscription, resource group, PostgreSQL Flexible Server, Container Apps environment, ACR, storage account, managed identity, and Application Insights names for the target environment.
+3. Back up the local `laws_sk` PostgreSQL database with `pg_dump --format custom` into an ignored operator path such as `runs/storage/laws-collector/backups/`.
+4. Create or select the Azure PostgreSQL Flexible Server and database named by `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`.
+5. Enable required database extensions, including `vector`, before restoring embeddings.
+6. Restore the dump with `pg_restore --no-owner --no-privileges` using `sslmode=require`.
+7. Apply current laws collector schema migrations with `scripts/databases/apply_laws_db_schema.py`.
+8. Validate restored row counts, `collector_import_state`, and `collector_progress`.
+9. Deploy `laws-collector` with `LAWS_COLLECTOR_IMPORT=zip`, live fixture, one worker cycle, `AZURE_LAWS_COLLECTOR_MAX_PROBES=1`, `LAWS_COLLECTOR_MAX_RUNNING_TIME=60`, and single job parallelism/completion.
+10. Start one manual Azure Container Apps Job execution and inspect logs for skipped completed ZIP state and either one imported sequential law or `No new laws for SK`.
+11. Remove temporary operator firewall rules after validation.
+12. Repeat for production only after the test migration and manual job execution are verified.
+
+### Secrets And Environment Values
+
+- `AZURE_CLIENT_ID`
+- `AZURE_CLIENT_SECRET`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `AZURE_RESOURCE_GROUP`
+- `AZURE_LOCATION`
+- `AZURE_POSTGRES_SERVER_NAME`
+- `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
+- `AZURE_POSTGRES_ADMIN_USERNAME`
+- `AZURE_POSTGRES_ADMIN_PASSWORD`
+- `AZURE_CONTAINERAPPS_ENVIRONMENT`
+- `AZURE_CONTAINER_REGISTRY`
+- `AZURE_MANAGED_IDENTITY_NAME`
+- `AZURE_STORAGE_ACCOUNT_NAME`
+- `AZURE_LAWS_STORAGE_CONTAINER_NAME`
+
+### Validation Steps
+
+- `pg_restore --list <dump>` succeeds before restore.
+- Azure `law_documents` count matches the source database.
+- `collector_import_state` shows completed archive/monthly state expected for the migrated database.
+- `collector_progress` contains the latest imported law and next probe cursor.
+- A manual Azure job run completes successfully and does not replay completed archive ZIP work.
+- Logs contain `No new laws for SK` when the live tail is current.
+
+### Rollback Notes
+
+- Delete the scheduled Container Apps Job or redeploy it as a manual job to stop scheduled executions.
+- Restore the local dump into a replacement Azure database or restore from Azure PostgreSQL backup.
+- Point the job back to the previous validated database connection string if available.
+- Delete temporary firewall rules and revoke any temporary credentials after rollback.
+- Keep the local dump until at least one scheduled Azure job run has completed and the restored database has been validated.
+
+### Privacy And Compliance Notes
+
+- Treat database dumps and connection strings as sensitive operational data.
+- Do not commit dumps, passwords, or full connection strings.
+- Use least-privilege Azure identities and remove temporary operator network access after migration.
+- Preserve collector state tables for traceability and human oversight of legal data ingestion.
+- Avoid logging personal data or legal-risk user outputs during migration and validation.
+
 ## Firebase Cloud Messaging For Document-Ready Mobile Push
 
 Related task: https://github.com/mmaideveloper/aijurisdictionagents/issues/343
