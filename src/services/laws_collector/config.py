@@ -22,6 +22,7 @@ class LawsCollectorConfig:
     historical_import_from: date
     import_mode: str = "zip"
     import_zip_max_threads: int = 4
+    force_zip_refresh: bool = False
 
     @classmethod
     def from_env(cls) -> "LawsCollectorConfig":
@@ -47,6 +48,7 @@ class LawsCollectorConfig:
             initial_import_from=_SLOVAK_INITIAL_IMPORT_DATE,
             historical_import_from=_SLOVAK_INITIAL_IMPORT_DATE,
             import_zip_max_threads=int(os.getenv("LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS", "4")),
+            force_zip_refresh=_is_truthy(os.getenv("LAWS_COLLECTOR_FORCE_ZIP_REFRESH", "")),
         )
 
     @staticmethod
@@ -104,3 +106,7 @@ def _resolve_repo_path(value: str) -> Path:
     if candidate.is_absolute():
         return candidate
     return _REPO_ROOT / candidate
+
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}

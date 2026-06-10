@@ -153,6 +153,7 @@ def run_worker() -> None:
                             )
                             return
                         if _is_up_to_date_tail_summary(tail_summary):
+                            _log_no_new_laws(config.country_code, tail_summary)
                             logger.info(
                                 "[laws-collector] worker stopped because laws collector is up to date "
                                 "last_processed_law=%s next_law_to_check=%s",
@@ -186,6 +187,7 @@ def run_worker() -> None:
                         )
                         return
                     if _is_up_to_date_tail_summary(summary):
+                        _log_no_new_laws(config.country_code, summary)
                         logger.info(
                             "[laws-collector] worker stopped because laws collector is up to date "
                             "last_processed_law=%s next_law_to_check=%s",
@@ -238,4 +240,14 @@ def _is_up_to_date_tail_summary(summary: object) -> bool:
     return (
         bool(getattr(summary, "stopped_on_current_year_gap", False))
         and int(getattr(summary, "failed_laws", 0)) == 0
+    )
+
+
+def _log_no_new_laws(country_code: str, summary: object) -> None:
+    last_processed_at = getattr(summary, "last_processed_at", None) or getattr(summary, "last_collector_run_at", None)
+    logger.info(
+        "[laws-collector] No new laws for %s, last processed law %s at %s",
+        country_code,
+        getattr(summary, "last_processed_law", None) or "none",
+        last_processed_at or "n/a",
     )

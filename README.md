@@ -605,11 +605,11 @@ Run the local laws collector against the local Docker PostgreSQL database:
 ```powershell
 $env:LAWS_COLLECTOR_IMPORT = "zip"
 $env:LAWS_COLLECTOR_MAX_RUNNING_TIME = "0"
-.\skills\laws-collector\scripts\start_laws_collector.ps1 -Fixture live -DatabaseOption postgres -MaxCycles 0 -Background
+.\skills\laws-collector\scripts\start_laws_collector.ps1 -Background
 ```
 
 This starts or reuses the local `laws_sk` PostgreSQL database, imports the full Slov-Lex archive when needed, then continues with monthly `exportZmeny.zip` updates. After archive/monthly import completes, use the sequential mode when you need to probe new laws from the last stored `law_number/law_year` cursor:
-In zip mode the worker also advances the live probe cursor to the highest imported law and, with `-PollSeconds 300`, checks for new laws every five minutes after the archive/monthly import catches up.
+In zip mode the worker also advances the live probe cursor to the highest imported law and checks for new laws after the archive/monthly import catches up. The local skill defaults to `-Fixture live -MaxCycles 0 -MaxProbes 1000`, so a plain background start follows the production-style archive ZIP, monthly ZIP, and live tail-probe path. After archive and monthly ZIP imports are completed and a live sequential cursor exists, newer ZIP snapshots are skipped by default and the worker logs the last imported law plus the next law to check. Use `-ForceZipRefresh` only for explicit archive/monthly repair or bootstrap refresh.
 If archive import was interrupted, the ZIP importer resumes after `collector_import_state.last_processed_entry` and streams the remaining entries so progress is persisted after each processed law.
 `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` controls parallel law-group import workers for the archive/monthly ZIP phase; local runs currently use `5` in `.env`.
 

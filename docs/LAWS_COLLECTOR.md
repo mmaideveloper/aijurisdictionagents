@@ -491,10 +491,16 @@ PYTHONPATH=src python -m services.laws_collector --fixture baseline
 Start the local worker loop with the new project skill:
 
 ```powershell
-./skills/laws-collector/scripts/start_laws_collector.ps1 -Fixture baseline -MaxCycles 1
+./skills/laws-collector/scripts/start_laws_collector.ps1
 ```
 
-This now runs the collector worker (`services.laws_collector.worker`) with local PostgreSQL by default and is useful for repeatable smoke tests against the same local database layout used by the rest of the repo.
+This runs the collector worker (`services.laws_collector.worker`) with local PostgreSQL by default. The default local start follows the production-style live ZIP path: verify the full Slov-Lex archive ZIP import, verify monthly ZIP imports, then sequentially probe from the last processed law cursor until the current tail is reached. After archive and monthly ZIP imports have completed and a live cursor exists, newer advertised ZIP snapshots are skipped by default; the worker logs `zip import skipped because live sequential cursor is active ... last_imported_law=... next_law_to_check=...` and continues with the next sequential law. When the live tail is current, the worker logs `No new laws for SK, last processed law ... at ...` before the normal up-to-date stop message.
+
+For a repeatable baseline smoke test against the same local database layout used by the rest of the repo, set:
+
+```powershell
+./skills/laws-collector/scripts/start_laws_collector.ps1 -Fixture baseline -MaxCycles 1
+```
 
 For live Slov-Lex sequential probing, set:
 
@@ -506,7 +512,7 @@ $env:LAWS_WORKER_FIXTURE = "live"
 Start it in the background and keep logs visible in a separate console window:
 
 ```powershell
-./skills/laws-collector/scripts/start_laws_collector.ps1 -Background -Fixture live -MaxCycles 0
+./skills/laws-collector/scripts/start_laws_collector.ps1 -Background
 ```
 
 Open a dedicated foreground console window for collector logs:
@@ -519,6 +525,12 @@ Use SQLite explicitly only when needed:
 
 ```powershell
 ./skills/laws-collector/scripts/start_laws_collector.ps1 -DatabaseOption sqlite -Fixture baseline -MaxCycles 1
+```
+
+Force archive/monthly ZIP refresh only for explicit repair or bootstrap refresh:
+
+```powershell
+./skills/laws-collector/scripts/start_laws_collector.ps1 -ForceZipRefresh
 ```
 
 ## Azure Container App deployment (laws-collector)

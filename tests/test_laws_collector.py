@@ -775,6 +775,7 @@ def test_laws_collector_stops_when_live_zip_tail_is_up_to_date(monkeypatch, capl
                     "years_advanced": 0,
                     "stopped_on_current_year_gap": True,
                     "last_processed_law": "117/2026",
+                    "last_processed_at": "2026-06-10T09:00:00+00:00",
                     "next_law_to_check": "118/2026",
                     "stopped_due_to_max_running_time": False,
                 },
@@ -796,6 +797,7 @@ def test_laws_collector_stops_when_live_zip_tail_is_up_to_date(monkeypatch, capl
     laws_collector_worker.run_worker()
 
     assert FakeSequentialRunner.calls == 1
+    assert "No new laws for SK, last processed law 117/2026 at 2026-06-10T09:00:00+00:00" in caplog.text
     assert "worker stopped because laws collector is up to date" in caplog.text
     assert "last_processed_law=117/2026" in caplog.text
     assert "next_law_to_check=118/2026" in caplog.text
