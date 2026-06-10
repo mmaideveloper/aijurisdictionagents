@@ -406,6 +406,130 @@ def test_slovlex_sequential_import_runner_stops_mid_cycle_on_max_running_time(tm
     assert summary.stopped_due_to_max_running_time is True
 
 
+def test_slovlex_sequential_import_runner_logs_up_to_date_when_next_law_static_html_is_404(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    store, service = _build_service(tmp_path)
+
+    class FailingSnapshotLoader:
+        def load_snapshot(self, *, target: ImportTarget, timeout_seconds: float = 12.0) -> LawSnapshot:
+            assert target.law_id == "118/2026"
+            raise RuntimeError("SlovLex fetch failed for static html: HTTP 404")
+
+    runner = SlovLexSequentialImportRunner(
+        config=service.config,
+        store=store,
+        service=service,
+        snapshot_loader=FailingSnapshotLoader(),
+    )
+
+    def fake_probe(*, target: ImportTarget, timeout_seconds: float) -> object:
+        return type(
+            "Probe",
+            (),
+            {
+                "target": target,
+                "exists": True,
+                "status_code": 200,
+                "url": target.url,
+            },
+        )()
+
+    progress = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=2026,
+    )
+    progress = progress.evolve(
+        last_processed_law_year=2026,
+        last_processed_law_number=117,
+        next_probe_law_year=2026,
+        next_probe_law_number=118,
+    )
+    store.save_collector_progress(progress)
+    runner._probe_target = fake_probe  # type: ignore[method-assign]
+
+    summary = runner.run(max_probes=3, today=date(2026, 6, 10))
+    output = capsys.readouterr().out
+    reloaded = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=2026,
+    )
+
+    assert summary.probes == 1
+    assert summary.laws_found == 0
+    assert summary.failed_laws == 0
+    assert summary.stopped_on_current_year_gap is True
+    assert summary.next_law_to_check == "118/2026"
+    assert reloaded.next_probe_law == "118/2026"
+    assert reloaded.last_processed_law == "117/2026"
+    assert "118/2026 does not exists, system imports all laws and is up to date" in output
+
+
+def test_slovlex_sequential_import_runner_records_processing_failure_for_retry(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    store, service = _build_service(tmp_path)
+
+    class FailingSnapshotLoader:
+        def load_snapshot(self, *, target: ImportTarget, timeout_seconds: float = 12.0) -> LawSnapshot:
+            assert target.law_id == "118/2026"
+            raise RuntimeError("SlovLex fetch failed: temporary connection reset")
+
+    runner = SlovLexSequentialImportRunner(
+        config=service.config,
+        store=store,
+        service=service,
+        snapshot_loader=FailingSnapshotLoader(),
+    )
+
+    def fake_probe(*, target: ImportTarget, timeout_seconds: float) -> object:
+        return type(
+            "Probe",
+            (),
+            {
+                "target": target,
+                "exists": True,
+                "status_code": 200,
+                "url": target.url,
+            },
+        )()
+
+    progress = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=2026,
+    )
+    progress = progress.evolve(
+        last_processed_law_year=2026,
+        last_processed_law_number=117,
+        next_probe_law_year=2026,
+        next_probe_law_number=118,
+    )
+    store.save_collector_progress(progress)
+    runner._probe_target = fake_probe  # type: ignore[method-assign]
+
+    summary = runner.run(max_probes=3, today=date(2026, 6, 10))
+    output = capsys.readouterr().out
+    reloaded = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=2026,
+    )
+
+    assert summary.probes == 1
+    assert summary.laws_found == 0
+    assert summary.failed_laws == 1
+    assert summary.next_law_to_check == "118/2026"
+    assert reloaded.next_probe_law == "118/2026"
+    assert reloaded.last_processed_law == "117/2026"
+    assert "law processing failed country=SK law=118/2026" in output
+    assert "temporary connection reset" in output
+
+
 def test_sqlite_store_initialize_backfills_embedding_metadata_columns(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.sqlite3"
     store = SqliteLawStore(db_path=db_path)
@@ -578,6 +702,103 @@ def test_laws_collector_logs_embedding_runtime_on_startup(monkeypatch, caplog) -
     assert "embedding_option=local" in output
     assert "embedding_model=all-MiniLM-L6-v2" in output
     assert "embedding_device=" in output
+
+
+def test_laws_collector_stops_when_live_zip_tail_is_up_to_date(monkeypatch, caplog) -> None:
+    class FakeStore:
+        def initialize(self) -> None:
+            return None
+
+    class FakeService:
+        pass
+
+    class FakeDefinition:
+        collector_name = "fake_collector"
+
+        def create_service(self, *, config: object, store: object) -> FakeService:
+            return FakeService()
+
+    class FakeConfig:
+        country_code = "SK"
+        db_backend = "sqlite"
+        import_mode = "zip"
+        import_zip_max_threads = 5
+
+        def validate(self) -> None:
+            return None
+
+    class FakeZipRunner:
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def run(self, *, max_running_seconds: float = 0) -> object:
+            return type(
+                "ZipSummary",
+                (),
+                {
+                    "phase": "monthly",
+                    "import_key": "slov-lex:zip:monthly:test",
+                    "entries_processed": 0,
+                    "sync_summary": type(
+                        "SyncSummary",
+                        (),
+                        {
+                            "processed": 0,
+                            "new_documents": 0,
+                            "new_versions": 0,
+                            "metadata_updates": 0,
+                            "skipped": 0,
+                        },
+                    )(),
+                    "archive_completed": True,
+                    "monthly_completed": True,
+                    "last_processed_law": "99/2026",
+                    "stopped_due_to_max_running_time": False,
+                },
+            )()
+
+    class FakeSequentialRunner:
+        calls = 0
+
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def run(self, *, max_probes: int, max_running_seconds: float = 0) -> object:
+            FakeSequentialRunner.calls += 1
+            return type(
+                "SequentialSummary",
+                (),
+                {
+                    "probes": 1,
+                    "laws_found": 0,
+                    "failed_laws": 0,
+                    "years_advanced": 0,
+                    "stopped_on_current_year_gap": True,
+                    "last_processed_law": "117/2026",
+                    "next_law_to_check": "118/2026",
+                    "stopped_due_to_max_running_time": False,
+                },
+            )()
+
+    monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL_OPTION", "cloud")
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setenv("LAWS_WORKER_FIXTURE", "live")
+    monkeypatch.setenv("LAWS_WORKER_MAX_CYCLES", "0")
+    monkeypatch.setenv("LAWS_WORKER_MAX_PROBES", "1")
+    monkeypatch.setenv("LAWS_WORKER_POLL_SECONDS", "1")
+    caplog.set_level(logging.INFO, logger="laws-collector")
+    monkeypatch.setattr(laws_collector_worker.LawsCollectorConfig, "from_env", lambda: FakeConfig())
+    monkeypatch.setattr(laws_collector_worker, "get_country_laws_collector_definition", lambda _code: FakeDefinition())
+    monkeypatch.setattr(laws_collector_worker.SqliteLawStore, "from_config", lambda _config: FakeStore())
+    monkeypatch.setattr(laws_collector_worker, "SlovLexZipImportRunner", FakeZipRunner)
+    monkeypatch.setattr(laws_collector_worker, "SlovLexSequentialImportRunner", FakeSequentialRunner)
+
+    laws_collector_worker.run_worker()
+
+    assert FakeSequentialRunner.calls == 1
+    assert "worker stopped because laws collector is up to date" in caplog.text
+    assert "last_processed_law=117/2026" in caplog.text
+    assert "next_law_to_check=118/2026" in caplog.text
 
 
 def test_laws_collector_splits_large_laws_into_multiple_embedding_chunks(tmp_path: Path) -> None:

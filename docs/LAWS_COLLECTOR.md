@@ -367,6 +367,8 @@ Local execution logs now show:
 - when vectorization finishes with final status
 - the total per-law processing time
 - an explicit `No new laws for <country>...` message when the run finds nothing new
+- live tail static HTML `404` responses for the next current-year law are logged as `<law> does not exists, system imports all laws and is up to date`; the worker then logs `worker stopped because laws collector is up to date` and exits normally for cron-style daily runs
+- other per-law processing errors are logged as `law processing failed`, leave the failed law as `next_law_to_check`, and do not stop the worker process
 
 Example startup log:
 
