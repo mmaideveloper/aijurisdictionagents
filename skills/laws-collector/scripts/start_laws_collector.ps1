@@ -1,13 +1,14 @@
 param(
     [ValidateSet("baseline", "delta", "live")]
-    [string]$Fixture = "baseline",
+    [string]$Fixture = "live",
     [int]$PollSeconds = 30,
-    [int]$MaxCycles = 1,
-    [int]$MaxProbes = 1,
+    [int]$MaxCycles = 0,
+    [int]$MaxProbes = 1000,
     [ValidateSet("postgres", "sqlite")]
     [string]$DatabaseOption = "postgres",
     [string]$DbLocal = "",
     [string]$DbCloud = "",
+    [switch]$ForceZipRefresh,
     [switch]$Background,
     [switch]$ConsoleWindow
 )
@@ -273,6 +274,12 @@ $env:LAWS_WORKER_POLL_SECONDS = "$PollSeconds"
 $env:LAWS_WORKER_MAX_CYCLES = "$MaxCycles"
 $env:LAWS_WORKER_MAX_PROBES = "$MaxProbes"
 $env:LAWS_STORAGE_LOCAL = "./runs/storage/laws-collector/files/sk"
+if ($ForceZipRefresh) {
+    $env:LAWS_COLLECTOR_FORCE_ZIP_REFRESH = "1"
+}
+else {
+    Remove-Item -Path "Env:LAWS_COLLECTOR_FORCE_ZIP_REFRESH" -ErrorAction SilentlyContinue
+}
 
 if ($DatabaseOption -eq "sqlite") {
     $env:LAWS_DB_BACKEND = "sqlite"
@@ -313,6 +320,9 @@ if ($ConsoleWindow) {
     }
     if ($DbCloud) {
         $consoleArgs += @("-DbCloud", $DbCloud)
+    }
+    if ($ForceZipRefresh) {
+        $consoleArgs += @("-ForceZipRefresh")
     }
 
     Start-Process -FilePath $shellPath -ArgumentList $consoleArgs -WorkingDirectory $repoRoot | Out-Null

@@ -380,6 +380,20 @@ $effectiveDbPassword = Get-ContainerEnvValue -Container $existing -Name "POSTGRE
 $effectivePort = Get-ContainerHostPort -Container $existing -DefaultPort $effectivePort
 $dbCloud = "postgresql://${effectiveDbUser}:${effectiveDbPassword}@127.0.0.1:${effectivePort}/${effectiveDbName}"
 
+if ($ProjectName -eq "laws-collector") {
+    $adminDbCloud = "postgresql://${effectiveDbUser}:${effectiveDbPassword}@127.0.0.1:${effectivePort}/postgres"
+    & $python @(
+        (Join-Path $repoRoot "scripts\databases\provision_country_laws_db.py"),
+        "--admin-uri",
+        $adminDbCloud,
+        "--country",
+        "SK"
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "Laws collector database provisioning failed."
+    }
+}
+
 if (-not $SkipSchemaUpdate) {
     $previousDbOption = $env:DB_OPTION
     $previousDbCloud = $env:DB_CLOUD

@@ -118,6 +118,7 @@ Custom project skills:
   - Script: `.\skills\start-api\scripts\start_api.ps1`
 - `laws-collector` at `skills/laws-collector/SKILL.md`
   - Purpose: start and monitor laws collector; defaults to local PostgreSQL on Docker Desktop.
+  - Default start rule: when asked to start the laws collector, use the production-style local path unless the user explicitly asks for a smoke test or fixture. Start live ZIP import with PostgreSQL, no cycle cap, and enough live probes to continue from the last processed law cursor to the current tail. The run should first verify/complete archive ZIP import, then monthly ZIP import, then sequentially check from the last processed law. If archive/monthly ZIP imports already completed and a live sequential cursor exists, skip newer ZIP snapshots by default, log the completed ZIP state plus `last_imported_law` and `next_law_to_check`, and continue one-by-one. When current, the expected terminal log is `No new laws for SK, last processed law ... at ...`.
   - Script: `.\skills\laws-collector\scripts\start_laws_collector.ps1`
 - `start-postgres` at `skills/start-postgres/SKILL.md`
   - Purpose: start or reuse the local PostgreSQL Docker instance and apply schema updates.

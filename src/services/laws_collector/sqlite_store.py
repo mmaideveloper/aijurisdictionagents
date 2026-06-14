@@ -837,6 +837,26 @@ class SqliteLawStore:
             return None
         return _collector_import_state_from_row(row)
 
+    def get_latest_completed_monthly_import_state(self, *, country_code: str) -> CollectorImportState | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT country_code, source_system, import_key, import_label, source_url, status,
+                       started_at, last_processed_at, last_processed_entry,
+                       last_processed_law_year, last_processed_law_number, completed_at, metadata_json
+                FROM collector_import_state
+                WHERE country_code = ?
+                  AND import_key LIKE 'slov-lex:zip:monthly:%'
+                  AND status = 'completed'
+                ORDER BY completed_at DESC, updated_at DESC
+                LIMIT 1
+                """,
+                (country_code,),
+            ).fetchone()
+        if row is None:
+            return None
+        return _collector_import_state_from_row(row)
+
     def upsert_import_state(self, state: CollectorImportState) -> None:
         now = _now_iso()
         with self._connect() as conn:

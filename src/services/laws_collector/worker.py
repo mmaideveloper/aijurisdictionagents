@@ -138,7 +138,8 @@ def run_worker() -> None:
                             f"[laws-collector] collector={collector_definition.collector_name} "
                             f"country={config.country_code} cycle={cycle} fixture=live import_mode=zip_tail_probe "
                             f"probes={tail_summary.probes} max_probes={options.max_probes} "
-                            f"laws_found={tail_summary.laws_found} years_advanced={tail_summary.years_advanced} "
+                            f"laws_found={tail_summary.laws_found} failed_laws={tail_summary.failed_laws} "
+                            f"years_advanced={tail_summary.years_advanced} "
                             f"stopped_on_current_year_gap={str(tail_summary.stopped_on_current_year_gap).lower()} "
                             f"last_processed_law={tail_summary.last_processed_law or ''} "
                             f"next_law_to_check={tail_summary.next_law_to_check}"
@@ -151,6 +152,15 @@ def run_worker() -> None:
                                 time.monotonic() - started_at,
                             )
                             return
+                        if _is_up_to_date_tail_summary(tail_summary):
+                            _log_no_new_laws(config.country_code, tail_summary)
+                            logger.info(
+                                "[laws-collector] worker stopped because laws collector is up to date "
+                                "last_processed_law=%s next_law_to_check=%s",
+                                tail_summary.last_processed_law or "",
+                                tail_summary.next_law_to_check,
+                            )
+                            return
                 else:
                     summary = SlovLexSequentialImportRunner(
                         config=config,
@@ -160,7 +170,8 @@ def run_worker() -> None:
                     logger.info(
                         f"[laws-collector] collector={collector_definition.collector_name} "
                         f"country={config.country_code} cycle={cycle} fixture=live import_mode=one_law_url "
-                        f"probes={summary.probes} max_probes={options.max_probes} laws_found={summary.laws_found} "
+                        f"probes={summary.probes} max_probes={options.max_probes} "
+                        f"laws_found={summary.laws_found} failed_laws={summary.failed_laws} "
                         f"years_advanced={summary.years_advanced} "
                         f"stopped_on_current_year_gap={str(summary.stopped_on_current_year_gap).lower()} "
                         f"last_processed_law={summary.last_processed_law or ''} "
@@ -173,6 +184,15 @@ def run_worker() -> None:
                             "max_running_minutes=%s elapsed_seconds=%.1f",
                             options.max_running_minutes,
                             time.monotonic() - started_at,
+                        )
+                        return
+                    if _is_up_to_date_tail_summary(summary):
+                        _log_no_new_laws(config.country_code, summary)
+                        logger.info(
+                            "[laws-collector] worker stopped because laws collector is up to date "
+                            "last_processed_law=%s next_law_to_check=%s",
+                            summary.last_processed_law or "",
+                            summary.next_law_to_check,
                         )
                         return
             else:
@@ -214,3 +234,20 @@ def run_worker() -> None:
 
 def _is_azure_runtime() -> bool:
     return os.getenv("LAWS_DB_BACKEND", "").strip().lower() == "postgres"
+
+
+def _is_up_to_date_tail_summary(summary: object) -> bool:
+    return (
+        bool(getattr(summary, "stopped_on_current_year_gap", False))
+        and int(getattr(summary, "failed_laws", 0)) == 0
+    )
+
+
+def _log_no_new_laws(country_code: str, summary: object) -> None:
+    last_processed_at = getattr(summary, "last_processed_at", None) or getattr(summary, "last_collector_run_at", None)
+    logger.info(
+        "[laws-collector] No new laws for %s, last processed law %s at %s",
+        country_code,
+        getattr(summary, "last_processed_law", None) or "none",
+        last_processed_at or "n/a",
+    )

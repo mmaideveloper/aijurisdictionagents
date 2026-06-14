@@ -46,6 +46,7 @@ class SlovLexProbeResult:
 class SequentialImportSummary:
     probes: int
     laws_found: int
+    failed_laws: int
     years_advanced: int
     stopped_on_current_year_gap: bool
     last_checked_law: str | None
@@ -99,6 +100,7 @@ class SlovLexSequentialImportRunner:
         progress = self.get_progress()
         probes = 0
         laws_found = 0
+        failed_laws = 0
         years_advanced = 0
         stopped_on_current_year_gap = False
         stopped_due_to_max_running_time = False
@@ -136,11 +138,43 @@ class SlovLexSequentialImportRunner:
                     f"law={target.law_id} source={probe.url}"
                 )
                 if self.service is not None:
-                    snapshot = self.snapshot_loader.load_snapshot(
-                        target=target,
-                        timeout_seconds=timeout_seconds,
-                    )
-                    self.service.sync((snapshot,))
+                    try:
+                        snapshot = self.snapshot_loader.load_snapshot(
+                            target=target,
+                            timeout_seconds=timeout_seconds,
+                        )
+                        self.service.sync((snapshot,))
+                    except Exception as exc:
+                        if _is_missing_resource_error(exc):
+                            previous_year = progress.next_probe_law_year
+                            progress, stopped_on_current_year_gap = self.planner.mark_missing(
+                                progress,
+                                target=target,
+                                observed_at=observed_at,
+                                today=current_day,
+                            )
+                            self.store.save_collector_progress(progress)
+                            if progress.next_probe_law_year != previous_year:
+                                years_advanced += 1
+                            _log(
+                                f"{target.law_id} does not exists, system imports all laws "
+                                "and is up to date"
+                            )
+                            break
+                        else:
+                            failed_laws += 1
+                            _log(
+                                f"law processing failed country={self.config.country_code} "
+                                f"law={target.law_id} source={probe.url} error={exc}"
+                            )
+                            progress = progress.evolve(
+                                last_collector_run_at=observed_at,
+                                next_probe_law_year=target.year,
+                                next_probe_law_number=target.number,
+                            )
+                            self.store.save_collector_progress(progress)
+                            stopped_on_current_year_gap = target.year >= current_day.year
+                            break
                 progress = self.planner.mark_processed(
                     progress,
                     target=target,
@@ -175,6 +209,7 @@ class SlovLexSequentialImportRunner:
         return SequentialImportSummary(
             probes=probes,
             laws_found=laws_found,
+            failed_laws=failed_laws,
             years_advanced=years_advanced,
             stopped_on_current_year_gap=stopped_on_current_year_gap,
             last_checked_law=last_checked_law,
@@ -213,6 +248,10 @@ class SlovLexSequentialImportRunner:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _is_missing_resource_error(error: Exception) -> bool:
+    return "HTTP 404" in str(error)
 
 
 def _log(message: str) -> None:

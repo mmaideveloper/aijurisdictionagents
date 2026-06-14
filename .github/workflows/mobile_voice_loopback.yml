@@ -1,0 +1,57 @@
+name: mobile_voice_loopback
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'mobile_app/**'
+      - 'scripts/run_mobile_voice_loopback.ps1'
+      - '.github/workflows/mobile_voice_loopback.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-loopback:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile_app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.2'
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run local-device loopback
+        env:
+          AIJ_VOICE_LOOPBACK_ARTIFACT_DIR: ${{ runner.temp }}/voice-loopback
+        run: |
+          flutter test test/voice_loopback_simulator_test.dart \
+            --dart-define=AIJ_VOICE_LOOPBACK_RUNTIME=local-device \
+            --dart-define=AIJ_VOICE_LOOPBACK_TURN_COUNT=10
+
+      - name: Run azure loopback contract
+        env:
+          AIJ_VOICE_LOOPBACK_ARTIFACT_DIR: ${{ runner.temp }}/voice-loopback
+        run: |
+          flutter test test/voice_loopback_simulator_test.dart \
+            --dart-define=AIJ_VOICE_LOOPBACK_RUNTIME=azure \
+            --dart-define=AIJ_VOICE_LOOPBACK_TURN_COUNT=10
+
+      - name: Upload voice loopback artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-voice-loopback
+          path: ${{ runner.temp }}/voice-loopback

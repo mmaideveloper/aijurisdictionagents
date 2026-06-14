@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date
+import logging
 from pathlib import Path
 import sqlite3
 import threading
@@ -374,6 +375,98 @@ def test_zip_import_runner_skips_already_completed_monthly_export(tmp_path: Path
     assert summary.skipped_as_already_completed is True
     assert summary.entries_processed == 0
     assert summary.monthly_completed is True
+
+
+def test_zip_import_runner_skips_newer_zip_snapshots_when_live_cursor_is_active(
+    tmp_path: Path,
+    caplog,
+) -> None:
+    store, service, config = _build_service(tmp_path)
+    store.upsert_import_state(
+        CollectorImportState(
+            country_code="SK",
+            source_system="slov-lex",
+            import_key="slov-lex:zip:archive-seed",
+            import_label="archive seed 2026-03-01",
+            source_url="https://static.slov-lex.sk/static/exporty/ZZ/export.zip",
+            status="completed",
+            started_at="2026-03-01T00:00:00Z",
+            last_processed_at="2026-03-01T00:00:00Z",
+            last_processed_entry="export/SK/ZZ/2026/40/vyhlasene_znenie.html",
+            last_processed_law_year=2026,
+            last_processed_law_number=40,
+            completed_at="2026-03-01T00:00:00Z",
+            metadata={"archive_snapshot_date": "2026-03-01", "phase": "archive"},
+        )
+    )
+    store.upsert_import_state(
+        CollectorImportState(
+            country_code="SK",
+            source_system="slov-lex",
+            import_key="slov-lex:zip:monthly:2026-03-01_2026-04-01",
+            import_label="monthly 2026-03-01..2026-04-01",
+            source_url="https://static.slov-lex.sk/static/exporty/ZZ/exportZmeny.zip",
+            status="completed",
+            started_at="2026-04-01T00:00:00Z",
+            last_processed_at="2026-04-01T00:00:00Z",
+            last_processed_entry="changed/SK/ZZ/2026/70/vyhlasene_znenie.html",
+            last_processed_law_year=2026,
+            last_processed_law_number=70,
+            completed_at="2026-04-01T00:00:00Z",
+            metadata={
+                "monthly_range_start": "2026-03-01",
+                "monthly_range_end": "2026-04-01",
+                "phase": "monthly",
+            },
+        )
+    )
+    progress = store.get_or_create_collector_progress(
+        country_code="SK",
+        source_system="slov-lex",
+        initial_year=1945,
+    )
+    store.save_collector_progress(
+        progress.evolve(
+            last_collector_run_at="2026-05-02T00:00:00Z",
+            last_processed_at="2026-05-02T00:00:00Z",
+            last_processed_law_year=2026,
+            last_processed_law_number=100,
+            next_probe_law_year=2026,
+            next_probe_law_number=101,
+        )
+    )
+
+    class FakeIndexLoader:
+        def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
+            return SlovLexExportIndex(
+                archive_export=SlovLexArchiveExport(
+                    snapshot_date="2026-04-01",
+                    part_urls=("https://static.slov-lex.sk/static/exporty/ZZ/export.zip",),
+                ),
+                monthly_export=SlovLexMonthlyExport(
+                    range_start="2026-04-01",
+                    range_end="2026-05-01",
+                    zip_url="https://static.slov-lex.sk/static/exporty/ZZ/exportZmeny.zip",
+                ),
+            )
+
+    caplog.set_level(logging.INFO, logger="laws-collector")
+    summary = SlovLexZipImportRunner(
+        config=config,
+        store=store,
+        service=service,
+        export_index_loader=FakeIndexLoader(),
+    ).run()
+
+    assert summary.phase == "live_sequential"
+    assert summary.skipped_as_already_completed is True
+    assert summary.entries_processed == 0
+    assert summary.archive_completed is True
+    assert summary.monthly_completed is True
+    assert summary.last_processed_law == "100/2026"
+    assert "zip import skipped because live sequential cursor is active" in caplog.text
+    assert "last_imported_law=100/2026" in caplog.text
+    assert "next_law_to_check=101/2026" in caplog.text
 
 
 def test_zip_import_runner_processes_archive_seed(tmp_path: Path) -> None:

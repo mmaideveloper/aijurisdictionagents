@@ -53,6 +53,8 @@ _LOGGER = logging.getLogger("laws-collector")
 class ZipImportStateStore(Protocol):
     def get_import_state(self, *, country_code: str, import_key: str) -> CollectorImportState | None: ...
 
+    def get_latest_completed_monthly_import_state(self, *, country_code: str) -> CollectorImportState | None: ...
+
     def upsert_import_state(self, state: CollectorImportState) -> None: ...
 
     def upsert_archive_import_asset(self, asset: ArchiveImportAsset) -> None: ...
@@ -186,8 +188,55 @@ class SlovLexZipImportRunner:
                 f"last_processed_law={archive_completed_state.last_processed_law or ''} "
                 f"archive_snapshot_date={_archive_snapshot_date(archive_completed_state) or ''}"
             )
+        latest_monthly_state = self.store.get_latest_completed_monthly_import_state(
+            country_code=self.config.country_code,
+        )
+        progress = self.store.get_or_create_collector_progress(
+            country_code=self.config.country_code,
+            source_system="slov-lex",
+            initial_year=self.config.initial_import_from.year,
+        )
+        if latest_monthly_state is not None:
+            _log_zip(
+                "monthly state loaded "
+                f"status={latest_monthly_state.status} "
+                f"import_key={latest_monthly_state.import_key} "
+                f"last_processed_law={latest_monthly_state.last_processed_law or ''} "
+                f"monthly_range={latest_monthly_state.metadata.get('monthly_range_start', '')}"
+                f"..{latest_monthly_state.metadata.get('monthly_range_end', '')}"
+            )
+        if (
+            archive_completed
+            and latest_monthly_state is not None
+            and progress.last_processed_law is not None
+            and not self.config.force_zip_refresh
+        ):
+            _log_zip(
+                "zip import skipped because live sequential cursor is active "
+                f"archive_status={archive_completed_state.status if archive_completed_state else ''} "
+                f"archive_snapshot_date={_archive_snapshot_date(archive_completed_state) or ''} "
+                f"monthly_status={latest_monthly_state.status} "
+                f"monthly_import_key={latest_monthly_state.import_key} "
+                f"last_imported_law={progress.last_processed_law} "
+                f"last_imported_at={progress.last_processed_at or ''} "
+                f"next_law_to_check={progress.next_probe_law}"
+            )
+            return SlovLexZipImportSummary(
+                phase="live_sequential",
+                import_key=latest_monthly_state.import_key,
+                import_label=latest_monthly_state.import_label,
+                entries_processed=0,
+                sync_summary=SyncSummary(),
+                archive_completed=True,
+                monthly_completed=True,
+                last_processed_entry=latest_monthly_state.last_processed_entry,
+                last_processed_law=progress.last_processed_law,
+                skipped_as_already_completed=True,
+            )
+        if archive_completed and self.config.force_zip_refresh:
+            _log_zip("force zip refresh requested; completed archive/monthly state will not skip ZIP processing")
 
-        if not archive_completed and index.archive_export is not None:
+        if (not archive_completed or self.config.force_zip_refresh) and index.archive_export is not None:
             _log_zip(
                 "archive import starting "
                 f"snapshot_date={index.archive_export.snapshot_date} "
@@ -231,7 +280,11 @@ class SlovLexZipImportRunner:
             )
 
         archive_date = _archive_snapshot_date(archive_completed_state)
-        if archive_date is not None and index.monthly_export.range_end <= archive_date:
+        if (
+            archive_date is not None
+            and index.monthly_export.range_end <= archive_date
+            and not self.config.force_zip_refresh
+        ):
             _log_zip(
                 "monthly import skipped because archive already covers range "
                 f"archive_snapshot_date={archive_date} "
@@ -254,7 +307,7 @@ class SlovLexZipImportRunner:
             country_code=self.config.country_code,
             import_key=index.monthly_export.import_key,
         )
-        if monthly_state is not None and monthly_state.status == "completed":
+        if monthly_state is not None and monthly_state.status == "completed" and not self.config.force_zip_refresh:
             _log_zip(
                 "monthly import skipped because the same monthly bundle was already completed "
                 f"range={index.monthly_export.range_start}..{index.monthly_export.range_end} "
