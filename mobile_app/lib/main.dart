@@ -28,6 +28,7 @@ import 'chat/profile_service.dart';
 import 'chat/rule_engine.dart';
 import 'chat/speech_flow.dart';
 import 'chat/voice_session_orchestrator.dart';
+import 'chat/voice_conversation_settings.dart';
 import 'logging/app_logger.dart';
 import 'platform/app_updater.dart';
 import 'platform/device_phone_number.dart';
@@ -300,6 +301,9 @@ class AppStrings {
       'speaker_voice_label': 'Hlas asistenta',
       'speaker_voice_unavailable': 'Pre zvolený jazyk nie je dostupný hlas.',
       'test_speaker_voice': 'Vyskúšať hlas',
+      'record_chat_label': 'Nahrávať chat hlasom',
+      'record_chat_description':
+          'Zapne ľudskejší hlasový režim: dlhšie diktovanie, prerušenie asistenta používateľom a žiadne ukladanie zvuku.',
       'speaker_test_sample':
           'Dobrý deň, som Jurisdicta a toto je ukážka hlasu.',
       'no_camera_available': 'Na tomto zariadení nie je dostupná kamera.',
@@ -572,6 +576,9 @@ class AppStrings {
       'speaker_voice_unavailable':
           'No matching speaker voice is available for the selected language.',
       'test_speaker_voice': 'Test voice',
+      'record_chat_label': 'Record chat with voice',
+      'record_chat_description':
+          'Enables a more human voice mode: longer dictation, user barge-in while the assistant speaks, and no stored audio.',
       'speaker_test_sample':
           'Hello, I am Jurisdicta and this is a sample of the selected voice.',
       'no_camera_available': 'No camera available on this device.',
@@ -848,6 +855,9 @@ class AppStrings {
       'speaker_voice_unavailable':
           'Für die gewählte Sprache ist keine passende Stimme verfügbar.',
       'test_speaker_voice': 'Stimme testen',
+      'record_chat_label': 'Chat per Sprache aufnehmen',
+      'record_chat_description':
+          'Aktiviert einen menschlicheren Sprachmodus: längeres Diktieren, Unterbrechen des Assistenten und keine Audiospeicherung.',
       'speaker_test_sample':
           'Guten Tag, ich bin Jurisdicta und dies ist eine Sprachprobe.',
       'no_camera_available': 'Auf diesem Gerät ist keine Kamera verfügbar.',
@@ -4039,7 +4049,9 @@ class AccountSettingsPage extends StatefulWidget {
     required this.locales,
     required this.speaker,
     required this.speakerOutputEnabled,
+    required this.recordChatEnabled,
     required this.onSpeakerOutputChanged,
+    required this.onRecordChatChanged,
     required this.onLocaleChanged,
     required this.logger,
   });
@@ -4050,7 +4062,9 @@ class AccountSettingsPage extends StatefulWidget {
   final List<LocaleOption> locales;
   final JurisdictaSpeaker speaker;
   final bool speakerOutputEnabled;
+  final bool recordChatEnabled;
   final Future<void> Function(bool enabled) onSpeakerOutputChanged;
+  final Future<void> Function(bool enabled) onRecordChatChanged;
   final Future<void> Function(LocaleOption locale) onLocaleChanged;
   final AppLogger logger;
 
@@ -4083,6 +4097,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   String? _selectedPlanCode;
   String? _selectedSpeakerVoiceId;
   late bool _speakerOutputEnabled;
+  late bool _recordChatEnabled;
   late bool _debugModeEnabled;
   bool _isSharingLogs = false;
 
@@ -4119,6 +4134,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         TextEditingController(text: widget.user.socialSecurityNumber ?? '');
     _selectedLocale = widget.selectedLocale;
     _speakerOutputEnabled = widget.speakerOutputEnabled;
+    _recordChatEnabled = widget.recordChatEnabled;
     _debugModeEnabled = widget.logger.debugModeEnabled;
     _loadSubscriptions();
     _loadSpeakerVoices();
@@ -4337,6 +4353,16 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       _speakerOutputEnabled = enabled;
     });
     await widget.onSpeakerOutputChanged(enabled);
+  }
+
+  Future<void> _setRecordChatEnabled(bool enabled) async {
+    setState(() {
+      _recordChatEnabled = enabled;
+      if (enabled) {
+        _speakerOutputEnabled = true;
+      }
+    });
+    await widget.onRecordChatChanged(enabled);
   }
 
   @override
@@ -4570,6 +4596,13 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             onChanged: (value) => unawaited(_setSpeakerOutputEnabled(value)),
             title: Text(strings.t('speaker_output')),
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _recordChatEnabled,
+            onChanged: (value) => unawaited(_setRecordChatEnabled(value)),
+            title: Text(strings.t('record_chat_label')),
+            subtitle: Text(strings.t('record_chat_description')),
+          ),
           const SizedBox(height: 8),
           if (_isLoadingSpeakerVoices)
             const LinearProgressIndicator()
@@ -4738,6 +4771,8 @@ class _ChatHomePageState extends State<ChatHomePage>
   String? _updateProgressDetail;
   double? _updateDownloadProgress;
   bool _speakerOutputEnabled = false;
+  VoiceConversationSettings _voiceConversationSettings =
+      VoiceConversationSettings.recommended();
   bool _speechEnabled = false;
   bool _speechInputEnabled = false;
   bool _speechInputExplicitlyDisabled = false;
@@ -4792,6 +4827,17 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool get _isInputComposerExpanded =>
       _inputComposerExpanded || (_isListening && !_speakerOutputEnabled);
 
+  bool get _recordChatEnabled =>
+      _voiceConversationSettings.recordChatEnabled;
+
+  Duration get _activeSpeechSilenceTimeout => _recordChatEnabled
+      ? _voiceConversationSettings.pauseFor
+      : _speechSilenceTimeout;
+
+  Duration get _activeSpeechMaxListenDuration => _recordChatEnabled
+      ? _voiceConversationSettings.listenFor
+      : _speechMaxListenDuration;
+
   AppStrings get _strings => AppStrings(_selectedLocale.languageCode);
 
   void _setInputComposerExpanded(bool value, {bool unfocus = false}) {
@@ -4804,6 +4850,74 @@ class _ChatHomePageState extends State<ChatHomePage>
     setState(() {
       _inputComposerExpanded = value;
     });
+  }
+
+  Future<void> _loadVoiceConversationSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final settings = decodeVoiceConversationSettings(
+      prefs.getString(defaultVoiceConversationSettingsStorageKey),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _voiceConversationSettings = settings;
+      if (settings.recordChatEnabled) {
+        _speakerOutputEnabled = true;
+        _speechInputEnabled = true;
+        _speechInputExplicitlyDisabled = false;
+      }
+    });
+    await widget.logger.info(
+      'Voice conversation settings loaded',
+      <String, Object?>{
+        ..._voiceLogContext('voice_conversation_settings_load'),
+      },
+    );
+    if (settings.recordChatEnabled && _speechEnabled && !_isListening) {
+      await _startSpeechListening(resetHandledText: true);
+    }
+  }
+
+  Future<void> _persistVoiceConversationSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      defaultVoiceConversationSettingsStorageKey,
+      encodeVoiceConversationSettings(_voiceConversationSettings),
+    );
+  }
+
+  Future<void> _setRecordChatEnabled(bool enabled) async {
+    final nextSettings = _voiceConversationSettings.copyWith(
+      recordChatEnabled: enabled,
+    );
+    setState(() {
+      _voiceConversationSettings = nextSettings;
+      if (enabled) {
+        _speakerOutputEnabled = true;
+        _speechInputEnabled = true;
+        _speechInputExplicitlyDisabled = false;
+      } else {
+        _speechInputEnabled = false;
+        _speechInputExplicitlyDisabled = true;
+      }
+    });
+    await _persistVoiceConversationSettings();
+    if (!enabled && _isListening) {
+      await _stopSpeechListening(
+        submitAfterStop: false,
+        processStoppedInput: false,
+      );
+    } else if (enabled && mounted && _speechEnabled && !_isListening) {
+      await _startSpeechListening(resetHandledText: true);
+    }
+    await widget.logger.info(
+      'Record chat voice mode changed',
+      <String, Object?>{
+        'enabled': enabled,
+        ..._voiceLogContext('record_chat_setting'),
+      },
+    );
   }
 
   void _handleInputFocusChanged() {
@@ -4971,6 +5085,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         },
       ),
     );
+    unawaited(_loadVoiceConversationSettings());
     unawaited(_initializeSpeechRecognition());
     unawaited(_initializeAssistantSpeech());
     unawaited(_loadSpeakerVoices());
@@ -6030,6 +6145,12 @@ class _ChatHomePageState extends State<ChatHomePage>
         ..._voiceLogContext('speech_recognition_initialization'),
       },
     );
+    if (enabled &&
+        _recordChatEnabled &&
+        _speechInputEnabled &&
+        !_isListening) {
+      await _startSpeechListening(resetHandledText: true);
+    }
   }
 
   Future<void> _initializeAssistantSpeech() async {
@@ -6054,6 +6175,8 @@ class _ChatHomePageState extends State<ChatHomePage>
       'trace_id': _apiClient.flowCorrelationId,
       'processing_purpose': processingPurpose,
       'voice_compliance': _speechService.config.complianceFlags.toLogContext(),
+      'voice_conversation_settings':
+          _voiceConversationSettings.toLogContext(),
     };
   }
 
@@ -6151,7 +6274,10 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   bool _shouldStopAssistantSpeechForTranscript(String recognizedText) {
-    return !_assistantSpeechInProgress && recognizedText.isNotEmpty;
+    return _recordChatEnabled &&
+        _voiceConversationSettings.allowBargeIn &&
+        _assistantSpeechInProgress &&
+        recognizedText.isNotEmpty;
   }
 
   String _normalizeVoiceEchoText(String value) {
@@ -6191,7 +6317,11 @@ class _ChatHomePageState extends State<ChatHomePage>
         _isSending) {
       return;
     }
-    await Future<void>.delayed(_speechService.config.resumeListeningDelay);
+    await Future<void>.delayed(
+      _recordChatEnabled
+          ? _voiceConversationSettings.resumeListeningDelay
+          : _speechService.config.resumeListeningDelay,
+    );
     final stillReady = await _ensureSpeechInputEnabledForVoiceMode();
     if (!mounted ||
         !stillReady ||
@@ -6286,7 +6416,9 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     final shouldStopAssistantSpeech =
         _shouldStopAssistantSpeechForTranscript(recognizedText);
-    if (_assistantSpeechInProgress) {
+    if (_assistantSpeechInProgress && shouldStopAssistantSpeech) {
+      _stopAssistantSpeechForUserSpeech('recognized_speech');
+    } else if (_assistantSpeechInProgress) {
       unawaited(
         widget.logger.info(
           'Ignored STT fragment during assistant speech',
@@ -6301,9 +6433,6 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     if (recognizedText.isNotEmpty && _speechDraftStartedAt == null) {
       _speechDraftStartedAt = DateTime.now();
-    }
-    if (recognizedText.isNotEmpty && shouldStopAssistantSpeech) {
-      _stopAssistantSpeechForUserSpeech('recognized_speech');
     }
     if (result.finalResult && recognizedText.isNotEmpty) {
       _lastFinalSpeechResult = recognizedText;
@@ -8402,7 +8531,9 @@ class _ChatHomePageState extends State<ChatHomePage>
           locales: appLocaleOptions,
           speaker: _speaker,
           speakerOutputEnabled: _speakerOutputEnabled,
+          recordChatEnabled: _recordChatEnabled,
           onSpeakerOutputChanged: _setSpeakerOutputEnabled,
+          onRecordChatChanged: _setRecordChatEnabled,
           onLocaleChanged: _handleLocaleChanged,
           logger: widget.logger,
         ),
@@ -8596,8 +8727,8 @@ class _ChatHomePageState extends State<ChatHomePage>
     );
     await _speechRecognizer.listen(
       onResult: _onSpeechResult,
-      listenFor: _speechMaxListenDuration,
-      pauseFor: _speechSilenceTimeout,
+      listenFor: _activeSpeechMaxListenDuration,
+      pauseFor: _activeSpeechSilenceTimeout,
       localeId: _localeIdForSpeech(_selectedLocale),
       listenMode: ListenMode.dictation,
     );
@@ -8605,6 +8736,8 @@ class _ChatHomePageState extends State<ChatHomePage>
       'Speech listening started',
       <String, Object?>{
         'locale': _localeIdForSpeech(_selectedLocale),
+        'listen_for_ms': _activeSpeechMaxListenDuration.inMilliseconds,
+        'pause_for_ms': _activeSpeechSilenceTimeout.inMilliseconds,
         ..._voiceLogContext('speech_to_text'),
       },
     );
