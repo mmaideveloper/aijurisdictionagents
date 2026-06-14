@@ -4827,31 +4827,14 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool get _isInputComposerExpanded =>
       _inputComposerExpanded || (_isListening && !_speakerOutputEnabled);
 
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
   bool get _usesMessageSpeechType =>
       _speechService.config.interactionType == SpeechInteractionType.message;
 
   bool get _usesConversationSpeechType =>
       _speechService.config.interactionType ==
       SpeechInteractionType.conversation;
-=======
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-  bool get _recordChatEnabled =>
-      _voiceConversationSettings.recordChatEnabled;
+
+  bool get _recordChatEnabled => _voiceConversationSettings.recordChatEnabled;
 
   Duration get _activeSpeechSilenceTimeout => _recordChatEnabled
       ? _voiceConversationSettings.pauseFor
@@ -4860,22 +4843,6 @@ class _ChatHomePageState extends State<ChatHomePage>
   Duration get _activeSpeechMaxListenDuration => _recordChatEnabled
       ? _voiceConversationSettings.listenFor
       : _speechMaxListenDuration;
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
 
   AppStrings get _strings => AppStrings(_selectedLocale.languageCode);
 
@@ -6187,10 +6154,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         ..._voiceLogContext('speech_recognition_initialization'),
       },
     );
-    if (enabled &&
-        _recordChatEnabled &&
-        _speechInputEnabled &&
-        !_isListening) {
+    if (enabled && _recordChatEnabled && _speechInputEnabled && !_isListening) {
       await _startSpeechListening(resetHandledText: true);
     }
   }
@@ -6217,8 +6181,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       'trace_id': _apiClient.flowCorrelationId,
       'processing_purpose': processingPurpose,
       'voice_compliance': _speechService.config.complianceFlags.toLogContext(),
-      'voice_conversation_settings':
-          _voiceConversationSettings.toLogContext(),
+      'voice_conversation_settings': _voiceConversationSettings.toLogContext(),
     };
   }
 
