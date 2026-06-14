@@ -71,6 +71,19 @@ void main() {
     });
   });
 
+  group('speechMessageModeReadyMessage', () {
+    test('explains the default reviewed message flow', () {
+      expect(
+        speechMessageModeReadyMessage('EN', firstName: 'Martin'),
+        contains('click the microphone icon next to the text box'),
+      );
+      expect(
+        speechMessageModeReadyMessage('EN', firstName: 'Martin'),
+        contains('see the message text before sending'),
+      );
+    });
+  });
+
   group('parseSpokenCaseCreationCommand', () {
     test('matches a polite English command without a spoken title', () {
       final parsed = parseSpokenCaseCreationCommand('Please create a new case');

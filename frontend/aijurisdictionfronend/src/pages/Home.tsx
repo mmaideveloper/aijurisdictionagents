@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
+import { FiMessageSquare, FiMic, FiVolume2, FiVolumeX, FiVideo } from "react-icons/fi";
 import { ApiRequestError } from "../api/chatClient";
 import type { BrowserSpeechSession } from "../audio/speechToText";
 import {
@@ -28,6 +28,13 @@ type ApiErrorState =
   | null;
 
 type WorkspaceVoiceConfirmation = "yes" | "no" | null;
+type SpeechType = "message" | "conversation";
+
+const configuredSpeechType = (import.meta.env.VITE_AIJ_SPEECHTYPE ?? "message")
+  .trim()
+  .toLowerCase() as SpeechType;
+const defaultSpeechType: SpeechType =
+  configuredSpeechType === "conversation" ? "conversation" : "message";
 
 const parseWorkspaceVoiceConfirmation = (transcript: string): WorkspaceVoiceConfirmation => {
   const normalized = transcript
@@ -43,6 +50,46 @@ const parseWorkspaceVoiceConfirmation = (transcript: string): WorkspaceVoiceConf
   if (tokens.some((token) => ["ano", "yes", "ja"].includes(token))) return "yes";
   if (tokens.some((token) => ["nie", "no", "nein"].includes(token))) return "no";
   return null;
+};
+
+const stripDiacritics = (value: string): string =>
+  value.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+
+const normalizeSpokenCommandText = (value: string): string =>
+  stripDiacritics(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const sendCommandPhrases = [
+  "send",
+  "send message",
+  "i am done",
+  "that is all",
+  "posli",
+  "odosli",
+  "odosli spravu",
+  "to je vsetko",
+  "senden",
+  "nachricht senden"
+];
+
+const stripTrailingSendCommand = (transcript: string): { message: string; shouldSend: boolean } => {
+  const normalized = normalizeSpokenCommandText(transcript);
+  if (!normalized) return { message: "", shouldSend: false };
+  if (sendCommandPhrases.includes(normalized)) {
+    return { message: "", shouldSend: true };
+  }
+  const matchedPhrase = sendCommandPhrases.find((phrase) => normalized.endsWith(` ${phrase}`));
+  if (!matchedPhrase) {
+    return { message: transcript.trim(), shouldSend: false };
+  }
+  return {
+    message: transcript.trim().slice(0, Math.max(0, transcript.trim().length - matchedPhrase.length)).trim(),
+    shouldSend: true
+  };
 };
 
 const Home: React.FC = () => {
@@ -64,10 +111,13 @@ const Home: React.FC = () => {
   const [isSendingMessage, setIsSendingMessage] = React.useState(false);
   const [apiError, setApiError] = React.useState<ApiErrorState>(null);
   const [isRecording, setIsRecording] = React.useState(false);
+  const [isMessageAudioEnabled, setIsMessageAudioEnabled] = React.useState(false);
+  const [chatSpeechStatus, setChatSpeechStatus] = React.useState<string | null>(null);
   const [isAwaitingVoiceConfirmation, setIsAwaitingVoiceConfirmation] = React.useState(false);
   const [speechStatus, setSpeechStatus] = React.useState<string | null>(null);
   const speechSessionRef = React.useRef<BrowserSpeechSession | null>(null);
   const silenceTimerRef = React.useRef<number | null>(null);
+  const draftMessageRef = React.useRef("");
   const modeDraftMessageRef = React.useRef("");
   const awaitingVoiceConfirmationRef = React.useRef(false);
   const roleOptions = React.useMemo(
@@ -110,6 +160,10 @@ const Home: React.FC = () => {
     ],
     [t]
   );
+
+  React.useEffect(() => {
+    draftMessageRef.current = draftMessage;
+  }, [draftMessage]);
 
   React.useEffect(() => {
     modeDraftMessageRef.current = modeDraftMessage;
@@ -197,12 +251,115 @@ const Home: React.FC = () => {
 
     const handleSendMessage = async (event: React.FormEvent) => {
       event.preventDefault();
+      speechSessionRef.current?.stop();
+      speechSessionRef.current = null;
+      setIsRecording(false);
       const sent = await submitMessageToApi("Chat", draftMessage);
       if (sent) {
         setDraftMessage("");
+        draftMessageRef.current = "";
       }
     };
 
+    const speakBrowserMessage = (message: string) => {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(message);
+      utterance.lang = languageToSpeechLocale(language);
+      window.speechSynthesis.speak(utterance);
+    };
+
+    const handleMessageAudioToggle = () => {
+      const nextValue = !isMessageAudioEnabled;
+      setIsMessageAudioEnabled(nextValue);
+      if (!nextValue) {
+        speechSessionRef.current?.stop();
+        speechSessionRef.current = null;
+        setIsRecording(false);
+        setChatSpeechStatus(null);
+        return;
+      }
+      const guidance = t("workspaceSpeechMessageModeReady");
+      setChatSpeechStatus(guidance);
+      speakBrowserMessage(guidance);
+    };
+
+    const submitChatDraftFromSpeech = async (messageOverride?: string) => {
+      speechSessionRef.current?.stop();
+      speechSessionRef.current = null;
+      setIsRecording(false);
+      const message = (messageOverride ?? draftMessageRef.current).trim();
+      if (!message) {
+        return;
+      }
+      const sent = await submitMessageToApi("Chat", message);
+      if (sent) {
+        setDraftMessage("");
+        draftMessageRef.current = "";
+      }
+    };
+
+    const handleChatVoiceCapture = () => {
+      if (!isMessageAudioEnabled) {
+        handleMessageAudioToggle();
+        return;
+      }
+      if (isRecording) {
+        speechSessionRef.current?.stop();
+        speechSessionRef.current = null;
+        setIsRecording(false);
+        setChatSpeechStatus(t("workspaceSpeechReviewBeforeSend", { runtime: "browser-native" }));
+        return;
+      }
+      if (!isBrowserSpeechAvailable()) {
+        setChatSpeechStatus(t("workspaceSpeechUnavailable"));
+        return;
+      }
+      const speechLocale = languageToSpeechLocale(language);
+      setIsRecording(true);
+      setChatSpeechStatus(`${t("workspaceSpeechListening")} ${t("workspaceSpeechRuntimeBrowser")} (${speechLocale}).`);
+      try {
+        speechSessionRef.current = startBrowserSpeechSession({
+          lang: speechLocale,
+          onTranscript: (result) => {
+            const stripped = stripTrailingSendCommand(result.transcript);
+            const nextMessage = [draftMessageRef.current.trim(), stripped.message]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+            if (nextMessage) {
+              draftMessageRef.current = nextMessage;
+              setDraftMessage(nextMessage);
+            }
+            if (stripped.shouldSend) {
+              void submitChatDraftFromSpeech(nextMessage);
+              return;
+            }
+            setChatSpeechStatus(t("workspaceSpeechReviewBeforeSend", { runtime: result.runtime }));
+          },
+          onError: (error) => {
+            if (error.code === "no-speech") {
+              setChatSpeechStatus(t("workspaceSpeechNoInput"));
+              return;
+            }
+            setChatSpeechStatus(t("workspaceSpeechError", { code: error.code }));
+          },
+          onEnd: () => {
+            speechSessionRef.current = null;
+            setIsRecording(false);
+          }
+        });
+      } catch (error) {
+        setIsRecording(false);
+        if (error instanceof SpeechToTextError) {
+          setChatSpeechStatus(t("workspaceSpeechError", { code: error.code }));
+          return;
+        }
+        setChatSpeechStatus(t("workspaceSpeechError", { code: "unknown" }));
+      }
+    };
 
     const clearVoiceSilenceTimer = () => {
       if (silenceTimerRef.current != null) {
@@ -385,10 +542,53 @@ const Home: React.FC = () => {
                             <input
                               type="text"
                               value={draftMessage}
-                              onChange={(event) => setDraftMessage(event.target.value)}
+                              onChange={(event) => {
+                                setDraftMessage(event.target.value);
+                                draftMessageRef.current = event.target.value;
+                              }}
                               placeholder={t("workspaceChatPlaceholder")}
                               disabled={isSendingMessage}
                             />
+                            {defaultSpeechType === "message" ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="button secondary icon-button"
+                                  onClick={handleMessageAudioToggle}
+                                  disabled={isSendingMessage}
+                                  aria-label={
+                                    isMessageAudioEnabled
+                                      ? t("workspaceSpeechDisableAudio")
+                                      : t("workspaceSpeechEnableAudio")
+                                  }
+                                  title={
+                                    isMessageAudioEnabled
+                                      ? t("workspaceSpeechDisableAudio")
+                                      : t("workspaceSpeechEnableAudio")
+                                  }
+                                >
+                                  {isMessageAudioEnabled ? <FiVolume2 aria-hidden="true" /> : <FiVolumeX aria-hidden="true" />}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button secondary icon-button"
+                                  onClick={handleChatVoiceCapture}
+                                  disabled={isSendingMessage || !isMessageAudioEnabled}
+                                  aria-label={
+                                    isRecording
+                                      ? t("workspaceSpeechStopCapture")
+                                      : t("workspaceSpeechCapture")
+                                  }
+                                  title={
+                                    isRecording
+                                      ? t("workspaceSpeechStopCapture")
+                                      : t("workspaceSpeechCapture")
+                                  }
+                                >
+                                  <FiMic aria-hidden="true" />
+                                </button>
+                              </>
+                            ) : null}
                             <button
                               type="submit"
                               className="button primary"
@@ -400,6 +600,7 @@ const Home: React.FC = () => {
                           <p className="workspace-chat__status">
                             {isSendingMessage ? t("workspaceWaitingForApi") : t("workspaceConnectedApi")}
                           </p>
+                          {chatSpeechStatus ? <p className="hint">{chatSpeechStatus}</p> : null}
                           {apiError ? (
                             <p className="workspace-chat__status workspace-chat__status--error">
                               {t("workspaceApiErrorLabel")}: {t(apiError.key, { detail: apiError.detail })}

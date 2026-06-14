@@ -4827,8 +4827,14 @@ class _ChatHomePageState extends State<ChatHomePage>
   bool get _isInputComposerExpanded =>
       _inputComposerExpanded || (_isListening && !_speakerOutputEnabled);
 
-  bool get _recordChatEnabled =>
-      _voiceConversationSettings.recordChatEnabled;
+  bool get _usesMessageSpeechType =>
+      _speechService.config.interactionType == SpeechInteractionType.message;
+
+  bool get _usesConversationSpeechType =>
+      _speechService.config.interactionType ==
+      SpeechInteractionType.conversation;
+
+  bool get _recordChatEnabled => _voiceConversationSettings.recordChatEnabled;
 
   Duration get _activeSpeechSilenceTimeout => _recordChatEnabled
       ? _voiceConversationSettings.pauseFor
@@ -4954,6 +4960,9 @@ class _ChatHomePageState extends State<ChatHomePage>
   Future<void> _onVoiceSilenceThresholdReached(
     VoiceSilenceThresholdEvent event,
   ) async {
+    if (_usesMessageSpeechType) {
+      return;
+    }
     if (!mounted || !_speechInputEnabled) {
       return;
     }
@@ -6145,10 +6154,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         ..._voiceLogContext('speech_recognition_initialization'),
       },
     );
-    if (enabled &&
-        _recordChatEnabled &&
-        _speechInputEnabled &&
-        !_isListening) {
+    if (enabled && _recordChatEnabled && _speechInputEnabled && !_isListening) {
       await _startSpeechListening(resetHandledText: true);
     }
   }
@@ -6175,8 +6181,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       'trace_id': _apiClient.flowCorrelationId,
       'processing_purpose': processingPurpose,
       'voice_compliance': _speechService.config.complianceFlags.toLogContext(),
-      'voice_conversation_settings':
-          _voiceConversationSettings.toLogContext(),
+      'voice_conversation_settings': _voiceConversationSettings.toLogContext(),
     };
   }
 
@@ -6289,6 +6294,9 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<bool> _ensureSpeechInputEnabledForVoiceMode() async {
+    if (_usesMessageSpeechType) {
+      return false;
+    }
     if (!_speakerOutputEnabled || !_speechEnabled) {
       return false;
     }
@@ -6400,6 +6408,10 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!mounted) {
       return;
     }
+    if (_usesMessageSpeechType) {
+      _onMessageSpeechResult(result);
+      return;
+    }
     final recognizedText = result.recognizedWords.trim();
     final speechStartedAt = _speechRecognitionStartedAt ?? DateTime.now();
     if (_isLikelyAssistantSpeechEcho(recognizedText)) {
@@ -6477,6 +6489,67 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
+  void _onMessageSpeechResult(JurisdictaSpeechRecognitionResult result) {
+    final recognizedText = result.recognizedWords.trim();
+    if (_isLikelyAssistantSpeechEcho(recognizedText)) {
+      unawaited(
+        widget.logger.info(
+          'Ignored assistant speech echo from message STT',
+          <String, Object?>{
+            'recognized_length': recognizedText.length,
+            ..._voiceLogContext('assistant_speech_echo_ignored'),
+          },
+        ),
+      );
+      return;
+    }
+    if (_assistantSpeechInProgress) {
+      unawaited(
+        widget.logger.info(
+          'Ignored message STT fragment during assistant speech',
+          <String, Object?>{
+            'recognized_length': recognizedText.length,
+            'final_result': result.finalResult,
+            ..._voiceLogContext('assistant_speech_stt_ignored'),
+          },
+        ),
+      );
+      return;
+    }
+    if (recognizedText.isEmpty) {
+      return;
+    }
+    _speechDraftStartedAt ??= DateTime.now();
+    if (_shouldStopAssistantSpeechForTranscript(recognizedText)) {
+      _stopAssistantSpeechForUserSpeech('recognized_speech');
+    }
+    _lastDictatedSpeechDraft = recognizedText;
+    if (result.finalResult) {
+      _lastFinalSpeechResult = recognizedText;
+    }
+    setState(() {
+      _inputController.text = recognizedText;
+      _inputController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _inputController.text.length),
+      );
+    });
+    if (result.finalResult &&
+        _shouldProcessFinalSpeechResultImmediately(recognizedText)) {
+      final action = _ruleEngine.evaluate(
+        input: recognizedText,
+        context: _buildRuleEngineContext(
+          submitMessageWhenNoRuleMatches: false,
+        ),
+      );
+      _voiceSessionOrchestrator.enqueueActionForTranscript(
+        action: action,
+        transcript: recognizedText,
+        speechStartedAt: _speechRecognitionStartedAt ?? DateTime.now(),
+      );
+      unawaited(_processQueuedSpeechActionsImmediately());
+    }
+  }
+
   bool _shouldProcessFinalSpeechResultImmediately(String recognizedText) {
     if (recognizedText.isEmpty) {
       return false;
@@ -6535,10 +6608,12 @@ class _ChatHomePageState extends State<ChatHomePage>
     });
     var promptedBeforeStop = false;
     if (isListening) {
-      _voiceSessionOrchestrator.startListening(
-        now: _speechRecognitionStartedAt,
-      );
-    } else {
+      if (_usesConversationSpeechType) {
+        _voiceSessionOrchestrator.startListening(
+          now: _speechRecognitionStartedAt,
+        );
+      }
+    } else if (_usesConversationSpeechType) {
       if (!_stoppingSpeechManually && _speechInputEnabled) {
         promptedBeforeStop = _voiceSessionOrchestrator.checkInactivity(
           now: DateTime.now(),
@@ -6561,7 +6636,13 @@ class _ChatHomePageState extends State<ChatHomePage>
       var shouldProcess = _processSpeechOnStop;
       var shouldSubmit = _submitSpeechOnStop;
       if (stoppedAutomatically && _speechInputEnabled) {
-        if (promptedBeforeStop) {
+        if (_usesMessageSpeechType) {
+          final finalSpeech = (_lastFinalSpeechResult ?? '').trim();
+          if (finalSpeech.isEmpty ||
+              !_shouldProcessFinalSpeechResultImmediately(finalSpeech)) {
+            unawaited(_resumeSpeechListeningAfterAutoStop());
+          }
+        } else if (promptedBeforeStop) {
           shouldProcess = false;
           shouldSubmit = false;
         } else if (_lastFinalSpeechResult == null) {
@@ -7227,6 +7308,38 @@ class _ChatHomePageState extends State<ChatHomePage>
 
   Future<void> _toggleSpeechInput() async {
     final wasAssistantSpeaking = _assistantSpeechInProgress;
+    if (_usesMessageSpeechType) {
+      _setInputComposerExpanded(true);
+      _inputFocusNode.requestFocus();
+      _lastHandledSpeechText = null;
+      if (!_speechEnabled) {
+        _showSnackbar(_strings.t('speech_unavailable'));
+        return;
+      }
+      if (_assistantSpeechInProgress) {
+        _stopAssistantSpeechForUserSpeech('microphone_button');
+      } else {
+        await _speaker.stop();
+      }
+      if (!_speechInputEnabled) {
+        await _toggleSpeechInputEnabled(
+          speakReadyMessage: !wasAssistantSpeaking,
+        );
+        if (!_speechInputEnabled || !mounted) {
+          return;
+        }
+      }
+      if (_isListening) {
+        await _stopSpeechListening(
+          submitAfterStop: false,
+          processStoppedInput: true,
+        );
+        return;
+      }
+      await _startSpeechListening(resetHandledText: true);
+      return;
+    }
+
     if (!_speakerOutputEnabled) {
       _setInputComposerExpanded(true);
       _inputFocusNode.requestFocus();
@@ -7587,19 +7700,26 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (nextValue) {
       _setInputComposerExpanded(true);
       _inputFocusNode.requestFocus();
-      if (!_isListening) {
+      if (_usesConversationSpeechType && !_isListening) {
         await _startSpeechListening(resetHandledText: true);
       }
     }
 
     if (nextValue && speakReadyMessage) {
+      final readyMessage = _usesMessageSpeechType
+          ? speechMessageModeReadyMessage(
+              _selectedLocale.languageCode,
+              firstName: _signedInUser.firstName,
+            )
+          : speechInputReadyMessage(
+              _selectedLocale.languageCode,
+              firstName: _signedInUser.firstName,
+            );
+      _appendAssistantMessage(readyMessage, speak: false);
       await _speaker.stop();
       await _speakAssistantMessage(
-        speechInputReadyMessage(
-          _selectedLocale.languageCode,
-          firstName: _signedInUser.firstName,
-        ),
-        resumeSpeechInputOnCompletion: true,
+        readyMessage,
+        resumeSpeechInputOnCompletion: _usesConversationSpeechType,
       );
     }
 
@@ -8719,12 +8839,14 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
     _lastFinalSpeechResult = null;
     _speechDraftStartedAt = null;
-    _submitSpeechOnStop = true;
+    _submitSpeechOnStop = _usesConversationSpeechType;
     _processSpeechOnStop = true;
     _speechRecognitionStartedAt = DateTime.now();
-    _voiceSessionOrchestrator.startListening(
-      now: _speechRecognitionStartedAt,
-    );
+    if (_usesConversationSpeechType) {
+      _voiceSessionOrchestrator.startListening(
+        now: _speechRecognitionStartedAt,
+      );
+    }
     await _speechRecognizer.listen(
       onResult: _onSpeechResult,
       listenFor: _activeSpeechMaxListenDuration,

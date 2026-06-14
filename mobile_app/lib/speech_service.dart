@@ -32,6 +32,14 @@ const String _speechProviderDefine = String.fromEnvironment(
   'AIJ_SPEECH_PROVIDER',
   defaultValue: '',
 );
+const String _speechTypeDefine = String.fromEnvironment(
+  'AIJ_SPEECHTYPE',
+  defaultValue: '',
+);
+const String _speechTypeAliasDefine = String.fromEnvironment(
+  'AIJ_SPEECH_TYPE',
+  defaultValue: '',
+);
 const String _azureSpeechKeyDefine = String.fromEnvironment(
   'AIJ_AZURE_SPEECH_KEY',
   defaultValue: '',
@@ -63,6 +71,8 @@ const String _localTtsModelDefine = String.fromEnvironment(
 
 enum SpeechMode { local, azure }
 
+enum SpeechInteractionType { message, conversation }
+
 SpeechMode _parseSpeechMode(String rawValue) {
   switch (rawValue.trim().toLowerCase()) {
     case 'azure':
@@ -73,6 +83,16 @@ SpeechMode _parseSpeechMode(String rawValue) {
     case 'local':
     default:
       return SpeechMode.local;
+  }
+}
+
+SpeechInteractionType _parseSpeechInteractionType(String rawValue) {
+  switch (rawValue.trim().toLowerCase()) {
+    case 'conversation':
+      return SpeechInteractionType.conversation;
+    case 'message':
+    default:
+      return SpeechInteractionType.message;
   }
 }
 
@@ -103,6 +123,7 @@ class JurisdictaSpeechRecognitionError {
 class SpeechServiceConfig {
   const SpeechServiceConfig({
     required this.mode,
+    this.interactionType = SpeechInteractionType.message,
     this.azureKey,
     this.azureRegion,
     this.azureEndpoint,
@@ -124,8 +145,12 @@ class SpeechServiceConfig {
     final requestedMode = _speechModeDefine.trim().isNotEmpty
         ? _speechModeDefine
         : _speechProviderDefine;
+    final requestedType = _speechTypeDefine.trim().isNotEmpty
+        ? _speechTypeDefine
+        : _speechTypeAliasDefine;
     return SpeechServiceConfig(
       mode: _parseSpeechMode(requestedMode),
+      interactionType: _parseSpeechInteractionType(requestedType),
       azureKey: _emptyToNull(_azureSpeechKeyDefine),
       azureRegion: _emptyToNull(_azureSpeechRegionDefine),
       azureEndpoint: _emptyToNull(_azureSpeechEndpointDefine),
@@ -141,6 +166,7 @@ class SpeechServiceConfig {
   }
 
   final SpeechMode mode;
+  final SpeechInteractionType interactionType;
   final String? azureKey;
   final String? azureRegion;
   final String? azureEndpoint;
@@ -166,6 +192,7 @@ class SpeechServiceConfig {
 
   SpeechServiceConfig copyWith({
     SpeechMode? mode,
+    SpeechInteractionType? interactionType,
     String? azureKey,
     String? azureRegion,
     String? azureEndpoint,
@@ -181,6 +208,7 @@ class SpeechServiceConfig {
   }) {
     return SpeechServiceConfig(
       mode: mode ?? this.mode,
+      interactionType: interactionType ?? this.interactionType,
       azureKey: azureKey ?? this.azureKey,
       azureRegion: azureRegion ?? this.azureRegion,
       azureEndpoint: azureEndpoint ?? this.azureEndpoint,

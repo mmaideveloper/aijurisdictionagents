@@ -1,6 +1,7 @@
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 
 agent = AIAudioToolRecognizerAgent()
+print("speechtype default => message (review STT transcript before send)")
 for text in [
     "vytvor pripad splnomocnenie",
     "I want to validate company",

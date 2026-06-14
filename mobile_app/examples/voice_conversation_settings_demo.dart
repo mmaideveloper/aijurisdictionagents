@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:ai_jurisdiction_mobile/chat/voice_conversation_settings.dart';
 
 void main() {
@@ -7,8 +9,8 @@ void main() {
   final encoded = encodeVoiceConversationSettings(settings);
   final decoded = decodeVoiceConversationSettings(encoded);
 
-  print('Record chat enabled: ${decoded.recordChatEnabled}');
-  print('User barge-in enabled: ${decoded.allowBargeIn}');
-  print('Pause window: ${decoded.pauseFor.inSeconds}s');
-  print('Audio retained by app: false');
+  stdout.writeln('Record chat enabled: ${decoded.recordChatEnabled}');
+  stdout.writeln('User barge-in enabled: ${decoded.allowBargeIn}');
+  stdout.writeln('Pause window: ${decoded.pauseFor.inSeconds}s');
+  stdout.writeln('Audio retained by app: false');
 }

@@ -1,4 +1,4 @@
-"""Minimal runnable demo for mobile voice flow behavior."""
+"""Minimal runnable demo for message and conversation voice flow behavior."""
 
 from dataclasses import dataclass
 import sys
@@ -14,6 +14,20 @@ class VoiceState:
 
 
 def run_demo() -> None:
+    print("speechtype=message (default)")
+    draft = ""
+    for transcript in (
+        "I want information about company ACME s r o",
+        "send",
+    ):
+        if transcript == "send":
+            print(f"Spoken send -> submit reviewed draft: {draft}")
+            draft = ""
+            continue
+        draft = f"{draft} {transcript}".strip()
+        print(f"STT transcript visible in input box: {draft}")
+
+    print("\nspeechtype=conversation")
     transcript = (
         "chcem vytvorit pripad s nazovom splnomocnenie 1.0 posli"
     )
@@ -31,8 +45,8 @@ def run_demo() -> None:
 
     state.awaiting_confirmation = True
     state.pending_intent = "submit_message"
-    for answer in ("ano", "�no", "Ã¡no", "nie"):
-        normalized_answer = answer.replace("�", "a").replace("Ã¡", "a")
+    for answer in ("ano", "nie"):
+        normalized_answer = answer
         if normalized_answer == "ano":
             print(f"User answered {answer} -> stop mic during processing and run submit_message")
             state.awaiting_confirmation = False
