@@ -31,6 +31,13 @@ Frontend environment variables:
 - `VITE_API_KEY` (default: `aijuris`)
 - `VITE_API_COUNTRY` (default: `SK`)
 - `VITE_API_LANGUAGE` (default: `en`)
+- `VITE_AIJ_SPEECHTYPE` (default: `message`; use `conversation` for the existing Voice-agent transcript flow)
+
+Speech input:
+
+- `message` mode shows audio and microphone controls in the normal chat composer. Browser-native STT fills the visible text input first, and the reviewed text is sent through the normal chat API path.
+- `conversation` mode keeps the existing Voice-agent transcript screen available for speech-first sessions.
+- The browser path does not upload raw audio to the API. If browser STT is unavailable, the UI falls back to typed input. A future remote STT fallback must require explicit consent before raw audio upload.
 
 Flow used by the workspace:
 

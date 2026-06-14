@@ -21,6 +21,11 @@ controls, user transparency, and human oversight.
 
 ## Data Minimization for Audio / Transcript
 
+- `speechtype=message` is the default for mobile and web. The client turns
+  speech into a visible message draft first, then sends the reviewed transcript
+  through the normal chat/action pipeline.
+- `speechtype=conversation` remains available only as an opt-in continuous
+  voice-session flow.
 - Collect only the audio segment needed for the active speech recognition turn.
 - Do not log or persist full raw audio.
 - Do not log full transcripts. Logs may include transcript length, language,

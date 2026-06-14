@@ -155,6 +155,22 @@ void main() {
 
       expect(service.modeLabel, 'local');
       expect(service.runtimeModeLabel, 'device-speech');
+      expect(service.config.interactionType, SpeechInteractionType.message);
+    });
+
+    test('preserves conversation interaction type when requested', () {
+      final service = factory.create(
+        config: const SpeechServiceConfig(
+          mode: SpeechMode.local,
+          interactionType: SpeechInteractionType.conversation,
+        ),
+      );
+
+      expect(service.modeLabel, 'local');
+      expect(
+        service.config.interactionType,
+        SpeechInteractionType.conversation,
+      );
     });
 
     test('creates azure service when azure mode is requested', () {

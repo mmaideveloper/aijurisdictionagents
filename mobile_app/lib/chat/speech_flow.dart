@@ -53,6 +53,16 @@ const Map<String, String> _inputReadyMessagesByLanguage = <String, String>{
   'GE': 'Hallo{{name_part}}, ich höre zu. Zum Senden sagen Sie „Senden“.',
 };
 
+const Map<String, String> _messageModeReadyMessagesByLanguage =
+    <String, String>{
+  'SK':
+      'Ahoj{{name_part}}, som Jurisdicta. Ak chcete poslať hlasovú správu, kliknite na ikonu mikrofónu pri textovom poli. Správu pred odoslaním uvidíte v texte.',
+  'EN':
+      'Hello{{name_part}}, I am Jurisdicta. To send an audio message, click the microphone icon next to the text box. You will see the message text before sending.',
+  'GE':
+      'Hallo{{name_part}}, ich bin Jurisdicta. Um eine Sprachnachricht zu senden, klicken Sie auf das Mikrofonsymbol neben dem Textfeld. Sie sehen den Text vor dem Senden.',
+};
+
 String? resolveStoredProfileName({
   String? firstName,
   String? lastName,
@@ -102,6 +112,15 @@ String speechInputReadyMessage(String languageCode, {String? firstName}) {
   final resolvedFirstName = (firstName ?? '').trim();
   final template = _inputReadyMessagesByLanguage[normalized] ??
       _inputReadyMessagesByLanguage['SK']!;
+  final namePart = resolvedFirstName.isEmpty ? '' : ', $resolvedFirstName';
+  return template.replaceAll('{{name_part}}', namePart);
+}
+
+String speechMessageModeReadyMessage(String languageCode, {String? firstName}) {
+  final normalized = normalizeSpeechLanguageCode(languageCode);
+  final resolvedFirstName = (firstName ?? '').trim();
+  final template = _messageModeReadyMessagesByLanguage[normalized] ??
+      _messageModeReadyMessagesByLanguage['SK']!;
   final namePart = resolvedFirstName.isEmpty ? '' : ', $resolvedFirstName';
   return template.replaceAll('{{name_part}}', namePart);
 }

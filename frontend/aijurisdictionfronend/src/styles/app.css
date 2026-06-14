@@ -785,6 +785,12 @@
   box-shadow: var(--shadow);
 }
 
+.button.secondary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink);
+}
+
 .button.ghost {
   background: transparent;
   border: 1px solid var(--border);
@@ -792,6 +798,13 @@
 
 .button.full {
   width: 100%;
+}
+
+.button.icon-button {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  flex: 0 0 auto;
 }
 
 .timeline {
@@ -1505,10 +1518,14 @@ textarea {
 }
 
 .workspace-chat__composer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   gap: 0.8rem;
   align-items: center;
+}
+
+.workspace-chat__composer input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .workspace-chat__status {
@@ -1520,4 +1537,3 @@ textarea {
 .workspace-chat__status--error {
   color: #8d2b2b;
 }
-
