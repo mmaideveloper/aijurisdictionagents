@@ -188,6 +188,61 @@ Purpose: prepare the Ubuntu server `jurisdigta-server` at `192.168.1.50` for SSH
 - Preserve SSH and deployment logs for traceability, but avoid logging personal data or legal-risk user outputs.
 - Require human review before using this access for production changes that affect legal-risk workflows.
 
+## Dynamic DNS For Local JurisDigta Subdomains
+
+Related runbook: `Deployment/local-dynamic-dns-domain-setup.md`
+
+Purpose: point `web.jurisdigta.eu`, `api.jurisdigta.eu`, `mcp.jurisdigta.eu`, and `admin.jurisdigta.eu` to the local Ubuntu 26.04 server when the internet connection does not have a static public IP address.
+
+### Provider And Owner
+
+- DNS provider: setup.sk DNS zone for `jurisdigta.eu`.
+- DNS provider remains setup.sk for `jurisdigta.eu`; Cloudflare Tunnel is the preferred ingress path using partial DNS/CNAME setup with records maintained in setup.sk.
+- Required owner: infrastructure operator with setup.sk, router/firewall, and Ubuntu server administrator access.
+- Target environments: test first; production only after external DNS, TLS, authentication, logging, backup, and human-oversight validation are complete.
+
+### Manual Setup Steps
+
+1. Keep `jurisdigta.eu` DNS authoritative in setup.sk and use Cloudflare Tunnel partial DNS/CNAME setup for ingress.
+2. Create a named Cloudflare Tunnel in Cloudflare Zero Trust, copy the generated connector token, and install `cloudflared` on the Ubuntu server as a systemd service.
+3. Configure Cloudflare public hostnames for `web`, `api`, `mcp`, and `admin` pointing to local services on the server; validate local ports with `curl` before publishing DNS.
+4. In setup.sk, create `CNAME` records for those subdomains pointing to the Cloudflare-provided partial DNS targets, typically `<full-hostname>.cdn.cloudflare.net`.
+5. Keep router port forwards for TCP `80` and `443` disabled for the tunnel path; public traffic should arrive through outbound `cloudflared` connections.
+6. Configure UFW so local services are reachable only from loopback/LAN as needed; do not rely on direct public router NAT for tunnel traffic.
+7. Configure local nginx or service listeners for `web`, `api`, `mcp`, and `admin`.
+8. Validate HTTPS externally from outside the LAN after DNS propagation.
+9. Protect `admin.jurisdigta.eu` and MCP endpoints with Cloudflare Access, authentication, rate limits, audit logging, and preferably VPN/IP allow-list before production use.
+
+### Secrets And Access Values
+
+- setup.sk account credentials; never commit them.
+- Cloudflare Tunnel token/connector credentials; keep them server-local only and never commit them, paste them into tickets, or expose them in screenshots/logs.
+- Router administrator credentials; never commit them.
+- TLS is terminated/managed by Cloudflare for the public tunnel hostname path; do not commit any origin certificates if optional origin TLS is later added.
+
+### Validation Steps
+
+- Cloudflare Zero Trust shows the tunnel as healthy.
+- `web.jurisdigta.eu`, `api.jurisdigta.eu`, `mcp.jurisdigta.eu`, and `admin.jurisdigta.eu` resolve through setup.sk CNAME records to the Cloudflare tunnel targets.
+- Router forwards for public TCP `80` and `443` remain disabled unless a separate documented exception exists.
+- `cloudflared --version`, `systemctl status cloudflared --no-pager`, and `journalctl -u cloudflared -n 100 --no-pager` succeed on the server.
+- External checks such as `curl -fsS https://api.jurisdigta.eu/health` succeed from outside the LAN.
+
+### Rollback Notes
+
+- Remove setup.sk `CNAME` records for the service subdomains.
+- Disable the Cloudflare Tunnel public hostnames and stop/disable `cloudflared`; if any direct router forwards were created as an exception, disable them too.
+- Disable the nginx virtual hosts and reload nginx.
+- Revoke Cloudflare tunnel tokens if no longer needed or if exposed.
+- Keep replacement DNS/TLS/ingress in place before disabling active production traffic.
+
+### Privacy And Compliance Notes
+
+- Use privacy-by-design: expose only the reverse proxy and keep databases/internal ports private.
+- Minimize access logs and configure retention; do not log legal case contents, uploaded document text, tokens, API keys, or credentials.
+- Require strong authentication and human oversight for legal-risk admin and MCP operations before production exposure.
+- Provide user transparency when legal workflows use AI assistance, and retain traceable but privacy-safe audit logs.
+
 ## JurisDigta Self-Managed Server Deployment Preparation
 
 Related runbook: `Deployment/self-managed-server-deployment.md`
