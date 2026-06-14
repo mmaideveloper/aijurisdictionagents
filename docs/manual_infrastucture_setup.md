@@ -60,6 +60,7 @@ Purpose: migrate the existing local PostgreSQL laws collector database into Azur
 - `AZURE_MANAGED_IDENTITY_NAME`
 - `AZURE_STORAGE_ACCOUNT_NAME`
 - `AZURE_LAWS_STORAGE_CONTAINER_NAME`
+- `MCP_API_JWT_SECRET` as a long random per-environment secret for remote MCP OAuth/JWT token signing
 
 ### Validation Steps
 
@@ -134,3 +135,122 @@ Use Firebase Cloud Messaging directly.
 - Disable the backend push sender configuration if push delivery causes operational issues.
 - Keep document generation and in-app document-ready status functional even when push sending is disabled.
 - Revoke compromised Firebase service account credentials immediately and rotate the corresponding GitHub/Azure secrets.
+
+## JurisDigta Server SSH Access
+
+Related runbook: `Deployment/manual-server-setup.md`
+
+Purpose: prepare the Ubuntu server `jurisdigta-server` at `192.168.1.50` for SSH access from Codex using public-key authentication.
+
+### Provider And Owner
+
+- Provider: self-managed Ubuntu Server on the local/private network.
+- Required owner: infrastructure operator with console access to `jurisdigta-server`.
+- Target environments: manual server setup before any test or production deployment work.
+
+### Manual Setup Steps
+
+1. Install Ubuntu Server and create the non-root administrator user `jurisdigta-admin`.
+2. Install and enable OpenSSH Server with `sudo apt install openssh-server` and `sudo systemctl enable --now ssh`.
+3. Validate port `22` locally with `ss -tlnp | grep ':22'`.
+4. Validate workstation connectivity with `Test-NetConnection -ComputerName 192.168.1.50 -Port 22`.
+5. Generate an Ed25519 SSH key on the Codex workstation.
+6. Copy only the public key to a USB drive.
+7. Mount the USB partition on Ubuntu, avoiding `/boot/efi`.
+8. Append the public key to `/home/jurisdigta-admin/.ssh/authorized_keys`.
+9. Create the local SSH alias `jurisdigta-server` in `C:\Users\maton\.ssh\config`.
+10. Validate with `ssh -o BatchMode=yes jurisdigta-server "hostname && whoami"`.
+
+### Secrets And Access Values
+
+- Private key: `C:\Users\maton\.ssh\id_ed25519`; keep local and never commit or copy to the server.
+- Public key: `C:\Users\maton\.ssh\id_ed25519.pub`; safe to copy into `authorized_keys`.
+- Server user: `jurisdigta-admin`.
+- Server host/IP: `192.168.1.50`.
+
+### Validation Steps
+
+- `systemctl status ssh --no-pager` shows the SSH service is active.
+- `Test-NetConnection` from Windows returns `TcpTestSucceeded : True`.
+- `ssh jurisdigta-server` accepts the host key and logs in as `jurisdigta-admin`.
+- Non-interactive validation returns `jurisdigta-server` and `jurisdigta-admin`.
+
+### Rollback Notes
+
+- Remove the public key line ending in `maton-jurisdigta-server` from `/home/jurisdigta-admin/.ssh/authorized_keys`.
+- Remove or update `C:\Users\maton\.ssh\config` if the host alias changes.
+- Remove local private/public key files only after confirming they are not reused by any other host.
+
+### Privacy And Compliance Notes
+
+- Use public-key authentication and least-privilege server accounts.
+- Do not commit private keys, passwords, host inventories with sensitive access details, or deployment secrets.
+- Preserve SSH and deployment logs for traceability, but avoid logging personal data or legal-risk user outputs.
+- Require human review before using this access for production changes that affect legal-risk workflows.
+
+## JurisDigta Self-Managed Server Deployment Preparation
+
+Related runbook: `Deployment/self-managed-server-deployment.md`
+
+Purpose: install and validate the software needed to deploy JurisDigta API, system code, laws connector, and PostgreSQL database from GitHub onto the self-managed Ubuntu server `jurisdigta-server`.
+
+### Provider And Owner
+
+- Provider: self-managed Ubuntu Server on the local/private network, with optional public DNS and TLS for JurisDigta subdomains.
+- Required owner: infrastructure operator with server administrator access.
+- Target environments: test first; production only after package validation, API health check, laws connector migration validation, backup policy, and human oversight process are confirmed.
+
+### Manual Setup Steps
+
+1. Verify SSH access with `ssh -o BatchMode=yes jurisdigta-server "hostname && whoami"`.
+2. Enable non-interactive sudo for the deployment account only if Codex or automation will install packages remotely.
+3. Install base packages: `git`, `curl`, `unzip`, `jq`, `rsync`, `ufw`, `nginx`, `certbot`, Python venv/pip tooling, and PostgreSQL client tools.
+4. Install Docker Engine and Docker Compose plugin from Docker's Ubuntu apt repository.
+5. Add `jurisdigta-admin` to the `docker` group and reconnect SSH.
+6. Install Node.js/npm and GitHub CLI.
+7. Create `/srv/jurisdigta` deployment, runtime storage, log, and secrets directories.
+8. Clone `https://github.com/mmaideveloper/aijurisdictionagents.git` to `/srv/jurisdigta/app`.
+9. Create server-local environment configuration under `/srv/jurisdigta/secrets/` and keep it out of Git.
+10. Start and validate PostgreSQL through Docker using repository storage layout.
+11. Build and smoke-test the API with `curl -fsS http://127.0.0.1:8080/health`.
+12. Build the laws connector image and apply laws database migrations before live import.
+13. Configure firewall and nginx only after local health checks pass.
+14. Configure Certbot only after DNS and inbound ports `80` and `443` are confirmed.
+15. Add systemd units or timers only after the exact smoke deployment commands are validated.
+
+### Secrets And Environment Values
+
+- Server-local environment file path: `/srv/jurisdigta/secrets/jurisdigta.env`.
+- Keep secret file permissions at `600`.
+- Required production LLM default: `LLM_PROVIDER=azurefoundry`.
+- Required Azure Foundry values when `LLM_PROVIDER=azurefoundry`: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and `AZURE_OPENAI_API_KEY`.
+- PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
+- Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
+
+### Validation Steps
+
+- `sudo -n true` succeeds for automation-enabled setup.
+- `docker --version`, `docker compose version`, `node --version`, `npm --version`, `python3 --version`, `psql --version`, and `gh --version` succeed.
+- `docker run --rm hello-world` succeeds after reconnecting with Docker group membership.
+- Repository checkout under `/srv/jurisdigta/app` is on the intended branch.
+- PostgreSQL health check succeeds.
+- API health check returns HTTP 200 at `http://127.0.0.1:8080/health`.
+- Repository minimal runnable example succeeds: `python examples/minimal_demo.py`.
+- UFW allows only expected ingress, typically SSH plus nginx HTTP/HTTPS.
+
+### Rollback Notes
+
+- Stop Docker Compose workloads before changing runtime configuration.
+- Back up `/srv/jurisdigta/app/runs/storage` before removing containers, volumes, or the repository checkout.
+- Remove `/etc/sudoers.d/jurisdigta-admin-codex` to revoke Codex passwordless sudo.
+- Remove nginx site config or Certbot certificates only after DNS is routed away or rollback target is ready.
+- Remove Docker/GitHub CLI/nginx packages only if the server is being decommissioned.
+
+### Privacy And Compliance Notes
+
+- Treat server environment files, PostgreSQL data, document storage, logs, and backups as sensitive operational data.
+- Do not commit or print API keys, PostgreSQL passwords, full connection strings, access tokens, or generated legal documents.
+- Keep PostgreSQL and document runtime files outside `databases/` and under `/srv/jurisdigta/.../runs/storage`.
+- Preserve deployment and collector logs for traceability, while avoiding personal data and legal-risk content in logs.
+- Use `azurefoundry` for production-like local starts unless deterministic offline testing was explicitly requested.
+- Keep legal-risk outputs subject to human oversight before production traffic is enabled.

@@ -21,6 +21,7 @@ from app.document_templates.api import router as document_templates_router
 from app.flow_packs.api import router as flow_packs_router
 from app.laws_api import router as laws_router
 from app.logging_config import configure_logging
+from app.mcp_api import oauth_router as mcp_oauth_router
 from app.mcp_api import router as mcp_router
 from app.observability_api import router as observability_router
 from app.telemetry import configure_telemetry, instrument_fastapi
@@ -31,6 +32,7 @@ from app.versioning import (
     get_mobile_app_apk_download_url,
     get_mobile_app_release_url,
     get_mobile_app_version,
+    get_web_app_version,
 )
 from app.voice_intent_api import router as voice_intent_router
 
@@ -152,6 +154,7 @@ app.include_router(users_router)
 app.include_router(cases_router)
 app.include_router(voice_intent_router)
 app.include_router(observability_router)
+app.include_router(mcp_oauth_router)
 app.include_router(mcp_router)
 instrument_fastapi(app)
 
@@ -296,6 +299,7 @@ def version() -> JSONResponse:
             "law_reference_links": law_payload["law_reference_links"],
             "laws_by_country": laws_by_country,
             "mobile_app_version": get_mobile_app_version(),
+            "web_app_version": get_web_app_version(),
             "mobile_app_release_url": get_mobile_app_release_url(),
             "mobile_app_apk_download_url": get_mobile_app_apk_download_url(),
         }

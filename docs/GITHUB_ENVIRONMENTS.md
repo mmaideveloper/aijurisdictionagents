@@ -151,6 +151,7 @@ Required GitHub Environment secret:
 | Secret | Purpose |
 | --- | --- |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI key used by the API and document processor for chat completions and embeddings |
+| `MCP_API_JWT_SECRET` | Long random secret used to sign MCP OAuth/JWT bearer tokens for ChatGPT, Claude, VS Code, and other remote MCP clients |
 | `AZURE_POSTGRES_ADMIN_PASSWORD` | PostgreSQL admin password |
 
 Optional and conditional GitHub Environment secrets:

@@ -77,6 +77,10 @@ Install or refresh all repo automations:
 
 For details, see `docs/CODEX_AUTOMATIONS.md`.
 
+For Windows laptops that run long Codex tasks, configure plugged-in power
+settings so the laptop stays awake while the screen can turn off. See
+`docs/CODEX_AUTOMATIONS.md`.
+
 Audio/action recognizer architecture and action-agent mapping:
 
 Voice intent router for web and mobile STT commands:

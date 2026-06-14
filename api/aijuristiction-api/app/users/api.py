@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.mcp_tokens import create_mcp_api_token
 from app.security import require_api_key
 from app.services.email_scheduler import EmailScheduler
 from app.users.notifications import (
@@ -61,6 +62,13 @@ class SignUpRequest(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     address: str | None = None
+    city: str | None = None
+    country: str | None = None
+    zip_code: str | None = None
+    tax_number: str | None = None
+    identity_card_number: str | None = None
+    date_of_birth: str | None = None
+    social_security_number: str | None = None
     data_processing_consent_accepted: bool = False
     data_processing_consent_version: str | None = None
     mcp_api_key_expires_at: str | None = None
@@ -165,7 +173,7 @@ class DeviceAuthUserProfileResponse(UserProfileResponse):
 
 
 class MCPApiKeyCreateRequest(BaseModel):
-    expires_in_days: int = Field(default=30, ge=1, le=365)
+    expires_in_days: int = Field(default=1, ge=1, le=365)
 
 
 class MCPApiKeyCreateResponse(BaseModel):
@@ -202,6 +210,13 @@ def sign_up(
             first_name=payload.first_name,
             last_name=payload.last_name,
             address=payload.address,
+            city=payload.city,
+            country=payload.country,
+            zip_code=payload.zip_code,
+            tax_number=payload.tax_number,
+            identity_card_number=payload.identity_card_number,
+            date_of_birth=payload.date_of_birth,
+            social_security_number=payload.social_security_number,
             data_processing_consent_at=_now_if_accepted(payload.data_processing_consent_accepted),
             data_processing_consent_version=payload.data_processing_consent_version,
         )
@@ -256,6 +271,13 @@ def complete_registration(
             first_name=payload.first_name,
             last_name=payload.last_name,
             address=payload.address,
+            city=payload.city,
+            country=payload.country,
+            zip_code=payload.zip_code,
+            tax_number=payload.tax_number,
+            identity_card_number=payload.identity_card_number,
+            date_of_birth=payload.date_of_birth,
+            social_security_number=payload.social_security_number,
             data_processing_consent_at=_now_if_accepted(payload.data_processing_consent_accepted),
             data_processing_consent_version=payload.data_processing_consent_version,
         )
@@ -401,11 +423,10 @@ def create_user_mcp_api_key(
     payload: MCPApiKeyCreateRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> MCPApiKeyCreateResponse:
-    _ = store.get_user(user_id=user_id)
-    raw_key = f"mcp_{uuid4().hex}{uuid4().hex}"
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days)).replace(
-        microsecond=0
-    ).isoformat()
+    user = store.get_user(user_id=user_id)
+    expires_at_dt = (datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days)).replace(microsecond=0)
+    raw_key = create_mcp_api_token(user=user, expires_at=expires_at_dt)
+    expires_at = expires_at_dt.isoformat()
     store.set_user_mcp_api_key(user_id=user_id, api_key=raw_key, expires_at=expires_at)
     return MCPApiKeyCreateResponse(
         user_id=user_id,

@@ -1,0 +1,781 @@
+# Self-Managed Server Deployment Preparation
+
+This runbook documents the software and server preparation needed to deploy JurisDigta API, system code, laws connector, and PostgreSQL database from GitHub onto the Ubuntu host reachable as `jurisdigta-server`.
+
+Current target verified from Codex on 2026-06-13:
+
+- SSH alias: `jurisdigta-server`
+- Hostname: `jurisdigta-server`
+- Server user: `jurisdigta-admin`
+- OS: Ubuntu 26.04 LTS
+- Available capacity: about `409G` free disk and `11GiB` RAM
+- Installed before deployment prep: `git`, `python3`, `curl`, `rsync`, `ufw`
+- Missing before deployment prep: Docker, Docker Compose, Node.js, npm, pip, PostgreSQL client tools, GitHub CLI, nginx, unzip
+
+## Compliance And Security Baseline
+
+- Use the non-root account `jurisdigta-admin` for SSH and deployment operations.
+- Keep application secrets in server-local environment files or runtime secret stores, never in Git.
+- Restrict environment files to the deployment user and root: `chmod 600`.
+- Keep PostgreSQL runtime data under `/srv/jurisdigta/runs/storage/...` to mirror the repository layout.
+- Keep SQL assets in the repository under `databases/`; do not place database runtime files there.
+- Enable logs for traceability, but avoid logging personal data, legal facts, document contents, access tokens, API keys, or full PostgreSQL connection strings.
+- Require human review before production rollout of legal-risk workflows.
+- For GDPR and EU AI Act expectations, preserve data minimization, retention/deletion controls, user transparency, traceable operational logging, and human oversight for legal outputs.
+
+## 1. Confirm Sudo Access
+
+Codex needs non-interactive sudo to install packages and configure services. If this check fails, perform the console step below.
+
+From the Windows workstation:
+
+```powershell
+ssh -o BatchMode=yes jurisdigta-server "sudo -n true && echo SUDO_READY"
+```
+
+Expected output:
+
+```text
+SUDO_READY
+```
+
+If the command reports that interactive authentication is required, run this once in an interactive server console or interactive SSH session:
+
+```bash
+sudo usermod -aG sudo jurisdigta-admin
+echo 'jurisdigta-admin ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/jurisdigta-admin-codex
+sudo chmod 440 /etc/sudoers.d/jurisdigta-admin-codex
+```
+
+Rollback for passwordless sudo:
+
+```bash
+sudo rm -f /etc/sudoers.d/jurisdigta-admin-codex
+```
+
+## 2. Install Base Packages
+
+Install operating-system packages required for repository checkout, containers, PostgreSQL administration, reverse proxy, and TLS.
+
+```bash
+sudo apt update
+sudo apt install -y \
+  ca-certificates \
+  curl \
+  gnupg \
+  lsb-release \
+  git \
+  unzip \
+  jq \
+  rsync \
+  ufw \
+  nginx \
+  certbot \
+  python3-certbot-nginx \
+  python3 \
+  python3-venv \
+  python3-pip \
+  postgresql-client \
+  apt-transport-https \
+  software-properties-common
+```
+
+## 3. Install Docker Engine And Compose
+
+Use Docker for the API image, laws collector image, and local PostgreSQL with `pgvector`.
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+. /etc/os-release
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker jurisdigta-admin
+sudo systemctl enable --now docker
+```
+
+After group membership changes, reconnect SSH before running Docker without `sudo`.
+
+Validate:
+
+```bash
+docker --version
+docker compose version
+docker run --rm hello-world
+```
+
+## 4. Install Node.js And GitHub CLI
+
+Node.js is needed for frontend/system build paths. GitHub CLI is useful for authenticated repository and workflow operations.
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+  sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
+  sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+
+sudo apt update
+sudo apt install -y gh
+```
+
+Validate:
+
+```bash
+node --version
+npm --version
+gh --version
+```
+
+GitHub authentication must be done by an operator. Do not paste tokens into shell history. Prefer device/browser auth:
+
+```bash
+gh auth login --hostname github.com --git-protocol https --web
+gh auth status
+```
+
+Required scopes when project automation is used later:
+
+```bash
+gh auth refresh -s read:project,project
+```
+
+## 5. Prepare Deployment Directories
+
+Use `/srv/jurisdigta` as the server deployment root and keep runtime data out of Git.
+
+```bash
+sudo mkdir -p /srv/jurisdigta
+sudo chown -R jurisdigta-admin:jurisdigta-admin /srv/jurisdigta
+mkdir -p /srv/jurisdigta/runs/storage/api/postgres/data
+mkdir -p /srv/jurisdigta/runs/storage/laws-collector/postgres/data
+mkdir -p /srv/jurisdigta/runs/logs
+mkdir -p /srv/jurisdigta/secrets
+chmod 700 /srv/jurisdigta/secrets
+```
+
+## 6. Clone Or Update From GitHub
+
+Clone the repository once:
+
+```bash
+cd /srv/jurisdigta
+git clone https://github.com/mmaideveloper/aijurisdictionagents.git app
+cd /srv/jurisdigta/app
+git status --short --branch
+```
+
+Update an existing checkout:
+
+```bash
+cd /srv/jurisdigta/app
+git fetch --all --prune
+git checkout main
+git pull --ff-only origin main
+```
+
+## 7. Configure Server Environment
+
+Create a server-local environment file from the repository example and edit it manually.
+
+```bash
+cd /srv/jurisdigta/app
+cp .env.example /srv/jurisdigta/secrets/jurisdigta.env
+chmod 600 /srv/jurisdigta/secrets/jurisdigta.env
+nano /srv/jurisdigta/secrets/jurisdigta.env
+```
+
+Minimum deployment values to decide before production:
+
+- `LLM_PROVIDER=azurefoundry` unless deterministic offline testing was explicitly requested.
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_DEPLOYMENT`
+- `AZURE_OPENAI_EMBEDDINGS_MODEL`
+- `AZURE_OPENAI_API_VERSION`
+- `AZURE_OPENAI_API_KEY`
+- `DB_OPTION=postgres`
+- `LAWS_DB_BACKEND=postgres`
+- Strong PostgreSQL usernames and passwords.
+- Public origins and domain values for `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu` when those hosts are routed to this server.
+
+Do not switch local production-like starts from `azurefoundry` to `mock` just because Azure Foundry settings are missing. If credentials are incomplete, stop and report the exact missing `AZURE_OPENAI_*` values.
+
+## 8. PostgreSQL Deployment Option
+
+The repository already contains a Docker Compose stack for API plus PostgreSQL at:
+
+```text
+api/aijuristiction-api/docker-compose.yml
+```
+
+For the first server deployment, prefer Docker PostgreSQL using `pgvector/pgvector:pg16`, because that matches the repository local PostgreSQL path and keeps runtime files under `runs/storage/`.
+
+Minimal API/PostgreSQL smoke start:
+
+```bash
+cd /srv/jurisdigta/app/api/aijuristiction-api
+docker compose --env-file /srv/jurisdigta/secrets/jurisdigta.env up -d postgres
+docker compose --env-file /srv/jurisdigta/secrets/jurisdigta.env ps
+```
+
+Validate PostgreSQL:
+
+```bash
+docker exec aijurisdiction-postgres pg_isready -U postgres -d aijurisdiction
+```
+
+The laws collector uses a separate logical database by default, usually `laws_sk`. Create it before running laws collector migrations if the deployment does not create it automatically:
+
+```bash
+docker exec -it aijurisdiction-postgres psql -U postgres -d aijurisdiction -c "CREATE DATABASE laws_sk;"
+docker exec -it aijurisdiction-postgres psql -U postgres -d laws_sk -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+## 9. API Deployment Smoke Start
+
+After PostgreSQL is healthy, start the API container from the repository Compose file:
+
+```bash
+cd /srv/jurisdigta/app/api/aijuristiction-api
+docker compose --env-file /srv/jurisdigta/secrets/jurisdigta.env up -d --build api
+docker compose --env-file /srv/jurisdigta/secrets/jurisdigta.env ps
+```
+
+Minimal runnable validation example:
+
+```bash
+curl -fsS http://127.0.0.1:8080/health
+```
+
+Expected result is an HTTP 200 response. If the API fails during startup with missing Azure Foundry settings, add the missing `AZURE_OPENAI_*` values rather than silently changing to `mock`.
+
+## 10. Laws Connector Preparation
+
+The laws connector image is defined at:
+
+```text
+src/services/laws_collector/Dockerfile
+```
+
+Build the image from the repository root:
+
+```bash
+cd /srv/jurisdigta/app
+docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/Dockerfile .
+```
+
+Run migrations for the laws PostgreSQL database before a long-running import:
+
+```bash
+cd /srv/jurisdigta/app
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+export LAWS_DB_BACKEND=postgres
+export LAWS_DB_CLOUD="postgresql://postgres:<password>@127.0.0.1:5432/laws_sk"
+python scripts/databases/apply_laws_db_schema.py
+```
+
+Do not place the real password in shell history for production. Prefer loading it from `/srv/jurisdigta/secrets/jurisdigta.env` or a root-readable systemd environment file.
+
+Production-style laws connector defaults:
+
+- Use PostgreSQL.
+- Use ZIP import/resume mode unless a smoke test or fixture was explicitly requested.
+- Continue from stored collector state instead of replaying completed ZIP imports.
+- Preserve collector state and logs for auditability.
+
+## 11. Reverse Proxy And Firewall
+
+For a local LAN smoke deployment, expose only SSH and the reverse proxy:
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx Full'
+sudo ufw enable
+sudo ufw status verbose
+```
+
+Keep direct PostgreSQL access closed unless there is a documented operational need. Prefer local-only container networking for PostgreSQL.
+
+Use nginx to route:
+
+- `api.jurisdigta.eu` to `http://127.0.0.1:8080`
+- future frontend or admin services to their local ports
+
+TLS setup with Certbot requires public DNS records pointing at this server and inbound ports `80` and `443` reachable from the internet:
+
+```bash
+sudo certbot --nginx -d api.jurisdigta.eu
+```
+
+Do not run Certbot until DNS and firewall/NAT routing are confirmed.
+
+## 12. Service Management
+
+For production, wrap Docker Compose or standalone containers with systemd units after the smoke deployment is validated. Recommended units:
+
+- `jurisdigta-api.service`
+- `jurisdigta-laws-collector.service` or `jurisdigta-laws-collector.timer`
+- optional `jurisdigta-system.service` for system/orchestration processes that are not part of the API container
+
+Each unit should:
+
+- use `/srv/jurisdigta/app` as working directory,
+- load environment from `/srv/jurisdigta/secrets/jurisdigta.env`,
+- restart on failure with backoff,
+- write logs to journald,
+- run under `jurisdigta-admin` or a narrower service account.
+
+## 13. Validation Checklist
+
+Run these checks after package installation and smoke deployment:
+
+```bash
+hostname
+docker --version
+docker compose version
+node --version
+npm --version
+python3 --version
+psql --version
+gh --version
+sudo ufw status verbose
+curl -fsS http://127.0.0.1:8080/health
+```
+
+Repository validation:
+
+```bash
+cd /srv/jurisdigta/app
+git status --short --branch
+python examples/minimal_demo.py
+```
+
+The repository minimal runnable example remains:
+
+```bash
+python examples/minimal_demo.py
+```
+
+## 14. Rollback
+
+Stop containers:
+
+```bash
+cd /srv/jurisdigta/app/api/aijuristiction-api
+docker compose --env-file /srv/jurisdigta/secrets/jurisdigta.env down
+```
+
+Preserve database volumes before deletion:
+
+```bash
+sudo tar -czf /srv/jurisdigta/runs/storage/postgres-backup-$(date +%Y%m%d%H%M%S).tar.gz /srv/jurisdigta/app/runs/storage
+```
+
+Remove deployment checkout only after backups are validated:
+
+```bash
+rm -rf /srv/jurisdigta/app
+```
+
+Remove package-level changes only if the server is being decommissioned:
+
+```bash
+sudo apt remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin gh nginx certbot
+sudo rm -f /etc/sudoers.d/jurisdigta-admin-codex
+```
+
+## 15. Open Items Before Production
+
+- Decide whether this self-managed server is test, production, or both.
+- Confirm DNS and router/firewall/NAT for `jurisdigta.eu` subdomains.
+- Decide whether PostgreSQL stays as Docker `pgvector/pgvector:pg16` or moves to managed PostgreSQL.
+- Create systemd unit files after the first smoke deployment proves the exact runtime command.
+- Define backup retention for PostgreSQL and uploaded/generated documents.
+- Confirm legal output human-oversight process before opening production traffic.
+
+## 16. Executed Setup Log 2026-06-14
+
+This section records the actual installation and restore performed on `jurisdigta-server` so the deployment can be audited or repeated.
+
+### Server And Access
+
+- SSH alias: `jurisdigta-server`
+- Hostname: `jurisdigta-server`
+- Deployment user: `jurisdigta-admin`
+- OS: Ubuntu 26.04 LTS
+- Deployment root: `/srv/jurisdigta`
+- Repository checkout: `/srv/jurisdigta/app`
+- Server environment file: `/srv/jurisdigta/secrets/jurisdigta.env`
+- Runtime storage root: `/srv/jurisdigta/runs`
+- Rollback backup root: `/srv/jurisdigta/rollback-backups`
+
+Non-interactive sudo was enabled for Codex automation through:
+
+```text
+/etc/sudoers.d/jurisdigta-admin-codex
+```
+
+Rollback:
+
+```bash
+sudo rm -f /etc/sudoers.d/jurisdigta-admin-codex
+```
+
+### Installed Packages
+
+Ubuntu repository packages installed or confirmed:
+
+```bash
+sudo apt update
+sudo DEBIAN_FRONTEND=noninteractive apt install -y \
+  ca-certificates \
+  curl \
+  gnupg \
+  lsb-release \
+  git \
+  unzip \
+  jq \
+  rsync \
+  ufw \
+  nginx \
+  certbot \
+  python3-certbot-nginx \
+  python3 \
+  python3-venv \
+  python3-pip \
+  postgresql-client \
+  apt-transport-https \
+  software-properties-common \
+  docker.io \
+  docker-compose-v2 \
+  docker-buildx \
+  nodejs \
+  npm \
+  gh
+```
+
+Docker was enabled and the deployment user was added to the `docker` group:
+
+```bash
+sudo systemctl enable --now docker
+sudo usermod -aG docker jurisdigta-admin
+```
+
+Actual verified versions after installation:
+
+```text
+Docker version 29.1.3, build 29.1.3-0ubuntu4.1
+Docker Compose version 2.40.3+ds1-0ubuntu1
+docker buildx 0.30.1-0ubuntu1
+Node.js v22.22.1
+npm 9.2.0
+Python 3.14.4
+pip 25.1.1
+psql PostgreSQL client 18.4
+gh 2.46.0
+nginx 1.28.3
+certbot 4.0.0
+unzip 6.00
+jq 1.8.1
+git 2.53.0
+curl 8.18.0
+rsync 3.4.1
+ufw 0.36.2
+```
+
+### Docker DNS Fix
+
+During image build, containers could not resolve `deb.debian.org`. Docker DNS was fixed with:
+
+```json
+{"dns":["1.1.1.1","8.8.8.8"]}
+```
+
+File:
+
+```text
+/etc/docker/daemon.json
+```
+
+Then Docker was restarted:
+
+```bash
+sudo systemctl reset-failed docker
+sudo systemctl start docker
+```
+
+Validation:
+
+```bash
+docker run --rm debian:trixie-slim getent hosts deb.debian.org
+```
+
+### Deployment Directories
+
+Created:
+
+```bash
+sudo mkdir -p /srv/jurisdigta/runs/storage/api/postgres/data
+sudo mkdir -p /srv/jurisdigta/runs/storage/laws-collector/postgres/data
+sudo mkdir -p /srv/jurisdigta/runs/logs
+sudo mkdir -p /srv/jurisdigta/secrets
+sudo chown -R jurisdigta-admin:jurisdigta-admin /srv/jurisdigta
+chmod 700 /srv/jurisdigta/secrets
+```
+
+The repository `runs` path was linked to server runtime storage:
+
+```bash
+cd /srv/jurisdigta/app
+ln -s /srv/jurisdigta/runs runs
+```
+
+The local workstation `.env` was copied to:
+
+```text
+/srv/jurisdigta/secrets/jurisdigta.env
+```
+
+Permissions:
+
+```bash
+chmod 600 /srv/jurisdigta/secrets/jurisdigta.env
+```
+
+### Repository And Images
+
+Repository clone:
+
+```bash
+cd /srv/jurisdigta
+git clone https://github.com/mmaideveloper/aijurisdictionagents.git app
+cd /srv/jurisdigta/app
+git checkout main
+```
+
+Verified commit at setup time:
+
+```text
+fe0d49b Migration Postress full databasse
+```
+
+Built images:
+
+```bash
+cd /srv/jurisdigta/app/api/aijuristiction-api
+docker compose --env-file /srv/jurisdigta/secrets/jurisdigta.env build api
+
+cd /srv/jurisdigta/app
+docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/Dockerfile .
+```
+
+Images present after build:
+
+```text
+aijuristiction-api:local
+jurisdigta-laws-collector:local
+pgvector/pgvector:pg16
+```
+
+### PostgreSQL Setup
+
+Started PostgreSQL through repository Compose:
+
+```bash
+cd /srv/jurisdigta/app/api/aijuristiction-api
+docker compose --env-file /srv/jurisdigta/secrets/jurisdigta.env up -d postgres
+```
+
+Container:
+
+```text
+aijurisdiction-postgres
+```
+
+Image:
+
+```text
+pgvector/pgvector:pg16
+```
+
+Databases created or verified:
+
+```text
+aijurisdiction
+aijurisdiction-dev
+laws_sk
+```
+
+The `vector` extension was enabled in `laws_sk`.
+
+API schema migrations were applied to `aijurisdiction-dev`:
+
+```text
+0001_create_api_metadata.sql
+0002_case_document_embeddings.sql
+0003_permanent_memory.sql
+```
+
+Laws schema migrations were applied to `laws_sk`:
+
+```text
+0001_create_laws_schema.sql
+0002_add_collector_progress.sql
+0003_enable_real_law_embeddings.sql
+0004_add_law_metadata_tables.sql
+0005_add_collector_import_state.sql
+0006_add_archive_import_assets.sql
+0007_add_source_artifact_storage_references.sql
+```
+
+### Laws Database Backup And Restore
+
+The first USB backup found at:
+
+```text
+/mnt/usb/jurisdigtra/laws-collector-postgres/20260613-150831/laws_sk-20260613-150831.dump
+```
+
+had a readable table of contents but failed a full restore with:
+
+```text
+pg_restore: error: could not read from input file: end of file
+```
+
+A fresh complete dump was generated from the local workstation container:
+
+```text
+aijurisdiction-laws-collector-postgres-local
+```
+
+Source database:
+
+```text
+laws_sk
+```
+
+Fresh dump path on the workstation:
+
+```text
+runs/storage/postgres-transfers/20260614-133355/laws_sk-20260614-133355.dump
+```
+
+Fresh dump size:
+
+```text
+3,278,340,843 bytes
+```
+
+SHA-256:
+
+```text
+60fa273d2bd237c2c2d503e0c920f90154bc15b2c8c17911f6a00fb67bfebbf4
+```
+
+The same verified dump was copied to the USB on the workstation:
+
+```text
+D:\jurisdigta\laws-collector-postgres\20260614-133355\laws_sk-20260614-133355.dump
+D:\jurisdigta\laws-collector-postgres\20260614-133355\SHA256SUMS.txt
+D:\jurisdigta\laws-collector-postgres\20260614-133355\backup-info-20260614-133355.txt
+```
+
+The dump was transferred to the server:
+
+```text
+/srv/jurisdigta/laws_sk-20260614-133355.dump
+```
+
+Before restore, a rollback dump was created:
+
+```text
+/srv/jurisdigta/rollback-backups/laws_sk-server-before-complete-restore-20260614-114657.dump
+```
+
+Restore command pattern:
+
+```bash
+docker cp /srv/jurisdigta/laws_sk-20260614-133355.dump aijurisdiction-postgres:/tmp/laws_sk-complete-restore.dump
+docker exec aijurisdiction-postgres pg_restore \
+  --clean \
+  --if-exists \
+  --no-owner \
+  --no-privileges \
+  -U postgres \
+  -d laws_sk \
+  /tmp/laws_sk-complete-restore.dump
+```
+
+Post-restore counts:
+
+```text
+law_documents_count: 25732
+law_versions_count: 72107
+law_metadata_count: 72105
+law_provisions_count: 16639141
+versions_with_embeddings: 72107
+total_versions: 72107
+```
+
+### API Runtime
+
+Started API container:
+
+```bash
+docker run -d \
+  --name jurisdigta-api \
+  --restart unless-stopped \
+  --network aijuristiction-api_default \
+  -p 8080:8080 \
+  --env-file /srv/jurisdigta/secrets/jurisdigta.env \
+  -e DB_OPTION=postgres \
+  -e DB_CLOUD="postgresql://postgres:postgres@postgres:5432/aijurisdiction-dev" \
+  -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
+  -e STORAGE_OPTION=local \
+  -e STORE_LOCAL=/workspace/runs/storage/api/files \
+  -e LAWS_COUNTRY=SK \
+  -e LAWS_DB_BACKEND=postgres \
+  -e LAWS_DB_CLOUD="postgresql://postgres:postgres@postgres:5432/laws_sk" \
+  -v /srv/jurisdigta/runs:/workspace/runs \
+  aijuristiction-api:local
+```
+
+Current containers after validation:
+
+```text
+jurisdigta-api: aijuristiction-api:local, port 8080, healthy
+aijurisdiction-postgres: pgvector/pgvector:pg16, port 5432, healthy
+```
+
+Health check:
+
+```bash
+curl -fsS http://127.0.0.1:8080/health
+```
+
+Result:
+
+```json
+{"status":"ok","llm":{"status":"ok","provider":"azurefoundry"},"database":{"status":"ok","backend":"postgres"}}
+```
+
+### Compliance Notes From Execution
+
+- Secrets were stored in `/srv/jurisdigta/secrets/jurisdigta.env` with `600` permissions.
+- Full secret values are not documented in this runbook.
+- The laws backup contains legal corpus data and embeddings; keep it under controlled storage and define retention/deletion policy.
+- The restore created a rollback backup before replacing `laws_sk`.
+- Logs and validation output record aggregate counts only, not legal document contents.
+- API was started with `LLM_PROVIDER=azurefoundry` from `.env`, matching the project default rule.
