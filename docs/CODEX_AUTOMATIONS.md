@@ -30,6 +30,43 @@ The implementation agent treats Project V2 access as a hard prerequisite. If the
 Project V2 read fails, it must stop instead of selecting work from issue text or
 comments.
 
+### Keep Windows Laptop Awake During Codex Work
+
+On Windows laptops used for long Codex implementation runs, configure plugged-in
+power settings so the machine keeps running while the screen can turn off. Run
+these commands from PowerShell:
+
+```powershell
+powercfg /CHANGE standby-timeout-ac 0
+powercfg /CHANGE hibernate-timeout-ac 0
+powercfg /CHANGE monitor-timeout-ac 10
+powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_SLEEP 7bc4a2f9-d8fc-4469-b07b-33eb785aaca0 0
+powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_SLEEP HIBERNATEIDLE 0
+powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_SLEEP HYBRIDSLEEP 0
+powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_BUTTONS LIDACTION 0
+powercfg /SETACTIVE SCHEME_CURRENT
+```
+
+This keeps AC power sleep and hibernate disabled, turns the display off after 10
+minutes, disables AC hybrid sleep, and makes closing the lid do nothing while
+plugged in. Battery sleep is intentionally not changed, so an unplugged laptop
+can still protect itself from full discharge.
+
+Verify the active settings:
+
+```powershell
+powercfg /GETACTIVESCHEME
+powercfg /QUERY SCHEME_CURRENT SUB_SLEEP STANDBYIDLE
+powercfg /QUERY SCHEME_CURRENT SUB_SLEEP HIBERNATEIDLE
+powercfg /QUERY SCHEME_CURRENT SUB_VIDEO VIDEOIDLE
+powercfg /QUERY SCHEME_CURRENT SUB_BUTTONS LIDACTION
+```
+
+Keep the laptop on a hard, ventilated surface when running closed-lid work. If
+the laptop still sleeps, check vendor power-management software, firmware Modern
+Standby settings, overheating, Windows Update restarts, or forced organization
+policies.
+
 If Codex Desktop cannot store environment variables directly, use the local
 setup helper in the environment setup script. It reads `GH_TOKEN`,
 `GITHUB_TOKEN`, or `GH_PROJECT_TOKEN` from `.env`, stores credentials through the

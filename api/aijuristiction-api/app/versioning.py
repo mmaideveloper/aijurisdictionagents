@@ -39,6 +39,13 @@ def get_mobile_app_version() -> str:
     return UNKNOWN_VERSION
 
 
+def get_web_app_version() -> str:
+    source_version = _get_web_app_project_version()
+    if source_version is not None:
+        return source_version
+    return UNKNOWN_VERSION
+
+
 def get_mobile_app_release_url() -> str:
     owner = os.getenv("MOBILE_APP_GITHUB_OWNER", DEFAULT_MOBILE_APP_GITHUB_OWNER).strip()
     repo = os.getenv("MOBILE_APP_GITHUB_REPO", DEFAULT_MOBILE_APP_GITHUB_REPO).strip()
@@ -94,3 +101,20 @@ def _get_mobile_app_project_version() -> str | None:
     if match is None:
         return None
     return match.group(1).strip()
+
+
+def _get_web_app_project_version() -> str | None:
+    package_file = (
+        Path(__file__).resolve().parents[3]
+        / "frontend"
+        / "aijurisdictionfronend"
+        / "package.json"
+    )
+    if not package_file.exists():
+        return None
+
+    content = package_file.read_text(encoding="utf-8")
+    match = re.search(r'"version"\s*:\s*"([^"]+)"', content)
+    if match is None:
+        return None
+    return match.group(1)

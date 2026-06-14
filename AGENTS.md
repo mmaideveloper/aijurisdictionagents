@@ -7,6 +7,13 @@ Coding standards: typing, linting, tests, error handling
 Output requirements: always create/update docs, add minimal runnable example
 Minimal runnable example (default): `python examples/minimal_demo.py`
 
+Update request rule:
+
+- Whenever the user asks for any update, first review the relevant existing code and documentation before changing it.
+- Ask the user about unclear requirements, ambiguous behavior, missing acceptance criteria, or risky assumptions before implementation.
+- Recommend a better solution when the requested approach can be made safer, simpler, more maintainable, more compliant, or easier to test.
+- If the request is already clear and the current approach is sound, state that briefly and proceed.
+
 
 Regulatory baseline rule (GDPR + EU AI Act):
 

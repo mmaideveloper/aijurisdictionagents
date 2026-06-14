@@ -229,6 +229,25 @@ class ApiDatabaseStore:
                     FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS mcp_pending_signups (
+                    pending_id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS mcp_oauth_authorization_codes (
+                    code TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    redirect_uri TEXT NOT NULL,
+                    code_challenge TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS companies (
                     company_id TEXT PRIMARY KEY,
                     legal_name TEXT NOT NULL,
@@ -572,6 +591,122 @@ class ApiDatabaseStore:
             conn.commit()
             return True
 
+    def save_mcp_pending_signup(
+        self,
+        *,
+        pending_id: str,
+        email: str,
+        payload_json: str,
+        expires_in_minutes: int = 30,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO mcp_pending_signups(pending_id, email, payload_json, expires_at, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(pending_id) DO UPDATE SET
+                    email = excluded.email,
+                    payload_json = excluded.payload_json,
+                    expires_at = excluded.expires_at,
+                    created_at = excluded.created_at
+                """,
+                (
+                    pending_id,
+                    email.strip().lower(),
+                    payload_json,
+                    (now + timedelta(minutes=max(expires_in_minutes, 1))).isoformat(),
+                    now.isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def consume_mcp_pending_signup(self, *, pending_id: str) -> str | None:
+        normalized_id = pending_id.strip()
+        if not normalized_id:
+            return None
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT payload_json, expires_at
+                FROM mcp_pending_signups
+                WHERE pending_id = ?
+                """,
+                (normalized_id,),
+            )
+            if row is None:
+                return None
+            payload_json = str(row[0])
+            expires_at = str(row[1])
+            if not _is_future_iso_datetime(expires_at):
+                self._execute(conn, "DELETE FROM mcp_pending_signups WHERE pending_id = ?", (normalized_id,))
+                conn.commit()
+                return None
+            self._execute(conn, "DELETE FROM mcp_pending_signups WHERE pending_id = ?", (normalized_id,))
+            conn.commit()
+            return payload_json
+
+    def save_mcp_oauth_authorization_code(
+        self,
+        *,
+        code: str,
+        user_id: str,
+        client_id: str,
+        redirect_uri: str,
+        code_challenge: str,
+        expires_in_minutes: int = 10,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO mcp_oauth_authorization_codes(
+                    code, user_id, client_id, redirect_uri, code_challenge, expires_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    code.strip(),
+                    user_id,
+                    client_id.strip(),
+                    redirect_uri.strip(),
+                    code_challenge.strip(),
+                    (now + timedelta(minutes=max(expires_in_minutes, 1))).isoformat(),
+                    now.isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def consume_mcp_oauth_authorization_code(self, *, code: str) -> dict[str, str] | None:
+        normalized_code = code.strip()
+        if not normalized_code:
+            return None
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT user_id, client_id, redirect_uri, code_challenge, expires_at
+                FROM mcp_oauth_authorization_codes
+                WHERE code = ?
+                """,
+                (normalized_code,),
+            )
+            if row is None:
+                return None
+            self._execute(conn, "DELETE FROM mcp_oauth_authorization_codes WHERE code = ?", (normalized_code,))
+            conn.commit()
+        if not _is_future_iso_datetime(str(row[4])):
+            return None
+        return {
+            "user_id": str(row[0]),
+            "client_id": str(row[1]),
+            "redirect_uri": str(row[2]),
+            "code_challenge": str(row[3]),
+        }
+
     def issue_device_auth_token(
         self,
         *,
@@ -801,6 +936,25 @@ class ApiDatabaseStore:
                 WHERE phone_number = ?
                 """,
                 (normalized_phone,),
+            )
+        if row is None:
+            return None
+        return _row_to_user(row)
+
+    def find_user_by_email(self, *, email: str) -> User | None:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT
+                    user_id, phone_number, email, first_name, last_name, full_name,
+                    address, city, country, zip_code, tax_number, identity_card_number,
+                    date_of_birth, social_security_number,
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                FROM users
+                WHERE email = ?
+                """,
+                (email.strip().lower(),),
             )
         if row is None:
             return None
