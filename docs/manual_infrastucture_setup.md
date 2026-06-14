@@ -214,9 +214,13 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 10. Start and validate PostgreSQL through Docker using repository storage layout.
 11. Build and smoke-test the API with `curl -fsS http://127.0.0.1:8080/health`.
 12. Build the laws connector image and apply laws database migrations before live import.
-13. Configure firewall and nginx only after local health checks pass.
-14. Configure Certbot only after DNS and inbound ports `80` and `443` are confirmed.
-15. Add systemd units or timers only after the exact smoke deployment commands are validated.
+13. Before any laws collector redeploy, gracefully stop an active `jurisdigta-laws-collector-daily` container with `docker stop --time 120 jurisdigta-laws-collector-daily`; use forced removal only after the grace period fails.
+14. Install or update the server-local daily laws collector cron wrapper only after the collector image, PostgreSQL database, migrations, and one bounded live smoke run are validated.
+15. Install the server status writer cron from `docs/SYSTEM_STATUS_MONITORING.md` so API/system/laws collector status is updated every minute.
+16. Optional but recommended: install the Prometheus/Grafana stack from `Deployment/monitoring/README.md` for real-time dashboards, host metrics, Docker metrics, API probes, and laws collector metrics.
+17. Configure firewall and nginx only after local health checks pass.
+18. Configure Certbot only after DNS and inbound ports `80` and `443` are confirmed.
+19. Add systemd units or timers only after the exact smoke deployment commands are validated.
 
 ### Secrets And Environment Values
 
@@ -226,6 +230,19 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - Required Azure Foundry values when `LLM_PROVIDER=azurefoundry`: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and `AZURE_OPENAI_API_KEY`.
 - PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
 - Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
+- Server-local laws collector cron wrapper path: `/srv/jurisdigta/ops/run_laws_collector_daily.sh`.
+- Server-local laws collector log path: `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
+- Daily cron schedule on `jurisdigta-server`: `15 2 * * *`, using the server timezone.
+- Server-local status file path: `/srv/jurisdigta/runs/status/system-status.json`.
+- API status endpoint: `GET /v1/system/status?minutes=60`, protected by `x-api-key`.
+- Optional Prometheus exporter path: `/srv/jurisdigta/app/scripts/server/export_system_status_metrics.py`.
+- Optional Prometheus exporter port: `127.0.0.1:9108`.
+- Optional monitoring stack path: `/srv/jurisdigta/app/Deployment/monitoring`.
+- Optional Grafana local URL: `http://127.0.0.1:3000`, accessed by SSH tunnel unless protected behind authenticated nginx.
+- Optional Grafana public mobile entry URL after DNS/TLS setup: `https://admin.jurisdigta.eu`, redirected by nginx to `https://admin.jurisdigta.eu/grafana/`.
+- Required public Grafana prerequisite: `admin.jurisdigta.eu` must resolve to the public IP/NAT endpoint for `jurisdigta-server`, not the WebHouse hosting endpoint.
+- Required public Grafana prerequisite: router/firewall forwards TCP `80` and `443` to `jurisdigta-server`.
+- Required Grafana secret for local stack: `GRAFANA_ADMIN_PASSWORD`, stored only in `/srv/jurisdigta/app/Deployment/monitoring/.env` or a server-local secret manager.
 
 ### Validation Steps
 
@@ -236,11 +253,28 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - PostgreSQL health check succeeds.
 - API health check returns HTTP 200 at `http://127.0.0.1:8080/health`.
 - Repository minimal runnable example succeeds: `python examples/minimal_demo.py`.
+- `crontab -l` contains the daily laws collector wrapper entry.
+- `docker ps -a --filter name=jurisdigta-laws-collector-daily` shows no stuck active collector container after deployment validation.
+- A bounded manual collector cron run succeeds with `LAWS_WORKER_MAX_PROBES=1 LAWS_COLLECTOR_MAX_RUNNING_TIME=5 /srv/jurisdigta/ops/run_laws_collector_daily.sh`.
+- The latest collector log contains skipped completed ZIP state and either one imported sequential law or `No new laws for SK`.
+- `python3 /srv/jurisdigta/app/scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json` writes valid JSON.
+- `curl -fsS -H "x-api-key: ${API_KEY:-aijuris}" "http://127.0.0.1:8080/v1/system/status?minutes=60"` returns API, system, laws collector, and error-count sections.
+- If Prometheus/Grafana monitoring is enabled, `systemctl status jurisdigta-status-exporter.service --no-pager` shows the exporter active.
+- If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9108/metrics | head` returns Prometheus text metrics.
+- If Prometheus/Grafana monitoring is enabled, `docker compose -f /srv/jurisdigta/app/Deployment/monitoring/docker-compose.yml ps` shows Prometheus, Grafana, Node Exporter, cAdvisor, and Blackbox Exporter running.
+- If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9090/-/ready` and `curl -fsS http://127.0.0.1:3000/api/health` succeed.
+- If public Grafana mobile access is enabled, `curl -I https://admin.jurisdigta.eu` redirects to `/grafana/`, and `curl -I https://admin.jurisdigta.eu/grafana/` returns an HTTPS response from `jurisdigta-server`.
 - UFW allows only expected ingress, typically SSH plus nginx HTTP/HTTPS.
 
 ### Rollback Notes
 
 - Stop Docker Compose workloads before changing runtime configuration.
+- Remove the daily laws collector cron entry with `crontab -l | grep -v 'run_laws_collector_daily.sh' | crontab -`.
+- Remove the status writer cron entry with `crontab -l | grep -v 'write_system_status.py' | crontab -`.
+- Stop the optional status metrics exporter with `sudo systemctl disable --now jurisdigta-status-exporter.service`.
+- Stop the optional Prometheus/Grafana stack with `cd /srv/jurisdigta/app/Deployment/monitoring && docker compose down`.
+- Stop any active daily collector container gracefully with `docker stop --time 120 jurisdigta-laws-collector-daily`; use `docker rm -f jurisdigta-laws-collector-daily` only if the container remains stuck.
+- Remove `/srv/jurisdigta/ops/run_laws_collector_daily.sh` only after confirming no other scheduler uses it.
 - Back up `/srv/jurisdigta/app/runs/storage` before removing containers, volumes, or the repository checkout.
 - Remove `/etc/sudoers.d/jurisdigta-admin-codex` to revoke Codex passwordless sudo.
 - Remove nginx site config or Certbot certificates only after DNS is routed away or rollback target is ready.

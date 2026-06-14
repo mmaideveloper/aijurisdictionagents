@@ -1,0 +1,388 @@
+# JurisDigta Prometheus And Grafana Monitoring
+
+This stack is the recommended self-managed monitoring layer for `jurisdigta-server`.
+
+It complements the protected API endpoint documented in `docs/SYSTEM_STATUS_MONITORING.md`:
+
+```text
+GET /v1/system/status?minutes=60
+```
+
+## What It Monitors
+
+- API availability through Blackbox Exporter probing `http://host.docker.internal:8080/health`.
+- API/database/LLM/system/laws collector status through `scripts/server/export_system_status_metrics.py`.
+- Error counts for API, laws collector, and PostgreSQL from the status endpoint.
+- Last processed law, next law to check, latest laws collector run timestamps, and latest run duration.
+- Host CPU, memory, disk, filesystem, and kernel metrics through Node Exporter.
+- Docker container CPU, memory, filesystem, and restart behavior through cAdvisor.
+- Prometheus health and scrape status.
+
+## Security Baseline
+
+- Grafana and Prometheus bind only to `127.0.0.1` by default.
+- Access Grafana through SSH tunneling first:
+
+```bash
+ssh -L 3000:127.0.0.1:3000 jurisdigta-server
+```
+
+Then open:
+
+```text
+http://127.0.0.1:3000
+```
+
+- Do not expose ports `3000`, `9090`, `9100`, `9108`, or `9115` directly to the public internet.
+- If Grafana must be reachable through `admin.jurisdigta.eu`, put it behind nginx TLS plus strong authentication.
+- Keep dashboard panels operational only. Do not display user chat text, generated legal documents, API keys, database connection strings, or legal-risk user outputs.
+
+## JurisDigta Metrics Exporter
+
+By default, Docker Compose starts `status-exporter` as a private container and Prometheus scrapes it at:
+
+```text
+http://status-exporter:9108/metrics
+```
+
+For manual troubleshooting, run the exporter on the server host:
+
+```bash
+cd /srv/jurisdigta/app
+API_KEY="${API_KEY:-aijuris}" \
+python3 scripts/server/export_system_status_metrics.py \
+  --host 127.0.0.1 \
+  --port 9108 \
+  --status-url "http://127.0.0.1:8080/v1/system/status?minutes=60"
+```
+
+Validate:
+
+```bash
+curl -fsS http://127.0.0.1:9108/metrics | head
+```
+
+Optional fallback systemd unit:
+
+```ini
+[Unit]
+Description=JurisDigta system status Prometheus exporter
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/jurisdigta/app
+EnvironmentFile=/srv/jurisdigta/secrets/jurisdigta.env
+ExecStart=/usr/bin/python3 /srv/jurisdigta/app/scripts/server/export_system_status_metrics.py --host 127.0.0.1 --port 9108 --status-url http://127.0.0.1:8080/v1/system/status?minutes=60
+Restart=always
+RestartSec=10
+User=jurisdigta-admin
+Group=jurisdigta-admin
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Install only if you choose to run the exporter outside Docker Compose:
+
+```bash
+sudo tee /etc/systemd/system/jurisdigta-status-exporter.service >/dev/null <<'EOF'
+[Unit]
+Description=JurisDigta system status Prometheus exporter
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/jurisdigta/app
+EnvironmentFile=/srv/jurisdigta/secrets/jurisdigta.env
+ExecStart=/usr/bin/python3 /srv/jurisdigta/app/scripts/server/export_system_status_metrics.py --host 127.0.0.1 --port 9108 --status-url http://127.0.0.1:8080/v1/system/status?minutes=60
+Restart=always
+RestartSec=10
+User=jurisdigta-admin
+Group=jurisdigta-admin
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now jurisdigta-status-exporter.service
+systemctl status jurisdigta-status-exporter.service --no-pager
+```
+
+## Start Prometheus And Grafana
+
+Create server-local Grafana and SMTP settings:
+
+```bash
+cd /srv/jurisdigta/app/Deployment/monitoring
+umask 077
+python3 - <<'PY'
+from pathlib import Path
+
+source = Path("/srv/jurisdigta/secrets/jurisdigta.env")
+target = Path(".env")
+values = {}
+if source.exists():
+    for line in source.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value.strip().strip('"').strip("'")
+
+smtp_host = values.get("EMAIL_SMTP_HOST", "")
+smtp_port = values.get("EMAIL_SMTP_PORT", "587")
+smtp_user = values.get("EMAIL_SMTP_USERNAME", "")
+smtp_password = values.get("EMAIL_SMTP_PASSWORD", "")
+sender = values.get("EMAIL_SENDER", smtp_user) or "no-reply@jurisdigta.eu"
+
+target.write_text(
+    "\n".join(
+        [
+            "GRAFANA_ADMIN_USER=admin",
+            "GRAFANA_ADMIN_PASSWORD=replace-with-long-random-password",
+            f"GRAFANA_SMTP_ENABLED={'true' if smtp_host and smtp_password else 'false'}",
+            f"GRAFANA_SMTP_HOST={smtp_host}:{smtp_port}" if smtp_host else "GRAFANA_SMTP_HOST=",
+            f"GRAFANA_SMTP_USER={smtp_user}",
+            f"GRAFANA_SMTP_PASSWORD={smtp_password}",
+            f"GRAFANA_SMTP_FROM_ADDRESS={sender}",
+            "GRAFANA_SMTP_FROM_NAME=JurisDigta Grafana",
+            "GRAFANA_SMTP_STARTTLS_POLICY=OpportunisticStartTLS",
+            f"GRAFANA_ALERT_EMAIL_TO={sender}",
+            "",
+        ]
+    ),
+    encoding="utf-8",
+)
+target.chmod(0o600)
+PY
+```
+
+Start:
+
+```bash
+docker compose up -d
+```
+
+Validate:
+
+```bash
+docker compose ps
+curl -fsS http://127.0.0.1:9090/-/ready
+curl -fsS http://127.0.0.1:3000/api/health
+```
+
+## Access Grafana
+
+### From The Server
+
+The stack binds Grafana to `127.0.0.1:3000`, so it is reachable directly from the server:
+
+```bash
+curl -fsS http://127.0.0.1:3000/api/health
+```
+
+If the server has a desktop/browser session, open:
+
+```text
+http://127.0.0.1:3000
+```
+
+If the server is headless, use the remote SSH tunnel flow below.
+
+### Remotely From Your Workstation
+
+Open an SSH tunnel:
+
+```bash
+ssh -L 3000:127.0.0.1:3000 jurisdigta-server
+```
+
+Then open this on your workstation:
+
+```text
+http://127.0.0.1:3000
+```
+
+Prometheus can be tunneled the same way when needed:
+
+```bash
+ssh -L 9090:127.0.0.1:9090 jurisdigta-server
+```
+
+Then open:
+
+```text
+http://127.0.0.1:9090
+```
+
+### From Mobile Over Public HTTPS
+
+Use this only after DNS and router/firewall routing are correct.
+
+Target mobile URL:
+
+```text
+https://admin.jurisdigta.eu
+```
+
+Nginx redirects the root admin URL to:
+
+```text
+https://admin.jurisdigta.eu/grafana/
+```
+
+Prerequisites:
+
+- `admin.jurisdigta.eu` must resolve to the public IP or NAT endpoint that reaches `jurisdigta-server`.
+- The router/firewall must forward TCP `80` and `443` to `jurisdigta-server`.
+- Nginx must be active on `jurisdigta-server`.
+- Grafana must stay bound to `127.0.0.1:3000`; do not expose container port `3000` publicly.
+
+Current expected Grafana settings in `Deployment/monitoring/.env`:
+
+```text
+GRAFANA_SERVER_DOMAIN=admin.jurisdigta.eu
+GRAFANA_ROOT_URL=https://admin.jurisdigta.eu/grafana/
+GRAFANA_SERVE_FROM_SUB_PATH=true
+```
+
+After changing these values:
+
+```bash
+cd /srv/jurisdigta/app/Deployment/monitoring
+docker compose up -d --force-recreate grafana
+```
+
+Install nginx config after DNS points to this server:
+
+```bash
+sudo cp /srv/jurisdigta/app/Deployment/monitoring/nginx-admin-grafana.conf \
+  /etc/nginx/sites-available/jurisdigta-admin-grafana.conf
+sudo ln -sf /etc/nginx/sites-available/jurisdigta-admin-grafana.conf \
+  /etc/nginx/sites-enabled/jurisdigta-admin-grafana.conf
+sudo nginx -t
+```
+
+Issue TLS certificate:
+
+```bash
+sudo certbot --nginx -d admin.jurisdigta.eu
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Validate from outside the server network:
+
+```bash
+curl -I https://admin.jurisdigta.eu
+curl -I https://admin.jurisdigta.eu/grafana/
+```
+
+Security notes:
+
+- Keep Grafana's own login enabled with a strong password.
+- Do not publish Prometheus, Node Exporter, cAdvisor, Blackbox Exporter, or status exporter ports.
+- Consider adding nginx basic auth or IP allowlisting before production use if the dashboard should be restricted to a small operator group.
+- Do not display personal data, legal documents, chat contents, API keys, SMTP passwords, or database connection strings on dashboards.
+
+## First Grafana Dashboard
+
+Prometheus is provisioned automatically as a Grafana data source:
+
+```text
+http://prometheus:9090
+```
+
+Useful starter panels:
+
+- `jurisdigta_component_status{component="overall"}`
+- `jurisdigta_component_status{component="api"}`
+- `jurisdigta_component_status{component="system"}`
+- `jurisdigta_component_status{component="laws_collector"}`
+- `jurisdigta_errors_window`
+- `jurisdigta_laws_last_processed_number`
+- `jurisdigta_laws_last_processed_year`
+- `jurisdigta_laws_next_number`
+- `jurisdigta_laws_runtime_last_run_started_at_timestamp_seconds`
+- `jurisdigta_laws_runtime_last_run_finished_at_timestamp_seconds`
+- `jurisdigta_laws_runtime_duration_seconds`
+- `jurisdigta_system_disk_used_percent`
+- `jurisdigta_system_memory_used_percent`
+- `probe_success{service="jurisdigta-api"}`
+- `up{job="node-exporter"}`
+- `up{job="cadvisor"}`
+
+Suggested alert rules:
+
+- Overall JurisDigta status below `1` for more than 5 minutes.
+- API blackbox probe failure for more than 2 minutes.
+- Any `jurisdigta_errors_window` above `0` for 10 minutes.
+- Disk used above 80%.
+- Memory used above 85%.
+- Laws collector last run older than 36 hours.
+
+## Email Notifications
+
+Grafana OSS requires SMTP settings before email notifications work. The compose file maps these Grafana variables from the server-local `Deployment/monitoring/.env`:
+
+- `GRAFANA_SMTP_ENABLED`
+- `GRAFANA_SMTP_HOST`
+- `GRAFANA_SMTP_USER`
+- `GRAFANA_SMTP_PASSWORD`
+- `GRAFANA_SMTP_FROM_ADDRESS`
+- `GRAFANA_SMTP_FROM_NAME`
+- `GRAFANA_ALERT_EMAIL_TO`
+
+The recommended setup script above reads existing project email settings from `/srv/jurisdigta/secrets/jurisdigta.env`:
+
+- `EMAIL_SMTP_HOST`
+- `EMAIL_SMTP_PORT`
+- `EMAIL_SMTP_USERNAME`
+- `EMAIL_SMTP_PASSWORD`
+- `EMAIL_SENDER`
+
+`GRAFANA_SMTP_STARTTLS_POLICY=OpportunisticStartTLS` means Grafana tries to upgrade SMTP to STARTTLS when the mail server supports it. This is a pragmatic default for port `587`. If the provider requires encrypted SMTP, change it to a stricter provider-supported policy and restart Grafana.
+
+The `JurisDigta Email` contact point is provisioned automatically from `grafana/provisioning/alerting/contact-points.yml`. To test it:
+
+1. Open Grafana.
+2. Go to `Alerts & IRM` -> `Alerting` -> `Notification configuration` -> `Contact points`.
+3. Open `JurisDigta Email`.
+4. Click `Test`.
+
+If `EMAIL_SMTP_PASSWORD` is missing, Grafana still starts, but email notifications remain disabled until the SMTP password is added to the server-local secret file and `Deployment/monitoring/.env` is regenerated.
+
+## Azure Parity
+
+For Azure-hosted services, keep Application Insights and Log Analytics as the system of record for application traces and request failures. Grafana can still be used in two ways:
+
+- Azure Managed Grafana with Azure Monitor data source for Application Insights and Log Analytics.
+- Prometheus-compatible metrics through Azure Monitor managed service for Prometheus if the app is later hosted on AKS or another Prometheus-scrapable runtime.
+
+The self-managed server stack remains useful because it monitors the private server, Docker containers, and local laws collector cron that Azure Monitor cannot see directly unless an Azure agent is installed.
+
+## Rollback
+
+Stop the stack:
+
+```bash
+cd /srv/jurisdigta/app/Deployment/monitoring
+docker compose down
+```
+
+Remove persistent monitoring data only after confirming it is not needed:
+
+```bash
+docker volume rm monitoring_prometheus-data monitoring_grafana-data
+```
+
+Stop and remove the exporter service:
+
+```bash
+sudo systemctl disable --now jurisdigta-status-exporter.service
+sudo rm -f /etc/systemd/system/jurisdigta-status-exporter.service
+sudo systemctl daemon-reload
+```

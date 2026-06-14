@@ -295,6 +295,68 @@ Production-style laws connector defaults:
 - Continue from stored collector state instead of replaying completed ZIP imports.
 - Preserve collector state and logs for auditability.
 
+### Laws Collector Deployment Update Steps
+
+Use this sequence whenever deploying a new laws collector image or changing the daily collector cron wrapper on `jurisdigta-server`.
+
+1. Check the current collector state:
+
+```bash
+docker ps -a --filter name=jurisdigta-laws-collector-daily --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+tail -n 80 /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log 2>/dev/null || true
+```
+
+2. Gracefully stop any active laws collector run before rebuilding or replacing the wrapper:
+
+```bash
+if docker ps --filter name=jurisdigta-laws-collector-daily --format '{{.Names}}' | grep -qx jurisdigta-laws-collector-daily; then
+  docker stop --time 120 jurisdigta-laws-collector-daily
+fi
+```
+
+The `--time 120` grace period gives the Python worker time to receive `SIGTERM`, close database work, and let Docker stop the container cleanly. Do not start a second collector while the first one is still running; the wrapper also uses `flock`, but deployment should still stop the container explicitly before image rebuilds.
+
+3. If the container did not stop after the grace period, inspect logs before forcing cleanup:
+
+```bash
+docker logs --tail 200 jurisdigta-laws-collector-daily 2>/dev/null || true
+docker rm -f jurisdigta-laws-collector-daily
+```
+
+Use forced removal only after the graceful stop fails or the container is already stuck. Record the failure in the deployment notes because interrupted collector runs may leave the next law cursor unchanged for retry.
+
+4. Update the repository and rebuild the collector image:
+
+```bash
+cd /srv/jurisdigta/app
+git fetch --all --prune
+git checkout main
+git pull --ff-only origin main
+docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/Dockerfile .
+```
+
+5. Apply laws schema migrations before the first run after deployment:
+
+```bash
+cd /srv/jurisdigta/app
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+export LAWS_DB_BACKEND=postgres
+export LAWS_DB_CLOUD="$(docker inspect jurisdigta-api --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '$1=="LAWS_DB_CLOUD" {sub(/^LAWS_DB_CLOUD=/, ""); print; exit}')"
+python scripts/databases/apply_laws_db_schema.py
+```
+
+6. Validate with a bounded live run:
+
+```bash
+LAWS_WORKER_MAX_PROBES=1 LAWS_COLLECTOR_MAX_RUNNING_TIME=5 /srv/jurisdigta/ops/run_laws_collector_daily.sh
+tail -n 80 /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log
+```
+
+Expected result is either one imported sequential law or `No new laws for SK`, followed by a clean worker stop message.
+
 ## 11. Reverse Proxy And Firewall
 
 For a local LAN smoke deployment, expose only SSH and the reverse proxy:
@@ -337,6 +399,43 @@ Each unit should:
 - write logs to journald,
 - run under `jurisdigta-admin` or a narrower service account.
 
+For the current self-managed server maintenance path, a daily user cron entry can run the already-built laws collector image against the existing PostgreSQL container. The server-local wrapper is:
+
+```text
+/srv/jurisdigta/ops/run_laws_collector_daily.sh
+```
+
+It should:
+
+- load shared runtime secrets from `/srv/jurisdigta/secrets/jurisdigta.env`,
+- derive `LAWS_DB_CLOUD` from the running `jurisdigta-api` container instead of writing the database password into crontab,
+- run `jurisdigta-laws-collector:local` on Docker network `aijuristiction-api_default`,
+- set `LAWS_WORKER_FIXTURE=live`, `LAWS_WORKER_MAX_CYCLES=1`, and a bounded `LAWS_WORKER_MAX_PROBES`,
+- mount `/srv/jurisdigta/runs` for logs/runtime files,
+- mount `/srv/jurisdigta/app/archivelaws` and `/srv/jurisdigta/app/aimodels` so archive files and the local embedding model cache persist between cron runs,
+- use `flock` to prevent overlapping collector executions,
+- write logs under `/srv/jurisdigta/runs/logs/` and update `laws-collector-daily-latest.log`.
+
+Daily cron schedule used on `jurisdigta-server`:
+
+```cron
+15 2 * * * /srv/jurisdigta/ops/run_laws_collector_daily.sh >/dev/null 2>&1
+```
+
+The schedule uses the server timezone. On the verified Ubuntu server this was UTC.
+
+For near-real-time API/system/laws collector status, install the status writer cron documented in `docs/SYSTEM_STATUS_MONITORING.md`. It writes safe host/container status to:
+
+```text
+/srv/jurisdigta/runs/status/system-status.json
+```
+
+The API reads that file through `SYSTEM_STATUS_FILE` and exposes the combined protected endpoint:
+
+```text
+GET /v1/system/status?minutes=60
+```
+
 ## 13. Validation Checklist
 
 Run these checks after package installation and smoke deployment:
@@ -352,6 +451,12 @@ psql --version
 gh --version
 sudo ufw status verbose
 curl -fsS http://127.0.0.1:8080/health
+crontab -l
+test -x /srv/jurisdigta/ops/run_laws_collector_daily.sh
+LAWS_WORKER_MAX_PROBES=1 LAWS_COLLECTOR_MAX_RUNNING_TIME=5 /srv/jurisdigta/ops/run_laws_collector_daily.sh
+tail -n 80 /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log
+python3 /srv/jurisdigta/app/scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json
+curl -fsS -H "x-api-key: ${API_KEY:-aijuris}" "http://127.0.0.1:8080/v1/system/status?minutes=60"
 ```
 
 Repository validation:
@@ -771,6 +876,56 @@ Result:
 {"status":"ok","llm":{"status":"ok","provider":"azurefoundry"},"database":{"status":"ok","backend":"postgres"}}
 ```
 
+### Laws Collector Daily Cron
+
+Installed a daily `jurisdigta-admin` crontab entry:
+
+```cron
+15 2 * * * /srv/jurisdigta/ops/run_laws_collector_daily.sh >/dev/null 2>&1
+```
+
+The wrapper script:
+
+```text
+/srv/jurisdigta/ops/run_laws_collector_daily.sh
+```
+
+Run behavior:
+
+- Starts `jurisdigta-laws-collector:local` as an ephemeral Docker container named `jurisdigta-laws-collector-daily`.
+- Uses Docker network `aijuristiction-api_default` so the collector can reach PostgreSQL at the existing `postgres` network alias.
+- Reads shared secrets from `/srv/jurisdigta/secrets/jurisdigta.env`.
+- Reads the active `LAWS_DB_CLOUD` value from the running `jurisdigta-api` container at execution time, avoiding a separate plaintext database connection string in cron or the wrapper.
+- Sets `LAWS_COUNTRY=SK`, `LAWS_DB_BACKEND=postgres`, `LAWS_WORKER_FIXTURE=live`, `LAWS_WORKER_MAX_CYCLES=1`, `LAWS_WORKER_MAX_PROBES=25`, `LAWS_WORKER_POLL_SECONDS=3600`, and `LAWS_COLLECTOR_IMPORT=zip`.
+- Mounts `/srv/jurisdigta/runs` to `/workspace/runs`, `/srv/jurisdigta/app/archivelaws` to `/app/archivelaws`, and `/srv/jurisdigta/app/aimodels` to `/app/aimodels`.
+- Uses `/srv/jurisdigta/runs/locks/laws-collector-daily.lock` with `flock` so overlapping daily runs exit without starting another collector.
+- Writes timestamped logs under `/srv/jurisdigta/runs/logs/` and maintains `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
+
+Validation performed on 2026-06-14:
+
+```bash
+LAWS_WORKER_MAX_PROBES=1 LAWS_COLLECTOR_MAX_RUNNING_TIME=5 /srv/jurisdigta/ops/run_laws_collector_daily.sh
+```
+
+Observed result:
+
+```text
+[laws-collector] zip-import zip import skipped because live sequential cursor is active ...
+[laws-collector] start processing country=SK law=121/2026 ...
+[laws-collector] 121/2026 does not exists, system imports all laws and is up to date
+[laws-collector] No new laws for SK, last processed law 120/2026 ...
+[laws-collector] worker stopped because laws collector is up to date last_processed_law=120/2026 next_law_to_check=121/2026
+```
+
+Rollback:
+
+```bash
+crontab -l | grep -v 'run_laws_collector_daily.sh' | crontab -
+docker stop --time 120 jurisdigta-laws-collector-daily 2>/dev/null || true
+docker rm -f jurisdigta-laws-collector-daily 2>/dev/null || true
+rm -f /srv/jurisdigta/ops/run_laws_collector_daily.sh
+```
+
 ### Compliance Notes From Execution
 
 - Secrets were stored in `/srv/jurisdigta/secrets/jurisdigta.env` with `600` permissions.
@@ -779,3 +934,99 @@ Result:
 - The restore created a rollback backup before replacing `laws_sk`.
 - Logs and validation output record aggregate counts only, not legal document contents.
 - API was started with `LLM_PROVIDER=azurefoundry` from `.env`, matching the project default rule.
+- The daily laws collector cron reuses server-local secrets and logs only operational collector status, not full database connection strings or legal-risk user outputs.
+
+## Prometheus And Grafana Monitoring
+
+Recommended dashboard stack:
+
+```text
+Deployment/monitoring/
+```
+
+Use this stack when you want a real-time UI for `jurisdigta-server`, API, PostgreSQL, Docker containers, laws collector status, error counts, and latest laws import state.
+
+Components:
+
+- Prometheus: metrics storage and alert rule evaluation.
+- Grafana: dashboard and alert UI.
+- Node Exporter: Linux host CPU, memory, disk, filesystem, and kernel metrics.
+- cAdvisor: Docker container CPU, memory, filesystem, and restart metrics.
+- Blackbox Exporter: API availability probes.
+- `scripts/server/export_system_status_metrics.py`: converts `GET /v1/system/status?minutes=60` into Prometheus text metrics.
+
+Start the JurisDigta status exporter:
+
+```bash
+cd /srv/jurisdigta/app
+API_KEY="${API_KEY:-aijuris}" \
+python3 scripts/server/export_system_status_metrics.py \
+  --host 127.0.0.1 \
+  --port 9108 \
+  --status-url "http://127.0.0.1:8080/v1/system/status?minutes=60"
+```
+
+For production use, install it as systemd service `jurisdigta-status-exporter.service` using `Deployment/monitoring/README.md`.
+
+Start Prometheus and Grafana:
+
+```bash
+cd /srv/jurisdigta/app/Deployment/monitoring
+umask 077
+cat > .env <<'EOF'
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=replace-with-long-random-password
+EOF
+docker compose up -d
+```
+
+Validate:
+
+```bash
+curl -fsS http://127.0.0.1:9108/metrics | head
+curl -fsS http://127.0.0.1:9090/-/ready
+curl -fsS http://127.0.0.1:3000/api/health
+docker compose ps
+```
+
+Access Grafana by SSH tunnel first:
+
+```bash
+ssh -L 3000:127.0.0.1:3000 jurisdigta-server
+```
+
+Then open:
+
+```text
+http://127.0.0.1:3000
+```
+
+For mobile access, use Grafana behind nginx TLS at:
+
+```text
+https://admin.jurisdigta.eu
+```
+
+Nginx redirects the admin root URL to:
+
+```text
+https://admin.jurisdigta.eu/grafana/
+```
+
+Before enabling this URL:
+
+- Point `admin.jurisdigta.eu` DNS to the public IP or NAT endpoint for `jurisdigta-server`.
+- Forward TCP `80` and `443` from the router/firewall to `jurisdigta-server`.
+- Keep Grafana bound only to `127.0.0.1:3000`.
+- Use the nginx template `Deployment/monitoring/nginx-admin-grafana.conf`.
+- Run `sudo certbot --nginx -d admin.jurisdigta.eu` only after DNS and port forwarding are correct.
+
+Do not expose Grafana or Prometheus container ports directly to the internet. Public mobile access must go through nginx TLS and Grafana login.
+
+Rollback:
+
+```bash
+sudo systemctl disable --now jurisdigta-status-exporter.service
+cd /srv/jurisdigta/app/Deployment/monitoring
+docker compose down
+```

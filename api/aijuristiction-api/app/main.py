@@ -25,6 +25,7 @@ from app.mcp_api import oauth_router as mcp_oauth_router
 from app.mcp_api import router as mcp_router
 from app.observability_api import router as observability_router
 from app.telemetry import configure_telemetry, instrument_fastapi
+from app.system_status_api import router as system_status_router
 from app.users.api import router as users_router
 from app.versioning import (
     get_api_version,
@@ -154,6 +155,7 @@ app.include_router(users_router)
 app.include_router(cases_router)
 app.include_router(voice_intent_router)
 app.include_router(observability_router)
+app.include_router(system_status_router)
 app.include_router(mcp_oauth_router)
 app.include_router(mcp_router)
 instrument_fastapi(app)
