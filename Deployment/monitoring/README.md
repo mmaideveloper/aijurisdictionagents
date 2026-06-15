@@ -34,7 +34,7 @@ http://127.0.0.1:3000
 ```
 
 - Do not expose ports `3000`, `9090`, `9100`, `9108`, or `9115` directly to the public internet.
-- If Grafana must be reachable through `admin.jurisdigta.eu`, put it behind nginx TLS plus strong authentication.
+- If Grafana must be reachable through `admin.jurisdigta.eu`, publish it through Cloudflare Tunnel and protect it with Cloudflare Access plus Grafana login.
 - Keep dashboard panels operational only. Do not display user chat text, generated legal documents, API keys, database connection strings, or legal-risk user outputs.
 
 ## JurisDigta Metrics Exporter
@@ -220,25 +220,29 @@ http://127.0.0.1:9090
 
 ### From Mobile Over Public HTTPS
 
-Use this only after DNS and router/firewall routing are correct.
+For the current no-static-IP production server, use Cloudflare Tunnel rather
+than public-IP DNS, router port forwarding, and Certbot. Use this public route
+only after Cloudflare Access protects the hostname.
 
 Target mobile URL:
-
-```text
-https://admin.jurisdigta.eu
-```
-
-Nginx redirects the root admin URL to:
 
 ```text
 https://admin.jurisdigta.eu/grafana/
 ```
 
+Cloudflare Tunnel public hostname:
+
+```text
+Hostname: admin.jurisdigta.eu
+Service type: HTTP
+Service URL: http://127.0.0.1:3000
+```
+
 Prerequisites:
 
-- `admin.jurisdigta.eu` must resolve to the public IP or NAT endpoint that reaches `jurisdigta-server`.
-- The router/firewall must forward TCP `80` and `443` to `jurisdigta-server`.
-- Nginx must be active on `jurisdigta-server`.
+- `cloudflared.service` must be active on `jurisdigta-server`.
+- `admin.jurisdigta.eu` must be configured as a public hostname on the Cloudflare Tunnel.
+- Cloudflare Access must allow only approved operator identities before Grafana is used publicly.
 - Grafana must stay bound to `127.0.0.1:3000`; do not expose container port `3000` publicly.
 
 Current expected Grafana settings in `Deployment/monitoring/.env`:
@@ -256,7 +260,15 @@ cd /srv/jurisdigta/app/Deployment/monitoring
 docker compose up -d --force-recreate grafana
 ```
 
-Install nginx config after DNS points to this server:
+Validate from outside the server network:
+
+```bash
+curl -I https://admin.jurisdigta.eu/grafana/
+```
+
+The nginx template `Deployment/monitoring/nginx-admin-grafana.conf` remains a
+static-IP fallback only. Use it only when `admin.jurisdigta.eu` intentionally
+resolves to the server or NAT endpoint and inbound TCP `80` and `443` are open:
 
 ```bash
 sudo cp /srv/jurisdigta/app/Deployment/monitoring/nginx-admin-grafana.conf \
@@ -264,28 +276,16 @@ sudo cp /srv/jurisdigta/app/Deployment/monitoring/nginx-admin-grafana.conf \
 sudo ln -sf /etc/nginx/sites-available/jurisdigta-admin-grafana.conf \
   /etc/nginx/sites-enabled/jurisdigta-admin-grafana.conf
 sudo nginx -t
-```
-
-Issue TLS certificate:
-
-```bash
 sudo certbot --nginx -d admin.jurisdigta.eu
 sudo nginx -t
 sudo systemctl reload nginx
-```
-
-Validate from outside the server network:
-
-```bash
-curl -I https://admin.jurisdigta.eu
-curl -I https://admin.jurisdigta.eu/grafana/
 ```
 
 Security notes:
 
 - Keep Grafana's own login enabled with a strong password.
 - Do not publish Prometheus, Node Exporter, cAdvisor, Blackbox Exporter, or status exporter ports.
-- Consider adding nginx basic auth or IP allowlisting before production use if the dashboard should be restricted to a small operator group.
+- Use Cloudflare Access for operator identity control before production use.
 - Do not display personal data, legal documents, chat contents, API keys, SMTP passwords, or database connection strings on dashboards.
 
 ## First Grafana Dashboard

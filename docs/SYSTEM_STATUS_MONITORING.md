@@ -153,21 +153,34 @@ curl -fsS http://127.0.0.1:3000/api/health
 
 If the server has a browser session, open `http://127.0.0.1:3000` locally. On a headless server, use the SSH tunnel flow above.
 
-For mobile/public HTTPS access, use:
-
-```text
-https://admin.jurisdigta.eu
-```
-
-Nginx redirects this admin entry point to:
+For mobile/public HTTPS access on the current no-static-IP production server,
+publish Grafana through Cloudflare Tunnel and protect it with Cloudflare Access:
 
 ```text
 https://admin.jurisdigta.eu/grafana/
 ```
 
-This requires `admin.jurisdigta.eu` DNS to point to the public IP/NAT endpoint for `jurisdigta-server`, router/firewall forwarding for TCP `80` and `443`, and a Certbot certificate on the server. The nginx template is `Deployment/monitoring/nginx-admin-grafana.conf`.
+Cloudflare Tunnel hostname mapping:
 
-Keep Grafana and Prometheus private by default. Do not expose ports `3000`, `9090`, `9100`, `9108`, or `9115` directly to the public internet. If `admin.jurisdigta.eu` is used later, terminate TLS at nginx and require strong authentication before Grafana.
+```text
+admin.jurisdigta.eu -> http://127.0.0.1:3000
+```
+
+Grafana is configured to serve from `/grafana/`, so validate the public route
+with:
+
+```bash
+curl -I https://admin.jurisdigta.eu/grafana/
+```
+
+The older nginx/Certbot template at `Deployment/monitoring/nginx-admin-grafana.conf`
+is only a fallback for a future static-IP or NAT deployment where inbound TCP
+`80` and `443` are intentionally opened.
+
+Keep Grafana and Prometheus private by default. Do not expose ports `3000`,
+`9090`, `9100`, `9108`, or `9115` directly to the public internet. If
+`admin.jurisdigta.eu` is enabled, require Cloudflare Access before Grafana and
+keep Grafana's own login enabled.
 
 Useful Grafana panels:
 

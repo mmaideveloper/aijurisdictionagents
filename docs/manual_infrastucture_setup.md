@@ -273,9 +273,10 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 14. Install or update the server-local daily laws collector cron wrapper only after the collector image, PostgreSQL database, migrations, and one bounded live smoke run are validated.
 15. Install the server status writer cron from `docs/SYSTEM_STATUS_MONITORING.md` so API/system/laws collector status is updated every minute.
 16. Optional but recommended: install the Prometheus/Grafana stack from `Deployment/monitoring/README.md` for real-time dashboards, host metrics, Docker metrics, API probes, and laws collector metrics.
-17. Configure firewall and nginx only after local health checks pass.
-18. Configure Certbot only after DNS and inbound ports `80` and `443` are confirmed.
-19. Add systemd units or timers only after the exact smoke deployment commands are validated.
+17. Configure Cloudflare Tunnel public hostnames only after local health checks pass.
+18. Configure firewall to keep direct public ingress closed except SSH or explicitly approved maintenance access.
+19. Use nginx/Certbot only as a future static-IP fallback; for the current no-static-IP production server, Cloudflare Tunnel is the public HTTPS path.
+20. Add systemd units or timers only after the exact smoke deployment commands are validated.
 
 ### Secrets And Environment Values
 
@@ -293,10 +294,13 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - Optional Prometheus exporter path: `/srv/jurisdigta/app/scripts/server/export_system_status_metrics.py`.
 - Optional Prometheus exporter port: `127.0.0.1:9108`.
 - Optional monitoring stack path: `/srv/jurisdigta/app/Deployment/monitoring`.
-- Optional Grafana local URL: `http://127.0.0.1:3000`, accessed by SSH tunnel unless protected behind authenticated nginx.
-- Optional Grafana public mobile entry URL after DNS/TLS setup: `https://admin.jurisdigta.eu`, redirected by nginx to `https://admin.jurisdigta.eu/grafana/`.
-- Required public Grafana prerequisite: `admin.jurisdigta.eu` must resolve to the public IP/NAT endpoint for `jurisdigta-server`, not the WebHouse hosting endpoint.
-- Required public Grafana prerequisite: router/firewall forwards TCP `80` and `443` to `jurisdigta-server`.
+- Cloudflare Tunnel service: `cloudflared.service` on `jurisdigta-server`.
+- Cloudflare Tunnel API hostname: `api.jurisdigta.eu` -> `http://127.0.0.1:8080`.
+- Cloudflare Tunnel MCP hostname: `mcp.jurisdigta.eu` -> `http://127.0.0.1:8080`, with MCP served at `/MCP`.
+- Cloudflare Tunnel admin hostname: `admin.jurisdigta.eu` -> `http://127.0.0.1:3000`, with Grafana served at `/grafana/`.
+- Cloudflare Tunnel web hostname: `web.jurisdigta.eu` -> `http://127.0.0.1:80` only after nginx serves the intended web app.
+- Optional Grafana local URL: `http://127.0.0.1:3000`, accessed by SSH tunnel or through `admin.jurisdigta.eu` protected by Cloudflare Access.
+- Optional Grafana public mobile entry URL through Cloudflare Tunnel: `https://admin.jurisdigta.eu/grafana/`.
 - Required Grafana secret for local stack: `GRAFANA_ADMIN_PASSWORD`, stored only in `/srv/jurisdigta/app/Deployment/monitoring/.env` or a server-local secret manager.
 
 ### Validation Steps
@@ -318,8 +322,10 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9108/metrics | head` returns Prometheus text metrics.
 - If Prometheus/Grafana monitoring is enabled, `docker compose -f /srv/jurisdigta/app/Deployment/monitoring/docker-compose.yml ps` shows Prometheus, Grafana, Node Exporter, cAdvisor, and Blackbox Exporter running.
 - If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9090/-/ready` and `curl -fsS http://127.0.0.1:3000/api/health` succeed.
-- If public Grafana mobile access is enabled, `curl -I https://admin.jurisdigta.eu` redirects to `/grafana/`, and `curl -I https://admin.jurisdigta.eu/grafana/` returns an HTTPS response from `jurisdigta-server`.
-- UFW allows only expected ingress, typically SSH plus nginx HTTP/HTTPS.
+- `systemctl status cloudflared --no-pager` shows the Cloudflare tunnel active when public hostnames are enabled.
+- If Cloudflare Tunnel public hostnames are enabled, `curl -fsS https://api.jurisdigta.eu/health`, `curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`, and `curl -I https://admin.jurisdigta.eu/grafana/` succeed from outside the server.
+- Cloudflare Access protects `admin.jurisdigta.eu` before public use.
+- UFW allows only expected ingress, typically SSH; do not expose PostgreSQL, API, Grafana, Prometheus, or exporter ports directly.
 
 ### Rollback Notes
 
@@ -332,6 +338,7 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - Remove `/srv/jurisdigta/ops/run_laws_collector_daily.sh` only after confirming no other scheduler uses it.
 - Back up `/srv/jurisdigta/app/runs/storage` before removing containers, volumes, or the repository checkout.
 - Remove `/etc/sudoers.d/jurisdigta-admin-codex` to revoke Codex passwordless sudo.
+- Disable Cloudflare Tunnel hostnames or stop `cloudflared.service` only after DNS is routed to a rollback target or the service is intentionally offline.
 - Remove nginx site config or Certbot certificates only after DNS is routed away or rollback target is ready.
 - Remove Docker/GitHub CLI/nginx packages only if the server is being decommissioned.
 
@@ -343,3 +350,4 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - Preserve deployment and collector logs for traceability, while avoiding personal data and legal-risk content in logs.
 - Use `azurefoundry` for production-like local starts unless deterministic offline testing was explicitly requested.
 - Keep legal-risk outputs subject to human oversight before production traffic is enabled.
+- For Cloudflare Tunnel and Access, avoid logging personal data, legal documents, API keys, database credentials, or full user prompts in edge, dashboard, or application logs.

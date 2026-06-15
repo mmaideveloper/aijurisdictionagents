@@ -357,31 +357,83 @@ tail -n 80 /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log
 
 Expected result is either one imported sequential law or `No new laws for SK`, followed by a clean worker stop message.
 
-## 11. Reverse Proxy And Firewall
+## 11. Cloudflare Tunnel, Reverse Proxy, And Firewall
 
-For a local LAN smoke deployment, expose only SSH and the reverse proxy:
+For production deployments without a static public IP, use Cloudflare Tunnel as
+the public edge for `jurisdigta.eu` subdomains. The tunnel replaces the older
+public-IP/NAT/Certbot path for normal public access: Cloudflare terminates
+public HTTPS and `cloudflared` connects outbound from `jurisdigta-server`.
+
+Install `cloudflared` on `jurisdigta-server`:
+
+```bash
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | \
+  sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | \
+  sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt-get update
+sudo apt-get install -y cloudflared
+```
+
+Create the tunnel in Cloudflare Zero Trust, then run the generated service
+install command directly on the server. Do not paste tunnel tokens into chat,
+issue trackers, shell history committed to Git, or documentation:
+
+```bash
+sudo cloudflared service install <fresh-cloudflare-tunnel-token>
+sudo systemctl status cloudflared --no-pager
+```
+
+Configure these Cloudflare Tunnel public hostnames:
+
+| Hostname | Tunnel service | Current server target | Notes |
+| --- | --- | --- | --- |
+| `api.jurisdigta.eu` | HTTP | `http://127.0.0.1:8080` | API container; validate with `/health`. |
+| `mcp.jurisdigta.eu` | HTTP | `http://127.0.0.1:8080` | MCP is served by the API at `/MCP`; metadata is under `/.well-known/oauth-protected-resource/MCP`. |
+| `admin.jurisdigta.eu` | HTTP | `http://127.0.0.1:3000` | Grafana path is `/grafana/`; protect with Cloudflare Access. |
+| `web.jurisdigta.eu` | HTTP | `http://127.0.0.1:80` after web deployment | Do not publish until nginx serves the intended corporate/frontend web app instead of the default nginx page. |
+| `www.jurisdigta.eu` | HTTP | `http://127.0.0.1:80` after web deployment | Optional alias for the public web app. |
+| `jurisdigta.eu` | HTTP | `http://127.0.0.1:80` after web deployment | Optional root domain for the public web app. |
+
+Minimal runnable validation examples:
+
+```bash
+curl -fsS http://127.0.0.1:8080/health
+curl -I http://127.0.0.1:8080/MCP
+curl -I http://127.0.0.1:3000/grafana/
+sudo systemctl status cloudflared --no-pager
+```
+
+External validation after Cloudflare DNS and tunnel hostname routing are active:
+
+```bash
+curl -fsS https://api.jurisdigta.eu/health
+curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP
+curl -I https://admin.jurisdigta.eu/grafana/
+```
+
+Protect `admin.jurisdigta.eu` with Cloudflare Access before using it from the
+public internet. Allow only named operator emails, require MFA where available,
+and keep Grafana's own login enabled with a strong password. Do not publish
+Prometheus, PostgreSQL, Node Exporter, cAdvisor, Blackbox Exporter, or status
+exporter ports.
+
+For a local LAN smoke deployment, expose only SSH and nginx:
 
 ```bash
 sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'
+sudo ufw allow 'Nginx HTTP'
 sudo ufw enable
 sudo ufw status verbose
 ```
 
 Keep direct PostgreSQL access closed unless there is a documented operational need. Prefer local-only container networking for PostgreSQL.
 
-Use nginx to route:
-
-- `api.jurisdigta.eu` to `http://127.0.0.1:8080`
-- future frontend or admin services to their local ports
-
-TLS setup with Certbot requires public DNS records pointing at this server and inbound ports `80` and `443` reachable from the internet:
-
-```bash
-sudo certbot --nginx -d api.jurisdigta.eu
-```
-
-Do not run Certbot until DNS and firewall/NAT routing are confirmed.
+If a future static-IP deployment intentionally bypasses Cloudflare Tunnel, use
+nginx plus Certbot only after DNS points at the server and inbound TCP `80` and
+`443` are intentionally reachable. That fallback is not the preferred path for
+the current no-static-IP production environment.
 
 ## 12. Service Management
 
@@ -504,7 +556,7 @@ sudo rm -f /etc/sudoers.d/jurisdigta-admin-codex
 ## 15. Open Items Before Production
 
 - Decide whether this self-managed server is test, production, or both.
-- Confirm DNS and router/firewall/NAT for `jurisdigta.eu` subdomains.
+- Confirm Cloudflare nameserver delegation, Cloudflare Tunnel public hostnames, and Cloudflare Access policies for protected `jurisdigta.eu` subdomains.
 - Decide whether PostgreSQL stays as Docker `pgvector/pgvector:pg16` or moves to managed PostgreSQL.
 - Create systemd unit files after the first smoke deployment proves the exact runtime command.
 - Define backup retention for PostgreSQL and uploaded/generated documents.
@@ -1001,27 +1053,30 @@ Then open:
 http://127.0.0.1:3000
 ```
 
-For mobile access, use Grafana behind nginx TLS at:
-
-```text
-https://admin.jurisdigta.eu
-```
-
-Nginx redirects the admin root URL to:
+For mobile access in the current no-static-IP production setup, use Grafana
+through Cloudflare Tunnel and Cloudflare Access at:
 
 ```text
 https://admin.jurisdigta.eu/grafana/
 ```
 
+Cloudflare Tunnel should route:
+
+```text
+admin.jurisdigta.eu -> http://127.0.0.1:3000
+```
+
 Before enabling this URL:
 
-- Point `admin.jurisdigta.eu` DNS to the public IP or NAT endpoint for `jurisdigta-server`.
-- Forward TCP `80` and `443` from the router/firewall to `jurisdigta-server`.
+- Confirm `cloudflared.service` is active.
+- Configure `admin.jurisdigta.eu` as a public hostname on the Cloudflare Tunnel.
+- Protect `admin.jurisdigta.eu` with Cloudflare Access for approved operator identities.
 - Keep Grafana bound only to `127.0.0.1:3000`.
-- Use the nginx template `Deployment/monitoring/nginx-admin-grafana.conf`.
-- Run `sudo certbot --nginx -d admin.jurisdigta.eu` only after DNS and port forwarding are correct.
 
-Do not expose Grafana or Prometheus container ports directly to the internet. Public mobile access must go through nginx TLS and Grafana login.
+Do not expose Grafana or Prometheus container ports directly to the internet.
+Public mobile access must go through Cloudflare Access and Grafana login.
+Use the nginx template `Deployment/monitoring/nginx-admin-grafana.conf` only
+as a future static-IP/NAT fallback.
 
 Rollback:
 
