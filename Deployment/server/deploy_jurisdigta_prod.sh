@@ -187,8 +187,12 @@ run_schema_migrations() {
   docker run --rm \
     --network aijuristiction-api_default \
     --env-file "$ENV_FILE" \
+    -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     -e DB_OPTION=postgres \
     -e DB_CLOUD="$api_db_cloud" \
+    -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
+    -e STORAGE_OPTION=local \
+    -e STORE_LOCAL=/workspace/runs/storage/api/files \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
     aijuristiction-api:local \
@@ -197,8 +201,12 @@ run_schema_migrations() {
   docker run --rm \
     --network aijuristiction-api_default \
     --env-file "$ENV_FILE" \
+    -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     -e DB_OPTION=postgres \
     -e DB_CLOUD="$api_db_cloud" \
+    -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
+    -e STORAGE_OPTION=local \
+    -e STORE_LOCAL=/workspace/runs/storage/api/files \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
     aijuristiction-api:local \
