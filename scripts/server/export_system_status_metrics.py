@@ -144,6 +144,8 @@ def _render_metrics(payload: dict[str, Any]) -> str:
         "llm": _nested(payload, "api", "llm", "status"),
         "system": _nested(payload, "system", "status"),
         "laws_collector": _nested(payload, "laws_collector", "status"),
+        "email_scheduler": _nested(payload, "system", "apps", "email_scheduler", "status"),
+        "document_processor": _nested(payload, "system", "apps", "document_processor", "status"),
         "errors": _nested(payload, "errors", "status"),
     }
     for component, status in components.items():
@@ -178,6 +180,8 @@ def _render_metrics(payload: dict[str, Any]) -> str:
     if isinstance(system, dict):
         _append_resource_metrics(lines, system)
         _append_http_metrics(lines, system)
+        _append_email_metrics(lines, system)
+        _append_document_processor_metrics(lines, system)
 
     business = payload.get("business")
     if not isinstance(business, dict) and isinstance(system, dict):
@@ -319,6 +323,84 @@ def _append_http_metrics(lines: list[str], system: dict[str, Any]) -> None:
                 "jurisdigta_http_requests_by_method_window"
                 f'{{{labels},method="{_label(str(method))}"}} {_number(count, 0)}'
             )
+
+
+def _append_email_metrics(lines: list[str], system: dict[str, Any]) -> None:
+    apps = system.get("apps")
+    if not isinstance(apps, dict):
+        return
+    email = apps.get("email_scheduler")
+    if not isinstance(email, dict):
+        return
+    _append_help(lines, "jurisdigta_email_sent_total", "Total sent emails in the outbox.", "gauge")
+    lines.append(f"jurisdigta_email_sent_total {_number(email.get('sent_total'), 0)}")
+    _append_help(lines, "jurisdigta_email_sent_window", "Sent emails in the local monitoring window.", "gauge")
+    lines.append(f'jurisdigta_email_sent_window{{window="24h"}} {_number(email.get("sent_24h"), 0)}')
+    _append_help(lines, "jurisdigta_email_queue_total", "Email outbox queue count by status.", "gauge")
+    lines.append(f'jurisdigta_email_queue_total{{status="pending"}} {_number(email.get("queue_pending"), 0)}')
+    lines.append(f'jurisdigta_email_queue_total{{status="processing"}} {_number(email.get("queue_processing"), 0)}')
+    lines.append(f'jurisdigta_email_queue_total{{status="failed"}} {_number(email.get("failed_total"), 0)}')
+    _append_help(lines, "jurisdigta_email_send_duration_seconds_avg", "Average email queue-to-sent duration.", "gauge")
+    lines.append(
+        f'jurisdigta_email_send_duration_seconds_avg{{window="24h"}} '
+        f'{_number(email.get("avg_send_duration_seconds_24h"), 0)}'
+    )
+    _append_help(lines, "jurisdigta_email_send_duration_seconds_max", "Maximum email queue-to-sent duration.", "gauge")
+    lines.append(
+        f'jurisdigta_email_send_duration_seconds_max{{window="24h"}} '
+        f'{_number(email.get("max_send_duration_seconds_24h"), 0)}'
+    )
+
+
+def _append_document_processor_metrics(lines: list[str], system: dict[str, Any]) -> None:
+    apps = system.get("apps")
+    if not isinstance(apps, dict):
+        return
+    processor = apps.get("document_processor")
+    if not isinstance(processor, dict):
+        return
+    _append_help(lines, "jurisdigta_documents_processed_total", "Total processed uploaded case documents.", "gauge")
+    lines.append(f"jurisdigta_documents_processed_total {_number(processor.get('processed_total'), 0)}")
+    _append_help(lines, "jurisdigta_documents_processed_window", "Processed uploaded case documents in the local monitoring window.", "gauge")
+    lines.append(
+        f'jurisdigta_documents_processed_window{{window="24h"}} '
+        f'{_number(processor.get("processed_24h"), 0)}'
+    )
+    _append_help(lines, "jurisdigta_document_processor_queue_total", "Document processor queue count by status.", "gauge")
+    lines.append(
+        f'jurisdigta_document_processor_queue_total{{status="uploaded"}} '
+        f'{_number(processor.get("queue_uploaded"), 0)}'
+    )
+    lines.append(
+        f'jurisdigta_document_processor_queue_total{{status="failed_retryable"}} '
+        f'{_number(processor.get("queue_failed_retryable"), 0)}'
+    )
+    lines.append(
+        f'jurisdigta_document_processor_queue_total{{status="processing"}} '
+        f'{_number(processor.get("processing"), 0)}'
+    )
+    lines.append(
+        f'jurisdigta_document_processor_queue_total{{status="failed"}} '
+        f'{_number(processor.get("failed_total"), 0)}'
+    )
+    _append_help(lines, "jurisdigta_document_processing_duration_seconds_avg", "Average document upload-to-processed duration.", "gauge")
+    lines.append(
+        f'jurisdigta_document_processing_duration_seconds_avg{{window="24h"}} '
+        f'{_number(processor.get("avg_processing_duration_seconds_24h"), 0)}'
+    )
+    _append_help(lines, "jurisdigta_document_processing_duration_seconds_max", "Maximum document upload-to-processed duration.", "gauge")
+    lines.append(
+        f'jurisdigta_document_processing_duration_seconds_max{{window="24h"}} '
+        f'{_number(processor.get("max_processing_duration_seconds_24h"), 0)}'
+    )
+    duration = processor.get("last_run_duration_seconds")
+    if duration is not None:
+        _append_help(lines, "jurisdigta_document_processor_last_run_duration_seconds", "Latest document processor run duration.", "gauge")
+        lines.append(f"jurisdigta_document_processor_last_run_duration_seconds {_number(duration, 0)}")
+    last_run_processed = processor.get("last_run_processed")
+    if last_run_processed is not None:
+        _append_help(lines, "jurisdigta_document_processor_last_run_processed", "Documents processed in the latest document processor run.", "gauge")
+        lines.append(f"jurisdigta_document_processor_last_run_processed {_number(last_run_processed, 0)}")
 
 
 def _append_business_metrics(lines: list[str], business: dict[str, Any]) -> None:

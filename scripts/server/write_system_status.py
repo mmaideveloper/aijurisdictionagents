@@ -12,6 +12,7 @@ from typing import Any
 
 DEFAULT_OUTPUT = "/srv/jurisdigta/runs/status/system-status.json"
 DEFAULT_LAWS_LOG = "/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log"
+DEFAULT_DOCUMENT_PROCESSOR_LOG = "/srv/jurisdigta/runs/logs/document-processor-latest.log"
 DEFAULT_APP_ROOT = "/srv/jurisdigta/app"
 ERROR_PATTERN = re.compile(r"\b(error|exception|traceback|critical|failed)\b", re.IGNORECASE)
 HTTP_REQUEST_PATTERN = re.compile(
@@ -21,6 +22,12 @@ HTTP_REQUEST_PATTERN = re.compile(
 )
 START_PATTERN = re.compile(r"^\[(?P<timestamp>[^\]]+)\] starting laws collector daily job")
 FINISH_PATTERN = re.compile(r"^\[(?P<timestamp>[^\]]+)\] laws collector daily job finished")
+DOCUMENT_PROCESSOR_START_PATTERN = re.compile(
+    r"^\[(?P<timestamp>[^\]]+)\] starting document processor job"
+)
+DOCUMENT_PROCESSOR_FINISH_PATTERN = re.compile(
+    r"^\[(?P<timestamp>[^\]]+)\] document processor job finished"
+)
 KEY_VALUE_PATTERN = re.compile(r"(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>\S*)")
 SECRET_PATTERN = re.compile(
     r"(?i)(password|passwd|pwd|secret|token|api[_-]?key|authorization|connection[_-]?string)"
@@ -34,11 +41,14 @@ def main() -> int:
     )
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--laws-log", default=DEFAULT_LAWS_LOG)
+    parser.add_argument("--document-processor-log", default=DEFAULT_DOCUMENT_PROCESSOR_LOG)
     parser.add_argument("--app-root", default=DEFAULT_APP_ROOT)
     parser.add_argument("--api-container", default="jurisdigta-api")
     parser.add_argument("--mcp-container", default="jurisdigta-mcp")
     parser.add_argument("--postgres-container", default="aijurisdiction-postgres")
     parser.add_argument("--laws-container", default="jurisdigta-laws-collector-daily")
+    parser.add_argument("--email-container", default="jurisdigta-email-scheduler")
+    parser.add_argument("--document-processor-container", default="jurisdigta-document-processor")
     parser.add_argument("--docker-log-since", default="60m")
     args = parser.parse_args()
 
@@ -47,10 +57,13 @@ def main() -> int:
     payload = build_status_payload(
         app_root=Path(args.app_root),
         laws_log=Path(args.laws_log),
+        document_processor_log=Path(args.document_processor_log),
         api_container=args.api_container,
         mcp_container=args.mcp_container,
         postgres_container=args.postgres_container,
         laws_container=args.laws_container,
+        email_container=args.email_container,
+        document_processor_container=args.document_processor_container,
         docker_log_since=args.docker_log_since,
     )
     temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
@@ -63,25 +76,39 @@ def build_status_payload(
     *,
     app_root: Path,
     laws_log: Path,
+    document_processor_log: Path,
     api_container: str,
     mcp_container: str,
     postgres_container: str,
     laws_container: str,
+    email_container: str,
+    document_processor_container: str,
     docker_log_since: str,
 ) -> dict[str, Any]:
     api_status = _container_status(api_container, log_since=docker_log_since, include_http_metrics=True)
     mcp_status = _container_status(mcp_container, log_since=docker_log_since, include_http_metrics=True)
     postgres_status = _container_status(postgres_container, log_since=docker_log_since)
     laws_status = _container_status(laws_container, log_since=docker_log_since)
+    email_status = _container_status(email_container, log_since=docker_log_since)
+    document_processor_status = _container_status(document_processor_container, log_since=docker_log_since)
     laws_runtime = _laws_log_status(laws_log)
     laws_status.update(laws_runtime)
     if laws_status.get("status") == "stopped" and laws_status.get("last_run_finished_at"):
         laws_status["status"] = "idle"
+    email_status.update(_email_queue_status(postgres_container))
+    document_processor_status.update(_document_processor_status(document_processor_log, postgres_container))
+    if (
+        document_processor_status.get("status") == "stopped"
+        and document_processor_status.get("last_run_finished_at")
+    ):
+        document_processor_status["status"] = "idle"
 
     apps = {
         "api": api_status,
         "mcp": mcp_status,
         "postgres": postgres_status,
+        "email_scheduler": email_status,
+        "document_processor": document_processor_status,
         "laws_collector": laws_status,
     }
     return {
@@ -212,6 +239,119 @@ def _business_status(postgres_container: str) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _email_queue_status(postgres_container: str) -> dict[str, Any]:
+    sql = """
+    SELECT json_build_object(
+      'queue_pending', (SELECT COUNT(*) FROM email_outbox WHERE status = 'pending'),
+      'queue_processing', (SELECT COUNT(*) FROM email_outbox WHERE status = 'processing'),
+      'sent_total', (SELECT COUNT(*) FROM email_outbox WHERE status = 'sent'),
+      'sent_24h', (
+        SELECT COUNT(*) FROM email_outbox
+        WHERE status = 'sent' AND updated_at >= now() - interval '24 hours'
+      ),
+      'failed_total', (SELECT COUNT(*) FROM email_outbox WHERE status = 'failed'),
+      'avg_send_duration_seconds_24h', COALESCE((
+        SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at)))
+        FROM email_outbox
+        WHERE status = 'sent' AND updated_at >= now() - interval '24 hours'
+      ), 0),
+      'max_send_duration_seconds_24h', COALESCE((
+        SELECT MAX(EXTRACT(EPOCH FROM (updated_at - created_at)))
+        FROM email_outbox
+        WHERE status = 'sent' AND updated_at >= now() - interval '24 hours'
+      ), 0)
+    );
+    """
+    return _postgres_json(postgres_container, sql)
+
+
+def _document_processor_status(path: Path, postgres_container: str) -> dict[str, Any]:
+    payload = _document_processor_db_status(postgres_container)
+    payload.update(_document_processor_log_status(path))
+    return payload
+
+
+def _document_processor_db_status(postgres_container: str) -> dict[str, Any]:
+    sql = """
+    SELECT json_build_object(
+      'queue_uploaded', (
+        SELECT COUNT(*) FROM case_documents
+        WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+          AND processing_status = 'uploaded'
+      ),
+      'queue_failed_retryable', (
+        SELECT COUNT(*) FROM case_documents
+        WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+          AND processing_status = 'failed'
+      ),
+      'processing', (
+        SELECT COUNT(*) FROM case_documents
+        WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+          AND processing_status = 'processing'
+      ),
+      'processed_total', (
+        SELECT COUNT(*) FROM case_documents
+        WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+          AND processing_status = 'processed'
+      ),
+      'processed_24h', (
+        SELECT COUNT(*) FROM case_documents
+        WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+          AND processing_status = 'processed'
+          AND processed_at::timestamptz >= now() - interval '24 hours'
+      ),
+      'failed_total', (
+        SELECT COUNT(*) FROM case_documents
+        WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+          AND processing_status = 'failed'
+      ),
+      'avg_processing_duration_seconds_24h', COALESCE((
+        SELECT AVG(EXTRACT(EPOCH FROM (processed_at::timestamptz - created_at::timestamptz)))
+        FROM case_documents
+        WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+          AND processing_status = 'processed'
+          AND processed_at IS NOT NULL
+          AND processed_at::timestamptz >= now() - interval '24 hours'
+      ), 0),
+      'max_processing_duration_seconds_24h', COALESCE((
+        SELECT MAX(EXTRACT(EPOCH FROM (processed_at::timestamptz - created_at::timestamptz)))
+        FROM case_documents
+        WHERE kind IN ('uploaded', 'chat_attachment', 'session_history')
+          AND processing_status = 'processed'
+          AND processed_at IS NOT NULL
+          AND processed_at::timestamptz >= now() - interval '24 hours'
+      ), 0)
+    );
+    """
+    return _postgres_json(postgres_container, sql)
+
+
+def _postgres_json(postgres_container: str, sql: str) -> dict[str, Any]:
+    text = _command_text(
+        [
+            "docker",
+            "exec",
+            postgres_container,
+            "psql",
+            "-U",
+            "postgres",
+            "-d",
+            "aijurisdiction",
+            "-t",
+            "-A",
+            "-c",
+            sql,
+        ]
+    ).strip()
+    if not text:
+        return {}
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _laws_log_status(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {
@@ -240,6 +380,36 @@ def _laws_log_status(path: Path) -> dict[str, Any]:
         "last_run_processed": latest_run["processed"],
         "recent_errors": _recent_error_lines(text),
         "error_count": collector_errors,
+    }
+
+
+def _document_processor_log_status(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {
+            "latest_log": str(path),
+            "last_run_started_at": None,
+            "last_run_finished_at": None,
+            "last_run_duration_seconds": None,
+            "last_run_processed": 0,
+            "last_run_failed": 0,
+            "error_count": 0,
+        }
+    text = path.read_text(encoding="utf-8", errors="replace")
+    started = _last_timestamp(text, DOCUMENT_PROCESSOR_START_PATTERN)
+    finished = _last_timestamp(text, DOCUMENT_PROCESSOR_FINISH_PATTERN)
+    duration = None
+    if started and finished:
+        duration = max(0, int((finished - started).total_seconds()))
+    latest_run = _latest_document_processor_run_summary(text)
+    return {
+        "latest_log": str(path),
+        "last_run_started_at": _format_dt(started),
+        "last_run_finished_at": _format_dt(finished),
+        "last_run_duration_seconds": duration,
+        "last_run_processed": latest_run["processed"],
+        "last_run_failed": latest_run["failed"],
+        "recent_errors": _recent_error_lines(text),
+        "error_count": _count_error_lines(text),
     }
 
 
@@ -357,6 +527,27 @@ def _latest_laws_run_summary(text: str) -> dict[str, int]:
         summary["processed"] += _int_field(fields, "processed")
         summary["imported_laws"] += _int_field(fields, "new_documents")
         summary["imported_laws"] += _int_field(fields, "laws_found")
+    return summary
+
+
+def _latest_document_processor_run_summary(text: str) -> dict[str, int]:
+    lines = text.splitlines()
+    start_index = 0
+    for index, line in enumerate(lines):
+        if DOCUMENT_PROCESSOR_START_PATTERN.search(line):
+            start_index = index
+
+    summary = {
+        "processed": 0,
+        "failed": 0,
+    }
+    for line in lines[start_index:]:
+        summary["processed"] += line.count('"status": "processed"')
+        summary["processed"] += line.count("'status': 'processed'")
+        summary["failed"] += line.count('"status": "failed"')
+        summary["failed"] += line.count("'status': 'failed'")
+        if "[document-processor] document failed" in line:
+            summary["failed"] += 1
     return summary
 
 

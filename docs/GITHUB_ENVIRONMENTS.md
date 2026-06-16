@@ -322,7 +322,7 @@ the selected GitHub Environment contains stale or mismatched signing secrets.
 
 ## 11. Configure Self-Managed Production Server Variables
 
-These are used by `.github/workflows/self_managed_prod_deploy.yml` to deploy API, MCP, frontend web, laws collector, and system status monitoring to the Ubuntu `jurisdigta-server`.
+These are used by `.github/workflows/self_managed_prod_deploy.yml` to deploy API, MCP, frontend web, the document processor, laws collector, and system status monitoring to the Ubuntu `jurisdigta-server`.
 
 The workflow does not store application runtime secrets in GitHub. Keep Azure OpenAI, PostgreSQL, SMTP, MCP JWT, and API secrets in the server-local file:
 
@@ -348,6 +348,9 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_API_PORT` | `8080` | Server-local API bind port |
 | `JURISDIGTA_MCP_PORT` | `8070` | Server-local MCP bind port |
 | `JURISDIGTA_WEB_PORT` | `8090` | Server-local web bind port |
+| `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON` | `1` | Install/update the self-managed document processor cron wrapper; set `0` only for manual worker runs |
+| `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
+| `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT` | `20` | Max pending documents processed per scheduled run |
 
 Required `prod` GitHub Environment secret:
 
@@ -374,6 +377,8 @@ Server-local `jurisdigta.env` must include at least:
 - `LOCAL_POSTGRES_PASSWORD`
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
 - `MCP_API_JWT_SECRET`
+- `DOCUMENT_PROCESSOR_OPTION=azure`
+- `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` or another bounded runtime in minutes
 - email/Turnstile settings when those production features are enabled
 
 Optional server-local monitoring setting in `/srv/jurisdigta/app/Deployment/monitoring/.env`:
@@ -387,7 +392,15 @@ Minimal workflow validation after setup:
 
 1. Run `Self-Managed Prod Deploy` with `repo_ref=main`.
 2. Confirm the workflow summary lists the expected host, ref, and local ports.
-3. From outside the server, validate the Cloudflare Tunnel routes:
+3. Confirm the document processor image and cron wrapper exist on the server:
+
+```bash
+docker image inspect jurisdigta-document-processor:local >/dev/null
+test -x /srv/jurisdigta/ops/run_document_processor.sh
+crontab -l | grep run_document_processor.sh
+```
+
+4. From outside the server, validate the Cloudflare Tunnel routes:
 
 ```bash
 curl -fsS https://api.jurisdigta.eu/health
@@ -423,6 +436,9 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_APPLICATION_INSIGHTS_NAME`
 - `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME`
+- `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1` for self-managed prod
+- `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION=*/15 * * * *` for self-managed prod
+- `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT=20` for self-managed prod
 - `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES`
 - `AZURE_LAWS_STORAGE_CONTAINER_NAME=laws-collection-sk`
@@ -499,6 +515,7 @@ That means:
 - `Email Scheduler Build and Deploy` deploys the dedicated ACA Job to `dev` on `push` to `main` when API/email scheduler files change
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 - `Self-Managed Prod Deploy` is manual-only and always uses the protected `prod` GitHub Environment
+- `Self-Managed Prod Deploy` builds `jurisdigta-document-processor:local`, starts API with `DOCUMENT_PROCESSOR_OPTION=azure`, and installs `/srv/jurisdigta/ops/run_document_processor.sh` when `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1`
 
 ## 15. Quick Validation Checklist
 
@@ -514,7 +531,8 @@ After setup, verify:
 - `EMAIL_SMTP_PASSWORD` is set when `EMAIL_TRANSPORT=smtp`
 - `TURNSTILE_SITE_KEY` is set on the corporate web GitHub Environment and `TURNSTILE_SECRET_KEY` is set on the API GitHub Environment when `CONTACT_CAPTCHA_REQUIRED=true`
 - `AZURE_EMAIL_SCHEDULER_JOB_NAME` and `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION` are set when the dedicated email ACA job should run
+- self-managed prod document processor settings are set or accepted at defaults: `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON`, `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION`, and `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT`
 - optional `CAR_VALIDATION_API_BASE_URL` and `CAR_VALIDATION_API_KEY` are set together when live vehicle validation should be enabled
 - `workflow_dispatch` works with `github_environment=test`
 - `workflow_dispatch` works with `github_environment=prod`
-- `Self-Managed Prod Deploy` works against `prod` and the server-local health checks for API, MCP, and web pass
+- `Self-Managed Prod Deploy` works against `prod` and the server-local health checks for API, MCP, web, email scheduler, and document processor pass

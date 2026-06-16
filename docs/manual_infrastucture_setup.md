@@ -253,7 +253,7 @@ Related runbooks and scripts:
 - `Deployment/server/deploy_jurisdigta_prod.sh`
 - `.github/workflows/self_managed_prod_deploy.yml`
 
-Purpose: install and validate the software needed to deploy JurisDigta API, system code, laws connector, and PostgreSQL database from GitHub onto the self-managed Ubuntu server `jurisdigta-server`.
+Purpose: install and validate the software needed to deploy JurisDigta API, system code, document processor, laws connector, and PostgreSQL database from GitHub onto the self-managed Ubuntu server `jurisdigta-server`.
 
 ### Provider And Owner
 
@@ -283,15 +283,16 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 11. Build and smoke-test the API with `curl -fsS http://127.0.0.1:8080/health`.
 12. Build the laws connector image and apply laws database migrations before live import.
 13. Before any laws collector redeploy, gracefully stop an active `jurisdigta-laws-collector-daily` container with `docker stop --time 120 jurisdigta-laws-collector-daily`; use forced removal only after the grace period fails.
-14. Install or update the server-local daily laws collector cron wrapper only after the collector image, PostgreSQL database, migrations, and one bounded live smoke run are validated.
-15. Install the server status writer cron from `docs/SYSTEM_STATUS_MONITORING.md` so API/system/laws collector status is updated every minute.
-16. Optional but recommended: install the Prometheus/Grafana stack from `Deployment/monitoring/README.md` for real-time dashboards, host metrics, Docker metrics, API probes, and laws collector metrics.
-17. Configure Cloudflare Tunnel public hostnames only after local health checks pass.
-18. Configure firewall to keep direct public ingress closed except SSH or explicitly approved maintenance access.
-19. Use nginx/Certbot only as a future static-IP fallback; for the current no-static-IP production server, Cloudflare Tunnel is the public HTTPS path.
-20. Add systemd units or timers only after the exact smoke deployment commands are validated.
-21. Configure the GitHub `prod` Environment values documented in `docs/GITHUB_ENVIRONMENTS.md`.
-22. Run `Self-Managed Prod Deploy` from GitHub Actions after the server-local environment file is complete.
+14. Build the document processor image and install the locked cron wrapper through `Deployment/server/deploy_jurisdigta_prod.sh`; validate `/srv/jurisdigta/ops/run_document_processor.sh` before relying on asynchronous document extraction.
+15. Install or update the server-local daily laws collector cron wrapper only after the collector image, PostgreSQL database, migrations, and one bounded live smoke run are validated.
+16. Install the server status writer cron from `docs/SYSTEM_STATUS_MONITORING.md` so API/system/laws collector status is updated every minute.
+17. Optional but recommended: install the Prometheus/Grafana stack from `Deployment/monitoring/README.md` for real-time dashboards, host metrics, Docker metrics, API probes, and laws collector metrics.
+18. Configure Cloudflare Tunnel public hostnames only after local health checks pass.
+19. Configure firewall to keep direct public ingress closed except SSH or explicitly approved maintenance access.
+20. Use nginx/Certbot only as a future static-IP fallback; for the current no-static-IP production server, Cloudflare Tunnel is the public HTTPS path.
+21. Add systemd units or timers only after the exact smoke deployment commands are validated.
+22. Configure the GitHub `prod` Environment values documented in `docs/GITHUB_ENVIRONMENTS.md`.
+23. Run `Self-Managed Prod Deploy` from GitHub Actions after the server-local environment file is complete.
 
 ### Secrets And Environment Values
 
@@ -304,6 +305,11 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Server-local laws collector cron wrapper path: `/srv/jurisdigta/ops/run_laws_collector_daily.sh`.
 - Server-local laws collector log path: `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
 - Daily cron schedule on `jurisdigta-server`: `15 2 * * *`, using the server timezone.
+- Server-local document processor cron wrapper path: `/srv/jurisdigta/ops/run_document_processor.sh`.
+- Server-local document processor log path: `/srv/jurisdigta/runs/logs/document-processor-latest.log`.
+- Default document processor cron schedule on `jurisdigta-server`: `*/15 * * * *`.
+- Default document processor batch limit: `DOCUMENT_PROCESSOR_LIMIT=20`.
+- Production API document processing mode: `DOCUMENT_PROCESSOR_OPTION=azure`.
 - Server-local status file path: `/srv/jurisdigta/runs/status/system-status.json`.
 - API status endpoint: `GET /v1/system/status?minutes=60`, protected by `x-api-key`.
 - Optional Prometheus exporter path: `/srv/jurisdigta/app/scripts/server/export_system_status_metrics.py`.

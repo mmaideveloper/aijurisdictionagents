@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 
 from scripts.server.export_system_status_metrics import _merge_local_runtime, _render_metrics
-from scripts.server.write_system_status import _http_log_metrics, _latest_laws_run_summary, _recent_error_lines
+from scripts.server.write_system_status import (
+    _http_log_metrics,
+    _latest_document_processor_run_summary,
+    _latest_laws_run_summary,
+    _recent_error_lines,
+)
 
 
 def test_laws_run_summary_parses_latest_execution() -> None:
@@ -68,6 +73,24 @@ def test_http_log_metrics_are_aggregate_only() -> None:
         "duration_max_ms": 1692,
         "by_status_class": {"2xx": 2},
         "by_method": {"GET": 1, "POST": 1},
+    }
+
+
+def test_document_processor_run_summary_parses_latest_execution() -> None:
+    log_text = "\n".join(
+        [
+            "[2026-06-16T01:00:00Z] starting document processor job",
+            "[document-processor] batch_results=[{'status': 'processed'}, {'status': 'failed'}]",
+            "[document-processor] document failed doc_id=doc-1 case_id=case-1 error=bad pdf",
+            "[2026-06-16T01:05:00Z] document processor job finished",
+            "[2026-06-16T02:00:00Z] starting document processor job",
+            '[document-processor] batch_results=[{"status": "processed"}, {"status": "processed"}]',
+        ]
+    )
+
+    assert _latest_document_processor_run_summary(log_text) == {
+        "processed": 2,
+        "failed": 0,
     }
 
 
@@ -148,6 +171,53 @@ def test_exporter_renders_http_and_business_metrics() -> None:
     assert 'jurisdigta_users_new_window{window="24h"} 3.0' in metrics
     assert 'jurisdigta_cases_total{state="active"} 18.0' in metrics
     assert 'jurisdigta_cases_new_window{window="1h"} 2.0' in metrics
+
+
+def test_exporter_renders_email_and_document_processor_metrics() -> None:
+    metrics = _render_metrics(
+        {
+            "status": "ok",
+            "system": {
+                "status": "ok",
+                "apps": {
+                    "email_scheduler": {
+                        "status": "ok",
+                        "queue_pending": 4,
+                        "queue_processing": 1,
+                        "sent_total": 30,
+                        "sent_24h": 7,
+                        "failed_total": 2,
+                        "avg_send_duration_seconds_24h": 3.5,
+                        "max_send_duration_seconds_24h": 10,
+                    },
+                    "document_processor": {
+                        "status": "idle",
+                        "queue_uploaded": 5,
+                        "queue_failed_retryable": 1,
+                        "processing": 2,
+                        "processed_total": 40,
+                        "processed_24h": 8,
+                        "failed_total": 3,
+                        "avg_processing_duration_seconds_24h": 12.5,
+                        "max_processing_duration_seconds_24h": 60,
+                        "last_run_duration_seconds": 15,
+                        "last_run_processed": 6,
+                    },
+                },
+            },
+        }
+    )
+
+    assert "jurisdigta_email_sent_total 30.0" in metrics
+    assert 'jurisdigta_email_sent_window{window="24h"} 7.0' in metrics
+    assert 'jurisdigta_email_queue_total{status="pending"} 4.0' in metrics
+    assert 'jurisdigta_email_send_duration_seconds_avg{window="24h"} 3.5' in metrics
+    assert "jurisdigta_documents_processed_total 40.0" in metrics
+    assert 'jurisdigta_documents_processed_window{window="24h"} 8.0' in metrics
+    assert 'jurisdigta_document_processor_queue_total{status="uploaded"} 5.0' in metrics
+    assert 'jurisdigta_document_processing_duration_seconds_avg{window="24h"} 12.5' in metrics
+    assert "jurisdigta_document_processor_last_run_duration_seconds 15.0" in metrics
+    assert "jurisdigta_document_processor_last_run_processed 6.0" in metrics
 
 
 def test_exporter_merges_laws_runtime_from_local_status_file(monkeypatch, tmp_path) -> None:
