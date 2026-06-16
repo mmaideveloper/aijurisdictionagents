@@ -340,9 +340,7 @@ set +a
 
 docker rm -f jurisdigta-document-processor >/dev/null 2>&1 || true
 
-API_DB_CLOUD_VALUE="$(docker inspect jurisdigta-api --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '$1=="DB_CLOUD" {sub(/^DB_CLOUD=/, ""); print; exit}')"
-if [ -z "$API_DB_CLOUD_VALUE" ]; then
-  API_DB_CLOUD_VALUE="$(python3 - "${LOCAL_POSTGRES_DB:-aijurisdiction}" <<'PY'
+API_DB_CLOUD_VALUE="$(python3 - "${LOCAL_POSTGRES_DB:-aijurisdiction}" <<'PY'
 import os
 import sys
 from urllib.parse import quote
@@ -354,7 +352,6 @@ port = os.environ.get("LOCAL_POSTGRES_PORT", "5432")
 print(f"postgresql://{user}:{password}@postgres:{port}/{database}")
 PY
 )"
-fi
 
 DOCUMENT_PROCESSOR_LIMIT_VALUE="${DOCUMENT_PROCESSOR_LIMIT:-20}"
 DOCUMENT_PROCESSOR_MAX_RUNNING_TIME_VALUE="${DOCUMENT_PROCESSOR_MAX_RUNNING_TIME:-15}"
@@ -418,9 +415,7 @@ set +a
 
 docker rm -f jurisdigta-laws-collector-daily >/dev/null 2>&1 || true
 
-LAWS_DB_CLOUD_VALUE="$(docker inspect jurisdigta-api --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '$1=="LAWS_DB_CLOUD" {sub(/^LAWS_DB_CLOUD=/, ""); print; exit}')"
-if [ -z "$LAWS_DB_CLOUD_VALUE" ]; then
-  LAWS_DB_CLOUD_VALUE="$(python3 - "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}" <<'PY'
+LAWS_DB_CLOUD_VALUE="$(python3 - "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}" <<'PY'
 import os
 import sys
 from urllib.parse import quote
@@ -432,7 +427,6 @@ port = os.environ.get("LOCAL_POSTGRES_PORT", "5432")
 print(f"postgresql://{user}:{password}@postgres:{port}/{database}")
 PY
 )"
-fi
 
 docker run --rm \
   --name jurisdigta-laws-collector-daily \
