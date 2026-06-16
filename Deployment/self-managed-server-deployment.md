@@ -297,17 +297,16 @@ docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/D
 Run migrations for the laws PostgreSQL database before a long-running import:
 
 ```bash
-cd /srv/jurisdigta/app
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .
-export LAWS_DB_BACKEND=postgres
-export LAWS_DB_CLOUD="postgresql://postgres:<password>@127.0.0.1:5432/laws_sk"
-python scripts/databases/apply_laws_db_schema.py
+docker run --rm \
+  --network aijuristiction-api_default \
+  --env-file /srv/jurisdigta/secrets/jurisdigta.env \
+  -e LAWS_DB_BACKEND=postgres \
+  -e LAWS_DB_CLOUD="postgresql://postgres:<password>@postgres:5432/laws_sk" \
+  aijuristiction-api:local \
+  python /workspace/scripts/databases/apply_laws_db_schema.py
 ```
 
-Do not place the real password in shell history for production. Prefer loading it from `/srv/jurisdigta/secrets/jurisdigta.env` or a root-readable systemd environment file.
+Do not place the real password in shell history for production. Prefer deriving the connection string from the running `jurisdigta-api` container or loading it from `/srv/jurisdigta/secrets/jurisdigta.env` or a root-readable systemd environment file.
 
 Production-style laws connector defaults:
 
@@ -359,15 +358,20 @@ docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/D
 5. Apply laws schema migrations before the first run after deployment:
 
 ```bash
-cd /srv/jurisdigta/app
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .
-export LAWS_DB_BACKEND=postgres
-export LAWS_DB_CLOUD="$(docker inspect jurisdigta-api --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '$1=="LAWS_DB_CLOUD" {sub(/^LAWS_DB_CLOUD=/, ""); print; exit}')"
-python scripts/databases/apply_laws_db_schema.py
+docker run --rm \
+  --network aijuristiction-api_default \
+  --env-file /srv/jurisdigta/secrets/jurisdigta.env \
+  -e LAWS_DB_BACKEND=postgres \
+  -e LAWS_DB_CLOUD="$(docker inspect jurisdigta-api --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '$1=="LAWS_DB_CLOUD" {sub(/^LAWS_DB_CLOUD=/, ""); print; exit}')" \
+  aijuristiction-api:local \
+  python /workspace/scripts/databases/apply_laws_db_schema.py
 ```
+
+The production deployment script runs API and laws migrations inside the
+`aijuristiction-api:local` Docker image. Do not create a host Python virtual
+environment for migrations on Ubuntu 26.04; the default host Python can be
+newer than third-party OCR wheels support, while the API image uses the
+supported Python runtime.
 
 6. Validate with a bounded live run:
 

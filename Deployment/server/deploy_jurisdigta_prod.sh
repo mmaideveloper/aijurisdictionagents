@@ -178,21 +178,31 @@ run_schema_migrations() {
     return
   fi
 
-  log "applying API and laws database schema migrations"
-  cd "$APP_DIR"
-  python3 -m venv .venv
-  # shellcheck disable=SC1091
-  . .venv/bin/activate
-  python -m pip install --upgrade pip
-  python -m pip install -e .
-  export DB_OPTION=postgres
-  export DB_CLOUD
-  DB_CLOUD="$(postgres_url "127.0.0.1" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
-  python scripts/databases/apply_api_db_schema.py
-  export LAWS_DB_BACKEND=postgres
-  export LAWS_DB_CLOUD
-  LAWS_DB_CLOUD="$(postgres_url "127.0.0.1" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
-  python scripts/databases/apply_laws_db_schema.py
+  log "applying API and laws database schema migrations in the API image"
+  local api_db_cloud
+  local laws_db_cloud
+  api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
+  laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
+
+  docker run --rm \
+    --network aijuristiction-api_default \
+    --env-file "$ENV_FILE" \
+    -e DB_OPTION=postgres \
+    -e DB_CLOUD="$api_db_cloud" \
+    -e LAWS_DB_BACKEND=postgres \
+    -e LAWS_DB_CLOUD="$laws_db_cloud" \
+    aijuristiction-api:local \
+    python /workspace/scripts/databases/apply_api_db_schema.py
+
+  docker run --rm \
+    --network aijuristiction-api_default \
+    --env-file "$ENV_FILE" \
+    -e DB_OPTION=postgres \
+    -e DB_CLOUD="$api_db_cloud" \
+    -e LAWS_DB_BACKEND=postgres \
+    -e LAWS_DB_CLOUD="$laws_db_cloud" \
+    aijuristiction-api:local \
+    python /workspace/scripts/databases/apply_laws_db_schema.py
 }
 
 deploy_web() {
