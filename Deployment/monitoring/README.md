@@ -11,6 +11,8 @@ GET /v1/system/status?minutes=60
 ## What It Monitors
 
 - API and MCP availability through Blackbox Exporter probing the internal Docker service URLs `http://jurisdigta-api:8080/health` and `http://jurisdigta-mcp:8070/health`.
+- API and MCP request counts plus average/max request latency from privacy-minimized Docker log aggregation.
+- Aggregate user and case totals plus new users/cases in one-hour and 24-hour windows from PostgreSQL counts.
 - API/database/LLM/system/laws collector status through `scripts/server/export_system_status_metrics.py`.
 - Error counts for API, laws collector, and PostgreSQL from the status endpoint.
 - Last processed law, next law to check, latest laws collector run timestamps, and latest run duration.
@@ -137,7 +139,11 @@ API image does not expose those fields yet. It preserves an existing
 `GRAFANA_ADMIN_PASSWORD` unless the project env provides one. It also writes
 `MONITORING_APP_DOCKER_NETWORK`, defaulting to `aijuristiction-api_default`,
 so status-exporter and Blackbox Exporter can resolve `jurisdigta-api` and
-`jurisdigta-mcp` without opening API/MCP host bindings beyond loopback.
+`jurisdigta-mcp` without opening API/MCP host bindings beyond loopback. It
+sets `GRAFANA_DEFAULT_HOME_DASHBOARD_PATH` to the provisioned JurisDigta
+Application Performance dashboard so that dashboard is the default view after
+login, and applies the same `homeDashboardUID` through Grafana org preferences
+after stack startup.
 
 If `GRAFANA_ADMIN_PASSWORD` changed after Grafana was already initialized,
 also reset the persisted Grafana admin password:
@@ -337,6 +343,13 @@ Useful starter queries:
 - `jurisdigta_system_memory_used_percent`
 - `probe_success{service="jurisdigta-api"}`
 - `probe_success{service="jurisdigta-mcp"}`
+- `jurisdigta_http_requests_total_window{service="api"}`
+- `jurisdigta_http_request_duration_seconds_avg{service="api"}`
+- `jurisdigta_http_request_duration_seconds_avg{service="mcp"}`
+- `jurisdigta_users_total`
+- `jurisdigta_users_new_window{window="24h"}`
+- `jurisdigta_cases_total{state="active"}`
+- `jurisdigta_cases_new_window{window="24h"}`
 - `up{job="node-exporter"}`
 - `up{job="cadvisor"}`
 

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 from pathlib import Path
 import secrets
 import stat
 import subprocess
 import sys
+import time
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 
 DEFAULT_PROJECT_ENV = Path("/srv/jurisdigta/secrets/jurisdigta.env")
@@ -15,6 +19,7 @@ DEFAULT_GRAFANA_DOMAIN = "admin.jurisdigta.eu"
 DEFAULT_GRAFANA_ROOT_URL = "https://admin.jurisdigta.eu/grafana/"
 DEFAULT_ALERT_EMAIL_TO = "info@jurisdigta.eu"
 DEFAULT_APP_DOCKER_NETWORK = "aijuristiction-api_default"
+DEFAULT_HOME_DASHBOARD_PATH = "/var/lib/grafana/dashboards/jurisdigta-application-performance.json"
 
 
 def main() -> int:
@@ -81,6 +86,7 @@ def main() -> int:
     if args.start:
         _run(["docker", "compose", "up", "-d"], cwd=monitoring_dir)
         print("Monitoring stack started.")
+        _set_grafana_home_dashboard(values)
 
     if args.reset_grafana_password:
         _run(
@@ -98,6 +104,7 @@ def main() -> int:
             redact=values["GRAFANA_ADMIN_PASSWORD"],
         )
         print("Grafana admin password reset to the monitoring env value.")
+        _set_grafana_home_dashboard(values)
 
     return 0
 
@@ -151,6 +158,10 @@ def _build_monitoring_env(
         ),
         "GRAFANA_SERVE_FROM_SUB_PATH": (
             _first(project_values, existing_values, "GRAFANA_SERVE_FROM_SUB_PATH") or "true"
+        ),
+        "GRAFANA_DEFAULT_HOME_DASHBOARD_PATH": (
+            _first(project_values, existing_values, "GRAFANA_DEFAULT_HOME_DASHBOARD_PATH")
+            or DEFAULT_HOME_DASHBOARD_PATH
         ),
         "GRAFANA_ADMIN_USER": _first(project_values, existing_values, "GRAFANA_ADMIN_USER") or "admin",
         "GRAFANA_ADMIN_PASSWORD": admin_password,
@@ -215,6 +226,41 @@ def _validate(monitoring_dir: Path) -> None:
     dashboard_dir = monitoring_dir / "grafana" / "dashboards"
     for dashboard in sorted(dashboard_dir.glob("*.json")):
         json.loads(dashboard.read_text(encoding="utf-8"))
+
+
+def _set_grafana_home_dashboard(values: dict[str, str]) -> None:
+    admin_user = values.get("GRAFANA_ADMIN_USER") or "admin"
+    admin_password = values.get("GRAFANA_ADMIN_PASSWORD") or ""
+    if not admin_password:
+        return
+    auth = base64.b64encode(f"{admin_user}:{admin_password}".encode("utf-8")).decode("ascii")
+    headers = {
+        "Authorization": f"Basic {auth}",
+        "Content-Type": "application/json",
+    }
+    body = json.dumps(
+        {
+            "homeDashboardUID": "jurisdigta-application-performance",
+            "theme": "",
+            "timezone": "",
+        }
+    ).encode("utf-8")
+    for _attempt in range(12):
+        for base_url in ("http://127.0.0.1:3000/grafana", "http://127.0.0.1:3000"):
+            request = Request(
+                f"{base_url}/api/org/preferences",
+                data=body,
+                headers=headers,
+                method="PUT",
+            )
+            try:
+                with urlopen(request, timeout=5):
+                    print("Grafana home dashboard set to JurisDigta Application Performance.")
+                    return
+            except URLError:
+                continue
+        time.sleep(2)
+    print("Warning: Grafana home dashboard preference could not be updated.", file=sys.stderr)
 
 
 def _run(

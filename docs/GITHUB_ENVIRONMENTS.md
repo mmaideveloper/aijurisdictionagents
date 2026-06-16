@@ -144,8 +144,6 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_POSTGRES_STORAGE_SIZE_GB` | Optional PostgreSQL storage size |
 | `CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the API |
 | `MCP_CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the dedicated MCP service; default production value should include `https://mcp.jurisdigta.eu` |
-| `MCP_PUBLIC_BASE_URL` | Public MCP origin used in OAuth metadata and JWT audience validation; production value `https://mcp.jurisdigta.eu` |
-| `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS` | Comma-separated OAuth authorization callback hosts; production value `chatgpt.com,chat.openai.com` |
 | `MCP_PORT` | Local/self-managed MCP service port when using Docker Compose, default `8070` |
 | `CONTACT_CAPTCHA_REQUIRED` | Set `true` in public environments to require Cloudflare Turnstile verification for `POST /v1/contact` |
 | `CONTACT_RATE_LIMIT_MAX_REQUESTS` | Optional backend per-IP contact form throttle, default `5` |
@@ -376,8 +374,6 @@ Server-local `jurisdigta.env` must include at least:
 - `LOCAL_POSTGRES_PASSWORD`
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
 - `MCP_API_JWT_SECRET`
-- `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
-- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com`
 - email/Turnstile settings when those production features are enabled
 
 Optional server-local monitoring setting in `/srv/jurisdigta/app/Deployment/monitoring/.env`:
@@ -385,6 +381,7 @@ Optional server-local monitoring setting in `/srv/jurisdigta/app/Deployment/moni
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MONITORING_APP_DOCKER_NETWORK` | `aijuristiction-api_default` | Docker network where Prometheus Blackbox Exporter and status-exporter resolve `jurisdigta-api` and `jurisdigta-mcp` by container name |
+| `GRAFANA_DEFAULT_HOME_DASHBOARD_PATH` | `/var/lib/grafana/dashboards/jurisdigta-application-performance.json` | Grafana dashboard JSON shown as the default home dashboard after login |
 
 Minimal workflow validation after setup:
 
@@ -437,8 +434,6 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `API_BASE_URL`
 - `CORS_ALLOW_ORIGINS`
 - `MCP_CORS_ALLOW_ORIGINS=https://mcp.jurisdigta.eu`
-- `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
-- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com`
 - `MCP_PORT=8070` for self-managed Docker Compose deployments
 - `CONTACT_CAPTCHA_REQUIRED=true`
 - `CONTACT_RATE_LIMIT_MAX_REQUESTS=5`

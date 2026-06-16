@@ -100,6 +100,7 @@ Recommended self-managed dashboard stack for `jurisdigta-server`:
 - cAdvisor for Docker container CPU, memory, filesystem, and restart behavior.
 - Blackbox Exporter for HTTP availability probes. In Docker Compose it probes API and MCP through the internal service URLs `http://jurisdigta-api:8080/health` and `http://jurisdigta-mcp:8070/health` on `MONITORING_APP_DOCKER_NETWORK`, keeping host ports bound to loopback.
 - `scripts/server/export_system_status_metrics.py` for JurisDigta-specific Prometheus metrics from `/v1/system/status`.
+- `scripts/server/write_system_status.py` also records privacy-minimized aggregate request metrics from API/MCP Docker logs and aggregate PostgreSQL user/case counts. It does not persist request IDs, user IDs, case IDs, prompts, documents, or response bodies in Prometheus labels.
 
 Deployment assets are in:
 
@@ -211,6 +212,12 @@ Useful Grafana panels:
 - `jurisdigta_system_disk_used_percent`
 - `jurisdigta_system_memory_used_percent`
 - `probe_success{service="jurisdigta-api"}`
+- `jurisdigta_http_requests_total_window{service="api"}`
+- `jurisdigta_http_request_duration_seconds_avg{service="api"}`
+- `jurisdigta_users_total`
+- `jurisdigta_users_new_window{window="24h"}`
+- `jurisdigta_cases_total{state="active"}`
+- `jurisdigta_cases_new_window{window="24h"}`
 
 Email notification setup:
 

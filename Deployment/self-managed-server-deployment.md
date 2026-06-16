@@ -1057,6 +1057,7 @@ Components:
 - Blackbox Exporter: API availability probes.
 - Monitoring containers join `MONITORING_APP_DOCKER_NETWORK`, defaulting to `aijuristiction-api_default`, so API and MCP are probed by container name while their host ports stay bound to `127.0.0.1`.
 - `scripts/server/export_system_status_metrics.py`: converts `GET /v1/system/status?minutes=60` into Prometheus text metrics.
+- `scripts/server/write_system_status.py`: records aggregate API/MCP request counts, average/max request latency, total users, new users, total cases, and new cases without exposing personal data or legal case content in Prometheus labels.
 
 Start the JurisDigta status exporter:
 
@@ -1089,6 +1090,8 @@ curl -fsS http://127.0.0.1:9091/-/ready
 curl -fsS http://127.0.0.1:3000/grafana/api/health
 docker compose ps
 cd /srv/jurisdigta/app && PROMETHEUS_BASE_URL=http://127.0.0.1:9091 python3 examples/monitoring_scrape_demo.py
+curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_users_total'
+curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_http_requests_total_window'
 ```
 
 Access Grafana by SSH tunnel first:

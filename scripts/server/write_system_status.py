@@ -14,6 +14,11 @@ DEFAULT_OUTPUT = "/srv/jurisdigta/runs/status/system-status.json"
 DEFAULT_LAWS_LOG = "/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log"
 DEFAULT_APP_ROOT = "/srv/jurisdigta/app"
 ERROR_PATTERN = re.compile(r"\b(error|exception|traceback|critical|failed)\b", re.IGNORECASE)
+HTTP_REQUEST_PATTERN = re.compile(
+    r"\|\s*(?P<logger>[A-Za-z0-9_.-]+\.http)\s*\|\s*"
+    r"(?P<method>[A-Z]+)\s+(?P<path>\S+)\s+->\s+"
+    r"(?P<status>\d{3})\s+\((?P<duration_ms>\d+)\s+ms\)"
+)
 START_PATTERN = re.compile(r"^\[(?P<timestamp>[^\]]+)\] starting laws collector daily job")
 FINISH_PATTERN = re.compile(r"^\[(?P<timestamp>[^\]]+)\] laws collector daily job finished")
 KEY_VALUE_PATTERN = re.compile(r"(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>\S*)")
@@ -31,6 +36,7 @@ def main() -> int:
     parser.add_argument("--laws-log", default=DEFAULT_LAWS_LOG)
     parser.add_argument("--app-root", default=DEFAULT_APP_ROOT)
     parser.add_argument("--api-container", default="jurisdigta-api")
+    parser.add_argument("--mcp-container", default="jurisdigta-mcp")
     parser.add_argument("--postgres-container", default="aijurisdiction-postgres")
     parser.add_argument("--laws-container", default="jurisdigta-laws-collector-daily")
     parser.add_argument("--docker-log-since", default="60m")
@@ -42,6 +48,7 @@ def main() -> int:
         app_root=Path(args.app_root),
         laws_log=Path(args.laws_log),
         api_container=args.api_container,
+        mcp_container=args.mcp_container,
         postgres_container=args.postgres_container,
         laws_container=args.laws_container,
         docker_log_since=args.docker_log_since,
@@ -57,11 +64,13 @@ def build_status_payload(
     app_root: Path,
     laws_log: Path,
     api_container: str,
+    mcp_container: str,
     postgres_container: str,
     laws_container: str,
     docker_log_since: str,
 ) -> dict[str, Any]:
-    api_status = _container_status(api_container, log_since=docker_log_since)
+    api_status = _container_status(api_container, log_since=docker_log_since, include_http_metrics=True)
+    mcp_status = _container_status(mcp_container, log_since=docker_log_since, include_http_metrics=True)
     postgres_status = _container_status(postgres_container, log_since=docker_log_since)
     laws_status = _container_status(laws_container, log_since=docker_log_since)
     laws_runtime = _laws_log_status(laws_log)
@@ -71,6 +80,7 @@ def build_status_payload(
 
     apps = {
         "api": api_status,
+        "mcp": mcp_status,
         "postgres": postgres_status,
         "laws_collector": laws_status,
     }
@@ -80,11 +90,12 @@ def build_status_payload(
         "git": _git_status(app_root),
         "resources": _resource_status(),
         "apps": apps,
+        "business": _business_status(postgres_container),
         "status": _rollup_status([str(app.get("status", "unknown")) for app in apps.values()]),
     }
 
 
-def _container_status(name: str, *, log_since: str) -> dict[str, Any]:
+def _container_status(name: str, *, log_since: str, include_http_metrics: bool = False) -> dict[str, Any]:
     inspect = _command_json(
         [
             "docker",
@@ -115,7 +126,7 @@ def _container_status(name: str, *, log_since: str) -> dict[str, Any]:
     if health and health != "healthy":
         app_status = "degraded"
     log_text = _command_text(["docker", "logs", "--since", log_since, name])
-    return {
+    payload = {
         "container": name,
         "status": app_status,
         "docker_status": status,
@@ -126,6 +137,79 @@ def _container_status(name: str, *, log_since: str) -> dict[str, Any]:
         "finished_at": _clean_docker_timestamp(inspect.get("finished_at")),
         "error_count": _count_error_lines(log_text),
     }
+    if include_http_metrics:
+        payload["http"] = _http_log_metrics(log_text)
+    return payload
+
+
+def _http_log_metrics(text: str) -> dict[str, Any]:
+    requests = 0
+    duration_total_ms = 0
+    duration_max_ms = 0
+    by_status_class: dict[str, int] = {}
+    by_method: dict[str, int] = {}
+    for line in text.splitlines():
+        match = HTTP_REQUEST_PATTERN.search(line)
+        if not match:
+            continue
+        requests += 1
+        method = match.group("method")
+        status_code = match.group("status")
+        status_class = f"{status_code[0]}xx"
+        duration_ms = int(match.group("duration_ms"))
+        duration_total_ms += duration_ms
+        duration_max_ms = max(duration_max_ms, duration_ms)
+        by_status_class[status_class] = by_status_class.get(status_class, 0) + 1
+        by_method[method] = by_method.get(method, 0) + 1
+    return {
+        "window_seconds": 3600,
+        "requests": requests,
+        "duration_avg_ms": round(duration_total_ms / requests, 2) if requests else 0,
+        "duration_max_ms": duration_max_ms,
+        "by_status_class": by_status_class,
+        "by_method": by_method,
+    }
+
+
+def _business_status(postgres_container: str) -> dict[str, Any]:
+    sql = """
+    SELECT json_build_object(
+      'users', json_build_object(
+        'total', (SELECT COUNT(*) FROM users),
+        'new_1h', (SELECT COUNT(*) FROM users WHERE created_at::timestamptz >= now() - interval '1 hour'),
+        'new_24h', (SELECT COUNT(*) FROM users WHERE created_at::timestamptz >= now() - interval '24 hours')
+      ),
+      'cases', json_build_object(
+        'total', (SELECT COUNT(*) FROM cases),
+        'active', (SELECT COUNT(*) FROM cases WHERE status <> 'deleted'),
+        'new_1h', (SELECT COUNT(*) FROM cases WHERE created_at::timestamptz >= now() - interval '1 hour'),
+        'new_24h', (SELECT COUNT(*) FROM cases WHERE created_at::timestamptz >= now() - interval '24 hours')
+      )
+    );
+    """
+    text = _command_text(
+        [
+            "docker",
+            "exec",
+            postgres_container,
+            "psql",
+            "-U",
+            "postgres",
+            "-d",
+            "aijurisdiction",
+            "-t",
+            "-A",
+            "-c",
+            sql,
+        ]
+    ).strip()
+    if not text:
+        return {}
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _laws_log_status(path: Path) -> dict[str, Any]:
@@ -236,7 +320,7 @@ def _command_text(command: list[str]) -> str:
         return ""
     if result.returncode != 0:
         return ""
-    return result.stdout or ""
+    return (result.stdout or "") + (result.stderr or "")
 
 
 def _last_timestamp(text: str, pattern: re.Pattern[str]) -> datetime | None:

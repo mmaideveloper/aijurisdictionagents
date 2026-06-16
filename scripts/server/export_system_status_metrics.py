@@ -177,6 +177,13 @@ def _render_metrics(payload: dict[str, Any]) -> str:
     system = payload.get("system")
     if isinstance(system, dict):
         _append_resource_metrics(lines, system)
+        _append_http_metrics(lines, system)
+
+    business = payload.get("business")
+    if not isinstance(business, dict) and isinstance(system, dict):
+        business = system.get("business")
+    if isinstance(business, dict):
+        _append_business_metrics(lines, business)
 
     generated_at = _timestamp(payload.get("generated_at"))
     if generated_at is not None:
@@ -273,6 +280,64 @@ def _append_resource_metrics(lines: list[str], system: dict[str, Any]) -> None:
         lines.append(f"jurisdigta_system_memory_used_percent {_number(memory.get('used_percent'), 0)}")
 
 
+def _append_http_metrics(lines: list[str], system: dict[str, Any]) -> None:
+    apps = system.get("apps")
+    if not isinstance(apps, dict):
+        return
+    _append_help(lines, "jurisdigta_http_requests_total_window", "Total HTTP request count in the local monitoring window.", "gauge")
+    _append_help(lines, "jurisdigta_http_requests_by_status_window", "HTTP request count by status class in the local monitoring window.", "gauge")
+    _append_help(lines, "jurisdigta_http_requests_by_method_window", "HTTP request count by method in the local monitoring window.", "gauge")
+    _append_help(lines, "jurisdigta_http_request_duration_seconds_avg", "Average HTTP request duration in the local monitoring window.", "gauge")
+    _append_help(lines, "jurisdigta_http_request_duration_seconds_max", "Maximum HTTP request duration in the local monitoring window.", "gauge")
+    for service in ("api", "mcp"):
+        app_payload = apps.get(service)
+        if not isinstance(app_payload, dict):
+            continue
+        http = app_payload.get("http")
+        if not isinstance(http, dict):
+            continue
+        window_seconds = int(_number(http.get("window_seconds"), 3600))
+        labels = f'service="{_label(service)}",window_seconds="{window_seconds}"'
+        lines.append(
+            f"jurisdigta_http_requests_total_window{{{labels}}} {_number(http.get('requests'), 0)}"
+        )
+        lines.append(
+            "jurisdigta_http_request_duration_seconds_avg"
+            f"{{{labels}}} {_number(http.get('duration_avg_ms'), 0) / 1000}"
+        )
+        lines.append(
+            "jurisdigta_http_request_duration_seconds_max"
+            f"{{{labels}}} {_number(http.get('duration_max_ms'), 0) / 1000}"
+        )
+        for status_class, count in sorted(_dict(http.get("by_status_class")).items()):
+            lines.append(
+                "jurisdigta_http_requests_by_status_window"
+                f'{{{labels},status_class="{_label(str(status_class))}"}} {_number(count, 0)}'
+            )
+        for method, count in sorted(_dict(http.get("by_method")).items()):
+            lines.append(
+                "jurisdigta_http_requests_by_method_window"
+                f'{{{labels},method="{_label(str(method))}"}} {_number(count, 0)}'
+            )
+
+
+def _append_business_metrics(lines: list[str], business: dict[str, Any]) -> None:
+    users = _dict(business.get("users"))
+    cases = _dict(business.get("cases"))
+    _append_help(lines, "jurisdigta_users_total", "Total registered users.", "gauge")
+    lines.append(f"jurisdigta_users_total {_number(users.get('total'), 0)}")
+    _append_help(lines, "jurisdigta_users_new_window", "New registered users in the local monitoring window.", "gauge")
+    lines.append(f'jurisdigta_users_new_window{{window="1h"}} {_number(users.get("new_1h"), 0)}')
+    lines.append(f'jurisdigta_users_new_window{{window="24h"}} {_number(users.get("new_24h"), 0)}')
+
+    _append_help(lines, "jurisdigta_cases_total", "Total cases.", "gauge")
+    lines.append(f'jurisdigta_cases_total{{state="all"}} {_number(cases.get("total"), 0)}')
+    lines.append(f'jurisdigta_cases_total{{state="active"}} {_number(cases.get("active"), 0)}')
+    _append_help(lines, "jurisdigta_cases_new_window", "New cases in the local monitoring window.", "gauge")
+    lines.append(f'jurisdigta_cases_new_window{{window="1h"}} {_number(cases.get("new_1h"), 0)}')
+    lines.append(f'jurisdigta_cases_new_window{{window="24h"}} {_number(cases.get("new_24h"), 0)}')
+
+
 def _render_exporter_error(exc: Exception) -> str:
     message = _label(str(exc))
     return "\n".join(
@@ -329,6 +394,10 @@ def _number(value: object, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _status_value(status: str) -> float:

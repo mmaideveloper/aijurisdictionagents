@@ -64,6 +64,7 @@ services:
       GF_SERVER_DOMAIN: ${GRAFANA_SERVER_DOMAIN:-localhost}
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000/}
       GF_SERVER_SERVE_FROM_SUB_PATH: ${GRAFANA_SERVE_FROM_SUB_PATH:-false}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: ${GRAFANA_DEFAULT_HOME_DASHBOARD_PATH:-/var/lib/grafana/dashboards/jurisdigta-application-performance.json}
       GF_SMTP_ENABLED: ${GRAFANA_SMTP_ENABLED:-false}
       GF_SMTP_HOST: ${GRAFANA_SMTP_HOST:-}
       GF_SMTP_USER: ${GRAFANA_SMTP_USER:-}

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from scripts.server.export_system_status_metrics import _merge_local_runtime, _render_metrics
-from scripts.server.write_system_status import _latest_laws_run_summary, _recent_error_lines
+from scripts.server.write_system_status import _http_log_metrics, _latest_laws_run_summary, _recent_error_lines
 
 
 def test_laws_run_summary_parses_latest_execution() -> None:
@@ -43,6 +43,34 @@ def test_recent_error_lines_are_sanitized_and_limited() -> None:
     ]
 
 
+def test_http_log_metrics_are_aggregate_only() -> None:
+    log_text = "\n".join(
+        [
+            (
+                "2026-06-16 12:52:15,804 | INFO | aijuristiction-api.http | "
+                "GET /v1/system/status -> 200 (1692 ms) "
+                "request_id=097387ab-79de-4c80-b734-c0250841db36"
+            ),
+            (
+                "2026-06-16 12:52:29,059 | INFO | aijuristiction-api.http | "
+                "POST /v1/cases/case-123/documents -> 201 (300 ms) "
+                "request_id=978036e7-d54f-4fc5-85a3-ff8844274100"
+            ),
+        ]
+    )
+
+    metrics = _http_log_metrics(log_text)
+
+    assert metrics == {
+        "window_seconds": 3600,
+        "requests": 2,
+        "duration_avg_ms": 996.0,
+        "duration_max_ms": 1692,
+        "by_status_class": {"2xx": 2},
+        "by_method": {"GET": 1, "POST": 1},
+    }
+
+
 def test_exporter_renders_laws_runtime_and_recent_error_metrics() -> None:
     metrics = _render_metrics(
         {
@@ -73,6 +101,53 @@ def test_exporter_renders_laws_runtime_and_recent_error_metrics() -> None:
         'jurisdigta_laws_recent_error_info{index="1",timestamp="2026-06-16T01:00:00Z",'
         'message="failed import_key=monthly"} 1'
     ) in metrics
+
+
+def test_exporter_renders_http_and_business_metrics() -> None:
+    metrics = _render_metrics(
+        {
+            "status": "ok",
+            "system": {
+                "status": "ok",
+                "apps": {
+                    "api": {
+                        "http": {
+                            "window_seconds": 3600,
+                            "requests": 10,
+                            "duration_avg_ms": 125,
+                            "duration_max_ms": 500,
+                            "by_status_class": {"2xx": 9, "5xx": 1},
+                            "by_method": {"GET": 7, "POST": 3},
+                        }
+                    },
+                    "mcp": {
+                        "http": {
+                            "window_seconds": 3600,
+                            "requests": 4,
+                            "duration_avg_ms": 50,
+                            "duration_max_ms": 100,
+                        }
+                    },
+                },
+                "business": {
+                    "users": {"total": 12, "new_1h": 1, "new_24h": 3},
+                    "cases": {"total": 20, "active": 18, "new_1h": 2, "new_24h": 5},
+                },
+            },
+        }
+    )
+
+    assert 'jurisdigta_http_requests_total_window{service="api",window_seconds="3600"} 10.0' in metrics
+    assert 'jurisdigta_http_request_duration_seconds_avg{service="api",window_seconds="3600"} 0.125' in metrics
+    assert 'jurisdigta_http_request_duration_seconds_max{service="api",window_seconds="3600"} 0.5' in metrics
+    assert (
+        'jurisdigta_http_requests_by_status_window{service="api",window_seconds="3600",status_class="5xx"} 1.0'
+        in metrics
+    )
+    assert 'jurisdigta_users_total 12.0' in metrics
+    assert 'jurisdigta_users_new_window{window="24h"} 3.0' in metrics
+    assert 'jurisdigta_cases_total{state="active"} 18.0' in metrics
+    assert 'jurisdigta_cases_new_window{window="1h"} 2.0' in metrics
 
 
 def test_exporter_merges_laws_runtime_from_local_status_file(monkeypatch, tmp_path) -> None:
