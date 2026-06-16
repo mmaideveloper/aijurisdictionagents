@@ -16,6 +16,7 @@ Create two new GitHub Environments:
 
 These environments are used by repository workflows that deploy infrastructure, API, frontend, document processor jobs, and mobile builds.
 The corporate website workflow additionally exposes a capitalized `Prod` manual dispatch option for hosts configured under that exact GitHub Environment name.
+The self-managed production server workflow uses only the lowercase `prod` GitHub Environment and deploys to `jurisdigta-server` over SSH.
 
 ## 1. Create the GitHub Environments
 
@@ -142,6 +143,8 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_POSTGRES_VERSION` | Optional PostgreSQL version |
 | `AZURE_POSTGRES_STORAGE_SIZE_GB` | Optional PostgreSQL storage size |
 | `CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the API |
+| `MCP_CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the dedicated MCP service; default production value should include `https://mcp.jurisdigta.eu` |
+| `MCP_PORT` | Local/self-managed MCP service port when using Docker Compose, default `8070` |
 | `CONTACT_CAPTCHA_REQUIRED` | Set `true` in public environments to require Cloudflare Turnstile verification for `POST /v1/contact` |
 | `CONTACT_RATE_LIMIT_MAX_REQUESTS` | Optional backend per-IP contact form throttle, default `5` |
 | `CONTACT_RATE_LIMIT_WINDOW_SECONDS` | Optional backend per-IP contact form throttle window, default `600` |
@@ -317,7 +320,75 @@ Paste those values without extra whitespace. The mobile workflow trims accidenta
 line breaks, validates the keystore and alias with `keytool`, and warns early if
 the selected GitHub Environment contains stale or mismatched signing secrets.
 
-## 11. Populate `test` and `prod`
+## 11. Configure Self-Managed Production Server Variables
+
+These are used by `.github/workflows/self_managed_prod_deploy.yml` to deploy API, MCP, frontend web, laws collector, and system status monitoring to the Ubuntu `jurisdigta-server`.
+
+The workflow does not store application runtime secrets in GitHub. Keep Azure OpenAI, PostgreSQL, SMTP, MCP JWT, and API secrets in the server-local file:
+
+```text
+/srv/jurisdigta/secrets/jurisdigta.env
+```
+
+Required `prod` GitHub Environment variable:
+
+| Variable | Purpose |
+| --- | --- |
+| `JURISDIGTA_SSH_HOST` | SSH host or DNS name for `jurisdigta-server`; use a public/tunnel-reachable hostname for GitHub-hosted runners |
+
+Optional `prod` GitHub Environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JURISDIGTA_SSH_PORT` | `22` | SSH port |
+| `JURISDIGTA_SSH_USER` | `jurisdigta-admin` | Deployment user |
+| `JURISDIGTA_DEPLOY_ROOT` | `/srv/jurisdigta` | Server deployment root |
+| `JURISDIGTA_ENV_FILE` | `/srv/jurisdigta/secrets/jurisdigta.env` | Server-local runtime env file |
+| `JURISDIGTA_WEB_API_BASE_URL` | `https://api.jurisdigta.eu` | API URL embedded into the frontend build |
+| `JURISDIGTA_API_PORT` | `8080` | Server-local API bind port |
+| `JURISDIGTA_MCP_PORT` | `8070` | Server-local MCP bind port |
+| `JURISDIGTA_WEB_PORT` | `8090` | Server-local web bind port |
+
+Required `prod` GitHub Environment secret:
+
+| Secret | Purpose |
+| --- | --- |
+| `JURISDIGTA_SSH_PRIVATE_KEY` | Private key for a deploy-only SSH key authorized on `jurisdigta-server` |
+
+Recommended environment protection:
+
+- Require reviewers for `prod`.
+- Restrict deployment to `main` unless a hotfix ref is intentionally selected in manual dispatch.
+- Rotate `JURISDIGTA_SSH_PRIVATE_KEY` if it is copied outside GitHub secrets or an approved operator vault.
+
+Server-local `jurisdigta.env` must include at least:
+
+- `LLM_PROVIDER=azurefoundry`
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_DEPLOYMENT`
+- `AZURE_OPENAI_EMBEDDINGS_MODEL`
+- `AZURE_OPENAI_API_VERSION`
+- `AZURE_OPENAI_API_KEY`
+- `LOCAL_POSTGRES_DB`
+- `LOCAL_POSTGRES_USER`
+- `LOCAL_POSTGRES_PASSWORD`
+- `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
+- `MCP_API_JWT_SECRET`
+- email/Turnstile settings when those production features are enabled
+
+Minimal workflow validation after setup:
+
+1. Run `Self-Managed Prod Deploy` with `repo_ref=main`.
+2. Confirm the workflow summary lists the expected host, ref, and local ports.
+3. From outside the server, validate the Cloudflare Tunnel routes:
+
+```bash
+curl -fsS https://api.jurisdigta.eu/health
+curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP
+curl -fsS https://web.jurisdigta.eu/health
+```
+
+## 12. Populate `test` and `prod`
 
 The fastest approach is:
 
@@ -355,6 +426,8 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK`
 - `API_BASE_URL`
 - `CORS_ALLOW_ORIGINS`
+- `MCP_CORS_ALLOW_ORIGINS=https://mcp.jurisdigta.eu`
+- `MCP_PORT=8070` for self-managed Docker Compose deployments
 - `CONTACT_CAPTCHA_REQUIRED=true`
 - `CONTACT_RATE_LIMIT_MAX_REQUESTS=5`
 - `CONTACT_RATE_LIMIT_WINDOW_SECONDS=600`
@@ -371,7 +444,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - secret `EMAIL_SMTP_PASSWORD`
 - `CAR_VALIDATION_API_BASE_URL` and secret `CAR_VALIDATION_API_KEY` when live vehicle checks should run in that environment
 
-## 12. Run the Workflows Against the New Environment
+## 13. Run the Workflows Against the New Environment
 
 Use manual workflow dispatch and set `github_environment` to `test` or `prod`.
 
@@ -386,6 +459,11 @@ Typical order:
 7. `web_build_deploy`
 8. `mobile_flutter_build`
 
+For the self-managed production server path, use:
+
+1. `Deployment/server/setup_jurisdigta_server.sh` once from the server console or SSH session.
+2. `Self-Managed Prod Deploy` from GitHub Actions after `/srv/jurisdigta/secrets/jurisdigta.env` and Cloudflare Tunnel routing are ready.
+
 Recommended deployed value:
 
 - `DOCUMENT_PROCESSOR_OPTION=azure` for `dev`, `test`, and `prod`
@@ -398,7 +476,7 @@ Observability note:
 
 - The API observability endpoint reuses `AZURE_LOG_ANALYTICS_WORKSPACE_NAME` and `AZURE_MANAGED_IDENTITY_NAME` directly. Do not add separate `APPLICATIONINSIGHTS_*` runtime variables for that feature.
 
-## 13. Current Workflow Defaults
+## 14. Current Workflow Defaults
 
 Some workflows default to `dev` for push-based execution.
 
@@ -413,8 +491,9 @@ That means:
 - `Laws Collector Build and Deploy` now deploys automatically to `dev` on `push` to `main` after its tests/build pass
 - `Email Scheduler Build and Deploy` deploys the dedicated ACA Job to `dev` on `push` to `main` when API/email scheduler files change
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
+- `Self-Managed Prod Deploy` is manual-only and always uses the protected `prod` GitHub Environment
 
-## 14. Quick Validation Checklist
+## 15. Quick Validation Checklist
 
 After setup, verify:
 
@@ -431,3 +510,4 @@ After setup, verify:
 - optional `CAR_VALIDATION_API_BASE_URL` and `CAR_VALIDATION_API_KEY` are set together when live vehicle validation should be enabled
 - `workflow_dispatch` works with `github_environment=test`
 - `workflow_dispatch` works with `github_environment=prod`
+- `Self-Managed Prod Deploy` works against `prod` and the server-local health checks for API, MCP, and web pass

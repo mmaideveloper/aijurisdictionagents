@@ -109,6 +109,7 @@ def test_version_endpoint(monkeypatch) -> None:
     assert payload["service"] == "aijuristiction-api"
     assert payload["version"] == payload["api_version"]
     assert payload["api_version"] != "unknown"
+    assert payload["mcp_server_version"] == payload["api_version"]
     assert isinstance(payload["core_version"], str)
     assert payload["last_law_update_date"] == "2026-03-20T00:00:00Z"
     assert payload["last_law_update_source"] == "law_documents_global"
@@ -143,9 +144,45 @@ def test_version_endpoint(monkeypatch) -> None:
     )
 
 
+def test_root_endpoint_renders_version_html(monkeypatch) -> None:
+    monkeypatch.setattr(
+        app_main,
+        "get_law_knowledge_snapshot",
+        lambda country: SimpleNamespace(
+            last_law_update_date="2026-03-21T00:00:00Z"
+            if country == "SK"
+            else "2026-03-20T00:00:00Z",
+            last_law_update_source="law_documents_country"
+            if country == "SK"
+            else "law_documents_global",
+            last_collector_run_at="2026-03-30T12:30:00Z (SK:slovlex)",
+            last_processed_law="234/2026",
+            model_knowledge_cutoff_date="2023-10-01",
+            model_knowledge_cutoff_source="https://platform.openai.com/docs/models/gpt-4o-mini",
+            reference_links=(
+                "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/10/",
+            ),
+        ),
+    )
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    body = response.text
+    assert "<h1>aijuristiction-api</h1>" in body
+    assert f"API {app.version}" in body
+    assert "JSON version output" in body
+    assert "&quot;api_version&quot;" in body
+    assert "&quot;last_law_update_date&quot;: &quot;2026-03-20T00:00:00Z&quot;" in body
+
+
 def test_swagger_docs_available() -> None:
     response = client.get("/docs")
     assert response.status_code == 200
+
+
+def test_public_api_does_not_mount_mcp() -> None:
+    response = client.get("/MCP")
+    assert response.status_code == 404
 
 
 def test_openapi_contains_api_key_security_scheme() -> None:

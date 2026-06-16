@@ -19,6 +19,7 @@ services:
       retries: 5
 
   api:
+    container_name: jurisdigta-api
     build:
       context: ../..
       dockerfile: api/aijuristiction-api/Dockerfile
@@ -38,3 +39,33 @@ services:
         condition: service_healthy
     volumes:
       - ../../runs:/workspace/runs
+
+  mcp:
+    container_name: jurisdigta-mcp
+    build:
+      context: ../..
+      dockerfile: api/aijuristiction-api/Dockerfile
+    image: aijuristiction-api:local
+    command: ["uvicorn", "app.mcp_main:app", "--host", "0.0.0.0", "--port", "8070"]
+    ports:
+      - "${MCP_PORT:-8070}:8070"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      DB_OPTION: postgres
+      DB_CLOUD: postgresql://${LOCAL_POSTGRES_USER:-postgres}:${LOCAL_POSTGRES_PASSWORD:-postgres}@postgres:5432/${LOCAL_POSTGRES_DB:-aijurisdiction}
+      STORAGE_OPTION: local
+      DB_LOCAL: /workspace/runs/storage/api/sqlite/api.sqlite3
+      STORE_LOCAL: /workspace/runs/storage/api/files
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      MCP_CORS_ALLOW_ORIGINS: ${MCP_CORS_ALLOW_ORIGINS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../runs:/workspace/runs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8070/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

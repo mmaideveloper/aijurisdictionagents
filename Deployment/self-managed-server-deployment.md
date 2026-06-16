@@ -2,6 +2,12 @@
 
 This runbook documents the software and server preparation needed to deploy JurisDigta API, system code, laws connector, and PostgreSQL database from GitHub onto the Ubuntu host reachable as `jurisdigta-server`.
 
+Checked-in automation:
+
+- `Deployment/server/setup_jurisdigta_server.sh` installs Ubuntu packages, Docker, deployment directories, firewall baseline, and the first repository checkout.
+- `Deployment/server/deploy_jurisdigta_prod.sh` updates the server checkout, deploys PostgreSQL/API/MCP/web/laws collector/status monitoring, and validates local health checks.
+- `.github/workflows/self_managed_prod_deploy.yml` runs the production deploy script over SSH from the protected GitHub `prod` Environment.
+
 Current target verified from Codex on 2026-06-13:
 
 - SSH alias: `jurisdigta-server`
@@ -56,6 +62,21 @@ sudo rm -f /etc/sudoers.d/jurisdigta-admin-codex
 ## 2. Install Base Packages
 
 Install operating-system packages required for repository checkout, containers, PostgreSQL administration, reverse proxy, and TLS.
+
+Preferred repeatable path:
+
+```bash
+cd /srv/jurisdigta/app
+bash Deployment/server/setup_jurisdigta_server.sh
+```
+
+Set `INSTALL_CLOUDFLARED=1` when the same run should also install `cloudflared`:
+
+```bash
+INSTALL_CLOUDFLARED=1 bash Deployment/server/setup_jurisdigta_server.sh
+```
+
+Manual equivalent:
 
 ```bash
 sudo apt update
@@ -390,18 +411,20 @@ Configure these Cloudflare Tunnel public hostnames:
 | Hostname | Tunnel service | Current server target | Notes |
 | --- | --- | --- | --- |
 | `api.jurisdigta.eu` | HTTP | `http://127.0.0.1:8080` | API container; validate with `/health`. |
-| `mcp.jurisdigta.eu` | HTTP | `http://127.0.0.1:8080` | MCP is served by the API at `/MCP`; metadata is under `/.well-known/oauth-protected-resource/MCP`. |
+| `mcp.jurisdigta.eu` | HTTP | `http://127.0.0.1:8070` | Dedicated MCP service; metadata is under `/.well-known/oauth-protected-resource/MCP`. |
 | `admin.jurisdigta.eu` | HTTP | `http://127.0.0.1:3000` | Grafana path is `/grafana/`; protect with Cloudflare Access. |
-| `web.jurisdigta.eu` | HTTP | `http://127.0.0.1:80` after web deployment | Do not publish until nginx serves the intended corporate/frontend web app instead of the default nginx page. |
-| `www.jurisdigta.eu` | HTTP | `http://127.0.0.1:80` after web deployment | Optional alias for the public web app. |
-| `jurisdigta.eu` | HTTP | `http://127.0.0.1:80` after web deployment | Optional root domain for the public web app. |
+| `web.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Frontend web container `jurisdigta-web`; validate with `/health`. |
+| `www.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Optional alias for the public web app. |
+| `jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Optional root domain for the public web app. |
 
 Minimal runnable validation examples:
 
 ```bash
 curl -fsS http://127.0.0.1:8080/health
-curl -I http://127.0.0.1:8080/MCP
+curl -fsS http://127.0.0.1:8070/health
+curl -I http://127.0.0.1:8070/.well-known/oauth-protected-resource/MCP
 curl -I http://127.0.0.1:3000/grafana/
+curl -fsS http://127.0.0.1:8090/health
 sudo systemctl status cloudflared --no-pager
 ```
 
@@ -409,6 +432,7 @@ External validation after Cloudflare DNS and tunnel hostname routing are active:
 
 ```bash
 curl -fsS https://api.jurisdigta.eu/health
+curl -fsS https://web.jurisdigta.eu/health
 curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP
 curl -I https://admin.jurisdigta.eu/grafana/
 ```
@@ -509,6 +533,28 @@ LAWS_WORKER_MAX_PROBES=1 LAWS_COLLECTOR_MAX_RUNNING_TIME=5 /srv/jurisdigta/ops/r
 tail -n 80 /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log
 python3 /srv/jurisdigta/app/scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json
 curl -fsS -H "x-api-key: ${API_KEY:-aijuris}" "http://127.0.0.1:8080/v1/system/status?minutes=60"
+```
+
+Production GitHub deployment validation:
+
+```text
+GitHub Actions -> Self-Managed Prod Deploy -> Run workflow -> repo_ref=main
+```
+
+The workflow should complete the local server checks for:
+
+```bash
+curl -fsS http://127.0.0.1:8080/health
+curl -fsS http://127.0.0.1:8070/health
+curl -fsS http://127.0.0.1:8090/health
+```
+
+Then validate public Cloudflare Tunnel routing externally:
+
+```bash
+curl -fsS https://api.jurisdigta.eu/health
+curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP
+curl -fsS https://web.jurisdigta.eu/health
 ```
 
 Repository validation:
@@ -1020,24 +1066,22 @@ python3 scripts/server/export_system_status_metrics.py \
 
 For production use, install it as systemd service `jurisdigta-status-exporter.service` using `Deployment/monitoring/README.md`.
 
-Start Prometheus and Grafana:
+Configure and start Prometheus and Grafana:
 
 ```bash
 cd /srv/jurisdigta/app/Deployment/monitoring
-umask 077
-cat > .env <<'EOF'
-GRAFANA_ADMIN_USER=admin
-GRAFANA_ADMIN_PASSWORD=replace-with-long-random-password
-EOF
-docker compose up -d
+python3 configure_monitoring.py --validate --start
 ```
+
+Use `--reset-grafana-password` as well when `GRAFANA_ADMIN_PASSWORD` changed
+after Grafana was already initialized.
 
 Validate:
 
 ```bash
 curl -fsS http://127.0.0.1:9108/metrics | head
-curl -fsS http://127.0.0.1:9090/-/ready
-curl -fsS http://127.0.0.1:3000/api/health
+curl -fsS http://127.0.0.1:9091/-/ready
+curl -fsS http://127.0.0.1:3000/grafana/api/health
 docker compose ps
 ```
 
@@ -1077,6 +1121,76 @@ Do not expose Grafana or Prometheus container ports directly to the internet.
 Public mobile access must go through Cloudflare Access and Grafana login.
 Use the nginx template `Deployment/monitoring/nginx-admin-grafana.conf` only
 as a future static-IP/NAT fallback.
+
+## Frontend Web Container
+
+The self-managed server hosts `frontend/aijurisdictionfronend` as a static Vite
+build served by nginx inside Docker. The container binds only to localhost on
+port `8090`; public HTTPS should be provided by Cloudflare Tunnel.
+
+Build and deploy:
+
+```bash
+cd /srv/jurisdigta/app/frontend/aijurisdictionfronend
+docker build \
+  --build-arg VITE_API_BASE_URL=https://api.jurisdigta.eu \
+  -t jurisdigta-web:local .
+docker rm -f jurisdigta-web 2>/dev/null || true
+docker run -d \
+  --name jurisdigta-web \
+  --restart unless-stopped \
+  -p 127.0.0.1:8090:80 \
+  jurisdigta-web:local
+```
+
+Validate:
+
+```bash
+curl -fsS http://127.0.0.1:8090/health
+curl -I http://127.0.0.1:8090/
+curl -I http://127.0.0.1:8090/privacy
+docker ps --filter name=jurisdigta-web
+```
+
+Rollback:
+
+```bash
+docker rm -f jurisdigta-web
+docker image rm jurisdigta-web:local
+```
+
+Revoke GitHub self-managed deployment access:
+
+```bash
+nano /home/jurisdigta-admin/.ssh/authorized_keys
+```
+
+Remove the deploy-only public key line, then delete or rotate the `JURISDIGTA_SSH_PRIVATE_KEY` GitHub Environment secret.
+
+Compliance notes:
+
+- The frontend build embeds only public browser configuration. Do not embed
+  secrets in `VITE_*` variables.
+- Keep the API responsible for consent, retention/deletion controls, traceable
+  legal-risk logging, and human-oversight safeguards.
+- Keep the container bound to `127.0.0.1` and publish it through Cloudflare
+  Tunnel rather than exposing Docker port `8090` directly to the internet.
+
+If `cloudflared.service` is installed with `Type=notify` and repeatedly fails
+startup with `timeout` even though connectivity prechecks pass, use a systemd
+drop-in so systemd treats `cloudflared tunnel run` as a regular long-running
+process:
+
+```bash
+sudo mkdir -p /etc/systemd/system/cloudflared.service.d
+cat <<'EOF' | sudo tee /etc/systemd/system/cloudflared.service.d/override.conf >/dev/null
+[Service]
+Type=simple
+TimeoutStartSec=120
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart cloudflared
+```
 
 Rollback:
 

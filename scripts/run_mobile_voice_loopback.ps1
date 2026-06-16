@@ -320,15 +320,15 @@ if (-not $SkipStart) {
     }
 
     if (-not (Test-UrlReady -Url $MobileUrl)) {
-        $mobileArgs = @(
-            "-Background",
-            "-ApiMode", "localApi",
-            "-DatabaseOption", "postgres",
-            "-StorageOption", "local",
-            "-DbCloud", "postgresql://postgres:postgres@localhost:5432/aijurisdiction"
-        )
+        $mobileArgs = @{
+            Background = $true
+            ApiMode = "localApi"
+            DatabaseOption = "postgres"
+            StorageOption = "local"
+            DbCloud = "postgresql://postgres:postgres@localhost:5432/aijurisdiction"
+        }
         if ($NoOpen) {
-            $mobileArgs += "-NoOpen"
+            $mobileArgs["NoOpen"] = $true
         }
         & (Join-Path $repoRoot "skills\start-mobile-app\scripts\start_mobile_app.ps1") @mobileArgs
     }

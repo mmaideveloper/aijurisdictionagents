@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import json
 import logging
 import os
 import time
@@ -11,7 +13,7 @@ from collections.abc import Awaitable, Callable
 import dotenv
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.cases_api import router as cases_router
 from app.chat.result_metadata import get_law_knowledge_snapshot
@@ -21,8 +23,6 @@ from app.document_templates.api import router as document_templates_router
 from app.flow_packs.api import router as flow_packs_router
 from app.laws_api import router as laws_router
 from app.logging_config import configure_logging
-from app.mcp_api import oauth_router as mcp_oauth_router
-from app.mcp_api import router as mcp_router
 from app.observability_api import router as observability_router
 from app.telemetry import configure_telemetry, instrument_fastapi
 from app.system_status_api import router as system_status_router
@@ -30,6 +30,7 @@ from app.users.api import router as users_router
 from app.versioning import (
     get_api_version,
     get_core_version,
+    get_mcp_server_version,
     get_mobile_app_apk_download_url,
     get_mobile_app_release_url,
     get_mobile_app_version,
@@ -129,6 +130,90 @@ def _law_snapshot_payload(*, country_code: str | None) -> dict[str, Any]:
         "law_reference_links": list(snapshot.reference_links),
     }
 
+
+def _version_payload() -> dict[str, Any]:
+    law_payload = _law_snapshot_payload(country_code=None)
+    laws_by_country = {
+        country_code.lower(): _law_snapshot_payload(country_code=country_code)
+        for country_code in _SUPPORTED_LAW_VERSION_COUNTRIES
+    }
+    return {
+        "service": "aijuristiction-api",
+        "version": app.version,
+        "api_version": app.version,
+        "mcp_server_version": get_mcp_server_version(),
+        "core_version": get_core_version(),
+        "last_law_update_date": law_payload["last_law_update_date"],
+        "last_law_update_source": law_payload["last_law_update_source"],
+        "last_collector_run_at": law_payload["last_collector_run_at"],
+        "last_processed_law": law_payload["last_processed_law"],
+        "model_knowledge_cutoff_date": law_payload["model_knowledge_cutoff_date"],
+        "model_knowledge_cutoff_source": law_payload["model_knowledge_cutoff_source"],
+        "law_reference_links": law_payload["law_reference_links"],
+        "laws_by_country": laws_by_country,
+        "mobile_app_version": get_mobile_app_version(),
+        "web_app_version": get_web_app_version(),
+        "mobile_app_release_url": get_mobile_app_release_url(),
+        "mobile_app_apk_download_url": get_mobile_app_apk_download_url(),
+    }
+
+
+def _version_html(payload: dict[str, Any]) -> str:
+    body = html.escape(json.dumps(payload, indent=2, sort_keys=True))
+    service = html.escape(str(payload["service"]))
+    api_version = html.escape(str(payload["api_version"]))
+    core_version = html.escape(str(payload["core_version"]))
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{service} version</title>
+  <style>
+    :root {{
+      color-scheme: light dark;
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.5;
+    }}
+    body {{
+      margin: 0;
+      padding: 2rem;
+      background: Canvas;
+      color: CanvasText;
+    }}
+    main {{
+      max-width: 960px;
+      margin: 0 auto;
+    }}
+    h1 {{
+      margin: 0 0 0.25rem;
+      font-size: 1.8rem;
+    }}
+    .summary {{
+      margin: 0 0 1.5rem;
+      color: color-mix(in srgb, CanvasText 72%, Canvas 28%);
+    }}
+    pre {{
+      overflow-x: auto;
+      padding: 1rem;
+      border: 1px solid color-mix(in srgb, CanvasText 18%, Canvas 82%);
+      border-radius: 6px;
+      background: color-mix(in srgb, CanvasText 6%, Canvas 94%);
+    }}
+    a {{
+      color: LinkText;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{service}</h1>
+    <p class="summary">API {api_version} | Core {core_version} | <a href="/version">JSON version output</a></p>
+    <pre>{body}</pre>
+  </main>
+</body>
+</html>"""
+
 app = fastapi.FastAPI(
     title="AI Juristiction API",
     version=API_VERSION,
@@ -156,8 +241,6 @@ app.include_router(cases_router)
 app.include_router(voice_intent_router)
 app.include_router(observability_router)
 app.include_router(system_status_router)
-app.include_router(mcp_oauth_router)
-app.include_router(mcp_router)
 instrument_fastapi(app)
 
 
@@ -240,6 +323,12 @@ async def unhandled_exception_handler(request: fastapi.Request, exc: Exception) 
     )
 
 
+@app.get("/", response_class=HTMLResponse)
+def root() -> HTMLResponse:
+    payload = _version_payload()
+    return HTMLResponse(_version_html(payload))
+
+
 @app.get("/health")
 def health() -> JSONResponse:
     database_backend = _configured_db_backend()
@@ -281,31 +370,7 @@ def health() -> JSONResponse:
 
 @app.get("/version")
 def version() -> JSONResponse:
-    law_payload = _law_snapshot_payload(country_code=None)
-    laws_by_country = {
-        country_code.lower(): _law_snapshot_payload(country_code=country_code)
-        for country_code in _SUPPORTED_LAW_VERSION_COUNTRIES
-    }
-    return JSONResponse(
-        {
-            "service": "aijuristiction-api",
-            "version": app.version,
-            "api_version": app.version,
-            "core_version": get_core_version(),
-            "last_law_update_date": law_payload["last_law_update_date"],
-            "last_law_update_source": law_payload["last_law_update_source"],
-            "last_collector_run_at": law_payload["last_collector_run_at"],
-            "last_processed_law": law_payload["last_processed_law"],
-            "model_knowledge_cutoff_date": law_payload["model_knowledge_cutoff_date"],
-            "model_knowledge_cutoff_source": law_payload["model_knowledge_cutoff_source"],
-            "law_reference_links": law_payload["law_reference_links"],
-            "laws_by_country": laws_by_country,
-            "mobile_app_version": get_mobile_app_version(),
-            "web_app_version": get_web_app_version(),
-            "mobile_app_release_url": get_mobile_app_release_url(),
-            "mobile_app_apk_download_url": get_mobile_app_apk_download_url(),
-        }
-    )
+    return JSONResponse(_version_payload())
 
 
 logger.info(

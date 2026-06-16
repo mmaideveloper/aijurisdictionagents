@@ -1,0 +1,94 @@
+name: Self-Managed Prod Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_ref:
+        description: "Git ref to deploy on jurisdigta-server"
+        required: true
+        default: "main"
+      run_schema_migrations:
+        description: "Run API and laws database schema migrations"
+        required: true
+        type: boolean
+        default: true
+      start_monitoring:
+        description: "Start Prometheus/Grafana stack after deploy"
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+    env:
+      JURISDIGTA_SSH_HOST: ${{ vars.JURISDIGTA_SSH_HOST }}
+      JURISDIGTA_SSH_PORT: ${{ vars.JURISDIGTA_SSH_PORT || '22' }}
+      JURISDIGTA_SSH_USER: ${{ vars.JURISDIGTA_SSH_USER || 'jurisdigta-admin' }}
+      JURISDIGTA_DEPLOY_ROOT: ${{ vars.JURISDIGTA_DEPLOY_ROOT || '/srv/jurisdigta' }}
+      JURISDIGTA_ENV_FILE: ${{ vars.JURISDIGTA_ENV_FILE || '/srv/jurisdigta/secrets/jurisdigta.env' }}
+      JURISDIGTA_WEB_API_BASE_URL: ${{ vars.JURISDIGTA_WEB_API_BASE_URL || 'https://api.jurisdigta.eu' }}
+      JURISDIGTA_API_PORT: ${{ vars.JURISDIGTA_API_PORT || '8080' }}
+      JURISDIGTA_MCP_PORT: ${{ vars.JURISDIGTA_MCP_PORT || '8070' }}
+      JURISDIGTA_WEB_PORT: ${{ vars.JURISDIGTA_WEB_PORT || '8090' }}
+      JURISDIGTA_SSH_PRIVATE_KEY: ${{ secrets.JURISDIGTA_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate GitHub Environment settings
+        run: |
+          missing=0
+          for key in JURISDIGTA_SSH_HOST JURISDIGTA_SSH_PRIVATE_KEY; do
+            if [ -z "${!key}" ]; then
+              echo "Missing GitHub Environment variable or secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          if ! printf '%s' "${{ inputs.repo_ref }}" | grep -Eq '^[A-Za-z0-9._/@+-]+$'; then
+            echo "Invalid repo_ref. Use a branch, tag, or SHA containing only letters, numbers, . _ / @ + -"
+            exit 1
+          fi
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$JURISDIGTA_SSH_PRIVATE_KEY" > ~/.ssh/jurisdigta_deploy_key
+          chmod 600 ~/.ssh/jurisdigta_deploy_key
+          ssh-keyscan -p "$JURISDIGTA_SSH_PORT" "$JURISDIGTA_SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload deployment script
+        run: |
+          scp -P "$JURISDIGTA_SSH_PORT" \
+            -i ~/.ssh/jurisdigta_deploy_key \
+            Deployment/server/deploy_jurisdigta_prod.sh \
+            "${JURISDIGTA_SSH_USER}@${JURISDIGTA_SSH_HOST}:/tmp/deploy_jurisdigta_prod.sh"
+
+      - name: Deploy on jurisdigta-server
+        run: |
+          run_schema_migrations="${{ inputs.run_schema_migrations && '1' || '0' }}"
+          start_monitoring="${{ inputs.start_monitoring && '1' || '0' }}"
+          ssh -p "$JURISDIGTA_SSH_PORT" \
+            -i ~/.ssh/jurisdigta_deploy_key \
+            "${JURISDIGTA_SSH_USER}@${JURISDIGTA_SSH_HOST}" \
+            "chmod 700 /tmp/deploy_jurisdigta_prod.sh && DEPLOY_ROOT='$JURISDIGTA_DEPLOY_ROOT' ENV_FILE='$JURISDIGTA_ENV_FILE' REPO_REF='${{ inputs.repo_ref }}' WEB_API_BASE_URL='$JURISDIGTA_WEB_API_BASE_URL' API_PORT='$JURISDIGTA_API_PORT' MCP_PORT='$JURISDIGTA_MCP_PORT' WEB_PORT='$JURISDIGTA_WEB_PORT' RUN_SCHEMA_MIGRATIONS='$run_schema_migrations' START_MONITORING='$start_monitoring' /tmp/deploy_jurisdigta_prod.sh"
+
+      - name: Summarize deployment
+        run: |
+          {
+            echo "## Self-managed production deployment"
+            echo ""
+            echo "| Setting | Value |"
+            echo "| --- | --- |"
+            echo "| Host | ${JURISDIGTA_SSH_HOST} |"
+            echo "| User | ${JURISDIGTA_SSH_USER} |"
+            echo "| Ref | ${{ inputs.repo_ref }} |"
+            echo "| API | http://127.0.0.1:${JURISDIGTA_API_PORT}/health on server |"
+            echo "| MCP | http://127.0.0.1:${JURISDIGTA_MCP_PORT}/health on server |"
+            echo "| Web | http://127.0.0.1:${JURISDIGTA_WEB_PORT}/health on server |"
+          } >> "$GITHUB_STEP_SUMMARY"

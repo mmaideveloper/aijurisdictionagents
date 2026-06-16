@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 import os
+from pathlib import Path
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -62,6 +63,7 @@ def _handler(args: argparse.Namespace) -> type[BaseHTTPRequestHandler]:
 
             try:
                 payload = _fetch_status(args.status_url, args.api_key, args.timeout)
+                payload = _merge_local_runtime(payload)
                 body = _render_metrics(payload)
                 status = 200
             except Exception as exc:
@@ -91,6 +93,40 @@ def _fetch_status(status_url: str, api_key: str, timeout: float) -> dict[str, An
     if not isinstance(data, dict):
         raise RuntimeError("system status response was not a JSON object")
     return data
+
+
+def _merge_local_runtime(payload: dict[str, Any]) -> dict[str, Any]:
+    laws = payload.get("laws_collector")
+    if not isinstance(laws, dict) or isinstance(laws.get("runtime"), dict):
+        return payload
+
+    local_runtime = _local_laws_runtime()
+    if not local_runtime:
+        return payload
+
+    merged = json.loads(json.dumps(payload))
+    merged_laws = merged.setdefault("laws_collector", {})
+    if isinstance(merged_laws, dict):
+        merged_laws["runtime"] = local_runtime
+    return merged
+
+
+def _local_laws_runtime() -> dict[str, Any]:
+    value = os.getenv("SYSTEM_STATUS_FILE", "").strip()
+    if not value:
+        return {}
+    path = Path(value)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    apps = payload.get("apps") if isinstance(payload, dict) else None
+    if not isinstance(apps, dict):
+        return {}
+    laws = apps.get("laws_collector")
+    return laws if isinstance(laws, dict) else {}
 
 
 def _render_metrics(payload: dict[str, Any]) -> str:
@@ -191,6 +227,30 @@ def _append_laws_metrics(lines: list[str], laws: dict[str, Any]) -> None:
         if duration is not None:
             _append_help(lines, "jurisdigta_laws_runtime_duration_seconds", "Latest laws collector run duration.", "gauge")
             lines.append(f"jurisdigta_laws_runtime_duration_seconds {_number(duration, 0)}")
+        imported_laws = runtime.get("last_run_imported_laws")
+        if imported_laws is not None:
+            _append_help(lines, "jurisdigta_laws_runtime_imported_laws", "Imported laws in the latest collector run.", "gauge")
+            lines.append(f"jurisdigta_laws_runtime_imported_laws {_number(imported_laws, 0)}")
+        entries_processed = runtime.get("last_run_entries_processed")
+        if entries_processed is not None:
+            _append_help(lines, "jurisdigta_laws_runtime_entries_processed", "Entries processed in the latest collector run.", "gauge")
+            lines.append(f"jurisdigta_laws_runtime_entries_processed {_number(entries_processed, 0)}")
+        processed = runtime.get("last_run_processed")
+        if processed is not None:
+            _append_help(lines, "jurisdigta_laws_runtime_processed", "Documents processed in the latest collector run.", "gauge")
+            lines.append(f"jurisdigta_laws_runtime_processed {_number(processed, 0)}")
+        recent_errors = runtime.get("recent_errors")
+        if isinstance(recent_errors, list):
+            _append_help(lines, "jurisdigta_laws_recent_error_info", "Recent sanitized laws collector error lines.", "gauge")
+            for index, error in enumerate(recent_errors[-20:], start=1):
+                if not isinstance(error, dict):
+                    continue
+                timestamp = str(error.get("timestamp") or "")
+                message = str(error.get("message") or "")
+                lines.append(
+                    "jurisdigta_laws_recent_error_info"
+                    f'{{index="{index}",timestamp="{_label(timestamp)}",message="{_label(message)}"}} 1'
+                )
 
     totals = laws.get("totals")
     if isinstance(totals, dict):

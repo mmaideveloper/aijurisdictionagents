@@ -26,7 +26,7 @@ These controls support GDPR privacy-by-design, data minimization, traceability, 
 ## 1. Install Ubuntu Server
 
 1. Download the Ubuntu Server LTS installer from the official Ubuntu website.
-2. Install Ubuntu Server on the target machine.
+2. Install Ubuntu Server 26.04 LTS on the target machine.
 3. During installation:
    - Set hostname to `jurisdigta-server`.
    - Create the administrator user `jurisdigta-admin`.
@@ -236,6 +236,13 @@ Next runbook:
 
 ```text
 Deployment/self-managed-server-deployment.md
+```
+
+After the repository is cloned on the server, the repeatable package/deployment-root bootstrap is:
+
+```bash
+cd /srv/jurisdigta/app
+bash Deployment/server/setup_jurisdigta_server.sh
 ```
 
 ## 8. Troubleshooting

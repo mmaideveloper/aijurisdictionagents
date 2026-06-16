@@ -185,6 +185,24 @@ npm run build
 npm run preview
 ```
 
+## Self-managed server container
+
+The production container serves the Vite build through nginx with SPA route
+fallbacks for `BrowserRouter` routes.
+
+```bash
+cd frontend/aijurisdictionfronend
+docker build \
+  --build-arg VITE_API_BASE_URL=https://api.jurisdigta.eu \
+  -t jurisdigta-web:local .
+docker run -d \
+  --name jurisdigta-web \
+  --restart unless-stopped \
+  -p 127.0.0.1:8090:80 \
+  jurisdigta-web:local
+curl -fsS http://127.0.0.1:8090/health
+```
+
 ## Minimal Runnable Example (Project Default)
 
 ```bash

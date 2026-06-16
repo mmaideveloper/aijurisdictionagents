@@ -10,10 +10,12 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app as api_app
+from app.mcp_main import app as mcp_app
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
-client = TestClient(app)
+api_client = TestClient(api_app)
+mcp_client = TestClient(mcp_app)
 
 
 def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Path) -> None:
@@ -23,7 +25,9 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
 
     version_response = _mcp_call("getVersion")
     assert version_response.status_code == 200
-    assert _tool_payload(version_response)["api_version"]
+    version_payload = _tool_payload(version_response)
+    assert version_payload["api_version"]
+    assert version_payload["mcp_server_version"] == version_payload["api_version"]
 
     statistics_response = _mcp_call("getStatistics")
     assert statistics_response.status_code == 200
@@ -92,7 +96,7 @@ def test_mcp_logs_tool_events_without_sensitive_payloads(monkeypatch, tmp_path: 
 def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
 
-    sign_up_response = client.post(
+    sign_up_response = api_client.post(
         "/v1/users/sign-up",
         headers=AUTH_HEADERS,
         json={
@@ -104,7 +108,7 @@ def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> No
     assert sign_up_response.status_code == 201
     before = datetime.now(timezone.utc)
 
-    create_key_response = client.post(
+    create_key_response = api_client.post(
         f"/v1/users/{sign_up_response.json()['user_id']}/mcp-api-key",
         headers=AUTH_HEADERS,
         json={},
@@ -125,7 +129,7 @@ def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> No
 def test_mcp_login_page_can_generate_key(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
-    sign_up_response = client.post(
+    sign_up_response = api_client.post(
         "/v1/users/sign-up",
         headers=AUTH_HEADERS,
         json={
@@ -136,18 +140,18 @@ def test_mcp_login_page_can_generate_key(monkeypatch, tmp_path: Path) -> None:
     )
     assert sign_up_response.status_code == 201
 
-    page_response = client.get("/MCP/login")
+    page_response = mcp_client.get("/MCP/login")
     assert page_response.status_code == 200
     assert "Send OTP code" in page_response.text
 
-    login_response = client.post(
+    login_response = mcp_client.post(
         "/MCP/login",
         data={"email": "mcp-login@example.com", "password": "secret-pass"},
     )
     assert login_response.status_code == 200
     assert "Verify MCP login" in login_response.text
 
-    verify_response = client.post(
+    verify_response = mcp_client.post(
         "/MCP/login/verify",
         data={
             "email": "mcp-login@example.com",
@@ -170,11 +174,11 @@ def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path
     _configure_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
 
-    page_response = client.get("/MCP/sign-up")
+    page_response = mcp_client.get("/MCP/sign-up")
     assert page_response.status_code == 200
     assert "ID card number" in page_response.text
 
-    send_code_response = client.post(
+    send_code_response = mcp_client.post(
         "/MCP/sign-up",
         data={
             "email": "mcp-new@example.com",
@@ -195,7 +199,7 @@ def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path
     assert "secret-pass" not in send_code_response.text
     assert "AB123456" not in send_code_response.text
 
-    verify_response = client.post(
+    verify_response = mcp_client.post(
         "/MCP/sign-up/verify",
         data={
             "pending_id": _extract_hidden_value(send_code_response.text, "pending_id"),
@@ -205,7 +209,7 @@ def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path
     assert verify_response.status_code == 200
     assert "MCP account created" in verify_response.text
 
-    profile_response = client.post(
+    profile_response = api_client.post(
         "/v1/users/sign-in",
         headers=AUTH_HEADERS,
         json={"email": "mcp-new@example.com", "password": "secret-pass"},
@@ -230,7 +234,7 @@ def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path
 def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
-    sign_up_response = client.post(
+    sign_up_response = api_client.post(
         "/v1/users/sign-up",
         headers=AUTH_HEADERS,
         json={
@@ -241,17 +245,17 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     )
     assert sign_up_response.status_code == 201
 
-    protected_metadata = client.get("/.well-known/oauth-protected-resource/MCP")
+    protected_metadata = mcp_client.get("/.well-known/oauth-protected-resource/MCP")
     assert protected_metadata.status_code == 200
     assert protected_metadata.json()["resource"].endswith("/MCP")
 
-    authorization_metadata = client.get("/.well-known/oauth-authorization-server")
+    authorization_metadata = mcp_client.get("/.well-known/oauth-authorization-server")
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["code_challenge_methods_supported"] == ["S256"]
 
     code_verifier = "test-code-verifier-1234567890"
     code_challenge = _pkce_challenge(code_verifier)
-    authorize_page = client.get(
+    authorize_page = mcp_client.get(
         "/oauth/authorize",
         params={
             "response_type": "code",
@@ -265,7 +269,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorize_page.status_code == 200
     assert "Authorize MCP access" in authorize_page.text
 
-    login_response = client.post(
+    login_response = mcp_client.post(
         "/oauth/authorize/login",
         data={
             "response_type": "code",
@@ -281,7 +285,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert login_response.status_code == 200
     assert "Verify MCP OAuth login" in login_response.text
 
-    verify_response = client.post(
+    verify_response = mcp_client.post(
         "/oauth/authorize/verify",
         data={
             "response_type": "code",
@@ -300,7 +304,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert location.startswith("https://client.example/callback?")
     authorization_code = location.split("code=", 1)[1].split("&", 1)[0]
 
-    token_response = client.post(
+    token_response = mcp_client.post(
         "/oauth/token",
         data={
             "grant_type": "authorization_code",
@@ -331,7 +335,7 @@ def _configure_env(monkeypatch, tmp_path: Path) -> None:
 
 
 def _create_mcp_key(tmp_path: Path) -> str:
-    sign_up_response = client.post(
+    sign_up_response = api_client.post(
         "/v1/users/sign-up",
         headers=AUTH_HEADERS,
         json={
@@ -341,7 +345,7 @@ def _create_mcp_key(tmp_path: Path) -> str:
         },
     )
     assert sign_up_response.status_code == 201
-    create_key_response = client.post(
+    create_key_response = api_client.post(
         f"/v1/users/{sign_up_response.json()['user_id']}/mcp-api-key",
         headers=AUTH_HEADERS,
         json={"expires_in_days": 1},
@@ -362,7 +366,7 @@ def _mcp_call(
         "method": "tools/call",
         "params": {"name": name, "arguments": arguments or {}},
     }
-    return client.post("/MCP", json=payload, headers=headers or {})
+    return mcp_client.post("/MCP", json=payload, headers=headers or {})
 
 
 def _tool_payload(response) -> dict[str, object]:

@@ -245,7 +245,13 @@ Purpose: point `web.jurisdigta.eu`, `api.jurisdigta.eu`, `mcp.jurisdigta.eu`, an
 
 ## JurisDigta Self-Managed Server Deployment Preparation
 
-Related runbook: `Deployment/self-managed-server-deployment.md`
+Related runbooks and scripts:
+
+- `Deployment/manual-server-setup.md`
+- `Deployment/self-managed-server-deployment.md`
+- `Deployment/server/setup_jurisdigta_server.sh`
+- `Deployment/server/deploy_jurisdigta_prod.sh`
+- `.github/workflows/self_managed_prod_deploy.yml`
 
 Purpose: install and validate the software needed to deploy JurisDigta API, system code, laws connector, and PostgreSQL database from GitHub onto the self-managed Ubuntu server `jurisdigta-server`.
 
@@ -259,10 +265,17 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 
 1. Verify SSH access with `ssh -o BatchMode=yes jurisdigta-server "hostname && whoami"`.
 2. Enable non-interactive sudo for the deployment account only if Codex or automation will install packages remotely.
-3. Install base packages: `git`, `curl`, `unzip`, `jq`, `rsync`, `ufw`, `nginx`, `certbot`, Python venv/pip tooling, and PostgreSQL client tools.
-4. Install Docker Engine and Docker Compose plugin from Docker's Ubuntu apt repository.
-5. Add `jurisdigta-admin` to the `docker` group and reconnect SSH.
-6. Install Node.js/npm and GitHub CLI.
+3. Run the checked-in bootstrap script from the server after SSH works:
+
+```bash
+cd /srv/jurisdigta/app 2>/dev/null || cd /tmp
+bash Deployment/server/setup_jurisdigta_server.sh
+```
+
+If the repository is not cloned yet, run the same script from a temporary copy of `Deployment/server/setup_jurisdigta_server.sh` or manually clone the repository first.
+4. The bootstrap script installs base packages: `git`, `curl`, `unzip`, `jq`, `rsync`, `ufw`, `nginx`, `certbot`, Python venv/pip tooling, PostgreSQL client tools, Docker, Docker Compose v2, Node.js, npm, and OpenSSH.
+5. Reconnect SSH after the script adds `jurisdigta-admin` to the `docker` group.
+6. Install Cloudflare Tunnel with `INSTALL_CLOUDFLARED=1 bash Deployment/server/setup_jurisdigta_server.sh` when this server will expose public subdomains through Cloudflare.
 7. Create `/srv/jurisdigta` deployment, runtime storage, log, and secrets directories.
 8. Clone `https://github.com/mmaideveloper/aijurisdictionagents.git` to `/srv/jurisdigta/app`.
 9. Create server-local environment configuration under `/srv/jurisdigta/secrets/` and keep it out of Git.
@@ -277,6 +290,8 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 18. Configure firewall to keep direct public ingress closed except SSH or explicitly approved maintenance access.
 19. Use nginx/Certbot only as a future static-IP fallback; for the current no-static-IP production server, Cloudflare Tunnel is the public HTTPS path.
 20. Add systemd units or timers only after the exact smoke deployment commands are validated.
+21. Configure the GitHub `prod` Environment values documented in `docs/GITHUB_ENVIRONMENTS.md`.
+22. Run `Self-Managed Prod Deploy` from GitHub Actions after the server-local environment file is complete.
 
 ### Secrets And Environment Values
 
@@ -296,21 +311,26 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - Optional monitoring stack path: `/srv/jurisdigta/app/Deployment/monitoring`.
 - Cloudflare Tunnel service: `cloudflared.service` on `jurisdigta-server`.
 - Cloudflare Tunnel API hostname: `api.jurisdigta.eu` -> `http://127.0.0.1:8080`.
-- Cloudflare Tunnel MCP hostname: `mcp.jurisdigta.eu` -> `http://127.0.0.1:8080`, with MCP served at `/MCP`.
+- Cloudflare Tunnel MCP hostname: `mcp.jurisdigta.eu` -> `http://127.0.0.1:8070`, with MCP served by the dedicated MCP service at `/MCP`.
 - Cloudflare Tunnel admin hostname: `admin.jurisdigta.eu` -> `http://127.0.0.1:3000`, with Grafana served at `/grafana/`.
-- Cloudflare Tunnel web hostname: `web.jurisdigta.eu` -> `http://127.0.0.1:80` only after nginx serves the intended web app.
+- Cloudflare Tunnel web hostname: `web.jurisdigta.eu` -> `http://127.0.0.1:8090` only after the `jurisdigta-web` frontend container serves the intended web app.
 - Optional Grafana local URL: `http://127.0.0.1:3000`, accessed by SSH tunnel or through `admin.jurisdigta.eu` protected by Cloudflare Access.
 - Optional Grafana public mobile entry URL through Cloudflare Tunnel: `https://admin.jurisdigta.eu/grafana/`.
 - Required Grafana secret for local stack: `GRAFANA_ADMIN_PASSWORD`, stored only in `/srv/jurisdigta/app/Deployment/monitoring/.env` or a server-local secret manager.
+- GitHub `prod` Environment variable `JURISDIGTA_SSH_HOST`.
+- GitHub `prod` Environment secret `JURISDIGTA_SSH_PRIVATE_KEY`, preferably a deploy-only key.
+- Optional GitHub `prod` Environment variables: `JURISDIGTA_SSH_PORT`, `JURISDIGTA_SSH_USER`, `JURISDIGTA_DEPLOY_ROOT`, `JURISDIGTA_ENV_FILE`, `JURISDIGTA_WEB_API_BASE_URL`, `JURISDIGTA_API_PORT`, `JURISDIGTA_MCP_PORT`, and `JURISDIGTA_WEB_PORT`.
 
 ### Validation Steps
 
 - `sudo -n true` succeeds for automation-enabled setup.
 - `docker --version`, `docker compose version`, `node --version`, `npm --version`, `python3 --version`, `psql --version`, and `gh --version` succeed.
+- `bash /srv/jurisdigta/app/Deployment/server/setup_jurisdigta_server.sh` is idempotent and completes without package or permission errors.
 - `docker run --rm hello-world` succeeds after reconnecting with Docker group membership.
 - Repository checkout under `/srv/jurisdigta/app` is on the intended branch.
 - PostgreSQL health check succeeds.
 - API health check returns HTTP 200 at `http://127.0.0.1:8080/health`.
+- MCP health check returns HTTP 200 at `http://127.0.0.1:8070/health`.
 - Repository minimal runnable example succeeds: `python examples/minimal_demo.py`.
 - `crontab -l` contains the daily laws collector wrapper entry.
 - `docker ps -a --filter name=jurisdigta-laws-collector-daily` shows no stuck active collector container after deployment validation.
@@ -324,6 +344,8 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9090/-/ready` and `curl -fsS http://127.0.0.1:3000/api/health` succeed.
 - `systemctl status cloudflared --no-pager` shows the Cloudflare tunnel active when public hostnames are enabled.
 - If Cloudflare Tunnel public hostnames are enabled, `curl -fsS https://api.jurisdigta.eu/health`, `curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`, and `curl -I https://admin.jurisdigta.eu/grafana/` succeed from outside the server.
+- If the frontend web container is enabled, `curl -fsS http://127.0.0.1:8090/health` and `curl -I http://127.0.0.1:8090/privacy` succeed on the server.
+- GitHub Actions workflow `Self-Managed Prod Deploy` completes for `repo_ref=main`.
 - Cloudflare Access protects `admin.jurisdigta.eu` before public use.
 - UFW allows only expected ingress, typically SSH; do not expose PostgreSQL, API, Grafana, Prometheus, or exporter ports directly.
 
@@ -334,6 +356,7 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - Remove the status writer cron entry with `crontab -l | grep -v 'write_system_status.py' | crontab -`.
 - Stop the optional status metrics exporter with `sudo systemctl disable --now jurisdigta-status-exporter.service`.
 - Stop the optional Prometheus/Grafana stack with `cd /srv/jurisdigta/app/Deployment/monitoring && docker compose down`.
+- Stop the frontend web container with `docker rm -f jurisdigta-web` and remove the local image with `docker image rm jurisdigta-web:local`.
 - Stop any active daily collector container gracefully with `docker stop --time 120 jurisdigta-laws-collector-daily`; use `docker rm -f jurisdigta-laws-collector-daily` only if the container remains stuck.
 - Remove `/srv/jurisdigta/ops/run_laws_collector_daily.sh` only after confirming no other scheduler uses it.
 - Back up `/srv/jurisdigta/app/runs/storage` before removing containers, volumes, or the repository checkout.
@@ -341,6 +364,7 @@ Purpose: install and validate the software needed to deploy JurisDigta API, syst
 - Disable Cloudflare Tunnel hostnames or stop `cloudflared.service` only after DNS is routed to a rollback target or the service is intentionally offline.
 - Remove nginx site config or Certbot certificates only after DNS is routed away or rollback target is ready.
 - Remove Docker/GitHub CLI/nginx packages only if the server is being decommissioned.
+- Remove the deploy-only public key from `/home/jurisdigta-admin/.ssh/authorized_keys` and delete/rotate `JURISDIGTA_SSH_PRIVATE_KEY` if GitHub deployment access must be revoked.
 
 ### Privacy And Compliance Notes
 

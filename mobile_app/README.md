@@ -156,6 +156,32 @@ flutter pub get
 flutter run --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
 ```
 
+Android device/emulator setup on Windows:
+
+```powershell
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+$env:Path="$env:Path;$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME\emulator;$env:ANDROID_HOME\cmdline-tools\latest\bin"
+[Environment]::SetEnvironmentVariable('JAVA_TOOL_OPTIONS','-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT','User')
+flutter doctor -v
+flutter devices
+emulator -avd AIJurisDictA_Android_36 -no-snapshot-load
+flutter run -d emulator-5554 --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
+```
+
+For a physical Android device, enable Developer options and USB debugging,
+connect the phone, accept the RSA debugging prompt on the device, then verify:
+
+```powershell
+adb devices
+flutter run -d <device-id> --dart-define=AIJ_API_BASE_URL=http://<computer-lan-ip>:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
+```
+
+If microphone access was denied on Android, open system app settings for
+Jurisdigta AI Agent and allow Microphone. The in-app microphone controls remain
+clickable and re-check speech availability after permission is changed instead
+of staying permanently disabled.
+
 Minimal runnable example for the voice profile update parser and transport audit:
 
 ```bash

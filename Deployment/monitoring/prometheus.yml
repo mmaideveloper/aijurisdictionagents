@@ -34,6 +34,22 @@ scrape_configs:
           - http://host.docker.internal:8080/health
         labels:
           service: jurisdigta-api
+          component: api
+      - targets:
+          - http://host.docker.internal:8070/health
+        labels:
+          service: jurisdigta-mcp
+          component: mcp
+      - targets:
+          - https://web.jurisdigta.eu/health
+        labels:
+          service: jurisdigta-web
+          component: web
+      - targets:
+          - http://grafana:3000/grafana/api/health
+        labels:
+          service: jurisdigta-grafana
+          component: monitoring
     relabel_configs:
       - source_labels:
           - __address__

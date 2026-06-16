@@ -22,6 +22,10 @@ def get_api_version() -> str:
     return UNKNOWN_VERSION
 
 
+def get_mcp_server_version() -> str:
+    return get_api_version()
+
+
 def get_core_version() -> str:
     source_version = _get_core_source_version()
     if source_version is not None:

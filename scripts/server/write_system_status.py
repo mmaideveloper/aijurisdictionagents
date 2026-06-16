@@ -16,6 +16,11 @@ DEFAULT_APP_ROOT = "/srv/jurisdigta/app"
 ERROR_PATTERN = re.compile(r"\b(error|exception|traceback|critical|failed)\b", re.IGNORECASE)
 START_PATTERN = re.compile(r"^\[(?P<timestamp>[^\]]+)\] starting laws collector daily job")
 FINISH_PATTERN = re.compile(r"^\[(?P<timestamp>[^\]]+)\] laws collector daily job finished")
+KEY_VALUE_PATTERN = re.compile(r"(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>\S*)")
+SECRET_PATTERN = re.compile(
+    r"(?i)(password|passwd|pwd|secret|token|api[_-]?key|authorization|connection[_-]?string)"
+)
+URL_CREDENTIALS_PATTERN = re.compile(r"([a-z][a-z0-9+.-]*://[^:/\s]+:)([^@\s]+)(@)", re.IGNORECASE)
 
 
 def main() -> int:
@@ -140,11 +145,16 @@ def _laws_log_status(path: Path) -> dict[str, Any]:
         duration = max(0, int((finished - started).total_seconds()))
 
     collector_errors = _count_error_lines(text)
+    latest_run = _latest_laws_run_summary(text)
     return {
         "latest_log": str(path),
         "last_run_started_at": _format_dt(started),
         "last_run_finished_at": _format_dt(finished),
         "last_run_duration_seconds": duration,
+        "last_run_imported_laws": latest_run["imported_laws"],
+        "last_run_entries_processed": latest_run["entries_processed"],
+        "last_run_processed": latest_run["processed"],
+        "recent_errors": _recent_error_lines(text),
         "error_count": collector_errors,
     }
 
@@ -243,6 +253,74 @@ def _last_timestamp(text: str, pattern: re.Pattern[str]) -> datetime | None:
 
 def _count_error_lines(text: str) -> int:
     return sum(1 for line in text.splitlines() if ERROR_PATTERN.search(line))
+
+
+def _latest_laws_run_summary(text: str) -> dict[str, int]:
+    lines = text.splitlines()
+    start_index = 0
+    for index, line in enumerate(lines):
+        if START_PATTERN.search(line):
+            start_index = index
+
+    summary = {
+        "imported_laws": 0,
+        "entries_processed": 0,
+        "processed": 0,
+    }
+    for line in lines[start_index:]:
+        fields = _key_values(line)
+        summary["entries_processed"] += _int_field(fields, "entries_processed")
+        summary["processed"] += _int_field(fields, "processed")
+        summary["imported_laws"] += _int_field(fields, "new_documents")
+        summary["imported_laws"] += _int_field(fields, "laws_found")
+    return summary
+
+
+def _key_values(line: str) -> dict[str, str]:
+    return {match.group("key"): match.group("value") for match in KEY_VALUE_PATTERN.finditer(line)}
+
+
+def _int_field(fields: dict[str, str], key: str) -> int:
+    value = fields.get(key)
+    if value is None:
+        return 0
+    try:
+        return max(0, int(value))
+    except ValueError:
+        return 0
+
+
+def _recent_error_lines(text: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        if not ERROR_PATTERN.search(line):
+            continue
+        errors.append(
+            {
+                "timestamp": _format_dt(_line_timestamp(line)),
+                "message": _sanitize_log_line(line),
+            }
+        )
+    return errors[-limit:]
+
+
+def _line_timestamp(line: str) -> datetime | None:
+    if not line.startswith("["):
+        return None
+    timestamp, _, _rest = line[1:].partition("]")
+    return _parse_datetime(timestamp)
+
+
+def _sanitize_log_line(line: str) -> str:
+    sanitized = URL_CREDENTIALS_PATTERN.sub(r"\1***\3", line)
+    parts: list[str] = []
+    for token in sanitized.split():
+        key, separator, _value = token.partition("=")
+        if separator and SECRET_PATTERN.search(key):
+            parts.append(f"{key}=***")
+        else:
+            parts.append(token)
+    return " ".join(parts)[:240]
 
 
 def _parse_datetime(value: str) -> datetime | None:

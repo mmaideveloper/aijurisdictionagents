@@ -101,6 +101,10 @@ python examples/minimal_demo.py
   interrupt long spoken answers.
 - Browser `no-speech` STT timeouts are treated as soft no-input events instead
   of hard recognition failures.
+- Android microphone controls stay reachable even when startup speech
+  initialization fails or the user denied microphone permission earlier. Each
+  microphone action re-checks speech availability so a permission change in
+  Android app settings can recover without restarting the app.
 - Test locally with:
   - `cd mobile_app && flutter test test/speech_service_test.dart`
   - `cd mobile_app && flutter test test/speech_flow_test.dart`

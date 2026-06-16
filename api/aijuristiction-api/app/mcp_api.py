@@ -22,7 +22,13 @@ from app.mcp_tokens import create_mcp_api_token, validate_mcp_api_token
 from app.services.email_scheduler import EmailScheduler
 from app.users.api import get_email_scheduler, get_user_store
 from app.users.notifications import queue_registration_email
-from app.versioning import get_api_version, get_core_version, get_mobile_app_version, get_web_app_version
+from app.versioning import (
+    get_api_version,
+    get_core_version,
+    get_mcp_server_version,
+    get_mobile_app_version,
+    get_web_app_version,
+)
 from aijurisdictionagents.api_db import ApiDatabaseStore, User, generate_one_time_code
 
 router = APIRouter(prefix="/MCP", tags=["mcp"])
@@ -608,6 +614,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
 def _tool_get_version(_arguments: dict[str, Any]) -> dict[str, str]:
     return {
         "api_version": get_api_version(),
+        "mcp_server_version": get_mcp_server_version(),
         "system_version": get_core_version(),
         "mobile_app_version": get_mobile_app_version(),
         "web_app_version": get_web_app_version(),

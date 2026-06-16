@@ -8,12 +8,14 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.mcp_main import app as mcp_app
 from app.services.email import EmailNotificationService
 from app.services.email_scheduler import EmailScheduler
 from app.services.email_queue import EmailQueueConfig, EmailQueueStore
 from app.users.api import get_email_scheduler, get_user_store
 
 client = TestClient(app)
+mcp_client = TestClient(mcp_app)
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 
 
@@ -682,12 +684,12 @@ def test_user_can_create_and_delete_mcp_api_key_and_call_mcp(monkeypatch, tmp_pa
     assert create_key_response.status_code == 200
     mcp_key = create_key_response.json()["mcp_api_key"]
 
-    mcp_response = client.get("/MCP/status", headers={"x-mcp-api-key": mcp_key})
+    mcp_response = mcp_client.get("/MCP/status", headers={"x-mcp-api-key": mcp_key})
     assert mcp_response.status_code == 200
     assert mcp_response.json()["user_id"] == user_id
 
     delete_key_response = client.delete(f"/v1/users/{user_id}/mcp-api-key", headers=AUTH_HEADERS)
     assert delete_key_response.status_code == 200
 
-    expired_response = client.get("/MCP/status", headers={"x-mcp-api-key": mcp_key})
+    expired_response = mcp_client.get("/MCP/status", headers={"x-mcp-api-key": mcp_key})
     assert expired_response.status_code == 401

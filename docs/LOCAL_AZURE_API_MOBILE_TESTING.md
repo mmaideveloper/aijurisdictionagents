@@ -72,6 +72,48 @@ cd mobile_app
 flutter run -d chrome --web-port 7357 --dart-define=AIJ_API_BASE_URL=http://127.0.0.1:8080
 ```
 
+Windows Android setup used for native device/emulator validation:
+
+```powershell
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+$env:Path="$env:Path;$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME\emulator;$env:ANDROID_HOME\cmdline-tools\latest\bin"
+[Environment]::SetEnvironmentVariable('JAVA_TOOL_OPTIONS','-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT','User')
+flutter doctor -v
+adb devices
+avdmanager list avd
+emulator -avd AIJurisDictA_Android_36 -no-snapshot-load
+```
+
+Run against the Android emulator:
+
+```powershell
+cd mobile_app
+flutter run -d emulator-5554 --dart-define=AIJ_API_BASE_URL=http://10.0.2.2:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
+```
+
+Run against a physical Android device:
+
+```powershell
+adb devices
+cd mobile_app
+flutter run -d <device-id> --dart-define=AIJ_API_BASE_URL=http://<computer-lan-ip>:8080 --dart-define=AIJ_API_KEY=aijuris --dart-define=AIJ_SPEECH_MODE=local
+```
+
+Native speech smoke testing:
+
+- Emulator: use the emulator Extended controls microphone input, then tap the
+  app microphone. Google APIs emulator images can route host microphone input,
+  but recognition quality depends on host audio devices and Google speech
+  services available inside the emulator.
+- Physical Android: allow Microphone permission for Jurisdigta AI Agent in
+  Android app settings. If permission was denied before, tap the in-app
+  microphone again after changing the setting; the app re-checks speech
+  availability instead of leaving the control disabled.
+- Recurring regression: prefer `.\scripts\run_mobile_voice_loopback.ps1
+  -IncludeAzure`, which stores deterministic text artifacts under
+  `runs\voice-simulator-tests\` and does not persist raw audio.
+
 Smoke check:
 
 - Open `http://127.0.0.1:7357`.

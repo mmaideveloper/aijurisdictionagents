@@ -99,7 +99,7 @@ Create these public hostnames in the Cloudflare Tunnel configuration:
 | --- | --- | --- |
 | `web.jurisdigta.eu` | `http://127.0.0.1:<web-port>` or local nginx static site | Public web frontend controls |
 | `api.jurisdigta.eu` | `http://127.0.0.1:8080` | API authentication, rate limits, safe CORS |
-| `mcp.jurisdigta.eu` | `http://127.0.0.1:<mcp-port>` | Authentication, rate limits, audit logging |
+| `mcp.jurisdigta.eu` | `http://127.0.0.1:8070` | Authentication, rate limits, audit logging |
 | `admin.jurisdigta.eu` | `http://127.0.0.1:<admin-port>` | Cloudflare Access, VPN/IP allow-list, strong MFA |
 
 Do not expose unauthenticated MCP or admin routes. Put `admin.jurisdigta.eu` behind Cloudflare Access before sharing the hostname outside the operator team.
@@ -160,7 +160,7 @@ On the Ubuntu server, confirm the services work locally before exposing them thr
 curl -fsS http://127.0.0.1:8080/health
 # Replace these ports with the actual local web, MCP, and admin ports.
 curl -I http://127.0.0.1:<web-port>
-curl -I http://127.0.0.1:<mcp-port>
+curl -I http://127.0.0.1:8070/.well-known/oauth-protected-resource/MCP
 curl -I http://127.0.0.1:<admin-port>
 ```
 
@@ -213,7 +213,7 @@ In the tunnel details page, add these public hostname routes:
 | --- | --- | --- |
 | `web.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<web-port>` | Use the actual local web/frontend port or local nginx port. |
 | `api.jurisdigta.eu` | `HTTP` -> `127.0.0.1:8080` | API service. Validate `/health`. |
-| `mcp.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<mcp-port>` | Require auth, rate limits, and audit logging. |
+| `mcp.jurisdigta.eu` | `HTTP` -> `127.0.0.1:8070` | Require auth, rate limits, and audit logging. |
 | `admin.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<admin-port>` | Put behind Cloudflare Access/MFA before sharing. |
 
 If Cloudflare asks for HTTPS origin URLs instead of HTTP, only use HTTPS origin mode after local origin certificates are configured and validated. For the first local setup, HTTP to `127.0.0.1` through the tunnel is simpler.

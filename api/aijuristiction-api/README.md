@@ -229,11 +229,12 @@ This local Docker stack now runs:
 
 - PostgreSQL 16 with `pgvector`
 - API container built from the repository root so it includes `src/aijurisdictionagents`, migrations, and scripts
+- Dedicated MCP container on port `8070`, started from `app.mcp_main:app`
 
 Useful overrides:
 
 ```bash
-API_PORT=8081 LLM_PROVIDER=mock docker compose up --build
+API_PORT=8081 MCP_PORT=8070 LLM_PROVIDER=mock docker compose up --build
 ```
 
 The compose file stores database files under the shared repository `databases/` folder and points the API at:
@@ -250,6 +251,7 @@ If you want only the database container or the repository database rules, use `d
 
 ## Endpoints scaffolded
 
+- `GET /`
 - `GET /health`
 - `GET /version`
 - `GET /v1/observability/logs`
@@ -284,6 +286,16 @@ Example healthy response:
     "backend": "local"
   }
 }
+```
+
+`GET /` renders a lightweight HTML status page that shows the same public metadata
+returned by `GET /version`. The page links back to `/version` for clients that need
+the raw JSON response.
+
+Minimal runnable example:
+
+```bash
+python examples/api_root_version_page_minimal_demo.py
 ```
 
 `GET /version` response includes:

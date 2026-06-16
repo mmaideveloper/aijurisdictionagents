@@ -6159,6 +6159,35 @@ class _ChatHomePageState extends State<ChatHomePage>
     }
   }
 
+  Future<bool> _ensureSpeechRecognitionAvailable() async {
+    if (_speechEnabled) {
+      return true;
+    }
+    final enabled = await _speechRecognizer.initialize(
+      onError: _onSpeechError,
+      onStatus: _onSpeechStatus,
+    );
+    if (!mounted) {
+      return false;
+    }
+    setState(() {
+      _speechEnabled = enabled;
+    });
+    await widget.logger.info(
+      'Speech recognition availability rechecked',
+      <String, Object?>{
+        'enabled': enabled,
+        'speech_mode': _speechService.modeLabel,
+        'speech_runtime_mode': _speechService.runtimeModeLabel,
+        ..._voiceLogContext('speech_recognition_recheck'),
+      },
+    );
+    if (!enabled) {
+      _showSnackbar(_strings.t('speech_unavailable'));
+    }
+    return enabled;
+  }
+
   Future<void> _initializeAssistantSpeech() async {
     final enabled = await _speaker.initialize();
     if (!enabled) {
@@ -6753,14 +6782,17 @@ class _ChatHomePageState extends State<ChatHomePage>
     final completer = Completer<void>();
     _speechStopCompleter = completer;
     _stoppingSpeechManually = true;
-    await _speechRecognizer.stop();
-    if (!completer.isCompleted) {
-      await completer.future.timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {},
-      );
+    try {
+      await _speechRecognizer.stop();
+      if (!completer.isCompleted) {
+        await completer.future.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {},
+        );
+      }
+    } finally {
+      _stoppingSpeechManually = false;
     }
-    _stoppingSpeechManually = false;
   }
 
   Future<void> _requestNewCaseFromCommand({
@@ -7312,8 +7344,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _setInputComposerExpanded(true);
       _inputFocusNode.requestFocus();
       _lastHandledSpeechText = null;
-      if (!_speechEnabled) {
-        _showSnackbar(_strings.t('speech_unavailable'));
+      if (!await _ensureSpeechRecognitionAvailable()) {
         return;
       }
       if (_assistantSpeechInProgress) {
@@ -7347,8 +7378,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _setInputComposerExpanded(false, unfocus: true);
     }
     _lastHandledSpeechText = null;
-    if (!_speechEnabled) {
-      _showSnackbar(_strings.t('speech_unavailable'));
+    if (!await _ensureSpeechRecognitionAvailable()) {
       return;
     }
     if (_assistantSpeechInProgress) {
@@ -7659,8 +7689,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   Future<void> _toggleSpeechInputEnabled({
     bool speakReadyMessage = true,
   }) async {
-    if (!_speechEnabled) {
-      _showSnackbar(_strings.t('speech_unavailable'));
+    if (!await _ensureSpeechRecognitionAvailable()) {
       return;
     }
 
@@ -9705,9 +9734,8 @@ class _ChatHomePageState extends State<ChatHomePage>
                             ? strings.t('speech_input_enabled')
                             : strings.t('speech_input_disabled'),
                         child: IconButton.filledTonal(
-                          onPressed: _speechEnabled
-                              ? () => unawaited(_toggleSpeechInputEnabled())
-                              : null,
+                          onPressed: () =>
+                              unawaited(_toggleSpeechInputEnabled()),
                           icon: Icon(
                             _speechInputEnabled ? Icons.mic : Icons.mic_off,
                           ),
@@ -9783,8 +9811,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             IconButton(
-                              onPressed:
-                                  _speechEnabled ? _toggleSpeechInput : null,
+                              onPressed: _toggleSpeechInput,
                               icon: Icon(
                                 Icons.mic,
                                 color: _isListening
@@ -9836,8 +9863,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                             ),
                             const SizedBox(width: 8),
                             IconButton(
-                              onPressed:
-                                  _speechEnabled ? _toggleSpeechInput : null,
+                              onPressed: _toggleSpeechInput,
                               icon: Icon(
                                 Icons.mic,
                                 color: _isListening

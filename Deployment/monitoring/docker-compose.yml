@@ -9,7 +9,7 @@ services:
       - --storage.tsdb.retention.time=30d
       - --web.enable-lifecycle
     ports:
-      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-9091}:9090"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -28,6 +28,9 @@ services:
     working_dir: /app
     env_file:
       - .env
+    environment:
+      API_KEY: ${JURISDIGTA_API_KEY:-${API_KEY:-aijuris}}
+      SYSTEM_STATUS_FILE: /workspace/runs/status/system-status.json
     command:
       - python
       - /app/export_system_status_metrics.py
@@ -41,6 +44,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ../../scripts/server/export_system_status_metrics.py:/app/export_system_status_metrics.py:ro
+      - ../../runs:/workspace/runs:ro
 
   grafana:
     image: grafana/grafana-oss:latest
@@ -69,6 +73,7 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
 
@@ -101,6 +106,8 @@ services:
     restart: unless-stopped
     command:
       - --config.file=/etc/blackbox_exporter/config.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./blackbox.yml:/etc/blackbox_exporter/config.yml:ro
 

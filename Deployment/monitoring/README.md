@@ -113,65 +113,35 @@ systemctl status jurisdigta-status-exporter.service --no-pager
 
 ## Start Prometheus And Grafana
 
-Create server-local Grafana and SMTP settings:
+Create or update server-local Prometheus/Grafana settings:
 
 ```bash
 cd /srv/jurisdigta/app/Deployment/monitoring
-umask 077
-python3 - <<'PY'
-from pathlib import Path
-
-source = Path("/srv/jurisdigta/secrets/jurisdigta.env")
-target = Path(".env")
-values = {}
-if source.exists():
-    for line in source.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key] = value.strip().strip('"').strip("'")
-
-smtp_host = values.get("EMAIL_SMTP_HOST", "")
-smtp_port = values.get("EMAIL_SMTP_PORT", "587")
-smtp_user = values.get("EMAIL_SMTP_USERNAME", "")
-smtp_password = values.get("EMAIL_SMTP_PASSWORD", "")
-sender = values.get("EMAIL_SENDER", smtp_user) or "no-reply@jurisdigta.eu"
-
-target.write_text(
-    "\n".join(
-        [
-            "GRAFANA_ADMIN_USER=admin",
-            "GRAFANA_ADMIN_PASSWORD=replace-with-long-random-password",
-            f"GRAFANA_SMTP_ENABLED={'true' if smtp_host and smtp_password else 'false'}",
-            f"GRAFANA_SMTP_HOST={smtp_host}:{smtp_port}" if smtp_host else "GRAFANA_SMTP_HOST=",
-            f"GRAFANA_SMTP_USER={smtp_user}",
-            f"GRAFANA_SMTP_PASSWORD={smtp_password}",
-            f"GRAFANA_SMTP_FROM_ADDRESS={sender}",
-            "GRAFANA_SMTP_FROM_NAME=JurisDigta Grafana",
-            "GRAFANA_SMTP_STARTTLS_POLICY=OpportunisticStartTLS",
-            f"GRAFANA_ALERT_EMAIL_TO={sender}",
-            "",
-        ]
-    ),
-    encoding="utf-8",
-)
-target.chmod(0o600)
-PY
+python3 configure_monitoring.py --validate --start
 ```
 
-Start:
+The script reads `/srv/jurisdigta/secrets/jurisdigta.env`, writes
+`Deployment/monitoring/.env` with file mode `600`, validates dashboard JSON and
+Compose config, then starts the stack. It carries `JURISDIGTA_API_KEY` from
+`JURISDIGTA_API_KEY` or `API_KEY` so the status exporter can authenticate to
+`/v1/system/status`. The status exporter also mounts `../../runs` read-only so
+laws collector runtime details can be merged from `SYSTEM_STATUS_FILE` when the
+API image does not expose those fields yet. It preserves an existing
+`GRAFANA_ADMIN_PASSWORD` unless the project env provides one.
+
+If `GRAFANA_ADMIN_PASSWORD` changed after Grafana was already initialized,
+also reset the persisted Grafana admin password:
 
 ```bash
-docker compose up -d
+python3 configure_monitoring.py --validate --start --reset-grafana-password
 ```
 
 Validate:
 
 ```bash
 docker compose ps
-curl -fsS http://127.0.0.1:9090/-/ready
-curl -fsS http://127.0.0.1:3000/api/health
+curl -fsS http://127.0.0.1:9091/-/ready
+curl -fsS http://127.0.0.1:3000/grafana/api/health
 ```
 
 ## Access Grafana
@@ -209,13 +179,13 @@ http://127.0.0.1:3000
 Prometheus can be tunneled the same way when needed:
 
 ```bash
-ssh -L 9090:127.0.0.1:9090 jurisdigta-server
+ssh -L 9091:127.0.0.1:9091 jurisdigta-server
 ```
 
 Then open:
 
 ```text
-http://127.0.0.1:9090
+http://127.0.0.1:9091
 ```
 
 ### From Mobile Over Public HTTPS
@@ -266,6 +236,31 @@ Validate from outside the server network:
 curl -I https://admin.jurisdigta.eu/grafana/
 ```
 
+### Reset Grafana Login
+
+Grafana stores the admin password in its persistent database after the first
+startup. Updating `GRAFANA_ADMIN_PASSWORD` in `Deployment/monitoring/.env` does
+not change the password for an existing `grafana-data` volume. If login fails
+with the documented credentials, reset the admin password from the running
+container after loading it from the server-local secret file:
+
+```bash
+cd /srv/jurisdigta/app/Deployment/monitoring
+set -a
+. ./.env
+set +a
+docker exec jurisdigta-grafana grafana cli admin reset-admin-password "$GRAFANA_ADMIN_PASSWORD"
+curl -fsS http://127.0.0.1:3000/grafana/api/health
+```
+
+Keep the reset command out of shell history when operating a shared terminal.
+The preferred repeatable flow is:
+
+```bash
+cd /srv/jurisdigta/app/Deployment/monitoring
+python3 configure_monitoring.py --validate --start --reset-grafana-password
+```
+
 The nginx template `Deployment/monitoring/nginx-admin-grafana.conf` remains a
 static-IP fallback only. Use it only when `admin.jurisdigta.eu` intentionally
 resolves to the server or NAT endpoint and inbound TCP `80` and `443` are open:
@@ -288,7 +283,7 @@ Security notes:
 - Use Cloudflare Access for operator identity control before production use.
 - Do not display personal data, legal documents, chat contents, API keys, SMTP passwords, or database connection strings on dashboards.
 
-## First Grafana Dashboard
+## Provisioned Grafana Dashboards
 
 Prometheus is provisioned automatically as a Grafana data source:
 
@@ -296,7 +291,21 @@ Prometheus is provisioned automatically as a Grafana data source:
 http://prometheus:9090
 ```
 
-Useful starter panels:
+Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
+`JurisDigta` folder:
+
+- `JurisDigta Server Performance`: CPU, RAM, disk, load, network, disk I/O, and container memory.
+- `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, laws processing cursor and runtime, and application error counts.
+- `JurisDigta Laws Collector`: execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
+- `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
+
+The application dashboards use privacy-preserving aggregate metrics only. Do
+not add panels that expose user chat text, generated legal documents, API keys,
+database connection strings, SMTP passwords, raw legal-risk outputs, or raw
+collector logs. The laws collector error table uses sanitized, truncated
+operational log lines only.
+
+Useful starter queries:
 
 - `jurisdigta_component_status{component="overall"}`
 - `jurisdigta_component_status{component="api"}`
@@ -309,6 +318,10 @@ Useful starter panels:
 - `jurisdigta_laws_runtime_last_run_started_at_timestamp_seconds`
 - `jurisdigta_laws_runtime_last_run_finished_at_timestamp_seconds`
 - `jurisdigta_laws_runtime_duration_seconds`
+- `jurisdigta_laws_runtime_imported_laws`
+- `jurisdigta_laws_runtime_entries_processed`
+- `jurisdigta_laws_runtime_processed`
+- `jurisdigta_laws_recent_error_info`
 - `jurisdigta_system_disk_used_percent`
 - `jurisdigta_system_memory_used_percent`
 - `probe_success{service="jurisdigta-api"}`
