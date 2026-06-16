@@ -62,8 +62,8 @@ jobs:
           echo "RUNNER_IP=$runner_ip" >> "$GITHUB_ENV"
           az postgres flexible-server firewall-rule create \
             --resource-group "$AZURE_RESOURCE_GROUP" \
-            --name "$AZURE_POSTGRES_SERVER_NAME" \
-            --rule-name "github-runner-${GITHUB_RUN_ID}" \
+            --server-name "$AZURE_POSTGRES_SERVER_NAME" \
+            --name "github-runner-${GITHUB_RUN_ID}" \
             --start-ip-address "$runner_ip" \
             --end-ip-address "$runner_ip" \
             --only-show-errors \
@@ -100,8 +100,8 @@ jobs:
         run: |
           az postgres flexible-server firewall-rule delete \
             --resource-group "$AZURE_RESOURCE_GROUP" \
-            --name "$AZURE_POSTGRES_SERVER_NAME" \
-            --rule-name "github-runner-${GITHUB_RUN_ID}" \
+            --server-name "$AZURE_POSTGRES_SERVER_NAME" \
+            --name "github-runner-${GITHUB_RUN_ID}" \
             --yes \
             --only-show-errors \
             --output none || true

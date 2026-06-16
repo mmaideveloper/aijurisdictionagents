@@ -88,6 +88,6 @@ def configure_telemetry(service_name: str, service_version: str) -> TelemetryMod
 
 
 def instrument_fastapi(app: FastAPI) -> None:
-    if _TELEMETRY_MODE == "azure-monitor":
+    if _TELEMETRY_MODE in {"azure-monitor", "console"}:
         return
     FastAPIInstrumentor.instrument_app(app)

@@ -45,16 +45,23 @@ curl http://127.0.0.1:8070/
 - Authorization endpoint: `GET /oauth/authorize`
 - Token endpoint: `POST /oauth/token`
 
-The OAuth flow uses authorization code with PKCE S256. The browser authorization page validates the user password, sends an email OTP, and only creates a short-lived authorization code after OTP verification. The token endpoint exchanges that code for the same revocable JWT bearer token accepted by `POST /MCP`.
+The OAuth flow uses authorization code with PKCE S256. ChatGPT should pass the protected resource value `https://mcp.jurisdigta.eu/MCP` on the authorization and token requests. The browser authorization page validates the user password, sends an email OTP, and only creates a short-lived authorization code after OTP verification. The token endpoint exchanges that code for the same revocable JWT bearer token accepted by `POST /MCP`.
+
+Production settings:
+
+- `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com`
+- `MCP_API_JWT_SECRET=<long-random-secret>`
 
 ## Authentication
 
 - MCP API keys are per user.
 - Default key lifetime is 1 day.
 - Keys are signed JWT bearer tokens and are only shown once at creation.
-- JWT claims are minimized to `sub`, `email`, `exp`, and `jti`.
+- JWT claims are minimized to `sub`, `aud`, `scope`, `exp`, and `jti`.
 - The full token is still stored hashed in the database so it can be revoked.
 - Protected MCP tools accept either `Authorization: Bearer <mcp_api_key>` or `x-mcp-api-key: <mcp_api_key>`.
+- OAuth tokens are audience-bound to the MCP resource URL and include `scope=mcp:laws`.
 
 Users can generate a key in either way:
 
@@ -66,13 +73,13 @@ Keys can be revoked with:
 
 - `DELETE /v1/users/{user_id}/mcp-api-key`
 
-Manual JWT generation remains useful for local VS Code setups that pass an `Authorization` header directly. Standards-based remote clients should prefer OAuth discovery.
+Manual JWT generation remains useful for local VS Code setups that pass an `Authorization` header directly. Standards-based remote clients should prefer OAuth discovery. Existing tokens issued before the audience/scope claim update must be regenerated.
 
 ## Assistant Setup
 
 Use `https://mcp.jurisdigta.eu/MCP` as the remote MCP server URL in clients that support custom HTTP MCP servers.
 
-- ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it.
+- ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it. Users may self-register during the browser authorization flow, but ChatGPT only receives the OAuth access token and tool results, not a raw API key.
 - Claude: add a custom connector or remote MCP server and enter the MCP server URL. OAuth-capable Claude clients can discover authorization metadata from `https://mcp.jurisdigta.eu`.
 - VS Code: add an HTTP MCP server in MCP settings. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/MCP/login`.
 - Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
@@ -120,7 +127,7 @@ These tools require an MCP API key:
 }
 ```
 
-For protected tools, send the MCP API key as a Bearer token or `x-mcp-api-key` header.
+For protected tools, send the MCP API key as a Bearer token or `x-mcp-api-key` header. Protected unauthenticated tool calls return `401` with a `WWW-Authenticate` header pointing clients at the protected-resource metadata endpoint.
 
 ## Logging And Debugging
 
@@ -135,4 +142,4 @@ Debugging fields are intentionally minimized:
 
 For production troubleshooting, filter application logs by `mcp_` event names and correlate them with the `x-request-id` or `x-correlation-id` response headers.
 
-Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, hashed in storage, expire by default after 1 day, and can be revoked. Public tools avoid user-specific data. Protected legal-data tools remain read-only and are logged with request correlation IDs by the MCP middleware for traceability. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.
+Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, audience-bound, hashed in storage, expire by default after 1 day, and can be revoked. Public tools avoid user-specific data. Protected legal-data tools remain read-only and are logged with request correlation IDs by the MCP middleware for traceability. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. OAuth and MCP tool responses do not return raw API keys to ChatGPT. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, set `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, keep OAuth redirect hosts restricted, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.

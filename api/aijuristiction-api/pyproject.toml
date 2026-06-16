@@ -18,6 +18,7 @@ dependencies = [
   "python-dotenv>=1.0",
   "python-multipart>=0.0.9",
   "reportlab>=4.0",
+  "starlette<1.0",
   "truststore>=0.10.0",
   "uvicorn[standard]>=0.35.0",
 ]

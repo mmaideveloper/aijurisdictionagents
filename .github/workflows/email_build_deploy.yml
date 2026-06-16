@@ -168,8 +168,8 @@ jobs:
           $runnerIp = (Invoke-RestMethod -Uri "https://api.ipify.org").Trim()
           az postgres flexible-server firewall-rule create `
             --resource-group $env:AZURE_RESOURCE_GROUP `
-            --name $env:AZURE_POSTGRES_SERVER_NAME `
-            --rule-name "github-runner-${{ github.run_id }}" `
+            --server-name $env:AZURE_POSTGRES_SERVER_NAME `
+            --name "github-runner-${{ github.run_id }}" `
             --start-ip-address $runnerIp `
             --end-ip-address $runnerIp `
             --only-show-errors `
@@ -221,8 +221,8 @@ jobs:
         run: |
           az postgres flexible-server firewall-rule delete `
             --resource-group $env:AZURE_RESOURCE_GROUP `
-            --name $env:AZURE_POSTGRES_SERVER_NAME `
-            --rule-name "github-runner-${{ github.run_id }}" `
+            --server-name $env:AZURE_POSTGRES_SERVER_NAME `
+            --name "github-runner-${{ github.run_id }}" `
             --yes `
             --only-show-errors `
             --output none

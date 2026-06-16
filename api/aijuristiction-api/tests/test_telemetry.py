@@ -120,8 +120,17 @@ def test_instrument_fastapi_skips_manual_instrumentation_for_azure_monitor(monke
     assert "instrumented" not in calls
 
 
-def test_instrument_fastapi_uses_manual_instrumentation_for_non_azure_monitor(monkeypatch) -> None:
+def test_instrument_fastapi_skips_manual_instrumentation_for_console(monkeypatch) -> None:
     calls = _patch_common(monkeypatch, otlp_endpoint=None)
+
+    telemetry.configure_telemetry("svc", "0.1.0")
+    telemetry.instrument_fastapi(FastAPI())
+
+    assert "instrumented" not in calls
+
+
+def test_instrument_fastapi_uses_manual_instrumentation_for_otlp(monkeypatch) -> None:
+    calls = _patch_common(monkeypatch, otlp_endpoint="http://localhost:4318/v1/traces")
 
     app = FastAPI()
     telemetry.configure_telemetry("svc", "0.1.0")
