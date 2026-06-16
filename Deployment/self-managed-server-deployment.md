@@ -5,7 +5,7 @@ This runbook documents the software and server preparation needed to deploy Juri
 Checked-in automation:
 
 - `Deployment/server/setup_jurisdigta_server.sh` installs Ubuntu packages, Docker, deployment directories, firewall baseline, and the first repository checkout.
-- `Deployment/server/deploy_jurisdigta_prod.sh` updates the server checkout, deploys PostgreSQL/API/MCP/web/laws collector/status monitoring, and validates local health checks.
+- `Deployment/server/deploy_jurisdigta_prod.sh` updates the server checkout, deploys PostgreSQL/API/MCP/email scheduler/web/document processor/laws collector/status monitoring, and validates local health checks.
 - `.github/workflows/self_managed_prod_deploy.yml` runs the production deploy script over SSH from the protected GitHub `prod` Environment.
 
 Current target verified from Codex on 2026-06-13:
@@ -427,6 +427,9 @@ Minimal runnable validation examples:
 curl -fsS http://127.0.0.1:8080/health
 curl -fsS http://127.0.0.1:8070/health
 curl -I http://127.0.0.1:8070/.well-known/oauth-protected-resource/MCP
+docker inspect -f '{{.State.Running}}' jurisdigta-email-scheduler
+docker image inspect jurisdigta-document-processor:local >/dev/null
+test -x /srv/jurisdigta/ops/run_document_processor.sh
 curl -I http://127.0.0.1:3000/grafana/
 curl -fsS http://127.0.0.1:8090/health
 sudo systemctl status cloudflared --no-pager
@@ -468,6 +471,8 @@ the current no-static-IP production environment.
 For production, wrap Docker Compose or standalone containers with systemd units after the smoke deployment is validated. Recommended units:
 
 - `jurisdigta-api.service`
+- `jurisdigta-email-scheduler.service`
+- `jurisdigta-document-processor.timer`
 - `jurisdigta-laws-collector.service` or `jurisdigta-laws-collector.timer`
 - optional `jurisdigta-system.service` for system/orchestration processes that are not part of the API container
 
@@ -478,6 +483,57 @@ Each unit should:
 - restart on failure with backoff,
 - write logs to journald,
 - run under `jurisdigta-admin` or a narrower service account.
+
+The production deployment script starts `jurisdigta-email-scheduler` as a single
+long-running Docker container from the API image. It reads the same PostgreSQL
+API database as API/MCP through `EMAIL_DB_OPTION=postgres` and
+`EMAIL_DB_CLOUD`, then delivers queued `email_outbox` messages through the
+configured `EMAIL_TRANSPORT`. For real verification-code delivery, the
+server-local `/srv/jurisdigta/secrets/jurisdigta.env` must use
+`EMAIL_TRANSPORT=smtp` and include `EMAIL_SENDER`, `EMAIL_SMTP_HOST`,
+`EMAIL_SMTP_PORT`, `EMAIL_SMTP_USERNAME`, and `EMAIL_SMTP_PASSWORD`. The deploy
+script fails before replacing containers when these production email delivery
+settings are missing.
+
+Privacy-safe OTP delivery validation:
+
+```bash
+docker ps --filter name=jurisdigta-email-scheduler
+docker logs --tail 50 jurisdigta-email-scheduler
+docker exec aijurisdiction-postgres psql -U "${LOCAL_POSTGRES_USER:-postgres}" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -c "SELECT recipient, subject, status, attempts, updated_at FROM email_outbox WHERE metadata_json::text LIKE '%mcp_sign_up_code%' ORDER BY created_at DESC LIMIT 5;"
+```
+
+Do not print or paste `email_outbox.body` for OTP messages; it contains the
+verification code.
+
+The production deployment script also builds
+`jurisdigta-document-processor:local` and installs
+`/srv/jurisdigta/ops/run_document_processor.sh` into cron. The API container is
+started with `DOCUMENT_PROCESSOR_OPTION=azure`, so uploaded case documents stay
+pending until the worker claims them. The worker uses the same API PostgreSQL
+database and local file store under `/srv/jurisdigta/runs/storage/api/files`.
+
+Default self-managed document processor settings:
+
+- `INSTALL_DOCUMENT_PROCESSOR_CRON=1`
+- `DOCUMENT_PROCESSOR_CRON_EXPRESSION=*/15 * * * *`
+- `DOCUMENT_PROCESSOR_LIMIT=20`
+- `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` from the server-local env file when set
+
+Document processor validation:
+
+```bash
+docker image inspect jurisdigta-document-processor:local >/dev/null
+test -x /srv/jurisdigta/ops/run_document_processor.sh
+crontab -l | grep run_document_processor.sh
+/srv/jurisdigta/ops/run_document_processor.sh
+tail -n 80 /srv/jurisdigta/runs/logs/document-processor-latest.log
+```
+
+The document processor logs stable document IDs, case IDs, filenames, extraction
+methods, counts, and compact errors. Do not add logging of uploaded document
+contents, extracted text, embeddings, API keys, or raw database connection
+strings.
 
 For the current self-managed server maintenance path, a daily user cron entry can run the already-built laws collector image against the existing PostgreSQL container. The server-local wrapper is:
 

@@ -11,6 +11,9 @@ WEB_PORT="${WEB_PORT:-8090}"
 WEB_API_BASE_URL="${WEB_API_BASE_URL:-https://api.jurisdigta.eu}"
 RUN_SCHEMA_MIGRATIONS="${RUN_SCHEMA_MIGRATIONS:-1}"
 INSTALL_LAWS_CRON="${INSTALL_LAWS_CRON:-1}"
+INSTALL_DOCUMENT_PROCESSOR_CRON="${INSTALL_DOCUMENT_PROCESSOR_CRON:-1}"
+DOCUMENT_PROCESSOR_CRON_EXPRESSION="${DOCUMENT_PROCESSOR_CRON_EXPRESSION:-*/15 * * * *}"
+DOCUMENT_PROCESSOR_LIMIT="${DOCUMENT_PROCESSOR_LIMIT:-20}"
 INSTALL_STATUS_CRON="${INSTALL_STATUS_CRON:-1}"
 START_MONITORING="${START_MONITORING:-0}"
 
@@ -71,6 +74,44 @@ require_azurefoundry_settings() {
   fi
 }
 
+require_email_delivery_settings() {
+  local transport="${EMAIL_TRANSPORT:-}"
+  if [ "$transport" != "smtp" ]; then
+    fail "Production deploy requires EMAIL_TRANSPORT=smtp for sign-up and OTP email delivery. Current value: ${transport:-unset}"
+  fi
+
+  local missing=()
+  for key in EMAIL_SENDER EMAIL_SMTP_HOST EMAIL_SMTP_PORT EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD; do
+    if [ -z "${!key:-}" ]; then
+      missing+=("$key")
+    fi
+  done
+
+  if [ "${#missing[@]}" -gt 0 ]; then
+    printf '[jurisdigta-deploy] Missing required email delivery settings:\n' >&2
+    printf '  - %s\n' "${missing[@]}" >&2
+    exit 1
+  fi
+}
+
+require_cron_expression() {
+  local name="$1"
+  local value="$2"
+  local field_count
+  field_count="$(printf '%s\n' "$value" | awk '{print NF}')"
+  if [ "$field_count" != "5" ] || ! printf '%s' "$value" | grep -Eq '^[0-9*,/ -]+$'; then
+    fail "$name must be a five-field cron expression using numbers, '*', ',', '-', '/', and spaces. Current value: $value"
+  fi
+}
+
+require_positive_integer() {
+  local name="$1"
+  local value="$2"
+  if ! printf '%s' "$value" | grep -Eq '^[1-9][0-9]{0,3}$'; then
+    fail "$name must be a positive integer up to 9999. Current value: $value"
+  fi
+}
+
 ensure_runtime_layout() {
   mkdir -p \
     "$DEPLOY_ROOT/ops" \
@@ -80,6 +121,7 @@ ensure_runtime_layout() {
     "$DEPLOY_ROOT/runs/storage/api/postgres/data" \
     "$DEPLOY_ROOT/runs/storage/api/sqlite" \
     "$DEPLOY_ROOT/runs/storage/api/files" \
+    "$DEPLOY_ROOT/runs/storage/document-processor" \
     "$DEPLOY_ROOT/runs/storage/laws-collector/postgres/data" \
     "$DEPLOY_ROOT/runs/storage/laws-collector/files" \
     "$DEPLOY_ROOT/runs/storage/laws-collector/sqlite"
@@ -124,7 +166,7 @@ start_api_and_mcp() {
   local laws_db_cloud
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
-  docker rm -f jurisdigta-api jurisdigta-mcp >/dev/null 2>&1 || true
+  docker rm -f jurisdigta-api jurisdigta-mcp jurisdigta-email-scheduler >/dev/null 2>&1 || true
   docker run -d \
     --name jurisdigta-api \
     --restart unless-stopped \
@@ -136,6 +178,7 @@ start_api_and_mcp() {
     -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
     -e STORAGE_OPTION=local \
     -e STORE_LOCAL=/workspace/runs/storage/api/files \
+    -e DOCUMENT_PROCESSOR_OPTION=azure \
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
@@ -167,6 +210,22 @@ start_api_and_mcp() {
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     aijuristiction-api:local \
     uvicorn app.mcp_main:app --host 0.0.0.0 --port 8070 >/dev/null
+
+  docker run -d \
+    --name jurisdigta-email-scheduler \
+    --restart unless-stopped \
+    --network aijuristiction-api_default \
+    --env-file "$ENV_FILE" \
+    -e DB_OPTION=postgres \
+    -e DB_CLOUD="$api_db_cloud" \
+    -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
+    -e EMAIL_DB_OPTION=postgres \
+    -e EMAIL_DB_CLOUD="$api_db_cloud" \
+    -e EMAIL_DB_LOCAL=/workspace/runs/storage/api/sqlite/email.sqlite3 \
+    -e EMAIL_SCHEDULER_ENABLED=true \
+    -v "$DEPLOY_ROOT/runs:/workspace/runs" \
+    aijuristiction-api:local \
+    python -m app.email_scheduler_main >/dev/null
 }
 
 create_laws_database() {
@@ -237,6 +296,92 @@ build_laws_collector() {
   log "building laws collector image"
   cd "$APP_DIR"
   docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/Dockerfile .
+}
+
+build_document_processor() {
+  log "building document processor image"
+  cd "$APP_DIR"
+  docker build -t jurisdigta-document-processor:local -f src/services/document_processor/Dockerfile .
+}
+
+install_document_processor_wrapper() {
+  if [ "$INSTALL_DOCUMENT_PROCESSOR_CRON" != "1" ]; then
+    log "document processor cron skipped by INSTALL_DOCUMENT_PROCESSOR_CRON=$INSTALL_DOCUMENT_PROCESSOR_CRON"
+    return
+  fi
+
+  require_cron_expression "DOCUMENT_PROCESSOR_CRON_EXPRESSION" "$DOCUMENT_PROCESSOR_CRON_EXPRESSION"
+
+  log "installing document processor wrapper and cron"
+  cat > "$DEPLOY_ROOT/ops/run_document_processor.sh" <<'WRAPPER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DEPLOY_ROOT="${DEPLOY_ROOT:-/srv/jurisdigta}"
+APP_DIR="${APP_DIR:-$DEPLOY_ROOT/app}"
+ENV_FILE="${ENV_FILE:-$DEPLOY_ROOT/secrets/jurisdigta.env}"
+LOG_DIR="$DEPLOY_ROOT/runs/logs"
+LOCK_FILE="$DEPLOY_ROOT/runs/locks/document-processor.lock"
+LOG_FILE="$LOG_DIR/document-processor-$(date -u +%Y%m%dT%H%M%SZ).log"
+LATEST_LOG="$LOG_DIR/document-processor-latest.log"
+
+mkdir -p "$LOG_DIR" "$(dirname "$LOCK_FILE")"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "[document-processor] another run is already active" | tee -a "$LOG_FILE"
+  exit 0
+fi
+
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
+
+docker rm -f jurisdigta-document-processor >/dev/null 2>&1 || true
+
+API_DB_CLOUD_VALUE="$(docker inspect jurisdigta-api --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '$1=="DB_CLOUD" {sub(/^DB_CLOUD=/, ""); print; exit}')"
+if [ -z "$API_DB_CLOUD_VALUE" ]; then
+  API_DB_CLOUD_VALUE="$(python3 - "${LOCAL_POSTGRES_DB:-aijurisdiction}" <<'PY'
+import os
+import sys
+from urllib.parse import quote
+
+database = sys.argv[1]
+user = quote(os.environ.get("LOCAL_POSTGRES_USER", "postgres"), safe="")
+password = quote(os.environ.get("LOCAL_POSTGRES_PASSWORD", "postgres"), safe="")
+port = os.environ.get("LOCAL_POSTGRES_PORT", "5432")
+print(f"postgresql://{user}:{password}@postgres:{port}/{database}")
+PY
+)"
+fi
+
+DOCUMENT_PROCESSOR_LIMIT_VALUE="${DOCUMENT_PROCESSOR_LIMIT:-20}"
+DOCUMENT_PROCESSOR_MAX_RUNNING_TIME_VALUE="${DOCUMENT_PROCESSOR_MAX_RUNNING_TIME:-15}"
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] starting document processor job" | tee -a "$LOG_FILE"
+docker run --rm \
+  --name jurisdigta-document-processor \
+  --network aijuristiction-api_default \
+  --env-file "$ENV_FILE" \
+  -e DB_OPTION=postgres \
+  -e DB_CLOUD="$API_DB_CLOUD_VALUE" \
+  -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
+  -e STORAGE_OPTION=local \
+  -e STORE_LOCAL=/workspace/runs/storage/api/files \
+  -e DOCUMENT_PROCESSOR_OPTION=azure \
+  -e DOCUMENT_PROCESSOR_MAX_RUNNING_TIME="$DOCUMENT_PROCESSOR_MAX_RUNNING_TIME_VALUE" \
+  -v "$DEPLOY_ROOT/runs:/workspace/runs" \
+  -v "$APP_DIR/aimodels:/app/aimodels" \
+  jurisdigta-document-processor:local \
+  python -m services.document_processor --limit "$DOCUMENT_PROCESSOR_LIMIT_VALUE" 2>&1 | tee -a "$LOG_FILE"
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] document processor job finished" | tee -a "$LOG_FILE"
+
+ln -sfn "$LOG_FILE" "$LATEST_LOG"
+WRAPPER
+  chmod 700 "$DEPLOY_ROOT/ops/run_document_processor.sh"
+
+  (crontab -l 2>/dev/null | grep -v 'run_document_processor.sh' || true; \
+    echo "$DOCUMENT_PROCESSOR_CRON_EXPRESSION /srv/jurisdigta/ops/run_document_processor.sh >/dev/null 2>&1") | crontab -
 }
 
 install_laws_wrapper() {
@@ -322,7 +467,7 @@ install_status_writer_cron() {
 
   log "installing system status writer cron"
   (crontab -l 2>/dev/null | grep -v 'write_system_status.py' || true; \
-    echo '* * * * * cd /srv/jurisdigta/app && python3 scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json --laws-log /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log >/dev/null 2>&1') | crontab -
+    echo '* * * * * cd /srv/jurisdigta/app && python3 scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json --laws-log /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log --document-processor-log /srv/jurisdigta/runs/logs/document-processor-latest.log >/dev/null 2>&1') | crontab -
 }
 
 start_monitoring() {
@@ -343,9 +488,15 @@ validate_health() {
   curl -fsS "http://127.0.0.1:${API_PORT}/health" >/dev/null
   curl -fsS "http://127.0.0.1:${MCP_PORT}/health" >/dev/null
   curl -fsS "http://127.0.0.1:${WEB_PORT}/health" >/dev/null
+  docker inspect -f '{{.State.Running}}' jurisdigta-email-scheduler | grep -qx true
+  docker image inspect jurisdigta-document-processor:local >/dev/null
+  if [ "$INSTALL_DOCUMENT_PROCESSOR_CRON" = "1" ]; then
+    test -x "$DEPLOY_ROOT/ops/run_document_processor.sh"
+  fi
   python3 "$APP_DIR/scripts/server/write_system_status.py" \
     --output "$DEPLOY_ROOT/runs/status/system-status.json" \
-    --laws-log "$DEPLOY_ROOT/runs/logs/laws-collector-daily-latest.log" >/dev/null
+    --laws-log "$DEPLOY_ROOT/runs/logs/laws-collector-daily-latest.log" \
+    --document-processor-log "$DEPLOY_ROOT/runs/logs/document-processor-latest.log" >/dev/null
 }
 
 require_command git
@@ -356,15 +507,23 @@ require_command curl
 [ -f "$ENV_FILE" ] || fail "Missing environment file: $ENV_FILE"
 load_env
 require_azurefoundry_settings
+require_email_delivery_settings
+require_cron_expression "DOCUMENT_PROCESSOR_CRON_EXPRESSION" "$DOCUMENT_PROCESSOR_CRON_EXPRESSION"
+require_positive_integer "DOCUMENT_PROCESSOR_LIMIT" "$DOCUMENT_PROCESSOR_LIMIT"
 ensure_runtime_layout
 update_checkout
 load_env
 require_azurefoundry_settings
+require_email_delivery_settings
+require_cron_expression "DOCUMENT_PROCESSOR_CRON_EXPRESSION" "$DOCUMENT_PROCESSOR_CRON_EXPRESSION"
+require_positive_integer "DOCUMENT_PROCESSOR_LIMIT" "$DOCUMENT_PROCESSOR_LIMIT"
 start_postgres_and_build_image
 create_laws_database
 run_schema_migrations
 start_api_and_mcp
 deploy_web
+build_document_processor
+install_document_processor_wrapper
 build_laws_collector
 install_laws_wrapper
 install_status_writer_cron

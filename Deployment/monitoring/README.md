@@ -13,9 +13,11 @@ GET /v1/system/status?minutes=60
 - API and MCP availability through Blackbox Exporter probing the internal Docker service URLs `http://jurisdigta-api:8080/health` and `http://jurisdigta-mcp:8070/health`.
 - API and MCP request counts plus average/max request latency from privacy-minimized Docker log aggregation.
 - Aggregate user and case totals plus new users/cases in one-hour and 24-hour windows from PostgreSQL counts.
-- API/database/LLM/system/laws collector status through `scripts/server/export_system_status_metrics.py`.
+- API/database/LLM/system/email scheduler/document processor/laws collector status through `scripts/server/export_system_status_metrics.py`.
 - Error counts for API, laws collector, and PostgreSQL from the status endpoint.
 - Last processed law, next law to check, latest laws collector run timestamps, and latest run duration.
+- Email sent counts, email queue counts, and aggregate email send duration from the outbox.
+- Document processor queue counts, processed document counts, latest run duration, and aggregate processing duration.
 - Host CPU, memory, disk, filesystem, and kernel metrics through Node Exporter.
 - Docker container CPU, memory, filesystem, and restart behavior through cAdvisor.
 - Prometheus health and scrape status.
@@ -39,6 +41,7 @@ http://127.0.0.1:3000
 - Do not expose ports `3000`, `9090`, `9100`, `9108`, or `9115` directly to the public internet.
 - If Grafana must be reachable through `admin.jurisdigta.eu`, publish it through Cloudflare Tunnel and protect it with Cloudflare Access plus Grafana login.
 - Keep dashboard panels operational only. Do not display user chat text, generated legal documents, API keys, database connection strings, or legal-risk user outputs.
+- Email and document processor panels must stay aggregate-only: queue counts, sent/processed counts, and timing gauges. Do not add recipients, filenames, case titles, extracted document text, verification codes, embeddings, or raw connection strings as labels.
 
 ## JurisDigta Metrics Exporter
 
@@ -312,7 +315,7 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 `JurisDigta` folder:
 
 - `JurisDigta Server Performance`: CPU, RAM, disk, load, network, disk I/O, and container memory.
-- `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, laws processing cursor and runtime, and application error counts.
+- `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
 - `JurisDigta Laws Collector`: execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
 
@@ -350,6 +353,17 @@ Useful starter queries:
 - `jurisdigta_users_new_window{window="24h"}`
 - `jurisdigta_cases_total{state="active"}`
 - `jurisdigta_cases_new_window{window="24h"}`
+- `jurisdigta_email_sent_total`
+- `jurisdigta_email_sent_window{window="24h"}`
+- `jurisdigta_email_queue_total`
+- `jurisdigta_email_send_duration_seconds_avg{window="24h"}`
+- `jurisdigta_email_send_duration_seconds_max{window="24h"}`
+- `jurisdigta_documents_processed_total`
+- `jurisdigta_documents_processed_window{window="24h"}`
+- `jurisdigta_document_processor_queue_total`
+- `jurisdigta_document_processing_duration_seconds_avg{window="24h"}`
+- `jurisdigta_document_processing_duration_seconds_max{window="24h"}`
+- `jurisdigta_document_processor_last_run_duration_seconds`
 - `up{job="node-exporter"}`
 - `up{job="cadvisor"}`
 

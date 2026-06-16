@@ -38,6 +38,38 @@ Embedding model env vars:
 PYTHONPATH=src python -m services.document_processor --limit 20
 ```
 
+## Self-managed production server
+
+`Deployment/server/deploy_jurisdigta_prod.sh` builds
+`jurisdigta-document-processor:local` from this Dockerfile and installs a locked
+cron wrapper at `/srv/jurisdigta/ops/run_document_processor.sh`.
+
+Defaults for the self-managed GitHub `prod` deployment:
+
+- `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1`
+- `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION=*/15 * * * *`
+- `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT=20`
+
+Server-local runtime settings remain in
+`/srv/jurisdigta/secrets/jurisdigta.env`. Use
+`DOCUMENT_PROCESSOR_OPTION=azure` for production so API uploads remain pending
+until the scheduled worker processes them. Set
+`DOCUMENT_PROCESSOR_MAX_RUNNING_TIME` to a bounded value such as `15` minutes.
+
+Validation on the server:
+
+```bash
+docker image inspect jurisdigta-document-processor:local >/dev/null
+test -x /srv/jurisdigta/ops/run_document_processor.sh
+crontab -l | grep run_document_processor.sh
+/srv/jurisdigta/ops/run_document_processor.sh
+tail -n 80 /srv/jurisdigta/runs/logs/document-processor-latest.log
+```
+
+The worker shares the API PostgreSQL database and local file storage. Keep
+uploaded document contents, extracted text, embeddings, API keys, and raw
+connection strings out of logs.
+
 ## Minimal runnable example
 
 ```bash

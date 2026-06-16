@@ -34,6 +34,9 @@ jobs:
       JURISDIGTA_API_PORT: ${{ vars.JURISDIGTA_API_PORT || '8080' }}
       JURISDIGTA_MCP_PORT: ${{ vars.JURISDIGTA_MCP_PORT || '8070' }}
       JURISDIGTA_WEB_PORT: ${{ vars.JURISDIGTA_WEB_PORT || '8090' }}
+      JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON: ${{ vars.JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON || '1' }}
+      JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION: ${{ vars.JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION || '*/15 * * * *' }}
+      JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT: ${{ vars.JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT || '20' }}
       JURISDIGTA_SSH_PRIVATE_KEY: ${{ secrets.JURISDIGTA_SSH_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v5
@@ -52,6 +55,18 @@ jobs:
           fi
           if ! printf '%s' "${{ inputs.repo_ref }}" | grep -Eq '^[A-Za-z0-9._/@+-]+$'; then
             echo "Invalid repo_ref. Use a branch, tag, or SHA containing only letters, numbers, . _ / @ + -"
+            exit 1
+          fi
+          if ! printf '%s' "$JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON" | grep -Eq '^[01]$'; then
+            echo "JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON must be 0 or 1"
+            exit 1
+          fi
+          if ! printf '%s' "$JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION" | grep -Eq '^[0-9*,/ -]+$' || [ "$(printf '%s\n' "$JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION" | awk '{print NF}')" != "5" ]; then
+            echo "JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION must be a five-field cron expression"
+            exit 1
+          fi
+          if ! printf '%s' "$JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT" | grep -Eq '^[1-9][0-9]{0,3}$'; then
+            echo "JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT must be a positive integer"
             exit 1
           fi
 
@@ -76,7 +91,7 @@ jobs:
           ssh -p "$JURISDIGTA_SSH_PORT" \
             -i ~/.ssh/jurisdigta_deploy_key \
             "${JURISDIGTA_SSH_USER}@${JURISDIGTA_SSH_HOST}" \
-            "chmod 700 /tmp/deploy_jurisdigta_prod.sh && DEPLOY_ROOT='$JURISDIGTA_DEPLOY_ROOT' ENV_FILE='$JURISDIGTA_ENV_FILE' REPO_REF='${{ inputs.repo_ref }}' WEB_API_BASE_URL='$JURISDIGTA_WEB_API_BASE_URL' API_PORT='$JURISDIGTA_API_PORT' MCP_PORT='$JURISDIGTA_MCP_PORT' WEB_PORT='$JURISDIGTA_WEB_PORT' RUN_SCHEMA_MIGRATIONS='$run_schema_migrations' START_MONITORING='$start_monitoring' /tmp/deploy_jurisdigta_prod.sh"
+            "chmod 700 /tmp/deploy_jurisdigta_prod.sh && DEPLOY_ROOT='$JURISDIGTA_DEPLOY_ROOT' ENV_FILE='$JURISDIGTA_ENV_FILE' REPO_REF='${{ inputs.repo_ref }}' WEB_API_BASE_URL='$JURISDIGTA_WEB_API_BASE_URL' API_PORT='$JURISDIGTA_API_PORT' MCP_PORT='$JURISDIGTA_MCP_PORT' WEB_PORT='$JURISDIGTA_WEB_PORT' RUN_SCHEMA_MIGRATIONS='$run_schema_migrations' START_MONITORING='$start_monitoring' INSTALL_DOCUMENT_PROCESSOR_CRON='$JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON' DOCUMENT_PROCESSOR_CRON_EXPRESSION='$JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION' DOCUMENT_PROCESSOR_LIMIT='$JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT' /tmp/deploy_jurisdigta_prod.sh"
 
       - name: Summarize deployment
         run: |
@@ -91,4 +106,7 @@ jobs:
             echo "| API | http://127.0.0.1:${JURISDIGTA_API_PORT}/health on server |"
             echo "| MCP | http://127.0.0.1:${JURISDIGTA_MCP_PORT}/health on server |"
             echo "| Web | http://127.0.0.1:${JURISDIGTA_WEB_PORT}/health on server |"
+            echo "| Document processor cron | ${JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON} |"
+            echo "| Document processor schedule | ${JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION} |"
+            echo "| Document processor limit | ${JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT} |"
           } >> "$GITHUB_STEP_SUMMARY"

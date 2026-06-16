@@ -65,6 +65,48 @@ Stop it with:
 Stop-Process -Id (Get-Content .\runs\email-scheduler-local.pid) -Force
 ```
 
+## Self-managed server scheduler
+
+`Deployment/server/deploy_jurisdigta_prod.sh` starts one long-running
+`jurisdigta-email-scheduler` Docker container from the API image. API and MCP
+containers only enqueue messages into `email_outbox`; the scheduler container
+claims pending rows and performs delivery.
+
+The scheduler is wired to the same PostgreSQL API database as API/MCP:
+
+```env
+EMAIL_DB_OPTION=postgres
+EMAIL_DB_CLOUD=postgresql://<user>:<password>@postgres:5432/<database>
+```
+
+For production delivery, set the server-local
+`/srv/jurisdigta/secrets/jurisdigta.env` to SMTP transport and include the SMTP
+password:
+
+```env
+EMAIL_TRANSPORT=smtp
+EMAIL_SENDER=no-reply@jurisdigta.eu
+EMAIL_SMTP_HOST=mail.webhouse.sk
+EMAIL_SMTP_PORT=587
+EMAIL_SMTP_USERNAME=no-reply@jurisdigta.eu
+EMAIL_SMTP_PASSWORD=<set in the server-local secret file>
+```
+
+The self-managed production deploy fails fast when these SMTP settings are
+missing, because log transport would mark queued OTP messages as processed
+without delivering them to users.
+
+Validate the scheduler without exposing OTP codes:
+
+```bash
+docker inspect -f '{{.State.Running}}' jurisdigta-email-scheduler
+docker logs --tail 50 jurisdigta-email-scheduler
+docker exec aijurisdiction-postgres psql -U "${LOCAL_POSTGRES_USER:-postgres}" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -c "SELECT recipient, subject, status, attempts, updated_at FROM email_outbox WHERE metadata_json::text LIKE '%mcp_sign_up_code%' ORDER BY created_at DESC LIMIT 5;"
+```
+
+Do not query or paste `email_outbox.body` for OTP messages because it contains
+the verification code.
+
 ## Azure deployment
 
 `API Build and Deploy` and `infra/scripts/deploy_api.ps1` pass email settings into the API Container App. In GitHub Environments, configure:
