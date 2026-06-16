@@ -18,8 +18,9 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
 - Confirmation parsing also accepts common corrupted STT/encoding forms such as `�no` and `Ã¡no`, so a spoken Slovak yes clears the pending prompt instead of leaving the app waiting and asking again later.
 - While waiting for that confirmation, the prompt is not repeated automatically; the app waits for `yes`/`áno` or `no`/`nie` so assistant TTS cannot loop on its own echo.
 - Tapping the microphone while listening or waiting for confirmation is treated as an explicit user stop: speech input is disabled and will not auto-restart until the user enables it again.
-- On Android, when the speech recognizer auto-stops unexpectedly while speech input remains enabled, the app now shows a short polite status message and re-starts listening automatically.
+- On Android, when the speech recognizer auto-stops unexpectedly while speech input remains enabled, the app now shows a short polite status message and re-starts listening automatically without discarding the current draft.
 - Enabling the microphone now opens/expands the input box immediately (same visual behavior as tapping the input), keeps partial dictated transcript, and appends recognized speech to existing typed text.
+- In the default message flow, Android STT restarts append the next recognized segment to the visible draft. A standalone spoken `Posli`/`Pošli` sends the previous draft instead of replacing it with the command word.
 - While microphone mode is enabled, the expanded input stays open until the user disables microphone, sends the message, or taps outside the input area.
 - During assistant speech, STT fragments are not used for automatic barge-in. The assistant finishes unless the user explicitly taps the microphone button.
 - Voice session handling now runs through `VoiceSessionOrchestrator`, which tracks listening, processing, and confirmation states, applies idempotency keys to STT transcripts, and dispatches `RuleEngineAction` values through an action queue.
@@ -218,7 +219,7 @@ Android note:
 
 ### Speech input
 
-Use the `Speech input` button in the top control area to enable audio. In the default `AIJ_SPEECHTYPE=message` flow, Jurisdicta says the welcome/instruction text, then waits for the composer microphone. The microphone fills the input draft and remains active until the user taps send, taps the microphone again, or says `Send`, `send message`, `I am done`, `this is end`, `Posli`, `to je vsetko`, or `cakam na odpoved`. The transcript stays visible for review before ordinary messages are sent. In `AIJ_SPEECHTYPE=conversation`, the older continuous flow is preserved: if no more speech is detected for 5 seconds after a dictated draft, Jurisdicta asks whether it may answer and waits for `ano/yes` or `nie/no`; answering `ano/yes` runs the pending action immediately, while `nie/no` preserves the current draft and keeps listening for more speech. Say `clean message`, `clean last message`, or `zrus vsetko` to clear it. In Azure mode, the app records microphone audio and sends it to Azure Speech STT only when the signed-in user has data-processing consent.
+Use the `Speech input` button in the top control area to enable audio. In the default `AIJ_SPEECHTYPE=message` flow, Jurisdicta says the welcome/instruction text, then waits for the composer microphone. The microphone fills the input draft and remains active until the user taps send, taps the microphone again, or says `Send`, `send message`, `I am done`, `this is end`, `Posli`, `Pošli`, `to je vsetko`, or `cakam na odpoved`. The transcript stays visible for review before ordinary messages are sent. If Android briefly stops local STT while the microphone is still enabled, the app restarts listening and appends the next recognized segment to the same draft. A standalone send command sends the existing draft; trailing send words are stripped from the message text. In `AIJ_SPEECHTYPE=conversation`, the older continuous flow is preserved: if no more speech is detected for 5 seconds after a dictated draft, Jurisdicta asks whether it may answer and waits for `ano/yes` or `nie/no`; answering `ano/yes` runs the pending action immediately, while `nie/no` preserves the current draft and keeps listening for more speech. Say `clean message`, `clean last message`, or `zrus vsetko` to clear it. In Azure mode, the app records microphone audio and sends it to Azure Speech STT only when the signed-in user has data-processing consent.
 
 Some Android devices do not expose usable local STT, or their platform recognizer may depend on Google/cloud services outside the app's direct control. The app treats local/device STT as the privacy-first default where available, shows a typed-input fallback when unavailable, and keeps Azure/server STT behind explicit consent instead of silently uploading raw audio.
 
@@ -244,6 +245,14 @@ Voice compliance regression checks:
 ```bash
 cd mobile_app
 flutter test test/speech_service_test.dart test/intent_mapper_test.dart
+```
+
+Deterministic message-mode STT draft/send check:
+
+```bash
+cd mobile_app
+dart run examples/voice_message_dictation_demo.dart
+flutter test test/speech_flow_test.dart test/voice_session_orchestrator_test.dart
 ```
 
 Recurring deterministic voice loopback check:

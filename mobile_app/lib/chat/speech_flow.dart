@@ -124,3 +124,43 @@ String speechMessageModeReadyMessage(String languageCode, {String? firstName}) {
   final namePart = resolvedFirstName.isEmpty ? '' : ', $resolvedFirstName';
   return template.replaceAll('{{name_part}}', namePart);
 }
+
+String mergeRecognizedSpeechDraft({
+  required String existingDraft,
+  required String recognizedText,
+  String? previousRecognizedSegment,
+}) {
+  final existing = existingDraft.trim();
+  final recognized = recognizedText.trim();
+  if (recognized.isEmpty) {
+    return existing;
+  }
+  if (existing.isEmpty) {
+    return recognized;
+  }
+
+  final normalizedExisting = _normalizeDraftForMerge(existing);
+  final normalizedRecognized = _normalizeDraftForMerge(recognized);
+  if (normalizedExisting == normalizedRecognized ||
+      normalizedExisting.endsWith(normalizedRecognized)) {
+    return existing;
+  }
+  if (normalizedRecognized.startsWith(normalizedExisting)) {
+    return recognized;
+  }
+
+  final previous = (previousRecognizedSegment ?? '').trim();
+  final normalizedPrevious = _normalizeDraftForMerge(previous);
+  if (normalizedPrevious.isNotEmpty &&
+      normalizedExisting.endsWith(normalizedPrevious) &&
+      normalizedRecognized.startsWith(normalizedPrevious)) {
+    final prefix = existing.substring(0, existing.length - previous.length);
+    return '$prefix$recognized'.trim();
+  }
+
+  return '$existing $recognized'.trim();
+}
+
+String _normalizeDraftForMerge(String value) {
+  return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+}
