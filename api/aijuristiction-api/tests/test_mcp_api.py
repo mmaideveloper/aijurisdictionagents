@@ -37,7 +37,8 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     assert statistics["last_processed_day"] == "2026-06-01T12:00:00Z"
 
     unauthenticated_search = _mcp_call("searchLaws", {"query": "civil"})
-    assert unauthenticated_search.status_code == 200
+    assert unauthenticated_search.status_code == 401
+    assert "WWW-Authenticate" in unauthenticated_search.headers
     assert unauthenticated_search.json()["error"]["code"] == 401
 
     authenticated_search = _mcp_call(
@@ -118,7 +119,9 @@ def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> No
     token = create_key_response.json()["mcp_api_key"]
     claims = _jwt_claims(token)
     assert claims["sub"] == sign_up_response.json()["user_id"]
-    assert claims["email"] == "mcp-default@example.com"
+    assert claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+    assert claims["scope"] == "mcp:laws"
+    assert "email" not in claims
     assert "first_name" not in claims
     assert "last_name" not in claims
     expires_at = datetime.fromisoformat(create_key_response.json()["mcp_api_key_expires_at"])
@@ -233,6 +236,7 @@ def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path
 
 def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
+    _create_laws_db(tmp_path / "laws.sqlite3")
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
     sign_up_response = api_client.post(
         "/v1/users/sign-up",
@@ -248,13 +252,16 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     protected_metadata = mcp_client.get("/.well-known/oauth-protected-resource/MCP")
     assert protected_metadata.status_code == 200
     assert protected_metadata.json()["resource"].endswith("/MCP")
+    assert protected_metadata.json()["scopes_supported"] == ["mcp:laws"]
 
     authorization_metadata = mcp_client.get("/.well-known/oauth-authorization-server")
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["code_challenge_methods_supported"] == ["S256"]
+    assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws"]
 
     code_verifier = "test-code-verifier-1234567890"
     code_challenge = _pkce_challenge(code_verifier)
+    resource = "https://mcp.jurisdigta.eu/MCP"
     authorize_page = mcp_client.get(
         "/oauth/authorize",
         params={
@@ -264,6 +271,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
             "state": "abc",
+            "resource": resource,
         },
     )
     assert authorize_page.status_code == 200
@@ -278,6 +286,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
             "state": "abc",
+            "resource": resource,
             "email": "mcp-oauth@example.com",
             "password": "secret-pass",
         },
@@ -294,6 +303,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
             "state": "abc",
+            "resource": resource,
             "email": "mcp-oauth@example.com",
             "verification_code": "123456",
         },
@@ -312,13 +322,25 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
             "redirect_uri": "https://client.example/callback",
             "client_id": "chatgpt",
             "code_verifier": code_verifier,
+            "resource": resource,
         },
     )
     assert token_response.status_code == 200
     token_payload = token_response.json()
     assert token_payload["token_type"] == "Bearer"
     claims = _jwt_claims(token_payload["access_token"])
-    assert claims["email"] == "mcp-oauth@example.com"
+    assert claims["sub"] == sign_up_response.json()["user_id"]
+    assert claims["aud"] == resource
+    assert claims["scope"] == "mcp:laws"
+    assert "email" not in claims
+
+    oauth_search = _mcp_call(
+        "searchLaws",
+        {"query": "civil"},
+        headers={"authorization": f"Bearer {token_payload['access_token']}"},
+    )
+    assert oauth_search.status_code == 200
+    assert _tool_payload(oauth_search)["results"][0]["document_id"] == "doc-1"
 
 
 def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> None:
@@ -353,6 +375,8 @@ def _configure_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "laws.sqlite3"))
     monkeypatch.setenv("MCP_API_JWT_SECRET", "test-mcp-secret")
+    monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu")
+    monkeypatch.setenv("MCP_OAUTH_ALLOWED_REDIRECT_HOSTS", "client.example,chatgpt.com")
 
 
 def _create_mcp_key(tmp_path: Path) -> str:

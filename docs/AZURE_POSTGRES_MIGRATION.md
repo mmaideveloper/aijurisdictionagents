@@ -147,8 +147,8 @@ For a locked-down production network, replace broad public access with approved 
 $MyIp = (Invoke-RestMethod -Uri "https://api.ipify.org").Trim()
 az postgres flexible-server firewall-rule create `
   --resource-group $ResourceGroupName `
-  --name $PostgresServerName `
-  --rule-name "temporary-operator-restore" `
+  --server-name $PostgresServerName `
+  --name "temporary-operator-restore" `
   --start-ip-address $MyIp `
   --end-ip-address $MyIp
 ```
@@ -367,8 +367,8 @@ Remove temporary operator firewall access after restore:
 ```powershell
 az postgres flexible-server firewall-rule delete `
   --resource-group $ResourceGroupName `
-  --name $PostgresServerName `
-  --rule-name "temporary-operator-restore" `
+  --server-name $PostgresServerName `
+  --name "temporary-operator-restore" `
   --yes
 ```
 

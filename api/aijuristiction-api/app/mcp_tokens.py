@@ -11,13 +11,22 @@ from uuid import uuid4
 
 from aijurisdictionagents.api_db import User
 
+MCP_TOKEN_SCOPE = "mcp:laws"
 
-def create_mcp_api_token(*, user: User, expires_at: datetime) -> str:
+
+def create_mcp_api_token(
+    *,
+    user: User,
+    expires_at: datetime,
+    audience: str | None = None,
+    scope: str = MCP_TOKEN_SCOPE,
+) -> str:
     token_id = str(uuid4())
     header = {"alg": "HS256", "typ": "JWT"}
     payload = {
         "sub": user.user_id,
-        "email": user.email,
+        "aud": audience or default_mcp_resource_url(),
+        "scope": scope,
         "exp": int(expires_at.timestamp()),
         "jti": token_id,
     }
@@ -28,7 +37,7 @@ def create_mcp_api_token(*, user: User, expires_at: datetime) -> str:
     return f"{signing_input}.{signature}"
 
 
-def validate_mcp_api_token(token: str) -> dict[str, Any] | None:
+def validate_mcp_api_token(token: str, *, audience: str, required_scope: str) -> dict[str, Any] | None:
     parts = token.split(".")
     if len(parts) != 3:
         return None
@@ -47,11 +56,21 @@ def validate_mcp_api_token(token: str) -> dict[str, Any] | None:
     exp = payload.get("exp")
     if not isinstance(exp, int) or exp <= int(datetime.now(timezone.utc).timestamp()):
         return None
-    if not isinstance(payload.get("sub"), str) or not isinstance(payload.get("email"), str):
+    if not isinstance(payload.get("sub"), str):
+        return None
+    if payload.get("aud") != audience:
+        return None
+    scope = payload.get("scope")
+    if not isinstance(scope, str) or required_scope not in scope.split():
         return None
     if not isinstance(payload.get("jti"), str):
         return None
     return payload
+
+
+def default_mcp_resource_url() -> str:
+    base_url = os.getenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu").strip().rstrip("/")
+    return f"{base_url}/MCP"
 
 
 def _base64url_json(payload: dict[str, Any]) -> str:

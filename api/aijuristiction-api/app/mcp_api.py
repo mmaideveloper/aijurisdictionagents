@@ -12,13 +12,14 @@ import secrets
 import time
 from typing import Any, Callable, Sequence, cast
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.laws_api import _laws_db_config, _read_laws_statistics
-from app.mcp_tokens import create_mcp_api_token, validate_mcp_api_token
+from app.mcp_tokens import MCP_TOKEN_SCOPE, create_mcp_api_token, default_mcp_resource_url, validate_mcp_api_token
 from app.services.email_scheduler import EmailScheduler
 from app.users.api import get_email_scheduler, get_user_store
 from app.users.notifications import queue_registration_email
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/MCP", tags=["mcp"])
 oauth_router = APIRouter(tags=["mcp-oauth"])
 MCP_PROTOCOL_VERSION = "2025-03-26"
 _PUBLIC_TOOLS = {"getVersion", "getStatistics"}
+_DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com")
 logger = logging.getLogger("aijuristiction-api.mcp")
 
 
@@ -94,6 +96,16 @@ async def mcp_json_rpc(
         _payload_message_count(payload),
         ",".join(_payload_methods(payload)),
     )
+    if _payload_requires_auth(payload) and not _extract_mcp_api_key(
+        authorization=authorization,
+        x_mcp_api_key=x_mcp_api_key,
+    ):
+        logger.warning("mcp_json_rpc_auth_challenge reason=missing_bearer_token")
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content=_json_rpc_error(_first_payload_id(payload), 401, "Tool requires OAuth authorization"),
+            headers={"WWW-Authenticate": _www_authenticate_header(request)},
+        )
     response = _handle_json_rpc(
         payload=payload,
         authorization=authorization,
@@ -124,10 +136,12 @@ def mcp_sign_up_page() -> HTMLResponse:
 @oauth_router.get("/.well-known/oauth-protected-resource")
 def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
     base_url = _base_url(request)
+    resource = _resource_url(request)
     return {
-        "resource": f"{base_url}/MCP",
+        "resource": resource,
         "authorization_servers": [base_url],
         "bearer_methods_supported": ["header"],
+        "scopes_supported": [MCP_TOKEN_SCOPE],
         "resource_documentation": f"{base_url}/MCP/login",
     }
 
@@ -148,24 +162,30 @@ def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
         "grant_types_supported": ["authorization_code"],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
+        "scopes_supported": [MCP_TOKEN_SCOPE],
     }
 
 
 @oauth_router.get("/oauth/authorize", response_class=HTMLResponse)
 def oauth_authorize_page(
+    request: Request,
     response_type: str,
     client_id: str,
     redirect_uri: str,
     code_challenge: str,
     code_challenge_method: str,
     state: str = "",
+    resource: str = "",
 ) -> HTMLResponse:
+    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
     _validate_oauth_authorize_request(
         response_type=response_type,
         client_id=client_id,
         redirect_uri=redirect_uri,
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
+        resource=resolved_resource,
+        expected_resource=_resource_url(request),
     )
     return HTMLResponse(
         _oauth_login_form_html(
@@ -175,29 +195,35 @@ def oauth_authorize_page(
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
             state=state,
+            resource=resolved_resource,
         )
     )
 
 
 @oauth_router.post("/oauth/authorize/login", response_class=HTMLResponse)
 def oauth_authorize_login(
+    request: Request,
     response_type: str = Form(...),
     client_id: str = Form(...),
     redirect_uri: str = Form(...),
     code_challenge: str = Form(...),
     code_challenge_method: str = Form(...),
+    resource: str = Form(""),
     state: str = Form(""),
     email: str = Form(...),
     password: str = Form(...),
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> HTMLResponse:
+    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
     _validate_oauth_authorize_request(
         response_type=response_type,
         client_id=client_id,
         redirect_uri=redirect_uri,
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
+        resource=resolved_resource,
+        expected_resource=_resource_url(request),
     )
     user = store.authenticate_user(email=email, password=password)
     if user is None:
@@ -223,28 +249,34 @@ def oauth_authorize_login(
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
             state=state,
+            resource=resolved_resource,
         )
     )
 
 
 @oauth_router.post("/oauth/authorize/verify")
 def oauth_authorize_verify(
+    request: Request,
     response_type: str = Form(...),
     client_id: str = Form(...),
     redirect_uri: str = Form(...),
     code_challenge: str = Form(...),
     code_challenge_method: str = Form(...),
+    resource: str = Form(""),
     email: str = Form(...),
     verification_code: str = Form(...),
     state: str = Form(""),
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> RedirectResponse:
+    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
     _validate_oauth_authorize_request(
         response_type=response_type,
         client_id=client_id,
         redirect_uri=redirect_uri,
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
+        resource=resolved_resource,
+        expected_resource=_resource_url(request),
     )
     if not _accepts_any_local_auth_code() and not store.verify_registration_code(
         email=_oauth_login_code_key(email=email),
@@ -261,6 +293,7 @@ def oauth_authorize_verify(
         client_id=client_id,
         redirect_uri=redirect_uri,
         code_challenge=code_challenge,
+        resource=resolved_resource,
     )
     query = {"code": authorization_code}
     if state:
@@ -270,11 +303,13 @@ def oauth_authorize_verify(
 
 @oauth_router.post("/oauth/token")
 def oauth_token(
+    request: Request,
     grant_type: str = Form(...),
     code: str = Form(...),
     redirect_uri: str = Form(...),
     client_id: str = Form(...),
     code_verifier: str = Form(...),
+    resource: str = Form(""),
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> dict[str, Any]:
     if grant_type != "authorization_code":
@@ -284,16 +319,25 @@ def oauth_token(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid authorization code")
     if record["client_id"] != client_id or record["redirect_uri"] != redirect_uri:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Authorization code context mismatch")
+    expected_resource = _resource_url(request)
+    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
+    if record["resource"] != expected_resource or resolved_resource != expected_resource:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
     if _pkce_s256_challenge(code_verifier) != record["code_challenge"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid PKCE code verifier")
     user = store.get_user(user_id=record["user_id"])
-    token, expires_at = _issue_mcp_api_key(store=store, user=user, expires_in_days=1)
+    token, expires_at = _issue_mcp_api_key(
+        store=store,
+        user=user,
+        expires_in_days=1,
+        audience=expected_resource,
+    )
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
     return {
         "access_token": token,
         "token_type": "Bearer",
         "expires_in": expires_in,
-        "scope": "mcp:laws",
+        "scope": MCP_TOKEN_SCOPE,
     }
 
 
@@ -837,9 +881,15 @@ def _mcp_tools() -> list[dict[str, Any]]:
     ]
 
 
-def _issue_mcp_api_key(*, store: ApiDatabaseStore, user: User, expires_in_days: int) -> tuple[str, str]:
+def _issue_mcp_api_key(
+    *,
+    store: ApiDatabaseStore,
+    user: User,
+    expires_in_days: int,
+    audience: str | None = None,
+) -> tuple[str, str]:
     expires_at_dt = (datetime.now(timezone.utc) + timedelta(days=expires_in_days)).replace(microsecond=0)
-    raw_key = create_mcp_api_token(user=user, expires_at=expires_at_dt)
+    raw_key = create_mcp_api_token(user=user, expires_at=expires_at_dt, audience=audience)
     expires_at = expires_at_dt.isoformat()
     store.set_user_mcp_api_key(user_id=user.user_id, api_key=raw_key, expires_at=expires_at)
     return raw_key, expires_at
@@ -868,16 +918,19 @@ def _oauth_login_code_key(*, email: str) -> str:
 
 
 def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> User:
-    payload = validate_mcp_api_token(api_key)
+    payload = validate_mcp_api_token(
+        api_key,
+        audience=default_mcp_resource_url(),
+        required_scope=MCP_TOKEN_SCOPE,
+    )
     if payload is None:
         logger.warning("mcp_auth_failed reason=invalid_or_expired_token")
         raise HTTPException(status_code=401, detail="Invalid or expired MCP API key")
     user = store.find_user_by_mcp_api_key(api_key=api_key)
-    if user is None or user.user_id != payload.get("sub") or user.email != payload.get("email"):
+    if user is None or user.user_id != payload.get("sub"):
         logger.warning(
-            "mcp_auth_failed reason=token_user_mismatch subject_type=%s email_claim_present=%s",
+            "mcp_auth_failed reason=token_user_mismatch subject_type=%s",
             _value_type(payload.get("sub")),
-            payload.get("email") is not None,
         )
         raise HTTPException(status_code=401, detail="Invalid or expired MCP API key")
     return user
@@ -923,6 +976,52 @@ def _base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
+def _resource_url(request: Request) -> str:
+    return f"{_base_url(request)}/MCP"
+
+
+def _resolve_oauth_resource(*, request: Request, resource: str) -> str:
+    return resource.strip() or _resource_url(request)
+
+
+def _allowed_oauth_redirect_hosts() -> set[str]:
+    configured = os.getenv("MCP_OAUTH_ALLOWED_REDIRECT_HOSTS", "").strip()
+    if configured:
+        return {host.strip().lower() for host in configured.split(",") if host.strip()}
+    return set(_DEFAULT_ALLOWED_REDIRECT_HOSTS)
+
+
+def _payload_requires_auth(payload: Any) -> bool:
+    messages = payload if isinstance(payload, list) else [payload]
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        if message.get("method") != "tools/call":
+            continue
+        raw_params = message.get("params")
+        params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
+        tool_name = params.get("name")
+        if isinstance(tool_name, str) and tool_name not in _PUBLIC_TOOLS:
+            return True
+    return False
+
+
+def _first_payload_id(payload: Any) -> Any:
+    if isinstance(payload, list):
+        for message in payload:
+            if isinstance(message, dict):
+                return message.get("id")
+        return None
+    if isinstance(payload, dict):
+        return payload.get("id")
+    return None
+
+
+def _www_authenticate_header(request: Request) -> str:
+    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/MCP"
+    return f'Bearer resource_metadata="{metadata_url}", scope="{MCP_TOKEN_SCOPE}"'
+
+
 def _validate_oauth_authorize_request(
     *,
     response_type: str,
@@ -930,17 +1029,26 @@ def _validate_oauth_authorize_request(
     redirect_uri: str,
     code_challenge: str,
     code_challenge_method: str,
+    resource: str,
+    expected_resource: str,
 ) -> None:
     if response_type != "code":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only response_type=code is supported")
     if not client_id.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="client_id is required")
-    if not redirect_uri.startswith(("http://", "https://", "vscode://", "vscode-insiders://")):
+    parsed_redirect = urlparse(redirect_uri)
+    if parsed_redirect.scheme not in {"http", "https", "vscode", "vscode-insiders"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported redirect_uri")
+    if parsed_redirect.scheme in {"http", "https"}:
+        allowed_hosts = _allowed_oauth_redirect_hosts()
+        if parsed_redirect.hostname is None or parsed_redirect.hostname.lower() not in allowed_hosts:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unregistered redirect_uri host")
     if code_challenge_method != "S256":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PKCE S256 is supported")
     if not code_challenge.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="code_challenge is required")
+    if resource != expected_resource:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
 
 
 def _pkce_s256_challenge(code_verifier: str) -> str:
@@ -1083,6 +1191,7 @@ def _oauth_login_form_html(
     code_challenge: str,
     code_challenge_method: str,
     state: str,
+    resource: str,
 ) -> str:
     hidden = _hidden_inputs(
         {
@@ -1092,6 +1201,7 @@ def _oauth_login_form_html(
             "code_challenge": code_challenge,
             "code_challenge_method": code_challenge_method,
             "state": state,
+            "resource": resource,
         }
     )
     return f"""<!doctype html>
@@ -1121,6 +1231,7 @@ def _oauth_otp_form_html(
     code_challenge: str,
     code_challenge_method: str,
     state: str,
+    resource: str,
 ) -> str:
     hidden = _hidden_inputs(
         {
@@ -1131,6 +1242,7 @@ def _oauth_otp_form_html(
             "code_challenge": code_challenge,
             "code_challenge_method": code_challenge_method,
             "state": state,
+            "resource": resource,
         }
     )
     escaped_email = escape(email, quote=False)

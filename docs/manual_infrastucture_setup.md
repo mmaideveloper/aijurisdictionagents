@@ -61,6 +61,8 @@ Purpose: migrate the existing local PostgreSQL laws collector database into Azur
 - `AZURE_STORAGE_ACCOUNT_NAME`
 - `AZURE_LAWS_STORAGE_CONTAINER_NAME`
 - `MCP_API_JWT_SECRET` as a long random per-environment secret for remote MCP OAuth/JWT token signing
+- `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu` for OAuth metadata and JWT audience validation
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com` for ChatGPT authorization callbacks
 
 ### Validation Steps
 

@@ -243,6 +243,7 @@ class ApiDatabaseStore:
                     client_id TEXT NOT NULL,
                     redirect_uri TEXT NOT NULL,
                     code_challenge TEXT NOT NULL,
+                    resource TEXT NOT NULL DEFAULT '',
                     expires_at TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
@@ -366,6 +367,7 @@ class ApiDatabaseStore:
                 """,
             )
             self._ensure_user_schema(conn)
+            self._ensure_mcp_oauth_schema(conn)
             self._ensure_case_document_schema(conn)
             self._ensure_subscription_schema(conn)
             self._ensure_permanent_memory_schema(conn)
@@ -656,6 +658,7 @@ class ApiDatabaseStore:
         client_id: str,
         redirect_uri: str,
         code_challenge: str,
+        resource: str,
         expires_in_minutes: int = 10,
     ) -> None:
         now = datetime.now(timezone.utc)
@@ -664,9 +667,9 @@ class ApiDatabaseStore:
                 conn,
                 """
                 INSERT INTO mcp_oauth_authorization_codes(
-                    code, user_id, client_id, redirect_uri, code_challenge, expires_at, created_at
+                    code, user_id, client_id, redirect_uri, code_challenge, resource, expires_at, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     code.strip(),
@@ -674,6 +677,7 @@ class ApiDatabaseStore:
                     client_id.strip(),
                     redirect_uri.strip(),
                     code_challenge.strip(),
+                    resource.strip(),
                     (now + timedelta(minutes=max(expires_in_minutes, 1))).isoformat(),
                     now.isoformat(),
                 ),
@@ -688,7 +692,7 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT user_id, client_id, redirect_uri, code_challenge, expires_at
+                SELECT user_id, client_id, redirect_uri, code_challenge, resource, expires_at
                 FROM mcp_oauth_authorization_codes
                 WHERE code = ?
                 """,
@@ -698,13 +702,14 @@ class ApiDatabaseStore:
                 return None
             self._execute(conn, "DELETE FROM mcp_oauth_authorization_codes WHERE code = ?", (normalized_code,))
             conn.commit()
-        if not _is_future_iso_datetime(str(row[4])):
+        if not _is_future_iso_datetime(str(row[5])):
             return None
         return {
             "user_id": str(row[0]),
             "client_id": str(row[1]),
             "redirect_uri": str(row[2]),
             "code_challenge": str(row[3]),
+            "resource": str(row[4]),
         }
 
     def issue_device_auth_token(
@@ -1871,6 +1876,35 @@ class ApiDatabaseStore:
             WHERE full_name IS NULL OR TRIM(full_name) = ''
             """,
         )
+
+    def _ensure_mcp_oauth_schema(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'mcp_oauth_authorization_codes'
+                    """,
+                ).fetchall()
+            }
+        else:
+            columns = {
+                row[1]
+                for row in self._execute(
+                    conn,
+                    "PRAGMA table_info(mcp_oauth_authorization_codes)",
+                ).fetchall()
+            }
+        if "resource" not in columns:
+            self._execute(
+                conn,
+                "ALTER TABLE mcp_oauth_authorization_codes ADD COLUMN resource TEXT NOT NULL DEFAULT ''",
+            )
 
     def _ensure_case_document_schema(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
