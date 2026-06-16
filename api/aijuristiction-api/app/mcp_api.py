@@ -911,6 +911,15 @@ def _now_iso() -> str:
 
 
 def _base_url(request: Request) -> str:
+    configured = os.getenv("MCP_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if configured:
+        return configured
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if forwarded_proto and forwarded_host:
+        proto = forwarded_proto.split(",")[0].strip()
+        host = forwarded_host.split(",")[0].strip()
+        return f"{proto}://{host}".rstrip("/")
     return str(request.base_url).rstrip("/")
 
 

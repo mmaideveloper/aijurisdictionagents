@@ -321,6 +321,27 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert claims["email"] == "mcp-oauth@example.com"
 
 
+def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu")
+
+    protected_metadata = mcp_client.get(
+        "/.well-known/oauth-protected-resource/MCP",
+        headers={"x-forwarded-proto": "http", "x-forwarded-host": "internal.local"},
+    )
+    authorization_metadata = mcp_client.get(
+        "/.well-known/oauth-authorization-server",
+        headers={"x-forwarded-proto": "http", "x-forwarded-host": "internal.local"},
+    )
+
+    assert protected_metadata.status_code == 200
+    assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
+    assert protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
+    assert authorization_metadata.status_code == 200
+    assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
+    assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
+
+
 def _configure_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("DB_OPTION", "local")
     monkeypatch.setenv("STORAGE_OPTION", "local")
