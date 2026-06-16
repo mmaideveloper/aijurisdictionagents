@@ -260,7 +260,7 @@ abstract class JurisdictaSpeechRecognizer {
     Duration? listenFor,
     Duration? pauseFor,
     bool partialResults = true,
-    bool cancelOnError = true,
+    bool cancelOnError = false,
     ListenMode listenMode = ListenMode.dictation,
   });
 
@@ -400,7 +400,7 @@ class PlatformSpeechRecognizer implements JurisdictaSpeechRecognizer {
     Duration? listenFor,
     Duration? pauseFor,
     bool partialResults = true,
-    bool cancelOnError = true,
+    bool cancelOnError = false,
     ListenMode listenMode = ListenMode.dictation,
   }) {
     return _speechToText.listen(
@@ -521,7 +521,7 @@ class AzureSpeechRecognizer implements JurisdictaSpeechRecognizer {
     Duration? listenFor,
     Duration? pauseFor,
     bool partialResults = true,
-    bool cancelOnError = true,
+    bool cancelOnError = false,
     ListenMode listenMode = ListenMode.dictation,
   }) async {
     _onResult = onResult;

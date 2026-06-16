@@ -6549,21 +6549,38 @@ class _ChatHomePageState extends State<ChatHomePage>
       return;
     }
     _speechDraftStartedAt ??= DateTime.now();
+    final existingDraft = _inputController.text.trim();
+    final exactSendCommand = isSpokenSendCommand(recognizedText);
+    final clearDraftCommand = isSpokenClearDraftCommand(recognizedText);
+    final trailingSendCommand = hasTrailingSpokenSendCommand(recognizedText);
+    final recognizedMessage =
+        stripTrailingSpokenSendCommand(recognizedText) ?? recognizedText;
     if (_shouldStopAssistantSpeechForTranscript(recognizedText)) {
       _stopAssistantSpeechForUserSpeech('recognized_speech');
     }
-    _lastDictatedSpeechDraft = recognizedText;
-    if (result.finalResult) {
-      _lastFinalSpeechResult = recognizedText;
+    if (!exactSendCommand && !clearDraftCommand) {
+      _lastDictatedSpeechDraft = mergeRecognizedSpeechDraft(
+        existingDraft: existingDraft,
+        recognizedText: recognizedMessage,
+        previousRecognizedSegment: _lastDictatedSpeechDraft,
+      );
+    }
+    if (result.finalResult && !exactSendCommand && !clearDraftCommand) {
+      _lastFinalSpeechResult = recognizedMessage;
     }
     setState(() {
-      _inputController.text = recognizedText;
+      if (!exactSendCommand && !clearDraftCommand) {
+        _inputController.text = _lastDictatedSpeechDraft ?? recognizedMessage;
+      }
       _inputController.selection = TextSelection.fromPosition(
         TextPosition(offset: _inputController.text.length),
       );
     });
     if (result.finalResult &&
-        _shouldProcessFinalSpeechResultImmediately(recognizedText)) {
+        (exactSendCommand ||
+            clearDraftCommand ||
+            trailingSendCommand ||
+            _shouldProcessFinalSpeechResultImmediately(recognizedText))) {
       final action = _ruleEngine.evaluate(
         input: recognizedText,
         context: _buildRuleEngineContext(
@@ -6702,7 +6719,14 @@ class _ChatHomePageState extends State<ChatHomePage>
     });
     _voiceSessionOrchestrator.stopListening();
     if (error.isNoSpeechDetected) {
-      _showSnackbar(_strings.t('speech_no_input_detected'));
+      if (_usesMessageSpeechType &&
+          !_stoppingSpeechManually &&
+          _speechInputEnabled) {
+        _showSnackbar(_strings.t('speech_input_auto_stopped'));
+        unawaited(_resumeSpeechListeningAfterAutoStop());
+      } else {
+        _showSnackbar(_strings.t('speech_no_input_detected'));
+      }
       unawaited(
         widget.logger.info(
           'Speech recognition ended without detected speech',

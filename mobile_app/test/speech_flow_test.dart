@@ -84,6 +84,40 @@ void main() {
     });
   });
 
+  group('mergeRecognizedSpeechDraft', () {
+    test('extends the same partial segment without duplicating words', () {
+      expect(
+        mergeRecognizedSpeechDraft(
+          existingDraft: 'Potrebujem poradit',
+          recognizedText: 'Potrebujem poradit so zmluvou',
+          previousRecognizedSegment: 'Potrebujem poradit',
+        ),
+        'Potrebujem poradit so zmluvou',
+      );
+    });
+
+    test('appends a new Android recognizer segment after an auto restart', () {
+      expect(
+        mergeRecognizedSpeechDraft(
+          existingDraft: 'Potrebujem poradit so zmluvou',
+          recognizedText: 'a este s vypovednou lehotou',
+          previousRecognizedSegment: 'Potrebujem poradit so zmluvou',
+        ),
+        'Potrebujem poradit so zmluvou a este s vypovednou lehotou',
+      );
+    });
+
+    test('keeps typed text and appends dictated speech', () {
+      expect(
+        mergeRecognizedSpeechDraft(
+          existingDraft: 'Dobry den,',
+          recognizedText: 'potrebujem poradit',
+        ),
+        'Dobry den, potrebujem poradit',
+      );
+    });
+  });
+
   group('parseSpokenCaseCreationCommand', () {
     test('matches a polite English command without a spoken title', () {
       final parsed = parseSpokenCaseCreationCommand('Please create a new case');
