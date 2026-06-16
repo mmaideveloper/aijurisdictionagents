@@ -31,12 +31,12 @@ scrape_configs:
         - http_2xx
     static_configs:
       - targets:
-          - http://host.docker.internal:8080/health
+          - http://jurisdigta-api:8080/health
         labels:
           service: jurisdigta-api
           component: api
       - targets:
-          - http://host.docker.internal:8070/health
+          - http://jurisdigta-mcp:8070/health
         labels:
           service: jurisdigta-mcp
           component: mcp

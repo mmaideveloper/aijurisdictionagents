@@ -380,6 +380,12 @@ Server-local `jurisdigta.env` must include at least:
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com`
 - email/Turnstile settings when those production features are enabled
 
+Optional server-local monitoring setting in `/srv/jurisdigta/app/Deployment/monitoring/.env`:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MONITORING_APP_DOCKER_NETWORK` | `aijuristiction-api_default` | Docker network where Prometheus Blackbox Exporter and status-exporter resolve `jurisdigta-api` and `jurisdigta-mcp` by container name |
+
 Minimal workflow validation after setup:
 
 1. Run `Self-Managed Prod Deploy` with `repo_ref=main`.

@@ -10,7 +10,7 @@ GET /v1/system/status?minutes=60
 
 ## What It Monitors
 
-- API availability through Blackbox Exporter probing `http://host.docker.internal:8080/health`.
+- API and MCP availability through Blackbox Exporter probing the internal Docker service URLs `http://jurisdigta-api:8080/health` and `http://jurisdigta-mcp:8070/health`.
 - API/database/LLM/system/laws collector status through `scripts/server/export_system_status_metrics.py`.
 - Error counts for API, laws collector, and PostgreSQL from the status endpoint.
 - Last processed law, next law to check, latest laws collector run timestamps, and latest run duration.
@@ -21,6 +21,7 @@ GET /v1/system/status?minutes=60
 ## Security Baseline
 
 - Grafana and Prometheus bind only to `127.0.0.1` by default.
+- Monitoring containers join the existing API Docker network through `MONITORING_APP_DOCKER_NETWORK`, defaulting to `aijuristiction-api_default`, so API and MCP host ports can remain bound to `127.0.0.1`.
 - Access Grafana through SSH tunneling first:
 
 ```bash
@@ -43,6 +44,12 @@ By default, Docker Compose starts `status-exporter` as a private container and P
 
 ```text
 http://status-exporter:9108/metrics
+```
+
+The Compose-managed exporter calls the API through the shared Docker network:
+
+```text
+http://jurisdigta-api:8080/v1/system/status?minutes=60
 ```
 
 For manual troubleshooting, run the exporter on the server host:
@@ -127,7 +134,10 @@ Compose config, then starts the stack. It carries `JURISDIGTA_API_KEY` from
 `/v1/system/status`. The status exporter also mounts `../../runs` read-only so
 laws collector runtime details can be merged from `SYSTEM_STATUS_FILE` when the
 API image does not expose those fields yet. It preserves an existing
-`GRAFANA_ADMIN_PASSWORD` unless the project env provides one.
+`GRAFANA_ADMIN_PASSWORD` unless the project env provides one. It also writes
+`MONITORING_APP_DOCKER_NETWORK`, defaulting to `aijuristiction-api_default`,
+so status-exporter and Blackbox Exporter can resolve `jurisdigta-api` and
+`jurisdigta-mcp` without opening API/MCP host bindings beyond loopback.
 
 If `GRAFANA_ADMIN_PASSWORD` changed after Grafana was already initialized,
 also reset the persisted Grafana admin password:
@@ -142,6 +152,7 @@ Validate:
 docker compose ps
 curl -fsS http://127.0.0.1:9091/-/ready
 curl -fsS http://127.0.0.1:3000/grafana/api/health
+python3 ../../examples/monitoring_scrape_demo.py
 ```
 
 ## Access Grafana
@@ -325,6 +336,7 @@ Useful starter queries:
 - `jurisdigta_system_disk_used_percent`
 - `jurisdigta_system_memory_used_percent`
 - `probe_success{service="jurisdigta-api"}`
+- `probe_success{service="jurisdigta-mcp"}`
 - `up{job="node-exporter"}`
 - `up{job="cadvisor"}`
 

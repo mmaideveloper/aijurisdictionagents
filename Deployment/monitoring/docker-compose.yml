@@ -39,12 +39,13 @@ services:
       - --port
       - "9108"
       - --status-url
-      - http://host.docker.internal:8080/v1/system/status?minutes=60
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - http://jurisdigta-api:8080/v1/system/status?minutes=60
     volumes:
       - ../../scripts/server/export_system_status_metrics.py:/app/export_system_status_metrics.py:ro
       - ../../runs:/workspace/runs:ro
+    networks:
+      - default
+      - app-network
 
   grafana:
     image: grafana/grafana-oss:latest
@@ -110,7 +111,15 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    networks:
+      - default
+      - app-network
 
 volumes:
   prometheus-data:
   grafana-data:
+
+networks:
+  app-network:
+    external: true
+    name: ${MONITORING_APP_DOCKER_NETWORK:-aijuristiction-api_default}

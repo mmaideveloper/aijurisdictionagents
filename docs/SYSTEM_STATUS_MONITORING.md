@@ -98,7 +98,7 @@ Recommended self-managed dashboard stack for `jurisdigta-server`:
 - Grafana for dashboards and alert visualization.
 - Node Exporter for Linux host CPU, memory, disk, filesystem, and kernel metrics.
 - cAdvisor for Docker container CPU, memory, filesystem, and restart behavior.
-- Blackbox Exporter for HTTP availability probes such as `http://127.0.0.1:8080/health`.
+- Blackbox Exporter for HTTP availability probes. In Docker Compose it probes API and MCP through the internal service URLs `http://jurisdigta-api:8080/health` and `http://jurisdigta-mcp:8070/health` on `MONITORING_APP_DOCKER_NETWORK`, keeping host ports bound to loopback.
 - `scripts/server/export_system_status_metrics.py` for JurisDigta-specific Prometheus metrics from `/v1/system/status`.
 
 Deployment assets are in:
@@ -132,6 +132,12 @@ cd /srv/jurisdigta/app/Deployment/monitoring
 # See Deployment/monitoring/README.md for the full command.
 docker compose up -d
 ```
+
+The monitoring Compose stack expects the API/MCP Docker network to exist.
+On the self-managed server this is normally `aijuristiction-api_default`,
+created by the API PostgreSQL Compose project and reused by the API/MCP
+containers. Override it with `MONITORING_APP_DOCKER_NETWORK` only if the
+production API network name changes.
 
 Access Grafana through an SSH tunnel first:
 
@@ -171,6 +177,14 @@ with:
 
 ```bash
 curl -I https://admin.jurisdigta.eu/grafana/
+```
+
+Validate Prometheus scrape and HTTP probe health with the minimal runnable
+example:
+
+```bash
+cd /srv/jurisdigta/app
+PROMETHEUS_BASE_URL=http://127.0.0.1:9091 python3 examples/monitoring_scrape_demo.py
 ```
 
 The older nginx/Certbot template at `Deployment/monitoring/nginx-admin-grafana.conf`

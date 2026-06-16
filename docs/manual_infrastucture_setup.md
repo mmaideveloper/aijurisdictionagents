@@ -311,6 +311,7 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Optional Prometheus exporter path: `/srv/jurisdigta/app/scripts/server/export_system_status_metrics.py`.
 - Optional Prometheus exporter port: `127.0.0.1:9108`.
 - Optional monitoring stack path: `/srv/jurisdigta/app/Deployment/monitoring`.
+- Optional monitoring Docker network setting: `MONITORING_APP_DOCKER_NETWORK=aijuristiction-api_default`, used by status-exporter and Blackbox Exporter to reach `jurisdigta-api` and `jurisdigta-mcp` without exposing API/MCP beyond loopback host ports.
 - Cloudflare Tunnel service: `cloudflared.service` on `jurisdigta-server`.
 - Cloudflare Tunnel API hostname: `api.jurisdigta.eu` -> `http://127.0.0.1:8080`.
 - Cloudflare Tunnel MCP hostname: `mcp.jurisdigta.eu` -> `http://127.0.0.1:8070`, with MCP served by the dedicated MCP service at `/MCP`.
@@ -343,7 +344,8 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - If Prometheus/Grafana monitoring is enabled, `systemctl status jurisdigta-status-exporter.service --no-pager` shows the exporter active.
 - If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9108/metrics | head` returns Prometheus text metrics.
 - If Prometheus/Grafana monitoring is enabled, `docker compose -f /srv/jurisdigta/app/Deployment/monitoring/docker-compose.yml ps` shows Prometheus, Grafana, Node Exporter, cAdvisor, and Blackbox Exporter running.
-- If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9090/-/ready` and `curl -fsS http://127.0.0.1:3000/api/health` succeed.
+- If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9091/-/ready` and `curl -fsS http://127.0.0.1:3000/grafana/api/health` succeed.
+- If Prometheus/Grafana monitoring is enabled, `cd /srv/jurisdigta/app && PROMETHEUS_BASE_URL=http://127.0.0.1:9091 python3 examples/monitoring_scrape_demo.py` reports all scrapes and HTTP probes healthy.
 - `systemctl status cloudflared --no-pager` shows the Cloudflare tunnel active when public hostnames are enabled.
 - If Cloudflare Tunnel public hostnames are enabled, `curl -fsS https://api.jurisdigta.eu/health`, `curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`, and `curl -I https://admin.jurisdigta.eu/grafana/` succeed from outside the server.
 - If the frontend web container is enabled, `curl -fsS http://127.0.0.1:8090/health` and `curl -I http://127.0.0.1:8090/privacy` succeed on the server.

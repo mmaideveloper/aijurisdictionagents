@@ -14,6 +14,7 @@ DEFAULT_PROMETHEUS_HOST_PORT = "9091"
 DEFAULT_GRAFANA_DOMAIN = "admin.jurisdigta.eu"
 DEFAULT_GRAFANA_ROOT_URL = "https://admin.jurisdigta.eu/grafana/"
 DEFAULT_ALERT_EMAIL_TO = "info@jurisdigta.eu"
+DEFAULT_APP_DOCKER_NETWORK = "aijuristiction-api_default"
 
 
 def main() -> int:
@@ -134,6 +135,10 @@ def _build_monitoring_env(
             prometheus_host_port
             or _first(project_values, existing_values, "PROMETHEUS_HOST_PORT")
             or DEFAULT_PROMETHEUS_HOST_PORT
+        ),
+        "MONITORING_APP_DOCKER_NETWORK": (
+            _first(project_values, existing_values, "MONITORING_APP_DOCKER_NETWORK")
+            or DEFAULT_APP_DOCKER_NETWORK
         ),
         "JURISDIGTA_API_KEY": _first(project_values, existing_values, "JURISDIGTA_API_KEY", "API_KEY"),
         "GRAFANA_SERVER_DOMAIN": (
