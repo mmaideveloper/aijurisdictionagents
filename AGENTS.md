@@ -33,6 +33,9 @@ Database layout rule:
 Environment variable rule:
 
 - Whenever you add a new environment variable to the project, add a documented example entry to `.env.example` in the same change.
+- Whenever `.env.example` changes, update local `.env` from it before sharing runtime configuration. Missing keys must be added to `.env` with the value `unknown-variable` so startup and sync tooling can warn clearly without guessing secrets.
+- Use `.\scripts\sync_jurisdigta_env.ps1` to sync local environment configuration. The script copies SSH key material from `E:\jurisdigta\ssh` into the dedicated local SSH folder, updates local `.env`, and transfers the full `.env` to `jurisdigta-server:/srv/jurisdigta/secrets/jurisdigta.env` with restrictive permissions.
+- Keep `.env` and private keys out of Git. The server copy is a runtime secret file, not a shared source-controlled artifact.
 
 LLM provider default rule:
 

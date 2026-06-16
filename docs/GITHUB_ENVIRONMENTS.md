@@ -330,6 +330,10 @@ The workflow does not store application runtime secrets in GitHub. Keep Azure Op
 /srv/jurisdigta/secrets/jurisdigta.env
 ```
 
+Use `docs/ENV_SYNC.md` and `.\scripts\sync_jurisdigta_env.ps1` to keep the
+server-local file aligned with `.env.example`. Missing keys are added to local
+`.env` as `unknown-variable` until the real secret is known.
+
 Required `prod` GitHub Environment variable:
 
 | Variable | Purpose |

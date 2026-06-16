@@ -252,6 +252,7 @@ Related runbooks and scripts:
 - `Deployment/server/setup_jurisdigta_server.sh`
 - `Deployment/server/deploy_jurisdigta_prod.sh`
 - `.github/workflows/self_managed_prod_deploy.yml`
+- `docs/ENV_SYNC.md`
 
 Purpose: install and validate the software needed to deploy JurisDigta API, system code, laws connector, and PostgreSQL database from GitHub onto the self-managed Ubuntu server `jurisdigta-server`.
 
@@ -297,6 +298,9 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 
 - Server-local environment file path: `/srv/jurisdigta/secrets/jurisdigta.env`.
 - Keep secret file permissions at `600`.
+- Workstation `.env` files are synced from `.env.example` with `.\scripts\sync_jurisdigta_env.ps1`. Missing keys from `.env.example` must be written as `unknown-variable` so local startup and sync checks can warn without guessing secrets.
+- The sync script copies SSH key material from `E:\jurisdigta\ssh` to `%USERPROFILE%\.ssh\jurisdigta` and uses SSH/SCP to publish the full local `.env` to `/srv/jurisdigta/secrets/jurisdigta.env`.
+- Keep the dedicated SSH folder local to the workstation. Only public keys belong in `/home/jurisdigta-admin/.ssh/authorized_keys` on the server.
 - Required production LLM default: `LLM_PROVIDER=azurefoundry`.
 - Required Azure Foundry values when `LLM_PROVIDER=azurefoundry`: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and `AZURE_OPENAI_API_KEY`.
 - PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
