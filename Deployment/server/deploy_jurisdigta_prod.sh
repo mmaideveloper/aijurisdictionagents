@@ -139,7 +139,6 @@ start_api_and_mcp() {
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
-    -e MCP_PUBLIC_BASE_URL="${MCP_PUBLIC_BASE_URL:-https://mcp.jurisdigta.eu}" \
     -e SYSTEM_STATUS_FILE=/workspace/runs/status/system-status.json \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     aijuristiction-api:local >/dev/null
@@ -163,6 +162,7 @@ start_api_and_mcp() {
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
+    -e MCP_PUBLIC_BASE_URL="${MCP_PUBLIC_BASE_URL:-https://mcp.jurisdigta.eu}" \
     -e SYSTEM_STATUS_FILE=/workspace/runs/status/system-status.json \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     aijuristiction-api:local \
