@@ -214,6 +214,7 @@ start_api_and_mcp() {
   docker run -d \
     --name jurisdigta-email-scheduler \
     --restart unless-stopped \
+    --no-healthcheck \
     --network aijuristiction-api_default \
     --env-file "$ENV_FILE" \
     -e DB_OPTION=postgres \
