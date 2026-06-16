@@ -148,6 +148,11 @@ start_api_and_mcp() {
     --restart unless-stopped \
     --network aijuristiction-api_default \
     -p "127.0.0.1:${MCP_PORT}:8070" \
+    --health-cmd "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8070/health')\"" \
+    --health-interval 30s \
+    --health-timeout 5s \
+    --health-start-period 10s \
+    --health-retries 3 \
     --env-file "$ENV_FILE" \
     -e DB_OPTION=postgres \
     -e DB_CLOUD="$api_db_cloud" \
