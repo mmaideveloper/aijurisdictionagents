@@ -187,7 +187,7 @@ def _mcp_instructions_html(*, base_url: str) -> str:
       <h2>Assistant setup</h2>
       <ul>
         <li><strong>ChatGPT custom connector:</strong> create a remote MCP connector and use <code>{mcp_url}</code> as the server URL. Prefer OAuth discovery when available.</li>
-        <li><strong>Claude:</strong> add a custom connector or remote MCP server and use <code>{mcp_url}</code>. OAuth-capable Claude clients can discover authorization from this domain.</li>
+        <li><strong>Claude:</strong> add a custom connector or remote MCP server and use <code>{mcp_url}</code>. OAuth-capable Claude clients can discover authorization from this domain and register dynamically. If Claude asks for a client ID, open Advanced settings, set OAuth Client ID to <code>claude</code>, and leave the secret empty.</li>
         <li><strong>VS Code:</strong> add an HTTP MCP server in MCP settings with URL <code>{mcp_url}</code>. If your client cannot use OAuth, pass the generated key as <code>Authorization: Bearer &lt;key&gt;</code>.</li>
         <li><strong>Perplexity and other MCP clients:</strong> use the same remote server URL where custom MCP servers are supported. If custom remote MCP registration is not available in the product UI, use another MCP-compatible host.</li>
       </ul>

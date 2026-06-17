@@ -264,6 +264,24 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["code_challenge_methods_supported"] == ["S256"]
     assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws"]
+    assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
+
+    registration_response = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Claude",
+            "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:laws",
+        },
+    )
+    assert registration_response.status_code == 201
+    registration_payload = registration_response.json()
+    assert registration_payload["client_id"].startswith("jurisdigta-")
+    assert registration_payload["redirect_uris"] == ["https://claude.ai/api/mcp/auth_callback"]
+    assert registration_payload["token_endpoint_auth_method"] == "none"
 
     code_verifier = "test-code-verifier-1234567890"
     code_challenge = _pkce_challenge(code_verifier)
@@ -368,6 +386,23 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
+    assert authorization_metadata.json()["registration_endpoint"] == "https://mcp.jurisdigta.eu/oauth/register"
+
+
+def test_oauth_registration_rejects_unregistered_redirect_host(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+
+    registration_response = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Unknown client",
+            "redirect_uris": ["https://evil.example/callback"],
+            "token_endpoint_auth_method": "none",
+        },
+    )
+
+    assert registration_response.status_code == 400
+    assert registration_response.json()["detail"] == "Unregistered redirect_uri host"
 
 
 def _configure_env(monkeypatch, tmp_path: Path) -> None:
@@ -382,7 +417,7 @@ def _configure_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "laws.sqlite3"))
     monkeypatch.setenv("MCP_API_JWT_SECRET", "test-mcp-secret")
     monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu")
-    monkeypatch.setenv("MCP_OAUTH_ALLOWED_REDIRECT_HOSTS", "client.example,chatgpt.com")
+    monkeypatch.setenv("MCP_OAUTH_ALLOWED_REDIRECT_HOSTS", "client.example,chatgpt.com,claude.ai")
 
 
 def _create_mcp_key(tmp_path: Path) -> str:

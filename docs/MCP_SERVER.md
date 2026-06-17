@@ -42,15 +42,23 @@ curl http://127.0.0.1:8070/
 
 - Protected resource metadata: `GET /.well-known/oauth-protected-resource/MCP`
 - Authorization server metadata: `GET /.well-known/oauth-authorization-server`
+- Dynamic client registration endpoint: `POST /oauth/register`
 - Authorization endpoint: `GET /oauth/authorize`
 - Token endpoint: `POST /oauth/token`
 
-The OAuth flow uses authorization code with PKCE S256. ChatGPT should pass the protected resource value `https://mcp.jurisdigta.eu/MCP` on the authorization and token requests. The browser authorization page validates the user password, sends an email OTP, and only creates a short-lived authorization code after OTP verification. The token endpoint exchanges that code for the same revocable JWT bearer token accepted by `POST /MCP`.
+The OAuth flow uses authorization code with PKCE S256. Remote clients can either
+use dynamic client registration at `/oauth/register` or provide a preconfigured
+public OAuth Client ID. ChatGPT and Claude should pass the protected resource
+value `https://mcp.jurisdigta.eu/MCP` on the authorization and token requests.
+The browser authorization page validates the user password, sends an email OTP,
+and only creates a short-lived authorization code after OTP verification. The
+token endpoint exchanges that code for the same revocable JWT bearer token
+accepted by `POST /MCP`.
 
 Production settings:
 
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
-- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com`
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
 - `MCP_API_JWT_SECRET=<long-random-secret>`
 
 ## Authentication
@@ -82,7 +90,7 @@ Manual JWT generation remains useful for local VS Code setups that pass an `Auth
 Use `https://mcp.jurisdigta.eu/MCP` as the remote MCP server URL in clients that support custom HTTP MCP servers.
 
 - ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it. Users may self-register during the browser authorization flow, but ChatGPT only receives the OAuth access token and tool results, not a raw API key.
-- Claude: add a custom connector or remote MCP server and enter the MCP server URL. OAuth-capable Claude clients can discover authorization metadata from `https://mcp.jurisdigta.eu`.
+- Claude: add a custom connector or remote MCP server and enter the MCP server URL. OAuth-capable Claude clients can discover authorization metadata from `https://mcp.jurisdigta.eu` and register dynamically. If Claude reports that automatic client registration is not supported, open Advanced settings, set OAuth Client ID to a stable public value such as `claude`, leave OAuth Client Secret empty, and retry after confirming `claude.ai` is allowed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`.
 - VS Code: add an HTTP MCP server in MCP settings. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/MCP/login`.
 - Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
 
@@ -90,6 +98,7 @@ Discovery endpoints:
 
 - `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`
 - `https://mcp.jurisdigta.eu/.well-known/oauth-authorization-server`
+- `https://mcp.jurisdigta.eu/oauth/register`
 
 Client documentation:
 
@@ -144,4 +153,4 @@ Debugging fields are intentionally minimized:
 
 For production troubleshooting, filter application logs by `mcp_` event names and correlate them with the `x-request-id` or `x-correlation-id` response headers.
 
-Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, audience-bound, hashed in storage, expire by default after 1 day, and can be revoked. Public tools avoid user-specific data. Protected legal-data tools remain read-only and are logged with request correlation IDs by the MCP middleware for traceability. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. OAuth and MCP tool responses do not return raw API keys to ChatGPT. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, set `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, keep OAuth redirect hosts restricted, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.
+Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, audience-bound, hashed in storage, expire by default after 1 day, and can be revoked. Public tools avoid user-specific data. Protected legal-data tools remain read-only and are logged with request correlation IDs by the MCP middleware for traceability. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. OAuth and MCP tool responses do not return raw API keys to ChatGPT or Claude. Dynamic client registration only issues a public OAuth client identifier for PKCE flows; it does not issue user tokens, secrets, or data access without the existing user login and email OTP authorization. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, set `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, keep OAuth redirect hosts restricted, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.

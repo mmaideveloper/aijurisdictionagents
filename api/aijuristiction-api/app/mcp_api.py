@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, Form, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.laws_api import _laws_db_config, _read_laws_statistics
@@ -36,7 +36,7 @@ router = APIRouter(prefix="/MCP", tags=["mcp"])
 oauth_router = APIRouter(tags=["mcp-oauth"])
 MCP_PROTOCOL_VERSION = "2025-03-26"
 _PUBLIC_TOOLS = {"getVersion", "getStatistics"}
-_DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com")
+_DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai")
 logger = logging.getLogger("aijuristiction-api.mcp")
 
 
@@ -158,11 +158,61 @@ def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
         "issuer": base_url,
         "authorization_endpoint": f"{base_url}/oauth/authorize",
         "token_endpoint": f"{base_url}/oauth/token",
+        "registration_endpoint": f"{base_url}/oauth/register",
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code"],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": [MCP_TOKEN_SCOPE],
+    }
+
+
+@oauth_router.post("/oauth/register", status_code=status.HTTP_201_CREATED)
+def oauth_dynamic_client_registration(
+    request: Request,
+    metadata: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    redirect_uris = _registration_string_list(metadata.get("redirect_uris"))
+    if not redirect_uris:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="redirect_uris is required")
+    for redirect_uri in redirect_uris:
+        _validate_oauth_redirect_uri(redirect_uri)
+
+    requested_auth_method = str(metadata.get("token_endpoint_auth_method") or "none").strip()
+    if requested_auth_method != "none":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only public OAuth clients with token_endpoint_auth_method=none are supported",
+        )
+
+    grant_types = _registration_string_list(metadata.get("grant_types")) or ["authorization_code"]
+    if any(grant_type != "authorization_code" for grant_type in grant_types):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported grant_types")
+
+    response_types = _registration_string_list(metadata.get("response_types")) or ["code"]
+    if any(response_type != "code" for response_type in response_types):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported response_types")
+
+    scope = str(metadata.get("scope") or MCP_TOKEN_SCOPE).strip()
+    if scope and scope != MCP_TOKEN_SCOPE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scope")
+
+    client_id = f"jurisdigta-{secrets.token_urlsafe(18)}"
+    logger.info(
+        "mcp_oauth_client_registered client_id=%s redirect_count=%d request_host=%s",
+        client_id,
+        len(redirect_uris),
+        request.headers.get("host", ""),
+    )
+    return {
+        "client_id": client_id,
+        "client_id_issued_at": int(time.time()),
+        "client_name": str(metadata.get("client_name") or "MCP client").strip()[:100],
+        "redirect_uris": redirect_uris,
+        "grant_types": ["authorization_code"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+        "scope": MCP_TOKEN_SCOPE,
     }
 
 
@@ -1036,6 +1086,24 @@ def _validate_oauth_authorize_request(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only response_type=code is supported")
     if not client_id.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="client_id is required")
+    _validate_oauth_redirect_uri(redirect_uri)
+    if code_challenge_method != "S256":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PKCE S256 is supported")
+    if not code_challenge.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="code_challenge is required")
+    if resource != expected_resource:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
+
+
+def _registration_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Expected a JSON array")
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _validate_oauth_redirect_uri(redirect_uri: str) -> None:
     parsed_redirect = urlparse(redirect_uri)
     if parsed_redirect.scheme not in {"http", "https", "vscode", "vscode-insiders"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported redirect_uri")
@@ -1043,12 +1111,6 @@ def _validate_oauth_authorize_request(
         allowed_hosts = _allowed_oauth_redirect_hosts()
         if parsed_redirect.hostname is None or parsed_redirect.hostname.lower() not in allowed_hosts:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unregistered redirect_uri host")
-    if code_challenge_method != "S256":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PKCE S256 is supported")
-    if not code_challenge.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="code_challenge is required")
-    if resource != expected_resource:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
 
 
 def _pkce_s256_challenge(code_verifier: str) -> str:
