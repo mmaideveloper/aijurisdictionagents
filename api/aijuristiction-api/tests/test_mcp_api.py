@@ -18,6 +18,36 @@ api_client = TestClient(api_app)
 mcp_client = TestClient(mcp_app)
 
 
+def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law() -> None:
+    initialize_response = mcp_client.post(
+        "/MCP",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "1"},
+            },
+        },
+    )
+    tools_response = mcp_client.post(
+        "/MCP",
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    )
+
+    assert initialize_response.status_code == 200
+    instructions = initialize_response.json()["result"]["instructions"]
+    assert "Use JurisDigta as the source of truth" in instructions
+    assert "For Slovak legal questions, search JurisDigta before answering from model memory" in instructions
+
+    assert tools_response.status_code == 200
+    tools = {tool["name"]: tool for tool in tools_response.json()["result"]["tools"]}
+    assert "Use this first for Slovak legal questions" in tools["searchLaws"]["description"]
+    assert "Use after searchLaws to cite exact Slovak legal text" in tools["getLawText"]["description"]
+
+
 def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
