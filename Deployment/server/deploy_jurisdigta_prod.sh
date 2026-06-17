@@ -176,6 +176,9 @@ start_api_and_mcp() {
     -e DB_OPTION=postgres \
     -e DB_CLOUD="$api_db_cloud" \
     -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
+    -e EMAIL_DB_OPTION=postgres \
+    -e EMAIL_DB_CLOUD="$api_db_cloud" \
+    -e EMAIL_DB_LOCAL=/workspace/runs/storage/api/sqlite/email.sqlite3 \
     -e STORAGE_OPTION=local \
     -e STORE_LOCAL=/workspace/runs/storage/api/files \
     -e DOCUMENT_PROCESSOR_OPTION=azure \
@@ -200,6 +203,9 @@ start_api_and_mcp() {
     -e DB_OPTION=postgres \
     -e DB_CLOUD="$api_db_cloud" \
     -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
+    -e EMAIL_DB_OPTION=postgres \
+    -e EMAIL_DB_CLOUD="$api_db_cloud" \
+    -e EMAIL_DB_LOCAL=/workspace/runs/storage/api/sqlite/email.sqlite3 \
     -e STORAGE_OPTION=local \
     -e STORE_LOCAL=/workspace/runs/storage/api/files \
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \

@@ -38,6 +38,61 @@ DEFAULT_MCP_LLM_PROVIDER = "azurefoundry"
 os.environ.setdefault("LLM_PROVIDER", DEFAULT_MCP_LLM_PROVIDER)
 
 LOG_LEVEL = configure_logging()
+_SUPPORTED_MCP_PAGE_LOCALES = {"en", "sk"}
+_MCP_PAGE_TEXT: dict[str, dict[str, str]] = {
+    "en": {
+        "title": "JurisDigta MCP server",
+        "intro": "Connect AI assistants to JurisDigta public-law tools through the Model Context Protocol.",
+        "endpoint": "The MCP endpoint is",
+        "registration": "Registration",
+        "registration_open": "Open",
+        "registration_profile": "Enter your email, phone number, profile details, ID card number, and explicit data-processing consent.",
+        "registration_otp": "Confirm the email OTP code to create the account.",
+        "registration_login": "Open {login_url} to generate a short-lived MCP API key, or let an OAuth-capable assistant complete the browser authorization flow.",
+        "keys": "MCP API keys are shown once, expire by default after one day, and can be revoked from the user API.",
+        "setup": "Assistant setup",
+        "chatgpt": "create a remote MCP connector and use {mcp_url} as the server URL. Prefer OAuth discovery when available.",
+        "claude": "add a custom connector or remote MCP server and use {mcp_url}. OAuth-capable Claude clients can discover authorization from this domain and register dynamically. If Claude asks for a client ID, open Advanced settings, set OAuth Client ID to claude, and leave the secret empty.",
+        "vscode": "add an HTTP MCP server in MCP settings with URL {mcp_url}. If your client cannot use OAuth, pass the generated key as Authorization: Bearer <key>.",
+        "other_clients": "use the same remote server URL where custom MCP servers are supported. If custom remote MCP registration is not available in the product UI, use another MCP-compatible host.",
+        "perplexity": "Perplexity and other MCP clients",
+        "discovery": "Discovery URLs",
+        "mcp_endpoint": "MCP endpoint",
+        "protected_resource": "Protected resource metadata",
+        "authorization_server": "Authorization server metadata",
+        "version": "Version and law freshness",
+        "docs": "Client documentation",
+        "manual": "Manual header example",
+        "compliance": "Compliance notes",
+        "compliance_text": "Public tools expose law metadata only. Protected tools require per-user authentication, use minimized JWT claims, and are logged with request and correlation IDs without storing raw prompts, law text, passwords, OTP codes, or tokens in application logs.",
+    },
+    "sk": {
+        "title": "JurisDigta MCP server",
+        "intro": "Pripojte AI asistentov k nastrojom JurisDigta pre slovenske verejne pravo cez Model Context Protocol.",
+        "endpoint": "MCP endpoint je",
+        "registration": "Registracia",
+        "registration_open": "Otvorte",
+        "registration_profile": "Zadajte e-mail, telefonne cislo, profilove udaje, cislo obcianskeho preukazu a vyslovny suhlas so spracovanim udajov.",
+        "registration_otp": "Potvrďte e-mailovy OTP kod na vytvorenie uctu.",
+        "registration_login": "Otvorte {login_url} na vygenerovanie kratkodobeho MCP API kluca alebo nechajte OAuth-kompatibilneho asistenta dokoncit autorizaciu v prehliadaci.",
+        "keys": "MCP API kluce sa zobrazia iba raz, predvolene expiruju po jednom dni a daju sa odvolat cez pouzivatelske API.",
+        "setup": "Nastavenie asistenta",
+        "chatgpt": "vytvorte vzdialeny MCP connector a pouzite {mcp_url} ako URL servera. Ak je dostupne OAuth discovery, uprednostnite ho.",
+        "claude": "pridajte vlastny connector alebo vzdialeny MCP server a pouzite {mcp_url}. OAuth-kompatibilni Claude klienti vedia z tejto domeny zistit autorizaciu a dynamicky sa registrovat. Ak Claude pyta client ID, v Advanced settings nastavte OAuth Client ID na claude a secret nechajte prazdny.",
+        "vscode": "pridajte HTTP MCP server v MCP nastaveniach s URL {mcp_url}. Ak klient nevie pouzit OAuth, poslite vygenerovany kluc ako Authorization: Bearer <key>.",
+        "other_clients": "pouzite rovnaku URL vzdialeneho servera tam, kde su podporovane vlastne MCP servery. Ak produkt nepodporuje vlastnu vzdialenu MCP registraciu, pouzite ineho MCP-kompatibilneho hostitela.",
+        "perplexity": "Perplexity a dalsi MCP klienti",
+        "discovery": "Discovery URL",
+        "mcp_endpoint": "MCP endpoint",
+        "protected_resource": "Metadata chraneneho zdroja",
+        "authorization_server": "Metadata autorizacneho servera",
+        "version": "Verzia a cerstvost zakonov",
+        "docs": "Dokumentacia klientov",
+        "manual": "Priklad manualnej hlavicky",
+        "compliance": "Poznamky ku compliance",
+        "compliance_text": "Verejne nastroje spristupnuju iba metadata zakonov. Chranene nastroje vyzaduju autentifikaciu pouzivatela, pouzivaju minimalizovane JWT claims a loguju sa s request a correlation ID bez ukladania raw promptov, textov zakonov, hesiel, OTP kodov alebo tokenov.",
+    },
+}
 TELEMETRY_MODE = configure_telemetry(
     service_name="jurisdigta-mcp-server",
     service_version=MCP_VERSION,
@@ -94,7 +149,22 @@ def _public_base_url(request: fastapi.Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
-def _mcp_instructions_html(*, base_url: str) -> str:
+def _mcp_page_locale(request: fastapi.Request) -> str:
+    header = request.headers.get("accept-language", "")
+    for item in header.split(","):
+        language = item.split(";", 1)[0].strip().lower()
+        primary = language.split("-", 1)[0]
+        if primary in _SUPPORTED_MCP_PAGE_LOCALES:
+            return primary
+    return "en"
+
+
+def _mcp_page_text(locale: str, key: str, **values: str) -> str:
+    text = _MCP_PAGE_TEXT.get(locale, _MCP_PAGE_TEXT["en"]).get(key, _MCP_PAGE_TEXT["en"][key])
+    return text.format(**values)
+
+
+def _mcp_instructions_html(*, base_url: str, locale: str = "en") -> str:
     mcp_url = f"{base_url}/MCP"
     protected_resource_url = f"{base_url}/.well-known/oauth-protected-resource/MCP"
     authorization_server_url = f"{base_url}/.well-known/oauth-authorization-server"
@@ -102,11 +172,11 @@ def _mcp_instructions_html(*, base_url: str) -> str:
     sign_up_url = f"{base_url}/MCP/sign-up"
     version_url = f"{base_url}/version"
     return f"""<!doctype html>
-<html lang="en">
+<html lang="{locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>JurisDigta MCP server</title>
+  <title>{_mcp_page_text(locale, "title")}</title>
   <style>
     :root {{
       color-scheme: light dark;
@@ -164,47 +234,47 @@ def _mcp_instructions_html(*, base_url: str) -> str:
 </head>
 <body>
   <main>
-    <h1>JurisDigta MCP server</h1>
+    <h1>{_mcp_page_text(locale, "title")}</h1>
     <p>
-      Connect AI assistants to JurisDigta public-law tools through the Model Context Protocol.
-      The MCP endpoint is <code>{mcp_url}</code>.
+      {_mcp_page_text(locale, "intro")}
+      {_mcp_page_text(locale, "endpoint")} <code>{mcp_url}</code>.
     </p>
 
     <section>
-      <h2>Registration</h2>
+      <h2>{_mcp_page_text(locale, "registration")}</h2>
       <ol>
-        <li>Open <a href="{sign_up_url}">{sign_up_url}</a>.</li>
-        <li>Enter your email, phone number, profile details, ID card number, and explicit data-processing consent.</li>
-        <li>Confirm the email OTP code to create the account.</li>
-        <li>Open <a href="{login_url}">{login_url}</a> to generate a short-lived MCP API key, or let an OAuth-capable assistant complete the browser authorization flow.</li>
+        <li>{_mcp_page_text(locale, "registration_open")} <a href="{sign_up_url}">{sign_up_url}</a>.</li>
+        <li>{_mcp_page_text(locale, "registration_profile")}</li>
+        <li>{_mcp_page_text(locale, "registration_otp")}</li>
+        <li>{_mcp_page_text(locale, "registration_login", login_url=f'<a href="{login_url}">{login_url}</a>')}</li>
       </ol>
       <p>
-        MCP API keys are shown once, expire by default after one day, and can be revoked from the user API.
+        {_mcp_page_text(locale, "keys")}
       </p>
     </section>
 
     <section>
-      <h2>Assistant setup</h2>
+      <h2>{_mcp_page_text(locale, "setup")}</h2>
       <ul>
-        <li><strong>ChatGPT custom connector:</strong> create a remote MCP connector and use <code>{mcp_url}</code> as the server URL. Prefer OAuth discovery when available.</li>
-        <li><strong>Claude:</strong> add a custom connector or remote MCP server and use <code>{mcp_url}</code>. OAuth-capable Claude clients can discover authorization from this domain and register dynamically. If Claude asks for a client ID, open Advanced settings, set OAuth Client ID to <code>claude</code>, and leave the secret empty.</li>
-        <li><strong>VS Code:</strong> add an HTTP MCP server in MCP settings with URL <code>{mcp_url}</code>. If your client cannot use OAuth, pass the generated key as <code>Authorization: Bearer &lt;key&gt;</code>.</li>
-        <li><strong>Perplexity and other MCP clients:</strong> use the same remote server URL where custom MCP servers are supported. If custom remote MCP registration is not available in the product UI, use another MCP-compatible host.</li>
+        <li><strong>ChatGPT custom connector:</strong> {_mcp_page_text(locale, "chatgpt", mcp_url=f'<code>{mcp_url}</code>')}</li>
+        <li><strong>Claude:</strong> {_mcp_page_text(locale, "claude", mcp_url=f'<code>{mcp_url}</code>')}</li>
+        <li><strong>VS Code:</strong> {_mcp_page_text(locale, "vscode", mcp_url=f'<code>{mcp_url}</code>')}</li>
+        <li><strong>{_mcp_page_text(locale, "perplexity")}:</strong> {_mcp_page_text(locale, "other_clients")}</li>
       </ul>
     </section>
 
     <section>
-      <h2>Discovery URLs</h2>
+      <h2>{_mcp_page_text(locale, "discovery")}</h2>
       <ul>
-        <li>MCP endpoint: <code>{mcp_url}</code></li>
-        <li>Protected resource metadata: <a href="{protected_resource_url}">{protected_resource_url}</a></li>
-        <li>Authorization server metadata: <a href="{authorization_server_url}">{authorization_server_url}</a></li>
-        <li>Version and law freshness: <a href="{version_url}">{version_url}</a></li>
+        <li>{_mcp_page_text(locale, "mcp_endpoint")}: <code>{mcp_url}</code></li>
+        <li>{_mcp_page_text(locale, "protected_resource")}: <a href="{protected_resource_url}">{protected_resource_url}</a></li>
+        <li>{_mcp_page_text(locale, "authorization_server")}: <a href="{authorization_server_url}">{authorization_server_url}</a></li>
+        <li>{_mcp_page_text(locale, "version")}: <a href="{version_url}">{version_url}</a></li>
       </ul>
     </section>
 
     <section>
-      <h2>Client documentation</h2>
+      <h2>{_mcp_page_text(locale, "docs")}</h2>
       <ul>
         <li><a href="https://developers.openai.com/api/docs/mcp">OpenAI remote MCP documentation</a></li>
         <li><a href="https://platform.claude.com/docs/en/agents-and-tools/mcp-connector">Claude MCP connector documentation</a></li>
@@ -213,7 +283,7 @@ def _mcp_instructions_html(*, base_url: str) -> str:
     </section>
 
     <section>
-      <h2>Manual header example</h2>
+      <h2>{_mcp_page_text(locale, "manual")}</h2>
       <pre><code>{{
   "mcpServers": {{
     "jurisdigta": {{
@@ -228,11 +298,9 @@ def _mcp_instructions_html(*, base_url: str) -> str:
     </section>
 
     <section>
-      <h2>Compliance notes</h2>
+      <h2>{_mcp_page_text(locale, "compliance")}</h2>
       <p>
-        Public tools expose law metadata only. Protected tools require per-user authentication,
-        use minimized JWT claims, and are logged with request and correlation IDs without storing
-        raw prompts, law text, passwords, OTP codes, or tokens in application logs.
+        {_mcp_page_text(locale, "compliance_text")}
       </p>
     </section>
   </main>
@@ -264,7 +332,9 @@ instrument_fastapi(app)
 
 @app.get("/", response_class=HTMLResponse)
 def mcp_instructions(request: fastapi.Request) -> HTMLResponse:
-    return HTMLResponse(_mcp_instructions_html(base_url=_public_base_url(request)))
+    return HTMLResponse(
+        _mcp_instructions_html(base_url=_public_base_url(request), locale=_mcp_page_locale(request))
+    )
 
 
 @app.on_event("startup")

@@ -110,6 +110,17 @@ def test_mcp_root_shows_assistant_setup_and_registration_steps() -> None:
     assert "Authorization: Bearer" in response.text
 
 
+def test_mcp_root_localizes_for_slovak_browser() -> None:
+    response = client.get("/", headers={"accept-language": "sk-SK,sk;q=0.9,en;q=0.8"})
+    assert response.status_code == 200
+    assert '<html lang="sk">' in response.text
+    assert "Registracia" in response.text
+    assert "Nastavenie asistenta" in response.text
+    assert "Metadata autorizacneho servera" in response.text
+    assert "/MCP/sign-up" in response.text
+    assert "Authorization: Bearer" in response.text
+
+
 def test_mcp_root_uses_forwarded_public_origin() -> None:
     response = client.get(
         "/",

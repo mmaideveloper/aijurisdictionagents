@@ -495,6 +495,13 @@ server-local `/srv/jurisdigta/secrets/jurisdigta.env` must use
 script fails before replacing containers when these production email delivery
 settings are missing.
 
+Inside the self-managed Docker network, API and MCP must use the container
+hostname `postgres` for `EMAIL_DB_CLOUD`, not a server-local loopback value such
+as `127.0.0.1`. This matters for MCP sign-up, login, and OAuth authorization
+because those handlers enqueue OTP email from inside the API/MCP containers; a
+bad email outbox URL can break those flows while the normal database health
+check still reports healthy.
+
 Privacy-safe OTP delivery validation:
 
 ```bash

@@ -72,12 +72,19 @@ Stop-Process -Id (Get-Content .\runs\email-scheduler-local.pid) -Force
 containers only enqueue messages into `email_outbox`; the scheduler container
 claims pending rows and performs delivery.
 
-The scheduler is wired to the same PostgreSQL API database as API/MCP:
+The scheduler, API, and MCP containers are wired to the same PostgreSQL API
+database for email outbox access:
 
 ```env
 EMAIL_DB_OPTION=postgres
 EMAIL_DB_CLOUD=postgresql://<user>:<password>@postgres:5432/<database>
 ```
+
+For self-managed Docker deployments, `EMAIL_DB_CLOUD` must use the Docker
+network host `postgres` inside the API and MCP containers. Do not rely on the
+server-local `.env` value if it uses `127.0.0.1`; browser sign-up, login, and
+OAuth OTP flows enqueue email from inside containers and will fail against a
+loopback-only PostgreSQL URL even when `/health` succeeds.
 
 For production delivery, set the server-local
 `/srv/jurisdigta/secrets/jurisdigta.env` to SMTP transport and include the SMTP

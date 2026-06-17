@@ -176,6 +176,46 @@ def test_mcp_login_page_can_generate_key(monkeypatch, tmp_path: Path) -> None:
     assert rows == [("mcp-login@example.com", "Your MCP login code")]
 
 
+def test_mcp_login_invalid_otp_returns_localized_html_warning(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    sign_up_response = api_client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421 900 111 231",
+            "email": "mcp-login-warning@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+
+    login_response = mcp_client.post(
+        "/MCP/login",
+        data={"email": "mcp-login-warning@example.com", "password": "secret-pass"},
+        headers={"accept-language": "sk-SK,sk;q=0.9,en;q=0.8"},
+    )
+    assert login_response.status_code == 200
+    assert '<html lang="sk">' in login_response.text
+    assert "Overenie MCP prihlasenia" in login_response.text
+
+    verify_response = mcp_client.post(
+        "/MCP/login/verify",
+        data={
+            "email": "mcp-login-warning@example.com",
+            "verification_code": "000000",
+            "expires_in_days": "7",
+        },
+        headers={"accept-language": "sk-SK,sk;q=0.9,en;q=0.8"},
+    )
+
+    assert verify_response.status_code == 400
+    assert "text/html" in verify_response.headers["content-type"]
+    assert "application/json" not in verify_response.headers["content-type"]
+    assert "Overovaci kod je neplatny alebo expiroval" in verify_response.text
+    assert 'name="email" type="hidden" value="mcp-login-warning@example.com"' in verify_response.text
+    assert 'name="expires_in_days" type="hidden" value="7"' in verify_response.text
+
+
 def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
@@ -238,6 +278,51 @@ def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path
         ).fetchall()
     assert ("mcp-new@example.com", "Your MCP sign-up code") in rows
     assert ("mcp-new@example.com", "Welcome to AI Jurisdiction") in rows
+
+
+def test_mcp_sign_up_invalid_otp_returns_localized_html_warning(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+
+    page_response = mcp_client.get("/MCP/sign-up", headers={"accept-language": "sk"})
+    assert page_response.status_code == 200
+    assert '<html lang="sk">' in page_response.text
+    assert "Cislo obcianskeho preukazu" in page_response.text
+
+    send_code_response = mcp_client.post(
+        "/MCP/sign-up",
+        data={
+            "email": "mcp-new-warning@example.com",
+            "phone_number": "+421 900 111 232",
+            "password": "secret-pass",
+            "first_name": "Mcp",
+            "last_name": "User",
+            "address": "Main 1",
+            "identity_card_number": "CD123456",
+            "city": "Bratislava",
+            "country": "SK",
+            "zip_code": "81101",
+            "data_processing_consent_accepted": "true",
+        },
+        headers={"accept-language": "sk"},
+    )
+    assert send_code_response.status_code == 200
+    assert "Overenie MCP registracie" in send_code_response.text
+
+    verify_response = mcp_client.post(
+        "/MCP/sign-up/verify",
+        data={
+            "pending_id": _extract_hidden_value(send_code_response.text, "pending_id"),
+            "email": _extract_hidden_value(send_code_response.text, "email"),
+            "verification_code": "000000",
+        },
+        headers={"accept-language": "sk"},
+    )
+
+    assert verify_response.status_code == 400
+    assert "text/html" in verify_response.headers["content-type"]
+    assert "Overovaci kod je neplatny alebo expiroval" in verify_response.text
+    assert 'name="pending_id" type="hidden"' in verify_response.text
+    assert 'name="email" type="hidden" value="mcp-new-warning@example.com"' in verify_response.text
 
 
 def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path) -> None:

@@ -230,6 +230,10 @@ This local Docker stack now runs:
 - PostgreSQL 16 with `pgvector`
 - API container built from the repository root so it includes `src/aijurisdictionagents`, migrations, and scripts
 - Dedicated MCP container on port `8070`, started from `app.mcp_main:app`
+- Browser-based MCP login, sign-up, and OAuth authorization pages localize user-facing copy from
+  `Accept-Language` (`sk` for Slovak browsers, English fallback). Invalid OTP submissions re-render
+  the same HTML form with an accessible warning instead of returning a JSON error body, while keeping
+  OTP values out of logs and response state.
 
 Useful overrides:
 

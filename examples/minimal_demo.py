@@ -14,3 +14,7 @@ print(
     "email_templates => non-OTP outbound emails use branded HTML with plain-text fallback; "
     "OTP/code emails remain plain text."
 )
+print(
+    "mcp_auth_ux => browser MCP login/sign-up pages localize Slovak/English via Accept-Language; "
+    "invalid OTP submissions re-render HTML warnings instead of JSON errors."
+)

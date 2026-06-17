@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Body, Depends, Form, Header, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app.laws_api import _laws_db_config, _read_laws_statistics
 from app.mcp_tokens import MCP_TOKEN_SCOPE, create_mcp_api_token, default_mcp_resource_url, validate_mcp_api_token
@@ -38,6 +38,115 @@ MCP_PROTOCOL_VERSION = "2025-03-26"
 _PUBLIC_TOOLS = {"getVersion", "getStatistics"}
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai")
 logger = logging.getLogger("aijuristiction-api.mcp")
+_MCP_SUPPORTED_LOCALES = {"en", "sk"}
+_MCP_TEXT: dict[str, dict[str, str]] = {
+    "en": {
+        "security_label": "Security and privacy",
+        "trust_otp": "One-time email verification protects account and API key access.",
+        "trust_scope": "Legal assistant access is scoped to the MCP server and expires by default.",
+        "trust_profile": "Profile data is used only for account creation and required access controls.",
+        "login_title": "Log in",
+        "login_subtitle": "Generate a short-lived MCP API key for your legal assistant connection.",
+        "login_note": "Use your JurisDigta account email and password. We will send an OTP code before creating a key.",
+        "email": "Email",
+        "password": "Password",
+        "expiry_days": "API key expiry days",
+        "send_otp": "Send OTP code",
+        "need_account": "Need an account?",
+        "sign_up_link": "Sign up",
+        "already_registered": "Already registered?",
+        "log_in_link": "Log in",
+        "oauth_title": "Authorize MCP access",
+        "oauth_subtitle": "Confirm your account before authorizing this MCP client.",
+        "oauth_note": "We will send an OTP code before completing authorization.",
+        "oauth_verify_title": "Verify MCP OAuth login",
+        "oauth_verify_subtitle": "Enter the one-time code from your email to authorize MCP access.",
+        "otp_sent": "An OTP code was sent to {email}.",
+        "otp_code": "OTP code",
+        "authorize": "Authorize",
+        "verify_login_title": "Verify MCP login",
+        "verify_login_subtitle": "Enter the one-time code from your email to generate the API key.",
+        "generate_key": "Generate MCP API key",
+        "create_account_title": "Create account",
+        "create_account_subtitle": "Register for JurisDigta MCP access with email verification and explicit data-processing consent.",
+        "create_account_note": "Enter the details needed to create your account. We will email a verification code before saving the account.",
+        "phone": "Phone number",
+        "first_name": "First name",
+        "last_name": "Last name",
+        "address": "Address",
+        "city": "City",
+        "country": "Country",
+        "zip_code": "ZIP code",
+        "id_card": "ID card number",
+        "consent": "I agree to data processing for account creation and MCP access.",
+        "send_verification": "Send verification code",
+        "verify_signup_title": "Verify MCP sign up",
+        "verify_signup_subtitle": "Enter the one-time code from your email to create the account.",
+        "create_account": "Create account",
+        "account_created_title": "MCP account created",
+        "account_created_subtitle": "Your JurisDigta MCP account is verified.",
+        "account_created": "Account {email} is verified. You can now log in and generate an MCP API key.",
+        "key_created_title": "MCP API key created",
+        "key_created_subtitle": "Copy the key now. It is shown once and expires at the configured time.",
+        "key_expires": "This key expires at {expires_at}.",
+        "key_note": "Use it as a Bearer token or as the x-mcp-api-key header when connecting your AI assistant to /MCP.",
+        "invalid_code": "The verification code is invalid or has expired. Check the code and try again.",
+        "expired_code": "This sign-up request expired. Start sign-up again to receive a new code.",
+    },
+    "sk": {
+        "security_label": "Bezpecnost a sukromie",
+        "trust_otp": "Jednorazove overenie e-mailom chrani pristup k uctu a API klucu.",
+        "trust_scope": "Pristup pravneho asistenta je obmedzeny na MCP server a predvolene expiruje.",
+        "trust_profile": "Profilove udaje sa pouzivaju iba na vytvorenie uctu a potrebne riadenie pristupu.",
+        "login_title": "Prihlasenie",
+        "login_subtitle": "Vygenerujte kratkodoby MCP API kluc pre pripojenie pravneho asistenta.",
+        "login_note": "Pouzite e-mail a heslo uctu JurisDigta. Pred vytvorenim kluca posleme OTP kod.",
+        "email": "E-mail",
+        "password": "Heslo",
+        "expiry_days": "Platnost API kluca v dnoch",
+        "send_otp": "Poslat OTP kod",
+        "need_account": "Potrebujete ucet?",
+        "sign_up_link": "Registrovat sa",
+        "already_registered": "Uz mate ucet?",
+        "log_in_link": "Prihlasit sa",
+        "oauth_title": "Autorizacia MCP pristupu",
+        "oauth_subtitle": "Pred autorizaciou MCP klienta potvrďte svoj ucet.",
+        "oauth_note": "Pred dokoncenim autorizacie posleme OTP kod.",
+        "oauth_verify_title": "Overenie MCP OAuth prihlasenia",
+        "oauth_verify_subtitle": "Zadajte jednorazovy kod z e-mailu na autorizaciu MCP pristupu.",
+        "otp_sent": "OTP kod bol odoslany na {email}.",
+        "otp_code": "OTP kod",
+        "authorize": "Autorizovat",
+        "verify_login_title": "Overenie MCP prihlasenia",
+        "verify_login_subtitle": "Zadajte jednorazovy kod z e-mailu na vygenerovanie API kluca.",
+        "generate_key": "Vygenerovat MCP API kluc",
+        "create_account_title": "Vytvorenie uctu",
+        "create_account_subtitle": "Registracia pristupu JurisDigta MCP s overenim e-mailu a vyslovnym suhlasom so spracovanim udajov.",
+        "create_account_note": "Zadajte udaje potrebne na vytvorenie uctu. Pred ulozenim uctu posleme overovaci kod e-mailom.",
+        "phone": "Telefonne cislo",
+        "first_name": "Meno",
+        "last_name": "Priezvisko",
+        "address": "Adresa",
+        "city": "Mesto",
+        "country": "Krajina",
+        "zip_code": "PSC",
+        "id_card": "Cislo obcianskeho preukazu",
+        "consent": "Suhlasim so spracovanim udajov na vytvorenie uctu a MCP pristup.",
+        "send_verification": "Poslat overovaci kod",
+        "verify_signup_title": "Overenie MCP registracie",
+        "verify_signup_subtitle": "Zadajte jednorazovy kod z e-mailu na vytvorenie uctu.",
+        "create_account": "Vytvorit ucet",
+        "account_created_title": "MCP ucet bol vytvoreny",
+        "account_created_subtitle": "Vas ucet JurisDigta MCP je overeny.",
+        "account_created": "Ucet {email} je overeny. Teraz sa mozete prihlasit a vygenerovat MCP API kluc.",
+        "key_created_title": "MCP API kluc bol vytvoreny",
+        "key_created_subtitle": "Skopirujte si kluc teraz. Zobrazi sa iba raz a expiruje v nastavenom case.",
+        "key_expires": "Tento kluc expiruje {expires_at}.",
+        "key_note": "Pouzite ho ako Bearer token alebo hlavicku x-mcp-api-key pri pripajani AI asistenta k /MCP.",
+        "invalid_code": "Overovaci kod je neplatny alebo expiroval. Skontrolujte kod a skuste to znova.",
+        "expired_code": "Tato registracna poziadavka expirovala. Spustite registraciu znova a dostanete novy kod.",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -124,13 +233,15 @@ async def mcp_json_rpc(
 
 
 @router.get("/login", response_class=HTMLResponse)
-def mcp_login_page() -> HTMLResponse:
-    return HTMLResponse(_login_form_html())
+def mcp_login_page(request: Request) -> HTMLResponse:
+    locale = _mcp_locale(request)
+    return HTMLResponse(_login_form_html(locale=locale))
 
 
 @router.get("/sign-up", response_class=HTMLResponse)
-def mcp_sign_up_page() -> HTMLResponse:
-    return HTMLResponse(_sign_up_form_html())
+def mcp_sign_up_page(request: Request) -> HTMLResponse:
+    locale = _mcp_locale(request)
+    return HTMLResponse(_sign_up_form_html(locale=locale))
 
 
 @oauth_router.get("/.well-known/oauth-protected-resource")
@@ -239,6 +350,7 @@ def oauth_authorize_page(
     )
     return HTMLResponse(
         _oauth_login_form_html(
+            locale=_mcp_locale(request),
             response_type=response_type,
             client_id=client_id,
             redirect_uri=redirect_uri,
@@ -292,6 +404,7 @@ def oauth_authorize_login(
     )
     return HTMLResponse(
         _oauth_otp_form_html(
+            locale=_mcp_locale(request),
             email=user.email,
             response_type=response_type,
             client_id=client_id,
@@ -317,7 +430,7 @@ def oauth_authorize_verify(
     verification_code: str = Form(...),
     state: str = Form(""),
     store: ApiDatabaseStore = Depends(get_user_store),
-) -> RedirectResponse:
+) -> Response:
     resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
     _validate_oauth_authorize_request(
         response_type=response_type,
@@ -332,7 +445,22 @@ def oauth_authorize_verify(
         email=_oauth_login_code_key(email=email),
         code=verification_code,
     ):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+        locale = _mcp_locale(request)
+        return HTMLResponse(
+            _oauth_otp_form_html(
+                locale=locale,
+                email=email,
+                response_type=response_type,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method,
+                state=state,
+                resource=resolved_resource,
+                warning_key="invalid_code",
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
     user = store.find_user_by_email(email=email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -393,6 +521,7 @@ def oauth_token(
 
 @router.post("/login", response_class=HTMLResponse)
 def mcp_login_submit(
+    request: Request,
     email: str = Form(...),
     password: str = Form(...),
     expires_in_days: int = Form(1),
@@ -417,11 +546,14 @@ def mcp_login_submit(
         ),
         metadata={"event": "mcp_login_code", "user_id": user.user_id},
     )
-    return HTMLResponse(_otp_form_html(email=user.email, expires_in_days=expires_in_days))
+    return HTMLResponse(
+        _otp_form_html(locale=_mcp_locale(request), email=user.email, expires_in_days=expires_in_days)
+    )
 
 
 @router.post("/login/verify", response_class=HTMLResponse)
 def mcp_login_verify(
+    request: Request,
     email: str = Form(...),
     verification_code: str = Form(...),
     expires_in_days: int = Form(1),
@@ -433,16 +565,25 @@ def mcp_login_verify(
         email=_mcp_login_code_key(email=email),
         code=verification_code,
     ):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+        return HTMLResponse(
+            _otp_form_html(
+                locale=_mcp_locale(request),
+                email=email,
+                expires_in_days=expires_in_days,
+                warning_key="invalid_code",
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
     user = store.find_user_by_email(email=email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     raw_key, expires_at = _issue_mcp_api_key(store=store, user=user, expires_in_days=expires_in_days)
-    return HTMLResponse(_key_created_html(api_key=raw_key, expires_at=expires_at))
+    return HTMLResponse(_key_created_html(locale=_mcp_locale(request), api_key=raw_key, expires_at=expires_at))
 
 
 @router.post("/sign-up", response_class=HTMLResponse)
 def mcp_sign_up_submit(
+    request: Request,
     email: str = Form(...),
     phone_number: str = Form(...),
     password: str = Form(...),
@@ -503,6 +644,7 @@ def mcp_sign_up_submit(
     )
     return HTMLResponse(
         _sign_up_otp_form_html(
+            locale=_mcp_locale(request),
             pending_id=pending_id,
             email=email,
         )
@@ -511,8 +653,10 @@ def mcp_sign_up_submit(
 
 @router.post("/sign-up/verify", response_class=HTMLResponse)
 def mcp_sign_up_verify(
+    request: Request,
     pending_id: str = Form(...),
     verification_code: str = Form(...),
+    email: str = Form(""),
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> HTMLResponse:
@@ -520,10 +664,26 @@ def mcp_sign_up_verify(
         email=_mcp_sign_up_code_key(pending_id=pending_id),
         code=verification_code,
     ):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+        return HTMLResponse(
+            _sign_up_otp_form_html(
+                locale=_mcp_locale(request),
+                pending_id=pending_id,
+                email=email,
+                warning_key="invalid_code",
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
     pending_json = store.consume_mcp_pending_signup(pending_id=pending_id)
     if pending_json is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Expired sign-up request")
+        return HTMLResponse(
+            _sign_up_otp_form_html(
+                locale=_mcp_locale(request),
+                pending_id=pending_id,
+                email=email,
+                warning_key="expired_code",
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
     pending = json.loads(pending_json)
     try:
         user = store.create_user(
@@ -546,7 +706,7 @@ def mcp_sign_up_verify(
             raise
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists") from exc
     queue_registration_email(scheduler=scheduler, user=user)
-    return HTMLResponse(_sign_up_complete_html(email=user.email))
+    return HTMLResponse(_sign_up_complete_html(locale=_mcp_locale(request), email=user.email))
 
 
 async def _read_json_rpc_payload(request: Request) -> Any:
@@ -1226,9 +1386,37 @@ def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int
     return resolved
 
 
-def _mcp_auth_page_html(*, title: str, subtitle: str, body_html: str, footer_html: str = "") -> str:
+def _mcp_locale(request: Request) -> str:
+    header = request.headers.get("accept-language", "")
+    for item in header.split(","):
+        language = item.split(";", 1)[0].strip().lower()
+        primary = language.split("-", 1)[0]
+        if primary in _MCP_SUPPORTED_LOCALES:
+            return primary
+    return "en"
+
+
+def _mcp_t(locale: str, key: str, **values: str) -> str:
+    text = _MCP_TEXT.get(locale, _MCP_TEXT["en"]).get(key, _MCP_TEXT["en"][key])
+    return text.format(**values)
+
+
+def _warning_html(*, locale: str, warning_key: str | None) -> str:
+    if not warning_key:
+        return ""
+    return f'    <div class="alert" role="alert">{escape(_mcp_t(locale, warning_key), quote=False)}</div>\n'
+
+
+def _mcp_auth_page_html(
+    *,
+    locale: str,
+    title: str,
+    subtitle: str,
+    body_html: str,
+    footer_html: str = "",
+) -> str:
     return f"""<!doctype html>
-<html lang="en">
+<html lang="{escape(locale, quote=True)}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1349,6 +1537,15 @@ def _mcp_auth_page_html(*, title: str, subtitle: str, body_html: str, footer_htm
       color: var(--muted);
       font-size: 0.92rem;
     }}
+    .alert {{
+      margin: 0 0 18px;
+      border: 1px solid #b45309;
+      border-radius: 8px;
+      background: #fff7ed;
+      color: #7c2d12;
+      padding: 12px 14px;
+      font-weight: 700;
+    }}
     input {{
       width: 100%;
       min-height: 46px;
@@ -1422,6 +1619,13 @@ def _mcp_auth_page_html(*, title: str, subtitle: str, body_html: str, footer_htm
       .auth-card {{ padding: 22px; }}
       .form-grid {{ grid-template-columns: 1fr; }}
     }}
+    @media (prefers-color-scheme: dark) {{
+      .alert {{
+        border-color: #f59e0b;
+        background: #2b1d0d;
+        color: #fed7aa;
+      }}
+    }}
   </style>
 </head>
 <body>
@@ -1430,10 +1634,10 @@ def _mcp_auth_page_html(*, title: str, subtitle: str, body_html: str, footer_htm
       <div class="brand-mark">JurisDigta MCP</div>
       <h1 id="mcp-auth-title">{escape(title, quote=False)}</h1>
       <p class="subtitle">{escape(subtitle, quote=False)}</p>
-      <ul class="trust-list" aria-label="Security and privacy">
-        <li>One-time email verification protects account and API key access.</li>
-        <li>Legal assistant access is scoped to the MCP server and expires by default.</li>
-        <li>Profile data is used only for account creation and required access controls.</li>
+      <ul class="trust-list" aria-label="{escape(_mcp_t(locale, "security_label"), quote=True)}">
+        <li>{escape(_mcp_t(locale, "trust_otp"), quote=False)}</li>
+        <li>{escape(_mcp_t(locale, "trust_scope"), quote=False)}</li>
+        <li>{escape(_mcp_t(locale, "trust_profile"), quote=False)}</li>
       </ul>
     </section>
     <section class="auth-card" aria-label="{escape(title, quote=True)} form">
@@ -1445,32 +1649,37 @@ def _mcp_auth_page_html(*, title: str, subtitle: str, body_html: str, footer_htm
 </html>"""
 
 
-def _login_form_html() -> str:
+def _login_form_html(*, locale: str) -> str:
     return _mcp_auth_page_html(
-        title="Log in",
-        subtitle="Generate a short-lived MCP API key for your legal assistant connection.",
-        body_html="""    <p class="form-note">Use your JurisDigta account email and password. We will send an OTP code before creating a key.</p>
+        locale=locale,
+        title=_mcp_t(locale, "login_title"),
+        subtitle=_mcp_t(locale, "login_subtitle"),
+        body_html=f"""    <p class="form-note">{escape(_mcp_t(locale, "login_note"), quote=False)}</p>
     <form method="post" action="/MCP/login">
       <div class="form-grid">
-        <label class="field wide">Email
+        <label class="field wide">{escape(_mcp_t(locale, "email"), quote=False)}
           <input name="email" type="email" autocomplete="username" required>
         </label>
-        <label class="field wide">Password
+        <label class="field wide">{escape(_mcp_t(locale, "password"), quote=False)}
           <input name="password" type="password" autocomplete="current-password" required>
         </label>
-        <label class="field wide">API key expiry days
+        <label class="field wide">{escape(_mcp_t(locale, "expiry_days"), quote=False)}
           <input name="expires_in_days" type="number" min="1" max="365" value="1">
         </label>
       </div>
-      <button class="primary-button" type="submit">Send OTP code</button>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "send_otp"), quote=False)}</button>
     </form>
 """,
-        footer_html='    <p class="auth-footer">Need an account? <a href="/MCP/sign-up">Sign up</a></p>',
+        footer_html=(
+            f'    <p class="auth-footer">{escape(_mcp_t(locale, "need_account"), quote=False)} '
+            f'<a href="/MCP/sign-up">{escape(_mcp_t(locale, "sign_up_link"), quote=False)}</a></p>'
+        ),
     )
 
 
 def _oauth_login_form_html(
     *,
+    locale: str,
     response_type: str,
     client_id: str,
     redirect_uri: str,
@@ -1491,28 +1700,33 @@ def _oauth_login_form_html(
         }
     )
     return _mcp_auth_page_html(
-        title="Authorize MCP access",
-        subtitle="Confirm your account before authorizing this MCP client.",
-        body_html=f"""    <p class="form-note">We will send an OTP code before completing authorization.</p>
+        locale=locale,
+        title=_mcp_t(locale, "oauth_title"),
+        subtitle=_mcp_t(locale, "oauth_subtitle"),
+        body_html=f"""    <p class="form-note">{escape(_mcp_t(locale, "oauth_note"), quote=False)}</p>
     <form method="post" action="/oauth/authorize/login">
 {hidden}
       <div class="form-grid">
-        <label class="field wide">Email
+        <label class="field wide">{escape(_mcp_t(locale, "email"), quote=False)}
           <input name="email" type="email" autocomplete="username" required>
         </label>
-        <label class="field wide">Password
+        <label class="field wide">{escape(_mcp_t(locale, "password"), quote=False)}
           <input name="password" type="password" autocomplete="current-password" required>
         </label>
       </div>
-      <button class="primary-button" type="submit">Send OTP code</button>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "send_otp"), quote=False)}</button>
     </form>
 """,
-        footer_html='    <p class="auth-footer">Need an account? <a href="/MCP/sign-up">Sign up</a></p>',
+        footer_html=(
+            f'    <p class="auth-footer">{escape(_mcp_t(locale, "need_account"), quote=False)} '
+            f'<a href="/MCP/sign-up">{escape(_mcp_t(locale, "sign_up_link"), quote=False)}</a></p>'
+        ),
     )
 
 
 def _oauth_otp_form_html(
     *,
+    locale: str,
     email: str,
     response_type: str,
     client_id: str,
@@ -1521,6 +1735,7 @@ def _oauth_otp_form_html(
     code_challenge_method: str,
     state: str,
     resource: str,
+    warning_key: str | None = None,
 ) -> str:
     hidden = _hidden_inputs(
         {
@@ -1536,104 +1751,119 @@ def _oauth_otp_form_html(
     )
     escaped_email = escape(email, quote=False)
     return _mcp_auth_page_html(
-        title="Verify MCP OAuth login",
-        subtitle="Enter the one-time code from your email to authorize MCP access.",
-        body_html=f"""    <p class="email-note">An OTP code was sent to {escaped_email}.</p>
+        locale=locale,
+        title=_mcp_t(locale, "oauth_verify_title"),
+        subtitle=_mcp_t(locale, "oauth_verify_subtitle"),
+        body_html=f"""{_warning_html(locale=locale, warning_key=warning_key)}    <p class="email-note">{escape(_mcp_t(locale, "otp_sent", email=escaped_email), quote=False)}</p>
     <form method="post" action="/oauth/authorize/verify">
 {hidden}
-      <label class="field wide">OTP code
+      <label class="field wide">{escape(_mcp_t(locale, "otp_code"), quote=False)}
         <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
       </label>
-      <button class="primary-button" type="submit">Authorize</button>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "authorize"), quote=False)}</button>
     </form>
 """,
     )
 
 
-def _otp_form_html(*, email: str, expires_in_days: int) -> str:
+def _otp_form_html(
+    *,
+    locale: str,
+    email: str,
+    expires_in_days: int,
+    warning_key: str | None = None,
+) -> str:
     escaped_email = escape(email, quote=True)
     return _mcp_auth_page_html(
-        title="Verify MCP login",
-        subtitle="Enter the one-time code from your email to generate the API key.",
-        body_html=f"""    <p class="email-note">An OTP code was sent to {escaped_email}.</p>
+        locale=locale,
+        title=_mcp_t(locale, "verify_login_title"),
+        subtitle=_mcp_t(locale, "verify_login_subtitle"),
+        body_html=f"""{_warning_html(locale=locale, warning_key=warning_key)}    <p class="email-note">{escape(_mcp_t(locale, "otp_sent", email=escaped_email), quote=False)}</p>
     <form method="post" action="/MCP/login/verify">
       <input name="email" type="hidden" value="{escaped_email}">
       <input name="expires_in_days" type="hidden" value="{expires_in_days}">
-      <label class="field wide">OTP code
+      <label class="field wide">{escape(_mcp_t(locale, "otp_code"), quote=False)}
         <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
       </label>
-      <button class="primary-button" type="submit">Generate MCP API key</button>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "generate_key"), quote=False)}</button>
     </form>
 """,
     )
 
 
-def _sign_up_form_html() -> str:
+def _sign_up_form_html(*, locale: str) -> str:
     return _mcp_auth_page_html(
-        title="Create account",
-        subtitle="Register for JurisDigta MCP access with email verification and explicit data-processing consent.",
-        body_html="""    <p class="form-note">Enter the details needed to create your account. We will email a verification code before saving the account.</p>
+        locale=locale,
+        title=_mcp_t(locale, "create_account_title"),
+        subtitle=_mcp_t(locale, "create_account_subtitle"),
+        body_html=f"""    <p class="form-note">{escape(_mcp_t(locale, "create_account_note"), quote=False)}</p>
     <form method="post" action="/MCP/sign-up">
       <div class="form-grid">
-        <label class="field wide">Email
+        <label class="field wide">{escape(_mcp_t(locale, "email"), quote=False)}
           <input name="email" type="email" autocomplete="username" required>
         </label>
-        <label class="field">Phone number
+        <label class="field">{escape(_mcp_t(locale, "phone"), quote=False)}
           <input name="phone_number" type="tel" autocomplete="tel" required>
         </label>
-        <label class="field">Password
+        <label class="field">{escape(_mcp_t(locale, "password"), quote=False)}
           <input name="password" type="password" autocomplete="new-password" required>
         </label>
-        <label class="field">First name
+        <label class="field">{escape(_mcp_t(locale, "first_name"), quote=False)}
           <input name="first_name" type="text" autocomplete="given-name" required>
         </label>
-        <label class="field">Last name
+        <label class="field">{escape(_mcp_t(locale, "last_name"), quote=False)}
           <input name="last_name" type="text" autocomplete="family-name" required>
         </label>
-        <label class="field wide">Address
+        <label class="field wide">{escape(_mcp_t(locale, "address"), quote=False)}
           <input name="address" type="text" autocomplete="street-address" required>
         </label>
-        <label class="field">City
+        <label class="field">{escape(_mcp_t(locale, "city"), quote=False)}
           <input name="city" type="text" autocomplete="address-level2">
         </label>
-        <label class="field">Country
+        <label class="field">{escape(_mcp_t(locale, "country"), quote=False)}
           <input name="country" type="text" autocomplete="country-name">
         </label>
-        <label class="field">ZIP code
+        <label class="field">{escape(_mcp_t(locale, "zip_code"), quote=False)}
           <input name="zip_code" type="text" autocomplete="postal-code">
         </label>
-        <label class="field">ID card number
+        <label class="field">{escape(_mcp_t(locale, "id_card"), quote=False)}
           <input name="identity_card_number" type="text" required>
         </label>
         <label class="checkbox-field">
           <input name="data_processing_consent_accepted" type="checkbox" value="true" required>
-          <span>I agree to data processing for account creation and MCP access.</span>
+          <span>{escape(_mcp_t(locale, "consent"), quote=False)}</span>
         </label>
       </div>
-      <button class="primary-button" type="submit">Send verification code</button>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "send_verification"), quote=False)}</button>
     </form>
 """,
-        footer_html='    <p class="auth-footer">Already registered? <a href="/MCP/login">Log in</a></p>',
+        footer_html=(
+            f'    <p class="auth-footer">{escape(_mcp_t(locale, "already_registered"), quote=False)} '
+            f'<a href="/MCP/login">{escape(_mcp_t(locale, "log_in_link"), quote=False)}</a></p>'
+        ),
     )
 
 
 def _sign_up_otp_form_html(
     *,
+    locale: str,
     pending_id: str,
     email: str,
+    warning_key: str | None = None,
 ) -> str:
-    hidden_html = _hidden_inputs({"pending_id": pending_id})
+    hidden_html = _hidden_inputs({"pending_id": pending_id, "email": email})
     escaped_email = escape(email, quote=False)
     return _mcp_auth_page_html(
-        title="Verify MCP sign up",
-        subtitle="Enter the one-time code from your email to create the account.",
-        body_html=f"""    <p class="email-note">An OTP code was sent to {escaped_email}.</p>
+        locale=locale,
+        title=_mcp_t(locale, "verify_signup_title"),
+        subtitle=_mcp_t(locale, "verify_signup_subtitle"),
+        body_html=f"""{_warning_html(locale=locale, warning_key=warning_key)}    <p class="email-note">{escape(_mcp_t(locale, "otp_sent", email=escaped_email), quote=False)}</p>
     <form method="post" action="/MCP/sign-up/verify">
 {hidden_html}
-      <label class="field wide">OTP code
+      <label class="field wide">{escape(_mcp_t(locale, "otp_code"), quote=False)}
         <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
       </label>
-      <button class="primary-button" type="submit">Create account</button>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "create_account"), quote=False)}</button>
     </form>
 """,
     )
@@ -1646,25 +1876,27 @@ def _hidden_inputs(values: dict[str, str]) -> str:
     )
 
 
-def _sign_up_complete_html(*, email: str) -> str:
+def _sign_up_complete_html(*, locale: str, email: str) -> str:
     escaped_email = escape(email, quote=False)
     return _mcp_auth_page_html(
-        title="MCP account created",
-        subtitle="Your JurisDigta MCP account is verified.",
-        body_html=f"""    <p class="email-note">Account {escaped_email} is verified. You can now log in and generate an MCP API key.</p>
-    <p class="auth-footer"><a href="/MCP/login">Log in</a></p>
+        locale=locale,
+        title=_mcp_t(locale, "account_created_title"),
+        subtitle=_mcp_t(locale, "account_created_subtitle"),
+        body_html=f"""    <p class="email-note">{escape(_mcp_t(locale, "account_created", email=escaped_email), quote=False)}</p>
+    <p class="auth-footer"><a href="/MCP/login">{escape(_mcp_t(locale, "log_in_link"), quote=False)}</a></p>
 """,
     )
 
 
-def _key_created_html(*, api_key: str, expires_at: str) -> str:
+def _key_created_html(*, locale: str, api_key: str, expires_at: str) -> str:
     escaped_api_key = escape(api_key, quote=False)
     escaped_expires_at = escape(expires_at, quote=False)
     return _mcp_auth_page_html(
-        title="MCP API key created",
-        subtitle="Copy the key now. It is shown once and expires at the configured time.",
-        body_html=f"""    <p class="email-note">This key expires at {escaped_expires_at}.</p>
+        locale=locale,
+        title=_mcp_t(locale, "key_created_title"),
+        subtitle=_mcp_t(locale, "key_created_subtitle"),
+        body_html=f"""    <p class="email-note">{escape(_mcp_t(locale, "key_expires", expires_at=escaped_expires_at), quote=False)}</p>
     <pre class="key-output">{escaped_api_key}</pre>
-    <p class="form-note">Use it as a Bearer token or as the x-mcp-api-key header when connecting your AI assistant to /MCP.</p>
+    <p class="form-note">{escape(_mcp_t(locale, "key_note"), quote=False)}</p>
 """,
     )
