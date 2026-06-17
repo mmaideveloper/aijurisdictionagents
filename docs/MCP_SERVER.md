@@ -42,6 +42,7 @@ curl http://127.0.0.1:8070/
 
 - Protected resource metadata: `GET /.well-known/oauth-protected-resource/MCP`
 - Authorization server metadata: `GET /.well-known/oauth-authorization-server`
+- Claude/path-derived authorization server metadata: `GET /.well-known/oauth-authorization-server/MCP`
 - Dynamic client registration endpoint: `POST /oauth/register`
 - Authorization endpoint: `GET /oauth/authorize`
 - Token endpoint: `POST /oauth/token`
@@ -98,6 +99,7 @@ Discovery endpoints:
 
 - `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`
 - `https://mcp.jurisdigta.eu/.well-known/oauth-authorization-server`
+- `https://mcp.jurisdigta.eu/.well-known/oauth-authorization-server/MCP`
 - `https://mcp.jurisdigta.eu/oauth/register`
 
 Client documentation:

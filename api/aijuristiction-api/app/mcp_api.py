@@ -263,6 +263,7 @@ def oauth_mcp_protected_resource_metadata(request: Request) -> dict[str, Any]:
 
 
 @oauth_router.get("/.well-known/oauth-authorization-server")
+@oauth_router.get("/.well-known/oauth-authorization-server/MCP")
 def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
     base_url = _base_url(request)
     return {

@@ -464,6 +464,10 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
         "/.well-known/oauth-authorization-server",
         headers={"x-forwarded-proto": "http", "x-forwarded-host": "internal.local"},
     )
+    mcp_path_authorization_metadata = mcp_client.get(
+        "/.well-known/oauth-authorization-server/MCP",
+        headers={"x-forwarded-proto": "http", "x-forwarded-host": "internal.local"},
+    )
 
     assert protected_metadata.status_code == 200
     assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
@@ -472,6 +476,8 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
     assert authorization_metadata.json()["registration_endpoint"] == "https://mcp.jurisdigta.eu/oauth/register"
+    assert mcp_path_authorization_metadata.status_code == 200
+    assert mcp_path_authorization_metadata.json() == authorization_metadata.json()
 
 
 def test_oauth_registration_rejects_unregistered_redirect_host(monkeypatch, tmp_path: Path) -> None:
