@@ -199,7 +199,6 @@ async def mcp_json_rpc(
     request: Request,
     authorization: str | None = Header(default=None),
     x_mcp_api_key: str | None = Header(default=None),
-    store: ApiDatabaseStore = Depends(get_user_store),
 ) -> JSONResponse:
     started_at = time.perf_counter()
     payload = await _read_json_rpc_payload(request)
@@ -213,16 +212,19 @@ async def mcp_json_rpc(
         _payload_message_count(payload),
         ",".join(_payload_methods(payload)),
     )
-    if _payload_requires_auth(payload) and not _extract_mcp_api_key(
+    payload_requires_auth = _payload_requires_auth(payload)
+    api_key = _extract_mcp_api_key(
         authorization=authorization,
         x_mcp_api_key=x_mcp_api_key,
-    ):
+    )
+    if payload_requires_auth and not api_key:
         logger.warning("mcp_json_rpc_auth_challenge reason=missing_bearer_token")
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content=_json_rpc_error(_first_payload_id(payload), 401, "Tool requires OAuth authorization"),
             headers={"WWW-Authenticate": _www_authenticate_header(request)},
         )
+    store = get_user_store() if payload_requires_auth else None
     response = _handle_json_rpc(
         payload=payload,
         authorization=authorization,
@@ -739,7 +741,7 @@ def _handle_json_rpc(
     payload: Any,
     authorization: str | None,
     x_mcp_api_key: str | None,
-    store: ApiDatabaseStore,
+    store: ApiDatabaseStore | None,
 ) -> JSONResponse:
     if isinstance(payload, list):
         logger.info("mcp_json_rpc_batch_started message_count=%d", len(payload))
@@ -772,7 +774,7 @@ def _handle_json_rpc_message(
     message: Any,
     authorization: str | None,
     x_mcp_api_key: str | None,
-    store: ApiDatabaseStore,
+    store: ApiDatabaseStore | None,
 ) -> dict[str, Any] | None:
     if not isinstance(message, dict):
         logger.warning("mcp_json_rpc_invalid_message reason=non_object")
@@ -852,7 +854,7 @@ def _require_auth_for_tool(
     tool_name: str,
     authorization: str | None,
     x_mcp_api_key: str | None,
-    store: ApiDatabaseStore,
+    store: ApiDatabaseStore | None,
 ) -> None:
     if tool_name in _PUBLIC_TOOLS:
         logger.info("mcp_tool_auth_skipped tool=%s reason=public_tool", tool_name)
@@ -861,6 +863,9 @@ def _require_auth_for_tool(
     if not api_key:
         logger.warning("mcp_tool_auth_failed tool=%s reason=missing_api_key", tool_name)
         raise HTTPException(status_code=401, detail="Tool requires a valid MCP API key")
+    if store is None:
+        logger.error("mcp_tool_auth_failed tool=%s reason=missing_user_store", tool_name)
+        raise HTTPException(status_code=500, detail="MCP user store is unavailable")
     user = _authenticate_mcp_api_token(api_key=api_key, store=store)
     logger.info("mcp_tool_auth_succeeded tool=%s user_id=%s", tool_name, user.user_id)
 
