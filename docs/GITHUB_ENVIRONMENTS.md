@@ -324,6 +324,8 @@ the selected GitHub Environment contains stale or mismatched signing secrets.
 
 These are used by `.github/workflows/self_managed_prod_deploy.yml` to deploy API, MCP, frontend web, the document processor, laws collector, and system status monitoring to the Ubuntu `jurisdigta-server`.
 
+The workflow must run on a repository self-hosted runner with labels `self-hosted`, `Linux`, `X64`, and `jurisdigta-prod`. Keep this runner on the trusted server or trusted private network that can reach `jurisdigta-server` over SSH. Do not run the production deployment from a GitHub-hosted runner when `JURISDIGTA_SSH_HOST` is a private LAN address such as `192.168.1.50`.
+
 The workflow does not store application runtime secrets in GitHub. Keep Azure OpenAI, PostgreSQL, SMTP, MCP JWT, and API secrets in the server-local file:
 
 ```text
@@ -338,7 +340,7 @@ Required `prod` GitHub Environment variable:
 
 | Variable | Purpose |
 | --- | --- |
-| `JURISDIGTA_SSH_HOST` | SSH host or DNS name for `jurisdigta-server`; use a public/tunnel-reachable hostname for GitHub-hosted runners |
+| `JURISDIGTA_SSH_HOST` | SSH host or DNS name for `jurisdigta-server`; `192.168.1.50` is valid only when the self-hosted `jurisdigta-prod` runner can reach that private LAN address |
 
 Optional `prod` GitHub Environment variables:
 
