@@ -145,7 +145,10 @@ def test_mcp_login_page_can_generate_key(monkeypatch, tmp_path: Path) -> None:
 
     page_response = mcp_client.get("/MCP/login")
     assert page_response.status_code == 200
+    assert "JurisDigta MCP" in page_response.text
+    assert "auth-shell" in page_response.text
     assert "Send OTP code" in page_response.text
+    assert "AIJurisdiction MCP Login" not in page_response.text
 
     login_response = mcp_client.post(
         "/MCP/login",
@@ -179,7 +182,10 @@ def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path
 
     page_response = mcp_client.get("/MCP/sign-up")
     assert page_response.status_code == 200
+    assert "JurisDigta MCP" in page_response.text
+    assert "auth-shell" in page_response.text
     assert "ID card number" in page_response.text
+    assert "AIJurisdiction MCP Sign up" not in page_response.text
 
     send_code_response = mcp_client.post(
         "/MCP/sign-up",

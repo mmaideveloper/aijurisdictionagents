@@ -1164,23 +1164,247 @@ def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int
     return resolved
 
 
-def _login_form_html() -> str:
-    return """<!doctype html>
+def _mcp_auth_page_html(*, title: str, subtitle: str, body_html: str, footer_html: str = "") -> str:
+    return f"""<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>AIJurisdiction MCP Login</title></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(title, quote=False)} - JurisDigta MCP</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --background: #f5f7fb;
+      --surface: #ffffff;
+      --surface-muted: #eef3f7;
+      --text: #16202a;
+      --muted: #5a6878;
+      --line: #d8e1ea;
+      --primary: #176a63;
+      --primary-dark: #0f4e49;
+      --accent: #b4572b;
+      --focus: #1b7f75;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(135deg, rgba(23, 106, 99, 0.12), rgba(180, 87, 43, 0.08)),
+        var(--background);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }}
+    a {{ color: var(--primary-dark); font-weight: 700; text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    .auth-shell {{
+      width: min(1120px, calc(100% - 32px));
+      min-height: 100vh;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+      gap: 32px;
+      align-items: center;
+      padding: 48px 0;
+    }}
+    .brand-panel {{
+      padding: 8px;
+    }}
+    .brand-mark {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      font-weight: 800;
+      letter-spacing: 0;
+      color: var(--primary-dark);
+      text-transform: uppercase;
+    }}
+    .brand-mark::before {{
+      content: "";
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      box-shadow: 0 10px 24px rgba(23, 106, 99, 0.18);
+    }}
+    h1 {{
+      margin: 24px 0 14px;
+      font-size: clamp(2.15rem, 6vw, 4.25rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }}
+    .subtitle {{
+      max-width: 580px;
+      color: var(--muted);
+      font-size: 1.05rem;
+    }}
+    .trust-list {{
+      display: grid;
+      gap: 10px;
+      margin: 28px 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--muted);
+    }}
+    .trust-list li {{
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }}
+    .trust-list li::before {{
+      content: "";
+      flex: 0 0 auto;
+      width: 9px;
+      height: 9px;
+      margin-top: 8px;
+      border-radius: 999px;
+      background: var(--accent);
+    }}
+    .auth-card {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: 0 24px 70px rgba(22, 32, 42, 0.12);
+      padding: 28px;
+    }}
+    .form-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }}
+    .form-grid .wide, .field.wide {{ grid-column: 1 / -1; }}
+    .field {{
+      display: grid;
+      gap: 7px;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 0.92rem;
+    }}
+    .hint, .form-note, .email-note {{
+      color: var(--muted);
+      font-size: 0.92rem;
+    }}
+    input {{
+      width: 100%;
+      min-height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      padding: 10px 12px;
+    }}
+    input:focus {{
+      border-color: var(--focus);
+      box-shadow: 0 0 0 3px rgba(27, 127, 117, 0.16);
+      outline: none;
+    }}
+    .checkbox-field {{
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-muted);
+      color: var(--muted);
+      font-weight: 600;
+    }}
+    .checkbox-field input {{
+      width: 18px;
+      min-width: 18px;
+      height: 18px;
+      min-height: 18px;
+      margin-top: 2px;
+      accent-color: var(--primary);
+    }}
+    .primary-button {{
+      width: 100%;
+      min-height: 48px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--primary);
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+      margin-top: 18px;
+      padding: 12px 16px;
+    }}
+    .primary-button:hover {{ background: var(--primary-dark); }}
+    .auth-footer {{
+      margin: 18px 0 0;
+      color: var(--muted);
+      text-align: center;
+    }}
+    .key-output {{
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #101820;
+      color: #f6fbff;
+      padding: 16px;
+    }}
+    @media (max-width: 820px) {{
+      .auth-shell {{
+        grid-template-columns: 1fr;
+        gap: 20px;
+        padding: 28px 0;
+      }}
+      .brand-panel {{ padding: 0; }}
+      .auth-card {{ padding: 22px; }}
+      .form-grid {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
 <body>
-  <main>
-    <h1>AIJurisdiction MCP Login</h1>
-    <form method="post" action="/MCP/login">
-      <label>Username or email <input name="email" type="email" autocomplete="username" required></label><br>
-      <label>Password <input name="password" type="password" autocomplete="current-password" required></label><br>
-      <label>API key expiry days <input name="expires_in_days" type="number" min="1" max="365" value="1"></label><br>
-      <button type="submit">Send OTP code</button>
-    </form>
-    <p><a href="/MCP/sign-up">Sign up</a></p>
+  <main class="auth-shell">
+    <section class="brand-panel" aria-labelledby="mcp-auth-title">
+      <div class="brand-mark">JurisDigta MCP</div>
+      <h1 id="mcp-auth-title">{escape(title, quote=False)}</h1>
+      <p class="subtitle">{escape(subtitle, quote=False)}</p>
+      <ul class="trust-list" aria-label="Security and privacy">
+        <li>One-time email verification protects account and API key access.</li>
+        <li>Legal assistant access is scoped to the MCP server and expires by default.</li>
+        <li>Profile data is used only for account creation and required access controls.</li>
+      </ul>
+    </section>
+    <section class="auth-card" aria-label="{escape(title, quote=True)} form">
+{body_html}
+{footer_html}
+    </section>
   </main>
 </body>
 </html>"""
+
+
+def _login_form_html() -> str:
+    return _mcp_auth_page_html(
+        title="Log in",
+        subtitle="Generate a short-lived MCP API key for your legal assistant connection.",
+        body_html="""    <p class="form-note">Use your JurisDigta account email and password. We will send an OTP code before creating a key.</p>
+    <form method="post" action="/MCP/login">
+      <div class="form-grid">
+        <label class="field wide">Email
+          <input name="email" type="email" autocomplete="username" required>
+        </label>
+        <label class="field wide">Password
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <label class="field wide">API key expiry days
+          <input name="expires_in_days" type="number" min="1" max="365" value="1">
+        </label>
+      </div>
+      <button class="primary-button" type="submit">Send OTP code</button>
+    </form>
+""",
+        footer_html='    <p class="auth-footer">Need an account? <a href="/MCP/sign-up">Sign up</a></p>',
+    )
 
 
 def _oauth_login_form_html(
@@ -1204,22 +1428,25 @@ def _oauth_login_form_html(
             "resource": resource,
         }
     )
-    return f"""<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Authorize MCP access</title></head>
-<body>
-  <main>
-    <h1>Authorize MCP access</h1>
+    return _mcp_auth_page_html(
+        title="Authorize MCP access",
+        subtitle="Confirm your account before authorizing this MCP client.",
+        body_html=f"""    <p class="form-note">We will send an OTP code before completing authorization.</p>
     <form method="post" action="/oauth/authorize/login">
 {hidden}
-      <label>Email <input name="email" type="email" autocomplete="username" required></label><br>
-      <label>Password <input name="password" type="password" autocomplete="current-password" required></label><br>
-      <button type="submit">Send OTP code</button>
+      <div class="form-grid">
+        <label class="field wide">Email
+          <input name="email" type="email" autocomplete="username" required>
+        </label>
+        <label class="field wide">Password
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+      </div>
+      <button class="primary-button" type="submit">Send OTP code</button>
     </form>
-    <p><a href="/MCP/sign-up">Sign up</a></p>
-  </main>
-</body>
-</html>"""
+""",
+        footer_html='    <p class="auth-footer">Need an account? <a href="/MCP/sign-up">Sign up</a></p>',
+    )
 
 
 def _oauth_otp_form_html(
@@ -1246,68 +1473,86 @@ def _oauth_otp_form_html(
         }
     )
     escaped_email = escape(email, quote=False)
-    return f"""<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Verify MCP OAuth login</title></head>
-<body>
-  <main>
-    <h1>Verify MCP OAuth login</h1>
-    <p>An OTP code was sent to {escaped_email}.</p>
+    return _mcp_auth_page_html(
+        title="Verify MCP OAuth login",
+        subtitle="Enter the one-time code from your email to authorize MCP access.",
+        body_html=f"""    <p class="email-note">An OTP code was sent to {escaped_email}.</p>
     <form method="post" action="/oauth/authorize/verify">
 {hidden}
-      <label>OTP code <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required></label><br>
-      <button type="submit">Authorize</button>
+      <label class="field wide">OTP code
+        <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
+      </label>
+      <button class="primary-button" type="submit">Authorize</button>
     </form>
-  </main>
-</body>
-</html>"""
+""",
+    )
 
 
 def _otp_form_html(*, email: str, expires_in_days: int) -> str:
     escaped_email = escape(email, quote=True)
-    return f"""<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Verify MCP login</title></head>
-<body>
-  <main>
-    <h1>Verify MCP login</h1>
-    <p>An OTP code was sent to {escaped_email}.</p>
+    return _mcp_auth_page_html(
+        title="Verify MCP login",
+        subtitle="Enter the one-time code from your email to generate the API key.",
+        body_html=f"""    <p class="email-note">An OTP code was sent to {escaped_email}.</p>
     <form method="post" action="/MCP/login/verify">
       <input name="email" type="hidden" value="{escaped_email}">
       <input name="expires_in_days" type="hidden" value="{expires_in_days}">
-      <label>OTP code <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required></label><br>
-      <button type="submit">Generate MCP API key</button>
+      <label class="field wide">OTP code
+        <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
+      </label>
+      <button class="primary-button" type="submit">Generate MCP API key</button>
     </form>
-  </main>
-</body>
-</html>"""
+""",
+    )
 
 
 def _sign_up_form_html() -> str:
-    return """<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>AIJurisdiction MCP Sign up</title></head>
-<body>
-  <main>
-    <h1>AIJurisdiction MCP Sign up</h1>
+    return _mcp_auth_page_html(
+        title="Create account",
+        subtitle="Register for JurisDigta MCP access with email verification and explicit data-processing consent.",
+        body_html="""    <p class="form-note">Enter the details needed to create your account. We will email a verification code before saving the account.</p>
     <form method="post" action="/MCP/sign-up">
-      <label>Email <input name="email" type="email" autocomplete="username" required></label><br>
-      <label>Phone number <input name="phone_number" type="tel" autocomplete="tel" required></label><br>
-      <label>Password <input name="password" type="password" autocomplete="new-password" required></label><br>
-      <label>First name <input name="first_name" type="text" autocomplete="given-name" required></label><br>
-      <label>Last name <input name="last_name" type="text" autocomplete="family-name" required></label><br>
-      <label>Address <input name="address" type="text" autocomplete="street-address" required></label><br>
-      <label>City <input name="city" type="text" autocomplete="address-level2"></label><br>
-      <label>Country <input name="country" type="text" autocomplete="country-name"></label><br>
-      <label>ZIP code <input name="zip_code" type="text" autocomplete="postal-code"></label><br>
-      <label>ID card number <input name="identity_card_number" type="text" required></label><br>
-      <label><input name="data_processing_consent_accepted" type="checkbox" value="true" required> I agree to data processing for account creation and MCP access.</label><br>
-      <button type="submit">Send verification code</button>
+      <div class="form-grid">
+        <label class="field wide">Email
+          <input name="email" type="email" autocomplete="username" required>
+        </label>
+        <label class="field">Phone number
+          <input name="phone_number" type="tel" autocomplete="tel" required>
+        </label>
+        <label class="field">Password
+          <input name="password" type="password" autocomplete="new-password" required>
+        </label>
+        <label class="field">First name
+          <input name="first_name" type="text" autocomplete="given-name" required>
+        </label>
+        <label class="field">Last name
+          <input name="last_name" type="text" autocomplete="family-name" required>
+        </label>
+        <label class="field wide">Address
+          <input name="address" type="text" autocomplete="street-address" required>
+        </label>
+        <label class="field">City
+          <input name="city" type="text" autocomplete="address-level2">
+        </label>
+        <label class="field">Country
+          <input name="country" type="text" autocomplete="country-name">
+        </label>
+        <label class="field">ZIP code
+          <input name="zip_code" type="text" autocomplete="postal-code">
+        </label>
+        <label class="field">ID card number
+          <input name="identity_card_number" type="text" required>
+        </label>
+        <label class="checkbox-field">
+          <input name="data_processing_consent_accepted" type="checkbox" value="true" required>
+          <span>I agree to data processing for account creation and MCP access.</span>
+        </label>
+      </div>
+      <button class="primary-button" type="submit">Send verification code</button>
     </form>
-    <p><a href="/MCP/login">Back to login</a></p>
-  </main>
-</body>
-</html>"""
+""",
+        footer_html='    <p class="auth-footer">Already registered? <a href="/MCP/login">Log in</a></p>',
+    )
 
 
 def _sign_up_otp_form_html(
@@ -1317,21 +1562,19 @@ def _sign_up_otp_form_html(
 ) -> str:
     hidden_html = _hidden_inputs({"pending_id": pending_id})
     escaped_email = escape(email, quote=False)
-    return f"""<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Verify MCP sign up</title></head>
-<body>
-  <main>
-    <h1>Verify MCP sign up</h1>
-    <p>An OTP code was sent to {escaped_email}.</p>
+    return _mcp_auth_page_html(
+        title="Verify MCP sign up",
+        subtitle="Enter the one-time code from your email to create the account.",
+        body_html=f"""    <p class="email-note">An OTP code was sent to {escaped_email}.</p>
     <form method="post" action="/MCP/sign-up/verify">
 {hidden_html}
-      <label>OTP code <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required></label><br>
-      <button type="submit">Create account</button>
+      <label class="field wide">OTP code
+        <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
+      </label>
+      <button class="primary-button" type="submit">Create account</button>
     </form>
-  </main>
-</body>
-</html>"""
+""",
+    )
 
 
 def _hidden_inputs(values: dict[str, str]) -> str:
@@ -1343,31 +1586,23 @@ def _hidden_inputs(values: dict[str, str]) -> str:
 
 def _sign_up_complete_html(*, email: str) -> str:
     escaped_email = escape(email, quote=False)
-    return f"""<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>MCP account created</title></head>
-<body>
-  <main>
-    <h1>MCP account created</h1>
-    <p>Account {escaped_email} is verified. You can now log in and generate an MCP API key.</p>
-    <p><a href="/MCP/login">Log in</a></p>
-  </main>
-</body>
-</html>"""
+    return _mcp_auth_page_html(
+        title="MCP account created",
+        subtitle="Your JurisDigta MCP account is verified.",
+        body_html=f"""    <p class="email-note">Account {escaped_email} is verified. You can now log in and generate an MCP API key.</p>
+    <p class="auth-footer"><a href="/MCP/login">Log in</a></p>
+""",
+    )
 
 
 def _key_created_html(*, api_key: str, expires_at: str) -> str:
     escaped_api_key = escape(api_key, quote=False)
     escaped_expires_at = escape(expires_at, quote=False)
-    return f"""<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>MCP API key created</title></head>
-<body>
-  <main>
-    <h1>MCP API key created</h1>
-    <p>This key is shown once and expires at {escaped_expires_at}.</p>
-    <pre>{escaped_api_key}</pre>
-    <p>Use it as a Bearer token or as the x-mcp-api-key header when connecting your AI assistant to /MCP.</p>
-  </main>
-</body>
-</html>"""
+    return _mcp_auth_page_html(
+        title="MCP API key created",
+        subtitle="Copy the key now. It is shown once and expires at the configured time.",
+        body_html=f"""    <p class="email-note">This key expires at {escaped_expires_at}.</p>
+    <pre class="key-output">{escaped_api_key}</pre>
+    <p class="form-note">Use it as a Bearer token or as the x-mcp-api-key header when connecting your AI assistant to /MCP.</p>
+""",
+    )

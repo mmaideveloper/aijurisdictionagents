@@ -69,6 +69,8 @@ Users can generate a key in either way:
 - Browser sign-up page: `GET /MCP/sign-up`, then submit email, phone number, password, first name, last name, address, ID card number, and data-processing consent. The MCP service emails an OTP code. Submitting the OTP at `POST /MCP/sign-up/verify` creates the user; the user can then log in to generate an MCP API key.
 - API endpoint: `POST /v1/users/{user_id}/mcp-api-key` with optional `{ "expires_in_days": 1 }`.
 
+The browser login, sign-up, OTP, OAuth authorization, and key-created pages share the JurisDigta MCP auth shell in `api/aijuristiction-api/app/mcp_api.py`. Keep the form field names and POST targets stable when changing UX, because external MCP and OAuth clients rely on those routes. Do not add remote tracking images or echo submitted password, ID-card, or profile values back into the OTP pages.
+
 Keys can be revoked with:
 
 - `DELETE /v1/users/{user_id}/mcp-api-key`
