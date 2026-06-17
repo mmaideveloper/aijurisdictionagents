@@ -291,14 +291,16 @@ def oauth_dynamic_client_registration(
         _validate_oauth_redirect_uri(redirect_uri)
 
     requested_auth_method = str(metadata.get("token_endpoint_auth_method") or "none").strip()
-    if requested_auth_method != "none":
+    allowed_auth_methods = {"none", "client_secret_post", "client_secret_basic"}
+    if requested_auth_method not in allowed_auth_methods:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only public OAuth clients with token_endpoint_auth_method=none are supported",
+            detail="Unsupported token_endpoint_auth_method",
         )
 
     grant_types = _registration_string_list(metadata.get("grant_types")) or ["authorization_code"]
-    if any(grant_type != "authorization_code" for grant_type in grant_types):
+    allowed_grant_types = {"authorization_code", "refresh_token"}
+    if any(grant_type not in allowed_grant_types for grant_type in grant_types):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported grant_types")
 
     response_types = _registration_string_list(metadata.get("response_types")) or ["code"]
@@ -306,7 +308,9 @@ def oauth_dynamic_client_registration(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported response_types")
 
     scope = str(metadata.get("scope") or MCP_TOKEN_SCOPE).strip()
-    if scope and scope != MCP_TOKEN_SCOPE:
+    requested_scopes = {item for item in scope.split() if item}
+    allowed_scopes = {MCP_TOKEN_SCOPE, "offline_access"}
+    if requested_scopes and any(item not in allowed_scopes for item in requested_scopes):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scope")
 
     client_id = f"jurisdigta-{secrets.token_urlsafe(18)}"

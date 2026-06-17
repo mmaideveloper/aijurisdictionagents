@@ -368,6 +368,24 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert registration_payload["redirect_uris"] == ["https://claude.ai/api/mcp/auth_callback"]
     assert registration_payload["token_endpoint_auth_method"] == "none"
 
+    claude_variant_registration = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Claude Connector",
+            "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "client_secret_post",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+    assert claude_variant_registration.status_code == 201
+    claude_variant_payload = claude_variant_registration.json()
+    assert claude_variant_payload["client_id"].startswith("jurisdigta-")
+    assert claude_variant_payload["grant_types"] == ["authorization_code"]
+    assert claude_variant_payload["token_endpoint_auth_method"] == "none"
+    assert claude_variant_payload["scope"] == "mcp:laws"
+
     code_verifier = "test-code-verifier-1234567890"
     code_challenge = _pkce_challenge(code_verifier)
     resource = "https://mcp.jurisdigta.eu/MCP"
