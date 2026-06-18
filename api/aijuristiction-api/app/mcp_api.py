@@ -37,6 +37,7 @@ oauth_router = APIRouter(tags=["mcp-oauth"])
 MCP_PROTOCOL_VERSION = "2025-03-26"
 _PUBLIC_TOOLS = {"getVersion", "getStatistics"}
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai")
+_MCP_OTP_VERIFICATION_PURPOSE = "mcp_access"
 logger = logging.getLogger("aijuristiction-api.mcp")
 _MCP_SUPPORTED_LOCALES = {"en", "sk"}
 _MCP_TEXT: dict[str, dict[str, str]] = {
@@ -376,7 +377,7 @@ def oauth_authorize_login(
     password: str = Form(...),
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
-) -> HTMLResponse:
+) -> Response:
     resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
     _validate_oauth_authorize_request(
         response_type=response_type,
@@ -390,6 +391,17 @@ def oauth_authorize_login(
     user = store.authenticate_user(email=email, password=password)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if _has_recent_mcp_otp_verification(store=store, user=user):
+        logger.info("mcp_oauth_otp_reuse user_id=%s client_id=%s", user.user_id, client_id)
+        return _redirect_with_oauth_authorization_code(
+            store=store,
+            user=user,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            resource=resolved_resource,
+            state=state,
+        )
     code = generate_one_time_code()
     store.save_registration_code(email=_oauth_login_code_key(email=user.email), code=code)
     scheduler.enqueue(
@@ -464,19 +476,16 @@ def oauth_authorize_verify(
     user = store.find_user_by_email(email=email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    authorization_code = secrets.token_urlsafe(32)
-    store.save_mcp_oauth_authorization_code(
-        code=authorization_code,
-        user_id=user.user_id,
+    _save_mcp_otp_verification(store=store, user=user)
+    return _redirect_with_oauth_authorization_code(
+        store=store,
+        user=user,
         client_id=client_id,
         redirect_uri=redirect_uri,
         code_challenge=code_challenge,
         resource=resolved_resource,
+        state=state,
     )
-    query = {"code": authorization_code}
-    if state:
-        query["state"] = state
-    return RedirectResponse(url=f"{redirect_uri}?{urlencode(query)}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @oauth_router.post("/oauth/token")
@@ -519,6 +528,31 @@ def oauth_token(
     }
 
 
+def _redirect_with_oauth_authorization_code(
+    *,
+    store: ApiDatabaseStore,
+    user: User,
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    resource: str,
+    state: str,
+) -> RedirectResponse:
+    authorization_code = secrets.token_urlsafe(32)
+    store.save_mcp_oauth_authorization_code(
+        code=authorization_code,
+        user_id=user.user_id,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        code_challenge=code_challenge,
+        resource=resource,
+    )
+    query = {"code": authorization_code}
+    if state:
+        query["state"] = state
+    return RedirectResponse(url=f"{redirect_uri}?{urlencode(query)}", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/login", response_class=HTMLResponse)
 def mcp_login_submit(
     request: Request,
@@ -533,6 +567,12 @@ def mcp_login_submit(
     user = store.authenticate_user(email=email, password=password)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if _has_recent_mcp_otp_verification(store=store, user=user):
+        raw_key, expires_at = _issue_mcp_api_key(store=store, user=user, expires_in_days=expires_in_days)
+        logger.info("mcp_login_otp_reuse user_id=%s", user.user_id)
+        return HTMLResponse(
+            _key_created_html(locale=_mcp_locale(request), api_key=raw_key, expires_at=expires_at)
+        )
     code = generate_one_time_code()
     code_key = _mcp_login_code_key(email=user.email)
     store.save_registration_code(email=code_key, code=code)
@@ -1153,6 +1193,38 @@ def _accepts_any_local_auth_code() -> bool:
         "yes",
         "on",
     }
+
+
+def _mcp_otp_reuse_window_hours() -> int:
+    raw_value = os.getenv("MCP_OTP_REUSE_WINDOW_HOURS", "24").strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        logger.warning("mcp_otp_reuse_window_invalid value_type=str")
+        return 24
+    return _bounded_int(value, default=24, minimum=0, maximum=168)
+
+
+def _has_recent_mcp_otp_verification(*, store: ApiDatabaseStore, user: User) -> bool:
+    if _mcp_otp_reuse_window_hours() < 1:
+        return False
+    return bool(
+        store.has_valid_mcp_otp_verification(
+            user_id=user.user_id,
+            purpose=_MCP_OTP_VERIFICATION_PURPOSE,
+        )
+    )
+
+
+def _save_mcp_otp_verification(*, store: ApiDatabaseStore, user: User) -> None:
+    reuse_window_hours = _mcp_otp_reuse_window_hours()
+    if reuse_window_hours < 1:
+        return
+    store.save_mcp_otp_verification(
+        user_id=user.user_id,
+        purpose=_MCP_OTP_VERIFICATION_PURPOSE,
+        expires_in_hours=reuse_window_hours,
+    )
 
 
 def _require_sign_up_consent(accepted: bool) -> None:

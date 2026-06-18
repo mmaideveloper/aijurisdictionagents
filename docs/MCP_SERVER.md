@@ -60,6 +60,7 @@ Production settings:
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
 - `MCP_API_JWT_SECRET=<long-random-secret>`
+- `MCP_OTP_REUSE_WINDOW_HOURS=24`
 
 ## Authentication
 
@@ -78,6 +79,8 @@ Users can generate a key in either way:
 - API endpoint: `POST /v1/users/{user_id}/mcp-api-key` with optional `{ "expires_in_days": 1 }`.
 
 The browser login, sign-up, OTP, OAuth authorization, and key-created pages share the JurisDigta MCP auth shell in `api/aijuristiction-api/app/mcp_api.py`. Keep the form field names and POST targets stable when changing UX, because external MCP and OAuth clients rely on those routes. Do not add remote tracking images or echo submitted password, ID-card, or profile values back into the OTP pages.
+
+After a successful MCP OTP verification, the server records a per-user MCP verification marker and skips repeat OTP prompts for subsequent MCP login or OAuth authorization attempts during `MCP_OTP_REUSE_WINDOW_HOURS` hours. The default is 24 hours; set it to `0` to require OTP every time. The user password is still required before a reused verification can authorize a client or create an MCP API key.
 
 Keys can be revoked with:
 
@@ -153,4 +156,4 @@ Debugging fields are intentionally minimized:
 
 For production troubleshooting, filter application logs by `mcp_` event names and correlate them with the `x-request-id` or `x-correlation-id` response headers.
 
-Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, audience-bound, hashed in storage, expire by default after 1 day, and can be revoked. Public tools avoid user-specific data. Protected legal-data tools remain read-only and are logged with request correlation IDs by the MCP middleware for traceability. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. OAuth and MCP tool responses do not return raw API keys to ChatGPT or Claude. Dynamic client registration only issues a public OAuth client identifier for PKCE flows; it does not issue user tokens, secrets, or data access without the existing user login and email OTP authorization. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, set `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, keep OAuth redirect hosts restricted, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.
+Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, audience-bound, hashed in storage, expire by default after 1 day, and can be revoked. Public tools avoid user-specific data. Protected legal-data tools remain read-only and are logged with request correlation IDs by the MCP middleware for traceability. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. OAuth and MCP tool responses do not return raw API keys to ChatGPT or Claude. Dynamic client registration only issues a public OAuth client identifier for PKCE flows; it does not issue user tokens, secrets, or data access without the existing user login and email OTP authorization. OTP reuse stores only user id, purpose, verification time, and expiry; it does not store OTP codes, passwords, OAuth tokens, email addresses, prompts, or law text. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, set `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, keep OAuth redirect hosts restricted, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.
