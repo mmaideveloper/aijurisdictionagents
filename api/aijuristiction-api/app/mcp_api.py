@@ -33,6 +33,7 @@ from app.versioning import (
 from aijurisdictionagents.api_db import ApiDatabaseStore, User, generate_one_time_code
 
 router = APIRouter(prefix="/MCP", tags=["mcp"])
+compat_router = APIRouter(prefix="/MC", tags=["mcp"])
 oauth_router = APIRouter(tags=["mcp-oauth"])
 MCP_PROTOCOL_VERSION = "2025-03-26"
 MCP_SERVER_INSTRUCTIONS = (
@@ -196,6 +197,7 @@ def mcp_authenticated_status(user_id: str = Depends(require_mcp_api_key)) -> dic
 
 
 @router.post("", response_class=JSONResponse)
+@compat_router.post("", response_class=JSONResponse)
 async def mcp_json_rpc(
     request: Request,
     authorization: str | None = Header(default=None),

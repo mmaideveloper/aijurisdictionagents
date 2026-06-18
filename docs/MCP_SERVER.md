@@ -9,6 +9,9 @@ It is intended for AI assistants that can connect to remote MCP servers over HTT
 For ChatGPT, Claude, and VS Code OAuth-capable clients, start from the OAuth metadata endpoints instead of manually copying a token.
 The API `/version`, MCP `/version`, and MCP `getVersion` tool expose `mcp_server_version`.
 For the current deployable package this value is aligned with the API package revision.
+`POST /MC` is also accepted as a compatibility alias for connector records that
+were accidentally saved with the truncated Claude URL `/MC`; OAuth metadata and
+token audiences remain canonical as `https://mcp.jurisdigta.eu/MCP`.
 
 `GET /` on the MCP service is a public human-facing setup page. In production,
 `https://mcp.jurisdigta.eu/` should show:

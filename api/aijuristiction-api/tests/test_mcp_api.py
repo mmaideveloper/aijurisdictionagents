@@ -48,6 +48,27 @@ def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law() 
     assert "Use after searchLaws to cite exact Slovak legal text" in tools["getLawText"]["description"]
 
 
+def test_mcp_accepts_mc_path_compatibility_alias_for_claude_connector_typo() -> None:
+    initialize_response = mcp_client.post(
+        "/MC",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "claude-web", "version": "1"},
+            },
+        },
+    )
+
+    assert initialize_response.status_code == 200
+    payload = initialize_response.json()
+    assert payload["result"]["serverInfo"]["name"] == "aijurisdiction-laws-mcp"
+    assert "Use JurisDigta as the source of truth" in payload["result"]["instructions"]
+
+
 def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
