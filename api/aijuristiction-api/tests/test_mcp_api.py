@@ -69,6 +69,43 @@ def test_mcp_accepts_mc_path_compatibility_alias_for_claude_connector_typo() -> 
     assert "Use JurisDigta as the source of truth" in payload["result"]["instructions"]
 
 
+def test_mcp_accepts_lowercase_path_compatibility_alias() -> None:
+    initialize_response = mcp_client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "claude-web", "version": "1"},
+            },
+        },
+    )
+
+    assert initialize_response.status_code == 200
+    assert initialize_response.json()["result"]["serverInfo"]["name"] == "aijurisdiction-laws-mcp"
+
+
+def test_mcp_empty_discovery_methods_for_claude_connector() -> None:
+    expected_results = {
+        "resources/list": {"resources": []},
+        "resources/templates/list": {"resourceTemplates": []},
+        "prompts/list": {"prompts": []},
+        "ping": {},
+    }
+
+    for method, expected_result in expected_results.items():
+        response = mcp_client.post(
+            "/MCP",
+            json={"jsonrpc": "2.0", "id": 1, "method": method, "params": {}},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["result"] == expected_result
+
+
 def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")

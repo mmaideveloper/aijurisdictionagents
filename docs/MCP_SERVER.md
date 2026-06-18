@@ -11,7 +11,9 @@ The API `/version`, MCP `/version`, and MCP `getVersion` tool expose `mcp_server
 For the current deployable package this value is aligned with the API package revision.
 `POST /MC` is also accepted as a compatibility alias for connector records that
 were accidentally saved with the truncated Claude URL `/MC`; OAuth metadata and
-token audiences remain canonical as `https://mcp.jurisdigta.eu/MCP`.
+token audiences remain canonical as `https://mcp.jurisdigta.eu/MCP`. `POST /mcp`
+is accepted as a lowercase compatibility alias for clients that normalize the
+path.
 
 `GET /` on the MCP service is a public human-facing setup page. In production,
 `https://mcp.jurisdigta.eu/` should show:

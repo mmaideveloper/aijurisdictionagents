@@ -17,6 +17,7 @@ from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.logging_config import configure_logging
 from app.mcp_api import oauth_router as mcp_oauth_router
 from app.mcp_api import compat_router as mcp_compat_router
+from app.mcp_api import lowercase_compat_router as mcp_lowercase_compat_router
 from app.mcp_api import router as mcp_router
 from app.telemetry import configure_telemetry, instrument_fastapi
 from app.versioning import (
@@ -329,6 +330,7 @@ app.add_middleware(
 app.include_router(mcp_oauth_router)
 app.include_router(mcp_router)
 app.include_router(mcp_compat_router)
+app.include_router(mcp_lowercase_compat_router)
 instrument_fastapi(app)
 
 

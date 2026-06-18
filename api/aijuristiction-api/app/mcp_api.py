@@ -34,6 +34,7 @@ from aijurisdictionagents.api_db import ApiDatabaseStore, User, generate_one_tim
 
 router = APIRouter(prefix="/MCP", tags=["mcp"])
 compat_router = APIRouter(prefix="/MC", tags=["mcp"])
+lowercase_compat_router = APIRouter(prefix="/mcp", tags=["mcp"])
 oauth_router = APIRouter(tags=["mcp-oauth"])
 MCP_PROTOCOL_VERSION = "2025-03-26"
 MCP_SERVER_INSTRUCTIONS = (
@@ -198,6 +199,7 @@ def mcp_authenticated_status(user_id: str = Depends(require_mcp_api_key)) -> dic
 
 @router.post("", response_class=JSONResponse)
 @compat_router.post("", response_class=JSONResponse)
+@lowercase_compat_router.post("", response_class=JSONResponse)
 async def mcp_json_rpc(
     request: Request,
     authorization: str | None = Header(default=None),
@@ -846,6 +848,18 @@ def _handle_json_rpc_message(
         if method == "tools/list":
             logger.info("mcp_tools_list_completed tool_count=%d", len(_mcp_tools()))
             return _json_rpc_result(request_id, {"tools": _mcp_tools()})
+        if method == "resources/list":
+            logger.info("mcp_resources_list_completed resource_count=0")
+            return _json_rpc_result(request_id, {"resources": []})
+        if method == "resources/templates/list":
+            logger.info("mcp_resource_templates_list_completed resource_template_count=0")
+            return _json_rpc_result(request_id, {"resourceTemplates": []})
+        if method == "prompts/list":
+            logger.info("mcp_prompts_list_completed prompt_count=0")
+            return _json_rpc_result(request_id, {"prompts": []})
+        if method == "ping":
+            logger.info("mcp_ping_completed")
+            return _json_rpc_result(request_id, {})
         if method == "tools/call":
             raw_params = message.get("params")
             params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
