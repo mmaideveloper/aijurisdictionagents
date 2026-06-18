@@ -500,6 +500,112 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert _tool_payload(oauth_search)["results"][0]["document_id"] == "doc-1"
 
 
+def test_oauth_login_reuses_recent_mcp_otp_verification(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
+    monkeypatch.setenv("MCP_OTP_REUSE_WINDOW_HOURS", "24")
+    sign_up_response = api_client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421 900 111 233",
+            "email": "mcp-oauth-reuse@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+
+    code_verifier = "test-code-verifier-reuse-1234567890"
+    code_challenge = _pkce_challenge(code_verifier)
+    resource = "https://mcp.jurisdigta.eu/MCP"
+    authorize_data = {
+        "response_type": "code",
+        "client_id": "claude",
+        "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "state": "claude-state",
+        "resource": resource,
+        "email": "mcp-oauth-reuse@example.com",
+        "password": "secret-pass",
+    }
+
+    first_login_response = mcp_client.post("/oauth/authorize/login", data=authorize_data)
+    assert first_login_response.status_code == 200
+    assert "Verify MCP OAuth login" in first_login_response.text
+
+    verify_response = mcp_client.post(
+        "/oauth/authorize/verify",
+        data={
+            **{key: value for key, value in authorize_data.items() if key != "password"},
+            "verification_code": "123456",
+        },
+        follow_redirects=False,
+    )
+    assert verify_response.status_code == 303
+
+    reuse_response = mcp_client.post(
+        "/oauth/authorize/login",
+        data=authorize_data,
+        follow_redirects=False,
+    )
+
+    assert reuse_response.status_code == 303
+    assert reuse_response.headers["location"].startswith("https://claude.ai/api/mcp/auth_callback?")
+    assert "state=claude-state" in reuse_response.headers["location"]
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        rows = conn.execute(
+            "SELECT subject FROM email_outbox WHERE recipient = ? AND subject = ?",
+            ("mcp-oauth-reuse@example.com", "Your MCP OAuth login code"),
+        ).fetchall()
+    assert rows == [("Your MCP OAuth login code",)]
+
+
+def test_mcp_otp_reuse_can_be_disabled(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
+    monkeypatch.setenv("MCP_OTP_REUSE_WINDOW_HOURS", "0")
+    sign_up_response = api_client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421 900 111 234",
+            "email": "mcp-oauth-no-reuse@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+
+    code_challenge = _pkce_challenge("test-code-verifier-no-reuse-1234567890")
+    authorize_data = {
+        "response_type": "code",
+        "client_id": "claude",
+        "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "state": "claude-state",
+        "resource": "https://mcp.jurisdigta.eu/MCP",
+        "email": "mcp-oauth-no-reuse@example.com",
+        "password": "secret-pass",
+    }
+
+    first_login_response = mcp_client.post("/oauth/authorize/login", data=authorize_data)
+    assert first_login_response.status_code == 200
+    verify_response = mcp_client.post(
+        "/oauth/authorize/verify",
+        data={
+            **{key: value for key, value in authorize_data.items() if key != "password"},
+            "verification_code": "123456",
+        },
+        follow_redirects=False,
+    )
+    assert verify_response.status_code == 303
+
+    second_login_response = mcp_client.post("/oauth/authorize/login", data=authorize_data)
+    assert second_login_response.status_code == 200
+    assert "Verify MCP OAuth login" in second_login_response.text
+
+
 def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu")

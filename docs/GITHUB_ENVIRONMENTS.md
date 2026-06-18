@@ -383,6 +383,9 @@ Server-local `jurisdigta.env` must include at least:
 - `LOCAL_POSTGRES_PASSWORD`
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
 - `MCP_API_JWT_SECRET`
+- `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
+- `MCP_OTP_REUSE_WINDOW_HOURS=24`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` or another bounded runtime in minutes
 - email/Turnstile settings when those production features are enabled
@@ -457,6 +460,9 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `CORS_ALLOW_ORIGINS`
 - `MCP_CORS_ALLOW_ORIGINS=https://mcp.jurisdigta.eu`
 - `MCP_PORT=8070` for self-managed Docker Compose deployments
+- `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu` for self-managed MCP OAuth metadata and token audience binding
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai` for remote connector OAuth callbacks
+- `MCP_OTP_REUSE_WINDOW_HOURS=24` for bounded repeat OTP suppression after successful MCP OTP verification
 - `CONTACT_CAPTCHA_REQUIRED=true`
 - `CONTACT_RATE_LIMIT_MAX_REQUESTS=5`
 - `CONTACT_RATE_LIMIT_WINDOW_SECONDS=600`

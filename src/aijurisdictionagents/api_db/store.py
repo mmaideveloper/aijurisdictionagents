@@ -249,6 +249,15 @@ class ApiDatabaseStore:
                     FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS mcp_otp_verifications (
+                    user_id TEXT NOT NULL,
+                    purpose TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    verified_at TEXT NOT NULL,
+                    PRIMARY KEY(user_id, purpose),
+                    FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS companies (
                     company_id TEXT PRIMARY KEY,
                     legal_name TEXT NOT NULL,
@@ -711,6 +720,66 @@ class ApiDatabaseStore:
             "code_challenge": str(row[3]),
             "resource": str(row[4]),
         }
+
+    def save_mcp_otp_verification(
+        self,
+        *,
+        user_id: str,
+        purpose: str,
+        expires_in_hours: int,
+    ) -> None:
+        normalized_user_id = user_id.strip()
+        normalized_purpose = purpose.strip().lower()
+        if not normalized_user_id or not normalized_purpose:
+            return
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(hours=max(expires_in_hours, 1))
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO mcp_otp_verifications(user_id, purpose, expires_at, verified_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, purpose) DO UPDATE SET
+                    expires_at = excluded.expires_at,
+                    verified_at = excluded.verified_at
+                """,
+                (
+                    normalized_user_id,
+                    normalized_purpose,
+                    expires_at.isoformat(),
+                    now.isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def has_valid_mcp_otp_verification(self, *, user_id: str, purpose: str) -> bool:
+        normalized_user_id = user_id.strip()
+        normalized_purpose = purpose.strip().lower()
+        if not normalized_user_id or not normalized_purpose:
+            return False
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT expires_at
+                FROM mcp_otp_verifications
+                WHERE user_id = ? AND purpose = ?
+                """,
+                (normalized_user_id, normalized_purpose),
+            )
+            if row is None:
+                return False
+            expires_at = str(row[0])
+            if _is_future_iso_datetime(expires_at):
+                return True
+            self._execute(
+                conn,
+                "DELETE FROM mcp_otp_verifications WHERE user_id = ? AND purpose = ?",
+                (normalized_user_id, normalized_purpose),
+            )
+            conn.commit()
+            return False
 
     def issue_device_auth_token(
         self,
@@ -1905,6 +1974,19 @@ class ApiDatabaseStore:
                 conn,
                 "ALTER TABLE mcp_oauth_authorization_codes ADD COLUMN resource TEXT NOT NULL DEFAULT ''",
             )
+        self._execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mcp_otp_verifications (
+                user_id TEXT NOT NULL,
+                purpose TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                verified_at TEXT NOT NULL,
+                PRIMARY KEY(user_id, purpose),
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+            """,
+        )
 
     def _ensure_case_document_schema(
         self, conn: sqlite3.Connection | PostgresConnection[Any]

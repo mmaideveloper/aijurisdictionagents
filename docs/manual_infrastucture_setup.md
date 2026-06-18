@@ -306,6 +306,7 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Required production LLM default: `LLM_PROVIDER=azurefoundry`.
 - Required Azure Foundry values when `LLM_PROVIDER=azurefoundry`: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and `AZURE_OPENAI_API_KEY`.
 - PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
+- Required MCP OAuth values in `/srv/jurisdigta/secrets/jurisdigta.env`: `MCP_API_JWT_SECRET`, `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`, and `MCP_OTP_REUSE_WINDOW_HOURS=24`.
 - Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
 - Server-local laws collector cron wrapper path: `/srv/jurisdigta/ops/run_laws_collector_daily.sh`.
 - Server-local laws collector log path: `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
@@ -345,6 +346,7 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - PostgreSQL health check succeeds.
 - API health check returns HTTP 200 at `http://127.0.0.1:8080/health`.
 - MCP health check returns HTTP 200 at `http://127.0.0.1:8070/health`.
+- MCP OAuth metadata at `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP` advertises `https://mcp.jurisdigta.eu/MCP` as the protected resource.
 - Repository minimal runnable example succeeds: `python examples/minimal_demo.py`.
 - `crontab -l` contains the daily laws collector wrapper entry.
 - `docker ps -a --filter name=jurisdigta-laws-collector-daily` shows no stuck active collector container after deployment validation.
