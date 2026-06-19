@@ -26,6 +26,7 @@ const labels: Record<string, string> = {
   navHome: "Home",
   navPricing: "Pricing",
   navApp: "App",
+  navAssistant: "Assistant",
   navProfile: "Profile",
   navProfileMenu: "Profile menu",
   navMyProfile: "My Profile",
@@ -165,6 +166,14 @@ describe("Navigation profile dropdown", () => {
     renderNavigation({ initialEntries: ["/app"] });
 
     expect(screen.getByText("AI Jurisdiction")).toBeDefined();
+  });
+
+  it("shows the assistant route for signed-in users", () => {
+    renderNavigation({ initialEntries: ["/app"] });
+
+    expect(screen.getByRole("link", { name: "Assistant" }).getAttribute("href")).toBe(
+      "/app/assistant"
+    );
   });
 
   it("shows navbar brand on home when sidebar is collapsed", () => {

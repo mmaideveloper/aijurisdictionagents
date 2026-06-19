@@ -38,6 +38,10 @@ vi.mock("../pages/AppDashboard", () => ({
   default: () => <div>App Dashboard</div>
 }));
 
+vi.mock("../pages/AssistantWorkspace", () => ({
+  default: () => <div>Assistant Workspace</div>
+}));
+
 vi.mock("../pages/CaseIntake", () => ({
   default: () => <div>Case Intake</div>
 }));
@@ -113,6 +117,19 @@ describe("App protected routes", () => {
     expect(screen.queryByText("Lawyer Workspace")).toBeNull();
   });
 
+  it("redirects unauthenticated users from /app/assistant to /", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/app/assistant"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.queryByText("Assistant Workspace")).toBeNull();
+  });
+
   it("redirects unauthenticated users from /profile to /", () => {
     authState.isAuthenticated = false;
 
@@ -136,5 +153,17 @@ describe("App protected routes", () => {
     );
 
     expect(screen.getByText("Profile Page")).toBeDefined();
+  });
+
+  it("allows authenticated users to access /app/assistant", () => {
+    authState.isAuthenticated = true;
+
+    render(
+      <MemoryRouter initialEntries={["/app/assistant"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Assistant Workspace")).toBeDefined();
   });
 });

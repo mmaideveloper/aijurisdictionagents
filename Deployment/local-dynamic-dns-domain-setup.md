@@ -5,6 +5,7 @@ This runbook explains how to publish JurisDigta service hostnames from a local U
 Target hostnames:
 
 - `web.jurisdigta.eu`
+- `agent.jurisdigta.eu`
 - `api.jurisdigta.eu`
 - `mcp.jurisdigta.eu`
 - `admin.jurisdigta.eu`
@@ -21,7 +22,7 @@ The pattern is:
 
 1. Create a Cloudflare Tunnel in Cloudflare Zero Trust.
 2. Install and run `cloudflared` on the Ubuntu server.
-3. Configure Cloudflare public hostnames for `web`, `api`, `mcp`, and `admin`, each mapped to a local service.
+3. Configure Cloudflare public hostnames for `web`, `agent`, `api`, `mcp`, and `admin`, each mapped to a local service.
 4. In setup.sk, create one `CNAME` per subdomain pointing to the Cloudflare-provided partial-setup target.
 
 For partial DNS setup, Cloudflare documents the CNAME target as `<hostname>.cdn.cloudflare.net`, for example `api.jurisdigta.eu.cdn.cloudflare.net`. Cloudflare named tunnel DNS records may also be represented as `<UUID>.cfargotunnel.com`; use the exact target shown by Cloudflare for the hostname/tunnel flow you configure.
@@ -57,6 +58,7 @@ Ubuntu 26.04 server cloudflared
 Ubuntu 26.04 server nginx / local services
   |
   +--> web.jurisdigta.eu   -> local web frontend port or static files
+  +--> agent.jurisdigta.eu -> local web frontend port, protected by Cloudflare Access
   +--> api.jurisdigta.eu   -> http://127.0.0.1:8080
   +--> mcp.jurisdigta.eu   -> local MCP service port
   +--> admin.jurisdigta.eu -> local admin service port protected by Cloudflare Access/VPN/IP allow-list
@@ -98,6 +100,7 @@ Create these public hostnames in the Cloudflare Tunnel configuration:
 | Public hostname | Local service | Required protection |
 | --- | --- | --- |
 | `web.jurisdigta.eu` | `http://127.0.0.1:<web-port>` or local nginx static site | Public web frontend controls |
+| `agent.jurisdigta.eu` | `http://127.0.0.1:<web-port>` after web deployment | Authenticated assistant route `/app/assistant`; Cloudflare Access before production use |
 | `api.jurisdigta.eu` | `http://127.0.0.1:8080` | API authentication, rate limits, safe CORS |
 | `mcp.jurisdigta.eu` | `http://127.0.0.1:8070` | Authentication, rate limits, audit logging |
 | `admin.jurisdigta.eu` | `http://127.0.0.1:<admin-port>` | Cloudflare Access, VPN/IP allow-list, strong MFA |
@@ -119,6 +122,7 @@ Example setup.sk records:
 | setup.sk host | Type | Target | TTL |
 | --- | --- | --- | --- |
 | `web` | `CNAME` | `web.jurisdigta.eu.cdn.cloudflare.net.` | `300` |
+| `agent` | `CNAME` | `agent.jurisdigta.eu.cdn.cloudflare.net.` | `300` |
 | `api` | `CNAME` | `api.jurisdigta.eu.cdn.cloudflare.net.` | `300` |
 | `mcp` | `CNAME` | `mcp.jurisdigta.eu.cdn.cloudflare.net.` | `300` |
 | `admin` | `CNAME` | `admin.jurisdigta.eu.cdn.cloudflare.net.` | `300` |
@@ -137,10 +141,13 @@ After DNS propagation and a healthy tunnel, validate from outside the LAN:
 
 ```bash
 dig +short web.jurisdigta.eu
+dig +short agent.jurisdigta.eu
 dig +short api.jurisdigta.eu
 dig +short mcp.jurisdigta.eu
 dig +short admin.jurisdigta.eu
 curl -I https://web.jurisdigta.eu
+curl -fsS https://agent.jurisdigta.eu/health
+curl -I https://agent.jurisdigta.eu/app/assistant
 curl -fsS https://api.jurisdigta.eu/health
 curl -I https://mcp.jurisdigta.eu
 curl -I https://admin.jurisdigta.eu
@@ -212,6 +219,7 @@ In the tunnel details page, add these public hostname routes:
 | Cloudflare hostname | Service type and URL | Notes |
 | --- | --- | --- |
 | `web.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<web-port>` | Use the actual local web/frontend port or local nginx port. |
+| `agent.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<web-port>` | Same frontend container as `web`; require Cloudflare Access for the assistant workspace. |
 | `api.jurisdigta.eu` | `HTTP` -> `127.0.0.1:8080` | API service. Validate `/health`. |
 | `mcp.jurisdigta.eu` | `HTTP` -> `127.0.0.1:8070` | Require auth, rate limits, and audit logging. |
 | `admin.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<admin-port>` | Put behind Cloudflare Access/MFA before sharing. |
@@ -227,6 +235,7 @@ Example setup.sk records:
 | setup.sk host | Type | Target |
 | --- | --- | --- |
 | `web` | `CNAME` | `web.jurisdigta.eu.cdn.cloudflare.net.` |
+| `agent` | `CNAME` | `agent.jurisdigta.eu.cdn.cloudflare.net.` |
 | `api` | `CNAME` | `api.jurisdigta.eu.cdn.cloudflare.net.` |
 | `mcp` | `CNAME` | `mcp.jurisdigta.eu.cdn.cloudflare.net.` |
 | `admin` | `CNAME` | `admin.jurisdigta.eu.cdn.cloudflare.net.` |
@@ -250,10 +259,13 @@ Run these checks from a mobile network or another external connection after DNS 
 
 ```bash
 dig +short web.jurisdigta.eu
+dig +short agent.jurisdigta.eu
 dig +short api.jurisdigta.eu
 dig +short mcp.jurisdigta.eu
 dig +short admin.jurisdigta.eu
 curl -I https://web.jurisdigta.eu
+curl -fsS https://agent.jurisdigta.eu/health
+curl -I https://agent.jurisdigta.eu/app/assistant
 curl -fsS https://api.jurisdigta.eu/health
 curl -I https://mcp.jurisdigta.eu
 curl -I https://admin.jurisdigta.eu

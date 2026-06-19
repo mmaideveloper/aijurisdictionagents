@@ -69,6 +69,29 @@ All `/app/*` routes and `/profile` are guarded by mock auth state.
 - Authenticated users can access the full app area (`/app`, `/app/workspace`, etc.) and `/profile`
 - Logging out from the profile dropdown immediately removes access to protected routes
 
+## JurisDigta Assistant Workspace (Issue #356)
+
+The first assistant-ui integration slice adds an authenticated route:
+
+`/app/assistant`
+
+Implementation notes:
+
+- Uses `@assistant-ui/react` `0.14.23` with a local runtime adapter shape that can be replaced by the future Assistant Gateway.
+- Keeps JurisDigta API/MCP as a locked mandatory capability in the UI.
+- Shows Slovakia-first V1 modes for legal search, document preparation, person/company screening, car validation, and location validation.
+- Does not execute arbitrary third-party MCP calls from the browser.
+- Marks sensitive verification/screening flows as explicit-approval and consent/legal-basis gated before execution.
+- Shows transparency metadata: AI-assisted draft, legal-review-required risk level, and required human oversight.
+- All user-facing assistant strings are translated for `en`, `sk`, and `de`.
+
+Production deployment preparation:
+
+- The route is served by the existing `jurisdigta-web` container on local port `8090`.
+- Publish `agent.jurisdigta.eu` through Cloudflare Tunnel to `http://127.0.0.1:8090`.
+- Protect `agent.jurisdigta.eu` with Cloudflare Access before production legal-user access.
+- Validate `https://agent.jurisdigta.eu/health` and `https://agent.jurisdigta.eu/app/assistant` after DNS/tunnel setup.
+
 ## Navbar Branding
 
 The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + app name/tagline).
@@ -237,6 +260,12 @@ Task #245 chat window visuals minimal demo:
 
 ```bash
 python examples/frontend_chat_window_visuals_task_245_minimal_demo.py
+```
+
+Issue #356 assistant workspace minimal demo:
+
+```bash
+python examples/frontend_assistant_task_356_minimal_demo.py
 ```
 
 The demo defaults to the shared Azure dev API endpoint. Override it for local API testing with

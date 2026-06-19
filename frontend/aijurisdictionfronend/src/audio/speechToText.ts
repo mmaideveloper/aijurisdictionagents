@@ -18,18 +18,22 @@ type BrowserSpeechInstance = {
   stop: () => void;
 };
 type BrowserSpeechCtor = new () => BrowserSpeechInstance;
+type BrowserSpeechWindow = {
+  webkitSpeechRecognition?: BrowserSpeechCtor;
+  SpeechRecognition?: BrowserSpeechCtor;
+};
 export type BrowserSpeechSession = {
   runtime: SpeechRuntime;
   stop: () => void;
 };
 export const isBrowserSpeechAvailable = (): boolean => {
   if (typeof window === "undefined") return false;
-  const w = window as Window & { webkitSpeechRecognition?: BrowserSpeechCtor; SpeechRecognition?: BrowserSpeechCtor };
+  const w = window as unknown as BrowserSpeechWindow;
   return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
 };
 export const recognizeOnce = (lang: string): Promise<SpeechResult> => {
   if (!isBrowserSpeechAvailable()) throw new SpeechToTextError("unsupported", "Speech recognition is not available in this browser.");
-  const w = window as Window & { webkitSpeechRecognition?: BrowserSpeechCtor; SpeechRecognition?: BrowserSpeechCtor };
+  const w = window as unknown as BrowserSpeechWindow;
   const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!Ctor) throw new SpeechToTextError("unsupported", "Speech recognition is not available in this browser.");
   const recognition = new Ctor(); recognition.lang = lang; recognition.interimResults = false; recognition.maxAlternatives = 1;
@@ -54,7 +58,7 @@ export const startBrowserSpeechSession = ({
   onEnd: () => void;
 }): BrowserSpeechSession => {
   if (!isBrowserSpeechAvailable()) throw new SpeechToTextError("unsupported", "Speech recognition is not available in this browser.");
-  const w = window as Window & { webkitSpeechRecognition?: BrowserSpeechCtor; SpeechRecognition?: BrowserSpeechCtor };
+  const w = window as unknown as BrowserSpeechWindow;
   const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!Ctor) throw new SpeechToTextError("unsupported", "Speech recognition is not available in this browser.");
   const recognition = new Ctor();

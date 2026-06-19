@@ -192,7 +192,7 @@ Purpose: prepare the Ubuntu server `jurisdigta-server` at `192.168.1.50` for SSH
 
 Related runbook: `Deployment/local-dynamic-dns-domain-setup.md`
 
-Purpose: point `web.jurisdigta.eu`, `api.jurisdigta.eu`, `mcp.jurisdigta.eu`, and `admin.jurisdigta.eu` to the local Ubuntu 26.04 server when the internet connection does not have a static public IP address.
+Purpose: point `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, `mcp.jurisdigta.eu`, and `admin.jurisdigta.eu` to the local Ubuntu 26.04 server when the internet connection does not have a static public IP address.
 
 ### Provider And Owner
 
@@ -205,13 +205,13 @@ Purpose: point `web.jurisdigta.eu`, `api.jurisdigta.eu`, `mcp.jurisdigta.eu`, an
 
 1. Keep `jurisdigta.eu` DNS authoritative in setup.sk and use Cloudflare Tunnel partial DNS/CNAME setup for ingress.
 2. Create a named Cloudflare Tunnel in Cloudflare Zero Trust, copy the generated connector token, and install `cloudflared` on the Ubuntu server as a systemd service.
-3. Configure Cloudflare public hostnames for `web`, `api`, `mcp`, and `admin` pointing to local services on the server; validate local ports with `curl` before publishing DNS.
+3. Configure Cloudflare public hostnames for `web`, `agent`, `api`, `mcp`, and `admin` pointing to local services on the server; validate local ports with `curl` before publishing DNS.
 4. In setup.sk, create `CNAME` records for those subdomains pointing to the Cloudflare-provided partial DNS targets, typically `<full-hostname>.cdn.cloudflare.net`.
 5. Keep router port forwards for TCP `80` and `443` disabled for the tunnel path; public traffic should arrive through outbound `cloudflared` connections.
 6. Configure UFW so local services are reachable only from loopback/LAN as needed; do not rely on direct public router NAT for tunnel traffic.
 7. Configure local nginx or service listeners for `web`, `api`, `mcp`, and `admin`.
 8. Validate HTTPS externally from outside the LAN after DNS propagation.
-9. Protect `admin.jurisdigta.eu` and MCP endpoints with Cloudflare Access, authentication, rate limits, audit logging, and preferably VPN/IP allow-list before production use.
+9. Protect `agent.jurisdigta.eu`, `admin.jurisdigta.eu`, and MCP endpoints with Cloudflare Access, authentication, rate limits, audit logging, and preferably VPN/IP allow-list before production use.
 
 ### Secrets And Access Values
 
@@ -223,7 +223,7 @@ Purpose: point `web.jurisdigta.eu`, `api.jurisdigta.eu`, `mcp.jurisdigta.eu`, an
 ### Validation Steps
 
 - Cloudflare Zero Trust shows the tunnel as healthy.
-- `web.jurisdigta.eu`, `api.jurisdigta.eu`, `mcp.jurisdigta.eu`, and `admin.jurisdigta.eu` resolve through setup.sk CNAME records to the Cloudflare tunnel targets.
+- `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, `mcp.jurisdigta.eu`, and `admin.jurisdigta.eu` resolve through setup.sk CNAME records to the Cloudflare tunnel targets.
 - Router forwards for public TCP `80` and `443` remain disabled unless a separate documented exception exists.
 - `cloudflared --version`, `systemctl status cloudflared --no-pager`, and `journalctl -u cloudflared -n 100 --no-pager` succeed on the server.
 - External checks such as `curl -fsS https://api.jurisdigta.eu/health` succeed from outside the LAN.
@@ -307,7 +307,7 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Required Azure Foundry values when `LLM_PROVIDER=azurefoundry`: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and `AZURE_OPENAI_API_KEY`.
 - PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
 - Required MCP OAuth values in `/srv/jurisdigta/secrets/jurisdigta.env`: `MCP_API_JWT_SECRET`, `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`, and `MCP_OTP_REUSE_WINDOW_HOURS=24`.
-- Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
+- Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
 - Server-local laws collector cron wrapper path: `/srv/jurisdigta/ops/run_laws_collector_daily.sh`.
 - Server-local laws collector log path: `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
 - Daily cron schedule on `jurisdigta-server`: `15 2 * * *`, using the server timezone.
@@ -328,6 +328,7 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Cloudflare Tunnel MCP hostname: `mcp.jurisdigta.eu` -> `http://127.0.0.1:8070`, with MCP served by the dedicated MCP service at `/MCP`.
 - Cloudflare Tunnel admin hostname: `admin.jurisdigta.eu` -> `http://127.0.0.1:3000`, with Grafana served at `/grafana/`.
 - Cloudflare Tunnel web hostname: `web.jurisdigta.eu` -> `http://127.0.0.1:8090` only after the `jurisdigta-web` frontend container serves the intended web app.
+- Cloudflare Tunnel assistant hostname: `agent.jurisdigta.eu` -> `http://127.0.0.1:8090`, with Cloudflare Access required before legal users access `/app/assistant`.
 - Optional Grafana local URL: `http://127.0.0.1:3000`, accessed by SSH tunnel or through `admin.jurisdigta.eu` protected by Cloudflare Access.
 - Optional Grafana public mobile entry URL through Cloudflare Tunnel: `https://admin.jurisdigta.eu/grafana/`.
 - Required Grafana secret for local stack: `GRAFANA_ADMIN_PASSWORD`, stored only in `/srv/jurisdigta/app/Deployment/monitoring/.env` or a server-local secret manager.
@@ -361,10 +362,10 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - If Prometheus/Grafana monitoring is enabled, `cd /srv/jurisdigta/app && PROMETHEUS_BASE_URL=http://127.0.0.1:9091 python3 examples/monitoring_scrape_demo.py` reports all scrapes and HTTP probes healthy.
 - If Prometheus/Grafana monitoring is enabled, Prometheus queries for `jurisdigta_http_requests_total_window`, `jurisdigta_http_request_duration_seconds_avg`, `jurisdigta_users_total`, and `jurisdigta_cases_total` return aggregate samples.
 - `systemctl status cloudflared --no-pager` shows the Cloudflare tunnel active when public hostnames are enabled.
-- If Cloudflare Tunnel public hostnames are enabled, `curl -fsS https://api.jurisdigta.eu/health`, `curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`, and `curl -I https://admin.jurisdigta.eu/grafana/` succeed from outside the server.
+- If Cloudflare Tunnel public hostnames are enabled, `curl -fsS https://api.jurisdigta.eu/health`, `curl -fsS https://agent.jurisdigta.eu/health`, `curl -I https://agent.jurisdigta.eu/app/assistant`, `curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`, and `curl -I https://admin.jurisdigta.eu/grafana/` succeed from outside the server.
 - If the frontend web container is enabled, `curl -fsS http://127.0.0.1:8090/health` and `curl -I http://127.0.0.1:8090/privacy` succeed on the server.
 - GitHub Actions workflow `Self-Managed Prod Deploy` completes for `repo_ref=main`.
-- Cloudflare Access protects `admin.jurisdigta.eu` before public use.
+- Cloudflare Access protects `agent.jurisdigta.eu` and `admin.jurisdigta.eu` before public use.
 - UFW allows only expected ingress, typically SSH; do not expose PostgreSQL, API, Grafana, Prometheus, or exporter ports directly.
 
 ### Rollback Notes
