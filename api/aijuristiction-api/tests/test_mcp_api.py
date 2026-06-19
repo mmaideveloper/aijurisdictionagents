@@ -7,6 +7,7 @@ import json
 import logging
 import sqlite3
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 
@@ -431,6 +432,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     protected_metadata = mcp_client.get("/.well-known/oauth-protected-resource/MCP")
     assert protected_metadata.status_code == 200
     assert protected_metadata.json()["resource"].endswith("/MCP")
+    assert protected_metadata.json()["resource_name"] == "JurisDigta MCP"
     assert protected_metadata.json()["scopes_supported"] == ["mcp:laws"]
 
     authorization_metadata = mcp_client.get("/.well-known/oauth-authorization-server")
@@ -439,6 +441,8 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_metadata.json()["grant_types_supported"] == ["authorization_code", "refresh_token"]
     assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws", "offline_access"]
     assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
+    assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
+    assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/MCP"]
 
     registration_response = mcp_client.post(
         "/oauth/register",
@@ -528,7 +532,10 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert verify_response.status_code == 303
     location = verify_response.headers["location"]
     assert location.startswith("https://client.example/callback?")
-    authorization_code = location.split("code=", 1)[1].split("&", 1)[0]
+    callback_query = parse_qs(urlparse(location).query)
+    assert callback_query["state"] == ["abc"]
+    assert callback_query["iss"] == ["https://mcp.jurisdigta.eu"]
+    authorization_code = callback_query["code"][0]
 
     token_response = mcp_client.post(
         "/oauth/token",

@@ -273,6 +273,7 @@ def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
     resource = _resource_url(request)
     return {
         "resource": resource,
+        "resource_name": "JurisDigta MCP",
         "authorization_servers": [base_url],
         "bearer_methods_supported": ["header"],
         "scopes_supported": [MCP_TOKEN_SCOPE],
@@ -299,6 +300,8 @@ def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": [MCP_TOKEN_SCOPE, MCP_REFRESH_TOKEN_SCOPE],
+        "authorization_response_iss_parameter_supported": True,
+        "protected_resources": [_resource_url(request)],
     }
 
 
@@ -625,6 +628,7 @@ def _redirect_with_oauth_authorization_code(
     query = {"code": authorization_code}
     if state:
         query["state"] = state
+    query["iss"] = _base_url_from_resource(resource)
     return RedirectResponse(url=f"{redirect_uri}?{urlencode(query)}", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1366,6 +1370,13 @@ def _base_url(request: Request) -> str:
 
 def _resource_url(request: Request) -> str:
     return f"{_base_url(request)}/MCP"
+
+
+def _base_url_from_resource(resource: str) -> str:
+    parsed = urlparse(resource)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    return resource.rstrip("/")
 
 
 def _resolve_oauth_resource(*, request: Request, resource: str) -> str:

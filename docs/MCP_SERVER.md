@@ -57,10 +57,15 @@ remote clients that request `offline_access`. Remote clients can either use
 dynamic client registration at `/oauth/register` or provide a preconfigured
 public OAuth Client ID. ChatGPT and Claude should pass the protected resource
 value `https://mcp.jurisdigta.eu/MCP` on the authorization, token, and refresh
-requests. The browser authorization page validates the user password, sends an
-email OTP, and only creates a short-lived authorization code after OTP
-verification. The token endpoint exchanges that code for the same revocable JWT
-bearer token accepted by `POST /MCP` and a separate audience-bound refresh token.
+requests. Protected-resource metadata includes a human-readable
+`resource_name`, and authorization-server metadata advertises the protected MCP
+resource plus `authorization_response_iss_parameter_supported=true`. The
+authorization callback returns `iss=https://mcp.jurisdigta.eu` with the
+authorization code so strict OAuth clients can bind the response to the issuer.
+The browser authorization page validates the user password, sends an email OTP,
+and only creates a short-lived authorization code after OTP verification. The
+token endpoint exchanges that code for the same revocable JWT bearer token
+accepted by `POST /MCP` and a separate audience-bound refresh token.
 
 Production settings:
 
