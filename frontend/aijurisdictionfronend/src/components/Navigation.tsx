@@ -170,6 +170,9 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
             <NavLink to="/auth">{t("navAuth")}</NavLink>
           ) : null}
           <NavLink to="/app">{t("navApp")}</NavLink>
+          {isAuthenticated ? (
+            <NavLink to="/app/assistant">{t("navAssistant")}</NavLink>
+          ) : null}
         </div>
         <div className="nav-actions">
           <LanguageSwitcher />

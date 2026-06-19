@@ -418,6 +418,7 @@ Configure these Cloudflare Tunnel public hostnames:
 | `mcp.jurisdigta.eu` | HTTP | `http://127.0.0.1:8070` | Dedicated MCP service; metadata is under `/.well-known/oauth-protected-resource/MCP`. |
 | `admin.jurisdigta.eu` | HTTP | `http://127.0.0.1:3000` | Grafana path is `/grafana/`; protect with Cloudflare Access. |
 | `web.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Frontend web container `jurisdigta-web`; validate with `/health`. |
+| `agent.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Authenticated assistant route `/app/assistant`; protect with Cloudflare Access before production legal-user access. |
 | `www.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Optional alias for the public web app. |
 | `jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Optional root domain for the public web app. |
 
@@ -440,6 +441,8 @@ External validation after Cloudflare DNS and tunnel hostname routing are active:
 ```bash
 curl -fsS https://api.jurisdigta.eu/health
 curl -fsS https://web.jurisdigta.eu/health
+curl -fsS https://agent.jurisdigta.eu/health
+curl -I https://agent.jurisdigta.eu/app/assistant
 curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP
 curl -I https://admin.jurisdigta.eu/grafana/
 ```
@@ -448,7 +451,9 @@ Protect `admin.jurisdigta.eu` with Cloudflare Access before using it from the
 public internet. Allow only named operator emails, require MFA where available,
 and keep Grafana's own login enabled with a strong password. Do not publish
 Prometheus, PostgreSQL, Node Exporter, cAdvisor, Blackbox Exporter, or status
-exporter ports.
+exporter ports. Protect `agent.jurisdigta.eu` with Cloudflare Access before
+legal users access `/app/assistant`; the frontend route is not a substitute for
+server-side identity and Assistant Gateway authorization.
 
 For a local LAN smoke deployment, expose only SSH and nginx:
 
@@ -1220,6 +1225,7 @@ Validate:
 ```bash
 curl -fsS http://127.0.0.1:8090/health
 curl -I http://127.0.0.1:8090/
+curl -I http://127.0.0.1:8090/app/assistant
 curl -I http://127.0.0.1:8090/privacy
 docker ps --filter name=jurisdigta-web
 ```

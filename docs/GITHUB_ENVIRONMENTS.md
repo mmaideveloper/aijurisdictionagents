@@ -415,6 +415,8 @@ crontab -l | grep run_document_processor.sh
 curl -fsS https://api.jurisdigta.eu/health
 curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP
 curl -fsS https://web.jurisdigta.eu/health
+curl -fsS https://agent.jurisdigta.eu/health
+curl -I https://agent.jurisdigta.eu/app/assistant
 ```
 
 ## 12. Populate `test` and `prod`

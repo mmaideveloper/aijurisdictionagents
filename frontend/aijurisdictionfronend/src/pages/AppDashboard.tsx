@@ -13,6 +13,13 @@ const AppDashboard: React.FC = () => {
       </section>
       <section className="card-grid">
         <article className="card">
+          <h3>{t("assistantTitle")}</h3>
+          <p>{t("assistantDashboardBody")}</p>
+          <Link className="button ghost" to="/app/assistant">
+            {t("navAssistant")}
+          </Link>
+        </article>
+        <article className="card">
           <h3>{t("caseTitle")}</h3>
           <p>{t("caseSubtitle")}</p>
           <Link className="button ghost" to="/app/case">

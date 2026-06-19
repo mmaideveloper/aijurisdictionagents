@@ -7,6 +7,7 @@ import Home from "./pages/Home";
 import Auth from "./pages/Auth";
 import Pricing from "./pages/Pricing";
 import AppDashboard from "./pages/AppDashboard";
+import AssistantWorkspace from "./pages/AssistantWorkspace";
 import CaseIntake from "./pages/CaseIntake";
 import LawyerWorkspace from "./pages/LawyerWorkspace";
 import AdviceSummary from "./pages/AdviceSummary";
@@ -49,6 +50,14 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <AppDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/assistant"
+          element={
+            <ProtectedRoute>
+              <AssistantWorkspace />
             </ProtectedRoute>
           }
         />
