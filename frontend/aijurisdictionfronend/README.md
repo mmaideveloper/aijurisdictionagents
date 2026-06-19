@@ -89,7 +89,8 @@ Production deployment preparation:
 
 - The route is served by the existing `jurisdigta-web` container on local port `8090`.
 - Publish `agent.jurisdigta.eu` through Cloudflare Tunnel to `http://127.0.0.1:8090`.
-- Protect `agent.jurisdigta.eu` with Cloudflare Access before production legal-user access.
+- Current production uses the local app login at `/auth`; do not configure Cloudflare Access for `agent.jurisdigta.eu` unless the auth plan changes.
+- Treat the local credentials as temporary bootstrap access and move to backend-managed accounts before broader legal-user access.
 - Validate `https://agent.jurisdigta.eu/health` and `https://agent.jurisdigta.eu/app/assistant` after DNS/tunnel setup.
 
 ## Navbar Branding

@@ -12,7 +12,7 @@ const labels: Record<string, string> = {
   assistantEyebrow: "Authenticated legal assistant",
   assistantTitle: "JurisDigta Assistant",
   assistantSubtitle: "Assistant subtitle",
-  assistantCloudflareAccess: "Production access planned through Cloudflare Access",
+  assistantLocalAuthAccess: "Production access uses local app authentication",
   assistantModesTitle: "Assistant modes",
   assistantModeLegalSearch: "Legal search",
   assistantModePrepareDocument: "Prepare document",
@@ -102,7 +102,7 @@ describe("AssistantWorkspace", () => {
     expect(screen.getByText("Locked on")).toBeDefined();
     expect(screen.getByText("Human approval")).toBeDefined();
     expect(screen.getByText("AI-assisted draft")).toBeDefined();
-    expect(screen.getByText("Production access planned through Cloudflare Access")).toBeDefined();
+    expect(screen.getByText("Production access uses local app authentication")).toBeDefined();
   });
 
   it("shows V1 assistant modes without arbitrary MCP URL entry", () => {
