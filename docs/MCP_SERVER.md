@@ -116,6 +116,52 @@ Use `https://mcp.jurisdigta.eu/MCP` as the remote MCP server URL in clients that
 - VS Code: add an HTTP MCP server in MCP settings. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/MCP/login`.
 - Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
 
+### Claude Desktop via `mcp-remote`
+
+Claude Desktop can use a remote HTTPS MCP server through a local stdio proxy.
+On Windows Store installs, edit:
+
+```text
+%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json
+```
+
+On classic desktop installs, check:
+
+```text
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+Add or merge this `mcpServers` entry while keeping existing preferences:
+
+```json
+{
+  "mcpServers": {
+    "jurisdigta": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\nodejs\\npx.cmd",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.jurisdigta.eu/MCP"
+      ],
+      "env": {
+        "NODE_OPTIONS": "--use-system-ca"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop after saving the file. The first connection starts
+`mcp-remote`, opens the JurisDigta OAuth flow, and then stores the MCP session
+locally for Claude Desktop.
+
+If the Claude log shows `UNABLE_TO_VERIFY_LEAF_SIGNATURE` while running `npx`,
+keep `NODE_OPTIONS=--use-system-ca`; it tells Node.js to trust the Windows
+system certificate store. If Claude logs `Claude Code requires a Pro or Max
+subscription`, the MCP server may be configured correctly but the active Claude
+account lacks the required Claude Desktop/Code entitlement.
+
 Discovery endpoints:
 
 - `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`
