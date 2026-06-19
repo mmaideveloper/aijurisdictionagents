@@ -233,6 +233,22 @@ def test_cors_preflight_allows_local_chat_simulator() -> None:
     assert response.headers["access-control-allow-origin"] == "http://localhost:8090"
 
 
+def test_cors_preflight_allows_production_agent_web() -> None:
+    response = client.options(
+        "/v1/users/sign-in",
+        headers={
+            "Origin": "https://agent.jurisdigta.eu",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-api-key,content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert (
+        response.headers["access-control-allow-origin"]
+        == "https://agent.jurisdigta.eu"
+    )
+
+
 def test_cors_preflight_allows_flutter_web_localhost() -> None:
     response = client.options(
         "/v1/chat/sessions",

@@ -142,7 +142,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
 | `AZURE_POSTGRES_VERSION` | Optional PostgreSQL version |
 | `AZURE_POSTGRES_STORAGE_SIZE_GB` | Optional PostgreSQL storage size |
-| `CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the API |
+| `CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the API. Include browser-hosted frontend origins such as `https://web.jurisdigta.eu` and `https://agent.jurisdigta.eu`; self-managed prod deploy appends those two origins when starting the API container |
 | `MCP_CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the dedicated MCP service; default production value should include `https://mcp.jurisdigta.eu` |
 | `MCP_PORT` | Local/self-managed MCP service port when using Docker Compose, default `8070` |
 | `CONTACT_CAPTCHA_REQUIRED` | Set `true` in public environments to require Cloudflare Turnstile verification for `POST /v1/contact` |

@@ -70,9 +70,11 @@ _DEFAULT_CORPORATE_WEB_ORIGINS: tuple[str, ...] = (
     "https://jurisdigta.eu",
     "https://www.jurisdigta.eu",
     "https://web.jurisdigta.eu",
+    "https://agent.jurisdigta.eu",
     "https://juridigta.eu",
     "https://www.juridigta.eu",
     "https://web.juridigta.eu",
+    "https://agent.juridigta.eu",
 )
 
 
