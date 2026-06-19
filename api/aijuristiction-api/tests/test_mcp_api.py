@@ -557,6 +557,22 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert oauth_search.status_code == 200
     assert _tool_payload(oauth_search)["results"][0]["document_id"] == "doc-1"
 
+    replacement_key_response = api_client.post(
+        f"/v1/users/{sign_up_response.json()['user_id']}/mcp-api-key",
+        headers=AUTH_HEADERS,
+        json={"expires_in_days": 1},
+    )
+    assert replacement_key_response.status_code == 200
+    assert replacement_key_response.json()["mcp_api_key"] != token_payload["access_token"]
+
+    existing_oauth_search = _mcp_call(
+        "searchLaws",
+        {"query": "civil"},
+        headers={"authorization": f"Bearer {token_payload['access_token']}"},
+    )
+    assert existing_oauth_search.status_code == 200
+    assert _tool_payload(existing_oauth_search)["results"][0]["document_id"] == "doc-1"
+
 
 def test_oauth_login_reuses_recent_mcp_otp_verification(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
