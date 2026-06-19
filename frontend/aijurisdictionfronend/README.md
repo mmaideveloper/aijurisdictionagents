@@ -50,12 +50,14 @@ Console logging:
 - Frontend emits process logs to browser console with `INFO`, `WARN`, and `ERROR` levels.
 - API request lifecycle and failures are logged with structured JSON context.
 
-## Simulated Login (Frontend-only)
+## JurisDigta Account Login
 
-The UI includes an in-memory auth state used for local development. It resets on refresh.
+The web app signs users in through the same API user table used by the mobile app and MCP account flows.
 
-- Email: `admin@admin.com`
-- Password: `admin123`
+- Login submits `email` and `password` to `POST /v1/users/sign-in`.
+- The request uses `VITE_API_BASE_URL` and `VITE_API_KEY`, matching the existing frontend API client configuration.
+- The returned user profile is cached in browser `sessionStorage` for the current browser session.
+- Passwords are never stored by the frontend.
 
 ## Signed-in Homepage
 
@@ -63,7 +65,7 @@ When authenticated, the home page switches to a 3-column workspace layout (case 
 
 ## Protected App Routes
 
-All `/app/*` routes and `/profile` are guarded by mock auth state.
+All `/app/*` routes and `/profile` are guarded by API-backed web auth state.
 
 - Unauthenticated users are redirected to `/`
 - Authenticated users can access the full app area (`/app`, `/app/workspace`, etc.) and `/profile`
@@ -89,8 +91,8 @@ Production deployment preparation:
 
 - The route is served by the existing `jurisdigta-web` container on local port `8090`.
 - Publish `agent.jurisdigta.eu` through Cloudflare Tunnel to `http://127.0.0.1:8090`.
-- Current production uses the local app login at `/auth`; do not configure Cloudflare Access for `agent.jurisdigta.eu` unless the auth plan changes.
-- Treat the local credentials as temporary bootstrap access and move to backend-managed accounts before broader legal-user access.
+- Current production uses the JurisDigta account login at `/auth`; do not configure Cloudflare Access for `agent.jurisdigta.eu` unless the auth plan changes.
+- Login credentials are verified by the API against the PostgreSQL-backed users table.
 - Validate `https://agent.jurisdigta.eu/health` and `https://agent.jurisdigta.eu/app/assistant` after DNS/tunnel setup.
 
 ## Navbar Branding
@@ -116,7 +118,7 @@ In signed-in state, the profile icon opens a click-triggered dropdown menu in th
 
 ## My Profile View
 
-The `/profile` page displays structured user information from the current mock auth session.
+The `/profile` page displays structured user information from the current API-authenticated web session.
 
 - First Name
 - Last Name

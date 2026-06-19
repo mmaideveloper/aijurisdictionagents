@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -7,12 +7,12 @@ import { MemoryRouter } from "react-router-dom";
 import { LanguageProvider } from "../components/LanguageProvider";
 import Home from "../pages/Home";
 
-vi.mock("../auth/mockAuth", () => ({
+vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
     isAuthenticated: true,
     user: {
       name: "Admin User",
-      email: "admin@admin.com"
+      email: "user@example.com"
     },
     signOut: vi.fn()
   })

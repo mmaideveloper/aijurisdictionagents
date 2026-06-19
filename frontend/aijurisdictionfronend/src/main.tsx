@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { LanguageProvider } from "./components/LanguageProvider";
-import { AuthProvider } from "./auth/mockAuth";
+import { AuthProvider } from "./auth/webAuth";
 import { CaseProvider } from "./state/CaseProvider";
 import "./styles/theme.css";
 import "./styles/app.css";

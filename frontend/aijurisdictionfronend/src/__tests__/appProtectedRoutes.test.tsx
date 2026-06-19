@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 
 import React from "react";
 import { describe, expect, it, vi, afterEach } from "vitest";
@@ -8,7 +8,7 @@ import App from "../App";
 
 const authState = vi.hoisted(() => ({ isAuthenticated: false }));
 
-vi.mock("../auth/mockAuth", () => ({
+vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
     isAuthenticated: authState.isAuthenticated
   })

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 
 import React from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
@@ -9,12 +9,12 @@ import { Navigation } from "../components/Navigation";
 
 const mockSignOut = vi.fn();
 
-vi.mock("../auth/mockAuth", () => ({
+vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
     isAuthenticated: true,
     user: {
       name: "Admin",
-      email: "admin@admin.com"
+      email: "user@example.com"
     },
     signOut: mockSignOut
   })

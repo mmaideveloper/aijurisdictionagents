@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../components/LanguageProvider";
-import { useAuth } from "../auth/mockAuth";
+import { useAuth } from "../auth/webAuth";
 import { BillingCadence, plans } from "../data/plans";
 import { useCases } from "../state/CaseProvider";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
