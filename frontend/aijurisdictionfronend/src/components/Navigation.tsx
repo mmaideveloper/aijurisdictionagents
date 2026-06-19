@@ -1,6 +1,6 @@
-import React from "react";
+﻿import React from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../auth/mockAuth";
+import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "./LanguageProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 

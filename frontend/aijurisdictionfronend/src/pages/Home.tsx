@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { Link } from "react-router-dom";
 import { FiMessageSquare, FiMic, FiVolume2, FiVolumeX, FiVideo } from "react-icons/fi";
 import { ApiRequestError } from "../api/chatClient";
@@ -9,7 +9,7 @@ import {
   startBrowserSpeechSession,
   SpeechToTextError
 } from "../audio/speechToText";
-import { useAuth } from "../auth/mockAuth";
+import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import WorkspaceWelcome from "../components/WorkspaceWelcome";
 import {

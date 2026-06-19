@@ -418,7 +418,7 @@ Configure these Cloudflare Tunnel public hostnames:
 | `mcp.jurisdigta.eu` | HTTP | `http://127.0.0.1:8070` | Dedicated MCP service; metadata is under `/.well-known/oauth-protected-resource/MCP`. |
 | `admin.jurisdigta.eu` | HTTP | `http://127.0.0.1:3000` | Grafana path is `/grafana/`; protect with Cloudflare Access. |
 | `web.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Frontend web container `jurisdigta-web`; validate with `/health`. |
-| `agent.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Authenticated assistant route `/app/assistant`; current production uses the local app login. |
+| `agent.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Authenticated assistant route `/app/assistant`; current production uses JurisDigta account login against the API users table. |
 | `www.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Optional alias for the public web app. |
 | `jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Optional root domain for the public web app. |
 
@@ -451,7 +451,7 @@ Protect `admin.jurisdigta.eu` with Cloudflare Access before using it from the
 public internet. Allow only named operator emails, require MFA where available,
 and keep Grafana's own login enabled with a strong password. Do not publish
 Prometheus, PostgreSQL, Node Exporter, cAdvisor, Blackbox Exporter, or status
-exporter ports. Keep `agent.jurisdigta.eu` behind the local app login before
+exporter ports. Keep `agent.jurisdigta.eu` behind JurisDigta account login before
 legal users access `/app/assistant`; the frontend route is not a substitute for
 backend-managed identity and Assistant Gateway authorization.
 

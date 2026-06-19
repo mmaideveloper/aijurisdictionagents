@@ -211,7 +211,7 @@ Purpose: point `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, 
 6. Configure UFW so local services are reachable only from loopback/LAN as needed; do not rely on direct public router NAT for tunnel traffic.
 7. Configure local nginx or service listeners for `web`, `api`, `mcp`, and `admin`.
 8. Validate HTTPS externally from outside the LAN after DNS propagation.
-9. Protect `agent.jurisdigta.eu` with the local app login for the current release, and protect `admin.jurisdigta.eu` plus MCP endpoints with Cloudflare Access, authentication, rate limits, audit logging, and preferably VPN/IP allow-list before production use.
+9. Protect `agent.jurisdigta.eu` with JurisDigta account login against the API users table for the current release, and protect `admin.jurisdigta.eu` plus MCP endpoints with Cloudflare Access, authentication, rate limits, audit logging, and preferably VPN/IP allow-list before production use.
 
 ### Secrets And Access Values
 
@@ -328,7 +328,7 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Cloudflare Tunnel MCP hostname: `mcp.jurisdigta.eu` -> `http://127.0.0.1:8070`, with MCP served by the dedicated MCP service at `/MCP`.
 - Cloudflare Tunnel admin hostname: `admin.jurisdigta.eu` -> `http://127.0.0.1:3000`, with Grafana served at `/grafana/`.
 - Cloudflare Tunnel web hostname: `web.jurisdigta.eu` -> `http://127.0.0.1:8090` only after the `jurisdigta-web` frontend container serves the intended web app.
-- Cloudflare Tunnel assistant hostname: `agent.jurisdigta.eu` -> `http://127.0.0.1:8090`, with the local app login required before legal users access `/app/assistant`.
+- Cloudflare Tunnel assistant hostname: `agent.jurisdigta.eu` -> `http://127.0.0.1:8090`, with JurisDigta account login required before legal users access `/app/assistant`.
 - Optional Grafana local URL: `http://127.0.0.1:3000`, accessed by SSH tunnel or through `admin.jurisdigta.eu` protected by Cloudflare Access.
 - Optional Grafana public mobile entry URL through Cloudflare Tunnel: `https://admin.jurisdigta.eu/grafana/`.
 - Required Grafana secret for local stack: `GRAFANA_ADMIN_PASSWORD`, stored only in `/srv/jurisdigta/app/Deployment/monitoring/.env` or a server-local secret manager.

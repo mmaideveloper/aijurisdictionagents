@@ -17,12 +17,13 @@ npm run dev
 
 Open `http://localhost:5173`.
 
-## Simulated login (frontend-only)
+## JurisDigta account login
 
-The demo includes an in-memory auth state for UI development. It resets on refresh.
+The frontend signs in through the existing API users table.
 
-- Email: `admin@admin.com`
-- Password: `admin123`
+- Configure `VITE_API_BASE_URL` and `VITE_API_KEY` in `frontend/aijurisdictionfronend/.env`.
+- Login submits `email` and `password` to `POST /v1/users/sign-in`.
+- Use an existing JurisDigta user created by the mobile app, MCP account flow, or API sign-up endpoint.
 
 ## Minimal runnable example
 
@@ -50,7 +51,7 @@ npm run preview
 - Hero header with session status and region
 - Feature cards for intake, orchestration, and outputs
 - Callout panel for upcoming API integration
-- Navbar reacts to mock auth state:
+- Navbar reacts to API-backed auth state:
   - Sign-in link when logged out
   - Profile trigger when logged in with dropdown options: `My Profile`, `My Cases`, `Log Out`
   - `My Profile` navigates to `/profile`
@@ -69,7 +70,7 @@ Route access behavior:
 - After logout, protected routes are no longer accessible until sign-in.
 
 My Profile view behavior:
-- `/profile` displays structured user fields from mock auth state.
+- `/profile` displays structured user fields from the API-authenticated user profile.
 - Current fields include `First Name`, `Last Name`, `Email`, plus optional `Role` and `Account Created Date`.
 - The profile view also includes subscription pricing controls and an opened-cases panel for quick case return.
 

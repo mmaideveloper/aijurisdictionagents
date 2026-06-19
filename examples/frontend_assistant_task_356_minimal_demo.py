@@ -42,8 +42,13 @@ if __name__ == "__main__":
     )
     _require_contains(
         FRONTEND_ROOT / "src" / "data" / "translations.ts",
-        "assistantLocalAuthAccess",
+        "assistantApiAuthAccess",
         "Assistant deployment/access copy must be translated through language keys.",
+    )
+    _require_contains(
+        FRONTEND_ROOT / "src" / "auth" / "webAuth.tsx",
+        "/v1/users/sign-in",
+        "Web auth must use the existing API user sign-in endpoint.",
     )
 
     print("Frontend assistant issue #356 minimal demo checks passed.")

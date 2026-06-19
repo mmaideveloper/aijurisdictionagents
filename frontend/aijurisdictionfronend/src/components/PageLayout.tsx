@@ -1,8 +1,8 @@
-import React from "react";
+﻿import React from "react";
 import { useLocation } from "react-router-dom";
 import { Navigation } from "./Navigation";
 import { Footer } from "./Footer";
-import { useAuth } from "../auth/mockAuth";
+import { useAuth } from "../auth/webAuth";
 import { Sidebar } from "./Sidebar";
 import { BsBoxArrowRight } from "react-icons/bs";
 import { useLanguage } from "./LanguageProvider";

@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
-import { MOCK_USER, useAuth } from "../auth/mockAuth";
 
 const Auth: React.FC = () => {
   const { t } = useLanguage();
@@ -11,18 +11,27 @@ const Auth: React.FC = () => {
   const [password, setPassword] = React.useState("");
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const handleSignIn = () => {
+  const handleSignIn = async () => {
     const normalizedEmail = email.trim();
-    const ok = signIn(normalizedEmail, password);
-    if (!ok) {
-      setError("Invalid credentials.");
+    setIsSubmitting(true);
+    try {
+      const ok = await signIn(normalizedEmail, password);
+      if (!ok) {
+        setError(t("authInvalidCredentials"));
+        setMessage(null);
+        return;
+      }
+      setError(null);
+      setMessage(t("authSignedIn"));
+      navigate("/");
+    } catch (signInError) {
+      setError(signInError instanceof Error ? signInError.message : t("authSignInFailed"));
       setMessage(null);
-      return;
+    } finally {
+      setIsSubmitting(false);
     }
-    setError(null);
-    setMessage(`Signed in as ${MOCK_USER.email}.`);
-    navigate("/");
   };
 
   const handleSignOut = () => {
@@ -53,7 +62,7 @@ const Auth: React.FC = () => {
             <span>{t("authPassword")}</span>
             <input
               type="password"
-              placeholder="••••••••"
+              placeholder="********"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
@@ -62,13 +71,11 @@ const Auth: React.FC = () => {
             type="button"
             className="button primary full"
             onClick={handleSignIn}
+            disabled={isSubmitting}
           >
-            {t("authSignIn")}
+            {isSubmitting ? t("authSigningIn") : t("authSignIn")}
           </button>
-          <p className="hint">
-            Simulated login only. Use <strong>{MOCK_USER.email}</strong> /{" "}
-            <strong>{MOCK_USER.password}</strong>.
-          </p>
+          <p className="hint">{t("authApiLoginHint")}</p>
           {error ? (
             <p className="hint" role="alert">
               {error}
@@ -77,9 +84,9 @@ const Auth: React.FC = () => {
           {message ? <p className="hint">{message}</p> : null}
           {isAuthenticated ? (
             <div className="hint">
-              Signed in as <strong>{user?.name ?? MOCK_USER.name}</strong>.{" "}
+              {t("authSignedInAs")} <strong>{user?.name ?? t("commonUser")}</strong>.{" "}
               <button type="button" className="button ghost" onClick={handleSignOut}>
-                Reset session
+                {t("authResetSession")}
               </button>
             </div>
           ) : null}
