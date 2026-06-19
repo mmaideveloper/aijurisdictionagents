@@ -52,14 +52,15 @@ curl http://127.0.0.1:8070/
 - Authorization endpoint: `GET /oauth/authorize`
 - Token endpoint: `POST /oauth/token`
 
-The OAuth flow uses authorization code with PKCE S256. Remote clients can either
-use dynamic client registration at `/oauth/register` or provide a preconfigured
+The OAuth flow uses authorization code with PKCE S256, plus refresh tokens for
+remote clients that request `offline_access`. Remote clients can either use
+dynamic client registration at `/oauth/register` or provide a preconfigured
 public OAuth Client ID. ChatGPT and Claude should pass the protected resource
-value `https://mcp.jurisdigta.eu/MCP` on the authorization and token requests.
-The browser authorization page validates the user password, sends an email OTP,
-and only creates a short-lived authorization code after OTP verification. The
-token endpoint exchanges that code for the same revocable JWT bearer token
-accepted by `POST /MCP`.
+value `https://mcp.jurisdigta.eu/MCP` on the authorization, token, and refresh
+requests. The browser authorization page validates the user password, sends an
+email OTP, and only creates a short-lived authorization code after OTP
+verification. The token endpoint exchanges that code for the same revocable JWT
+bearer token accepted by `POST /MCP` and a separate audience-bound refresh token.
 
 Production settings:
 
@@ -73,13 +74,17 @@ Production settings:
 - MCP API keys are per user.
 - Default key lifetime is 1 day.
 - Keys are signed JWT bearer tokens and are only shown once at creation.
-- JWT claims are minimized to `sub`, `aud`, `scope`, `exp`, and `jti`.
+- JWT claims are minimized to `sub`, `aud`, `scope`, `exp`, `jti`, and
+  `token_use` for refresh tokens.
 - The latest full token is stored hashed in the database as the per-user MCP
   access marker. Clearing it revokes MCP access for the user; valid signed
   OAuth/browser tokens for that user remain usable until their own JWT expiry
   unless access is revoked.
 - Protected MCP tools accept either `Authorization: Bearer <mcp_api_key>` or `x-mcp-api-key: <mcp_api_key>`.
 - OAuth tokens are audience-bound to the MCP resource URL and include `scope=mcp:laws`.
+- OAuth refresh tokens are audience-bound, use `scope=offline_access`, are not
+  accepted as MCP bearer tokens, and can be exchanged at `/oauth/token` with
+  `grant_type=refresh_token`.
 
 Users can generate a key in either way:
 

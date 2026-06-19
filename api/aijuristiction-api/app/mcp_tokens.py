@@ -12,6 +12,7 @@ from uuid import uuid4
 from aijurisdictionagents.api_db import User
 
 MCP_TOKEN_SCOPE = "mcp:laws"
+MCP_REFRESH_TOKEN_SCOPE = "offline_access"
 
 
 def create_mcp_api_token(
@@ -37,7 +38,53 @@ def create_mcp_api_token(
     return f"{signing_input}.{signature}"
 
 
+def create_mcp_refresh_token(
+    *,
+    user: User,
+    expires_at: datetime,
+    audience: str | None = None,
+) -> str:
+    token_id = str(uuid4())
+    header = {"alg": "HS256", "typ": "JWT"}
+    payload = {
+        "sub": user.user_id,
+        "aud": audience or default_mcp_resource_url(),
+        "scope": MCP_REFRESH_TOKEN_SCOPE,
+        "exp": int(expires_at.timestamp()),
+        "jti": token_id,
+        "token_use": "refresh",
+    }
+    encoded_header = _base64url_json(header)
+    encoded_payload = _base64url_json(payload)
+    signing_input = f"{encoded_header}.{encoded_payload}"
+    signature = _sign(signing_input)
+    return f"{signing_input}.{signature}"
+
+
 def validate_mcp_api_token(token: str, *, audience: str, required_scope: str) -> dict[str, Any] | None:
+    payload = _validate_mcp_token(token=token, audience=audience)
+    if payload is None:
+        return None
+    if payload.get("token_use") not in {None, "access"}:
+        return None
+    scope = payload.get("scope")
+    if not isinstance(scope, str) or required_scope not in scope.split():
+        return None
+    return payload
+
+
+def validate_mcp_refresh_token(token: str, *, audience: str) -> dict[str, Any] | None:
+    payload = _validate_mcp_token(token=token, audience=audience)
+    if payload is None:
+        return None
+    if payload.get("token_use") != "refresh":
+        return None
+    if payload.get("scope") != MCP_REFRESH_TOKEN_SCOPE:
+        return None
+    return payload
+
+
+def _validate_mcp_token(token: str, *, audience: str) -> dict[str, Any] | None:
     parts = token.split(".")
     if len(parts) != 3:
         return None
@@ -59,9 +106,6 @@ def validate_mcp_api_token(token: str, *, audience: str, required_scope: str) ->
     if not isinstance(payload.get("sub"), str):
         return None
     if payload.get("aud") != audience:
-        return None
-    scope = payload.get("scope")
-    if not isinstance(scope, str) or required_scope not in scope.split():
         return None
     if not isinstance(payload.get("jti"), str):
         return None
