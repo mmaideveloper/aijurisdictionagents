@@ -19,7 +19,15 @@ from fastapi import APIRouter, Body, Depends, Form, Header, HTTPException, Reque
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app.laws_api import _laws_db_config, _read_laws_statistics
-from app.mcp_tokens import MCP_TOKEN_SCOPE, create_mcp_api_token, default_mcp_resource_url, validate_mcp_api_token
+from app.mcp_tokens import (
+    MCP_REFRESH_TOKEN_SCOPE,
+    MCP_TOKEN_SCOPE,
+    create_mcp_api_token,
+    create_mcp_refresh_token,
+    default_mcp_resource_url,
+    validate_mcp_api_token,
+    validate_mcp_refresh_token,
+)
 from app.services.email_scheduler import EmailScheduler
 from app.users.api import get_email_scheduler, get_user_store
 from app.users.notifications import queue_registration_email
@@ -287,10 +295,10 @@ def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
         "token_endpoint": f"{base_url}/oauth/token",
         "registration_endpoint": f"{base_url}/oauth/register",
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
-        "scopes_supported": [MCP_TOKEN_SCOPE],
+        "scopes_supported": [MCP_TOKEN_SCOPE, MCP_REFRESH_TOKEN_SCOPE],
     }
 
 
@@ -340,10 +348,10 @@ def oauth_dynamic_client_registration(
         "client_id_issued_at": int(time.time()),
         "client_name": str(metadata.get("client_name") or "MCP client").strip()[:100],
         "redirect_uris": redirect_uris,
-        "grant_types": ["authorization_code"],
+        "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
         "token_endpoint_auth_method": "none",
-        "scope": MCP_TOKEN_SCOPE,
+        "scope": f"{MCP_TOKEN_SCOPE} {MCP_REFRESH_TOKEN_SCOPE}",
     }
 
 
@@ -511,15 +519,25 @@ def oauth_authorize_verify(
 def oauth_token(
     request: Request,
     grant_type: str = Form(...),
-    code: str = Form(...),
-    redirect_uri: str = Form(...),
+    code: str = Form(""),
+    redirect_uri: str = Form(""),
     client_id: str = Form(...),
-    code_verifier: str = Form(...),
+    code_verifier: str = Form(""),
     resource: str = Form(""),
+    refresh_token: str = Form(""),
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> dict[str, Any]:
+    if grant_type == "refresh_token":
+        return _oauth_refresh_token_response(
+            request=request,
+            refresh_token=refresh_token,
+            resource=resource,
+            store=store,
+        )
     if grant_type != "authorization_code":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported grant_type")
+    if not code or not redirect_uri or not code_verifier:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing authorization code parameters")
     record = store.consume_mcp_oauth_authorization_code(code=code)
     if record is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid authorization code")
@@ -538,9 +556,47 @@ def oauth_token(
         expires_in_days=1,
         audience=expected_resource,
     )
+    refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=expected_resource)
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
     return {
         "access_token": token,
+        "refresh_token": refresh_token_value,
+        "token_type": "Bearer",
+        "expires_in": expires_in,
+        "scope": MCP_TOKEN_SCOPE,
+    }
+
+
+def _oauth_refresh_token_response(
+    *,
+    request: Request,
+    refresh_token: str,
+    resource: str,
+    store: ApiDatabaseStore,
+) -> dict[str, Any]:
+    if not refresh_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing refresh_token")
+    expected_resource = _resource_url(request)
+    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
+    if resolved_resource != expected_resource:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
+    payload = validate_mcp_refresh_token(refresh_token, audience=expected_resource)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid refresh_token")
+    user = store.find_user_by_id(user_id=str(payload["sub"]))
+    if user is None or not user.mcp_api_key_hash:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MCP access revoked")
+    token, expires_at = _issue_mcp_api_key(
+        store=store,
+        user=user,
+        expires_in_days=1,
+        audience=expected_resource,
+    )
+    refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=expected_resource)
+    expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
+    return {
+        "access_token": token,
+        "refresh_token": refresh_token_value,
         "token_type": "Bearer",
         "expires_in": expires_in,
         "scope": MCP_TOKEN_SCOPE,
@@ -1184,6 +1240,12 @@ def _issue_mcp_api_key(
     expires_at = expires_at_dt.isoformat()
     store.set_user_mcp_api_key(user_id=user.user_id, api_key=raw_key, expires_at=expires_at)
     return raw_key, expires_at
+
+
+def _issue_mcp_refresh_token(*, user: User, audience: str) -> tuple[str, str]:
+    expires_at_dt = (datetime.now(timezone.utc) + timedelta(days=30)).replace(microsecond=0)
+    raw_key = create_mcp_refresh_token(user=user, expires_at=expires_at_dt, audience=audience)
+    return raw_key, expires_at_dt.isoformat()
 
 
 def _extract_mcp_api_key(*, authorization: str | None, x_mcp_api_key: str | None) -> str | None:
