@@ -54,6 +54,28 @@ load_env() {
   set +a
 }
 
+append_csv_value() {
+  local existing="$1"
+  local required="$2"
+  if [ -z "$existing" ]; then
+    printf '%s' "$required"
+    return
+  fi
+  case ",$existing," in
+    *",$required,"*) printf '%s' "$existing" ;;
+    *) printf '%s,%s' "$existing" "$required" ;;
+  esac
+}
+
+production_api_cors_origins() {
+  local origins="${CORS_ALLOW_ORIGINS:-}"
+  origins="$(append_csv_value "$origins" "https://jurisdigta.eu")"
+  origins="$(append_csv_value "$origins" "https://www.jurisdigta.eu")"
+  origins="$(append_csv_value "$origins" "https://web.jurisdigta.eu")"
+  origins="$(append_csv_value "$origins" "https://agent.jurisdigta.eu")"
+  printf '%s' "$origins"
+}
+
 require_azurefoundry_settings() {
   local provider="${LLM_PROVIDER:-azurefoundry}"
   if [ "$provider" != "azurefoundry" ]; then
@@ -164,8 +186,10 @@ start_api_and_mcp() {
   compose_env
   local api_db_cloud
   local laws_db_cloud
+  local api_cors_allow_origins
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
+  api_cors_allow_origins="$(production_api_cors_origins)"
   docker rm -f jurisdigta-api jurisdigta-mcp jurisdigta-email-scheduler >/dev/null 2>&1 || true
   docker run -d \
     --name jurisdigta-api \
@@ -176,6 +200,7 @@ start_api_and_mcp() {
     -e DB_OPTION=postgres \
     -e DB_CLOUD="$api_db_cloud" \
     -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
+    -e CORS_ALLOW_ORIGINS="$api_cors_allow_origins" \
     -e EMAIL_DB_OPTION=postgres \
     -e EMAIL_DB_CLOUD="$api_db_cloud" \
     -e EMAIL_DB_LOCAL=/workspace/runs/storage/api/sqlite/email.sqlite3 \

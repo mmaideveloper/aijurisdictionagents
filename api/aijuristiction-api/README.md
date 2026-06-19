@@ -658,7 +658,7 @@ curl -X POST "http://localhost:8080/v1/chat/sessions" \
   - `http://127.x.x.x:<any-port>` for loopback IPv4 addresses
   - `http://[::1]:<any-port>` for IPv6 loopback
   - `Origin: null` for static `file://` previews, including the corporate web contact form during local checks
-- Deployed browser clients are blocked until you set `CORS_ALLOW_ORIGINS` explicitly.
+- Deployed browser clients are blocked until `CORS_ALLOW_ORIGINS` includes their exact origins. The self-managed production deploy always adds `https://web.jurisdigta.eu` and `https://agent.jurisdigta.eu` for the API container.
 - Native Android/iOS builds do not require `CORS_ALLOW_ORIGINS`.
 - Override allowed origins with `CORS_ALLOW_ORIGINS` (comma-separated), for example:
 
@@ -669,7 +669,7 @@ CORS_ALLOW_ORIGINS=http://localhost:8090,http://127.0.0.1:8090,http://localhost:
 Example for a deployed browser build:
 
 ```bash
-CORS_ALLOW_ORIGINS=https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io uvicorn app.main:app --reload --port 8080
+CORS_ALLOW_ORIGINS=https://mobile-web-dev.example.com,https://web-juris-dev.<region>.azurecontainerapps.io,https://web.jurisdigta.eu,https://agent.jurisdigta.eu uvicorn app.main:app --reload --port 8080
 
 ## Local source precedence
 
