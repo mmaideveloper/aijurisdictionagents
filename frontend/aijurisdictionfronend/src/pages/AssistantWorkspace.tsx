@@ -129,7 +129,7 @@ const AssistantWorkspace: React.FC = () => {
             </div>
             <div className="assistant-access">
               <BsShieldCheck aria-hidden="true" />
-              <span>{t("assistantCloudflareAccess")}</span>
+              <span>{t("assistantLocalAuthAccess")}</span>
             </div>
           </section>
 

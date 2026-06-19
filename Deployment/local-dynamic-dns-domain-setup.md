@@ -58,7 +58,7 @@ Ubuntu 26.04 server cloudflared
 Ubuntu 26.04 server nginx / local services
   |
   +--> web.jurisdigta.eu   -> local web frontend port or static files
-  +--> agent.jurisdigta.eu -> local web frontend port, protected by Cloudflare Access
+  +--> agent.jurisdigta.eu -> local web frontend port, protected by local app login
   +--> api.jurisdigta.eu   -> http://127.0.0.1:8080
   +--> mcp.jurisdigta.eu   -> local MCP service port
   +--> admin.jurisdigta.eu -> local admin service port protected by Cloudflare Access/VPN/IP allow-list
@@ -100,7 +100,7 @@ Create these public hostnames in the Cloudflare Tunnel configuration:
 | Public hostname | Local service | Required protection |
 | --- | --- | --- |
 | `web.jurisdigta.eu` | `http://127.0.0.1:<web-port>` or local nginx static site | Public web frontend controls |
-| `agent.jurisdigta.eu` | `http://127.0.0.1:<web-port>` after web deployment | Authenticated assistant route `/app/assistant`; Cloudflare Access before production use |
+| `agent.jurisdigta.eu` | `http://127.0.0.1:<web-port>` after web deployment | Authenticated assistant route `/app/assistant`; current production uses the local app login |
 | `api.jurisdigta.eu` | `http://127.0.0.1:8080` | API authentication, rate limits, safe CORS |
 | `mcp.jurisdigta.eu` | `http://127.0.0.1:8070` | Authentication, rate limits, audit logging |
 | `admin.jurisdigta.eu` | `http://127.0.0.1:<admin-port>` | Cloudflare Access, VPN/IP allow-list, strong MFA |
@@ -219,7 +219,7 @@ In the tunnel details page, add these public hostname routes:
 | Cloudflare hostname | Service type and URL | Notes |
 | --- | --- | --- |
 | `web.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<web-port>` | Use the actual local web/frontend port or local nginx port. |
-| `agent.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<web-port>` | Same frontend container as `web`; require Cloudflare Access for the assistant workspace. |
+| `agent.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<web-port>` | Same frontend container as `web`; require the local app login for the assistant workspace. |
 | `api.jurisdigta.eu` | `HTTP` -> `127.0.0.1:8080` | API service. Validate `/health`. |
 | `mcp.jurisdigta.eu` | `HTTP` -> `127.0.0.1:8070` | Require auth, rate limits, and audit logging. |
 | `admin.jurisdigta.eu` | `HTTP` -> `127.0.0.1:<admin-port>` | Put behind Cloudflare Access/MFA before sharing. |

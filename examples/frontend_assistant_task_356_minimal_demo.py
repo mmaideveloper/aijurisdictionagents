@@ -42,7 +42,7 @@ if __name__ == "__main__":
     )
     _require_contains(
         FRONTEND_ROOT / "src" / "data" / "translations.ts",
-        "assistantCloudflareAccess",
+        "assistantLocalAuthAccess",
         "Assistant deployment/access copy must be translated through language keys.",
     )
 
