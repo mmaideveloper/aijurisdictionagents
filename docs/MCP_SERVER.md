@@ -74,7 +74,10 @@ Production settings:
 - Default key lifetime is 1 day.
 - Keys are signed JWT bearer tokens and are only shown once at creation.
 - JWT claims are minimized to `sub`, `aud`, `scope`, `exp`, and `jti`.
-- The full token is still stored hashed in the database so it can be revoked.
+- The latest full token is stored hashed in the database as the per-user MCP
+  access marker. Clearing it revokes MCP access for the user; valid signed
+  OAuth/browser tokens for that user remain usable until their own JWT expiry
+  unless access is revoked.
 - Protected MCP tools accept either `Authorization: Bearer <mcp_api_key>` or `x-mcp-api-key: <mcp_api_key>`.
 - OAuth tokens are audience-bound to the MCP resource URL and include `scope=mcp:laws`.
 

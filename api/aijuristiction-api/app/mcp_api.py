@@ -1217,12 +1217,15 @@ def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> Use
     if payload is None:
         logger.warning("mcp_auth_failed reason=invalid_or_expired_token")
         raise HTTPException(status_code=401, detail="Invalid or expired MCP API key")
-    user = store.find_user_by_mcp_api_key(api_key=api_key)
+    user = store.find_user_by_id(user_id=str(payload["sub"]))
     if user is None or user.user_id != payload.get("sub"):
         logger.warning(
             "mcp_auth_failed reason=token_user_mismatch subject_type=%s",
             _value_type(payload.get("sub")),
         )
+        raise HTTPException(status_code=401, detail="Invalid or expired MCP API key")
+    if not user.mcp_api_key_hash:
+        logger.warning("mcp_auth_failed reason=mcp_access_revoked user_id=%s", user.user_id)
         raise HTTPException(status_code=401, detail="Invalid or expired MCP API key")
     return user
 
