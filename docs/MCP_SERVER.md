@@ -65,7 +65,8 @@ authorization code so strict OAuth clients can bind the response to the issuer.
 The browser authorization page validates the user password, sends an email OTP,
 and only creates a short-lived authorization code after OTP verification. The
 token endpoint exchanges that code for the same revocable JWT bearer token
-accepted by `POST /MCP` and a separate audience-bound refresh token.
+accepted by `POST /MCP` and a separate audience-bound refresh token. Token
+responses include `Cache-Control: no-store` and `Pragma: no-cache`.
 
 Production settings:
 
@@ -214,11 +215,21 @@ For protected tools, send the MCP API key as a Bearer token or `x-mcp-api-key` h
 MCP server logs use the `jurisdigta-mcp-server.http` and `aijuristiction-api.mcp` loggers with the shared `API_LOG_LEVEL` or `LOG_LEVEL` setting.
 Each JSON-RPC request logs request and correlation IDs from `x-request-id` and `x-correlation-id`, batch/message counts, method names, HTTP status, and request duration.
 Tool calls log stable event names such as `mcp_tool_started`, `mcp_tool_completed`, `mcp_tool_auth_failed`, and `mcp_laws_db_session_failed`.
+The HTTP middleware also emits `mcp_wire_request` and `mcp_wire_response`
+records for MCP-service traffic. These records include method, path, redacted
+query string, selected headers, content type, body bytes, and a body preview.
+The preview is complete up to `MCP_WIRE_LOG_MAX_BYTES` bytes, which defaults to
+`20000`; set a larger value temporarily when a connector sends larger payloads.
+Set `MCP_WIRE_LOGGING_ENABLED=false` to disable these wire-level records.
 
 Debugging fields are intentionally minimized:
 
 - Logged: tool name, argument keys, country code, limit, query length, result count, content length, database backend, user id after successful authentication, and a short SHA-256 hash for document ids.
-- Not logged: MCP API keys, OAuth/JWT tokens, passwords, OTP codes, email addresses, raw search queries, raw law document ids, returned law text, law content, or full database connection strings.
+- Redacted from wire logs: authorization and cookie headers, MCP API keys,
+  OAuth/JWT access and refresh tokens, OAuth authorization codes, PKCE
+  verifiers, passwords, OTP verification codes, client secrets, pending ids,
+  and identity-card fields.
+- Not logged in tool events: MCP API keys, OAuth/JWT tokens, passwords, OTP codes, email addresses, raw search queries, raw law document ids, returned law text, law content, or full database connection strings.
 
 For production troubleshooting, filter application logs by `mcp_` event names and correlate them with the `x-request-id` or `x-correlation-id` response headers.
 

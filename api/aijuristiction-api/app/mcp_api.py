@@ -529,7 +529,7 @@ def oauth_token(
     resource: str = Form(""),
     refresh_token: str = Form(""),
     store: ApiDatabaseStore = Depends(get_user_store),
-) -> dict[str, Any]:
+) -> JSONResponse:
     if grant_type == "refresh_token":
         return _oauth_refresh_token_response(
             request=request,
@@ -561,13 +561,15 @@ def oauth_token(
     )
     refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=expected_resource)
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
-    return {
-        "access_token": token,
-        "refresh_token": refresh_token_value,
-        "token_type": "Bearer",
-        "expires_in": expires_in,
-        "scope": MCP_TOKEN_SCOPE,
-    }
+    return _oauth_token_json_response(
+        {
+            "access_token": token,
+            "refresh_token": refresh_token_value,
+            "token_type": "Bearer",
+            "expires_in": expires_in,
+            "scope": MCP_TOKEN_SCOPE,
+        }
+    )
 
 
 def _oauth_refresh_token_response(
@@ -576,7 +578,7 @@ def _oauth_refresh_token_response(
     refresh_token: str,
     resource: str,
     store: ApiDatabaseStore,
-) -> dict[str, Any]:
+) -> JSONResponse:
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing refresh_token")
     expected_resource = _resource_url(request)
@@ -597,13 +599,25 @@ def _oauth_refresh_token_response(
     )
     refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=expected_resource)
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
-    return {
-        "access_token": token,
-        "refresh_token": refresh_token_value,
-        "token_type": "Bearer",
-        "expires_in": expires_in,
-        "scope": MCP_TOKEN_SCOPE,
-    }
+    return _oauth_token_json_response(
+        {
+            "access_token": token,
+            "refresh_token": refresh_token_value,
+            "token_type": "Bearer",
+            "expires_in": expires_in,
+            "scope": MCP_TOKEN_SCOPE,
+        }
+    )
+
+
+def _oauth_token_json_response(content: dict[str, Any]) -> JSONResponse:
+    return JSONResponse(
+        content=content,
+        headers={
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 def _redirect_with_oauth_authorization_code(
