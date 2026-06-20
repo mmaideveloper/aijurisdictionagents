@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+import json
 import logging
 import os
 from pathlib import Path
 import time
 from typing import Any
+from urllib.parse import parse_qsl, urlencode
 from uuid import uuid4
 
 import dotenv
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from starlette.datastructures import Headers
 
 from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.logging_config import configure_logging
@@ -105,6 +108,30 @@ _DEFAULT_MCP_ORIGINS: tuple[str, ...] = (
     "https://mcp.jurisdigta.eu",
     "https://mcp.juridigta.eu",
 )
+_SENSITIVE_HEADER_NAMES = {
+    "authorization",
+    "cookie",
+    "proxy-authorization",
+    "set-cookie",
+    "x-api-key",
+    "x-mcp-api-key",
+}
+_SENSITIVE_FIELD_NAMES = {
+    "access_token",
+    "authorization",
+    "client_secret",
+    "code",
+    "code_verifier",
+    "id_card",
+    "identity_card_number",
+    "mcp_api_key",
+    "password",
+    "pending_id",
+    "refresh_token",
+    "token",
+    "verification_code",
+}
+_REDACTED = "[redacted]"
 
 
 def _cors_allow_origins() -> list[str]:
@@ -118,6 +145,112 @@ def _cors_allow_origin_regex() -> str | None:
     if os.getenv("MCP_CORS_ALLOW_ORIGINS") or os.getenv("CORS_ALLOW_ORIGINS"):
         return None
     return r"^https?://(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?$"
+
+
+def _mcp_wire_logging_enabled() -> bool:
+    value = os.getenv("MCP_WIRE_LOGGING_ENABLED", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def _mcp_wire_log_max_bytes() -> int:
+    raw_value = os.getenv("MCP_WIRE_LOG_MAX_BYTES", "20000").strip()
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        parsed = 20000
+    return max(1024, parsed)
+
+
+def _redact_header_value(name: str, value: str) -> str:
+    lowered = name.lower()
+    if lowered in _SENSITIVE_HEADER_NAMES:
+        return _REDACTED
+    if lowered in {"location", "referer", "referrer"}:
+        return _redact_url_query(value)
+    return value
+
+
+def _redact_value(name: str, value: Any) -> Any:
+    lowered = name.lower()
+    if lowered in _SENSITIVE_FIELD_NAMES or any(marker in lowered for marker in ("password", "secret", "token")):
+        return _REDACTED
+    return _redact_payload(value)
+
+
+def _redact_payload(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        return {str(key): _redact_value(str(key), value) for key, value in payload.items()}
+    if isinstance(payload, list):
+        return [_redact_payload(item) for item in payload]
+    return payload
+
+
+def _content_type_base(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
+def _decode_body_preview(*, body: bytes, content_type: str, max_bytes: int) -> dict[str, Any]:
+    truncated = len(body) > max_bytes
+    preview = body[:max_bytes]
+    if not preview:
+        return {"bytes": len(body), "truncated": truncated, "body": ""}
+    text = preview.decode("utf-8", errors="replace")
+    base_content_type = _content_type_base(content_type)
+    if base_content_type == "application/json" or text.lstrip().startswith(("{", "[")):
+        try:
+            return {
+                "bytes": len(body),
+                "truncated": truncated,
+                "json": _redact_payload(json.loads(text)),
+            }
+        except json.JSONDecodeError:
+            pass
+    if base_content_type == "application/x-www-form-urlencoded":
+        return {
+            "bytes": len(body),
+            "truncated": truncated,
+            "form": {
+                key: _redact_value(key, value)
+                for key, value in parse_qsl(text, keep_blank_values=True)
+            },
+        }
+    return {"bytes": len(body), "truncated": truncated, "body": text}
+
+
+def _wire_headers(headers: Headers) -> dict[str, str]:
+    return {
+        name.lower(): _redact_header_value(name, value)
+        for name, value in headers.items()
+        if name.lower()
+        not in {
+            "accept-encoding",
+            "connection",
+            "content-length",
+        }
+    }
+
+
+def _redacted_query_string(request: fastapi.Request) -> str:
+    redacted = [
+        (key, str(_redact_value(key, value)))
+        for key, value in request.query_params.multi_items()
+    ]
+    return urlencode(redacted)
+
+
+def _redact_url_query(value: str) -> str:
+    if "?" not in value:
+        return value
+    base, query = value.split("?", 1)
+    fragment = ""
+    if "#" in query:
+        query, fragment = query.split("#", 1)
+        fragment = f"#{fragment}"
+    redacted = [
+        (key, str(_redact_value(key, item)))
+        for key, item in parse_qsl(query, keep_blank_values=True)
+    ]
+    return f"{base}?{urlencode(redacted)}{fragment}"
 
 
 def _configured_db_backend() -> str:
@@ -379,11 +512,75 @@ async def request_id_middleware(
     correlation_id = request.headers.get("x-correlation-id", request_id)
     request.state.request_id = request_id
     request.state.correlation_id = correlation_id
+    wire_logging_enabled = _mcp_wire_logging_enabled()
+    max_wire_bytes = _mcp_wire_log_max_bytes()
+    if wire_logging_enabled:
+        request_body = await request.body()
+        logger.info(
+            "mcp_wire_request request_id=%s correlation_id=%s payload=%s",
+            request_id,
+            correlation_id,
+            json.dumps(
+                {
+                    "method": request.method,
+                    "path": request.url.path,
+                    "query": _redacted_query_string(request),
+                    "client": request.client.host if request.client else None,
+                    "headers": _wire_headers(request.headers),
+                    "body": _decode_body_preview(
+                        body=request_body,
+                        content_type=request.headers.get("content-type", ""),
+                        max_bytes=max_wire_bytes,
+                    ),
+                },
+                sort_keys=True,
+            ),
+        )
     started = time.perf_counter()
     response = await call_next(request)
     duration_ms = int((time.perf_counter() - started) * 1000)
     response.headers["x-request-id"] = request_id
     response.headers["x-correlation-id"] = correlation_id
+    if wire_logging_enabled:
+        response_body = b""
+        body_iterator: Any = getattr(response, "body_iterator", None)
+        if body_iterator is not None:
+            async for chunk in body_iterator:
+                response_body += chunk
+        else:
+            response_body = getattr(response, "body", b"")
+        logger.info(
+            "mcp_wire_response request_id=%s correlation_id=%s payload=%s",
+            request_id,
+            correlation_id,
+            json.dumps(
+                {
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                    "headers": _wire_headers(response.headers),
+                    "body": _decode_body_preview(
+                        body=response_body,
+                        content_type=response.headers.get("content-type", ""),
+                        max_bytes=max_wire_bytes,
+                    ),
+                },
+                sort_keys=True,
+            ),
+        )
+        response_headers = {
+            name: value
+            for name, value in response.headers.items()
+            if name.lower() != "content-length"
+        }
+        response = Response(
+            content=response_body,
+            status_code=response.status_code,
+            headers=response_headers,
+            media_type=response.media_type,
+            background=response.background,
+        )
+        response.headers["x-request-id"] = request_id
+        response.headers["x-correlation-id"] = correlation_id
     logger.info(
         "%s %s -> %s (%d ms) request_id=%s correlation_id=%s origin=%s user_agent=%s",
         request.method,

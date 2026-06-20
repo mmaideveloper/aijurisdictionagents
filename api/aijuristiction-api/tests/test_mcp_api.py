@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app as api_app
 from app.mcp_main import app as mcp_app
+from app.mcp_main import _redact_header_value
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 api_client = TestClient(api_app)
@@ -181,6 +182,67 @@ def test_mcp_logs_tool_events_without_sensitive_payloads(monkeypatch, tmp_path: 
     assert mcp_key not in joined_logs
     assert "secret-pass" not in joined_logs
     assert "mcp-search@example.com" not in joined_logs
+
+
+def test_mcp_wire_logging_records_redacted_request_and_response(monkeypatch, tmp_path: Path, caplog) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("MCP_WIRE_LOGGING_ENABLED", "true")
+    caplog.set_level(logging.INFO, logger="jurisdigta-mcp-server.http")
+
+    response = mcp_client.post(
+        "/MCP?code=secret-code&state=public-state",
+        headers={
+            "authorization": "Bearer secret-bearer-token",
+            "x-mcp-api-key": "secret-api-key",
+            "x-request-id": "wire-test-request",
+        },
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "1"},
+                "password": "secret-pass",
+                "access_token": "secret-access-token",
+                "nested": {"verification_code": "123456"},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    http_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "jurisdigta-mcp-server.http"
+    ]
+    joined_logs = "\n".join(http_logs)
+    assert "mcp_wire_request request_id=wire-test-request" in joined_logs
+    assert "mcp_wire_response request_id=wire-test-request" in joined_logs
+    assert '"authorization": "[redacted]"' in joined_logs
+    assert '"x-mcp-api-key": "[redacted]"' in joined_logs
+    assert "secret-bearer-token" not in joined_logs
+    assert "secret-api-key" not in joined_logs
+    assert "secret-code" not in joined_logs
+    assert "secret-pass" not in joined_logs
+    assert "secret-access-token" not in joined_logs
+    assert "123456" not in joined_logs
+    assert "public-state" in joined_logs
+
+
+def test_mcp_wire_logging_redacts_oauth_codes_in_redirect_headers() -> None:
+    location = (
+        "https://claude.ai/api/mcp/auth_callback?"
+        "code=secret-code&state=public-state&iss=https%3A%2F%2Fmcp.jurisdigta.eu"
+    )
+
+    redacted = _redact_header_value("Location", location)
+
+    assert "secret-code" not in redacted
+    assert "code=%5Bredacted%5D" in redacted
+    assert "state=public-state" in redacted
+    assert "iss=https%3A%2F%2Fmcp.jurisdigta.eu" in redacted
 
 
 def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> None:
@@ -549,6 +611,8 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         },
     )
     assert token_response.status_code == 200
+    assert token_response.headers["cache-control"] == "no-store"
+    assert token_response.headers["pragma"] == "no-cache"
     token_payload = token_response.json()
     assert token_payload["token_type"] == "Bearer"
     assert token_payload["refresh_token"]
@@ -590,6 +654,8 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         },
     )
     assert refresh_response.status_code == 200
+    assert refresh_response.headers["cache-control"] == "no-store"
+    assert refresh_response.headers["pragma"] == "no-cache"
     refreshed_payload = refresh_response.json()
     assert refreshed_payload["token_type"] == "Bearer"
     assert refreshed_payload["scope"] == "mcp:laws"
