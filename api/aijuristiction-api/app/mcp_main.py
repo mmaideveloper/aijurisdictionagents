@@ -122,6 +122,7 @@ _SENSITIVE_FIELD_NAMES = {
     "client_secret",
     "code",
     "code_verifier",
+    "email",
     "id_card",
     "identity_card_number",
     "mcp_api_key",
@@ -172,6 +173,8 @@ def _redact_header_value(name: str, value: str) -> str:
 
 def _redact_value(name: str, value: Any) -> Any:
     lowered = name.lower()
+    if lowered == "token_type":
+        return _redact_payload(value)
     if lowered in _SENSITIVE_FIELD_NAMES or any(marker in lowered for marker in ("password", "secret", "token")):
         return _REDACTED
     return _redact_payload(value)

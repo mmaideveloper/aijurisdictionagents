@@ -87,7 +87,8 @@ Production settings:
   OAuth/browser tokens for that user remain usable until their own JWT expiry
   unless access is revoked.
 - Protected MCP tools accept either `Authorization: Bearer <mcp_api_key>` or `x-mcp-api-key: <mcp_api_key>`.
-- OAuth tokens are audience-bound to the MCP resource URL and include `scope=mcp:laws`.
+- OAuth token responses include `scope=mcp:laws offline_access` when a refresh
+  token is returned. Access-token JWT claims remain scoped to `mcp:laws`.
 - OAuth refresh tokens are audience-bound, use `scope=offline_access`, are not
   accepted as MCP bearer tokens, and can be exchanged at `/oauth/token` with
   `grant_type=refresh_token`.
@@ -228,7 +229,9 @@ Debugging fields are intentionally minimized:
 - Redacted from wire logs: authorization and cookie headers, MCP API keys,
   OAuth/JWT access and refresh tokens, OAuth authorization codes, PKCE
   verifiers, passwords, OTP verification codes, client secrets, pending ids,
-  and identity-card fields.
+  email addresses, and identity-card fields. OAuth `token_type` remains visible
+  so connector debugging can confirm Bearer-token semantics without exposing
+  credentials.
 - Not logged in tool events: MCP API keys, OAuth/JWT tokens, passwords, OTP codes, email addresses, raw search queries, raw law document ids, returned law text, law content, or full database connection strings.
 
 For production troubleshooting, filter application logs by `mcp_` event names and correlate them with the `x-request-id` or `x-correlation-id` response headers.

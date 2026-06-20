@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.main import app as api_app
 from app.mcp_main import app as mcp_app
 from app.mcp_main import _redact_header_value
+from app.mcp_main import _redact_payload
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 api_client = TestClient(api_app)
@@ -205,6 +206,8 @@ def test_mcp_wire_logging_records_redacted_request_and_response(monkeypatch, tmp
                 "capabilities": {},
                 "clientInfo": {"name": "test-client", "version": "1"},
                 "password": "secret-pass",
+                "email": "mcp-search@example.com",
+                "token_type": "Bearer",
                 "access_token": "secret-access-token",
                 "nested": {"verification_code": "123456"},
             },
@@ -228,6 +231,8 @@ def test_mcp_wire_logging_records_redacted_request_and_response(monkeypatch, tmp
     assert "secret-pass" not in joined_logs
     assert "secret-access-token" not in joined_logs
     assert "123456" not in joined_logs
+    assert "mcp-search@example.com" not in joined_logs
+    assert '"token_type": "Bearer"' in joined_logs
     assert "public-state" in joined_logs
 
 
@@ -243,6 +248,22 @@ def test_mcp_wire_logging_redacts_oauth_codes_in_redirect_headers() -> None:
     assert "code=%5Bredacted%5D" in redacted
     assert "state=public-state" in redacted
     assert "iss=https%3A%2F%2Fmcp.jurisdigta.eu" in redacted
+
+
+def test_mcp_wire_logging_preserves_oauth_token_type_while_redacting_values() -> None:
+    redacted = _redact_payload(
+        {
+            "token_type": "Bearer",
+            "access_token": "secret-access-token",
+            "refresh_token": "secret-refresh-token",
+            "email": "mcp-search@example.com",
+        }
+    )
+
+    assert redacted["token_type"] == "Bearer"
+    assert redacted["access_token"] == "[redacted]"
+    assert redacted["refresh_token"] == "[redacted]"
+    assert redacted["email"] == "[redacted]"
 
 
 def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> None:
@@ -615,6 +636,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert token_response.headers["pragma"] == "no-cache"
     token_payload = token_response.json()
     assert token_payload["token_type"] == "Bearer"
+    assert token_payload["scope"] == "mcp:laws offline_access"
     assert token_payload["refresh_token"]
     claims = _jwt_claims(token_payload["access_token"])
     assert claims["sub"] == sign_up_response.json()["user_id"]
@@ -658,7 +680,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert refresh_response.headers["pragma"] == "no-cache"
     refreshed_payload = refresh_response.json()
     assert refreshed_payload["token_type"] == "Bearer"
-    assert refreshed_payload["scope"] == "mcp:laws"
+    assert refreshed_payload["scope"] == "mcp:laws offline_access"
     assert refreshed_payload["access_token"] != token_payload["access_token"]
     assert refreshed_payload["refresh_token"] != token_payload["refresh_token"]
     refreshed_claims = _jwt_claims(refreshed_payload["access_token"])
