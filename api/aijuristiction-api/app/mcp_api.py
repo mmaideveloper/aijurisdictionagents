@@ -53,7 +53,7 @@ MCP_SERVER_INSTRUCTIONS = (
     "Answer with the law name or number, relevant sections or paragraphs, and a plain-language explanation. "
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
-_PUBLIC_TOOLS = {"getVersion", "getStatistics"}
+_PUBLIC_TOOLS = {"getVersion", "getStatistics", "searchLaws", "getLawText"}
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai")
 _MCP_OTP_VERIFICATION_PURPOSE = "mcp_access"
 logger = logging.getLogger("aijuristiction-api.mcp")
@@ -230,8 +230,11 @@ async def mcp_json_rpc(
         authorization=authorization,
         x_mcp_api_key=x_mcp_api_key,
     )
-    if payload_requires_auth and not api_key:
-        logger.warning("mcp_json_rpc_auth_challenge reason=missing_bearer_token")
+    if not api_key and payload_requires_auth:
+        logger.warning(
+            "mcp_json_rpc_auth_challenge reason=missing_bearer_token methods=%s",
+            ",".join(_payload_methods(payload)),
+        )
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content=_json_rpc_error(_first_payload_id(payload), 401, "Tool requires OAuth authorization"),
@@ -269,6 +272,8 @@ def mcp_sign_up_page(request: Request) -> HTMLResponse:
 
 @oauth_router.get("/.well-known/oauth-protected-resource")
 def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
+    if _should_hide_oauth_metadata_for_claude_web(request):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
     base_url = _base_url(request)
     resource = _resource_url(request)
     return {
@@ -289,6 +294,8 @@ def oauth_mcp_protected_resource_metadata(request: Request) -> dict[str, Any]:
 @oauth_router.get("/.well-known/oauth-authorization-server")
 @oauth_router.get("/.well-known/oauth-authorization-server/MCP")
 def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
+    if _should_hide_oauth_metadata_for_claude_web(request):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
     base_url = _base_url(request)
     return {
         "issuer": base_url,
@@ -300,7 +307,7 @@ def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": [MCP_TOKEN_SCOPE, MCP_REFRESH_TOKEN_SCOPE],
-        "authorization_response_iss_parameter_supported": True,
+        "authorization_response_iss_parameter_supported": _oauth_authorization_response_iss_enabled(),
         "protected_resources": [_resource_url(request)],
     }
 
@@ -642,7 +649,8 @@ def _redirect_with_oauth_authorization_code(
     query = {"code": authorization_code}
     if state:
         query["state"] = state
-    query["iss"] = _base_url_from_resource(resource)
+    if _oauth_authorization_response_iss_enabled():
+        query["iss"] = _base_url_from_resource(resource)
     return RedirectResponse(url=f"{redirect_uri}?{urlencode(query)}", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1252,9 +1260,14 @@ def _issue_mcp_api_key(
     user: User,
     expires_in_days: int,
     audience: str | None = None,
+    opaque: bool = False,
 ) -> tuple[str, str]:
     expires_at_dt = (datetime.now(timezone.utc) + timedelta(days=expires_in_days)).replace(microsecond=0)
-    raw_key = create_mcp_api_token(user=user, expires_at=expires_at_dt, audience=audience)
+    raw_key = f"mcp_{secrets.token_urlsafe(32)}" if opaque else create_mcp_api_token(
+        user=user,
+        expires_at=expires_at_dt,
+        audience=audience,
+    )
     expires_at = expires_at_dt.isoformat()
     store.set_user_mcp_api_key(user_id=user.user_id, api_key=raw_key, expires_at=expires_at)
     return raw_key, expires_at
@@ -1295,8 +1308,12 @@ def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> Use
         required_scope=MCP_TOKEN_SCOPE,
     )
     if payload is None:
-        logger.warning("mcp_auth_failed reason=invalid_or_expired_token")
-        raise HTTPException(status_code=401, detail="Invalid or expired MCP API key")
+        user = store.find_user_by_mcp_api_key(api_key=api_key)
+        if user is None:
+            logger.warning("mcp_auth_failed reason=invalid_or_expired_token")
+            raise HTTPException(status_code=401, detail="Invalid or expired MCP API key")
+        logger.info("mcp_auth_succeeded token_type=opaque user_id=%s", user.user_id)
+        return user
     user = store.find_user_by_id(user_id=str(payload["sub"]))
     if user is None or user.user_id != payload.get("sub"):
         logger.warning(
@@ -1417,6 +1434,36 @@ def _payload_requires_auth(payload: Any) -> bool:
         if isinstance(tool_name, str) and tool_name not in _PUBLIC_TOOLS:
             return True
     return False
+
+
+def _should_challenge_oauth_probe(*, request: Request, payload: Any) -> bool:
+    user_agent = request.headers.get("user-agent", "").lower()
+    if "python-httpx" not in user_agent:
+        return False
+    methods = set(_payload_methods(payload))
+    return bool(methods & {"initialize", "tools/list", "resources/list", "resources/templates/list", "prompts/list"})
+
+
+def _should_hide_oauth_metadata_for_claude_web(request: Request) -> bool:
+    enabled = os.getenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not enabled:
+        return False
+    user_agent = request.headers.get("user-agent", "").lower()
+    return "python-httpx" in user_agent
+
+
+def _oauth_authorization_response_iss_enabled() -> bool:
+    return os.getenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _first_payload_id(payload: Any) -> Any:

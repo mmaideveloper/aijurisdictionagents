@@ -23,13 +23,18 @@ def create_mcp_api_token(
     scope: str = MCP_TOKEN_SCOPE,
 ) -> str:
     token_id = str(uuid4())
+    issued_at = int(datetime.now(timezone.utc).timestamp())
+    resolved_audience = audience or default_mcp_resource_url()
     header = {"alg": "HS256", "typ": "JWT"}
     payload = {
         "sub": user.user_id,
-        "aud": audience or default_mcp_resource_url(),
+        "aud": resolved_audience,
+        "iss": _issuer_from_audience(resolved_audience),
         "scope": scope,
+        "iat": issued_at,
         "exp": int(expires_at.timestamp()),
         "jti": token_id,
+        "token_use": "access",
     }
     encoded_header = _base64url_json(header)
     encoded_payload = _base64url_json(payload)
@@ -45,11 +50,15 @@ def create_mcp_refresh_token(
     audience: str | None = None,
 ) -> str:
     token_id = str(uuid4())
+    issued_at = int(datetime.now(timezone.utc).timestamp())
+    resolved_audience = audience or default_mcp_resource_url()
     header = {"alg": "HS256", "typ": "JWT"}
     payload = {
         "sub": user.user_id,
-        "aud": audience or default_mcp_resource_url(),
+        "aud": resolved_audience,
+        "iss": _issuer_from_audience(resolved_audience),
         "scope": MCP_REFRESH_TOKEN_SCOPE,
+        "iat": issued_at,
         "exp": int(expires_at.timestamp()),
         "jti": token_id,
         "token_use": "refresh",
@@ -115,6 +124,12 @@ def _validate_mcp_token(token: str, *, audience: str) -> dict[str, Any] | None:
 def default_mcp_resource_url() -> str:
     base_url = os.getenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu").strip().rstrip("/")
     return f"{base_url}/MCP"
+
+
+def _issuer_from_audience(audience: str) -> str:
+    if audience.endswith("/MCP"):
+        return audience[:-4]
+    return audience.rstrip("/")
 
 
 def _base64url_json(payload: dict[str, Any]) -> str:
