@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { PageLayout } from "./components/PageLayout";
 import { useAuth } from "./auth/webAuth";

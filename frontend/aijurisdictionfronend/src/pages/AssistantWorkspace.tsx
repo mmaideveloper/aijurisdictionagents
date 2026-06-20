@@ -9,7 +9,13 @@ import {
   type ThreadMessageLike
 } from "@assistant-ui/react";
 import { BsArrowUpCircle, BsLockFill, BsShieldCheck } from "react-icons/bs";
+import {
+  AssistantResponse,
+  CaseMode as GatewayCaseMode,
+  submitAssistantQuestion
+} from "../assistantGateway";
 import { useLanguage } from "../components/LanguageProvider";
+import { useCases } from "../state/CaseProvider";
 
 const AssistantThread: React.FC = () => {
   const { t } = useLanguage();
@@ -80,6 +86,21 @@ const AssistantThread: React.FC = () => {
 
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
+  const { activeCase, cases, addInteraction } = useCases();
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [caseMode, setCaseMode] = React.useState<GatewayCaseMode>(activeCase ? "existing" : "new");
+  const [caseId, setCaseId] = React.useState(activeCase?.id ?? "");
+  const [question, setQuestion] = React.useState("");
+  const [files, setFiles] = React.useState<File[]>([]);
+  const [answer, setAnswer] = React.useState<AssistantResponse | null>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [formError, setFormError] = React.useState("");
+
+  React.useEffect(() => {
+    if (activeCase && caseMode === "existing") {
+      setCaseId(activeCase.id);
+    }
+  }, [activeCase, caseMode]);
 
   const modes = [
     t("assistantModeLegalSearch"),
@@ -101,6 +122,53 @@ const AssistantWorkspace: React.FC = () => {
     t("assistantCapabilityCar"),
     t("assistantCapabilityLocation")
   ];
+
+  const canSubmit =
+    question.trim().length > 0 &&
+    (caseMode === "new" || caseId.trim().length > 0) &&
+    !isSubmitting;
+
+  const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextFiles = Array.from(event.target.files ?? []);
+    if (nextFiles.length === 0) {
+      return;
+    }
+    setFiles((current) => [...current, ...nextFiles]);
+    event.target.value = "";
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canSubmit) {
+      setFormError("Enter a question and select a case target before sending.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFormError("");
+
+    const response = await submitAssistantQuestion({
+      question,
+      caseMode,
+      caseId: caseId.trim(),
+      country: "SK",
+      language: "sk",
+      consentGateway: true,
+      consentDocuments: true,
+      consentThirdParty: false,
+      files
+    });
+
+    setAnswer(response);
+    setCaseId(response.caseId);
+
+    if (caseMode === "existing" && cases.some((caseItem) => caseItem.id === response.caseId)) {
+      addInteraction(response.caseId, "User", question);
+      addInteraction(response.caseId, "AI Assistant", response.answer);
+    }
+
+    setIsSubmitting(false);
+  };
 
   return (
     <div className="page assistant-workspace-page">
@@ -139,6 +207,140 @@ const AssistantWorkspace: React.FC = () => {
                 {mode}
               </button>
             ))}
+          </section>
+
+          <section className="assistant-gateway-card" aria-labelledby="assistant-gateway-title">
+            <div className="assistant-gateway-card__header">
+              <div>
+                <p className="eyebrow">Assistant Gateway</p>
+                <h2 id="assistant-gateway-title">Ask with case documents</h2>
+              </div>
+              <span>{answer?.caseId ?? "No answer yet"}</span>
+            </div>
+            <form className="assistant-gateway-form" onSubmit={handleSubmit}>
+              <div className="assistant-gateway-form__row">
+                <label>
+                  <span>Case target</span>
+                  <select
+                    value={caseMode}
+                    onChange={(event) => setCaseMode(event.target.value as GatewayCaseMode)}
+                  >
+                    <option value="new">Create new case</option>
+                    <option value="existing">Use existing case</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Case ID</span>
+                  <input
+                    type="text"
+                    value={caseId}
+                    disabled={caseMode === "new"}
+                    list="assistant-case-options"
+                    placeholder={caseMode === "new" ? "Generated after answer" : "Select or enter case ID"}
+                    onChange={(event) => setCaseId(event.target.value)}
+                  />
+                  <datalist id="assistant-case-options">
+                    {cases.map((caseItem) => (
+                      <option key={caseItem.id} value={caseItem.id}>
+                        {caseItem.title}
+                      </option>
+                    ))}
+                  </datalist>
+                </label>
+              </div>
+
+              <label>
+                <span>Question</span>
+                <textarea
+                  rows={4}
+                  value={question}
+                  placeholder="Write the legal question and facts to answer."
+                  onChange={(event) => setQuestion(event.target.value)}
+                />
+              </label>
+
+              <div className="assistant-gateway-upload">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.txt,.md,.doc,.docx,.png,.jpg,.jpeg"
+                  hidden
+                  onChange={handleFilesSelected}
+                />
+                <button
+                  type="button"
+                  className="button ghost"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Upload documents
+                </button>
+                <span>{files.length} document{files.length === 1 ? "" : "s"} selected</span>
+              </div>
+
+              {files.length > 0 ? (
+                <ul className="assistant-gateway-files">
+                  {files.map((file) => (
+                    <li key={`${file.name}-${file.size}-${file.lastModified}`}>
+                      <span>{file.name}</span>
+                      <button
+                        type="button"
+                        className="button ghost small"
+                        onClick={() =>
+                          setFiles((current) =>
+                            current.filter(
+                              (currentFile) =>
+                                `${currentFile.name}-${currentFile.size}-${currentFile.lastModified}` !==
+                                `${file.name}-${file.size}-${file.lastModified}`
+                            )
+                          )
+                        }
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {formError ? <p className="form-error">{formError}</p> : null}
+
+              <button type="submit" className="button primary" disabled={!canSubmit}>
+                {isSubmitting ? "Sending..." : "Send question"}
+              </button>
+            </form>
+
+            {answer ? (
+              <div className="assistant-gateway-answer">
+                {answer.usedFallback ? (
+                  <p className="assistant-gateway-warning">
+                    Local demo fallback is shown because Assistant Gateway is not reachable.
+                  </p>
+                ) : null}
+                <pre>{answer.answer}</pre>
+                <dl>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{answer.status}</dd>
+                  </div>
+                  <div>
+                    <dt>Case</dt>
+                    <dd>{answer.caseId}</dd>
+                  </div>
+                  <div>
+                    <dt>Documents</dt>
+                    <dd>{answer.storedDocuments.length}</dd>
+                  </div>
+                </dl>
+                {answer.nextActions.length > 0 ? (
+                  <ul>
+                    {answer.nextActions.map((action) => (
+                      <li key={action}>{action}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
           </section>
 
           <AssistantThread />

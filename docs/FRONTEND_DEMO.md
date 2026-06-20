@@ -2,8 +2,9 @@
 
 Location: `frontend/aijurisdictionfronend`
 
-This is a basic React + TypeScript app scaffolded with Vite. It is intended as the starting
-point for the AI Jurisdiction client workspace (intake, uploads, and live agent stream).
+The frontend is a React + TypeScript + Vite workspace for the JurisDigta client app.
+It includes public pages, API-backed auth, protected app routes, case intake, and the
+assistant workspace at `/app/assistant`.
 
 ## Quick start
 
@@ -17,17 +18,9 @@ npm run dev
 
 Open `http://localhost:5173`.
 
-## JurisDigta account login
-
-The frontend signs in through the existing API users table.
-
-- Configure `VITE_API_BASE_URL` and `VITE_API_KEY` in `frontend/aijurisdictionfronend/.env`.
-- Login submits `email` and `password` to `POST /v1/users/sign-in`.
-- Use an existing JurisDigta user created by the mobile app, MCP account flow, or API sign-up endpoint.
-
 ## Minimal runnable example
 
-From repo root (PowerShell):
+From repo root:
 
 ```powershell
 .\examples\frontend_demo.ps1
@@ -39,61 +32,59 @@ Default repo minimal runnable example:
 python examples/minimal_demo.py
 ```
 
+## Assistant Gateway Flow
+
+The protected assistant page lets a signed-in user:
+
+- create a new case target or select an existing case ID
+- send a legal question
+- upload supporting documents
+- receive an answer with case ID, status, document count, and next actions
+
+The browser does not call MCP tools directly. Production execution must go through:
+
+```text
+Browser -> Assistant Gateway -> auth/consent/policy -> case store + document ingestion -> MCP/tools -> answer
+```
+
+Default frontend endpoint:
+
+```text
+POST /api/assistant/cases/answer
+```
+
+Set `VITE_ASSISTANT_GATEWAY_URL` when the gateway is hosted elsewhere.
+
+Multipart request fields:
+
+- `question`: user question or case instruction.
+- `case_mode`: `new` or `existing`.
+- `case_id`: existing case ID, blank for new cases.
+- `country`: currently `SK`.
+- `language`: currently `sk`.
+- `consents`: JSON object with `assistant_gateway`, `document_processing`, and `third_party_tools`.
+- `documents`: zero or more uploaded files.
+
+Expected JSON response:
+
+```json
+{
+  "case_id": "CASE-...",
+  "answer": "Assistant answer text",
+  "status": "completed",
+  "citations": ["documents/2026-06-20-contract.pdf"],
+  "stored_documents": ["documents/2026-06-20-contract.pdf"],
+  "next_actions": ["Upload missing invoice", "Confirm payment date"]
+}
+```
+
+If the gateway is not reachable, the UI shows a deterministic local demo answer so
+the question/upload/answer rendering path remains testable.
+
 ## Build
 
 ```bash
+cd frontend/aijurisdictionfronend
 npm run build
 npm run preview
 ```
-
-## Layout notes
-
-- Hero header with session status and region
-- Feature cards for intake, orchestration, and outputs
-- Callout panel for upcoming API integration
-- Navbar reacts to API-backed auth state:
-  - Sign-in link when logged out
-  - Profile trigger when logged in with dropdown options: `My Profile`, `My Cases`, `Log Out`
-  - `My Profile` navigates to `/profile`
-  - `My Cases` currently navigates to `/` (homepage workspace)
-  - Brand/logo is shown for signed-in non-home routes and for signed-in home when the sidebar is collapsed
-  - Dropdown closes on outside click, option click, and `Escape`
-  - Keyboard support includes `ArrowUp`/`ArrowDown` navigation and `Home`/`End` shortcuts
-
-## Signed-in homepage
-
-When authenticated, the home page swaps to a 3-column workspace layout: case sidebar, active workspace, and AI configuration panel. On narrow screens the side panels collapse and the center workspace takes full width.
-
-Route access behavior:
-- All `/app/*` routes and `/profile` are protected by auth state.
-- Unauthenticated users attempting `/app/*` or `/profile` are redirected to `/`.
-- After logout, protected routes are no longer accessible until sign-in.
-
-My Profile view behavior:
-- `/profile` displays structured user fields from the API-authenticated user profile.
-- Current fields include `First Name`, `Last Name`, `Email`, plus optional `Role` and `Account Created Date`.
-- The profile view also includes subscription pricing controls and an opened-cases panel for quick case return.
-
-Case sidebar behavior:
-- `+ New case` creates a mock case and makes it active.
-- Clicking a case loads its data into the center workspace and AI configuration panel.
-- The case list scrolls independently within the full-height sidebar.
-- The sidebar is now componentized and uses a branded header plus section grouping.
-- Each case row stays the same background as the sidebar with a status-colored dot.
-- The workspace view is full-height with internal scrolling, so the page itself does not scroll.
-- On the authenticated home view, the layout is a full-height flex row: sidebar on the left, navbar + content on the right.
-- The center workspace starts with a welcome state prompting the user to start a new case or continue by selecting a case in the sidebar.
-- The AI configuration panel includes a role selector with intent hints and highlights the active perspective.
-- The AI configuration panel now includes a communication mode segmented control (`Chat`, `Voice`, `Video`).
-- Communication mode changes are stored per case and switch the center workspace view without dropping case context.
-
-## Case state model
-
-The frontend now includes a session-scoped case store exposed via a context provider.
-Each case includes:
-- `id`, `title`, `description`, `status`, `createdAt`
-- `interactionHistory` entries with timestamps, actors, and messages
-- `selectedRole` and `selectedMode` stored per case
-- `selectedCommunicationMode` (`Chat`/`Voice`/`Video`) stored per case
-
-The active case is available globally via the `CaseProvider` context.

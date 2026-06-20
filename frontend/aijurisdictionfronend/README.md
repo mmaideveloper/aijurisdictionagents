@@ -1,4 +1,4 @@
-# AI Jurisdiction Frontend
+﻿# AI Jurisdiction Frontend
 
 React + TypeScript + Vite frontend workspace for AI Jurisdiction. This UI is aligned with the
 `frontend_design` proposal and includes the public marketing pages plus authenticated workflow
@@ -94,6 +94,32 @@ Production deployment preparation:
 - Current production uses the JurisDigta account login at `/auth`; do not configure Cloudflare Access for `agent.jurisdigta.eu` unless the auth plan changes.
 - Login credentials are verified by the API against the PostgreSQL-backed users table.
 - Validate `https://agent.jurisdigta.eu/health` and `https://agent.jurisdigta.eu/app/assistant` after DNS/tunnel setup.
+
+## Assistant Gateway Case Answer Flow
+
+The protected `/app/assistant` route includes a gateway-backed intake panel where a
+signed-in user can create a new case target or use an existing case ID, attach documents,
+send a question, and render the returned answer.
+
+Default endpoint:
+
+```text
+POST /api/assistant/cases/answer
+```
+
+Override it with:
+
+```bash
+VITE_ASSISTANT_GATEWAY_URL=https://api.example.test/api/assistant/cases/answer npm run dev
+```
+
+The request is multipart form data with `question`, `case_mode`, `case_id`, `country`,
+`language`, `consents`, and zero or more `documents` file fields. The browser never calls
+MCP tools directly; Assistant Gateway must perform auth, case access checks, consent/policy
+validation, document persistence, tool execution, and answer logging.
+
+If the gateway is not reachable, the UI shows a deterministic local fallback answer so the
+question/upload/answer rendering path can be tested during frontend development.
 
 ## Navbar Branding
 
