@@ -605,7 +605,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
 
     code_verifier = "test-code-verifier-1234567890"
     code_challenge = _pkce_challenge(code_verifier)
-    resource = "https://mcp.jurisdigta.eu/mcp"
+    resource = "https://mcp.jurisdigta.eu/MCP"
     authorize_page = mcp_client.get(
         "/oauth/authorize",
         params={

@@ -556,10 +556,13 @@ def oauth_token(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid authorization code")
     if record["client_id"] != client_id or record["redirect_uri"] != redirect_uri:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Authorization code context mismatch")
-    expected_resource = _resource_url(request)
     resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
-    if record["resource"] != expected_resource or resolved_resource != expected_resource:
+    if not _is_mcp_resource_match(request=request, resource=record["resource"]) or not _is_mcp_resource_match(
+        request=request,
+        resource=resolved_resource,
+    ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
+    token_audience = resolved_resource if resource.strip() else str(record["resource"])
     if _pkce_s256_challenge(code_verifier) != record["code_challenge"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid PKCE code verifier")
     user = store.get_user(user_id=record["user_id"])
@@ -567,9 +570,9 @@ def oauth_token(
         store=store,
         user=user,
         expires_in_days=1,
-        audience=expected_resource,
+        audience=token_audience,
     )
-    refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=expected_resource)
+    refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=token_audience)
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
     return _oauth_token_json_response(
         {
@@ -591,11 +594,14 @@ def _oauth_refresh_token_response(
 ) -> JSONResponse:
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing refresh_token")
-    expected_resource = _resource_url(request)
     resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
-    if resolved_resource != expected_resource:
+    if not _is_mcp_resource_match(request=request, resource=resolved_resource):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
-    payload = validate_mcp_refresh_token(refresh_token, audience=expected_resource)
+    payload = validate_mcp_refresh_token(refresh_token, audience=resolved_resource)
+    if payload is None:
+        canonical_resource = _canonicalize_mcp_resource(request=request, resource=resolved_resource)
+        if canonical_resource != resolved_resource:
+            payload = validate_mcp_refresh_token(refresh_token, audience=canonical_resource)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid refresh_token")
     user = store.find_user_by_id(user_id=str(payload["sub"]))
@@ -605,9 +611,9 @@ def _oauth_refresh_token_response(
         store=store,
         user=user,
         expires_in_days=1,
-        audience=expected_resource,
+        audience=resolved_resource,
     )
-    refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=expected_resource)
+    refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=resolved_resource)
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
     return _oauth_token_json_response(
         {
@@ -1422,8 +1428,7 @@ def _base_url_from_resource(resource: str) -> str:
 
 
 def _resolve_oauth_resource(*, request: Request, resource: str) -> str:
-    resolved = resource.strip() or _resource_url(request)
-    return _canonicalize_mcp_resource(request=request, resource=resolved)
+    return resource.strip() or _resource_url(request)
 
 
 def _canonicalize_mcp_resource(*, request: Request, resource: str) -> str:
@@ -1440,6 +1445,10 @@ def _canonicalize_mcp_resource(*, request: Request, resource: str) -> str:
     ):
         return expected
     return resource
+
+
+def _is_mcp_resource_match(*, request: Request, resource: str) -> bool:
+    return _canonicalize_mcp_resource(request=request, resource=resource) == _resource_url(request)
 
 
 def _allowed_oauth_redirect_hosts() -> set[str]:
@@ -1529,8 +1538,23 @@ def _validate_oauth_authorize_request(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PKCE S256 is supported")
     if not code_challenge.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="code_challenge is required")
-    if resource != expected_resource:
+    if _canonicalize_mcp_resource_for_expected(resource=resource, expected_resource=expected_resource) != expected_resource:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
+
+
+def _canonicalize_mcp_resource_for_expected(*, resource: str, expected_resource: str) -> str:
+    parsed = urlparse(resource)
+    expected_parsed = urlparse(expected_resource)
+    if (
+        parsed.scheme.lower() == expected_parsed.scheme.lower()
+        and parsed.netloc.lower() == expected_parsed.netloc.lower()
+        and parsed.path.lower() == "/mcp"
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+    ):
+        return expected_resource
+    return resource
 
 
 def _registration_string_list(value: Any) -> list[str]:
