@@ -163,8 +163,9 @@ export const translations = {
     assistantUserRole: "You",
     assistantInitialMessage:
       "JurisDigta Assistant is ready with JurisDigta API and MCP locked on. Drafts are AI-assisted and require human legal review before use.",
-    assistantGatewayStubResponse:
-      "This frontend spike is wired through assistant-ui primitives. Production execution must go through the Assistant Gateway before MCP tools, consent-gated verification, or third-party servers are called.",
+    assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
+    assistantApiErrorResponse:
+      "The assistant could not reach the JurisDigta API. Status: {status}. Detail: {detail}",
     caseTitle: "Create a case",
     caseSubtitle: "Upload documents and open a chatbot with the AI lawyer agent.",
     caseUpload: "Upload evidence",
@@ -511,8 +512,9 @@ export const translations = {
     assistantUserRole: "Vy",
     assistantInitialMessage:
       "JurisDigta Asistent je pripravený s povinne zapnutým JurisDigta API a MCP. Návrhy sú asistované AI a pred použitím vyžadujú ľudskú právnu kontrolu.",
-    assistantGatewayStubResponse:
-      "Tento frontendový spike je zapojený cez assistant-ui primitíva. Produkčné vykonávanie musí ísť cez Assistant Gateway pred volaním MCP nástrojov, overovania so súhlasom alebo tretích strán.",
+    assistantEmptyMessageResponse: "Zadajte otázku alebo pokyn na prípravu dokumentu.",
+    assistantApiErrorResponse:
+      "Asistent sa nevie spojiť s JurisDigta API. Stav: {status}. Detail: {detail}",
     caseTitle: "Vytvoriť prípad",
     caseSubtitle: "Nahrajte dokumenty a otvorte chatbot s AI právnikom.",
     caseUpload: "Nahrať dôkazy",
@@ -859,8 +861,9 @@ export const translations = {
     assistantUserRole: "Sie",
     assistantInitialMessage:
       "JurisDigta Assistent ist mit verpflichtendem JurisDigta API und MCP bereit. Entwürfe sind KI-unterstützt und benötigen vor der Nutzung menschliche rechtliche Prüfung.",
-    assistantGatewayStubResponse:
-      "Dieser Frontend-Spike ist über assistant-ui-Primitives angebunden. Produktionsausführung muss über das Assistant Gateway laufen, bevor MCP-Tools, einwilligungsgebundene Prüfungen oder Drittserver aufgerufen werden.",
+    assistantEmptyMessageResponse: "Bitte geben Sie eine Frage oder eine Anweisung zur Dokumenterstellung ein.",
+    assistantApiErrorResponse:
+      "Der Assistent konnte die JurisDigta API nicht erreichen. Status: {status}. Detail: {detail}",
     caseTitle: "Fall erstellen",
     caseSubtitle: "Dokumente hochladen und KI-Anwalt-Chat starten.",
     caseUpload: "Beweise hochladen",

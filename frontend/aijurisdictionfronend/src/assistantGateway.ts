@@ -1,3 +1,5 @@
+import { createChatSession, replyToSession } from "./api/chatClient";
+
 export type CaseMode = "new" | "existing";
 
 export type AssistantRequest = {
@@ -85,7 +87,7 @@ export async function submitAssistantQuestion(
     const payload = (await response.json()) as GatewayPayload;
     return normalizeGatewayPayload(payload, request);
   } catch (error) {
-    return buildLocalFallback(request, error);
+    return submitQuestionThroughChatApi(request, error);
   }
 }
 
@@ -131,29 +133,74 @@ function normalizeStringList(values: NormalizableValue[] | undefined): string[] 
     .filter(Boolean);
 }
 
-function buildLocalFallback(request: AssistantRequest, error: unknown): AssistantResponse {
+async function submitQuestionThroughChatApi(
+  request: AssistantRequest,
+  gatewayError: unknown
+): Promise<AssistantResponse> {
+  try {
+    const session = await createChatSession({
+      caseId: request.caseMode === "existing" ? request.caseId : undefined,
+      country: request.country,
+      language: request.language
+    });
+    const reply = await replyToSession({
+      sessionId: session.id,
+      content: buildChatApiQuestion(request, gatewayError)
+    });
+    const caseId = request.caseMode === "existing" && request.caseId ? request.caseId : session.case_id || createDraftCaseId();
+    const fileNames = request.files.map((file) => file.name);
+
+    return {
+      caseId,
+      status: "completed",
+      usedFallback: false,
+      citations: [],
+      storedDocuments: fileNames,
+      nextActions: fileNames.length
+        ? ["Upload handling through Assistant Gateway was unavailable; answer was generated from the typed question only."]
+        : [],
+      answer: reply.content
+    };
+  } catch (chatError) {
+    return buildGatewayUnavailableResponse(request, gatewayError, chatError);
+  }
+}
+
+function buildChatApiQuestion(request: AssistantRequest, gatewayError: unknown): string {
+  const fileNames = request.files.map((file) => file.name);
+  const gatewayErrorText = gatewayError instanceof Error ? gatewayError.message : "Gateway request failed";
+  const lines = [request.question.trim()];
+
+  if (fileNames.length > 0) {
+    lines.push(`Attached document filenames: ${fileNames.join(", ")}.`);
+    lines.push("Document upload through Assistant Gateway was unavailable, so answer from the typed facts only.");
+  }
+  lines.push(`Assistant Gateway unavailable: ${gatewayErrorText}. Use the JurisDigta chat API to answer the legal question directly.`);
+
+  return lines.join("\n\n");
+}
+
+function buildGatewayUnavailableResponse(
+  request: AssistantRequest,
+  gatewayError: unknown,
+  chatError: unknown
+): AssistantResponse {
   const caseId = request.caseMode === "existing" && request.caseId ? request.caseId : createDraftCaseId();
   const fileNames = request.files.map((file) => file.name);
-  const gatewayError = error instanceof Error ? error.message : "Gateway request failed";
+  const gatewayErrorText = gatewayError instanceof Error ? gatewayError.message : "Gateway request failed";
+  const chatErrorText = chatError instanceof Error ? chatError.message : "Chat API request failed";
 
   return {
     caseId,
     status: "needs_input",
-    usedFallback: true,
+    usedFallback: false,
     citations: fileNames,
     storedDocuments: fileNames,
-    nextActions: [
-      "Confirm identity and consent before production execution.",
-      "Persist the question, uploaded files, and answer in the selected case.",
-      "Route legal research through MCP tools only after Assistant Gateway policy checks."
-    ],
+    nextActions: ["Retry after the JurisDigta API is reachable."],
     answer: [
-      `Local demo answer for case ${caseId}.`,
-      `Question received: ${request.question}`,
-      fileNames.length
-        ? `Documents prepared for upload: ${fileNames.join(", ")}.`
-        : "No documents were attached to this request.",
-      `Gateway note: ${gatewayError}.`
+      "JurisDigta assistant could not produce an answer because both backends were unavailable.",
+      `Assistant Gateway error: ${gatewayErrorText}.`,
+      `Chat API error: ${chatErrorText}.`
     ].join("\n\n")
   };
 }

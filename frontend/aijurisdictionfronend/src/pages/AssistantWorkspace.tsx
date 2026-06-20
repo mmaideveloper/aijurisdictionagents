@@ -14,11 +14,35 @@ import {
   CaseMode as GatewayCaseMode,
   submitAssistantQuestion
 } from "../assistantGateway";
+import { ApiRequestError, createChatSession, replyToSession } from "../api/chatClient";
+import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { useCases } from "../state/CaseProvider";
 
+type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
+
+const extractTextContent = (content: AdapterRunOptions["messages"][number]["content"]): string => {
+  return content
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .join("\n")
+    .trim();
+};
+
+const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user") {
+      return extractTextContent(message.content);
+    }
+  }
+  return "";
+};
+
 const AssistantThread: React.FC = () => {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
+  const { user } = useAuth();
+  const sessionRef = React.useRef<{ language: string; userId?: string; sessionId: string } | null>(null);
+
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
     () => [
       {
@@ -29,22 +53,53 @@ const AssistantThread: React.FC = () => {
     ],
     [t]
   );
+
   const assistantAdapter = React.useMemo<ChatModelAdapter>(
     () => ({
-      async run() {
-        return {
-          content: [
-            {
-              type: "text",
-              text: t("assistantGatewayStubResponse")
-            }
-          ],
-          status: { type: "complete", reason: "stop" }
-        };
+      async run(options) {
+        const content = latestUserText(options.messages);
+        if (!content) {
+          return {
+            content: [{ type: "text", text: t("assistantEmptyMessageResponse") }],
+            status: { type: "complete", reason: "stop" }
+          };
+        }
+
+        try {
+          const userId = user?.userId;
+          const existingSession = sessionRef.current;
+          const session =
+            existingSession?.language === language && existingSession.userId === userId
+              ? existingSession
+              : {
+                  language,
+                  userId,
+                  sessionId: (await createChatSession({ language, userId })).id
+                };
+          sessionRef.current = session;
+
+          const assistantMessage = await replyToSession({
+            sessionId: session.sessionId,
+            content
+          });
+
+          return {
+            content: [{ type: "text", text: assistantMessage.content }],
+            status: { type: "complete", reason: "stop" }
+          };
+        } catch (error) {
+          const status = error instanceof ApiRequestError && error.status ? String(error.status) : "network";
+          const detail = error instanceof Error ? error.message : "Unknown error";
+          return {
+            content: [{ type: "text", text: t("assistantApiErrorResponse", { status, detail }) }],
+            status: { type: "complete", reason: "stop" }
+          };
+        }
       }
     }),
-    [t]
+    [language, t, user?.userId]
   );
+
   const runtime = useLocalRuntime(assistantAdapter, {
     initialMessages: assistantMessages
   });
