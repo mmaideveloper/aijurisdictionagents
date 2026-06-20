@@ -29,6 +29,7 @@ export type ChatMessage = {
 };
 
 export type CreateChatSessionInput = {
+  userId?: string;
   caseId?: string;
   country?: string;
   language?: string;
@@ -144,6 +145,7 @@ export const createChatSession = async (input: CreateChatSessionInput = {}): Pro
       "x-api-key": config.apiKey
     },
     body: JSON.stringify({
+      user_id: input.userId || null,
       case_id: input.caseId || null,
       country: input.country || config.country,
       language: input.language || config.language,

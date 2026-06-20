@@ -4,6 +4,7 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import AssistantWorkspace from "../pages/AssistantWorkspace";
+import { createChatSession, replyToSession } from "../api/chatClient";
 
 const labels: Record<string, string> = {
   assistantThreadsTitle: "Conversations",
@@ -46,14 +47,36 @@ const labels: Record<string, string> = {
   assistantComposerPlaceholder: "Ask for legal research or document preparation...",
   assistantSend: "Send message",
   assistantRole: "Assistant",
-  assistantUserRole: "You"
+  assistantUserRole: "You",
+  assistantInitialMessage: "JurisDigta Assistant is ready with JurisDigta API and MCP locked on.",
+  assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
+  assistantApiErrorResponse: "The assistant could not reach the JurisDigta API. Status: {status}. Detail: {detail}"
 };
 
 vi.mock("../components/LanguageProvider", () => ({
   useLanguage: () => ({
+    language: "sk",
     t: (key: string) => labels[key] ?? key
   })
 }));
+
+vi.mock("../auth/webAuth", () => ({
+  useAuth: () => ({
+    user: { userId: "user-1" }
+  })
+}));
+
+vi.mock("../api/chatClient", async () => {
+  const actual = await vi.importActual<typeof import("../api/chatClient")>("../api/chatClient");
+  return {
+    ...actual,
+    createChatSession: vi.fn(),
+    replyToSession: vi.fn()
+  };
+});
+
+let capturedAdapter: { run: (options: unknown) => Promise<{ content?: readonly { type: string; text?: string }[] }> } | null =
+  null;
 
 vi.mock("@assistant-ui/react", () => ({
   AssistantRuntimeProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -87,11 +110,17 @@ vi.mock("@assistant-ui/react", () => ({
       return <Message />;
     }
   },
-  useLocalRuntime: () => ({})
+  useLocalRuntime: (adapter: typeof capturedAdapter) => {
+    capturedAdapter = adapter;
+    return {};
+  }
 }));
 
 describe("AssistantWorkspace", () => {
   afterEach(() => {
+    capturedAdapter = null;
+    vi.mocked(createChatSession).mockReset();
+    vi.mocked(replyToSession).mockReset();
     cleanup();
   });
 
@@ -111,5 +140,44 @@ describe("AssistantWorkspace", () => {
     expect(screen.getByRole("button", { name: "Legal search" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Verify company" })).toBeDefined();
     expect(screen.queryByLabelText(/mcp url/i)).toBeNull();
+  });
+
+  it("sends assistant messages to the JurisDigta chat API", async () => {
+    vi.mocked(createChatSession).mockResolvedValue({
+      id: "session-1",
+      user_id: "user-1",
+      case_id: null,
+      country: "SK",
+      language: "sk",
+      discussion_type: "advice",
+      state: "active",
+      created_at: "2026-06-20T00:00:00Z"
+    });
+    vi.mocked(replyToSession).mockResolvedValue({
+      id: "message-1",
+      session_id: "session-1",
+      role: "assistant",
+      content: "Real answer from API",
+      agent_name: "AI Lawyer",
+      created_at: "2026-06-20T00:00:01Z"
+    });
+
+    render(<AssistantWorkspace />);
+
+    const result = await capturedAdapter?.run({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Daj mi potvrdenie na zaplatenie 5000 splatné do 31.12.2026" }]
+        }
+      ]
+    });
+
+    expect(createChatSession).toHaveBeenCalledWith({ language: "sk", userId: "user-1" });
+    expect(replyToSession).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      content: "Daj mi potvrdenie na zaplatenie 5000 splatné do 31.12.2026"
+    });
+    expect(result?.content?.[0]?.text).toBe("Real answer from API");
   });
 });
