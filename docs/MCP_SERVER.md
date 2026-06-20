@@ -87,6 +87,8 @@ Production settings:
   OAuth/browser tokens for that user remain usable until their own JWT expiry
   unless access is revoked.
 - Protected MCP tools accept either `Authorization: Bearer <mcp_api_key>` or `x-mcp-api-key: <mcp_api_key>`.
+- `initialize` advertises MCP protocol version `2025-11-25`, matching the
+  current Claude custom connector probe.
 - OAuth token responses include `scope=mcp:laws offline_access` when a refresh
   token is returned. Access-token JWT claims remain scoped to `mcp:laws`.
 - OAuth refresh tokens are audience-bound, use `scope=offline_access`, are not
