@@ -12,6 +12,7 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
   const { t } = useLanguage();
   const { pathname } = useLocation();
   const hasWorkspaceLayout = isAuthenticated && pathname === "/";
+  const hasAssistantLayout = isAuthenticated && pathname === "/app/assistant";
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const toggleSidebar = () => {
     setSidebarOpen((prev) => !prev);
@@ -36,6 +37,15 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
           <main className="main-content">{children}</main>
           <Footer />
         </div>
+      </div>
+    );
+  }
+
+  if (hasAssistantLayout) {
+    return (
+      <div className="app-shell app-shell--assistant">
+        <Navigation isSidebarCollapsed={false} />
+        <main className="main-content">{children}</main>
       </div>
     );
   }

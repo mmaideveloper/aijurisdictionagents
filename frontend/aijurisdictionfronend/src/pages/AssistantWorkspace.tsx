@@ -8,7 +8,7 @@ import {
   type ChatModelAdapter,
   type ThreadMessageLike
 } from "@assistant-ui/react";
-import { BsArrowUpCircle, BsLockFill, BsShieldCheck } from "react-icons/bs";
+import { BsArrowUpCircle, BsLockFill, BsPencilSquare, BsShieldCheck } from "react-icons/bs";
 import {
   AssistantResponse,
   CaseMode as GatewayCaseMode,
@@ -105,16 +105,23 @@ const AssistantThread: React.FC = () => {
   });
 
   const Message: React.FC = () => (
-    <MessagePrimitive.Root className="assistant-message">
+    <MessagePrimitive.Root className="assistant-message-row">
       <MessagePrimitive.If user>
-        <div className="assistant-message__role">{t("assistantUserRole")}</div>
+        <div className="assistant-message assistant-message--user">
+          <div className="assistant-message__role">{t("assistantUserRole")}</div>
+          <div className="assistant-message__body">
+            <MessagePrimitive.Parts />
+          </div>
+        </div>
       </MessagePrimitive.If>
       <MessagePrimitive.If assistant>
-        <div className="assistant-message__role">{t("assistantRole")}</div>
+        <div className="assistant-message assistant-message--assistant">
+          <div className="assistant-message__role">{t("assistantRole")}</div>
+          <div className="assistant-message__body">
+            <MessagePrimitive.Parts />
+          </div>
+        </div>
       </MessagePrimitive.If>
-      <div className="assistant-message__body">
-        <MessagePrimitive.Parts />
-      </div>
     </MessagePrimitive.Root>
   );
 
@@ -229,39 +236,42 @@ const AssistantWorkspace: React.FC = () => {
     <div className="page assistant-workspace-page">
       <section className="assistant-workspace">
         <aside className="assistant-rail" aria-label={t("assistantThreadsTitle")}>
-          <div>
-            <p className="eyebrow">{t("assistantThreadsTitle")}</p>
-            <h2>{t("assistantThreadCurrent")}</h2>
-          </div>
-          <div className="assistant-thread-list">
-            <button type="button" className="assistant-thread-item active">
-              {t("assistantThreadCurrent")}
-            </button>
-            <button type="button" className="assistant-thread-item">
-              {t("assistantThreadDocument")}
-            </button>
-          </div>
-        </aside>
-
-        <main className="assistant-main" aria-labelledby="assistant-title">
-          <section className="assistant-main__header">
+          <div className="assistant-rail__header">
             <div>
               <p className="eyebrow">{t("assistantEyebrow")}</p>
-              <h1 id="assistant-title">{t("assistantTitle")}</h1>
-              <p>{t("assistantSubtitle")}</p>
+              <div className="assistant-rail__title">{t("assistantTitle")}</div>
             </div>
-            <div className="assistant-access">
-              <BsShieldCheck aria-hidden="true" />
-              <span>{t("assistantApiAuthAccess")}</span>
+            <button type="button" className="assistant-new-chat" aria-label={t("assistantThreadCurrent")}>
+              <BsPencilSquare aria-hidden="true" />
+            </button>
+          </div>
+
+          <button type="button" className="assistant-new-chat-wide">
+            <BsPencilSquare aria-hidden="true" />
+            <span>{t("assistantThreadCurrent")}</span>
+          </button>
+
+          <section className="assistant-rail__section">
+            <div className="assistant-rail__section-title">{t("assistantThreadsTitle")}</div>
+            <div className="assistant-thread-list">
+              <button type="button" className="assistant-thread-item active">
+                {t("assistantThreadCurrent")}
+              </button>
+              <button type="button" className="assistant-thread-item">
+                {t("assistantThreadDocument")}
+              </button>
             </div>
           </section>
 
-          <section className="assistant-mode-strip" aria-label={t("assistantModesTitle")}>
-            {modes.map((mode, index) => (
-              <button key={mode} type="button" className={index === 0 ? "active" : ""}>
-                {mode}
-              </button>
-            ))}
+          <section className="assistant-rail__section">
+            <div className="assistant-rail__section-title">{t("assistantModesTitle")}</div>
+            <div className="assistant-mode-list">
+              {modes.map((mode, index) => (
+                <button key={mode} type="button" className={index === 0 ? "active" : ""}>
+                  {mode}
+                </button>
+              ))}
+            </div>
           </section>
 
           <section className="assistant-gateway-card" aria-labelledby="assistant-gateway-title">
@@ -398,11 +408,7 @@ const AssistantWorkspace: React.FC = () => {
             ) : null}
           </section>
 
-          <AssistantThread />
-        </main>
-
-        <aside className="assistant-tool-panel" aria-label={t("assistantToolsTitle")}>
-          <section>
+          <section className="assistant-rail__guardrails">
             <div className="assistant-panel-title">
               <BsLockFill aria-hidden="true" />
               <h2>{t("assistantMandatoryMcpTitle")}</h2>
@@ -411,22 +417,9 @@ const AssistantWorkspace: React.FC = () => {
             <span className="assistant-status">{t("assistantMcpLocked")}</span>
           </section>
 
-          <section>
-            <h2>{t("assistantToolsTitle")}</h2>
-            <ul className="assistant-capability-list">
-              {capabilities.map((capability) => (
-                <li key={capability}>{capability}</li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
+          <section className="assistant-rail__guardrails">
             <h2>{t("assistantApprovalTitle")}</h2>
             <p>{t("assistantApprovalBody")}</p>
-          </section>
-
-          <section>
-            <h2>{t("assistantMetadataTitle")}</h2>
             <dl className="assistant-metadata">
               <div>
                 <dt>{t("assistantMetadataGenerated")}</dt>
@@ -443,6 +436,27 @@ const AssistantWorkspace: React.FC = () => {
             </dl>
           </section>
         </aside>
+
+        <main className="assistant-main" aria-labelledby="assistant-title">
+          <section className="assistant-main__header">
+            <div>
+              <h1 id="assistant-title">{t("assistantTitle")}</h1>
+              <p>{t("assistantSubtitle")}</p>
+            </div>
+            <div className="assistant-access">
+              <BsShieldCheck aria-hidden="true" />
+              <span>{t("assistantApiAuthAccess")}</span>
+            </div>
+          </section>
+
+          <AssistantThread />
+
+          <section className="assistant-capability-strip" aria-label={t("assistantToolsTitle")}>
+            {capabilities.map((capability) => (
+              <span key={capability}>{capability}</span>
+            ))}
+          </section>
+        </main>
       </section>
     </div>
   );
