@@ -313,7 +313,7 @@ def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> No
     token = create_key_response.json()["mcp_api_key"]
     claims = _jwt_claims(token)
     assert claims["sub"] == sign_up_response.json()["user_id"]
-    assert claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+    assert claims["aud"] == "https://mcp.jurisdigta.eu/mcp"
     assert claims["iss"] == "https://mcp.jurisdigta.eu"
     assert claims["scope"] == "mcp:laws"
     assert claims["token_use"] == "access"
@@ -539,7 +539,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
 
     protected_metadata = mcp_client.get("/.well-known/oauth-protected-resource/MCP")
     assert protected_metadata.status_code == 200
-    assert protected_metadata.json()["resource"].endswith("/MCP")
+    assert protected_metadata.json()["resource"].endswith("/mcp")
     assert protected_metadata.json()["resource_name"] == "JurisDigta MCP"
     assert protected_metadata.json()["scopes_supported"] == ["mcp:laws"]
     claude_web_protected_metadata = mcp_client.get(
@@ -566,7 +566,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws", "offline_access"]
     assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
     assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is False
-    assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/MCP"]
+    assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/mcp"]
 
     registration_response = mcp_client.post(
         "/oauth/register",
@@ -605,7 +605,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
 
     code_verifier = "test-code-verifier-1234567890"
     code_challenge = _pkce_challenge(code_verifier)
-    resource = "https://mcp.jurisdigta.eu/MCP"
+    resource = "https://mcp.jurisdigta.eu/mcp"
     authorize_page = mcp_client.get(
         "/oauth/authorize",
         params={
@@ -771,7 +771,7 @@ def test_oauth_authorization_response_issuer_can_be_enabled(monkeypatch, tmp_pat
 
     code_verifier = "test-code-verifier-issuer-1234567890"
     code_challenge = _pkce_challenge(code_verifier)
-    resource = "https://mcp.jurisdigta.eu/MCP"
+    resource = "https://mcp.jurisdigta.eu/mcp"
     verify_response = mcp_client.post(
         "/oauth/authorize/verify",
         data={
@@ -810,7 +810,7 @@ def test_oauth_login_reuses_recent_mcp_otp_verification(monkeypatch, tmp_path: P
 
     code_verifier = "test-code-verifier-reuse-1234567890"
     code_challenge = _pkce_challenge(code_verifier)
-    resource = "https://mcp.jurisdigta.eu/MCP"
+    resource = "https://mcp.jurisdigta.eu/mcp"
     authorize_data = {
         "response_type": "code",
         "client_id": "claude",
@@ -877,7 +877,7 @@ def test_mcp_otp_reuse_can_be_disabled(monkeypatch, tmp_path: Path) -> None:
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
         "state": "claude-state",
-        "resource": "https://mcp.jurisdigta.eu/MCP",
+        "resource": "https://mcp.jurisdigta.eu/mcp",
         "email": "mcp-oauth-no-reuse@example.com",
         "password": "secret-pass",
     }
@@ -915,16 +915,28 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
         "/.well-known/oauth-authorization-server/MCP",
         headers={"x-forwarded-proto": "http", "x-forwarded-host": "internal.local"},
     )
+    lower_mcp_protected_metadata = mcp_client.get(
+        "/.well-known/oauth-protected-resource/mcp",
+        headers={"x-forwarded-proto": "http", "x-forwarded-host": "internal.local"},
+    )
+    lower_mcp_authorization_metadata = mcp_client.get(
+        "/.well-known/oauth-authorization-server/mcp",
+        headers={"x-forwarded-proto": "http", "x-forwarded-host": "internal.local"},
+    )
 
     assert protected_metadata.status_code == 200
-    assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
+    assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/mcp"
     assert protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
+    assert lower_mcp_protected_metadata.status_code == 200
+    assert lower_mcp_protected_metadata.json() == protected_metadata.json()
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
     assert authorization_metadata.json()["registration_endpoint"] == "https://mcp.jurisdigta.eu/oauth/register"
     assert mcp_path_authorization_metadata.status_code == 200
     assert mcp_path_authorization_metadata.json() == authorization_metadata.json()
+    assert lower_mcp_authorization_metadata.status_code == 200
+    assert lower_mcp_authorization_metadata.json() == authorization_metadata.json()
 
 
 def test_oauth_registration_rejects_unregistered_redirect_host(monkeypatch, tmp_path: Path) -> None:

@@ -190,8 +190,9 @@ def require_mcp_api_key(
 
 
 @router.get("", response_class=JSONResponse)
+@lowercase_compat_router.get("", response_class=JSONResponse)
 def mcp_status() -> JSONResponse:
-    return JSONResponse(status_code=405, content={"detail": "Use POST /MCP for Streamable HTTP JSON-RPC."})
+    return JSONResponse(status_code=405, content={"detail": "Use POST /mcp for Streamable HTTP JSON-RPC."})
 
 
 @router.get("/status", response_class=JSONResponse)
@@ -287,12 +288,14 @@ def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
 
 
 @oauth_router.get("/.well-known/oauth-protected-resource/MCP")
+@oauth_router.get("/.well-known/oauth-protected-resource/mcp")
 def oauth_mcp_protected_resource_metadata(request: Request) -> dict[str, Any]:
     return oauth_protected_resource_metadata(request)
 
 
 @oauth_router.get("/.well-known/oauth-authorization-server")
 @oauth_router.get("/.well-known/oauth-authorization-server/MCP")
+@oauth_router.get("/.well-known/oauth-authorization-server/mcp")
 def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
     if _should_hide_oauth_metadata_for_claude_web(request):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
@@ -1302,11 +1305,19 @@ def _oauth_login_code_key(*, email: str) -> str:
 
 
 def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> User:
+    expected_audience = default_mcp_resource_url()
     payload = validate_mcp_api_token(
         api_key,
-        audience=default_mcp_resource_url(),
+        audience=expected_audience,
         required_scope=MCP_TOKEN_SCOPE,
     )
+    if payload is None and expected_audience.lower().endswith("/mcp"):
+        legacy_audience = f"{expected_audience[:-4]}/MCP"
+        payload = validate_mcp_api_token(
+            api_key,
+            audience=legacy_audience,
+            required_scope=MCP_TOKEN_SCOPE,
+        )
     if payload is None:
         user = store.find_user_by_mcp_api_key(api_key=api_key)
         if user is None:
@@ -1400,7 +1411,7 @@ def _base_url(request: Request) -> str:
 
 
 def _resource_url(request: Request) -> str:
-    return f"{_base_url(request)}/MCP"
+    return f"{_base_url(request)}/mcp"
 
 
 def _base_url_from_resource(resource: str) -> str:
@@ -1411,7 +1422,24 @@ def _base_url_from_resource(resource: str) -> str:
 
 
 def _resolve_oauth_resource(*, request: Request, resource: str) -> str:
-    return resource.strip() or _resource_url(request)
+    resolved = resource.strip() or _resource_url(request)
+    return _canonicalize_mcp_resource(request=request, resource=resolved)
+
+
+def _canonicalize_mcp_resource(*, request: Request, resource: str) -> str:
+    expected = _resource_url(request)
+    parsed = urlparse(resource)
+    expected_parsed = urlparse(expected)
+    if (
+        parsed.scheme.lower() == expected_parsed.scheme.lower()
+        and parsed.netloc.lower() == expected_parsed.netloc.lower()
+        and parsed.path.lower() == "/mcp"
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+    ):
+        return expected
+    return resource
 
 
 def _allowed_oauth_redirect_hosts() -> set[str]:
@@ -1478,7 +1506,7 @@ def _first_payload_id(payload: Any) -> Any:
 
 
 def _www_authenticate_header(request: Request) -> str:
-    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/MCP"
+    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/mcp"
     return f'Bearer resource_metadata="{metadata_url}", scope="{MCP_TOKEN_SCOPE}"'
 
 
