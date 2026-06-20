@@ -8,6 +8,7 @@ import importlib
 import json
 import logging
 import os
+import re
 import secrets
 import time
 from typing import Any, Callable, Sequence, cast
@@ -1071,10 +1072,42 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="query must contain at least 2 characters")
     country_code = str(arguments.get("country_code", "SK")).strip().upper() or "SK"
     limit = _bounded_int(arguments.get("limit"), default=10, minimum=1, maximum=50)
+    requested_law_year = _optional_positive_int(arguments.get("law_year"))
+    requested_law_number = _optional_positive_int(arguments.get("law_number"))
+    parsed_identifier = _parse_law_identifier(query)
+    if requested_law_year is None and parsed_identifier is not None:
+        requested_law_year = parsed_identifier[0]
+    if requested_law_number is None and parsed_identifier is not None:
+        requested_law_number = parsed_identifier[1]
     pattern = f"%{query.lower()}%"
+    exact = query.lower()
     logger.info("mcp_tool_search_laws_query country_code=%s limit=%d query_length=%d", country_code, limit, len(query))
 
     with _LawsQuerySession() as laws:
+        law_year_filter = ""
+        law_number_filter = ""
+        query_params: list[Any] = [
+            country_code,
+            pattern,
+            pattern,
+            pattern,
+            pattern,
+        ]
+        if requested_law_year is not None:
+            law_year_filter = f" AND d.law_year = {laws.param}"
+            query_params.append(requested_law_year)
+        if requested_law_number is not None:
+            law_number_filter = f" AND d.law_number = {laws.param}"
+            query_params.append(requested_law_number)
+        query_params.extend(
+            [
+                exact,
+                exact,
+                exact,
+                f"{requested_law_number}/{requested_law_year}%" if requested_law_year and requested_law_number else "",
+                limit,
+            ]
+        )
         rows = laws.query_all(
             f"""
             SELECT
@@ -1102,10 +1135,22 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
                   OR LOWER(COALESCE(m.title, '')) LIKE {laws.param}
                   OR LOWER(COALESCE(m.law_identifier_text, '')) LIKE {laws.param}
               )
-            ORDER BY d.law_year DESC, d.law_number DESC, v.effective_from DESC
+              {law_year_filter}
+              {law_number_filter}
+            ORDER BY
+                CASE
+                    WHEN LOWER(COALESCE(m.law_identifier_text, '')) = {laws.param} THEN 0
+                    WHEN LOWER(COALESCE(m.title, d.official_name)) = {laws.param} THEN 1
+                    WHEN LOWER(d.lawyer_title) = {laws.param} THEN 2
+                    WHEN COALESCE(m.law_identifier_text, '') LIKE {laws.param} THEN 3
+                    ELSE 10
+                END,
+                d.law_year DESC,
+                d.law_number DESC,
+                v.effective_from DESC
             LIMIT {laws.param}
             """,
-            (country_code, pattern, pattern, pattern, pattern, limit),
+            tuple(query_params),
         )
     results = [_search_result_from_row(row) for row in rows]
     logger.info("mcp_tool_search_laws_result country_code=%s result_count=%d", country_code, len(results))
@@ -1237,7 +1282,9 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "name": "searchLaws",
             "description": (
                 "Search JurisDigta imported Slovak laws by title, identifier, and lawyer-facing title. "
-                "Use this first for Slovak legal questions instead of relying on model memory."
+                "Use exact law_number and law_year when the user cites a legal identifier such as 40/1964; "
+                "otherwise prefer exact title matches over amendment acts. Use this first for Slovak legal "
+                "questions instead of relying on model memory."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1245,6 +1292,8 @@ def _mcp_tools() -> list[dict[str, Any]]:
                 "properties": {
                     "query": {"type": "string", "minLength": 2},
                     "country_code": {"type": "string", "default": "SK"},
+                    "law_year": {"type": "integer", "minimum": 1},
+                    "law_number": {"type": "integer", "minimum": 1},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
                 },
                 "additionalProperties": False,
@@ -1600,6 +1649,20 @@ def _search_result_from_row(row: Sequence[Any]) -> dict[str, Any]:
         "title": str(row[12]),
         "law_type": str(row[13]),
     }
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    parsed = _bounded_int(value, default=0, minimum=1, maximum=999999)
+    return parsed
+
+
+def _parse_law_identifier(query: str) -> tuple[int, int] | None:
+    match = re.search(r"\b(?P<number>\d{1,6})\s*/\s*(?P<year>\d{4})\b", query)
+    if match is None:
+        return None
+    return int(match.group("year")), int(match.group("number"))
 
 
 def _payload_message_count(payload: Any) -> int:

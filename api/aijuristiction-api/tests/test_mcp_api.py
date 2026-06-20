@@ -173,6 +173,65 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     assert _tool_payload(text_response)["content_text"] == "Civil code full text."
 
 
+def test_mcp_search_prefers_base_law_over_newer_amendment(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-40-1964",
+        version_id="ver-40-1964",
+        metadata_id="meta-40-1964",
+        artifact_id="artifact-40-1964",
+        law_year=1964,
+        law_number=40,
+        official_name="Obciansky zakonnik",
+        lawyer_title="Obciansky zakonnik",
+        law_identifier_text="40/1964 Zb.",
+        title="Obciansky zakonnik",
+        content_text="Aktualne konsolidovane znenie Obcianskeho zakonnika.",
+    )
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-254-2024",
+        version_id="ver-254-2024",
+        metadata_id="meta-254-2024",
+        artifact_id="artifact-254-2024",
+        law_year=2024,
+        law_number=254,
+        official_name="Zakon, ktorym sa meni a doplna zakon c. 40/1964 Zb. Obciansky zakonnik",
+        lawyer_title="Novela Obcianskeho zakonnika",
+        law_identifier_text="254/2024 Z. z.",
+        title="Zakon, ktorym sa meni a doplna Obciansky zakonnik",
+        content_text="Novelizacny zakon.",
+    )
+
+    title_search = _mcp_call(
+        "searchLaws",
+        {"query": "Obciansky zakonnik"},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    identifier_search = _mcp_call(
+        "searchLaws",
+        {"query": "40/1964"},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    explicit_identifier_search = _mcp_call(
+        "searchLaws",
+        {"query": "Obciansky zakonnik", "law_year": 1964, "law_number": 40},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert title_search.status_code == 200
+    assert identifier_search.status_code == 200
+    assert explicit_identifier_search.status_code == 200
+    assert _tool_payload(title_search)["results"][0]["document_id"] == "doc-40-1964"
+    assert _tool_payload(identifier_search)["results"][0]["document_id"] == "doc-40-1964"
+    explicit_results = _tool_payload(explicit_identifier_search)["results"]
+    assert [result["document_id"] for result in explicit_results] == ["doc-40-1964"]
+
+
 def test_mcp_logs_tool_events_without_sensitive_payloads(monkeypatch, tmp_path: Path, caplog) -> None:
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
@@ -1213,5 +1272,80 @@ def _create_laws_db(path: Path) -> None:
         conn.execute(
             "INSERT INTO archive_import_assets(country_code, processing_status) VALUES (?, ?)",
             ("SK", "processed"),
+        )
+        conn.commit()
+
+
+def _insert_law_search_fixture(
+    path: Path,
+    *,
+    document_id: str,
+    version_id: str,
+    metadata_id: str,
+    artifact_id: str,
+    law_year: int,
+    law_number: int,
+    official_name: str,
+    lawyer_title: str,
+    law_identifier_text: str,
+    title: str,
+    content_text: str,
+) -> None:
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """
+            INSERT INTO law_documents(
+                document_id, country_code, collection_code, law_year, law_number,
+                official_name, lawyer_title, source_url, current_status, last_stored_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                document_id,
+                "SK",
+                "ZZ",
+                law_year,
+                law_number,
+                official_name,
+                lawyer_title,
+                f"https://example.test/laws/{law_year}/{law_number}",
+                "published",
+                "2026-06-01T12:00:00Z",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO law_versions(
+                version_id, document_id, version_token, effective_from,
+                embedding_model, embedding_dimensions, embedding_vector
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (version_id, document_id, f"{law_year}0101", f"{law_year}-01-01", "test-model", 8, "[0.1]"),
+        )
+        conn.execute(
+            """
+            INSERT INTO law_metadata(
+                law_metadata_id, document_id, version_id, law_identifier_text, title, law_type
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (metadata_id, document_id, version_id, law_identifier_text, title, "act"),
+        )
+        conn.execute(
+            """
+            INSERT INTO source_artifacts(
+                artifact_id, document_id, version_id, artifact_kind, source_url,
+                storage_backend, storage_path, content_text, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                artifact_id,
+                document_id,
+                version_id,
+                "html",
+                f"https://example.test/laws/{law_year}/{law_number}",
+                "local_file",
+                "ignored",
+                content_text,
+                "2026-06-01T12:00:00Z",
+            ),
         )
         conn.commit()
