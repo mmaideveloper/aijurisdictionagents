@@ -320,6 +320,9 @@ def oauth_dynamic_client_registration(
     request: Request,
     metadata: dict[str, Any] = Body(default_factory=dict),
 ) -> dict[str, Any]:
+    if _should_hide_oauth_metadata_for_claude_web(request):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
+
     redirect_uris = _registration_string_list(metadata.get("redirect_uris"))
     if not redirect_uris:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="redirect_uris is required")

@@ -78,7 +78,7 @@ an authenticated tool call, but Claude still probes OAuth registration during
 connector setup. By default, OAuth metadata and dynamic registration remain
 available. Set `MCP_CLAUDE_WEB_PUBLIC_DISCOVERY=true` only for incident testing
 when Claude should be forced to validate the public tools directly through
-`POST /mcp` without advertised OAuth metadata.
+`POST /mcp` without advertised OAuth metadata or dynamic client registration.
 
 Production settings:
 

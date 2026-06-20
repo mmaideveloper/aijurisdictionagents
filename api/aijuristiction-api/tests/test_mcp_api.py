@@ -558,6 +558,19 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         headers={"user-agent": "python-httpx/0.28.1"},
     )
     assert hidden_claude_web_authorization_metadata.status_code == 404
+    hidden_claude_web_registration = mcp_client.post(
+        "/oauth/register",
+        headers={"user-agent": "python-httpx/0.28.1"},
+        json={
+            "client_name": "Claude",
+            "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "client_secret_post",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+    assert hidden_claude_web_registration.status_code == 404
     monkeypatch.delenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY")
     authorization_metadata = mcp_client.get("/.well-known/oauth-authorization-server")
     assert authorization_metadata.status_code == 200
