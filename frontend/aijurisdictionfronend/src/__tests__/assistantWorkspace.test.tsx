@@ -3,6 +3,7 @@
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import AssistantWorkspace from "../pages/AssistantWorkspace";
 import { createChatSession, replyToSession } from "../api/chatClient";
 
@@ -62,6 +63,8 @@ vi.mock("../components/LanguageProvider", () => ({
 
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
+    isAuthenticated: true,
+    signOut: vi.fn(),
     user: { userId: "user-1" }
   })
 }));
@@ -70,6 +73,8 @@ vi.mock("../state/CaseProvider", () => ({
   useCases: () => ({
     activeCase: null,
     cases: [],
+    documents: [],
+    selectCase: vi.fn(),
     addInteraction: vi.fn()
   })
 }));
@@ -132,8 +137,15 @@ describe("AssistantWorkspace", () => {
     cleanup();
   });
 
+  const renderAssistantWorkspace = () =>
+    render(
+      <MemoryRouter>
+        <AssistantWorkspace />
+      </MemoryRouter>
+    );
+
   it("renders the locked JurisDigta MCP and compliance guardrails", () => {
-    render(<AssistantWorkspace />);
+    renderAssistantWorkspace();
 
     expect(screen.getByRole("heading", { name: "JurisDigta Assistant" })).toBeDefined();
     expect(screen.getByText("Locked on")).toBeDefined();
@@ -143,7 +155,7 @@ describe("AssistantWorkspace", () => {
   });
 
   it("shows V1 assistant modes without arbitrary MCP URL entry", () => {
-    render(<AssistantWorkspace />);
+    renderAssistantWorkspace();
 
     expect(screen.getByRole("button", { name: "Legal search" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Verify company" })).toBeDefined();
@@ -170,7 +182,7 @@ describe("AssistantWorkspace", () => {
       created_at: "2026-06-20T00:00:01Z"
     });
 
-    render(<AssistantWorkspace />);
+    renderAssistantWorkspace();
 
     const result = await capturedAdapter?.run({
       messages: [

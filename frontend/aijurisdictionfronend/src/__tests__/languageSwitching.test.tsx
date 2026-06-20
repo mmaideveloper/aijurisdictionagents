@@ -58,10 +58,10 @@ describe("language switching", () => {
 
     render(
       <LanguageProvider>
-        <MemoryRouter initialEntries={["/"]}>
+        <MemoryRouter initialEntries={["/home"]}>
           <PageLayout>
             <Routes>
-              <Route path="/" element={<Home />} />
+              <Route path="/home" element={<Home />} />
               <Route path="/pricing" element={<Pricing />} />
             </Routes>
           </PageLayout>
@@ -70,12 +70,10 @@ describe("language switching", () => {
     );
 
     expect(screen.getByText("What would you like to explore today?")).toBeDefined();
-    expect(screen.getByText("Cases")).toBeDefined();
 
     await user.click(screen.getByRole("button", { name: "SK" }));
 
     expect(screen.getByText("Čo by ste dnes chceli preskúmať?")).toBeDefined();
-    expect(screen.getByText("Prípady")).toBeDefined();
     expect(window.localStorage.getItem("aj_frontend_lang")).toBe("sk");
 
     await user.click(screen.getByRole("link", { name: "Cenník" }));

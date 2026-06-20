@@ -38,7 +38,7 @@ const App: React.FC = () => {
   return (
     <PageLayout>
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<AssistantWorkspace />} />
         <Route path="/auth" element={<Auth />} />
         <Route
           path="/auth/callback"
@@ -55,11 +55,7 @@ const App: React.FC = () => {
         />
         <Route
           path="/app/assistant"
-          element={
-            <ProtectedRoute>
-              <AssistantWorkspace />
-            </ProtectedRoute>
-          }
+          element={<AssistantWorkspace />}
         />
         <Route
           path="/app/case"
@@ -124,7 +120,7 @@ const App: React.FC = () => {
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/disclaimer" element={<Disclaimer />} />
         <Route path="/terms" element={<TermsOfService />} />
-        <Route path="/home" element={<Navigate to="/" replace />} />
+        <Route path="/home" element={<Home />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </PageLayout>

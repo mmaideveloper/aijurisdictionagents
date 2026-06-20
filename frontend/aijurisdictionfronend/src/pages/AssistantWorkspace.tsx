@@ -8,7 +8,21 @@ import {
   type ChatModelAdapter,
   type ThreadMessageLike
 } from "@assistant-ui/react";
-import { BsArrowUpCircle, BsLockFill, BsPencilSquare, BsShieldCheck } from "react-icons/bs";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  BsArrowUpCircle,
+  BsChatLeftText,
+  BsCreditCard,
+  BsFileEarmarkText,
+  BsGrid,
+  BsLockFill,
+  BsPersonCircle,
+  BsPencilSquare,
+  BsPlug,
+  BsPlusCircle,
+  BsPuzzle,
+  BsShieldCheck
+} from "react-icons/bs";
 import {
   AssistantResponse,
   CaseMode as GatewayCaseMode,
@@ -38,10 +52,21 @@ const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
   return "";
 };
 
+const FREE_PLAN_LIMIT = 3;
+const FREE_PLAN_USAGE_KEY = "jurisdigta.assistant.free.questions.v1";
+
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
-  const { user } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const [freeQuestionCount, setFreeQuestionCount] = React.useState(() => {
+    try {
+      return Number(window.localStorage.getItem(FREE_PLAN_USAGE_KEY) ?? "0") || 0;
+    } catch {
+      return 0;
+    }
+  });
   const sessionRef = React.useRef<{ language: string; userId?: string; sessionId: string } | null>(null);
+  const freeQuestionsLeft = Math.max(0, FREE_PLAN_LIMIT - freeQuestionCount);
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
     () => [
@@ -65,8 +90,33 @@ const AssistantThread: React.FC = () => {
           };
         }
 
+        if (!isAuthenticated && freeQuestionsLeft <= 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  "Free plan limit reached. Sign in to keep your case history or upgrade for more JurisDigta assistant usage."
+              }
+            ],
+            status: { type: "complete", reason: "stop" }
+          };
+        }
+
+        if (!isAuthenticated) {
+          setFreeQuestionCount((current) => {
+            const next = Math.min(FREE_PLAN_LIMIT, current + 1);
+            try {
+              window.localStorage.setItem(FREE_PLAN_USAGE_KEY, String(next));
+            } catch {
+              // Local free usage tracking is best-effort only.
+            }
+            return next;
+          });
+        }
+
         try {
-          const userId = user?.userId;
+          const userId = isAuthenticated ? user?.userId : undefined;
           const existingSession = sessionRef.current;
           const session =
             existingSession?.language === language && existingSession.userId === userId
@@ -97,7 +147,7 @@ const AssistantThread: React.FC = () => {
         }
       }
     }),
-    [language, t, user?.userId]
+    [freeQuestionsLeft, isAuthenticated, language, t, user?.userId]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {
@@ -148,7 +198,9 @@ const AssistantThread: React.FC = () => {
 
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
-  const { activeCase, cases, addInteraction } = useCases();
+  const { isAuthenticated, user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const { activeCase, cases, addInteraction, selectCase } = useCases();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [caseMode, setCaseMode] = React.useState<GatewayCaseMode>(activeCase ? "existing" : "new");
   const [caseId, setCaseId] = React.useState(activeCase?.id ?? "");
@@ -184,6 +236,17 @@ const AssistantWorkspace: React.FC = () => {
     t("assistantCapabilityCar"),
     t("assistantCapabilityLocation")
   ];
+
+  const assistantApps = [
+    { label: "JurisDigta MCP", detail: "Default", icon: <BsPlug aria-hidden="true" /> },
+    { label: "Apps", detail: "Add workspace apps", icon: <BsGrid aria-hidden="true" /> },
+    { label: "Skills", detail: "Legal drafting and review", icon: <BsPuzzle aria-hidden="true" /> },
+    { label: "Plugins", detail: "Connect external tools", icon: <BsPlug aria-hidden="true" /> }
+  ];
+
+  const selectedCaseDocuments = activeCase?.documents ?? [];
+  const selectedCaseChats = activeCase?.interactionHistory ?? [];
+  const userInitial = (user?.name || user?.email || "G").slice(0, 1).toUpperCase();
 
   const canSubmit =
     question.trim().length > 0 &&
@@ -241,27 +304,90 @@ const AssistantWorkspace: React.FC = () => {
               <p className="eyebrow">{t("assistantEyebrow")}</p>
               <div className="assistant-rail__title">{t("assistantTitle")}</div>
             </div>
-            <button type="button" className="assistant-new-chat" aria-label={t("assistantThreadCurrent")}>
+            <button
+              type="button"
+              className="assistant-new-chat"
+              aria-label="New case"
+              onClick={() => (isAuthenticated ? navigate("/app/case") : navigate("/auth"))}
+            >
               <BsPencilSquare aria-hidden="true" />
             </button>
           </div>
 
-          <button type="button" className="assistant-new-chat-wide">
-            <BsPencilSquare aria-hidden="true" />
-            <span>{t("assistantThreadCurrent")}</span>
+          <button
+            type="button"
+            className="assistant-new-chat-wide"
+            onClick={() => (isAuthenticated ? navigate("/app/case") : navigate("/auth"))}
+          >
+            <BsPlusCircle aria-hidden="true" />
+            <span>New case</span>
           </button>
 
           <section className="assistant-rail__section">
-            <div className="assistant-rail__section-title">{t("assistantThreadsTitle")}</div>
+            <div className="assistant-rail__section-title">Cases</div>
             <div className="assistant-thread-list">
-              <button type="button" className="assistant-thread-item active">
-                {t("assistantThreadCurrent")}
-              </button>
-              <button type="button" className="assistant-thread-item">
-                {t("assistantThreadDocument")}
-              </button>
+              {isAuthenticated && cases.length > 0 ? (
+                cases.map((caseItem) => (
+                  <button
+                    key={caseItem.id}
+                    type="button"
+                    className={`assistant-thread-item${caseItem.id === activeCase?.id ? " active" : ""}`}
+                    onClick={() => selectCase(caseItem.id)}
+                  >
+                    <span>{caseItem.title}</span>
+                    <small>{caseItem.documents.length} docs / {caseItem.interactionHistory.length} chats</small>
+                  </button>
+                ))
+              ) : (
+                <>
+                  <button type="button" className="assistant-thread-item active">
+                    <span>{t("assistantThreadCurrent")}</span>
+                    <small>{isAuthenticated ? "No saved documents yet" : "Free plan temporary chat"}</small>
+                  </button>
+                  <button type="button" className="assistant-thread-item">
+                    <span>{t("assistantThreadDocument")}</span>
+                    <small>Sign in to save</small>
+                  </button>
+                </>
+              )}
             </div>
           </section>
+
+          {isAuthenticated && activeCase ? (
+            <section className="assistant-rail__section assistant-case-tree">
+              <div className="assistant-rail__section-title">Selected case</div>
+              <div className="assistant-case-tree__group">
+                <div className="assistant-case-tree__label">
+                  <BsFileEarmarkText aria-hidden="true" />
+                  <span>Documents</span>
+                </div>
+                {selectedCaseDocuments.length > 0 ? (
+                  selectedCaseDocuments.map((document) => (
+                    <button key={document.id} type="button" className="assistant-case-tree__item">
+                      {document.originalFilename}
+                    </button>
+                  ))
+                ) : (
+                  <p>No documents in this case.</p>
+                )}
+              </div>
+              <div className="assistant-case-tree__group">
+                <div className="assistant-case-tree__label">
+                  <BsChatLeftText aria-hidden="true" />
+                  <span>Chats</span>
+                </div>
+                {selectedCaseChats.length > 0 ? (
+                  selectedCaseChats.slice(-5).map((interaction) => (
+                    <button key={interaction.id} type="button" className="assistant-case-tree__item">
+                      {interaction.actor}: {interaction.message.slice(0, 44)}
+                    </button>
+                  ))
+                ) : (
+                  <p>No chat history yet.</p>
+                )}
+              </div>
+            </section>
+          ) : null}
 
           <section className="assistant-rail__section">
             <div className="assistant-rail__section-title">{t("assistantModesTitle")}</div>
@@ -408,6 +534,21 @@ const AssistantWorkspace: React.FC = () => {
             ) : null}
           </section>
 
+          {isAuthenticated ? (
+            <section className="assistant-rail__section assistant-apps">
+              <div className="assistant-rail__section-title">Apps, skills, plugins and MCP</div>
+              {assistantApps.map((app) => (
+                <button key={app.label} type="button" className="assistant-app-item">
+                  {app.icon}
+                  <span>
+                    <strong>{app.label}</strong>
+                    <small>{app.detail}</small>
+                  </span>
+                </button>
+              ))}
+            </section>
+          ) : null}
+
           <section className="assistant-rail__guardrails">
             <div className="assistant-panel-title">
               <BsLockFill aria-hidden="true" />
@@ -434,6 +575,45 @@ const AssistantWorkspace: React.FC = () => {
                 <dd>{t("assistantMetadataReviewValue")}</dd>
               </div>
             </dl>
+          </section>
+
+          <section className="assistant-account-panel" aria-label="Account">
+            {isAuthenticated ? (
+              <>
+                <Link to="/profile" className="assistant-account-panel__identity">
+                  <span className="assistant-account-panel__avatar">{userInitial}</span>
+                  <span>
+                    <strong>{user?.name ?? "Profile"}</strong>
+                    <small>Free plan / Profile</small>
+                  </span>
+                </Link>
+                <div className="assistant-account-panel__actions">
+                  <Link to="/pricing">
+                    <BsCreditCard aria-hidden="true" />
+                    Upgrade
+                  </Link>
+                  <button type="button" onClick={signOut}>
+                    Sign out
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <Link to="/auth" className="assistant-account-panel__identity">
+                  <BsPersonCircle aria-hidden="true" />
+                  <span>
+                    <strong>Sign in</strong>
+                    <small>Free plan</small>
+                  </span>
+                </Link>
+                <div className="assistant-account-panel__actions">
+                  <Link to="/pricing">
+                    <BsCreditCard aria-hidden="true" />
+                    Upgrade
+                  </Link>
+                </div>
+              </>
+            )}
           </section>
         </aside>
 
