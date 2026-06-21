@@ -321,7 +321,8 @@
 }
 
 .assistant-rail,
-.assistant-main {
+.assistant-main,
+.assistant-tool-panel {
   min-width: 0;
 }
 
@@ -344,6 +345,27 @@
   flex-direction: column;
   overflow: hidden;
   background: #fff;
+}
+
+.assistant-tool-panel {
+  display: grid;
+  align-content: start;
+  gap: 0.9rem;
+  padding: 0.9rem;
+  background: #f7f3ee;
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.assistant-tool-panel section {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.assistant-tool-panel h2,
+.assistant-tool-panel p,
+.assistant-tool-panel dl {
+  margin: 0;
 }
 
 .assistant-rail__header {
@@ -2195,6 +2217,55 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  .app-shell--assistant {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .app-shell__body--assistant {
+    display: block;
+    overflow: visible;
+  }
+
+  .app-shell--assistant .main-content {
+    overflow: visible;
+    min-width: 0;
+  }
+
+  .app-shell--assistant .assistant-workspace-page {
+    min-height: auto;
+  }
+
+  .app-shell--assistant .assistant-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .assistant-rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    max-height: none;
+    overflow: visible;
+  }
+
+  .assistant-main {
+    min-height: 34rem;
+    overflow: visible;
+  }
+
+  .assistant-thread {
+    min-height: 32rem;
+  }
+
+  .assistant-tool-panel {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    overflow: visible;
+  }
+
   .nav {
     gap: 0.9rem;
     align-items: flex-start;
