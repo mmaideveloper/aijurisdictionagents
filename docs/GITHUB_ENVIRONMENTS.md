@@ -136,7 +136,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `EMAIL_SMTP_USE_TLS` | SMTP STARTTLS flag, default `true` |
 | `EMAIL_SMTP_USERNAME` | SMTP username, default `no-reply@jurisdigta.eu` |
 | `EMAIL_SCHEDULER_ENABLED` | Optional email scheduler toggle for API replicas, default `true`; set `false` when a dedicated Azure email scheduler job is deployed |
-| `EMAIL_SCHEDULER_INTERVAL_SECONDS` | Optional scheduler interval, default `60` |
+| `EMAIL_SCHEDULER_INTERVAL_SECONDS` | Optional scheduler interval for Azure API replicas, default `60` |
 | `CAR_VALIDATION_API_BASE_URL` | Optional vehicle validation API base URL, for example `https://www.databazavozidiel.sk`; leave unset to skip live car API checks |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
@@ -357,6 +357,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON` | `1` | Install/update the self-managed document processor cron wrapper; set `0` only for manual worker runs |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT` | `20` | Max pending documents processed per scheduled run |
+| `JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS` | `5` | Email outbox poll interval in seconds for near-immediate self-managed delivery; minimum accepted value is `5` |
 
 Required `prod` GitHub Environment secret:
 
