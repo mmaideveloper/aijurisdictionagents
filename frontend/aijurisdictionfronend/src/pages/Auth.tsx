@@ -5,27 +5,40 @@ import { useLanguage } from "../components/LanguageProvider";
 
 const Auth: React.FC = () => {
   const { t } = useLanguage();
-  const { isAuthenticated, user, signIn, signOut } = useAuth();
+  const { isAuthenticated, user, signIn, sendSignUpCode, signUp, signOut } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [loginOtpCode, setLoginOtpCode] = React.useState("");
+  const [registrationOtpCode, setRegistrationOtpCode] = React.useState("");
+  const [phoneNumber, setPhoneNumber] = React.useState("");
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isSendingRegistrationOtp, setIsSendingRegistrationOtp] = React.useState(false);
+  const [isRegistering, setIsRegistering] = React.useState(false);
+  const [loginOtpRequired, setLoginOtpRequired] = React.useState(false);
+  const [registrationOtpSentFor, setRegistrationOtpSentFor] = React.useState<string | null>(null);
 
   const handleSignIn = async () => {
     const normalizedEmail = email.trim();
     setIsSubmitting(true);
     try {
-      const ok = await signIn(normalizedEmail, password);
-      if (!ok) {
+      const result = await signIn(normalizedEmail, password, loginOtpCode);
+      if (result === "invalid_credentials") {
         setError(t("authInvalidCredentials"));
         setMessage(null);
         return;
       }
+      if (result === "otp_required") {
+        setLoginOtpRequired(true);
+        setError(null);
+        setMessage(t("authLoginOtpSent"));
+        return;
+      }
       setError(null);
       setMessage(t("authSignedIn"));
-      navigate("/");
+      navigate("/app/assistant");
     } catch (signInError) {
       setError(signInError instanceof Error ? signInError.message : t("authSignInFailed"));
       setMessage(null);
@@ -34,11 +47,70 @@ const Auth: React.FC = () => {
     }
   };
 
+  const handleSendRegistrationOtp = async () => {
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      setError(t("authEmailRequired"));
+      setMessage(null);
+      return;
+    }
+
+    setIsSendingRegistrationOtp(true);
+    try {
+      await sendSignUpCode(normalizedEmail);
+      setRegistrationOtpSentFor(normalizedEmail.toLowerCase());
+      setError(null);
+      setMessage(t("authRegisterOtpSent"));
+    } catch (otpError) {
+      setError(otpError instanceof Error ? otpError.message : t("authRegisterOtpFailed"));
+      setMessage(null);
+    } finally {
+      setIsSendingRegistrationOtp(false);
+    }
+  };
+
+  const handleSignUp = async () => {
+    const normalizedEmail = email.trim();
+    const normalizedPhone = phoneNumber.trim();
+    if (!normalizedEmail || !password || !normalizedPhone) {
+      setError(t("authRegisterMissingFields"));
+      setMessage(null);
+      return;
+    }
+    if (!registrationOtpCode.trim() || registrationOtpSentFor !== normalizedEmail.toLowerCase()) {
+      setError(t("authRegisterOtpRequired"));
+      setMessage(null);
+      return;
+    }
+
+    setIsRegistering(true);
+    try {
+      await signUp({
+        phoneNumber: normalizedPhone,
+        email: normalizedEmail,
+        password,
+        verificationCode: registrationOtpCode.trim()
+      });
+      setError(null);
+      setMessage(t("authRegistered"));
+      navigate("/app/assistant");
+    } catch (signUpError) {
+      setError(signUpError instanceof Error ? signUpError.message : t("authRegisterFailed"));
+      setMessage(null);
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
   const handleSignOut = () => {
     signOut();
     setMessage("Signed out.");
     setError(null);
     setPassword("");
+    setLoginOtpCode("");
+    setRegistrationOtpCode("");
+    setLoginOtpRequired(false);
+    setRegistrationOtpSentFor(null);
   };
 
   return (
@@ -55,7 +127,11 @@ const Auth: React.FC = () => {
               type="email"
               placeholder="name@firm.com"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setLoginOtpRequired(false);
+                setRegistrationOtpSentFor(null);
+              }}
             />
           </label>
           <label>
@@ -67,6 +143,16 @@ const Auth: React.FC = () => {
               onChange={(event) => setPassword(event.target.value)}
             />
           </label>
+          {loginOtpRequired ? (
+            <label>
+              <span>{t("authOtpCode")}</span>
+              <input
+                inputMode="numeric"
+                value={loginOtpCode}
+                onChange={(event) => setLoginOtpCode(event.target.value)}
+              />
+            </label>
+          ) : null}
           <button
             type="button"
             className="button primary full"
@@ -95,8 +181,33 @@ const Auth: React.FC = () => {
       <section className="auth-aside">
         <h2>{t("authCreateTitle")}</h2>
         <p>{t("authCreateBody")}</p>
-        <button type="button" className="button ghost">
-          {t("authRegister")}
+        <label className="form">
+          <span>{t("authPhone")}</span>
+          <input
+            type="tel"
+            placeholder="+421900123456"
+            value={phoneNumber}
+            onChange={(event) => setPhoneNumber(event.target.value)}
+          />
+        </label>
+        <label className="form">
+          <span>{t("authOtpCode")}</span>
+          <input
+            inputMode="numeric"
+            value={registrationOtpCode}
+            onChange={(event) => setRegistrationOtpCode(event.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          className="button ghost"
+          onClick={handleSendRegistrationOtp}
+          disabled={isSendingRegistrationOtp}
+        >
+          {isSendingRegistrationOtp ? t("authOtpSending") : t("authRegisterSendOtp")}
+        </button>
+        <button type="button" className="button ghost" onClick={handleSignUp} disabled={isRegistering}>
+          {isRegistering ? t("authRegistering") : t("authRegister")}
         </button>
       </section>
     </div>

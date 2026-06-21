@@ -91,7 +91,7 @@ describe("App protected routes", () => {
     cleanup();
   });
 
-  it("redirects unauthenticated users from /app to /", () => {
+  it("redirects unauthenticated users from /app to /auth", () => {
     authState.isAuthenticated = false;
 
     render(
@@ -100,11 +100,11 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+    expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("App Dashboard")).toBeNull();
   });
 
-  it("redirects unauthenticated users from nested /app route to /", () => {
+  it("redirects unauthenticated users from nested /app route to /auth", () => {
     authState.isAuthenticated = false;
 
     render(
@@ -113,11 +113,11 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+    expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("Lawyer Workspace")).toBeNull();
   });
 
-  it("allows unauthenticated users to access /app/assistant in free mode", () => {
+  it("redirects unauthenticated users from /app/assistant to /auth", () => {
     authState.isAuthenticated = false;
 
     render(
@@ -126,10 +126,11 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+    expect(screen.getByText("Auth Page")).toBeDefined();
+    expect(screen.queryByText("Assistant Workspace")).toBeNull();
   });
 
-  it("redirects unauthenticated users from /profile to /", () => {
+  it("redirects unauthenticated users from /profile to /auth", () => {
     authState.isAuthenticated = false;
 
     render(
@@ -138,7 +139,7 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+    expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("Profile Page")).toBeNull();
   });
 

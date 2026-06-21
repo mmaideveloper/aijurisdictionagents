@@ -8,30 +8,10 @@ import {
   type ChatModelAdapter,
   type ThreadMessageLike
 } from "@assistant-ui/react";
-import { Link, useNavigate } from "react-router-dom";
-import {
-  BsArrowUpCircle,
-  BsChatLeftText,
-  BsCreditCard,
-  BsFileEarmarkText,
-  BsGrid,
-  BsLockFill,
-  BsPersonCircle,
-  BsPencilSquare,
-  BsPlug,
-  BsPlusCircle,
-  BsPuzzle,
-  BsShieldCheck
-} from "react-icons/bs";
-import {
-  AssistantResponse,
-  CaseMode as GatewayCaseMode,
-  submitAssistantQuestion
-} from "../assistantGateway";
+import { BsArrowUpCircle, BsLockFill } from "react-icons/bs";
 import { ApiRequestError, createChatSession, replyToSession } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
-import { useCases } from "../state/CaseProvider";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
 
@@ -52,21 +32,10 @@ const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
   return "";
 };
 
-const FREE_PLAN_LIMIT = 3;
-const FREE_PLAN_USAGE_KEY = "jurisdigta.assistant.free.questions.v1";
-
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
-  const { isAuthenticated, user } = useAuth();
-  const [freeQuestionCount, setFreeQuestionCount] = React.useState(() => {
-    try {
-      return Number(window.localStorage.getItem(FREE_PLAN_USAGE_KEY) ?? "0") || 0;
-    } catch {
-      return 0;
-    }
-  });
+  const { user } = useAuth();
   const sessionRef = React.useRef<{ language: string; userId?: string; sessionId: string } | null>(null);
-  const freeQuestionsLeft = Math.max(0, FREE_PLAN_LIMIT - freeQuestionCount);
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
     () => [
@@ -90,33 +59,8 @@ const AssistantThread: React.FC = () => {
           };
         }
 
-        if (!isAuthenticated && freeQuestionsLeft <= 0) {
-          return {
-            content: [
-              {
-                type: "text",
-                text:
-                  "Free plan limit reached. Sign in to keep your case history or upgrade for more JurisDigta assistant usage."
-              }
-            ],
-            status: { type: "complete", reason: "stop" }
-          };
-        }
-
-        if (!isAuthenticated) {
-          setFreeQuestionCount((current) => {
-            const next = Math.min(FREE_PLAN_LIMIT, current + 1);
-            try {
-              window.localStorage.setItem(FREE_PLAN_USAGE_KEY, String(next));
-            } catch {
-              // Local free usage tracking is best-effort only.
-            }
-            return next;
-          });
-        }
-
         try {
-          const userId = isAuthenticated ? user?.userId : undefined;
+          const userId = user?.userId;
           const existingSession = sessionRef.current;
           const session =
             existingSession?.language === language && existingSession.userId === userId
@@ -147,7 +91,7 @@ const AssistantThread: React.FC = () => {
         }
       }
     }),
-    [freeQuestionsLeft, isAuthenticated, language, t, user?.userId]
+    [language, t, user?.userId]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {
@@ -155,23 +99,16 @@ const AssistantThread: React.FC = () => {
   });
 
   const Message: React.FC = () => (
-    <MessagePrimitive.Root className="assistant-message-row">
+    <MessagePrimitive.Root className="assistant-message">
       <MessagePrimitive.If user>
-        <div className="assistant-message assistant-message--user">
-          <div className="assistant-message__role">{t("assistantUserRole")}</div>
-          <div className="assistant-message__body">
-            <MessagePrimitive.Parts />
-          </div>
-        </div>
+        <div className="assistant-message__role">{t("assistantUserRole")}</div>
       </MessagePrimitive.If>
       <MessagePrimitive.If assistant>
-        <div className="assistant-message assistant-message--assistant">
-          <div className="assistant-message__role">{t("assistantRole")}</div>
-          <div className="assistant-message__body">
-            <MessagePrimitive.Parts />
-          </div>
-        </div>
+        <div className="assistant-message__role">{t("assistantRole")}</div>
       </MessagePrimitive.If>
+      <div className="assistant-message__body">
+        <MessagePrimitive.Parts />
+      </div>
     </MessagePrimitive.Root>
   );
 
@@ -198,35 +135,6 @@ const AssistantThread: React.FC = () => {
 
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
-  const { isAuthenticated, user, signOut } = useAuth();
-  const navigate = useNavigate();
-  const { activeCase, cases, addInteraction, selectCase } = useCases();
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-  const [caseMode, setCaseMode] = React.useState<GatewayCaseMode>(activeCase ? "existing" : "new");
-  const [caseId, setCaseId] = React.useState(activeCase?.id ?? "");
-  const [question, setQuestion] = React.useState("");
-  const [files, setFiles] = React.useState<File[]>([]);
-  const [answer, setAnswer] = React.useState<AssistantResponse | null>(null);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [formError, setFormError] = React.useState("");
-
-  React.useEffect(() => {
-    if (activeCase && caseMode === "existing") {
-      setCaseId(activeCase.id);
-    }
-  }, [activeCase, caseMode]);
-
-  const modes = [
-    t("assistantModeLegalSearch"),
-    t("assistantModePrepareDocument"),
-    t("assistantModeDraftDocument"),
-    t("assistantModeVerifyPerson"),
-    t("assistantModeVerifyCompany"),
-    t("assistantModeScreenPerson"),
-    t("assistantModeScreenCompany"),
-    t("assistantModeVerifyCar"),
-    t("assistantModeVerifyLocation")
-  ];
 
   const capabilities = [
     t("assistantCapabilityLawSearch"),
@@ -237,319 +145,38 @@ const AssistantWorkspace: React.FC = () => {
     t("assistantCapabilityLocation")
   ];
 
-  const assistantApps = [
-    { label: "JurisDigta MCP", detail: "Default", icon: <BsPlug aria-hidden="true" /> },
-    { label: "Apps", detail: "Add workspace apps", icon: <BsGrid aria-hidden="true" /> },
-    { label: "Skills", detail: "Legal drafting and review", icon: <BsPuzzle aria-hidden="true" /> },
-    { label: "Plugins", detail: "Connect external tools", icon: <BsPlug aria-hidden="true" /> }
-  ];
-
-  const selectedCaseDocuments = activeCase?.documents ?? [];
-  const selectedCaseChats = activeCase?.interactionHistory ?? [];
-  const userInitial = (user?.name || user?.email || "G").slice(0, 1).toUpperCase();
-
-  const canSubmit =
-    question.trim().length > 0 &&
-    (caseMode === "new" || caseId.trim().length > 0) &&
-    !isSubmitting;
-
-  const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const nextFiles = Array.from(event.target.files ?? []);
-    if (nextFiles.length === 0) {
-      return;
-    }
-    setFiles((current) => [...current, ...nextFiles]);
-    event.target.value = "";
-  };
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!canSubmit) {
-      setFormError("Enter a question and select a case target before sending.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    setFormError("");
-
-    const response = await submitAssistantQuestion({
-      question,
-      caseMode,
-      caseId: caseId.trim(),
-      country: "SK",
-      language: "sk",
-      consentGateway: true,
-      consentDocuments: true,
-      consentThirdParty: false,
-      files
-    });
-
-    setAnswer(response);
-    setCaseId(response.caseId);
-
-    if (caseMode === "existing" && cases.some((caseItem) => caseItem.id === response.caseId)) {
-      addInteraction(response.caseId, "User", question);
-      addInteraction(response.caseId, "AI Assistant", response.answer);
-    }
-
-    setIsSubmitting(false);
-  };
-
   return (
     <div className="page assistant-workspace-page">
       <section className="assistant-workspace">
         <aside className="assistant-rail" aria-label={t("assistantThreadsTitle")}>
-          <div className="assistant-rail__header">
-            <div>
-              <p className="eyebrow">{t("assistantEyebrow")}</p>
-              <div className="assistant-rail__title">{t("assistantTitle")}</div>
-            </div>
-            <button
-              type="button"
-              className="assistant-new-chat"
-              aria-label="New case"
-              onClick={() => (isAuthenticated ? navigate("/app/case") : navigate("/auth"))}
-            >
-              <BsPencilSquare aria-hidden="true" />
+          <div>
+            <p className="eyebrow">{t("assistantThreadsTitle")}</p>
+            <h2>{t("assistantThreadCurrent")}</h2>
+          </div>
+          <div className="assistant-thread-list">
+            <button type="button" className="assistant-thread-item active">
+              {t("assistantThreadCurrent")}
+            </button>
+            <button type="button" className="assistant-thread-item">
+              {t("assistantThreadDocument")}
             </button>
           </div>
+        </aside>
 
-          <button
-            type="button"
-            className="assistant-new-chat-wide"
-            onClick={() => (isAuthenticated ? navigate("/app/case") : navigate("/auth"))}
-          >
-            <BsPlusCircle aria-hidden="true" />
-            <span>New case</span>
-          </button>
-
-          <section className="assistant-rail__section">
-            <div className="assistant-rail__section-title">Cases</div>
-            <div className="assistant-thread-list">
-              {isAuthenticated && cases.length > 0 ? (
-                cases.map((caseItem) => (
-                  <button
-                    key={caseItem.id}
-                    type="button"
-                    className={`assistant-thread-item${caseItem.id === activeCase?.id ? " active" : ""}`}
-                    onClick={() => selectCase(caseItem.id)}
-                  >
-                    <span>{caseItem.title}</span>
-                    <small>{caseItem.documents.length} docs / {caseItem.interactionHistory.length} chats</small>
-                  </button>
-                ))
-              ) : (
-                <>
-                  <button type="button" className="assistant-thread-item active">
-                    <span>{t("assistantThreadCurrent")}</span>
-                    <small>{isAuthenticated ? "No saved documents yet" : "Free plan temporary chat"}</small>
-                  </button>
-                  <button type="button" className="assistant-thread-item">
-                    <span>{t("assistantThreadDocument")}</span>
-                    <small>Sign in to save</small>
-                  </button>
-                </>
-              )}
+        <main className="assistant-main" aria-labelledby="assistant-title">
+          <section className="assistant-main__header">
+            <div>
+              <p className="eyebrow">{t("assistantEyebrow")}</p>
+              <h1 id="assistant-title">{t("assistantTitle")}</h1>
+              <p>{t("assistantSubtitle")}</p>
             </div>
           </section>
 
-          {isAuthenticated && activeCase ? (
-            <section className="assistant-rail__section assistant-case-tree">
-              <div className="assistant-rail__section-title">Selected case</div>
-              <div className="assistant-case-tree__group">
-                <div className="assistant-case-tree__label">
-                  <BsFileEarmarkText aria-hidden="true" />
-                  <span>Documents</span>
-                </div>
-                {selectedCaseDocuments.length > 0 ? (
-                  selectedCaseDocuments.map((document) => (
-                    <button key={document.id} type="button" className="assistant-case-tree__item">
-                      {document.originalFilename}
-                    </button>
-                  ))
-                ) : (
-                  <p>No documents in this case.</p>
-                )}
-              </div>
-              <div className="assistant-case-tree__group">
-                <div className="assistant-case-tree__label">
-                  <BsChatLeftText aria-hidden="true" />
-                  <span>Chats</span>
-                </div>
-                {selectedCaseChats.length > 0 ? (
-                  selectedCaseChats.slice(-5).map((interaction) => (
-                    <button key={interaction.id} type="button" className="assistant-case-tree__item">
-                      {interaction.actor}: {interaction.message.slice(0, 44)}
-                    </button>
-                  ))
-                ) : (
-                  <p>No chat history yet.</p>
-                )}
-              </div>
-            </section>
-          ) : null}
+          <AssistantThread />
+        </main>
 
-          <section className="assistant-rail__section">
-            <div className="assistant-rail__section-title">{t("assistantModesTitle")}</div>
-            <div className="assistant-mode-list">
-              {modes.map((mode, index) => (
-                <button key={mode} type="button" className={index === 0 ? "active" : ""}>
-                  {mode}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="assistant-gateway-card" aria-labelledby="assistant-gateway-title">
-            <div className="assistant-gateway-card__header">
-              <div>
-                <p className="eyebrow">Assistant Gateway</p>
-                <h2 id="assistant-gateway-title">Ask with case documents</h2>
-              </div>
-              <span>{answer?.caseId ?? "No answer yet"}</span>
-            </div>
-            <form className="assistant-gateway-form" onSubmit={handleSubmit}>
-              <div className="assistant-gateway-form__row">
-                <label>
-                  <span>Case target</span>
-                  <select
-                    value={caseMode}
-                    onChange={(event) => setCaseMode(event.target.value as GatewayCaseMode)}
-                  >
-                    <option value="new">Create new case</option>
-                    <option value="existing">Use existing case</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Case ID</span>
-                  <input
-                    type="text"
-                    value={caseId}
-                    disabled={caseMode === "new"}
-                    list="assistant-case-options"
-                    placeholder={caseMode === "new" ? "Generated after answer" : "Select or enter case ID"}
-                    onChange={(event) => setCaseId(event.target.value)}
-                  />
-                  <datalist id="assistant-case-options">
-                    {cases.map((caseItem) => (
-                      <option key={caseItem.id} value={caseItem.id}>
-                        {caseItem.title}
-                      </option>
-                    ))}
-                  </datalist>
-                </label>
-              </div>
-
-              <label>
-                <span>Question</span>
-                <textarea
-                  rows={4}
-                  value={question}
-                  placeholder="Write the legal question and facts to answer."
-                  onChange={(event) => setQuestion(event.target.value)}
-                />
-              </label>
-
-              <div className="assistant-gateway-upload">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".pdf,.txt,.md,.doc,.docx,.png,.jpg,.jpeg"
-                  hidden
-                  onChange={handleFilesSelected}
-                />
-                <button
-                  type="button"
-                  className="button ghost"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Upload documents
-                </button>
-                <span>{files.length} document{files.length === 1 ? "" : "s"} selected</span>
-              </div>
-
-              {files.length > 0 ? (
-                <ul className="assistant-gateway-files">
-                  {files.map((file) => (
-                    <li key={`${file.name}-${file.size}-${file.lastModified}`}>
-                      <span>{file.name}</span>
-                      <button
-                        type="button"
-                        className="button ghost small"
-                        onClick={() =>
-                          setFiles((current) =>
-                            current.filter(
-                              (currentFile) =>
-                                `${currentFile.name}-${currentFile.size}-${currentFile.lastModified}` !==
-                                `${file.name}-${file.size}-${file.lastModified}`
-                            )
-                          )
-                        }
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {formError ? <p className="form-error">{formError}</p> : null}
-
-              <button type="submit" className="button primary" disabled={!canSubmit}>
-                {isSubmitting ? "Sending..." : "Send question"}
-              </button>
-            </form>
-
-            {answer ? (
-              <div className="assistant-gateway-answer">
-                {answer.usedFallback ? (
-                  <p className="assistant-gateway-warning">
-                    Local demo fallback is shown because Assistant Gateway is not reachable.
-                  </p>
-                ) : null}
-                <pre>{answer.answer}</pre>
-                <dl>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>{answer.status}</dd>
-                  </div>
-                  <div>
-                    <dt>Case</dt>
-                    <dd>{answer.caseId}</dd>
-                  </div>
-                  <div>
-                    <dt>Documents</dt>
-                    <dd>{answer.storedDocuments.length}</dd>
-                  </div>
-                </dl>
-                {answer.nextActions.length > 0 ? (
-                  <ul>
-                    {answer.nextActions.map((action) => (
-                      <li key={action}>{action}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
-
-          {isAuthenticated ? (
-            <section className="assistant-rail__section assistant-apps">
-              <div className="assistant-rail__section-title">Apps, skills, plugins and MCP</div>
-              {assistantApps.map((app) => (
-                <button key={app.label} type="button" className="assistant-app-item">
-                  {app.icon}
-                  <span>
-                    <strong>{app.label}</strong>
-                    <small>{app.detail}</small>
-                  </span>
-                </button>
-              ))}
-            </section>
-          ) : null}
-
-          <section className="assistant-rail__guardrails">
+        <aside className="assistant-tool-panel" aria-label={t("assistantToolsTitle")}>
+          <section>
             <div className="assistant-panel-title">
               <BsLockFill aria-hidden="true" />
               <h2>{t("assistantMandatoryMcpTitle")}</h2>
@@ -558,9 +185,22 @@ const AssistantWorkspace: React.FC = () => {
             <span className="assistant-status">{t("assistantMcpLocked")}</span>
           </section>
 
-          <section className="assistant-rail__guardrails">
+          <section>
+            <h2>{t("assistantToolsTitle")}</h2>
+            <ul className="assistant-capability-list">
+              {capabilities.map((capability) => (
+                <li key={capability}>{capability}</li>
+              ))}
+            </ul>
+          </section>
+
+          <section>
             <h2>{t("assistantApprovalTitle")}</h2>
             <p>{t("assistantApprovalBody")}</p>
+          </section>
+
+          <section>
+            <h2>{t("assistantMetadataTitle")}</h2>
             <dl className="assistant-metadata">
               <div>
                 <dt>{t("assistantMetadataGenerated")}</dt>
@@ -576,67 +216,7 @@ const AssistantWorkspace: React.FC = () => {
               </div>
             </dl>
           </section>
-
-          <section className="assistant-account-panel" aria-label="Account">
-            {isAuthenticated ? (
-              <>
-                <Link to="/profile" className="assistant-account-panel__identity">
-                  <span className="assistant-account-panel__avatar">{userInitial}</span>
-                  <span>
-                    <strong>{user?.name ?? "Profile"}</strong>
-                    <small>Free plan / Profile</small>
-                  </span>
-                </Link>
-                <div className="assistant-account-panel__actions">
-                  <Link to="/pricing">
-                    <BsCreditCard aria-hidden="true" />
-                    Upgrade
-                  </Link>
-                  <button type="button" onClick={signOut}>
-                    Sign out
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <Link to="/auth" className="assistant-account-panel__identity">
-                  <BsPersonCircle aria-hidden="true" />
-                  <span>
-                    <strong>Sign in</strong>
-                    <small>Free plan</small>
-                  </span>
-                </Link>
-                <div className="assistant-account-panel__actions">
-                  <Link to="/pricing">
-                    <BsCreditCard aria-hidden="true" />
-                    Upgrade
-                  </Link>
-                </div>
-              </>
-            )}
-          </section>
         </aside>
-
-        <main className="assistant-main" aria-labelledby="assistant-title">
-          <section className="assistant-main__header">
-            <div>
-              <h1 id="assistant-title">{t("assistantTitle")}</h1>
-              <p>{t("assistantSubtitle")}</p>
-            </div>
-            <div className="assistant-access">
-              <BsShieldCheck aria-hidden="true" />
-              <span>{t("assistantApiAuthAccess")}</span>
-            </div>
-          </section>
-
-          <AssistantThread />
-
-          <section className="assistant-capability-strip" aria-label={t("assistantToolsTitle")}>
-            {capabilities.map((capability) => (
-              <span key={capability}>{capability}</span>
-            ))}
-          </section>
-        </main>
       </section>
     </div>
   );

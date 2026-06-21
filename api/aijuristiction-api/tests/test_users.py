@@ -59,6 +59,7 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
     assert signed_up["last_name"] == "Founder"
     assert signed_up["full_name"] == "Marek Founder"
     assert signed_up["address"] == "Partizanska 665"
+    assert signed_up["created_at"]
 
     queued = _fetch_emails(tmp_path / "email.sqlite3")
     assert queued == [("founder@example.com", "Welcome to AI Jurisdiction", "pending", 0)]
@@ -81,6 +82,7 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
     )
     assert email_sign_in_response.status_code == 200
     assert email_sign_in_response.json()["user_id"] == signed_up["user_id"]
+    assert email_sign_in_response.json()["created_at"] == signed_up["created_at"]
 
     update_response = client.patch(
         f"/v1/users/{signed_up['user_id']}",
@@ -125,6 +127,74 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
     assert partially_updated["full_name"] == "Marek Preserved"
     assert partially_updated["address"] == "Partizanska 665"
     assert partially_updated["identity_card_number"] == "AB123456"
+
+
+def test_email_change_requires_valid_code(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900111555",
+            "email": "old-email@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+
+    send_code_response = client.post(
+        f"/v1/users/{user_id}/email-change/send-code",
+        headers=AUTH_HEADERS,
+        json={"email": "new-email@example.com"},
+    )
+    assert send_code_response.status_code == 202
+
+    invalid_response = client.post(
+        f"/v1/users/{user_id}/email-change/complete",
+        headers=AUTH_HEADERS,
+        json={"email": "new-email@example.com", "verification_code": "123456"},
+    )
+    assert invalid_response.status_code == 400
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        code_hash = conn.execute(
+            "SELECT code_hash FROM registration_codes WHERE email = ?",
+            (f"email-change:{user_id}:new-email@example.com",),
+        ).fetchone()[0]
+
+    valid_code = None
+    for candidate in range(0, 1_000_000):
+        code = f"{candidate:06d}"
+        digest = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        if digest == code_hash:
+            valid_code = code
+            break
+    assert valid_code is not None
+
+    complete_response = client.post(
+        f"/v1/users/{user_id}/email-change/complete",
+        headers=AUTH_HEADERS,
+        json={"email": "new-email@example.com", "verification_code": valid_code},
+    )
+    assert complete_response.status_code == 200
+    assert complete_response.json()["email"] == "new-email@example.com"
+
+    old_sign_in = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={"email": "old-email@example.com", "password": "secret-pass"},
+    )
+    assert old_sign_in.status_code == 401
+
+    new_sign_in = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={"email": "new-email@example.com", "password": "secret-pass"},
+    )
+    assert new_sign_in.status_code == 200
+    assert new_sign_in.json()["user_id"] == user_id
 
 
 def test_sign_up_complete_requires_valid_email_code(monkeypatch, tmp_path: Path) -> None:
@@ -304,6 +374,94 @@ def test_device_bound_sign_in_flow(monkeypatch, tmp_path: Path) -> None:
     silent_payload = silent_login_response.json()
     assert silent_payload["user_id"] == payload["user_id"]
     assert silent_payload["device_auth_token"]
+
+
+def test_web_email_login_requires_daily_otp(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121316",
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+
+    first_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+            "device_id": "web-device-1",
+        },
+    )
+    assert first_login.status_code == 428
+    assert first_login.json()["detail"] == "OTP code required"
+
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        body = conn.execute(
+            "SELECT body FROM email_outbox WHERE recipient = ? AND subject = ? ORDER BY created_at DESC LIMIT 1",
+            ("web-login@example.com", "Your JurisDigta login code"),
+        ).fetchone()[0]
+    assert "The code expires in 30 minutes." in body
+
+    wrong_code = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+            "device_id": "web-device-1",
+            "verification_code": "123456",
+        },
+    )
+    assert wrong_code.status_code == 400
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        code_hash = conn.execute(
+            "SELECT code_hash FROM registration_codes WHERE email = ?",
+            (f"web-signin:{user_id}:web-device-1",),
+        ).fetchone()[0]
+
+    valid_code = None
+    for candidate in range(0, 1_000_000):
+        code = f"{candidate:06d}"
+        digest = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        if digest == code_hash:
+            valid_code = code
+            break
+    assert valid_code is not None
+
+    verified_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+            "device_id": "web-device-1",
+            "verification_code": valid_code,
+        },
+    )
+    assert verified_login.status_code == 200
+    assert verified_login.json()["user_id"] == user_id
+
+    email_count_before_reuse = len(_fetch_emails(tmp_path / "email.sqlite3"))
+    reused_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+            "device_id": "web-device-1",
+        },
+    )
+    assert reused_login.status_code == 200
+    assert reused_login.json()["user_id"] == user_id
+    assert len(_fetch_emails(tmp_path / "email.sqlite3")) == email_count_before_reuse
 
 
 def test_local_auth_accepts_any_sign_in_code_when_enabled(monkeypatch, tmp_path: Path) -> None:

@@ -80,6 +80,6 @@ describe("Home chat visuals", () => {
 
     expect(screen.queryByText("Next recommended action")).toBeNull();
     expect(screen.getByText("Keystone Holdings Intake")).toBeDefined();
-    expect(screen.getByText("Connected through API chat.")).toBeDefined();
+    expect(screen.getByText("Pripojené cez API chat.")).toBeDefined();
   });
 });

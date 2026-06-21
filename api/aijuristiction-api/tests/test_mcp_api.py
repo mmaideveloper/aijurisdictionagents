@@ -232,6 +232,81 @@ def test_mcp_search_prefers_base_law_over_newer_amendment(monkeypatch, tmp_path:
     assert [result["document_id"] for result in explicit_results] == ["doc-40-1964"]
 
 
+def test_mcp_get_law_text_caps_large_default_payload(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    large_text = "Civil code full text.\n" + ("A" * 25_000)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE source_artifacts SET content_text = ? WHERE document_id = ?",
+            (large_text, "doc-1"),
+        )
+        conn.commit()
+
+    text_response = _mcp_call(
+        "getLawText",
+        {"document_id": "doc-1"},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert text_response.status_code == 200
+    payload = _tool_payload(text_response)
+    assert len(payload["content_text"]) == 20_000
+    assert payload["content_truncated"] is True
+    assert payload["next_offset"] == 20_000
+    assert payload["total_content_length"] == len(large_text)
+
+
+def test_mcp_get_law_text_returns_requested_section_range(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    civil_code_text = "\n".join(
+        [
+            "Prva cast",
+            "§ 684 Predchadzajuce ustanovenie.",
+            "§ 685 Najom bytu vznika najomnou zmluvou.",
+            "§ 686 Najomna zmluva musi obsahovat oznacenie predmetu najmu.",
+            "§ 716 Skoncenie najmu bytu.",
+            "§ 717 Ubytovanie mimo najmu bytu.",
+        ]
+    )
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-40-1964",
+        version_id="ver-40-1964",
+        metadata_id="meta-40-1964",
+        artifact_id="artifact-40-1964",
+        law_year=1964,
+        law_number=40,
+        official_name="Obciansky zakonnik",
+        lawyer_title="Obciansky zakonnik",
+        law_identifier_text="40/1964 Zb.",
+        title="Obciansky zakonnik",
+        content_text=civil_code_text,
+    )
+
+    text_response = _mcp_call(
+        "getLawText",
+        {"document_id": "doc-40-1964", "section_start": 685, "section_end": 716},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert text_response.status_code == 200
+    payload = _tool_payload(text_response)
+    assert payload["content_scope"] == "sections"
+    assert payload["requested_sections"][0] == 685
+    assert payload["requested_sections"][-1] == 716
+    assert payload["section_found"] is True
+    assert "§ 685 Najom bytu" in payload["content_text"]
+    assert "§ 716 Skoncenie najmu" in payload["content_text"]
+    assert "§ 684" not in payload["content_text"]
+    assert "§ 717" not in payload["content_text"]
+
+
 def test_mcp_logs_tool_events_without_sensitive_payloads(monkeypatch, tmp_path: Path, caplog) -> None:
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")

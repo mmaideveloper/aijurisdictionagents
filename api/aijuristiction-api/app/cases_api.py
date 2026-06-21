@@ -113,6 +113,7 @@ class SendCaseDocumentsEmailRequest(BaseModel):
     recipient: str = Field(min_length=3)
     case_subject: str = Field(default="")
     version: str = Field(default="v1")
+    doc_ids: list[str] | None = None
     correlation_id: str | None = None
 
 
@@ -388,6 +389,7 @@ def download_case_document(
     case_id: str,
     doc_id: str,
     user_id: str,
+    disposition: str = Query(default="attachment", pattern="^(attachment|inline)$"),
     store: ApiDatabaseStore = Depends(get_store),
 ) -> Response:
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
@@ -412,7 +414,7 @@ def download_case_document(
         content=payload,
         media_type=media_type,
         headers={
-            'Content-Disposition': f'attachment; filename="{document.original_filename}"',
+            'Content-Disposition': f'{disposition}; filename="{document.original_filename}"',
         },
     )
 
@@ -422,6 +424,7 @@ def download_generated_case_document_pdf(
     case_id: str,
     doc_id: str,
     user_id: str,
+    disposition: str = Query(default="attachment", pattern="^(attachment|inline)$"),
     store: ApiDatabaseStore = Depends(get_store),
 ) -> Response:
     case = _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
@@ -462,7 +465,7 @@ def download_generated_case_document_pdf(
         content=pdf_content,
         media_type="application/pdf",
         headers={
-            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Content-Disposition': f'{disposition}; filename="{filename}"',
         },
     )
 
@@ -474,7 +477,13 @@ def send_case_documents_email(
     store: ApiDatabaseStore = Depends(get_store),
 ) -> SendCaseDocumentsEmailResponse:
     case = _ensure_case_access(case_id=case_id, user_id=payload.user_id, store=store)
-    documents = [item for item in store.list_case_documents(case_id=case_id) if item.kind in {"uploaded", "chat_attachment", "session_history"}]
+    requested_doc_ids = {item.strip() for item in payload.doc_ids or [] if item.strip()}
+    documents = [
+        item
+        for item in store.list_case_documents(case_id=case_id)
+        if item.kind in {"uploaded", "chat_attachment", "session_history"}
+        and (not requested_doc_ids or item.doc_id in requested_doc_ids)
+    ]
     if not documents:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No case documents available to send.")
     correlation_id = (payload.correlation_id or str(uuid4())).strip()
@@ -483,7 +492,18 @@ def send_case_documents_email(
     html = _build_lawyer_email_html(case_subject=subject, version=payload.version.strip() or "v1", correlation_id=correlation_id)
     attachments: list[dict[str, str]] = []
     for document in documents:
-        raw = store.read_storage_bytes(storage_uri=document.storage_uri)
+        try:
+            raw = store.read_storage_bytes(storage_uri=document.storage_uri)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Stored payload is unavailable for document {document.doc_id}",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Case storage backend is not reachable for this document",
+            ) from exc
         attachments.append(
             {
                 "filename": document.original_filename,

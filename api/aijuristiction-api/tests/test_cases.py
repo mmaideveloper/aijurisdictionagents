@@ -79,6 +79,9 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     monkeypatch.setenv("STORAGE_OPTION", "local")
     monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
     monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv("EMAIL_DB_OPTION", "local")
+    monkeypatch.setenv("EMAIL_DB_LOCAL", str(tmp_path / "email.sqlite3"))
+    monkeypatch.setenv("EMAIL_SCHEDULER_ENABLED", "false")
 
     client = TestClient(app)
     user_id = _create_user(client, idx=2)
@@ -136,6 +139,26 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert document.status_code == 200
     assert document.content == b"Case evidence payload"
     assert document.headers["content-disposition"].endswith('filename="evidence.txt"')
+
+    inline_document = client.get(
+        f"/v1/cases/{case_id}/documents/{doc_id}?user_id={user_id}&disposition=inline",
+        headers=_headers(),
+    )
+    assert inline_document.status_code == 200
+    assert inline_document.headers["content-disposition"].startswith("inline;")
+
+    selected_email = client.post(
+        f"/v1/cases/{case_id}/documents/send-email",
+        headers=_headers(),
+        json={
+            "user_id": user_id,
+            "recipient": "client@example.com",
+            "case_subject": "History case",
+            "doc_ids": [doc_id],
+        },
+    )
+    assert selected_email.status_code == 200
+    assert selected_email.json()["attachment_count"] == 1
 
     generated_doc_id = store.add_case_text_document(
         case_id=case_id,

@@ -58,10 +58,10 @@ describe("language switching", () => {
 
     render(
       <LanguageProvider>
-        <MemoryRouter initialEntries={["/home"]}>
+        <MemoryRouter initialEntries={["/"]}>
           <PageLayout>
             <Routes>
-              <Route path="/home" element={<Home />} />
+              <Route path="/" element={<Home />} />
               <Route path="/pricing" element={<Pricing />} />
             </Routes>
           </PageLayout>
@@ -69,16 +69,18 @@ describe("language switching", () => {
       </LanguageProvider>
     );
 
-    expect(screen.getByText("What would you like to explore today?")).toBeDefined();
-
-    await user.click(screen.getByRole("button", { name: "SK" }));
-
     expect(screen.getByText("Čo by ste dnes chceli preskúmať?")).toBeDefined();
-    expect(window.localStorage.getItem("aj_frontend_lang")).toBe("sk");
+    expect(screen.getByText("Prípady")).toBeDefined();
 
-    await user.click(screen.getByRole("link", { name: "Cenník" }));
+    await user.click(screen.getByRole("button", { name: "EN" }));
 
-    expect(screen.getByText("Zvoľte si tempo, ktoré vám vyhovuje.")).toBeDefined();
-    expect(screen.getByRole("link", { name: "Domov" })).toBeDefined();
+    expect(screen.getByText("What would you like to explore today?")).toBeDefined();
+    expect(screen.getByText("Cases")).toBeDefined();
+    expect(window.localStorage.getItem("aj_frontend_lang")).toBe("en");
+
+    await user.click(screen.getByRole("link", { name: "Pricing" }));
+
+    expect(screen.getByText("Choose the cadence that fits your practice.")).toBeDefined();
+    expect(screen.getByRole("link", { name: "Home" })).toBeDefined();
   });
 });
