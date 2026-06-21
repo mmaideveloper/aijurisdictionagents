@@ -15,6 +15,7 @@ import Communication from "./pages/Communication";
 import LawValidation from "./pages/LawValidation";
 import LawRecommendation from "./pages/LawRecommendation";
 import Profile from "./pages/Profile";
+import DocumentViewer from "./pages/DocumentViewer";
 import Disclaimer from "./pages/Disclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
@@ -28,7 +29,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated } = useAuth();
 
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/auth" replace />;
   }
 
   return children;
@@ -118,6 +119,14 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <Profile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/documents/view"
+          element={
+            <ProtectedRoute>
+              <DocumentViewer />
             </ProtectedRoute>
           }
         />

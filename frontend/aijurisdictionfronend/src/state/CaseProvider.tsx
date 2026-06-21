@@ -1,5 +1,15 @@
 import React from "react";
+import {
+  createApiCase,
+  getCaseHistory,
+  listCases,
+  uploadApiCaseDocuments,
+  type ApiCase,
+  type ApiCaseDocument,
+  type ApiCaseHistoryMessage
+} from "../api/caseClient";
 import { createChatSession, replyToSession } from "../api/chatClient";
+import { useAuth } from "../auth/webAuth";
 import { getMockCaseTemplate, isSeededCaseTemplateId } from "../content/mockCaseTemplates";
 import { translate, type Language, type TranslationKey, type TranslationValues } from "../data/translations";
 import { consoleLogger } from "../logging/consoleLogger";
@@ -55,6 +65,7 @@ export type CreateCaseDocumentInput = {
   originalFilename: string;
   mimeType: string;
   size: number;
+  file?: File;
 };
 
 export type CreateCaseInput = {
@@ -78,7 +89,7 @@ export type CaseRecord = {
   jurisdiction: string;
   opposingParty: string;
   documents: CaseDocumentRecord[];
-  source: "mock";
+  source: "api" | "mock";
 };
 
 type CaseContextValue = {
@@ -88,7 +99,9 @@ type CaseContextValue = {
   activeCase: CaseRecord | null;
   hasSelectedCase: boolean;
   continueRequested: boolean;
-  createCase: (input: CreateCaseInput) => CaseRecord;
+  isLoadingCases: boolean;
+  caseLoadError: string | null;
+  createCase: (input: CreateCaseInput) => Promise<CaseRecord>;
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
   setContinueRequested: (value: boolean) => void;
@@ -661,24 +674,25 @@ const normalizeStoredCase = (value: unknown): CaseRecord | null => {
 
 const loadStoredCases = (): CaseRecord[] => {
   if (typeof window === "undefined") {
-    return defaultCases;
+    return [];
   }
 
   try {
     const rawCases = window.localStorage.getItem(CASE_STORAGE_KEY);
     if (!rawCases) {
-      return defaultCases;
+      return [];
     }
     const parsedCases: unknown = JSON.parse(rawCases);
     if (!Array.isArray(parsedCases)) {
-      return defaultCases;
+      return [];
     }
     const normalized = parsedCases
       .map((item) => normalizeStoredCase(item))
-      .filter((item): item is CaseRecord => item !== null);
-    return normalized.length > 0 ? normalized : defaultCases;
+      .filter((item): item is CaseRecord => item !== null)
+      .filter((item) => !isSeededCaseTemplateId(item.id));
+    return normalized;
   } catch {
-    return defaultCases;
+    return [];
   }
 };
 
@@ -702,17 +716,133 @@ const toApiMessageContent = (
   return content;
 };
 
+const mapApiStatus = (status: string): CaseStatus => {
+  const normalized = status.trim().toLowerCase();
+  if (["completed", "closed", "done"].includes(normalized)) {
+    return "Completed";
+  }
+  if (["on_hold", "on hold", "paused"].includes(normalized)) {
+    return "On hold";
+  }
+  if (["scheduled", "planned"].includes(normalized)) {
+    return "Scheduled";
+  }
+  return "In progress";
+};
+
+const mapApiRole = (role: ApiCaseHistoryMessage["role"], agentName: string | null): string => {
+  if (role === "user") {
+    return "You";
+  }
+  if (role === "system") {
+    return "System";
+  }
+  return agentName?.trim() || "AI Lawyer";
+};
+
+const mapApiDocument = (caseId: string, document: ApiCaseDocument): CaseDocumentRecord => ({
+  id: document.doc_id,
+  caseId,
+  originalFilename: document.original_filename,
+  mimeType: "application/octet-stream",
+  size: 0,
+  sizeLabel: document.processing_status,
+  uploadedAt: document.created_at
+});
+
+const mapApiCase = (
+  apiCase: ApiCase,
+  historyMessages: ApiCaseHistoryMessage[] = [],
+  historyDocuments: ApiCaseDocument[] = []
+): CaseRecord => {
+  const documents = historyDocuments.map((document) => mapApiDocument(apiCase.case_id, document));
+  const createdAt = apiCase.created_at;
+  return {
+    id: apiCase.case_id,
+    title: apiCase.title,
+    description: apiCase.company_id
+      ? `Company case ${apiCase.company_id}`
+      : `Case ${apiCase.case_id}`,
+    status: mapApiStatus(apiCase.status),
+    createdAt,
+    interactionHistory: historyMessages.map((message) => ({
+      id: message.communication_id,
+      createdAt: message.created_at,
+      actor: mapApiRole(message.role, message.agent_name),
+      message: message.content
+    })),
+    selectedRole: "AI Lawyer",
+    selectedMode: "Draft",
+    selectedCommunicationMode: "Chat",
+    workspace: {
+      meta: `${documents.length} document${documents.length === 1 ? "" : "s"} / ${historyMessages.length} chat${historyMessages.length === 1 ? "" : "s"}`,
+      objective: apiCase.title,
+      nextAction: "Open the selected case data and continue the chat.",
+      jurisdiction: "SK",
+      output: "Case history + documents"
+    },
+    jurisdiction: "SK",
+    opposingParty: "",
+    documents,
+    source: "api"
+  };
+};
+
 export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { language } = useLanguage();
+  const { isAuthenticated, user } = useAuth();
   const [storedCases, setStoredCases] = React.useState<CaseRecord[]>(() => loadStoredCases());
   const [activeCaseId, setActiveCaseId] = React.useState<string | null>(null);
   const [hasSelectedCase, setHasSelectedCase] = React.useState(false);
   const [continueRequested, setContinueRequested] = React.useState(false);
+  const [isLoadingCases, setIsLoadingCases] = React.useState(false);
+  const [caseLoadError, setCaseLoadError] = React.useState<string | null>(null);
   const sessionIdsByCaseRef = React.useRef<Record<string, CaseSessionCacheRecord>>({});
 
   React.useEffect(() => {
-    persistCases(storedCases);
+    persistCases(storedCases.filter((caseItem) => caseItem.source === "mock"));
   }, [storedCases]);
+
+  React.useEffect(() => {
+    let isCancelled = false;
+
+    const loadApiCases = async () => {
+      if (!isAuthenticated || !user?.userId) {
+        setStoredCases(loadStoredCases());
+        setActiveCaseId(null);
+        setHasSelectedCase(false);
+        return;
+      }
+
+      setIsLoadingCases(true);
+      setCaseLoadError(null);
+      try {
+        const apiCases = await listCases(user.userId);
+        if (isCancelled) {
+          return;
+        }
+        setStoredCases(apiCases.map((item) => mapApiCase(item)));
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+        const detail = error instanceof Error ? error.message : "Unable to load cases.";
+        setCaseLoadError(detail);
+        consoleLogger.warn("Unable to load API cases; using local fallback cases", { detail });
+        setStoredCases(loadStoredCases());
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingCases(false);
+        }
+      }
+    };
+
+    void loadApiCases();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isAuthenticated, user?.userId]);
 
   React.useEffect(() => {
     if (activeCaseId && !storedCases.some((caseItem) => caseItem.id === activeCaseId)) {
@@ -743,10 +873,74 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return cases.find((caseItem) => caseItem.id === activeCaseId) ?? null;
   }, [activeCaseId, cases]);
 
-  const createCase = React.useCallback((input: CreateCaseInput) => {
+  const loadCaseData = React.useCallback(
+    async (caseId: string) => {
+      if (!user?.userId) {
+        return;
+      }
+      try {
+        const [apiCase] = storedCases.filter((caseItem) => caseItem.id === caseId);
+        const history = await getCaseHistory(user.userId, caseId);
+        setStoredCases((prev) =>
+          prev.map((caseItem) =>
+            caseItem.id === caseId
+              ? mapApiCase(
+                  {
+                    case_id: caseItem.id,
+                    user_id: user.userId,
+                    company_id: null,
+                    title: caseItem.title,
+                    status: caseItem.status,
+                    created_at: caseItem.createdAt,
+                    updated_at: caseItem.createdAt
+                  },
+                  history.messages,
+                  history.documents
+                )
+              : caseItem
+          )
+        );
+        if (!apiCase) {
+          consoleLogger.info("Loaded selected case data", { caseId });
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Unable to load selected case.";
+        setCaseLoadError(detail);
+        consoleLogger.warn("Unable to load selected case data", { caseId, detail });
+      }
+    },
+    [storedCases, user?.userId]
+  );
+
+  const createCase = React.useCallback(async (input: CreateCaseInput) => {
     const createdAt = new Date().toISOString();
-    const id = `case-${Date.now()}`;
-    const newCase = createMockCase(input, createdAt, id);
+    let newCase: CaseRecord;
+    if (user?.userId) {
+      try {
+        const apiCase = await createApiCase({ userId: user.userId, title: input.title.trim() });
+        let history: Awaited<ReturnType<typeof getCaseHistory>> = {
+          messages: [],
+          documents: [],
+          has_more: false
+        };
+        const files = input.documents.map((document) => document.file).filter((file): file is File => Boolean(file));
+        if (files.length > 0) {
+          history = await uploadApiCaseDocuments({
+            userId: user.userId,
+            caseId: apiCase.case_id,
+            files
+          });
+        }
+        newCase = mapApiCase(apiCase, history.messages, history.documents);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Unable to create API case.";
+        setCaseLoadError(detail);
+        consoleLogger.warn("Unable to create API case; using local fallback case", { detail });
+        newCase = createMockCase(input, createdAt, `case-${Date.now()}`);
+      }
+    } else {
+      newCase = createMockCase(input, createdAt, `case-${Date.now()}`);
+    }
     setStoredCases((prev) => [newCase, ...prev]);
     setActiveCaseId(newCase.id);
     setHasSelectedCase(true);
@@ -756,7 +950,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       documentCount: newCase.documents.length
     });
     return localizeCaseRecord(newCase, language);
-  }, [language]);
+  }, [language, user?.userId]);
 
   const setActiveCase = React.useCallback((caseId: string) => {
     setActiveCaseId(caseId);
@@ -766,7 +960,11 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveCaseId(caseId);
     setHasSelectedCase(true);
     setContinueRequested(false);
-  }, []);
+    const selected = storedCases.find((caseItem) => caseItem.id === caseId);
+    if (selected?.source === "api") {
+      void loadCaseData(caseId);
+    }
+  }, [loadCaseData, storedCases]);
 
   const updateCase = React.useCallback((caseId: string, update: Partial<CaseRecord>) => {
     setStoredCases((prev) =>
@@ -808,7 +1006,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return existingSession.sessionId;
     }
 
-    const session = await createChatSession({ language });
+      const session = await createChatSession({ language, userId: user?.userId, caseId });
     sessionIdsByCaseRef.current[caseId] = {
       language,
       sessionId: session.id
@@ -820,7 +1018,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return session.id;
-  }, [language]);
+  }, [language, user?.userId]);
 
   const sendCaseMessage = React.useCallback(
     async (input: SendCaseMessageInput): Promise<SendCaseMessageResult> => {
@@ -884,6 +1082,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       activeCase,
       hasSelectedCase,
       continueRequested,
+      isLoadingCases,
+      caseLoadError,
       createCase,
       setActiveCase,
       selectCase,
@@ -902,6 +1102,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       activeCase,
       hasSelectedCase,
       continueRequested,
+      isLoadingCases,
+      caseLoadError,
       createCase,
       setActiveCase,
       selectCase,

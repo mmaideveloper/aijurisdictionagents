@@ -43,6 +43,7 @@ class User:
     data_processing_consent_version: str | None
     mcp_api_key_hash: str | None
     mcp_api_key_expires_at: str | None
+    created_at: str | None
 
 
 @dataclass(frozen=True)
@@ -544,6 +545,7 @@ class ApiDatabaseStore:
             data_processing_consent_version=data_processing_consent_version,
             mcp_api_key_hash=None,
             mcp_api_key_expires_at=None,
+            created_at=now,
         )
 
     def save_registration_code(
@@ -981,7 +983,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, password_hash
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at, password_hash
                 FROM users
                 WHERE email = ?
                 """,
@@ -989,7 +991,7 @@ class ApiDatabaseStore:
             )
         if row is None:
             return None
-        if not _verify_password(password, row[18]):
+        if not _verify_password(password, row[19]):
             return None
         return _row_to_user(row)
 
@@ -1005,7 +1007,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE phone_number = ?
                 """,
@@ -1024,7 +1026,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE email = ?
                 """,
@@ -1043,7 +1045,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -1062,7 +1064,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -1109,7 +1111,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -1200,6 +1202,64 @@ class ApiDatabaseStore:
             data_processing_consent_version=current_user.data_processing_consent_version,
             mcp_api_key_hash=current_user.mcp_api_key_hash,
             mcp_api_key_expires_at=current_user.mcp_api_key_expires_at,
+            created_at=current_user.created_at,
+        )
+
+    def update_user_email(self, *, user_id: str, email: str) -> User:
+        normalized_email = email.strip().lower()
+        with self._connect() as conn:
+            current = self._fetchone(
+                conn,
+                """
+                SELECT
+                    user_id, phone_number, email, first_name, last_name, full_name,
+                    address, city, country, zip_code, tax_number, identity_card_number,
+                    date_of_birth, social_security_number,
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                FROM users
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+            if current is None:
+                raise KeyError(f"User {user_id} not found")
+            current_user = _row_to_user(current)
+            resolved_full_name = _resolve_full_name(
+                full_name=current_user.full_name,
+                first_name=current_user.first_name,
+                last_name=current_user.last_name,
+                phone_number=current_user.phone_number,
+                email=normalized_email,
+            )
+            self._execute(
+                conn,
+                """
+                UPDATE users
+                SET email = ?, full_name = ?
+                WHERE user_id = ?
+                """,
+                (normalized_email, resolved_full_name, user_id),
+            )
+        return User(
+            user_id=user_id,
+            phone_number=current_user.phone_number,
+            email=normalized_email,
+            first_name=current_user.first_name,
+            last_name=current_user.last_name,
+            full_name=resolved_full_name,
+            address=current_user.address,
+            city=current_user.city,
+            country=current_user.country,
+            zip_code=current_user.zip_code,
+            tax_number=current_user.tax_number,
+            identity_card_number=current_user.identity_card_number,
+            date_of_birth=current_user.date_of_birth,
+            social_security_number=current_user.social_security_number,
+            data_processing_consent_at=current_user.data_processing_consent_at,
+            data_processing_consent_version=current_user.data_processing_consent_version,
+            mcp_api_key_hash=current_user.mcp_api_key_hash,
+            mcp_api_key_expires_at=current_user.mcp_api_key_expires_at,
+            created_at=current_user.created_at,
         )
 
 
@@ -1237,7 +1297,7 @@ class ApiDatabaseStore:
                 SELECT user_id, phone_number, email, first_name, last_name, full_name,
                        address, city, country, zip_code, tax_number, identity_card_number,
                        date_of_birth, social_security_number,
-                       data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                       data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE mcp_api_key_hash IS NOT NULL
                 """,
@@ -2295,6 +2355,7 @@ def _row_to_user(row: tuple[object, ...]) -> User:
         data_processing_consent_version=str(values[15]) if len(values) > 15 and values[15] is not None else None,
         mcp_api_key_hash=str(values[16]) if len(values) > 16 and values[16] is not None else None,
         mcp_api_key_expires_at=str(values[17]) if len(values) > 17 and values[17] is not None else None,
+        created_at=str(values[18]) if len(values) > 18 and values[18] is not None else None,
     )
 
 

@@ -13,17 +13,6 @@ const labels: Record<string, string> = {
   assistantEyebrow: "Authenticated legal assistant",
   assistantTitle: "JurisDigta Assistant",
   assistantSubtitle: "Assistant subtitle",
-  assistantApiAuthAccess: "Production access uses JurisDigta account login",
-  assistantModesTitle: "Assistant modes",
-  assistantModeLegalSearch: "Legal search",
-  assistantModePrepareDocument: "Prepare document",
-  assistantModeDraftDocument: "Draft document",
-  assistantModeVerifyPerson: "Verify person",
-  assistantModeVerifyCompany: "Verify company",
-  assistantModeScreenPerson: "Screen person",
-  assistantModeScreenCompany: "Screen company",
-  assistantModeVerifyCar: "Verify car",
-  assistantModeVerifyLocation: "Verify location",
   assistantToolsTitle: "Capabilities",
   assistantMandatoryMcpTitle: "JurisDigta MCP",
   assistantMandatoryMcpBody: "JurisDigta API and MCP are always attached.",
@@ -131,14 +120,14 @@ describe("AssistantWorkspace", () => {
     expect(screen.getByText("Locked on")).toBeDefined();
     expect(screen.getByText("Human approval")).toBeDefined();
     expect(screen.getByText("AI-assisted draft")).toBeDefined();
-    expect(screen.getByText("Production access uses JurisDigta account login")).toBeDefined();
+    expect(screen.queryByText("Production access uses JurisDigta account login")).toBeNull();
   });
 
-  it("shows V1 assistant modes without arbitrary MCP URL entry", () => {
+  it("does not show assistant modes or arbitrary MCP URL entry", () => {
     render(<AssistantWorkspace />);
 
-    expect(screen.getByRole("button", { name: "Legal search" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Verify company" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Legal search" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Verify company" })).toBeNull();
     expect(screen.queryByLabelText(/mcp url/i)).toBeNull();
   });
 

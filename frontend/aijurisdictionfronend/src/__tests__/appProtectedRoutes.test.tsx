@@ -91,7 +91,7 @@ describe("App protected routes", () => {
     cleanup();
   });
 
-  it("redirects unauthenticated users from /app to /", () => {
+  it("redirects unauthenticated users from /app to /auth", () => {
     authState.isAuthenticated = false;
 
     render(
@@ -100,11 +100,11 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("App Dashboard")).toBeNull();
   });
 
-  it("redirects unauthenticated users from nested /app route to /", () => {
+  it("redirects unauthenticated users from nested /app route to /auth", () => {
     authState.isAuthenticated = false;
 
     render(
@@ -113,11 +113,11 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("Lawyer Workspace")).toBeNull();
   });
 
-  it("redirects unauthenticated users from /app/assistant to /", () => {
+  it("redirects unauthenticated users from /app/assistant to /auth", () => {
     authState.isAuthenticated = false;
 
     render(
@@ -126,11 +126,11 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("Assistant Workspace")).toBeNull();
   });
 
-  it("redirects unauthenticated users from /profile to /", () => {
+  it("redirects unauthenticated users from /profile to /auth", () => {
     authState.isAuthenticated = false;
 
     render(
@@ -139,7 +139,7 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("Profile Page")).toBeNull();
   });
 

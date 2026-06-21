@@ -16,7 +16,7 @@ const getInitialLanguage = (): Language => {
   if (stored && translations[stored]) {
     return stored;
   }
-  return "en";
+  return "sk";
 };
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

@@ -8,7 +8,7 @@ import {
   type ChatModelAdapter,
   type ThreadMessageLike
 } from "@assistant-ui/react";
-import { BsArrowUpCircle, BsLockFill, BsShieldCheck } from "react-icons/bs";
+import { BsArrowUpCircle, BsLockFill } from "react-icons/bs";
 import { ApiRequestError, createChatSession, replyToSession } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
@@ -136,18 +136,6 @@ const AssistantThread: React.FC = () => {
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
 
-  const modes = [
-    t("assistantModeLegalSearch"),
-    t("assistantModePrepareDocument"),
-    t("assistantModeDraftDocument"),
-    t("assistantModeVerifyPerson"),
-    t("assistantModeVerifyCompany"),
-    t("assistantModeScreenPerson"),
-    t("assistantModeScreenCompany"),
-    t("assistantModeVerifyCar"),
-    t("assistantModeVerifyLocation")
-  ];
-
   const capabilities = [
     t("assistantCapabilityLawSearch"),
     t("assistantCapabilityOrsr"),
@@ -182,18 +170,6 @@ const AssistantWorkspace: React.FC = () => {
               <h1 id="assistant-title">{t("assistantTitle")}</h1>
               <p>{t("assistantSubtitle")}</p>
             </div>
-            <div className="assistant-access">
-              <BsShieldCheck aria-hidden="true" />
-              <span>{t("assistantApiAuthAccess")}</span>
-            </div>
-          </section>
-
-          <section className="assistant-mode-strip" aria-label={t("assistantModesTitle")}>
-            {modes.map((mode, index) => (
-              <button key={mode} type="button" className={index === 0 ? "active" : ""}>
-                {mode}
-              </button>
-            ))}
           </section>
 
           <AssistantThread />

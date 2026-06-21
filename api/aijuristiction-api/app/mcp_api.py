@@ -57,6 +57,8 @@ MCP_SERVER_INSTRUCTIONS = (
 _PUBLIC_TOOLS = {"getVersion", "getStatistics"}
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai")
 _MCP_OTP_VERIFICATION_PURPOSE = "mcp_access"
+_DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
+_MAX_LAW_TEXT_CHARS = 100_000
 logger = logging.getLogger("aijuristiction-api.mcp")
 _MCP_SUPPORTED_LOCALES = {"en", "sk"}
 _MCP_TEXT: dict[str, dict[str, str]] = {
@@ -1141,7 +1143,22 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
     document_id = str(arguments.get("document_id", "")).strip()
     if not document_id:
         raise HTTPException(status_code=400, detail="document_id is required")
-    logger.info("mcp_tool_get_law_text_query document_id_hash=%s", _stable_hash(document_id))
+    offset = _bounded_int(arguments.get("offset"), default=0, minimum=0, maximum=10_000_000)
+    max_chars = _bounded_int(
+        arguments.get("max_chars"),
+        default=_DEFAULT_LAW_TEXT_MAX_CHARS,
+        minimum=1,
+        maximum=_MAX_LAW_TEXT_CHARS,
+    )
+    section_start, section_end = _requested_section_range(arguments)
+    logger.info(
+        "mcp_tool_get_law_text_query document_id_hash=%s offset=%d max_chars=%d section_start=%s section_end=%s",
+        _stable_hash(document_id),
+        offset,
+        max_chars,
+        section_start,
+        section_end,
+    )
     with _LawsQuerySession() as laws:
         rows = laws.query_all(
             f"""
@@ -1172,6 +1189,29 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
     result_document_id = str(row[0])
     result_country_code = str(row[1])
     result_content_text = str(row[9])
+    content_scope = "full"
+    requested_sections: list[int] = []
+    section_found = True
+    source_offset = offset
+    total_content_length = len(result_content_text)
+    scoped_text = result_content_text
+    if section_start is not None:
+        assert section_end is not None
+        content_scope = "sections"
+        requested_sections = list(range(section_start, section_end + 1))
+        section_extract = _extract_section_range(result_content_text, section_start, section_end)
+        section_found = section_extract is not None
+        if section_extract is None:
+            scoped_text = ""
+            source_offset = 0
+            total_content_length = 0
+        else:
+            scoped_text, source_offset = section_extract
+            total_content_length = len(scoped_text)
+            offset = 0
+    content_text = scoped_text[offset : offset + max_chars]
+    next_offset = offset + len(content_text)
+    content_truncated = next_offset < len(scoped_text)
     result = {
         "document_id": result_document_id,
         "country_code": result_country_code,
@@ -1182,15 +1222,85 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
         "version_id": str(row[6]),
         "version_token": str(row[7]),
         "effective_from": str(row[8]),
-        "content_text": result_content_text,
+        "content_text": content_text,
+        "content_scope": content_scope,
+        "requested_sections": requested_sections,
+        "section_found": section_found,
+        "source_offset": source_offset,
+        "offset": offset,
+        "max_chars": max_chars,
+        "content_length": len(content_text),
+        "total_content_length": total_content_length,
+        "content_truncated": content_truncated,
+        "next_offset": next_offset if content_truncated else None,
     }
     logger.info(
-        "mcp_tool_get_law_text_result document_id_hash=%s country_code=%s content_length=%d",
+        (
+            "mcp_tool_get_law_text_result document_id_hash=%s country_code=%s "
+            "content_scope=%s content_length=%d total_content_length=%d truncated=%s"
+        ),
         _stable_hash(result_document_id),
         result_country_code,
-        len(result_content_text),
+        content_scope,
+        len(content_text),
+        total_content_length,
+        content_truncated,
     )
     return result
+
+
+def _requested_section_range(arguments: dict[str, Any]) -> tuple[int | None, int | None]:
+    section_start = _optional_positive_int(arguments.get("section_start"))
+    section_end = _optional_positive_int(arguments.get("section_end"))
+    section_number = _optional_positive_int(arguments.get("section_number"))
+    section_numbers = arguments.get("section_numbers")
+    if section_number is not None:
+        section_start = section_number if section_start is None else section_start
+        section_end = section_number if section_end is None else section_end
+    if isinstance(section_numbers, list) and section_numbers:
+        parsed_sections = sorted(
+            section
+            for section in (_optional_positive_int(value) for value in section_numbers)
+            if section is not None
+        )
+        if parsed_sections:
+            section_start = parsed_sections[0] if section_start is None else section_start
+            section_end = parsed_sections[-1] if section_end is None else section_end
+    if section_start is None and section_end is None:
+        return None, None
+    if section_start is None or section_end is None:
+        selected = section_start if section_start is not None else section_end
+        return selected, selected
+    if section_end < section_start:
+        raise HTTPException(status_code=400, detail="section_end must be greater than or equal to section_start")
+    return section_start, section_end
+
+
+def _extract_section_range(content_text: str, section_start: int, section_end: int) -> tuple[str, int] | None:
+    section_matches = [
+        (match.start(), int(match.group(1)))
+        for match in re.finditer(r"(?<!\d)§\s*(\d+)\b", content_text)
+    ]
+    if not section_matches:
+        return None
+
+    start_index: int | None = None
+    end_index = len(content_text)
+    for index, (position, section_number) in enumerate(section_matches):
+        if start_index is None and section_number >= section_start:
+            if section_number > section_start:
+                return None
+            start_index = position
+            continue
+        if start_index is not None and section_number > section_end:
+            end_index = position
+            break
+        if start_index is not None and index == len(section_matches) - 1:
+            end_index = len(content_text)
+
+    if start_index is None:
+        return None
+    return content_text[start_index:end_index].strip(), start_index
 
 
 class _LawsQuerySession:
@@ -1282,13 +1392,31 @@ def _mcp_tools() -> list[dict[str, Any]]:
         {
             "name": "getLawText",
             "description": (
-                "Return the latest imported HTML legal text for a JurisDigta law document id. "
-                "Use after searchLaws to cite exact Slovak legal text, sections, paragraphs, and effective wording."
+                "Return bounded latest imported legal text for a JurisDigta law document id. "
+                "Use after searchLaws to cite exact Slovak legal text, sections, paragraphs, and effective wording. "
+                "For large codes, request section_number or section_start/section_end instead of the full law."
             ),
             "inputSchema": {
                 "type": "object",
                 "required": ["document_id"],
-                "properties": {"document_id": {"type": "string", "minLength": 1}},
+                "properties": {
+                    "document_id": {"type": "string", "minLength": 1},
+                    "section_number": {"type": "integer", "minimum": 1},
+                    "section_numbers": {
+                        "type": "array",
+                        "items": {"type": "integer", "minimum": 1},
+                        "minItems": 1,
+                    },
+                    "section_start": {"type": "integer", "minimum": 1},
+                    "section_end": {"type": "integer", "minimum": 1},
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
+                    "max_chars": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": _MAX_LAW_TEXT_CHARS,
+                        "default": _DEFAULT_LAW_TEXT_MAX_CHARS,
+                    },
+                },
                 "additionalProperties": False,
             },
         },
@@ -1690,29 +1818,33 @@ def _mcp_auth_page_html(
   <style>
     :root {{
       color-scheme: light;
-      --background: #f5f7fb;
+      --background: #f5f0ea;
+      --background-end: #e8dfd4;
       --surface: #ffffff;
-      --surface-muted: #eef3f7;
-      --text: #16202a;
-      --muted: #5a6878;
-      --line: #d8e1ea;
-      --primary: #176a63;
-      --primary-dark: #0f4e49;
-      --accent: #b4572b;
-      --focus: #1b7f75;
+      --surface-muted: #f0e9e2;
+      --surface-contrast: #251c13;
+      --text: #1f1b16;
+      --muted: #5f564b;
+      --line: rgba(31, 27, 22, 0.12);
+      --primary: #d0632c;
+      --primary-dark: #8d3510;
+      --accent: #d0632c;
+      --accent-soft: #f5c7a6;
+      --focus: #d0632c;
+      --shadow: 0 24px 60px rgba(31, 27, 22, 0.12);
+      --radius: 24px;
+      --font-display: "Fraunces", "Times New Roman", serif;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       min-height: 100vh;
-      background:
-        linear-gradient(135deg, rgba(23, 106, 99, 0.12), rgba(180, 87, 43, 0.08)),
-        var(--background);
+      background: radial-gradient(circle at top, #fdf7f1 0%, var(--background) 45%, var(--background-end) 100%);
       color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Space Grotesk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.5;
     }}
-    a {{ color: var(--primary-dark); font-weight: 700; text-decoration: none; }}
+    a {{ color: var(--accent); font-weight: 700; text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
     .auth-shell {{
       width: min(1120px, calc(100% - 32px));
@@ -1734,22 +1866,28 @@ def _mcp_auth_page_html(
       font-size: 0.9rem;
       font-weight: 800;
       letter-spacing: 0;
-      color: var(--primary-dark);
-      text-transform: uppercase;
+      color: var(--text);
     }}
     .brand-mark::before {{
-      content: "";
-      width: 34px;
-      height: 34px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, var(--primary), var(--accent));
-      box-shadow: 0 10px 24px rgba(23, 106, 99, 0.18);
+      content: "AJ";
+      display: inline-flex;
+      width: 44px;
+      height: 44px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      box-shadow: var(--shadow);
+      font-weight: 800;
     }}
     h1 {{
+      font-family: var(--font-display);
       margin: 24px 0 14px;
       font-size: clamp(2.15rem, 6vw, 4.25rem);
       line-height: 1;
       letter-spacing: 0;
+      font-weight: 600;
     }}
     .subtitle {{
       max-width: 580px;
@@ -1781,10 +1919,10 @@ def _mcp_auth_page_html(
     .auth-card {{
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.95);
-      box-shadow: 0 24px 70px rgba(22, 32, 42, 0.12);
-      padding: 28px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      padding: 2rem;
     }}
     .form-grid {{
       display: grid;
@@ -1805,10 +1943,10 @@ def _mcp_auth_page_html(
     }}
     .alert {{
       margin: 0 0 18px;
-      border: 1px solid #b45309;
-      border-radius: 8px;
+      border: 1px solid var(--accent-soft);
+      border-radius: 12px;
       background: #fff7ed;
-      color: #7c2d12;
+      color: #8d2b2b;
       padding: 12px 14px;
       font-weight: 700;
     }}
@@ -1816,15 +1954,15 @@ def _mcp_auth_page_html(
       width: 100%;
       min-height: 46px;
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 12px;
       background: #fff;
       color: var(--text);
       font: inherit;
-      padding: 10px 12px;
+      padding: 0.8rem 1rem;
     }}
     input:focus {{
       border-color: var(--focus);
-      box-shadow: 0 0 0 3px rgba(27, 127, 117, 0.16);
+      box-shadow: 0 0 0 3px rgba(208, 99, 44, 0.16);
       outline: none;
     }}
     .checkbox-field {{
@@ -1834,7 +1972,7 @@ def _mcp_auth_page_html(
       align-items: flex-start;
       padding: 12px;
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 12px;
       background: var(--surface-muted);
       color: var(--muted);
       font-weight: 600;
@@ -1851,14 +1989,15 @@ def _mcp_auth_page_html(
       width: 100%;
       min-height: 48px;
       border: 0;
-      border-radius: 8px;
+      border-radius: 999px;
       background: var(--primary);
       color: #fff;
       cursor: pointer;
       font: inherit;
-      font-weight: 800;
+      font-weight: 600;
       margin-top: 18px;
-      padding: 12px 16px;
+      padding: 0.7rem 1.4rem;
+      box-shadow: var(--shadow);
     }}
     .primary-button:hover {{ background: var(--primary-dark); }}
     .auth-footer {{
@@ -1870,9 +2009,9 @@ def _mcp_auth_page_html(
       overflow-wrap: anywhere;
       white-space: pre-wrap;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #101820;
-      color: #f6fbff;
+      border-radius: 12px;
+      background: var(--surface-contrast);
+      color: #fff;
       padding: 16px;
     }}
     @media (max-width: 820px) {{

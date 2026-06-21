@@ -1,17 +1,18 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 
 import React from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { Navigation } from "../components/Navigation";
 
 const mockSignOut = vi.fn();
+const authState = vi.hoisted(() => ({ isAuthenticated: true }));
 
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
-    isAuthenticated: true,
+    isAuthenticated: authState.isAuthenticated,
     user: {
       name: "Admin",
       email: "user@example.com"
@@ -25,6 +26,7 @@ const labels: Record<string, string> = {
   tagline: "Agentic legal workspace",
   navHome: "Home",
   navPricing: "Pricing",
+  navAuth: "Log In",
   navApp: "App",
   navAssistant: "Assistant",
   navProfile: "Profile",
@@ -64,76 +66,24 @@ function renderNavigation({
   );
 }
 
-describe("Navigation profile dropdown", () => {
+describe("Navigation profile actions", () => {
   afterEach(() => {
     cleanup();
   });
 
   beforeEach(() => {
     mockSignOut.mockReset();
+    authState.isAuthenticated = true;
   });
 
-  it("opens on profile trigger click with expected options", async () => {
-    const user = userEvent.setup();
+  it("shows profile actions without opening a dropdown", () => {
     renderNavigation();
 
-    await user.click(screen.getByLabelText("Profile"));
-
-    expect(screen.getByRole("menu", { name: "Profile menu" })).toBeDefined();
-    expect(screen.getByRole("menuitem", { name: "My Profile" })).toBeDefined();
-    expect(screen.getByRole("menuitem", { name: "My Cases" })).toBeDefined();
-    expect(screen.getByRole("menuitem", { name: "Log Out" })).toBeDefined();
-  });
-
-  it("closes on outside click", async () => {
-    const user = userEvent.setup();
-    renderNavigation();
-
-    await user.click(screen.getByLabelText("Profile"));
-    expect(screen.getByRole("menu", { name: "Profile menu" })).toBeDefined();
-
-    fireEvent.mouseDown(document.body);
-
-    await waitFor(() => {
-      expect(screen.queryByRole("menu", { name: "Profile menu" })).toBeNull();
-    });
-  });
-
-  it("closes on escape key press", async () => {
-    const user = userEvent.setup();
-    renderNavigation();
-
-    await user.click(screen.getByLabelText("Profile"));
-    expect(screen.getByRole("menu", { name: "Profile menu" })).toBeDefined();
-
-    fireEvent.keyDown(document, { key: "Escape" });
-
-    await waitFor(() => {
-      expect(screen.queryByRole("menu", { name: "Profile menu" })).toBeNull();
-    });
-  });
-
-  it("supports keyboard navigation and closes when menu option is clicked", async () => {
-    const user = userEvent.setup();
-    renderNavigation();
-
-    const trigger = screen.getByLabelText("Profile");
-    trigger.focus();
-    fireEvent.keyDown(trigger, { key: "ArrowDown" });
-
-    const menu = await screen.findByRole("menu", { name: "Profile menu" });
-    await waitFor(() => {
-      expect(document.activeElement?.textContent).toBe("My Profile");
-    });
-
-    fireEvent.keyDown(menu, { key: "ArrowDown" });
-    await waitFor(() => {
-      expect(document.activeElement?.textContent).toBe("My Cases");
-    });
-
-    await user.click(screen.getByRole("menuitem", { name: "Log Out" }));
-    expect(mockSignOut).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("menu", { name: "Profile menu" })).toBeNull();
+    expect(screen.getByText("Admin")).toBeDefined();
+    expect(screen.getByText("user@example.com")).toBeDefined();
+    expect(screen.getByRole("button", { name: "My Profile" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "My Cases" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Log Out" })).toBeDefined();
   });
 
   it("navigates to /profile when My Profile is clicked", async () => {
@@ -141,8 +91,7 @@ describe("Navigation profile dropdown", () => {
     renderNavigation();
 
     expect(screen.getByTestId("current-path").textContent).toBe("/");
-    await user.click(screen.getByLabelText("Profile"));
-    await user.click(screen.getByRole("menuitem", { name: "My Profile" }));
+    await user.click(screen.getByRole("button", { name: "My Profile" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("current-path").textContent).toBe("/profile");
@@ -154,26 +103,57 @@ describe("Navigation profile dropdown", () => {
     renderNavigation({ initialEntries: ["/profile"] });
 
     expect(screen.getByTestId("current-path").textContent).toBe("/profile");
-    await user.click(screen.getByLabelText("Profile"));
-    await user.click(screen.getByRole("menuitem", { name: "My Cases" }));
+    await user.click(screen.getByRole("button", { name: "My Cases" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("current-path").textContent).toBe("/");
     });
   });
 
+  it("signs out from the visible profile action", async () => {
+    const user = userEvent.setup();
+    renderNavigation();
+
+    await user.click(screen.getByRole("button", { name: "Log Out" }));
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends signed-in users to login after logout", async () => {
+    const user = userEvent.setup();
+    renderNavigation({ initialEntries: ["/profile"] });
+
+    await user.click(screen.getByRole("button", { name: "Log Out" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("current-path").textContent).toBe("/auth");
+    });
+  });
+
+  it("shows login as the first menu item for signed-out users", () => {
+    authState.isAuthenticated = false;
+
+    const { container } = renderNavigation();
+
+    const links = container.querySelectorAll(".nav-links a");
+    expect(links[0]?.textContent).toBe("Log In");
+  });
+
+  it("does not show the assistant route for signed-in users", () => {
+    renderNavigation({ initialEntries: ["/app"] });
+
+    expect(screen.queryByRole("link", { name: "Assistant" })).toBeNull();
+  });
+
+  it("does not show the app route in the top menu", () => {
+    renderNavigation({ initialEntries: ["/app"] });
+
+    expect(screen.queryByRole("link", { name: "App" })).toBeNull();
+  });
+
   it("shows navbar brand on non-home routes for signed-in users", () => {
     renderNavigation({ initialEntries: ["/app"] });
 
     expect(screen.getByText("AI Jurisdiction")).toBeDefined();
-  });
-
-  it("shows the assistant route for signed-in users", () => {
-    renderNavigation({ initialEntries: ["/app"] });
-
-    expect(screen.getByRole("link", { name: "Assistant" }).getAttribute("href")).toBe(
-      "/app/assistant"
-    );
   });
 
   it("shows navbar brand on home when sidebar is collapsed", () => {

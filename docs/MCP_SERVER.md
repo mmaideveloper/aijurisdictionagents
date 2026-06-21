@@ -188,7 +188,7 @@ These tools do not require an MCP API key:
 These tools require an MCP API key:
 
 - `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title.
-- `getLawText`: returns latest imported text for a law document id.
+- `getLawText`: returns bounded latest imported text for a law document id. For large codes, pass `section_number` or `section_start`/`section_end` to retrieve only the relevant sections; use `offset` and `max_chars` when pagination is needed.
 
 ## Minimal JSON-RPC Example
 
@@ -207,6 +207,8 @@ These tools require an MCP API key:
   }
 }
 ```
+
+For Civil Code style questions, call `searchLaws` with the exact identifier first, for example `{"query": "40/1964", "law_number": 40, "law_year": 1964}`. Then call `getLawText` with the returned `document_id` and a focused range, for example `{"document_id": "...", "section_start": 685, "section_end": 716}`. Avoid asking for the full law text unless the law is small or pagination is explicitly required.
 
 For protected tools, send the MCP API key as a Bearer token or `x-mcp-api-key` header. Protected unauthenticated tool calls return `401` with a `WWW-Authenticate` header pointing clients at the protected-resource metadata endpoint.
 

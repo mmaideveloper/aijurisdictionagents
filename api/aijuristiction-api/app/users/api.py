@@ -53,6 +53,7 @@ class UserProfileResponse(BaseModel):
     data_processing_consent_at: str | None = None
     data_processing_consent_version: str | None = None
     mcp_api_key_expires_at: str | None = None
+    created_at: str | None = None
 
 
 class SignUpRequest(BaseModel):
@@ -102,6 +103,16 @@ class SignInByPhoneRequest(BaseModel):
 class SignInRequest(BaseModel):
     email: str = Field(min_length=1)
     password: str = Field(min_length=1)
+    device_id: str | None = None
+    verification_code: str | None = Field(default=None, max_length=64)
+
+
+class SendEmailChangeCodeRequest(BaseModel):
+    email: str = Field(min_length=1)
+
+
+class CompleteEmailChangeRequest(SendEmailChangeCodeRequest):
+    verification_code: str = Field(min_length=1, max_length=64)
 
 
 class UpdateUserProfileRequest(BaseModel):
@@ -361,13 +372,38 @@ def sign_in_with_device_token(
 
 
 @router.post("/sign-in", response_model=UserProfileResponse)
-def sign_in(payload: SignInRequest, store: ApiDatabaseStore = Depends(get_user_store)) -> UserProfileResponse:
+def sign_in(
+    payload: SignInRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> UserProfileResponse:
     user = store.authenticate_user(email=payload.email, password=payload.password)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+    device_id = (payload.device_id or "").strip()
+    if device_id:
+        otp_purpose = _web_sign_in_otp_purpose(device_id=device_id)
+        if not store.has_valid_mcp_otp_verification(user_id=user.user_id, purpose=otp_purpose):
+            verification_code = (payload.verification_code or "").strip()
+            if not verification_code:
+                _send_web_sign_in_code(store=store, scheduler=scheduler, user=user, device_id=device_id)
+                raise HTTPException(
+                    status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                    detail="OTP code required",
+                )
+            if not _accepts_any_local_auth_code() and not store.verify_registration_code(
+                email=_web_sign_in_code_key(user_id=user.user_id, device_id=device_id),
+                code=verification_code,
+            ):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+            store.save_mcp_otp_verification(
+                user_id=user.user_id,
+                purpose=otp_purpose,
+                expires_in_hours=_web_sign_in_otp_reuse_window_hours(),
+            )
     return _to_user_profile_response(user)
 
 
@@ -415,6 +451,61 @@ def update_user_profile(
             raise
         raise _conflict_from_integrity_error(exc) from exc
     return _to_user_profile_response(user)
+
+
+@router.post("/{user_id}/email-change/send-code", status_code=status.HTTP_202_ACCEPTED)
+def send_email_change_code(
+    user_id: str,
+    payload: SendEmailChangeCodeRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> dict[str, str]:
+    user = store.find_user_by_id(user_id=user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found")
+    email = payload.email.strip().lower()
+    existing = store.find_user_by_email(email=email)
+    if existing is not None and existing.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered")
+    code = generate_one_time_code()
+    store.save_registration_code(email=_email_change_code_key(user_id=user_id, email=email), code=code)
+    scheduler.enqueue(
+        recipient=email,
+        subject="Your email change code",
+        body=(
+            f"Hello {user.full_name},\n\n"
+            f"your one time email change code is: {code}\n"
+            "The code expires in 30 minutes.\n"
+        ),
+        metadata={"event": "email_change_code", "user_id": user_id},
+    )
+    return {"status": "code_sent"}
+
+
+@router.post("/{user_id}/email-change/complete", response_model=UserProfileResponse)
+def complete_email_change(
+    user_id: str,
+    payload: CompleteEmailChangeRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> UserProfileResponse:
+    user = store.find_user_by_id(user_id=user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found")
+    email = payload.email.strip().lower()
+    if not _accepts_any_local_auth_code() and not store.verify_registration_code(
+        email=_email_change_code_key(user_id=user_id, email=email),
+        code=payload.verification_code,
+    ):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+    try:
+        updated = store.update_user_email(user_id=user_id, email=email)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except Exception as exc:
+        if not _is_unique_constraint_error(exc):
+            raise
+        raise _conflict_from_integrity_error(exc) from exc
+    return _to_user_profile_response(updated)
 
 
 @router.post("/{user_id}/mcp-api-key", response_model=MCPApiKeyCreateResponse)
@@ -614,6 +705,7 @@ def _to_user_profile_response(user: User) -> UserProfileResponse:
         data_processing_consent_at=user.data_processing_consent_at,
         data_processing_consent_version=user.data_processing_consent_version,
         mcp_api_key_expires_at=user.mcp_api_key_expires_at,
+        created_at=user.created_at,
     )
 
 
@@ -635,6 +727,7 @@ def _to_device_auth_user_profile_response(*, user: User, token: str) -> DeviceAu
         social_security_number=user.social_security_number,
         data_processing_consent_at=user.data_processing_consent_at,
         data_processing_consent_version=user.data_processing_consent_version,
+        created_at=user.created_at,
         device_auth_token=token,
     )
 
@@ -649,6 +742,50 @@ def _now_if_accepted(accepted: bool) -> str | None:
 
 def _sign_in_code_key(*, phone_number: str, device_id: str) -> str:
     return f"signin:{phone_number.strip()}:{device_id.strip()}"
+
+
+def _email_change_code_key(*, user_id: str, email: str) -> str:
+    return f"email-change:{user_id.strip()}:{email.strip().lower()}"
+
+
+def _web_sign_in_code_key(*, user_id: str, device_id: str) -> str:
+    return f"web-signin:{user_id.strip()}:{device_id.strip()}"
+
+
+def _web_sign_in_otp_purpose(*, device_id: str) -> str:
+    return f"web-login:{device_id.strip().lower()}"
+
+
+def _web_sign_in_otp_reuse_window_hours() -> int:
+    raw_value = os.getenv("MCP_OTP_REUSE_WINDOW_HOURS", "24").strip()
+    try:
+        return max(int(raw_value), 1)
+    except ValueError:
+        return 24
+
+
+def _send_web_sign_in_code(
+    *,
+    store: ApiDatabaseStore,
+    scheduler: EmailScheduler,
+    user: User,
+    device_id: str,
+) -> None:
+    code = generate_one_time_code()
+    store.save_registration_code(
+        email=_web_sign_in_code_key(user_id=user.user_id, device_id=device_id),
+        code=code,
+    )
+    scheduler.enqueue(
+        recipient=user.email,
+        subject="Your JurisDigta login code",
+        body=(
+            f"Hello {user.full_name},\n\n"
+            f"your one time JurisDigta login code is: {code}\n"
+            "The code expires in 30 minutes.\n"
+        ),
+        metadata={"event": "sign_in_code", "user_id": user.user_id, "channel": "web"},
+    )
 
 
 def _accepts_any_local_auth_code() -> bool:
