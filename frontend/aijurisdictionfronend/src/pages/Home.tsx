@@ -92,6 +92,14 @@ const stripTrailingSendCommand = (transcript: string): { message: string; should
   };
 };
 
+const isWorkspaceUserActor = (actor: string, t: ReturnType<typeof useLanguage>["t"]): boolean => {
+  return (
+    actor === t("workspaceUserLabel") ||
+    actor === t("workspaceUserVoiceLabel") ||
+    actor === t("workspaceUserVideoLabel")
+  );
+};
+
 const Home: React.FC = () => {
   const { t, language } = useLanguage();
   const { isAuthenticated, user } = useAuth();
@@ -120,6 +128,7 @@ const Home: React.FC = () => {
   const draftMessageRef = React.useRef("");
   const modeDraftMessageRef = React.useRef("");
   const awaitingVoiceConfirmationRef = React.useRef(false);
+  const chatHistoryEndRef = React.useRef<HTMLDivElement | null>(null);
   const roleOptions = React.useMemo(
     () => [
       {
@@ -172,6 +181,14 @@ const Home: React.FC = () => {
   React.useEffect(() => {
     awaitingVoiceConfirmationRef.current = isAwaitingVoiceConfirmation;
   }, [isAwaitingVoiceConfirmation]);
+
+  React.useEffect(() => {
+    const latestInteraction = activeCase?.interactionHistory.at(-1);
+    if (!latestInteraction || isWorkspaceUserActor(latestInteraction.actor, t)) {
+      return;
+    }
+    chatHistoryEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [activeCase?.id, activeCase?.interactionHistory, t]);
 
   React.useEffect(() => {
     return () => {
@@ -520,10 +537,7 @@ const Home: React.FC = () => {
                         <div className="workspace-chat">
                           <div className="workspace-chat__history">
                             {activeCase?.interactionHistory.map((item) => {
-                              const isUser =
-                                item.actor === t("workspaceUserLabel") ||
-                                item.actor === t("workspaceUserVoiceLabel") ||
-                                item.actor === t("workspaceUserVideoLabel");
+                              const isUser = isWorkspaceUserActor(item.actor, t);
                               return (
                                 <article
                                   key={item.id}
@@ -537,6 +551,7 @@ const Home: React.FC = () => {
                                 </article>
                               );
                             })}
+                            <div ref={chatHistoryEndRef} aria-hidden="true" />
                           </div>
                           <form className="workspace-chat__composer" onSubmit={handleSendMessage}>
                             <input

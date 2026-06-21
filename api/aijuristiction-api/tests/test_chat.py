@@ -1345,6 +1345,85 @@ def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(mon
     assert "Client full name: Marek Matonok" in captured_prompts[-1]
 
 
+def test_uploaded_documents_contract_request_requires_extract_then_confirm_prompt(monkeypatch) -> None:
+    from aijurisdictionagents.schemas import Document as CoreDocument
+    from app.chat.models import Session
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    captured_prompts: list[str] = []
+    captured_document_paths: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            captured_document_paths.extend(document.path for document in documents)
+            return SimpleNamespace(content="MODEL_CONFIRM_EXTRACTED_DATA_REPLY", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        chat_api,
+        "prepare_country_direct_reply",
+        lambda **_kwargs: SimpleNamespace(
+            direct_reply=None,
+            prompt_note="",
+            supplemental_documents=[],
+            processing_events=[],
+        ),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session = repository.create_session(Session(country="SK", language="SK", discussion_type="advice"))
+
+    _user, lawyer, visible, events = chat_api._run_direct_lawyer_turn(
+        session_id=session.id,
+        session=session,
+        content="Priprav novu najomnu zmluvu z prilozenych dokumentov.",
+        supplemental_documents=[
+            CoreDocument(
+                doc_id="lease-source",
+                path="podklady-najom.txt",
+                content=(
+                    "Prenajimatel: Jana Novotna. Najomca: Tomas Hlavaty. "
+                    "Byt: Dunajska 12, Bratislava. Najomne: 850 EUR."
+                ),
+            )
+        ],
+    )
+
+    assert visible == "MODEL_CONFIRM_EXTRACTED_DATA_REPLY"
+    assert lawyer.agent_name == "LawyerSlovakia"
+    assert events == []
+    assert captured_document_paths == ["podklady-najom.txt"]
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "UPLOADED DOCUMENT CONTRACT INTAKE MODE" in prompt
+    assert "review every available uploaded document" in prompt
+    assert "Udaje, ktore som nasiel v dokumentoch" in prompt
+    assert "Suhlasite, aby som zmluvu pripravil z tychto udajov" in prompt
+    assert "Do not generate or export the final contract until the user confirms" in prompt
+
+
+def test_uploaded_document_contract_confirmation_note_ignores_review_only_request() -> None:
+    from aijurisdictionagents.schemas import Document as CoreDocument
+    from app.chat.api import _build_uploaded_document_contract_confirmation_note
+
+    note = _build_uploaded_document_contract_confirmation_note(
+        content="Pozri zmluvu a zhrn rizika.",
+        documents=[CoreDocument(doc_id="doc-1", path="zmluva.txt", content="Text zmluvy")],
+    )
+
+    assert note == ""
+
+
 def test_lawyer_output_validation_removes_profile_missing_message_when_profile_complete() -> None:
     from app.chat.output_validation import AILawyerOutputMessageValidationAgent, LawyerOutputUserProfile
 

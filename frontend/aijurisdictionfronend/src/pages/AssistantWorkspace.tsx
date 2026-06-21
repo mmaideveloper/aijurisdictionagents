@@ -9,7 +9,7 @@ import {
   type ThreadMessageLike
 } from "@assistant-ui/react";
 import { BsArrowUpCircle, BsLockFill } from "react-icons/bs";
-import { ApiRequestError, createChatSession, replyToSession } from "../api/chatClient";
+import { ApiRequestError, createChatSession, streamSession } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
@@ -50,13 +50,14 @@ const AssistantThread: React.FC = () => {
 
   const assistantAdapter = React.useMemo<ChatModelAdapter>(
     () => ({
-      async run(options) {
+      async *run(options) {
         const content = latestUserText(options.messages);
         if (!content) {
-          return {
+          yield {
             content: [{ type: "text", text: t("assistantEmptyMessageResponse") }],
             status: { type: "complete", reason: "stop" }
           };
+          return;
         }
 
         try {
@@ -72,19 +73,50 @@ const AssistantThread: React.FC = () => {
                 };
           sessionRef.current = session;
 
-          const assistantMessage = await replyToSession({
-            sessionId: session.sessionId,
-            content
-          });
+          let latestAssistantText = "";
+          const processingMessages: string[] = [];
 
-          return {
-            content: [{ type: "text", text: assistantMessage.content }],
+          for await (const streamEvent of streamSession({
+            sessionId: session.sessionId,
+            instruction: content,
+            signal: options.abortSignal
+          })) {
+            if (streamEvent.event === "processing" || streamEvent.event === "waiting_for_reply") {
+              const message = typeof streamEvent.data.message === "string" ? streamEvent.data.message.trim() : "";
+              if (message) {
+                processingMessages.push(message);
+                yield {
+                  content: [{ type: "text", text: processingMessages.join("\n\n") }]
+                };
+              }
+              continue;
+            }
+
+            if (streamEvent.event === "message") {
+              if (streamEvent.data.role === "assistant") {
+                latestAssistantText = streamEvent.data.content;
+                yield {
+                  content: [{ type: "text", text: latestAssistantText }]
+                };
+              }
+              continue;
+            }
+
+            if (streamEvent.event === "error") {
+              const detail =
+                typeof streamEvent.data.message === "string" ? streamEvent.data.message : "Unknown stream error";
+              throw new ApiRequestError("http", detail);
+            }
+          }
+
+          yield {
+            content: [{ type: "text", text: latestAssistantText || processingMessages.join("\n\n") }],
             status: { type: "complete", reason: "stop" }
           };
         } catch (error) {
           const status = error instanceof ApiRequestError && error.status ? String(error.status) : "network";
           const detail = error instanceof Error ? error.message : "Unknown error";
-          return {
+          yield {
             content: [{ type: "text", text: t("assistantApiErrorResponse", { status, detail }) }],
             status: { type: "complete", reason: "stop" }
           };
