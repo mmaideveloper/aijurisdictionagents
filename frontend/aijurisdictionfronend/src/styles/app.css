@@ -1,6 +1,7 @@
 .app-shell {
   position: relative;
   min-height: 100vh;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -60,12 +61,14 @@
   flex-wrap: wrap;
   padding: 1.2rem 6vw;
   gap: 1.1rem;
+  min-width: 0;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 0.8rem;
+  min-width: 0;
 }
 
 .nav-brand {
@@ -112,7 +115,8 @@
   align-items: center;
   gap: 0.8rem;
   margin-left: auto;
-  flex-shrink: 0;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .nav-links a {
@@ -139,6 +143,7 @@
 
 .profile-menu--inline {
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .profile-trigger {
@@ -202,6 +207,9 @@
 .profile-email {
   color: var(--ink-muted);
   font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-divider {
@@ -224,6 +232,8 @@
 .profile-inline-copy {
   display: grid;
   line-height: 1.15;
+  min-width: 0;
+  max-width: min(28rem, 38vw);
 }
 
 .profile-menu-item {
@@ -2199,6 +2209,7 @@ textarea {
     width: 100%;
     margin-left: 0;
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .main-content {
@@ -2229,6 +2240,10 @@ textarea {
 }
 
 @media (max-width: 600px) {
+  .nav {
+    padding: 1rem 6vw;
+  }
+
   .nav-brand .brand-copy span {
     display: none;
   }
@@ -2236,6 +2251,86 @@ textarea {
   .nav-brand .brand-mark {
     width: 40px;
     height: 40px;
+  }
+
+  .profile-menu--inline {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    width: 100%;
+    align-items: center;
+  }
+
+  .profile-inline-copy {
+    max-width: none;
+  }
+
+  .profile-actions--inline {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+
+  .profile-actions--inline .profile-menu-item {
+    flex: 1 1 8rem;
+    text-align: center;
+  }
+
+  .sidebar-brand {
+    align-items: center;
+  }
+
+  .sidebar-brand span,
+  .sidebar-footer,
+  .sidebar-section:last-of-type {
+    display: none;
+  }
+
+  .sidebar-section__header {
+    align-items: baseline;
+    gap: 0.75rem;
+  }
+
+  .case-item {
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .case-title {
+    min-width: 0;
+  }
+
+  .case-title > div {
+    min-width: 0;
+  }
+
+  .case-title strong,
+  .case-meta {
+    overflow-wrap: anywhere;
+  }
+
+  .case-status-label {
+    flex: 0 0 auto;
+    max-width: 42%;
+    text-align: right;
+  }
+
+  .panel-card {
+    padding: 1rem;
+  }
+
+  .workspace-chat__composer {
+    align-items: stretch;
+  }
+
+  .workspace-chat__composer input {
+    flex-basis: 100%;
+  }
+
+  .workspace-chat__composer .button.primary {
+    flex: 1 1 9rem;
+  }
+
+  .chat-message--user {
+    max-width: 100%;
   }
 
   .hero-actions {
@@ -2452,6 +2547,7 @@ textarea {
   display: flex;
   gap: 0.8rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .workspace-chat__composer input {
@@ -2467,4 +2563,78 @@ textarea {
 
 .workspace-chat__status--error {
   color: #8d2b2b;
+}
+
+@media (max-width: 900px) {
+  .app-shell--workspace {
+    flex-direction: column;
+    align-items: stretch;
+    overflow-x: hidden;
+  }
+
+  .app-shell--workspace .app-shell__main,
+  .app-shell--workspace .main-content {
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .app-shell--workspace .workspace-panel--left {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  .app-shell--workspace .sidebar {
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid rgba(31, 27, 22, 0.08);
+  }
+
+  .app-shell--workspace .sidebar-inner {
+    height: auto;
+    padding: 1.2rem 6vw;
+  }
+
+  .app-shell--workspace .sidebar-section--cases {
+    flex: initial;
+  }
+
+  .app-shell--workspace .case-list-scroll {
+    max-height: 14rem;
+    overflow-y: auto;
+  }
+
+  .app-shell--workspace .workspace-page,
+  .app-shell--workspace .workspace-shell {
+    height: auto;
+    overflow: visible;
+  }
+
+  .app-shell--workspace .workspace-shell {
+    padding: 1.2rem 6vw 3rem;
+  }
+
+  .app-shell--workspace .workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+  }
+
+  .app-shell--workspace .workspace-center,
+  .app-shell--workspace .workspace-panel--right {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-shell--workspace .sidebar-inner {
+    padding: 1rem 6vw;
+    gap: 1.1rem;
+  }
+
+  .app-shell--workspace .workspace-shell {
+    padding: 1rem 4vw 2rem;
+  }
 }
