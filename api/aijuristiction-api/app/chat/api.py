@@ -985,6 +985,62 @@ def _build_signed_in_user_profile_prompt_note(session: Session) -> str:
     return "\n".join(lines)
 
 
+def _build_uploaded_document_contract_confirmation_note(
+    *,
+    content: str,
+    documents: list[CoreDocument],
+) -> str:
+    if not documents or not _is_contract_preparation_request(content):
+        return ""
+    return (
+        "UPLOADED DOCUMENT CONTRACT INTAKE MODE:\n"
+        "- The user is asking to prepare a new contract/agreement and uploaded documents are available.\n"
+        "- Before asking generic intake questions or drafting the final contract, review every available uploaded "
+        "document provided in this turn or stored in the case.\n"
+        "- Extract all available contract data from the uploaded documents and the conversation first, including "
+        "parties, identification numbers, addresses, subject matter, property or asset details, dates, price/rent, "
+        "payment terms, obligations, attachments, governing law, and any missing or uncertain fields.\n"
+        "- Do not ask for a fact that is already available in the uploaded documents.\n"
+        "- In the user-facing reply, present a concise grouped list headed 'Udaje, ktore som nasiel v dokumentoch' "
+        "or the same meaning in the user's language. Mark uncertain facts as uncertain and mention the source "
+        "document when useful.\n"
+        "- After the extracted-data list, ask exactly one confirmation question asking whether the user agrees "
+        "with these data for the new contract or wants to change/add anything.\n"
+        "- For Slovak replies, use this confirmation wording unless the conversation clearly uses another language: "
+        "'Suhlasite, aby som zmluvu pripravil z tychto udajov, alebo chcete niektory udaj zmenit/doplnit?'\n"
+        "- Do not generate or export the final contract until the user confirms or corrects the extracted data."
+    )
+
+
+def _is_contract_preparation_request(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    contract_markers = (
+        "zmluv",
+        "contract",
+        "agreement",
+        "dohod",
+    )
+    preparation_markers = (
+        "priprav",
+        "vytvor",
+        "vygeneruj",
+        "napis",
+        "spis",
+        "draft",
+        "prepare",
+        "create",
+        "generate",
+        "write",
+        "new",
+        "novu",
+        "nova",
+        "novy",
+    )
+    return any(marker in normalized for marker in contract_markers) and any(
+        marker in normalized for marker in preparation_markers
+    )
+
+
 def _run_direct_lawyer_turn(
     *,
     session_id: UUID,
@@ -1143,6 +1199,12 @@ def _run_direct_lawyer_turn(
     all_documents = list(preparation.supplemental_documents)
     all_documents.extend(supplemental_documents or [])
     all_documents.extend(case_documents)
+    uploaded_contract_note = _build_uploaded_document_contract_confirmation_note(
+        content=content,
+        documents=all_documents,
+    )
+    if uploaded_contract_note:
+        prompt_override = f"{prompt_override}\n\n{uploaded_contract_note}"
     lawyer_message = lawyer.respond(
         conversation=conversation,
         documents=all_documents,
