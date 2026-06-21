@@ -32,6 +32,7 @@ from app.mcp_tokens import (
 from app.services.email_scheduler import EmailScheduler
 from app.users.api import get_email_scheduler, get_user_store
 from app.users.notifications import queue_registration_email
+from app.users.totp import reveal_totp_secret, verify_totp_code
 from app.versioning import (
     get_api_version,
     get_core_version,
@@ -74,6 +75,14 @@ _MCP_TEXT: dict[str, dict[str, str]] = {
         "password": "Password",
         "expiry_days": "API key expiry days",
         "send_otp": "Send OTP code",
+        "choose_mfa_title": "Choose MFA method",
+        "choose_mfa_subtitle": "Your account has authenticator-app MFA enabled. Choose how to verify this login.",
+        "mfa_method": "MFA method",
+        "mfa_email": "Email OTP",
+        "mfa_totp": "Authenticator app",
+        "continue": "Continue",
+        "totp_code": "Authenticator code",
+        "totp_note": "Open Google Authenticator or a compatible app and enter the current six-digit code.",
         "need_account": "Need an account?",
         "sign_up_link": "Sign up",
         "already_registered": "Already registered?",
@@ -127,6 +136,14 @@ _MCP_TEXT: dict[str, dict[str, str]] = {
         "password": "Heslo",
         "expiry_days": "Platnost API kluca v dnoch",
         "send_otp": "Poslat OTP kod",
+        "choose_mfa_title": "Vyber MFA metodu",
+        "choose_mfa_subtitle": "Vas ucet ma zapnute MFA cez autentifikacnu aplikaciu. Vyberte sposob overenia prihlasenia.",
+        "mfa_method": "MFA metoda",
+        "mfa_email": "Email OTP",
+        "mfa_totp": "Autentifikacna aplikacia",
+        "continue": "Pokracovat",
+        "totp_code": "Kod z autentifikacnej aplikacie",
+        "totp_note": "Otvorte Google Authenticator alebo kompatibilnu aplikaciu a zadajte aktualny sestmiestny kod.",
         "need_account": "Potrebujete ucet?",
         "sign_up_link": "Registrovat sa",
         "already_registered": "Uz mate ucet?",
@@ -448,18 +465,80 @@ def oauth_authorize_login(
             resource=resolved_resource,
             state=state,
         )
-    code = generate_one_time_code()
-    store.save_registration_code(email=_oauth_login_code_key(email=user.email), code=code)
-    scheduler.enqueue(
-        recipient=user.email,
-        subject="Your MCP OAuth login code",
-        body=(
-            f"Hello {user.full_name},\n\n"
-            f"your one time MCP OAuth login code is: {code}\n"
-            "The code expires in 30 minutes.\n"
-        ),
-        metadata={"event": "mcp_oauth_login_code", "user_id": user.user_id, "client_id": client_id},
+    if _user_has_totp_enabled(store=store, user=user):
+        return HTMLResponse(
+            _oauth_mfa_method_form_html(
+                locale=_mcp_locale(request),
+                email=user.email,
+                response_type=response_type,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method,
+                state=state,
+                resource=resolved_resource,
+            )
+        )
+    _send_oauth_login_code(store=store, scheduler=scheduler, user=user, client_id=client_id)
+    return HTMLResponse(
+        _oauth_otp_form_html(
+            locale=_mcp_locale(request),
+            email=user.email,
+            response_type=response_type,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            state=state,
+            resource=resolved_resource,
+        )
     )
+
+
+@oauth_router.post("/oauth/authorize/mfa", response_class=HTMLResponse)
+def oauth_authorize_mfa_method(
+    request: Request,
+    response_type: str = Form(...),
+    client_id: str = Form(...),
+    redirect_uri: str = Form(...),
+    code_challenge: str = Form(...),
+    code_challenge_method: str = Form(...),
+    resource: str = Form(""),
+    email: str = Form(...),
+    mfa_method: str = Form(...),
+    state: str = Form(""),
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> HTMLResponse:
+    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
+    _validate_oauth_authorize_request(
+        response_type=response_type,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+        resource=resolved_resource,
+        expected_resource=_resource_url(request),
+    )
+    user = store.find_user_by_email(email=email)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    method = mfa_method.strip().lower()
+    if method == "totp":
+        return HTMLResponse(
+            _oauth_totp_form_html(
+                locale=_mcp_locale(request),
+                email=user.email,
+                response_type=response_type,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method,
+                state=state,
+                resource=resolved_resource,
+            )
+        )
+    _send_oauth_login_code(store=store, scheduler=scheduler, user=user, client_id=client_id)
     return HTMLResponse(
         _oauth_otp_form_html(
             locale=_mcp_locale(request),
@@ -486,6 +565,7 @@ def oauth_authorize_verify(
     resource: str = Form(""),
     email: str = Form(...),
     verification_code: str = Form(...),
+    mfa_method: str = Form("email"),
     state: str = Form(""),
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> Response:
@@ -499,13 +579,20 @@ def oauth_authorize_verify(
         resource=resolved_resource,
         expected_resource=_resource_url(request),
     )
-    if not _accepts_any_local_auth_code() and not store.verify_registration_code(
-        email=_oauth_login_code_key(email=email),
+    user = store.find_user_by_email(email=email)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not _verify_mcp_mfa_code(
+        store=store,
+        user=user,
+        method=mfa_method,
         code=verification_code,
+        email_code_key=_oauth_login_code_key(email=email),
     ):
         locale = _mcp_locale(request)
+        form_html = _oauth_totp_form_html if mfa_method.strip().lower() == "totp" else _oauth_otp_form_html
         return HTMLResponse(
-            _oauth_otp_form_html(
+            form_html(
                 locale=locale,
                 email=email,
                 response_type=response_type,
@@ -519,9 +606,6 @@ def oauth_authorize_verify(
             ),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
-    user = store.find_user_by_email(email=email)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     _save_mcp_otp_verification(store=store, user=user)
     return _redirect_with_oauth_authorization_code(
         store=store,
@@ -689,19 +773,40 @@ def mcp_login_submit(
         return HTMLResponse(
             _key_created_html(locale=_mcp_locale(request), api_key=raw_key, expires_at=expires_at)
         )
-    code = generate_one_time_code()
-    code_key = _mcp_login_code_key(email=user.email)
-    store.save_registration_code(email=code_key, code=code)
-    scheduler.enqueue(
-        recipient=user.email,
-        subject="Your MCP login code",
-        body=(
-            f"Hello {user.full_name},\n\n"
-            f"your one time MCP login code is: {code}\n"
-            "The code expires in 30 minutes.\n"
-        ),
-        metadata={"event": "mcp_login_code", "user_id": user.user_id},
+    if _user_has_totp_enabled(store=store, user=user):
+        return HTMLResponse(
+            _mfa_method_form_html(
+                locale=_mcp_locale(request),
+                email=user.email,
+                expires_in_days=expires_in_days,
+            )
+        )
+    _send_mcp_login_code(store=store, scheduler=scheduler, user=user)
+    return HTMLResponse(
+        _otp_form_html(locale=_mcp_locale(request), email=user.email, expires_in_days=expires_in_days)
     )
+
+
+@router.post("/login/mfa", response_class=HTMLResponse)
+def mcp_login_mfa_method(
+    request: Request,
+    email: str = Form(...),
+    mfa_method: str = Form(...),
+    expires_in_days: int = Form(1),
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> HTMLResponse:
+    if expires_in_days < 1 or expires_in_days > 365:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Expiry must be 1-365 days")
+    user = store.find_user_by_email(email=email)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    method = mfa_method.strip().lower()
+    if method == "totp":
+        return HTMLResponse(
+            _totp_form_html(locale=_mcp_locale(request), email=user.email, expires_in_days=expires_in_days)
+        )
+    _send_mcp_login_code(store=store, scheduler=scheduler, user=user)
     return HTMLResponse(
         _otp_form_html(locale=_mcp_locale(request), email=user.email, expires_in_days=expires_in_days)
     )
@@ -712,17 +817,25 @@ def mcp_login_verify(
     request: Request,
     email: str = Form(...),
     verification_code: str = Form(...),
+    mfa_method: str = Form("email"),
     expires_in_days: int = Form(1),
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> HTMLResponse:
     if expires_in_days < 1 or expires_in_days > 365:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Expiry must be 1-365 days")
-    if not _accepts_any_local_auth_code() and not store.verify_registration_code(
-        email=_mcp_login_code_key(email=email),
+    user = store.find_user_by_email(email=email)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not _verify_mcp_mfa_code(
+        store=store,
+        user=user,
+        method=mfa_method,
         code=verification_code,
+        email_code_key=_mcp_login_code_key(email=email),
     ):
+        form_html = _totp_form_html if mfa_method.strip().lower() == "totp" else _otp_form_html
         return HTMLResponse(
-            _otp_form_html(
+            form_html(
                 locale=_mcp_locale(request),
                 email=email,
                 expires_in_days=expires_in_days,
@@ -730,9 +843,7 @@ def mcp_login_verify(
             ),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
-    user = store.find_user_by_email(email=email)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    _save_mcp_otp_verification(store=store, user=user)
     raw_key, expires_at = _issue_mcp_api_key(store=store, user=user, expires_in_days=expires_in_days)
     return HTMLResponse(_key_created_html(locale=_mcp_locale(request), api_key=raw_key, expires_at=expires_at))
 
@@ -1534,7 +1645,7 @@ def _accepts_any_local_auth_code() -> bool:
 
 
 def _mcp_otp_reuse_window_hours() -> int:
-    raw_value = os.getenv("MCP_OTP_REUSE_WINDOW_HOURS", "24").strip()
+    raw_value = os.getenv("MFA_REUSE_WINDOW_HOURS", os.getenv("MCP_OTP_REUSE_WINDOW_HOURS", "24")).strip()
     try:
         value = int(raw_value)
     except ValueError:
@@ -1563,6 +1674,62 @@ def _save_mcp_otp_verification(*, store: ApiDatabaseStore, user: User) -> None:
         purpose=_MCP_OTP_VERIFICATION_PURPOSE,
         expires_in_hours=reuse_window_hours,
     )
+
+
+def _user_has_totp_enabled(*, store: ApiDatabaseStore, user: User) -> bool:
+    return bool(store.get_user_mfa_settings(user_id=user.user_id).totp_enabled)
+
+
+def _send_mcp_login_code(*, store: ApiDatabaseStore, scheduler: EmailScheduler, user: User) -> None:
+    code = generate_one_time_code()
+    store.save_registration_code(email=_mcp_login_code_key(email=user.email), code=code)
+    scheduler.enqueue(
+        recipient=user.email,
+        subject="Your MCP login code",
+        body=(
+            f"Hello {user.full_name},\n\n"
+            f"your one time MCP login code is: {code}\n"
+            "The code expires in 30 minutes.\n"
+        ),
+        metadata={"event": "mcp_login_code", "user_id": user.user_id},
+    )
+
+
+def _send_oauth_login_code(
+    *,
+    store: ApiDatabaseStore,
+    scheduler: EmailScheduler,
+    user: User,
+    client_id: str,
+) -> None:
+    code = generate_one_time_code()
+    store.save_registration_code(email=_oauth_login_code_key(email=user.email), code=code)
+    scheduler.enqueue(
+        recipient=user.email,
+        subject="Your MCP OAuth login code",
+        body=(
+            f"Hello {user.full_name},\n\n"
+            f"your one time MCP OAuth login code is: {code}\n"
+            "The code expires in 30 minutes.\n"
+        ),
+        metadata={"event": "mcp_oauth_login_code", "user_id": user.user_id, "client_id": client_id},
+    )
+
+
+def _verify_mcp_mfa_code(
+    *,
+    store: ApiDatabaseStore,
+    user: User,
+    method: str,
+    code: str,
+    email_code_key: str,
+) -> bool:
+    normalized_method = method.strip().lower()
+    if normalized_method == "totp":
+        settings = store.get_user_mfa_settings(user_id=user.user_id)
+        secret = reveal_totp_secret(settings.totp_secret_protected or "")
+        return bool(secret and verify_totp_code(secret=secret, code=code))
+    return _accepts_any_local_auth_code() or store.verify_registration_code(email=email_code_key, code=code)
 
 
 def _require_sign_up_consent(accepted: bool) -> None:
@@ -2273,6 +2440,90 @@ def _oauth_otp_form_html(
     )
 
 
+def _oauth_mfa_method_form_html(
+    *,
+    locale: str,
+    email: str,
+    response_type: str,
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    code_challenge_method: str,
+    state: str,
+    resource: str,
+) -> str:
+    hidden = _hidden_inputs(
+        {
+            "email": email,
+            "response_type": response_type,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": code_challenge_method,
+            "state": state,
+            "resource": resource,
+        }
+    )
+    return _mcp_auth_page_html(
+        locale=locale,
+        title=_mcp_t(locale, "choose_mfa_title"),
+        subtitle=_mcp_t(locale, "choose_mfa_subtitle"),
+        body_html=f"""    <form method="post" action="/oauth/authorize/mfa">
+{hidden}
+      <label class="field wide">{escape(_mcp_t(locale, "mfa_method"), quote=False)}
+        <select name="mfa_method" required>
+          <option value="email">{escape(_mcp_t(locale, "mfa_email"), quote=False)}</option>
+          <option value="totp">{escape(_mcp_t(locale, "mfa_totp"), quote=False)}</option>
+        </select>
+      </label>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "continue"), quote=False)}</button>
+    </form>
+""",
+    )
+
+
+def _oauth_totp_form_html(
+    *,
+    locale: str,
+    email: str,
+    response_type: str,
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    code_challenge_method: str,
+    state: str,
+    resource: str,
+    warning_key: str | None = None,
+) -> str:
+    hidden = _hidden_inputs(
+        {
+            "email": email,
+            "mfa_method": "totp",
+            "response_type": response_type,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": code_challenge_method,
+            "state": state,
+            "resource": resource,
+        }
+    )
+    return _mcp_auth_page_html(
+        locale=locale,
+        title=_mcp_t(locale, "oauth_verify_title"),
+        subtitle=_mcp_t(locale, "oauth_verify_subtitle"),
+        body_html=f"""{_warning_html(locale=locale, warning_key=warning_key)}    <p class="form-note">{escape(_mcp_t(locale, "totp_note"), quote=False)}</p>
+    <form method="post" action="/oauth/authorize/verify">
+{hidden}
+      <label class="field wide">{escape(_mcp_t(locale, "totp_code"), quote=False)}
+        <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
+      </label>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "authorize"), quote=False)}</button>
+    </form>
+""",
+    )
+
+
 def _otp_form_html(
     *,
     locale: str,
@@ -2290,6 +2541,53 @@ def _otp_form_html(
       <input name="email" type="hidden" value="{escaped_email}">
       <input name="expires_in_days" type="hidden" value="{expires_in_days}">
       <label class="field wide">{escape(_mcp_t(locale, "otp_code"), quote=False)}
+        <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
+      </label>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "generate_key"), quote=False)}</button>
+    </form>
+""",
+    )
+
+
+def _mfa_method_form_html(*, locale: str, email: str, expires_in_days: int) -> str:
+    escaped_email = escape(email, quote=True)
+    return _mcp_auth_page_html(
+        locale=locale,
+        title=_mcp_t(locale, "choose_mfa_title"),
+        subtitle=_mcp_t(locale, "choose_mfa_subtitle"),
+        body_html=f"""    <form method="post" action="/MCP/login/mfa">
+      <input name="email" type="hidden" value="{escaped_email}">
+      <input name="expires_in_days" type="hidden" value="{expires_in_days}">
+      <label class="field wide">{escape(_mcp_t(locale, "mfa_method"), quote=False)}
+        <select name="mfa_method" required>
+          <option value="email">{escape(_mcp_t(locale, "mfa_email"), quote=False)}</option>
+          <option value="totp">{escape(_mcp_t(locale, "mfa_totp"), quote=False)}</option>
+        </select>
+      </label>
+      <button class="primary-button" type="submit">{escape(_mcp_t(locale, "continue"), quote=False)}</button>
+    </form>
+""",
+    )
+
+
+def _totp_form_html(
+    *,
+    locale: str,
+    email: str,
+    expires_in_days: int,
+    warning_key: str | None = None,
+) -> str:
+    escaped_email = escape(email, quote=True)
+    return _mcp_auth_page_html(
+        locale=locale,
+        title=_mcp_t(locale, "verify_login_title"),
+        subtitle=_mcp_t(locale, "verify_login_subtitle"),
+        body_html=f"""{_warning_html(locale=locale, warning_key=warning_key)}    <p class="form-note">{escape(_mcp_t(locale, "totp_note"), quote=False)}</p>
+    <form method="post" action="/MCP/login/verify">
+      <input name="email" type="hidden" value="{escaped_email}">
+      <input name="mfa_method" type="hidden" value="totp">
+      <input name="expires_in_days" type="hidden" value="{expires_in_days}">
+      <label class="field wide">{escape(_mcp_t(locale, "totp_code"), quote=False)}
         <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
       </label>
       <button class="primary-button" type="submit">{escape(_mcp_t(locale, "generate_key"), quote=False)}</button>

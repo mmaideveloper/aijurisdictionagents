@@ -18,6 +18,13 @@
   flex-direction: column;
 }
 
+.app-shell__body--assistant {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .app-shell--assistant {
   height: 100vh;
   overflow: hidden;
@@ -1808,6 +1815,7 @@
 }
 
 input,
+select,
 textarea {
   padding: 0.8rem 1rem;
   border-radius: 12px;
@@ -2005,6 +2013,39 @@ textarea {
   color: var(--ink);
   cursor: default;
   opacity: 1;
+}
+
+.mfa-panel,
+.mfa-setup {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.mfa-setup {
+  margin-top: 1rem;
+}
+
+.mfa-setup img {
+  width: min(220px, 100%);
+  height: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.mfa-setup label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.mfa-setup input[readonly] {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
 
 .profile-field-list {

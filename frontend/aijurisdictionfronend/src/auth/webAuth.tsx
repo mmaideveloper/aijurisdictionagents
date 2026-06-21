@@ -24,6 +24,9 @@ export interface AuthUser {
   mcpApiKeyExpiresAt?: string;
   role?: string;
   accountCreatedAt?: string;
+  mfaTotpEnabled?: boolean;
+  mfaTotpPending?: boolean;
+  mfaTotpEnabledAt?: string;
 }
 
 interface ApiUserProfile {
@@ -45,7 +48,23 @@ interface ApiUserProfile {
   data_processing_consent_version?: string | null;
   mcp_api_key_expires_at?: string | null;
   created_at?: string | null;
+  mfa_totp_enabled?: boolean;
+  mfa_totp_pending?: boolean;
+  mfa_totp_enabled_at?: string | null;
 }
+
+export interface MfaChallenge {
+  mfaRequired: true;
+  mfaToken: string;
+  userId: string;
+  email: string;
+  methods: string[];
+  reuseWindowHours: number;
+}
+
+export type AuthSignInResult = "signed_in" | "otp_required" | "invalid_credentials";
+
+export type SignInResult = AuthSignInResult | { status: "mfa_required"; challenge: MfaChallenge };
 
 export interface AuthState {
   isAuthenticated: boolean;
@@ -54,16 +73,17 @@ export interface AuthState {
 }
 
 export interface AuthContextValue extends AuthState {
-  signIn: (email: string, password: string, verificationCode?: string) => Promise<AuthSignInResult>;
+  signIn: (email: string, password: string, verificationCode?: string) => Promise<SignInResult>;
   sendSignUpCode: (email: string) => Promise<void>;
   signUp: (input: SignUpInput) => Promise<boolean>;
   updateProfile: (input: ProfileUpdateInput) => Promise<AuthUser>;
   sendEmailChangeCode: (email: string) => Promise<void>;
   completeEmailChange: (email: string, verificationCode: string) => Promise<AuthUser>;
+  sendMfaEmailCode: (mfaToken: string) => Promise<void>;
+  verifyMfa: (mfaToken: string, method: string, verificationCode: string) => Promise<boolean>;
+  refreshUser: (userId: string) => Promise<AuthUser>;
   signOut: () => void;
 }
-
-export type AuthSignInResult = "signed_in" | "otp_required" | "invalid_credentials";
 
 export interface SignUpInput {
   phoneNumber: string;
@@ -95,7 +115,7 @@ export function apiProfileToAuthUser(profile: ApiUserProfile): AuthUser {
   const fullName = profile.full_name?.trim();
   const fallbackName = [firstName, lastName].filter(Boolean).join(" ").trim();
 
-  return {
+  const authUser: AuthUser = {
     userId: profile.user_id,
     phoneNumber: profile.phone_number?.trim() || undefined,
     email: profile.email,
@@ -116,11 +136,22 @@ export function apiProfileToAuthUser(profile: ApiUserProfile): AuthUser {
     accountCreatedAt: profile.created_at?.trim() || undefined,
     role: "JurisDigta user"
   };
+  if ("mfa_totp_enabled" in profile) {
+    authUser.mfaTotpEnabled = Boolean(profile.mfa_totp_enabled);
+  }
+  if ("mfa_totp_pending" in profile) {
+    authUser.mfaTotpPending = Boolean(profile.mfa_totp_pending);
+  }
+  if (profile.mfa_totp_enabled_at) {
+    authUser.mfaTotpEnabledAt = profile.mfa_totp_enabled_at;
+  }
+  return authUser;
 }
 
 interface SignInApiResult {
-  status: AuthSignInResult;
+  status: AuthSignInResult | "mfa_required";
   user?: AuthUser;
+  challenge?: MfaChallenge;
 }
 
 async function signInWithApi(email: string, password: string, verificationCode?: string): Promise<SignInApiResult> {
@@ -149,7 +180,26 @@ async function signInWithApi(email: string, password: string, verificationCode?:
     throw new Error(await parseAuthError(response));
   }
 
-  return { status: "signed_in", user: apiProfileToAuthUser((await response.json()) as ApiUserProfile) };
+  const payload = (await response.json()) as ApiUserProfile & {
+    mfa_required?: boolean;
+    mfa_token?: string;
+    methods?: string[];
+    reuse_window_hours?: number;
+  };
+  if (payload.mfa_required && payload.mfa_token) {
+    return {
+      status: "mfa_required",
+      challenge: {
+        mfaRequired: true,
+        mfaToken: payload.mfa_token,
+        userId: payload.user_id,
+        email: payload.email,
+        methods: payload.methods ?? ["email"],
+        reuseWindowHours: payload.reuse_window_hours ?? 24
+      }
+    };
+  }
+  return { status: "signed_in", user: apiProfileToAuthUser(payload) };
 }
 
 async function sendSignUpCodeWithApi(email: string): Promise<void> {
@@ -326,7 +376,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   });
 
-  const signIn = React.useCallback(async (email: string, password: string, verificationCode?: string) => {
+  const signIn = React.useCallback(async (email: string, password: string, verificationCode?: string): Promise<SignInResult> => {
     const result = await signInWithApi(email, password, verificationCode);
     if (result.status === "invalid_credentials") {
       writeStoredUser(null);
@@ -335,6 +385,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     if (result.status === "otp_required") {
       return "otp_required";
+    }
+    if (result.status === "mfa_required") {
+      writeStoredUser(null);
+      setState({ isAuthenticated: false, user: null, isAuthLoading: false });
+      return { status: "mfa_required", challenge: result.challenge as MfaChallenge };
     }
 
     const user = result.user;
@@ -352,6 +407,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = React.useCallback(async (input: SignUpInput) => {
     const user = await signUpWithApi(input);
+    writeStoredUser(user);
+    setState({ isAuthenticated: true, user, isAuthLoading: false });
+    return true;
+  }, []);
+
+  const sendMfaEmailCode = React.useCallback(async (mfaToken: string) => {
+    const config = chatApiRuntimeConfig();
+    const response = await fetch(`${config.baseUrl}/v1/users/sign-in/mfa/send-email-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": config.apiKey },
+      body: JSON.stringify({ mfa_token: mfaToken })
+    });
+    if (!response.ok) {
+      throw new Error(await parseAuthError(response));
+    }
+  }, []);
+
+  const verifyMfa = React.useCallback(async (mfaToken: string, method: string, verificationCode: string) => {
+    const config = chatApiRuntimeConfig();
+    const response = await fetch(`${config.baseUrl}/v1/users/sign-in/mfa/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": config.apiKey },
+      body: JSON.stringify({
+        mfa_token: mfaToken,
+        method,
+        verification_code: verificationCode
+      })
+    });
+    if (response.status === 400 || response.status === 401) {
+      return false;
+    }
+    if (!response.ok) {
+      throw new Error(await parseAuthError(response));
+    }
+    const user = apiProfileToAuthUser((await response.json()) as ApiUserProfile);
     writeStoredUser(user);
     setState({ isAuthenticated: true, user, isAuthLoading: false });
     return true;
@@ -393,6 +483,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [state.user]
   );
 
+  const refreshUser = React.useCallback(async (userId: string) => {
+    const config = chatApiRuntimeConfig();
+    const response = await fetch(`${config.baseUrl}/v1/users/${userId}`, {
+      headers: { "x-api-key": config.apiKey }
+    });
+    if (!response.ok) {
+      throw new Error(await parseAuthError(response));
+    }
+    const user = apiProfileToAuthUser((await response.json()) as ApiUserProfile);
+    writeStoredUser(user);
+    setState({ isAuthenticated: true, user, isAuthLoading: false });
+    return user;
+  }, []);
+
   const signOut = React.useCallback(() => {
     writeStoredUser(null);
     setState({ isAuthenticated: false, user: null, isAuthLoading: false });
@@ -407,9 +511,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateProfile,
       sendEmailChangeCode,
       completeEmailChange,
+      sendMfaEmailCode,
+      verifyMfa,
+      refreshUser,
       signOut
     }),
-    [state, signIn, sendSignUpCode, signUp, updateProfile, sendEmailChangeCode, completeEmailChange, signOut]
+    [
+      state,
+      signIn,
+      sendSignUpCode,
+      signUp,
+      updateProfile,
+      sendEmailChangeCode,
+      completeEmailChange,
+      sendMfaEmailCode,
+      verifyMfa,
+      refreshUser,
+      signOut
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

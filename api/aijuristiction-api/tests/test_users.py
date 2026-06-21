@@ -13,6 +13,7 @@ from app.services.email import EmailNotificationService
 from app.services.email_scheduler import EmailScheduler
 from app.services.email_queue import EmailQueueConfig, EmailQueueStore
 from app.users.api import get_email_scheduler, get_user_store
+from app.users.totp import current_totp_code
 
 client = TestClient(app)
 mcp_client = TestClient(mcp_app)
@@ -490,6 +491,85 @@ def test_local_auth_accepts_any_sign_in_code_when_enabled(monkeypatch, tmp_path:
 
     assert verify_response.status_code == 200
     assert verify_response.json()["device_auth_token"]
+
+
+def test_totp_enrollment_and_web_mfa_login_reuse(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("MFA_REUSE_WINDOW_HOURS", "24")
+
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900555111",
+            "email": "totp-web@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+
+    start_response = client.post(
+        f"/v1/users/{user_id}/mfa/totp/start",
+        headers=AUTH_HEADERS,
+    )
+    assert start_response.status_code == 200
+    enrollment = start_response.json()
+    assert enrollment["manual_setup_key"]
+    assert enrollment["provisioning_uri"].startswith("otpauth://totp/")
+    assert enrollment["totp_pending"] is True
+
+    confirm_response = client.post(
+        f"/v1/users/{user_id}/mfa/totp/confirm",
+        headers=AUTH_HEADERS,
+        json={"verification_code": current_totp_code(secret=enrollment["manual_setup_key"])},
+    )
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["mfa_totp_enabled"] is True
+
+    first_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={"email": "totp-web@example.com", "password": "secret-pass"},
+    )
+    assert first_login.status_code == 200
+    assert first_login.json()["user_id"] == user_id
+    assert "mfa_token" not in first_login.json()
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        conn.execute("DELETE FROM mcp_otp_verifications")
+        conn.commit()
+
+    challenged_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={"email": "totp-web@example.com", "password": "secret-pass"},
+    )
+    assert challenged_login.status_code == 200
+    challenge = challenged_login.json()
+    assert challenge["mfa_required"] is True
+    assert challenge["methods"] == ["email", "totp"]
+
+    verify_response = client.post(
+        "/v1/users/sign-in/mfa/verify",
+        headers=AUTH_HEADERS,
+        json={
+            "mfa_token": challenge["mfa_token"],
+            "method": "totp",
+            "verification_code": current_totp_code(secret=enrollment["manual_setup_key"]),
+        },
+    )
+    assert verify_response.status_code == 200
+    assert verify_response.json()["mfa_totp_enabled"] is True
+
+    reused_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={"email": "totp-web@example.com", "password": "secret-pass"},
+    )
+    assert reused_login.status_code == 200
+    assert reused_login.json()["user_id"] == user_id
+    assert "mfa_token" not in reused_login.json()
 
 
 def test_sign_up_rejects_duplicate_phone_and_email(monkeypatch, tmp_path: Path) -> None:

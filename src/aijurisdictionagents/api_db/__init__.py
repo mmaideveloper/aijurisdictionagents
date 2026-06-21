@@ -9,6 +9,7 @@ from .store import (
     PermanentMemoryEntry,
     SubscriptionPlan,
     User,
+    UserMfaSettings,
     UserSubscription,
     generate_one_time_code,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "PermanentMemoryEntry",
     "SubscriptionPlan",
     "User",
+    "UserMfaSettings",
     "UserSubscription",
     "generate_one_time_code",
 ]

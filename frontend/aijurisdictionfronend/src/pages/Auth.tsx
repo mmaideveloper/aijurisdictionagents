@@ -1,11 +1,11 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../auth/webAuth";
+import { MfaChallenge, useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
 const Auth: React.FC = () => {
   const { t } = useLanguage();
-  const { isAuthenticated, user, signIn, sendSignUpCode, signUp, signOut } = useAuth();
+  const { isAuthenticated, user, signIn, sendSignUpCode, signUp, signOut, sendMfaEmailCode, verifyMfa } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -14,6 +14,9 @@ const Auth: React.FC = () => {
   const [phoneNumber, setPhoneNumber] = React.useState("");
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [mfaChallenge, setMfaChallenge] = React.useState<MfaChallenge | null>(null);
+  const [mfaMethod, setMfaMethod] = React.useState("totp");
+  const [mfaCode, setMfaCode] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isSendingRegistrationOtp, setIsSendingRegistrationOtp] = React.useState(false);
   const [isRegistering, setIsRegistering] = React.useState(false);
@@ -36,7 +39,19 @@ const Auth: React.FC = () => {
         setMessage(t("authLoginOtpSent"));
         return;
       }
+      if (typeof result !== "string" && result.status === "mfa_required") {
+        const preferredMethod = result.challenge.methods.includes("totp") ? "totp" : "email";
+        setMfaChallenge(result.challenge);
+        setMfaMethod(preferredMethod);
+        if (preferredMethod === "email") {
+          await sendMfaEmailCode(result.challenge.mfaToken);
+        }
+        setError(null);
+        setMessage(t("authMfaRequired"));
+        return;
+      }
       setError(null);
+      setMfaChallenge(null);
       setMessage(t("authSignedIn"));
       navigate("/app/assistant");
     } catch (signInError) {
@@ -102,6 +117,42 @@ const Auth: React.FC = () => {
     }
   };
 
+  const handleMfaMethodChange = async (nextMethod: string) => {
+    setMfaMethod(nextMethod);
+    setMfaCode("");
+    setError(null);
+    if (nextMethod === "email" && mfaChallenge) {
+      try {
+        await sendMfaEmailCode(mfaChallenge.mfaToken);
+        setMessage(t("authMfaEmailSent"));
+      } catch (sendError) {
+        setError(sendError instanceof Error ? sendError.message : t("authSignInFailed"));
+      }
+    }
+  };
+
+  const handleVerifyMfa = async () => {
+    if (!mfaChallenge) {
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const ok = await verifyMfa(mfaChallenge.mfaToken, mfaMethod, mfaCode.trim());
+      if (!ok) {
+        setError(t("authMfaInvalid"));
+        return;
+      }
+      setError(null);
+      setMfaChallenge(null);
+      setMessage(t("authSignedIn"));
+      navigate("/app/assistant");
+    } catch (verifyError) {
+      setError(verifyError instanceof Error ? verifyError.message : t("authSignInFailed"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSignOut = () => {
     signOut();
     setMessage("Signed out.");
@@ -157,10 +208,43 @@ const Auth: React.FC = () => {
             type="button"
             className="button primary full"
             onClick={handleSignIn}
-            disabled={isSubmitting}
+            disabled={isSubmitting || Boolean(mfaChallenge)}
           >
             {isSubmitting ? t("authSigningIn") : t("authSignIn")}
           </button>
+          {mfaChallenge ? (
+            <div className="mfa-panel">
+              <label>
+                <span>{t("authMfaMethod")}</span>
+                <select value={mfaMethod} onChange={(event) => void handleMfaMethodChange(event.target.value)}>
+                  {mfaChallenge.methods.includes("email") ? (
+                    <option value="email">{t("authMfaEmail")}</option>
+                  ) : null}
+                  {mfaChallenge.methods.includes("totp") ? (
+                    <option value="totp">{t("authMfaTotp")}</option>
+                  ) : null}
+                </select>
+              </label>
+              <label>
+                <span>{mfaMethod === "totp" ? t("authMfaTotpCode") : t("authMfaEmailCode")}</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={mfaCode}
+                  onChange={(event) => setMfaCode(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="button primary full"
+                onClick={handleVerifyMfa}
+                disabled={isSubmitting || mfaCode.trim().length === 0}
+              >
+                {t("authMfaVerify")}
+              </button>
+            </div>
+          ) : null}
           <p className="hint">{t("authApiLoginHint")}</p>
           {error ? (
             <p className="hint" role="alert">

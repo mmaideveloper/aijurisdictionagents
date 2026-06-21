@@ -47,6 +47,17 @@ class User:
 
 
 @dataclass(frozen=True)
+class UserMfaSettings:
+    user_id: str
+    totp_enabled: bool
+    totp_pending: bool
+    totp_secret_protected: str | None
+    pending_totp_secret_protected: str | None
+    totp_enabled_at: str | None
+    updated_at: str
+
+
+@dataclass(frozen=True)
 class SubscriptionPlan:
     plan_code: str
     display_name: str
@@ -256,6 +267,24 @@ class ApiDatabaseStore:
                     expires_at TEXT NOT NULL,
                     verified_at TEXT NOT NULL,
                     PRIMARY KEY(user_id, purpose),
+                    FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS user_mfa_settings (
+                    user_id TEXT PRIMARY KEY,
+                    totp_secret_protected TEXT,
+                    pending_totp_secret_protected TEXT,
+                    totp_enabled_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS mfa_login_challenges (
+                    challenge_token_hash TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
                     FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
                 );
 
@@ -782,6 +811,163 @@ class ApiDatabaseStore:
             )
             conn.commit()
             return False
+
+    def save_mfa_verification(self, *, user_id: str, purpose: str, expires_in_hours: int) -> None:
+        self.save_mcp_otp_verification(
+            user_id=user_id,
+            purpose=purpose,
+            expires_in_hours=expires_in_hours,
+        )
+
+    def has_valid_mfa_verification(self, *, user_id: str, purpose: str) -> bool:
+        return self.has_valid_mcp_otp_verification(user_id=user_id, purpose=purpose)
+
+    def get_user_mfa_settings(self, *, user_id: str) -> UserMfaSettings:
+        normalized_user_id = user_id.strip()
+        now = _now_iso()
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT
+                    user_id, totp_secret_protected, pending_totp_secret_protected,
+                    totp_enabled_at, created_at, updated_at
+                FROM user_mfa_settings
+                WHERE user_id = ?
+                """,
+                (normalized_user_id,),
+            )
+        if row is None:
+            return UserMfaSettings(
+                user_id=normalized_user_id,
+                totp_enabled=False,
+                totp_pending=False,
+                totp_secret_protected=None,
+                pending_totp_secret_protected=None,
+                totp_enabled_at=None,
+                updated_at=now,
+            )
+        return _row_to_user_mfa_settings(row)
+
+    def start_user_totp_enrollment(self, *, user_id: str, protected_secret: str) -> UserMfaSettings:
+        normalized_user_id = user_id.strip()
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO user_mfa_settings(
+                    user_id, totp_secret_protected, pending_totp_secret_protected,
+                    totp_enabled_at, created_at, updated_at
+                )
+                VALUES (?, NULL, ?, NULL, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    pending_totp_secret_protected = excluded.pending_totp_secret_protected,
+                    updated_at = excluded.updated_at
+                """,
+                (normalized_user_id, protected_secret, now, now),
+            )
+            conn.commit()
+        return self.get_user_mfa_settings(user_id=normalized_user_id)
+
+    def enable_user_totp(self, *, user_id: str) -> UserMfaSettings:
+        normalized_user_id = user_id.strip()
+        now = _now_iso()
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                "SELECT pending_totp_secret_protected FROM user_mfa_settings WHERE user_id = ?",
+                (normalized_user_id,),
+            )
+            if row is None or row[0] is None:
+                raise KeyError(f"Pending TOTP enrollment for user {normalized_user_id} not found")
+            self._execute(
+                conn,
+                """
+                UPDATE user_mfa_settings
+                SET
+                    totp_secret_protected = pending_totp_secret_protected,
+                    pending_totp_secret_protected = NULL,
+                    totp_enabled_at = ?,
+                    updated_at = ?
+                WHERE user_id = ?
+                """,
+                (now, now, normalized_user_id),
+            )
+            conn.commit()
+        return self.get_user_mfa_settings(user_id=normalized_user_id)
+
+    def disable_user_totp(self, *, user_id: str) -> UserMfaSettings:
+        normalized_user_id = user_id.strip()
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO user_mfa_settings(
+                    user_id, totp_secret_protected, pending_totp_secret_protected,
+                    totp_enabled_at, created_at, updated_at
+                )
+                VALUES (?, NULL, NULL, NULL, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    totp_secret_protected = NULL,
+                    pending_totp_secret_protected = NULL,
+                    totp_enabled_at = NULL,
+                    updated_at = excluded.updated_at
+                """,
+                (normalized_user_id, now, now),
+            )
+            conn.commit()
+        return self.get_user_mfa_settings(user_id=normalized_user_id)
+
+    def create_mfa_login_challenge(
+        self,
+        *,
+        user_id: str,
+        token: str,
+        expires_in_minutes: int = 10,
+    ) -> None:
+        normalized_user_id = user_id.strip()
+        now = datetime.now(timezone.utc)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO mfa_login_challenges(challenge_token_hash, user_id, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    _hash_mfa_challenge_token(token),
+                    normalized_user_id,
+                    (now + timedelta(minutes=max(expires_in_minutes, 1))).isoformat(),
+                    now.isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def consume_mfa_login_challenge(self, *, token: str) -> str | None:
+        token_hash = _hash_mfa_challenge_token(token)
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT user_id, expires_at
+                FROM mfa_login_challenges
+                WHERE challenge_token_hash = ?
+                """,
+                (token_hash,),
+            )
+            if row is None:
+                return None
+            self._execute(
+                conn,
+                "DELETE FROM mfa_login_challenges WHERE challenge_token_hash = ?",
+                (token_hash,),
+            )
+            conn.commit()
+        if not _is_future_iso_datetime(str(row[1])):
+            return None
+        return str(row[0])
 
     def issue_device_auth_token(
         self,
@@ -2047,6 +2233,32 @@ class ApiDatabaseStore:
             )
             """,
         )
+        self._execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS user_mfa_settings (
+                user_id TEXT PRIMARY KEY,
+                totp_secret_protected TEXT,
+                pending_totp_secret_protected TEXT,
+                totp_enabled_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+            """,
+        )
+        self._execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mfa_login_challenges (
+                challenge_token_hash TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+            """,
+        )
 
     def _ensure_case_document_schema(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -2359,6 +2571,21 @@ def _row_to_user(row: tuple[object, ...]) -> User:
     )
 
 
+def _row_to_user_mfa_settings(row: tuple[object, ...]) -> UserMfaSettings:
+    totp_secret = str(row[1]) if row[1] is not None else None
+    pending_secret = str(row[2]) if row[2] is not None else None
+    totp_enabled_at = str(row[3]) if row[3] is not None else None
+    return UserMfaSettings(
+        user_id=str(row[0]),
+        totp_enabled=bool(totp_secret and totp_enabled_at),
+        totp_pending=bool(pending_secret),
+        totp_secret_protected=totp_secret,
+        pending_totp_secret_protected=pending_secret,
+        totp_enabled_at=totp_enabled_at,
+        updated_at=str(row[5]),
+    )
+
+
 def _row_to_case(row: tuple[object, ...]) -> Case:
     values = list(row)
     return Case(
@@ -2384,6 +2611,10 @@ def _verify_password(password: str, encoded: str) -> bool:
     expected = bytes.fromhex(digest_hex)
     candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
     return hmac.compare_digest(candidate, expected)
+
+
+def _hash_mfa_challenge_token(token: str) -> str:
+    return hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
 
 
 def _to_json(value: dict[str, Any]) -> str:

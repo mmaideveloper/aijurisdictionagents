@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { chatApiRuntimeConfig } from "../api/chatClient";
 import { useLanguage } from "../components/LanguageProvider";
 import { useAuth } from "../auth/webAuth";
 import { BillingCadence, plans } from "../data/plans";
@@ -14,7 +15,7 @@ interface ProfileField {
 const Profile: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const { user, updateProfile, sendEmailChangeCode, completeEmailChange } = useAuth();
+  const { user, updateProfile, sendEmailChangeCode, completeEmailChange, refreshUser } = useAuth();
   const { cases, documents, selectCase } = useCases();
   const [cadence, setCadence] = useState<BillingCadence>("monthly");
   const [plan, setPlan] = useState(plans[0]?.id ?? "free");
@@ -40,6 +41,14 @@ const Profile: React.FC = () => {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [totpSetup, setTotpSetup] = useState<{
+    manualSetupKey: string;
+    qrCodeUri: string;
+  } | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [mfaMessage, setMfaMessage] = useState<string | null>(null);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [isMfaSubmitting, setIsMfaSubmitting] = useState(false);
   const selectedPlan = plans.find((option) => option.id === plan) ?? plans[0];
   const openedCases = cases.filter((caseItem) => caseItem.status !== "Completed");
 
@@ -159,6 +168,64 @@ const Profile: React.FC = () => {
       setProfileMessage(null);
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  const startTotpEnrollment = async () => {
+    if (!user) {
+      return;
+    }
+    setIsMfaSubmitting(true);
+    try {
+      const config = chatApiRuntimeConfig();
+      const response = await fetch(`${config.baseUrl}/v1/users/${user.userId}/mfa/totp/start`, {
+        method: "POST",
+        headers: { "x-api-key": config.apiKey }
+      });
+      if (!response.ok) {
+        throw new Error(t("profileMfaStartFailed"));
+      }
+      const payload = (await response.json()) as {
+        manual_setup_key: string;
+        qr_code_uri: string;
+      };
+      setTotpSetup({
+        manualSetupKey: payload.manual_setup_key,
+        qrCodeUri: payload.qr_code_uri
+      });
+      setMfaMessage(t("profileMfaScanPrompt"));
+      setMfaError(null);
+    } catch (error) {
+      setMfaError(error instanceof Error ? error.message : t("profileMfaStartFailed"));
+    } finally {
+      setIsMfaSubmitting(false);
+    }
+  };
+
+  const confirmTotpEnrollment = async () => {
+    if (!user) {
+      return;
+    }
+    setIsMfaSubmitting(true);
+    try {
+      const config = chatApiRuntimeConfig();
+      const response = await fetch(`${config.baseUrl}/v1/users/${user.userId}/mfa/totp/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": config.apiKey },
+        body: JSON.stringify({ verification_code: totpCode.trim() })
+      });
+      if (!response.ok) {
+        throw new Error(t("profileMfaInvalidCode"));
+      }
+      await refreshUser(user.userId);
+      setTotpSetup(null);
+      setTotpCode("");
+      setMfaMessage(t("profileMfaEnabled"));
+      setMfaError(null);
+    } catch (error) {
+      setMfaError(error instanceof Error ? error.message : t("profileMfaInvalidCode"));
+    } finally {
+      setIsMfaSubmitting(false);
     }
   };
 
@@ -414,6 +481,58 @@ const Profile: React.FC = () => {
               </div>
             ))}
           </dl>
+        </article>
+        <article className="profile-details card">
+          <h2>{t("profileMfaTitle")}</h2>
+          <p className="hint">
+            {user?.mfaTotpEnabled ? t("profileMfaTotpEnabled") : t("profileMfaTotpDisabled")}
+          </p>
+          <p className="hint">{t("profileMfaEmailFallback")}</p>
+          {!user?.mfaTotpEnabled ? (
+            <button
+              type="button"
+              className="button primary"
+              onClick={startTotpEnrollment}
+              disabled={isMfaSubmitting}
+            >
+              {t("profileMfaStartTotp")}
+            </button>
+          ) : null}
+          {totpSetup ? (
+            <div className="mfa-setup">
+              {totpSetup.qrCodeUri ? (
+                <img src={totpSetup.qrCodeUri} alt={t("profileMfaQrAlt")} />
+              ) : null}
+              <label>
+                <span>{t("profileMfaManualKey")}</span>
+                <input readOnly value={totpSetup.manualSetupKey} />
+              </label>
+              <label>
+                <span>{t("profileMfaConfirmCode")}</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={totpCode}
+                  onChange={(event) => setTotpCode(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="button primary"
+                onClick={confirmTotpEnrollment}
+                disabled={isMfaSubmitting || totpCode.trim().length === 0}
+              >
+                {t("profileMfaConfirm")}
+              </button>
+            </div>
+          ) : null}
+          {mfaError ? (
+            <p className="hint" role="alert">
+              {mfaError}
+            </p>
+          ) : null}
+          {mfaMessage ? <p className="hint">{mfaMessage}</p> : null}
         </article>
       </section>
     </div>

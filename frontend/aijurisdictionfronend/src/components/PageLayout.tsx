@@ -2,6 +2,7 @@ import React from "react";
 import { useLocation } from "react-router-dom";
 import { Navigation } from "./Navigation";
 import { Footer } from "./Footer";
+import { Sidebar } from "./Sidebar";
 
 export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { pathname } = useLocation();
@@ -10,7 +11,11 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
   if (hasAssistantLayout) {
     return (
       <div className="app-shell app-shell--assistant">
-        <main className="main-content">{children}</main>
+        <Navigation isSidebarCollapsed />
+        <div className="app-shell__body app-shell__body--assistant">
+          <Sidebar />
+          <main className="main-content">{children}</main>
+        </div>
       </div>
     );
   }

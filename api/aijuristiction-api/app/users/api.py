@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import importlib
 import os
+import base64
+import secrets
 import sqlite3
+from typing import cast
 from types import ModuleType
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
@@ -17,6 +20,13 @@ from app.users.notifications import (
     queue_registration_email,
     queue_subscription_change_email,
     queue_subscription_status_email,
+)
+from app.users.totp import (
+    generate_totp_secret,
+    protect_totp_secret,
+    reveal_totp_secret,
+    totp_provisioning_uri,
+    verify_totp_code,
 )
 
 from aijurisdictionagents.api_db import (
@@ -33,6 +43,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional for local sqlite-only
     _psycopg_module = None
 
 router = APIRouter(prefix="/v1/users", tags=["users"], dependencies=[Depends(require_api_key)])
+_GLOBAL_MFA_PURPOSE = "global_login"
 
 
 class UserProfileResponse(BaseModel):
@@ -54,6 +65,10 @@ class UserProfileResponse(BaseModel):
     data_processing_consent_version: str | None = None
     mcp_api_key_expires_at: str | None = None
     created_at: str | None = None
+    mfa_email_otp_available: bool = True
+    mfa_totp_enabled: bool = False
+    mfa_totp_pending: bool = False
+    mfa_totp_enabled_at: str | None = None
 
 
 class SignUpRequest(BaseModel):
@@ -191,6 +206,42 @@ class MCPApiKeyCreateResponse(BaseModel):
     user_id: str
     mcp_api_key: str
     mcp_api_key_expires_at: str
+
+
+class MfaRequiredResponse(BaseModel):
+    mfa_required: bool = True
+    mfa_token: str
+    user_id: str
+    email: str
+    methods: list[str]
+    reuse_window_hours: int
+
+
+class StartTotpEnrollmentResponse(BaseModel):
+    user_id: str
+    manual_setup_key: str
+    provisioning_uri: str
+    qr_code_uri: str
+    totp_pending: bool
+
+
+class ConfirmTotpEnrollmentRequest(BaseModel):
+    verification_code: str = Field(min_length=1, max_length=64)
+
+
+class DisableTotpRequest(BaseModel):
+    password: str | None = None
+    verification_code: str | None = None
+
+
+class VerifyMfaRequest(BaseModel):
+    mfa_token: str = Field(min_length=1)
+    method: str = Field(min_length=1)
+    verification_code: str = Field(min_length=1, max_length=64)
+
+
+class SendMfaEmailCodeRequest(BaseModel):
+    mfa_token: str = Field(min_length=1)
 
 
 _payment_sessions: dict[str, dict[str, str | int]] = {}
@@ -371,17 +422,27 @@ def sign_in_with_device_token(
     return _to_device_auth_user_profile_response(user=user, token=refreshed_token)
 
 
-@router.post("/sign-in", response_model=UserProfileResponse)
+@router.post("/sign-in", response_model=UserProfileResponse | MfaRequiredResponse)
 def sign_in(
     payload: SignInRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
-) -> UserProfileResponse:
+) -> UserProfileResponse | MfaRequiredResponse:
     user = store.authenticate_user(email=payload.email, password=payload.password)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
+        )
+    if _requires_mfa(store=store, user=user):
+        token = secrets.token_urlsafe(32)
+        store.create_mfa_login_challenge(user_id=user.user_id, token=token)
+        return MfaRequiredResponse(
+            mfa_token=token,
+            user_id=user.user_id,
+            email=user.email,
+            methods=_available_mfa_methods(store=store, user=user),
+            reuse_window_hours=_mfa_reuse_window_hours(),
         )
     device_id = (payload.device_id or "").strip()
     if device_id:
@@ -404,7 +465,57 @@ def sign_in(
                 purpose=otp_purpose,
                 expires_in_hours=_web_sign_in_otp_reuse_window_hours(),
             )
-    return _to_user_profile_response(user)
+    return _to_user_profile_response(user, store=store)
+
+
+@router.post("/sign-in/mfa/send-email-code", status_code=status.HTTP_202_ACCEPTED)
+def send_mfa_email_code(
+    payload: SendMfaEmailCodeRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+    scheduler: EmailScheduler = Depends(get_email_scheduler),
+) -> dict[str, str]:
+    user_id = _consume_and_reissue_mfa_challenge(store=store, token=payload.mfa_token)
+    user = store.get_user(user_id=user_id)
+    code = generate_one_time_code()
+    store.save_registration_code(email=_mfa_email_code_key(user_id=user.user_id), code=code)
+    scheduler.enqueue(
+        recipient=user.email,
+        subject="Your MFA login code",
+        body=(
+            f"Hello {user.full_name},\n\n"
+            f"your one time MFA login code is: {code}\n"
+            "The code expires in 30 minutes.\n"
+        ),
+        metadata={"event": "mfa_email_code", "user_id": user.user_id},
+    )
+    return {"status": "code_sent"}
+
+
+@router.post("/sign-in/mfa/verify", response_model=UserProfileResponse)
+def verify_mfa(
+    payload: VerifyMfaRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> UserProfileResponse:
+    user_id = store.consume_mfa_login_challenge(token=payload.mfa_token)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired MFA challenge")
+    user = store.get_user(user_id=user_id)
+    method = payload.method.strip().lower()
+    if method == "email":
+        if not _accepts_any_local_auth_code() and not store.verify_registration_code(
+            email=_mfa_email_code_key(user_id=user.user_id),
+            code=payload.verification_code,
+        ):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+    elif method == "totp":
+        settings = store.get_user_mfa_settings(user_id=user.user_id)
+        secret = reveal_totp_secret(settings.totp_secret_protected or "")
+        if secret is None or not verify_totp_code(secret=secret, code=payload.verification_code):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported MFA method")
+    _save_mfa_verification(store=store, user=user)
+    return _to_user_profile_response(user, store=store)
 
 
 @router.patch("/{user_id}", response_model=UserProfileResponse)
@@ -450,7 +561,59 @@ def update_user_profile(
         if not _is_unique_constraint_error(exc):
             raise
         raise _conflict_from_integrity_error(exc) from exc
-    return _to_user_profile_response(user)
+    return _to_user_profile_response(user, store=store)
+
+
+@router.post("/{user_id}/mfa/totp/start", response_model=StartTotpEnrollmentResponse)
+def start_totp_enrollment(
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> StartTotpEnrollmentResponse:
+    user = store.get_user(user_id=user_id)
+    secret = generate_totp_secret()
+    protected_secret = protect_totp_secret(secret)
+    settings = store.start_user_totp_enrollment(user_id=user.user_id, protected_secret=protected_secret)
+    uri = totp_provisioning_uri(secret=secret, email=user.email)
+    return StartTotpEnrollmentResponse(
+        user_id=user.user_id,
+        manual_setup_key=secret,
+        provisioning_uri=uri,
+        qr_code_uri=_qr_code_uri(uri),
+        totp_pending=settings.totp_pending,
+    )
+
+
+@router.post("/{user_id}/mfa/totp/confirm", response_model=UserProfileResponse)
+def confirm_totp_enrollment(
+    user_id: str,
+    payload: ConfirmTotpEnrollmentRequest,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> UserProfileResponse:
+    user = store.get_user(user_id=user_id)
+    settings = store.get_user_mfa_settings(user_id=user.user_id)
+    pending_secret = reveal_totp_secret(settings.pending_totp_secret_protected or "")
+    if pending_secret is None or not verify_totp_code(secret=pending_secret, code=payload.verification_code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+    store.enable_user_totp(user_id=user.user_id)
+    _save_mfa_verification(store=store, user=user)
+    return _to_user_profile_response(user, store=store)
+
+
+@router.delete("/{user_id}/mfa/totp", response_model=UserProfileResponse)
+def disable_totp(
+    user_id: str,
+    payload: DisableTotpRequest | None = None,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> UserProfileResponse:
+    user = store.get_user(user_id=user_id)
+    settings = store.get_user_mfa_settings(user_id=user.user_id)
+    if settings.totp_enabled:
+        code = payload.verification_code if payload is not None else None
+        secret = reveal_totp_secret(settings.totp_secret_protected or "")
+        if secret is None or not code or not verify_totp_code(secret=secret, code=code):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Valid TOTP code is required")
+    store.disable_user_totp(user_id=user.user_id)
+    return _to_user_profile_response(user, store=store)
 
 
 @router.post("/{user_id}/email-change/send-code", status_code=status.HTTP_202_ACCEPTED)
@@ -533,6 +696,15 @@ def delete_user_mcp_api_key(
 ) -> UserProfileResponse:
     user = store.clear_user_mcp_api_key(user_id=user_id)
     return _to_user_profile_response(user)
+
+
+@router.get("/{user_id}", response_model=UserProfileResponse)
+def get_user_profile(
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_user_store),
+) -> UserProfileResponse:
+    user = store.get_user(user_id=user_id)
+    return _to_user_profile_response(user, store=store)
 
 
 @router.get("/subscriptions/plans", response_model=list[SubscriptionPlanResponse])
@@ -686,7 +858,8 @@ def confirm_subscription_payment(
     return _to_subscription_response(item)
 
 
-def _to_user_profile_response(user: User) -> UserProfileResponse:
+def _to_user_profile_response(user: User, store: ApiDatabaseStore | None = None) -> UserProfileResponse:
+    mfa_settings = store.get_user_mfa_settings(user_id=user.user_id) if store is not None else None
     return UserProfileResponse(
         user_id=user.user_id,
         phone_number=user.phone_number,
@@ -706,6 +879,9 @@ def _to_user_profile_response(user: User) -> UserProfileResponse:
         data_processing_consent_version=user.data_processing_consent_version,
         mcp_api_key_expires_at=user.mcp_api_key_expires_at,
         created_at=user.created_at,
+        mfa_totp_enabled=bool(mfa_settings and mfa_settings.totp_enabled),
+        mfa_totp_pending=bool(mfa_settings and mfa_settings.totp_pending),
+        mfa_totp_enabled_at=mfa_settings.totp_enabled_at if mfa_settings else None,
     )
 
 
@@ -786,6 +962,66 @@ def _send_web_sign_in_code(
         ),
         metadata={"event": "sign_in_code", "user_id": user.user_id, "channel": "web"},
     )
+
+
+def _mfa_email_code_key(*, user_id: str) -> str:
+    return f"mfa-login:{user_id.strip()}"
+
+
+def _mfa_reuse_window_hours() -> int:
+    raw_value = os.getenv("MFA_REUSE_WINDOW_HOURS", os.getenv("MCP_OTP_REUSE_WINDOW_HOURS", "24")).strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return 24
+    return max(0, min(value, 168))
+
+
+def _requires_mfa(*, store: ApiDatabaseStore, user: User) -> bool:
+    settings = store.get_user_mfa_settings(user_id=user.user_id)
+    if not settings.totp_enabled:
+        return False
+    if _mfa_reuse_window_hours() < 1:
+        return True
+    return not store.has_valid_mfa_verification(user_id=user.user_id, purpose=_GLOBAL_MFA_PURPOSE)
+
+
+def _save_mfa_verification(*, store: ApiDatabaseStore, user: User) -> None:
+    reuse_window_hours = _mfa_reuse_window_hours()
+    if reuse_window_hours < 1:
+        return
+    store.save_mfa_verification(
+        user_id=user.user_id,
+        purpose=_GLOBAL_MFA_PURPOSE,
+        expires_in_hours=reuse_window_hours,
+    )
+
+
+def _available_mfa_methods(*, store: ApiDatabaseStore, user: User) -> list[str]:
+    methods = ["email"]
+    if store.get_user_mfa_settings(user_id=user.user_id).totp_enabled:
+        methods.append("totp")
+    return methods
+
+
+def _consume_and_reissue_mfa_challenge(*, store: ApiDatabaseStore, token: str) -> str:
+    user_id = store.consume_mfa_login_challenge(token=token)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired MFA challenge")
+    store.create_mfa_login_challenge(user_id=user_id, token=token)
+    return cast(str, user_id)
+
+
+def _qr_code_uri(provisioning_uri: str) -> str:
+    try:
+        import qrcode  # type: ignore[import-untyped]
+        import qrcode.image.svg  # type: ignore[import-untyped]
+    except ModuleNotFoundError:
+        return ""
+    factory = qrcode.image.svg.SvgPathImage
+    image = qrcode.make(provisioning_uri, image_factory=factory)
+    svg = cast(str, image.to_string(encoding="unicode"))
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
 
 
 def _accepts_any_local_auth_code() -> bool:

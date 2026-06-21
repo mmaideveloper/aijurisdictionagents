@@ -15,6 +15,7 @@ from app.main import app as api_app
 from app.mcp_main import app as mcp_app
 from app.mcp_main import _redact_header_value
 from app.mcp_main import _redact_payload
+from app.users.totp import current_totp_code
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 api_client = TestClient(api_app)
@@ -545,6 +546,59 @@ def test_mcp_login_invalid_otp_returns_localized_html_warning(monkeypatch, tmp_p
     assert "Overovaci kod je neplatny alebo expiroval" in verify_response.text
     assert 'name="email" type="hidden" value="mcp-login-warning@example.com"' in verify_response.text
     assert 'name="expires_in_days" type="hidden" value="7"' in verify_response.text
+
+
+def test_mcp_login_supports_totp_mfa_choice(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("MFA_REUSE_WINDOW_HOURS", "0")
+    sign_up_response = api_client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900777222",
+            "email": "mcp-totp@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+    start_response = api_client.post(f"/v1/users/{user_id}/mfa/totp/start", headers=AUTH_HEADERS)
+    assert start_response.status_code == 200
+    secret = start_response.json()["manual_setup_key"]
+    confirm_response = api_client.post(
+        f"/v1/users/{user_id}/mfa/totp/confirm",
+        headers=AUTH_HEADERS,
+        json={"verification_code": current_totp_code(secret=secret)},
+    )
+    assert confirm_response.status_code == 200
+
+    login_response = mcp_client.post(
+        "/MCP/login",
+        data={"email": "mcp-totp@example.com", "password": "secret-pass", "expires_in_days": "1"},
+    )
+    assert login_response.status_code == 200
+    assert "Choose MFA method" in login_response.text
+    assert 'option value="email"' in login_response.text
+    assert 'option value="totp"' in login_response.text
+
+    method_response = mcp_client.post(
+        "/MCP/login/mfa",
+        data={"email": "mcp-totp@example.com", "mfa_method": "totp", "expires_in_days": "1"},
+    )
+    assert method_response.status_code == 200
+    assert "Authenticator code" in method_response.text
+
+    verify_response = mcp_client.post(
+        "/MCP/login/verify",
+        data={
+            "email": "mcp-totp@example.com",
+            "mfa_method": "totp",
+            "verification_code": current_totp_code(secret=secret),
+            "expires_in_days": "1",
+        },
+    )
+    assert verify_response.status_code == 200
+    assert "MCP API key created" in verify_response.text
 
 
 def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path: Path) -> None:
