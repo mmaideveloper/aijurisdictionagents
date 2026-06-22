@@ -38,13 +38,11 @@ const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
   const { user } = useAuth();
-  const { activeCase, refreshCaseData } = useCases();
-  const sessionRef = React.useRef<{
-    language: string;
-    userId?: string;
-    caseId?: string;
-    sessionId: string;
-  } | null>(null);
+  const { activeCase, loadCaseData } = useCases();
+  const activeCaseId = activeCase?.id;
+  const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string } | null>(
+    null
+  );
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
     () => [
@@ -71,25 +69,17 @@ const AssistantThread: React.FC = () => {
 
         try {
           const userId = user?.userId;
-          const caseId = activeCase?.id;
           const existingSession = sessionRef.current;
           const session =
             existingSession?.language === language &&
             existingSession.userId === userId &&
-            existingSession.caseId === caseId
+            existingSession.caseId === activeCaseId
               ? existingSession
               : {
                   language,
                   userId,
-                  caseId,
-                  sessionId: (
-                    await createChatSession({
-                      language,
-                      userId,
-                      caseId,
-                      country: activeCase?.jurisdiction || undefined
-                    })
-                  ).id
+                  caseId: activeCaseId,
+                  sessionId: (await createChatSession({ language, userId, caseId: activeCaseId })).id
                 };
           sessionRef.current = session;
 
@@ -129,18 +119,13 @@ const AssistantThread: React.FC = () => {
             }
           }
 
-          if (session.caseId && userId) {
-            try {
-              await refreshCaseData(session.caseId);
-            } catch {
-              // The answer is still useful if the case-history refresh fails; the next case selection will retry it.
-            }
-          }
-
           yield {
             content: [{ type: "text", text: latestAssistantText || processingMessages.join("\n\n") }],
             status: { type: "complete", reason: "stop" }
           };
+          if (activeCaseId && userId) {
+            void loadCaseData(activeCaseId);
+          }
         } catch (error) {
           const status = error instanceof ApiRequestError && error.status ? String(error.status) : "network";
           const detail = error instanceof Error ? error.message : "Unknown error";
@@ -151,7 +136,7 @@ const AssistantThread: React.FC = () => {
         }
       }
     }),
-    [activeCase?.id, activeCase?.jurisdiction, language, refreshCaseData, t, user?.userId]
+    [activeCaseId, language, loadCaseData, t, user?.userId]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {

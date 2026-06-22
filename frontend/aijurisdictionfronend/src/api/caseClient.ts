@@ -60,7 +60,7 @@ export type FetchCaseDocumentInput = {
   caseId: string;
   docId: string;
   disposition?: "attachment" | "inline";
-  renderPdf?: boolean;
+  format?: "source" | "pdf";
   signal?: AbortSignal;
 };
 
@@ -183,21 +183,23 @@ export const buildCaseDocumentUrl = ({
   caseId,
   docId,
   disposition = "attachment",
-  renderPdf = false
+  format = "source"
 }: {
   userId: string;
   caseId: string;
   docId: string;
   disposition?: "attachment" | "inline";
-  renderPdf?: boolean;
+  format?: "source" | "pdf";
 }): string => {
   const config = chatApiRuntimeConfig();
   const params = new URLSearchParams({
     user_id: userId,
     disposition
   });
-  const pdfSuffix = renderPdf ? "/pdf" : "";
-  return `${config.baseUrl}/v1/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}${pdfSuffix}?${params.toString()}`;
+  const documentPath = `/v1/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}${
+    format === "pdf" ? "/pdf" : ""
+  }`;
+  return `${config.baseUrl}${documentPath}?${params.toString()}`;
 };
 
 const extractFilenameFromContentDisposition = (header: string | null): string | null => {
@@ -221,16 +223,16 @@ export const fetchCaseDocumentBlob = async ({
   caseId,
   docId,
   disposition = "attachment",
-  renderPdf = false,
+  format = "source",
   signal
 }: FetchCaseDocumentInput): Promise<FetchedCaseDocument> => {
   const config = chatApiRuntimeConfig();
-  const url = buildCaseDocumentUrl({ userId, caseId, docId, disposition, renderPdf });
+  const url = buildCaseDocumentUrl({ userId, caseId, docId, disposition, format });
 
   consoleLogger.info("Fetching case document", {
-    path: `/v1/cases/${caseId}/documents/${docId}${renderPdf ? "/pdf" : ""}`,
+    path: `/v1/cases/${caseId}/documents/${docId}${format === "pdf" ? "/pdf" : ""}`,
     disposition,
-    renderPdf,
+    format,
     url
   });
 
@@ -244,7 +246,7 @@ export const fetchCaseDocumentBlob = async ({
       signal
     });
   } catch (error) {
-    consoleLogger.error("Case document request failed", { url, disposition }, error);
+    consoleLogger.error("Case document request failed", { url, disposition, format }, error);
     throw new ApiRequestError(
       "network",
       "Network request failed. Check API availability, CORS, and URL/protocol."
@@ -256,7 +258,8 @@ export const fetchCaseDocumentBlob = async ({
     consoleLogger.warn("Case document request failed", {
       status: response.status,
       detail,
-      disposition
+      disposition,
+      format
     });
     throw new ApiRequestError("http", detail, response.status);
   }
@@ -264,7 +267,7 @@ export const fetchCaseDocumentBlob = async ({
   const contentType = response.headers.get("Content-Type") || "application/octet-stream";
   const filename =
     extractFilenameFromContentDisposition(response.headers.get("Content-Disposition")) ||
-    `document-${docId}`;
+    `document-${docId}${format === "pdf" ? ".pdf" : ""}`;
 
   return {
     blob: await response.blob(),

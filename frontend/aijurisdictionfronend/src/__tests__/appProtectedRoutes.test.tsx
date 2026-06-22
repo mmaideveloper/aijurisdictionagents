@@ -74,6 +74,10 @@ vi.mock("../pages/Profile", () => ({
   default: () => <div>Profile Page</div>
 }));
 
+vi.mock("../pages/DocumentViewer", () => ({
+  default: () => <div>Document Viewer</div>
+}));
+
 vi.mock("../pages/Disclaimer", () => ({
   default: () => <div>Disclaimer</div>
 }));
@@ -187,6 +191,19 @@ describe("App protected routes", () => {
 
     expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("Profile Page")).toBeNull();
+  });
+
+  it("allows document viewer links to open without redirecting to auth", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/app/documents/view?caseId=case-1&docId=doc-1&userId=user-1"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Document Viewer")).toBeDefined();
+    expect(screen.queryByText("Auth Page")).toBeNull();
   });
 
   it("allows unauthenticated users to access /aktuality", () => {

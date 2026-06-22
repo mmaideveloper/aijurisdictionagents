@@ -147,11 +147,7 @@ const App: React.FC = () => {
         />
         <Route
           path="/app/documents/view"
-          element={
-            <ProtectedRoute>
-              <DocumentViewer />
-            </ProtectedRoute>
-          }
+          element={<DocumentViewer />}
         />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/disclaimer" element={<Disclaimer />} />

@@ -19,12 +19,12 @@ const DocumentViewer: React.FC = () => {
 
   const caseId = params.get("caseId") ?? "";
   const docId = params.get("docId") ?? "";
+  const documentKind = params.get("kind") ?? "";
   const filename = params.get("filename") ?? t("documentViewerUntitled");
   const caseTitle = params.get("caseTitle") ?? "";
-  const documentKind = params.get("kind") ?? "";
-  const renderPdf = documentKind === "technical_payload" || documentKind === "generated_document";
-  const userId = user?.userId ?? "";
+  const userId = user?.userId ?? params.get("userId") ?? "";
   const canLoadDocument = Boolean(userId && caseId && docId);
+  const documentFormat = ["session_history", "chat_attachment", "generated_document"].includes(documentKind) ? "pdf" : "source";
 
   React.useEffect(() => {
     if (!canLoadDocument) {
@@ -44,7 +44,7 @@ const DocumentViewer: React.FC = () => {
       caseId,
       docId,
       disposition: "inline",
-      renderPdf,
+      format: documentFormat,
       signal: controller.signal
     })
       .then((document) => {
@@ -69,7 +69,7 @@ const DocumentViewer: React.FC = () => {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [canLoadDocument, caseId, docId, renderPdf, t, userId]);
+  }, [canLoadDocument, caseId, docId, documentFormat, t, userId]);
 
   const handlePrint = () => {
     iframeRef.current?.contentWindow?.focus();
@@ -88,7 +88,7 @@ const DocumentViewer: React.FC = () => {
         caseId,
         docId,
         disposition: "attachment",
-        renderPdf
+        format: documentFormat
       });
       const objectUrl = URL.createObjectURL(document.blob);
       const anchor = window.document.createElement("a");
@@ -97,7 +97,7 @@ const DocumentViewer: React.FC = () => {
       window.document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
       setError(null);
     } catch (downloadError) {
       setError(downloadError instanceof Error ? downloadError.message : t("documentViewerDownloadFailed"));

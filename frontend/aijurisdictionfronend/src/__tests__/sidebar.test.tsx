@@ -14,6 +14,12 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => navigate
 }));
 
+vi.mock("../auth/webAuth", () => ({
+  useAuth: () => ({
+    user: { userId: "user-1" }
+  })
+}));
+
 vi.mock("../components/LanguageProvider", () => ({
   useLanguage: () => ({
     t: (key: string) =>

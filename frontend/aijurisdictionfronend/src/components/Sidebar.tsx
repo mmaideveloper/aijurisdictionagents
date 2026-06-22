@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { useCases } from "../state/CaseProvider";
+import { useCases, type CaseDocumentRecord } from "../state/CaseProvider";
+import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "./LanguageProvider";
 import { BsBoxArrowLeft } from "react-icons/bs";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
@@ -23,6 +24,7 @@ type SidebarProps = {
 export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const navigate = useNavigate();
   const { cases, activeCase, selectCase, isLoadingCases, caseLoadError } = useCases();
+  const { user } = useAuth();
   const { t } = useLanguage();
   const [selectedChatId, setSelectedChatId] = React.useState<string | null>(null);
   const latestChatId = activeCase?.interactionHistory.at(-1)?.id ?? null;
@@ -42,19 +44,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
     );
   }, [activeCase, selectedChatId]);
 
-  const openDocument = (document: { id: string; originalFilename: string; kind?: string }) => {
+  const openDocument = (document: CaseDocumentRecord) => {
     if (!activeCase) {
       return;
     }
     const params = new URLSearchParams({
       caseId: activeCase.id,
       docId: document.id,
+      kind: document.kind,
       filename: document.originalFilename,
-      caseTitle: activeCase.title
+      caseTitle: activeCase.title,
+      userId: user?.userId ?? ""
     });
-    if (document.kind) {
-      params.set("kind", document.kind);
-    }
     window.open(`/app/documents/view?${params.toString()}`, "_blank", "noopener,noreferrer");
   };
 

@@ -236,14 +236,14 @@ const FirstUserMessageConsumer: React.FC = () => {
 };
 
 const RefreshCaseDataConsumer: React.FC = () => {
-  const { cases, documents, selectCase, refreshCaseData } = useCases();
+  const { cases, documents, selectCase, loadCaseData } = useCases();
 
   return (
     <div>
       <button type="button" onClick={() => selectCase("case-api")}>
         Select API Case
       </button>
-      <button type="button" onClick={() => void refreshCaseData("case-api")}>
+      <button type="button" onClick={() => void loadCaseData("case-api")}>
         Refresh API Case
       </button>
       <div data-testid="case-count">{cases.length}</div>
@@ -482,7 +482,7 @@ describe("CaseProvider", () => {
       documents: [
         {
           doc_id: "doc-generated",
-          kind: "technical_payload",
+          kind: "generated_document",
           version: 1,
           original_filename: "splnomocnenie-sk-en.pdf",
           processing_status: "processed",

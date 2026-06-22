@@ -323,7 +323,7 @@ def _load_case_documents_for_llm(
     processed_entries: list[tuple[str, str, str, str]] = []
     processed_names_by_doc_id: dict[str, str] = {}
     for document in list_case_documents(case_id=case_id):
-        if document.kind not in {'uploaded', 'chat_attachment', 'session_history'}:
+        if document.kind not in {'uploaded', 'chat_attachment', 'session_history', 'generated_document'}:
             continue
         if document.processing_status == 'processed' and document.doc_id in contents_by_doc_id:
             name, text, vector = contents_by_doc_id[document.doc_id]
@@ -926,8 +926,8 @@ def _persist_direct_assistant_message(
     agent_name: str,
 ) -> Message:
     content = _validate_lawyer_output_message(session=session, content=content)
-    _persist_case_generated_documents_if_needed(session=session, content=content)
     content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
+    _persist_generated_case_document_if_needed(session=session, content=content)
     persisted_lawyer = _repository.add_message(
         Message(
             session_id=session_id,
@@ -1481,6 +1481,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 session=session,
                 content=_validate_lawyer_output_message(session=session, content=core_message.content),
             )
+            _persist_generated_case_document_if_needed(session=session, content=content)
         else:
             content = core_message.content
         core_conversation.append(core_message)
@@ -2612,111 +2613,6 @@ def _user_visible_text(content: str) -> str:
     return _strip_user_visible_technical_trailer(content[:start_index])
 
 
-def _persist_case_generated_documents_if_needed(*, session: Session, content: str) -> None:
-    case_id = (session.case_id or "").strip()
-    if not case_id:
-        return
-    case_update = _extract_case_update(content)
-    document_entries = _case_update_document_entries(case_update)
-    visible_text = _user_visible_text(content)
-    if not document_entries:
-        if not _looks_like_generated_case_document_message(visible_text):
-            return
-        document_entries = [
-            {
-                "title": _document_export_title_from_recommendation(
-                    context_lines=visible_text.splitlines(),
-                    document_kind="generic_case_document",
-                    language=session.language,
-                ),
-                "filename": "generated-document.txt",
-                "content": visible_text,
-            }
-        ]
-    try:
-        store = _get_store()
-        existing_count = store.count_case_documents(case_id=case_id)
-        next_version = existing_count + 1
-        for index, entry in enumerate(document_entries, start=1):
-            document_body = _generated_case_document_payload(
-                entry=entry,
-                fallback_visible_text=visible_text,
-            )
-            if not document_body:
-                continue
-            filename = _generated_case_document_entry_filename(entry=entry, index=index)
-            store.add_case_document(
-                case_id=case_id,
-                kind="generated_document",
-                version=next_version,
-                original_filename=filename,
-                payload=document_body.encode("utf-8"),
-                uploaded_by_user_id=str(session.user_id) if session.user_id else None,
-            )
-            next_version += 1
-    except Exception:
-        _LOGGER.warning(
-            "Failed to persist generated assistant documents as case documents",
-            extra={"case_id": case_id},
-            exc_info=True,
-        )
-
-
-def _generated_case_document_payload(
-    *,
-    entry: dict[str, Any],
-    fallback_visible_text: str,
-) -> str:
-    title = str(entry.get("title") or entry.get("name") or entry.get("filename") or "").strip()
-    content = str(entry.get("content") or entry.get("body") or entry.get("text") or "").strip()
-    notes = str(entry.get("notes") or "").strip()
-    lines = [line for line in (title, content, notes) if line]
-    if lines:
-        return "\n\n".join(lines)
-    return fallback_visible_text.strip()
-
-
-def _generated_case_document_entry_filename(*, entry: dict[str, Any], index: int) -> str:
-    raw_name = str(entry.get("filename") or entry.get("path") or entry.get("title") or "").strip()
-    filename = Path(raw_name).name if raw_name else ""
-    if not filename:
-        filename = f"generated-document-{index}.txt"
-    stem = Path(filename).stem.strip() or f"generated-document-{index}"
-    return f"{stem}.txt"
-
-
-def _looks_like_generated_case_document_message(content: str) -> bool:
-    normalized = _canonicalize_document_text(content)
-    if not normalized:
-        return False
-    document_markers = (
-        "splnomocnen",
-        "plnomoc",
-        "power of attorney",
-        "potvrdenie",
-        "predzalobna vyzva",
-        "najomna zmluva",
-        "zmluva",
-        "zaloba",
-        "navrh",
-        "legal document",
-    )
-    ready_markers = (
-        "finalne verzie",
-        "finalna verzia",
-        "konecna verzia",
-        "dokument je pripraven",
-        "dokumenty su pripravene",
-        "pripravene na stiahnutie",
-        "ready for download",
-        "final version",
-        "final versions",
-    )
-    return any(marker in normalized for marker in document_markers) and any(
-        marker in normalized for marker in ready_markers
-    )
-
-
 def _attach_technical_payload_to_case_if_needed(*, session: Session, content: str) -> str:
     payload = _extract_hidden_technical_payload(content)
     if payload is None:
@@ -2784,6 +2680,135 @@ def _persist_case_technical_payload(
             exc_info=True,
         )
         return None
+
+
+def _persist_generated_case_document_if_needed(*, session: Session, content: str) -> str | None:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return None
+    visible_text = _user_visible_text(content).strip()
+    if not _looks_like_generated_case_document_for_storage(visible_text):
+        return None
+
+    document_body = _generated_case_document_body_for_storage(visible_text)
+    if not document_body:
+        return None
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    filename = _generated_case_document_filename_for_storage(document_body, timestamp=timestamp)
+    try:
+        store = _get_store()
+        version = _next_generated_case_document_version(store=store, case_id=case_id)
+        doc_id = store.add_case_document(
+            case_id=case_id,
+            kind="generated_document",
+            version=version,
+            original_filename=filename,
+            payload=document_body.encode("utf-8"),
+            uploaded_by_user_id=str(session.user_id) if session.user_id else None,
+        )
+        return doc_id if isinstance(doc_id, str) else None
+    except Exception:
+        _LOGGER.warning(
+            "Failed to persist assistant final answer as a generated case document",
+            extra={"case_id": case_id},
+            exc_info=True,
+        )
+        return None
+
+
+def _looks_like_generated_case_document_for_storage(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    if not normalized or "?" in normalized[-180:]:
+        return False
+    document_markers = (
+        "splnomocnenie",
+        "power of attorney",
+        "potvrdenie",
+        "zmluva",
+        "vyzva",
+        "zaloba",
+        "navrh",
+        "dohoda",
+        "contract",
+        "agreement",
+    )
+    ready_markers = (
+        "dokument je pripraven",
+        "dokumenty su pripravene",
+        "finalne verzie",
+        "finalna verzia",
+        "konecna verzia",
+        "na stiahnutie",
+        "format pdf",
+        "tu je",
+        "tu su",
+    )
+    body_markers = (
+        "tymto",
+        "podpis",
+        "attorney",
+        "rights",
+        "company",
+        "splnomocnenec",
+        "splnomocnitel",
+        "zmluvne strany",
+    )
+    return (
+        any(marker in normalized for marker in document_markers)
+        and any(marker in normalized for marker in ready_markers)
+        and any(marker in normalized for marker in body_markers)
+    )
+
+
+def _generated_case_document_body_for_storage(content: str) -> str:
+    lines = content.strip().splitlines()
+    cleaned: list[str] = []
+    skip_markers = (
+        "dokument je pripraven",
+        "dokumenty su pripravene",
+        "pripraveny na stiahnutie",
+        "pripravene na stiahnutie",
+        "tu su finalne verzie",
+        "tu su finálne verzie",
+    )
+    for line in lines:
+        stripped = line.strip()
+        normalized = _canonicalize_document_text(stripped)
+        if normalized and any(marker in normalized for marker in skip_markers):
+            continue
+        cleaned.append(stripped)
+    body = "\n".join(cleaned).strip()
+    body = re.sub(r"^(?:[A-Za-z]+Slovakia|LawyerSlovakia)\s*:\s*", "", body).strip()
+    return body
+
+
+def _generated_case_document_filename_for_storage(content: str, *, timestamp: str) -> str:
+    for line in content.splitlines():
+        title = line.strip().strip("*#:- ")
+        if title:
+            slug = _filename_slug_for_generated_case_document(title)
+            if slug:
+                return f"{slug}-{timestamp}.txt"
+    return f"generated-document-{timestamp}.txt"
+
+
+def _filename_slug_for_generated_case_document(value: str) -> str:
+    without_accents = unicodedata.normalize("NFKD", value)
+    ascii_text = without_accents.encode("ascii", "ignore").decode("ascii").lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_text).strip("-")
+    return slug[:80].strip("-")
+
+
+def _next_generated_case_document_version(*, store: ApiDatabaseStore, case_id: str) -> int:
+    list_case_documents = getattr(store, "list_case_documents", None)
+    if not callable(list_case_documents):
+        return 1
+    versions = [
+        int(getattr(document, "version", 0) or 0)
+        for document in list_case_documents(case_id=case_id)
+        if getattr(document, "kind", "") == "generated_document"
+    ]
+    return (max(versions) + 1) if versions else 1
 
 
 def _case_document_download_url(*, session: Session, doc_id: str) -> str:

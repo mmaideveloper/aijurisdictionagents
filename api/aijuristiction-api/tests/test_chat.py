@@ -2647,6 +2647,51 @@ def test_slovak_company_query_removes_case_preposition_prefix() -> None:
     )
 
 
+def test_prepare_slovakia_direct_reply_runs_orsr_for_plain_company_name(monkeypatch) -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizanska 665, 059 18 Spisske Bystre",
+                        "status": "Aktivna",
+                    },
+                ),
+            )
+
+    monkeypatch.setattr(slovakia_service, "build_default_tool_registry", lambda: _FakeRegistry())
+    session = Session(country="SK", language="sk-SK")
+    current_content = "ESolutions SK s.r.o."
+    messages = [Message(session_id=session.id, role=MessageRole.USER, content=current_content)]
+    events: list[dict[str, object]] = []
+
+    preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=messages,
+        current_content=current_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+        processing_event_callback=events.append,
+    )
+
+    assert "TOOL-FIRST COMPANY LOOKUP MODE" in preparation.prompt_note
+    assert "Verified company name: ESolutions SK s.r.o." in preparation.prompt_note
+    assert "Verified registration number: 46491261" in preparation.prompt_note
+    assert any(event.get("tool_name") == "obchodny_register_company_check" for event in events)
+
+
 def test_slovak_payment_confirmation_final_request_uses_tool_first_direct_reply(monkeypatch) -> None:
     from app.chat.country_services import slovakia as slovakia_service
     from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
@@ -4803,16 +4848,15 @@ def test_assistant_technical_payload_is_saved_as_case_document_and_linked(monkey
     assert '"case"' not in visible
 
 
-def test_assistant_case_update_documents_are_saved_as_generated_case_documents(monkeypatch) -> None:
+def test_generated_assistant_document_is_saved_as_case_document(monkeypatch) -> None:
     import app.chat.api as chat_api
     from app.chat.models import Session
 
     stored_documents: list[dict[str, object]] = []
 
     class _FakeStore:
-        def count_case_documents(self, *, case_id: str) -> int:
-            assert case_id == "case-123"
-            return 0
+        def list_case_documents(self, *, case_id: str):
+            return []
 
         def add_case_document(
             self,
@@ -4834,7 +4878,7 @@ def test_assistant_case_update_documents_are_saved_as_generated_case_documents(m
                     "uploaded_by_user_id": uploaded_by_user_id,
                 }
             )
-            return f"doc-generated-{version}"
+            return "doc-generated"
 
     user_id = uuid4()
     session = Session(
@@ -4846,87 +4890,29 @@ def test_assistant_case_update_documents_are_saved_as_generated_case_documents(m
     )
     content = (
         "Tu su finalne verzie splnomocnenia v slovenskej a anglickej verzii.\n\n"
-        "CASE_UPDATE_JSON:\n"
-        "{"
-        '"case":{'
-        '"documents":['
-        '{"title":"Splnomocnenie - slovenska verzia","filename":"splnomocnenie-sk.pdf","content":"Slovensky text splnomocnenia."},'
-        '{"title":"Power of Attorney - English version","filename":"power-of-attorney-en.pdf","content":"English power of attorney text."}'
-        "]}}"
+        "**Splnomocnenie (slovenska verzia)**:\n"
+        "- Splnomocnenec: Emilia Matonokova\n"
+        "- Spolocnost: Esolutions SK s.r.o.\n"
+        "- Prava: Vsetky pravne ukony tykajuce sa pouzivania firemneho auta.\n"
+        "- Podpis: ________________________\n\n"
+        "**Power of Attorney (anglicka verzia)**:\n"
+        "- Attorney-in-fact: Emilia Matonokova\n"
+        "- Company: Esolutions SK s.r.o.\n"
+        "- Rights: All legal acts related to the use of the company vehicle.\n\n"
+        "Dokumenty su pripravene na stiahnutie."
     )
 
     monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
 
-    chat_api._persist_case_generated_documents_if_needed(
-        session=session,
-        content=content,
-    )
-    persisted_content = chat_api._attach_technical_payload_to_case_if_needed(
-        session=session,
-        content=content,
-    )
+    doc_id = chat_api._persist_generated_case_document_if_needed(session=session, content=content)
 
-    generated_documents = [
-        item for item in stored_documents if item["kind"] == "generated_document"
-    ]
-    assert len(generated_documents) == 2
-    assert generated_documents[0]["original_filename"] == "splnomocnenie-sk.txt"
-    assert generated_documents[1]["original_filename"] == "power-of-attorney-en.txt"
-    assert generated_documents[0]["uploaded_by_user_id"] == str(user_id)
-    assert "Slovensky text splnomocnenia." in str(generated_documents[0]["payload"])
-    assert "English power of attorney text." in str(generated_documents[1]["payload"])
-    assert "CASE_UPDATE_JSON" not in chat_api._user_visible_text(persisted_content)
-
-
-def test_assistant_final_document_message_without_document_entries_is_saved(monkeypatch) -> None:
-    import app.chat.api as chat_api
-    from app.chat.models import Session
-
-    stored_documents: list[dict[str, object]] = []
-
-    class _FakeStore:
-        def count_case_documents(self, *, case_id: str) -> int:
-            return 0
-
-        def add_case_document(
-            self,
-            *,
-            case_id: str,
-            kind: str,
-            version: int,
-            original_filename: str,
-            payload: bytes,
-            uploaded_by_user_id: str | None = None,
-        ) -> str:
-            stored_documents.append(
-                {
-                    "kind": kind,
-                    "original_filename": original_filename,
-                    "payload": payload.decode("utf-8"),
-                }
-            )
-            return "doc-generated"
-
-    session = Session(
-        user_id=uuid4(),
-        case_id="case-123",
-        country="SK",
-        language="SK",
-        discussion_type="advice",
-    )
-    content = (
-        "Tu su finalne verzie splnomocnenia v slovenskej a anglickej verzii.\n\n"
-        "Splnomocnenie\n\nSlovensky text.\n\nPower of Attorney\n\nEnglish text."
-    )
-
-    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
-
-    chat_api._persist_case_generated_documents_if_needed(session=session, content=content)
-
+    assert doc_id == "doc-generated"
     assert len(stored_documents) == 1
     assert stored_documents[0]["kind"] == "generated_document"
-    assert "Slovensky text" in str(stored_documents[0]["payload"])
-    assert "English text" in str(stored_documents[0]["payload"])
+    assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
+    assert str(stored_documents[0]["original_filename"]).endswith(".txt")
+    assert "Splnomocnenie" in str(stored_documents[0]["payload"])
+    assert "Dokumenty su pripravene" not in str(stored_documents[0]["payload"])
 
 
 def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None:

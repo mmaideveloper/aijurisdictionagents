@@ -79,7 +79,14 @@ def prepare_slovakia_direct_reply(
         current_content=current_content,
         prior_messages=prior_messages,
     )
-    if not asks_company_registry_info and not looks_like_company_document and not asks_share_transfer:
+    company_query = _extract_slovak_company_query(messages=messages, current_content=current_content)
+    has_company_query = bool(company_query)
+    if (
+        not asks_company_registry_info
+        and not looks_like_company_document
+        and not asks_share_transfer
+        and not has_company_query
+    ):
         non_company_prompt_note = _merge_prompt_notes(address_prompt_note, property_prompt_note)
         if non_company_prompt_note:
             return DirectReplyPreparation(supplemental_documents=[], prompt_note=non_company_prompt_note)
@@ -97,7 +104,6 @@ def prepare_slovakia_direct_reply(
         callback=processing_event_callback,
     )
 
-    company_query = _extract_slovak_company_query(messages=messages, current_content=current_content)
     if not company_query:
         return DirectReplyPreparation(supplemental_documents=[], prompt_note=address_prompt_note)
 

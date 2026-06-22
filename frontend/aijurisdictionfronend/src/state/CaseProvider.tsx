@@ -50,7 +50,7 @@ export type CaseWorkspace = {
 export type CaseDocumentRecord = {
   id: string;
   caseId: string;
-  kind?: string;
+  kind: string;
   originalFilename: string;
   mimeType: string;
   size: number;
@@ -103,9 +103,9 @@ type CaseContextValue = {
   isLoadingCases: boolean;
   caseLoadError: string | null;
   createCase: (input: CreateCaseInput) => Promise<CaseRecord>;
+  loadCaseData: (caseId: string) => Promise<void>;
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
-  refreshCaseData: (caseId: string) => Promise<void>;
   setContinueRequested: (value: boolean) => void;
   addInteraction: (caseId: string, actor: string, message: string) => void;
   sendCaseMessage: (input: SendCaseMessageInput) => Promise<SendCaseMessageResult>;
@@ -277,6 +277,7 @@ const buildDocumentRecord = (
 ): CaseDocumentRecord => ({
   id: `${caseId}-document-${index + 1}`,
   caseId,
+  kind: "uploaded",
   originalFilename: document.originalFilename,
   mimeType: document.mimeType,
   size: document.size,
@@ -454,9 +455,9 @@ const normalizeStoredDocument = (
   return {
     id: candidate.id,
     caseId,
+    kind: typeof candidate.kind === "string" && candidate.kind.trim() ? candidate.kind : "uploaded",
     originalFilename: candidate.originalFilename,
     mimeType: typeof candidate.mimeType === "string" ? candidate.mimeType : "application/octet-stream",
-    kind: typeof candidate.kind === "string" ? candidate.kind : undefined,
     size: candidate.size,
     sizeLabel:
       typeof candidate.sizeLabel === "string" && candidate.sizeLabel.trim()
@@ -656,7 +657,9 @@ const mapApiCase = (
   historyMessages: ApiCaseHistoryMessage[] = [],
   historyDocuments: ApiCaseDocument[] = []
 ): CaseRecord => {
-  const documents = historyDocuments.map((document) => mapApiDocument(apiCase.case_id, document));
+  const documents = historyDocuments
+    .filter((document) => document.kind !== "technical_payload")
+    .map((document) => mapApiDocument(apiCase.case_id, document));
   const createdAt = apiCase.created_at;
   return {
     id: apiCase.case_id,
@@ -986,9 +989,9 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoadingCases,
       caseLoadError,
       createCase,
+      loadCaseData,
       setActiveCase,
       selectCase,
-      refreshCaseData: loadCaseData,
       setContinueRequested,
       addInteraction,
       sendCaseMessage,
@@ -1007,9 +1010,9 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoadingCases,
       caseLoadError,
       createCase,
+      loadCaseData,
       setActiveCase,
       selectCase,
-      loadCaseData,
       setContinueRequested,
       addInteraction,
       sendCaseMessage,
