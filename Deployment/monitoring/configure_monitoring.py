@@ -289,7 +289,7 @@ def _set_grafana_home_dashboard(values: dict[str, str]) -> None:
                 with urlopen(request, timeout=5):
                     print("Grafana home dashboard set to JurisDigta Application Performance.")
                     return
-            except URLError:
+            except (OSError, URLError):
                 continue
         time.sleep(2)
     print("Warning: Grafana home dashboard preference could not be updated.", file=sys.stderr)
