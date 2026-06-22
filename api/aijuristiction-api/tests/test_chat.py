@@ -1387,7 +1387,7 @@ def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
     assert calls[0] == (
         "searchLaws",
         {
-            "query": "Co hovori zakon 40/1964 o kupnej zmluve?",
+            "query": "40/1964",
             "country_code": "SK",
             "limit": 3,
             "law_number": 40,

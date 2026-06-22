@@ -118,12 +118,15 @@ def _should_use_mcp_law_context(*, query: str, country: str, language: str | Non
 
 
 def _search_arguments(*, query: str, limit: int) -> dict[str, Any]:
+    match = _LAW_IDENTIFIER_RE.search(query)
+    search_query = query.strip()
+    if match is not None:
+        search_query = f"{int(match.group('number'))}/{int(match.group('year'))}"
     arguments: dict[str, Any] = {
-        "query": query.strip(),
+        "query": search_query,
         "country_code": "SK",
         "limit": limit,
     }
-    match = _LAW_IDENTIFIER_RE.search(query)
     if match is not None:
         arguments["law_number"] = int(match.group("number"))
         arguments["law_year"] = int(match.group("year"))
