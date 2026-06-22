@@ -1014,6 +1014,138 @@ def _build_uploaded_document_contract_confirmation_note(
     )
 
 
+def _build_legal_document_preparation_policy_note(*, content: str, country: str) -> str:
+    if not _is_legal_document_preparation_request(content):
+        return ""
+
+    lines = [
+        "LEGAL DOCUMENT PREPARATION MODE:",
+        "- Prepare legally structured documents according to the applicable law and the requested jurisdiction.",
+        "- If the user asks for the same document in multiple languages, multiple versions, or variants, prepare each "
+        "language/version/variant as a separate final document, not as sections combined into one document.",
+        "- If the user provides a table/CSV/list with multiple people, companies, addresses, recipients, attorneys-in-fact, "
+        "principals, or other parties, prepare one separate final document per row/person/entity. Example: a power of "
+        "attorney request with 100 attorneys-in-fact in a CSV requires 100 separate PDF documents.",
+        "- Do not mix Slovak and English final legal texts in one PDF unless the user explicitly requests one bilingual "
+        "comparison document instead of separate documents.",
+        "- For each final document, keep the party data scoped to that document only.",
+        "- When using CASE_UPDATE_JSON, represent each separate final document as its own case.documents entry with a "
+        "clear filename/path so export can create separate PDFs or a ZIP package.",
+        "- Before drafting a legal document, check the managed document-template catalog for the detected document type.",
+    ]
+
+    template_note = _legal_document_template_source_note(content=content, country=country)
+    if template_note:
+        lines.extend(template_note)
+    else:
+        lines.extend(
+            [
+                "- No matching managed template was found for this request.",
+                "- Use AIWebSearchAgent (AIInternetSearchAgent alias, if configured) to locate a reliable current legal "
+                "document body or official/professional template before drafting.",
+                "- In the user-facing response, include the URL/title/location from which the internet template/body was "
+                "downloaded or derived.",
+                "- If no reliable source can be found, state that clearly and ask for confirmation before drafting from "
+                "general legal knowledge.",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _legal_document_template_source_note(*, content: str, country: str) -> list[str]:
+    try:
+        score, template = get_document_template_store().find_best_match(
+            request_text=content,
+            country=(country or "SK").strip() or "SK",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning("Document-template lookup failed for legal document request | reason=%s", exc)
+        return [
+            "- Managed document-template lookup failed for this request.",
+            "- Use AIWebSearchAgent (AIInternetSearchAgent alias, if configured) to locate a reliable current legal "
+            "document body or official/professional template before drafting.",
+            "- In the user-facing response, include the URL/title/location from which the internet template/body was "
+            "downloaded or derived.",
+        ]
+    if score <= 0 or template is None:
+        return []
+
+    lines = [
+        f"- Managed template match: {template.title} ({template.template_key}), score {score}.",
+        f"- Managed template source location: {template.source_url}.",
+        "- Mention this managed template source location in the user-facing response when it influenced the draft.",
+    ]
+    if template.body.strip():
+        lines.append(
+            "- Use the managed template body as the primary drafting structure and replace all placeholders with "
+            "confirmed data."
+        )
+    else:
+        lines.extend(
+            [
+                "- The managed template record has metadata/source only and no stored body.",
+                "- Use AIWebSearchAgent (AIInternetSearchAgent alias, if configured) to fetch or verify the document body "
+                "from that source or another reliable current source before drafting.",
+                "- In the user-facing response, include the URL/title/location from which the internet template/body was "
+                "downloaded or derived.",
+            ]
+        )
+    return lines
+
+
+def _is_legal_document_preparation_request(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    document_markers = (
+        "splnomocnen",
+        "plna moc",
+        "power of attorney",
+        "zmluv",
+        "contract",
+        "agreement",
+        "dohod",
+        "potvrden",
+        "vyhlasen",
+        "navrh",
+        "ziadost",
+        "legal document",
+        "pravny dokument",
+        "dokument",
+        "pdf",
+    )
+    preparation_markers = (
+        "priprav",
+        "vytvor",
+        "vygeneruj",
+        "napis",
+        "spis",
+        "vypracuj",
+        "draft",
+        "prepare",
+        "create",
+        "generate",
+        "write",
+        "new",
+        "novu",
+        "nova",
+        "novy",
+    )
+    review_only_markers = (
+        "skontrol",
+        "posud",
+        "zhrn",
+        "summar",
+        "review",
+        "analyz",
+    )
+    if any(marker in normalized for marker in review_only_markers) and not any(
+        marker in normalized for marker in preparation_markers
+    ):
+        return False
+    return any(marker in normalized for marker in document_markers) and any(
+        marker in normalized for marker in preparation_markers
+    )
+
+
 def _is_contract_preparation_request(content: str) -> bool:
     normalized = _canonicalize_document_text(content)
     contract_markers = (
@@ -1207,6 +1339,12 @@ def _run_direct_lawyer_turn(
     )
     if uploaded_contract_note:
         prompt_override = f"{prompt_override}\n\n{uploaded_contract_note}"
+    legal_document_policy_note = _build_legal_document_preparation_policy_note(
+        content=content,
+        country=session.country,
+    )
+    if legal_document_policy_note:
+        prompt_override = f"{prompt_override}\n\n{legal_document_policy_note}"
     mcp_law_context = build_mcp_law_context(
         query=content,
         country=session.country,

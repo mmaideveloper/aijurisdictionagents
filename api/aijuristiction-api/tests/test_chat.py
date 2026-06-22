@@ -1609,6 +1609,11 @@ def test_uploaded_documents_contract_request_requires_extract_then_confirm_promp
     monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
     monkeypatch.setattr(
         chat_api,
+        "get_document_template_store",
+        lambda: SimpleNamespace(find_best_match=lambda **_kwargs: (0, None)),
+    )
+    monkeypatch.setattr(
+        chat_api,
         "prepare_country_direct_reply",
         lambda **_kwargs: SimpleNamespace(
             direct_reply=None,
@@ -1652,6 +1657,55 @@ def test_uploaded_documents_contract_request_requires_extract_then_confirm_promp
     assert "Udaje, ktore som nasiel v dokumentoch" in prompt
     assert "Suhlasite, aby som zmluvu pripravil z tychto udajov" in prompt
     assert "Do not generate or export the final contract until the user confirms" in prompt
+
+
+def test_legal_document_preparation_policy_requires_separate_outputs_and_web_source(monkeypatch) -> None:
+    import app.chat.api as chat_api
+
+    monkeypatch.setattr(
+        chat_api,
+        "get_document_template_store",
+        lambda: SimpleNamespace(find_best_match=lambda **_kwargs: (0, None)),
+    )
+
+    note = chat_api._build_legal_document_preparation_policy_note(
+        content="Priprav splnomocnenie v slovenskej a anglickej verzii z CSV so 100 splnomocnencami.",
+        country="SK",
+    )
+
+    assert "LEGAL DOCUMENT PREPARATION MODE" in note
+    assert "multiple languages" in note
+    assert "separate final document" in note
+    assert "100 separate PDF documents" in note
+    assert "case.documents entry" in note
+    assert "AIWebSearchAgent" in note
+    assert "include the URL/title/location" in note
+
+
+def test_legal_document_preparation_policy_includes_managed_template_source(monkeypatch) -> None:
+    import app.chat.api as chat_api
+
+    template = SimpleNamespace(
+        title="Splnomocnenie",
+        template_key="sk.civil.power_of_attorney",
+        source_url="https://example.test/templates/splnomocnenie",
+        body="",
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "get_document_template_store",
+        lambda: SimpleNamespace(find_best_match=lambda **_kwargs: (7, template)),
+    )
+
+    note = chat_api._build_legal_document_preparation_policy_note(
+        content="Priprav splnomocnenie na pouzivanie firemneho auta.",
+        country="SK",
+    )
+
+    assert "Managed template match: Splnomocnenie (sk.civil.power_of_attorney), score 7." in note
+    assert "Managed template source location: https://example.test/templates/splnomocnenie." in note
+    assert "metadata/source only and no stored body" in note
+    assert "AIWebSearchAgent" in note
 
 
 def test_uploaded_document_contract_confirmation_note_ignores_review_only_request() -> None:
