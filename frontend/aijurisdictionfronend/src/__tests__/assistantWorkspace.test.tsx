@@ -39,7 +39,21 @@ const labels: Record<string, string> = {
   assistantUserRole: "You",
   assistantInitialMessage: "JurisDigta Assistant is ready with JurisDigta API and MCP locked on.",
   assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
-  assistantApiErrorResponse: "The assistant could not reach the JurisDigta API. Status: {status}. Detail: {detail}"
+  assistantApiErrorResponse: "The assistant could not reach the JurisDigta API. Status: {status}. Detail: {detail}",
+  workspaceConfigurations: "Configurations",
+  commsTitle: "Communication modes",
+  commsSubtitle: "Choose chat, voice, or video agent.",
+  commsChat: "Chat",
+  commsVoice: "Voice",
+  commsVideo: "Video",
+  roleSelectorTitle: "Role perspective",
+  roleSelectorHint: "Adjust the AI answer to a concrete purpose.",
+  workspaceLawyerTitle: "AI lawyer",
+  roleIntentLawyer: "Explain my rights",
+  workspaceJudgeTitle: "AI judge",
+  roleIntentJudge: "Assess fairness",
+  workspaceOpposingTitle: "Opposing party",
+  roleIntentOpposing: "Challenge my argument"
 };
 
 vi.mock("../components/LanguageProvider", () => ({
@@ -52,6 +66,23 @@ vi.mock("../components/LanguageProvider", () => ({
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
     user: { userId: "user-1" }
+  })
+}));
+
+const caseActions = vi.hoisted(() => ({
+  setCaseRole: vi.fn(),
+  setCaseCommunicationMode: vi.fn()
+}));
+
+vi.mock("../state/CaseProvider", () => ({
+  useCases: () => ({
+    activeCase: {
+      id: "case-1",
+      selectedCommunicationMode: "Chat",
+      selectedRole: "AI Lawyer"
+    },
+    setCaseRole: caseActions.setCaseRole,
+    setCaseCommunicationMode: caseActions.setCaseCommunicationMode
   })
 }));
 
@@ -110,25 +141,29 @@ vi.mock("@assistant-ui/react", () => ({
 describe("AssistantWorkspace", () => {
   afterEach(() => {
     capturedAdapter = null;
+    caseActions.setCaseRole.mockReset();
+    caseActions.setCaseCommunicationMode.mockReset();
     vi.mocked(createChatSession).mockReset();
     vi.mocked(streamSession).mockReset();
     cleanup();
   });
 
-  it("renders the locked JurisDigta MCP and compliance guardrails", () => {
+  it("renders assistant workspace with configuration controls", () => {
     render(<AssistantWorkspace />);
 
     expect(screen.getByRole("heading", { name: "JurisDigta Assistant" })).toBeDefined();
-    expect(screen.getByText("Locked on")).toBeDefined();
-    expect(screen.getByText("Human approval")).toBeDefined();
-    expect(screen.getByText("AI-assisted draft")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Configurations" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Chat" })).toBeDefined();
+    expect(screen.getByText("AI lawyer")).toBeDefined();
+    expect(screen.getByText("Opposing party")).toBeDefined();
     expect(screen.queryByText("Production access uses JurisDigta account login")).toBeNull();
   });
 
-  it("does not show assistant modes or arbitrary MCP URL entry", () => {
+  it("does not show the static MCP news panel in the assistant workspace", () => {
     render(<AssistantWorkspace />);
 
-    expect(screen.queryByRole("complementary", { name: "Conversations" })).toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Capabilities" })).toBeNull();
+    expect(screen.queryByText("JurisDigta API and MCP are always attached.")).toBeNull();
     expect(screen.queryByRole("button", { name: "Current matter" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Legal search" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Verify company" })).toBeNull();

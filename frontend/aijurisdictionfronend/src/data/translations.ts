@@ -144,7 +144,13 @@ export const translations = {
       "Use a JurisDigta-native assistant workspace with mandatory JurisDigta MCP, transparent AI draft metadata, and human review for legal-risk outputs.",
     assistantDashboardBody:
       "Open the assistant workspace for legal search, document preparation, verification planning, and approval-gated tool calls.",
-    newsSubtitle: "Follow active assistant conversation areas outside the chat workspace.",
+    newsEyebrow: "Product updates",
+    newsSubtitle: "Read dated JurisDigta assistant notes, compliance updates, and operational mini-blogs.",
+    newsMcpDate: "22 June 2026",
+    newsApprovalDate: "21 June 2026",
+    newsMetadataDate: "20 June 2026",
+    newsMetadataBody:
+      "Assistant outputs keep visible metadata about AI drafting, legal-risk level, and required human oversight.",
     assistantThreadsTitle: "Conversations",
     assistantThreadCurrent: "Current matter",
     assistantThreadDocument: "Document preparation",
@@ -582,7 +588,13 @@ export const translations = {
       "Použite pracovisko asistenta JurisDigta s povinným JurisDigta MCP, transparentnými metadátami AI návrhov a ľudskou kontrolou právne rizikových výstupov.",
     assistantDashboardBody:
       "Otvorte pracovisko asistenta pre právne vyhľadávanie, prípravu dokumentov, plánovanie overovania a schvaľované volania nástrojov.",
-    newsSubtitle: "Sledujte aktívne konverzačné oblasti asistenta mimo chatovacieho pracoviska.",
+    newsEyebrow: "Produktové aktuality",
+    newsSubtitle: "Prečítajte si dátumované poznámky asistenta JurisDigta, compliance novinky a operačné mini-blogy.",
+    newsMcpDate: "22. jún 2026",
+    newsApprovalDate: "21. jún 2026",
+    newsMetadataDate: "20. jún 2026",
+    newsMetadataBody:
+      "Výstupy asistenta zachovávajú viditeľné metadáta o AI návrhu, úrovni právneho rizika a potrebnom ľudskom dohľade.",
     assistantThreadsTitle: "Konverzácie",
     assistantThreadCurrent: "Aktuálna vec",
     assistantThreadDocument: "Príprava dokumentu",
@@ -1020,7 +1032,13 @@ export const translations = {
       "Nutzen Sie einen JurisDigta-eigenen Assistenten-Workspace mit verpflichtendem JurisDigta MCP, transparenten KI-Entwurfsmetadaten und menschlicher Prüfung für rechtlich riskante Ausgaben.",
     assistantDashboardBody:
       "Öffnen Sie den Assistenten-Workspace für Rechtssuche, Dokumentvorbereitung, Verifizierungsplanung und genehmigungspflichtige Tool-Aufrufe.",
-    newsSubtitle: "Verfolgen Sie aktive Assistenten-Konversationsbereiche außerhalb des Chat-Workspace.",
+    newsEyebrow: "Produktneuigkeiten",
+    newsSubtitle: "Lesen Sie datierte JurisDigta-Assistentennotizen, Compliance-Updates und operative Mini-Blogs.",
+    newsMcpDate: "22. Juni 2026",
+    newsApprovalDate: "21. Juni 2026",
+    newsMetadataDate: "20. Juni 2026",
+    newsMetadataBody:
+      "Assistentenausgaben behalten sichtbare Metadaten zu KI-Entwurf, Rechtsrisiko und erforderlicher menschlicher Aufsicht.",
     assistantThreadsTitle: "Konversationen",
     assistantThreadCurrent: "Aktuelle Sache",
     assistantThreadDocument: "Dokumentvorbereitung",

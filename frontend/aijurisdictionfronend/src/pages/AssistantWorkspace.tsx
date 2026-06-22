@@ -8,10 +8,13 @@ import {
   type ChatModelAdapter,
   type ThreadMessageLike
 } from "@assistant-ui/react";
-import { BsArrowUpCircle, BsLockFill } from "react-icons/bs";
+import { BsArrowUpCircle } from "react-icons/bs";
+import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
 import { ApiRequestError, createChatSession, streamSession } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
+import { useCases } from "../state/CaseProvider";
+import type { CaseCommunicationMode, CaseRole } from "../state/CaseProvider";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
 
@@ -165,17 +168,121 @@ const AssistantThread: React.FC = () => {
   );
 };
 
+const AssistantConfigurations: React.FC = () => {
+  const { t } = useLanguage();
+  const { activeCase, setCaseRole, setCaseCommunicationMode } = useCases();
+
+  const communicationModeOptions = React.useMemo(
+    () => [
+      {
+        mode: "Chat" as CaseCommunicationMode,
+        label: t("commsChat"),
+        icon: <FiMessageSquare aria-hidden="true" />
+      },
+      {
+        mode: "Voice" as CaseCommunicationMode,
+        label: t("commsVoice"),
+        icon: <FiMic aria-hidden="true" />
+      },
+      {
+        mode: "Video" as CaseCommunicationMode,
+        label: t("commsVideo"),
+        icon: <FiVideo aria-hidden="true" />
+      }
+    ],
+    [t]
+  );
+
+  const roleOptions = React.useMemo(
+    () => [
+      {
+        role: "AI Lawyer" as CaseRole,
+        label: t("workspaceLawyerTitle"),
+        intent: t("roleIntentLawyer")
+      },
+      {
+        role: "AI Judge" as CaseRole,
+        label: t("workspaceJudgeTitle"),
+        intent: t("roleIntentJudge")
+      },
+      {
+        role: "Opposing Counsel" as CaseRole,
+        label: t("workspaceOpposingTitle"),
+        intent: t("roleIntentOpposing")
+      }
+    ],
+    [t]
+  );
+
+  return (
+    <div className="panel-card assistant-config-card">
+      <div className="panel-card__header">
+        <h2>{t("workspaceConfigurations")}</h2>
+      </div>
+      <div className="config-list">
+        <fieldset className="role-selector" disabled={!activeCase}>
+          <legend>{t("commsTitle")}</legend>
+          <p className="hint">{t("commsSubtitle")}</p>
+          <div className="segment-control" role="radiogroup">
+            {communicationModeOptions.map((option) => {
+              const isActive = activeCase?.selectedCommunicationMode === option.mode;
+              return (
+                <button
+                  key={option.mode}
+                  type="button"
+                  className={`segment-control__option${isActive ? " is-active" : ""}`}
+                  aria-pressed={isActive}
+                  aria-label={option.label}
+                  title={option.label}
+                  onClick={() => {
+                    if (activeCase) {
+                      setCaseCommunicationMode(activeCase.id, option.mode);
+                    }
+                  }}
+                >
+                  <span className="segment-control__icon">{option.icon}</span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <fieldset className="role-selector" disabled={!activeCase}>
+          <legend>{t("roleSelectorTitle")}</legend>
+          <p className="hint">{t("roleSelectorHint")}</p>
+          <div className="role-options" role="radiogroup">
+            {roleOptions.map((option) => {
+              const isActive = activeCase?.selectedRole === option.role;
+              return (
+                <label
+                  key={option.role}
+                  className={`role-option${isActive ? " is-active" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name={`assistant-case-role-${activeCase?.id ?? "current"}`}
+                    value={option.role}
+                    checked={isActive}
+                    onChange={() => {
+                      if (activeCase) {
+                        setCaseRole(activeCase.id, option.role);
+                      }
+                    }}
+                  />
+                  <span className="role-option__label">{option.label}</span>
+                  <span className="role-option__intent">{option.intent}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      </div>
+    </div>
+  );
+};
+
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
-
-  const capabilities = [
-    t("assistantCapabilityLawSearch"),
-    t("assistantCapabilityOrsr"),
-    t("assistantCapabilityPerson"),
-    t("assistantCapabilityScreening"),
-    t("assistantCapabilityCar"),
-    t("assistantCapabilityLocation")
-  ];
 
   return (
     <div className="page assistant-workspace-page">
@@ -192,47 +299,8 @@ const AssistantWorkspace: React.FC = () => {
           <AssistantThread />
         </main>
 
-        <aside className="assistant-tool-panel" aria-label={t("assistantToolsTitle")}>
-          <section>
-            <div className="assistant-panel-title">
-              <BsLockFill aria-hidden="true" />
-              <h2>{t("assistantMandatoryMcpTitle")}</h2>
-            </div>
-            <p>{t("assistantMandatoryMcpBody")}</p>
-            <span className="assistant-status">{t("assistantMcpLocked")}</span>
-          </section>
-
-          <section>
-            <h2>{t("assistantToolsTitle")}</h2>
-            <ul className="assistant-capability-list">
-              {capabilities.map((capability) => (
-                <li key={capability}>{capability}</li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h2>{t("assistantApprovalTitle")}</h2>
-            <p>{t("assistantApprovalBody")}</p>
-          </section>
-
-          <section>
-            <h2>{t("assistantMetadataTitle")}</h2>
-            <dl className="assistant-metadata">
-              <div>
-                <dt>{t("assistantMetadataGenerated")}</dt>
-                <dd>{t("assistantMetadataAiDraft")}</dd>
-              </div>
-              <div>
-                <dt>{t("assistantMetadataRisk")}</dt>
-                <dd>{t("assistantMetadataRiskValue")}</dd>
-              </div>
-              <div>
-                <dt>{t("assistantMetadataReview")}</dt>
-                <dd>{t("assistantMetadataReviewValue")}</dd>
-              </div>
-            </dl>
-          </section>
+        <aside className="assistant-tool-panel" aria-label={t("workspaceConfigurations")}>
+          <AssistantConfigurations />
         </aside>
       </section>
     </div>
