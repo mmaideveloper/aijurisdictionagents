@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { useCases } from "../state/CaseProvider";
+import { useCases, type CaseDocumentRecord } from "../state/CaseProvider";
 import { useLanguage } from "./LanguageProvider";
 import { BsBoxArrowLeft } from "react-icons/bs";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
@@ -16,13 +16,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { cases, activeCase, selectCase, isLoadingCases, caseLoadError } = useCases();
   const { t } = useLanguage();
 
-  const openDocument = (document: { id: string; originalFilename: string }) => {
+  const openDocument = (document: CaseDocumentRecord) => {
     if (!activeCase) {
       return;
     }
     const params = new URLSearchParams({
       caseId: activeCase.id,
       docId: document.id,
+      kind: document.kind,
       filename: document.originalFilename,
       caseTitle: activeCase.title
     });

@@ -167,19 +167,24 @@ export const buildCaseDocumentUrl = ({
   userId,
   caseId,
   docId,
-  disposition = "attachment"
+  disposition = "attachment",
+  format = "source"
 }: {
   userId: string;
   caseId: string;
   docId: string;
   disposition?: "attachment" | "inline";
+  format?: "source" | "pdf";
 }): string => {
   const config = chatApiRuntimeConfig();
   const params = new URLSearchParams({
     user_id: userId,
     disposition
   });
-  return `${config.baseUrl}/v1/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}?${params.toString()}`;
+  const documentPath = `/v1/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}${
+    format === "pdf" ? "/pdf" : ""
+  }`;
+  return `${config.baseUrl}${documentPath}?${params.toString()}`;
 };
 
 export const sendCaseDocumentEmail = async (

@@ -50,6 +50,7 @@ export type CaseWorkspace = {
 export type CaseDocumentRecord = {
   id: string;
   caseId: string;
+  kind: string;
   originalFilename: string;
   mimeType: string;
   size: number;
@@ -102,6 +103,7 @@ type CaseContextValue = {
   isLoadingCases: boolean;
   caseLoadError: string | null;
   createCase: (input: CreateCaseInput) => Promise<CaseRecord>;
+  loadCaseData: (caseId: string) => Promise<void>;
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
   setContinueRequested: (value: boolean) => void;
@@ -275,6 +277,7 @@ const buildDocumentRecord = (
 ): CaseDocumentRecord => ({
   id: `${caseId}-document-${index + 1}`,
   caseId,
+  kind: "uploaded",
   originalFilename: document.originalFilename,
   mimeType: document.mimeType,
   size: document.size,
@@ -555,6 +558,7 @@ const normalizeStoredDocument = (
   return {
     id: candidate.id,
     caseId,
+    kind: typeof candidate.kind === "string" && candidate.kind.trim() ? candidate.kind : "uploaded",
     originalFilename: candidate.originalFilename,
     mimeType: typeof candidate.mimeType === "string" ? candidate.mimeType : "application/octet-stream",
     size: candidate.size,
@@ -743,6 +747,7 @@ const mapApiRole = (role: ApiCaseHistoryMessage["role"], agentName: string | nul
 const mapApiDocument = (caseId: string, document: ApiCaseDocument): CaseDocumentRecord => ({
   id: document.doc_id,
   caseId,
+  kind: document.kind,
   originalFilename: document.original_filename,
   mimeType: "application/octet-stream",
   size: 0,
@@ -1085,6 +1090,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoadingCases,
       caseLoadError,
       createCase,
+      loadCaseData,
       setActiveCase,
       selectCase,
       setContinueRequested,
@@ -1105,6 +1111,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoadingCases,
       caseLoadError,
       createCase,
+      loadCaseData,
       setActiveCase,
       selectCase,
       setContinueRequested,

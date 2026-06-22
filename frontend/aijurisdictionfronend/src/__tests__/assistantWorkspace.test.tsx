@@ -71,7 +71,8 @@ vi.mock("../auth/webAuth", () => ({
 
 const caseActions = vi.hoisted(() => ({
   setCaseRole: vi.fn(),
-  setCaseCommunicationMode: vi.fn()
+  setCaseCommunicationMode: vi.fn(),
+  loadCaseData: vi.fn()
 }));
 
 vi.mock("../state/CaseProvider", () => ({
@@ -81,6 +82,7 @@ vi.mock("../state/CaseProvider", () => ({
       selectedCommunicationMode: "Chat",
       selectedRole: "AI Lawyer"
     },
+    loadCaseData: caseActions.loadCaseData,
     setCaseRole: caseActions.setCaseRole,
     setCaseCommunicationMode: caseActions.setCaseCommunicationMode
   })
@@ -143,6 +145,7 @@ describe("AssistantWorkspace", () => {
     capturedAdapter = null;
     caseActions.setCaseRole.mockReset();
     caseActions.setCaseCommunicationMode.mockReset();
+    caseActions.loadCaseData.mockReset();
     vi.mocked(createChatSession).mockReset();
     vi.mocked(streamSession).mockReset();
     cleanup();
@@ -175,7 +178,7 @@ describe("AssistantWorkspace", () => {
     vi.mocked(createChatSession).mockResolvedValue({
       id: "session-1",
       user_id: "user-1",
-      case_id: null,
+      case_id: "case-1",
       country: "SK",
       language: "sk",
       discussion_type: "advice",
@@ -225,12 +228,13 @@ describe("AssistantWorkspace", () => {
       lastResult = await result;
     }
 
-    expect(createChatSession).toHaveBeenCalledWith({ language: "sk", userId: "user-1" });
+    expect(createChatSession).toHaveBeenCalledWith({ language: "sk", userId: "user-1", caseId: "case-1" });
     expect(streamSession).toHaveBeenCalledWith({
       sessionId: "session-1",
       instruction: prompt,
       signal: expect.any(AbortSignal)
     });
+    expect(caseActions.loadCaseData).toHaveBeenCalledWith("case-1");
     expect(lastResult?.content?.[0]?.text).toBe("Real answer from API");
   });
 });

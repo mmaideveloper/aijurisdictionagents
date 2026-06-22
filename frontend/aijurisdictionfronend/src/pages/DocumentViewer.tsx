@@ -16,15 +16,17 @@ const DocumentViewer: React.FC = () => {
 
   const caseId = params.get("caseId") ?? "";
   const docId = params.get("docId") ?? "";
+  const documentKind = params.get("kind") ?? "";
   const filename = params.get("filename") ?? t("documentViewerUntitled");
   const caseTitle = params.get("caseTitle") ?? "";
   const userId = user?.userId ?? "";
   const canLoadDocument = Boolean(userId && caseId && docId);
+  const documentFormat = ["session_history", "chat_attachment"].includes(documentKind) ? "pdf" : "source";
   const previewUrl = canLoadDocument
-    ? buildCaseDocumentUrl({ userId, caseId, docId, disposition: "inline" })
+    ? buildCaseDocumentUrl({ userId, caseId, docId, disposition: "inline", format: documentFormat })
     : "";
   const downloadUrl = canLoadDocument
-    ? buildCaseDocumentUrl({ userId, caseId, docId, disposition: "attachment" })
+    ? buildCaseDocumentUrl({ userId, caseId, docId, disposition: "attachment", format: documentFormat })
     : "";
 
   const handlePrint = () => {

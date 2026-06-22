@@ -38,7 +38,11 @@ const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
   const { user } = useAuth();
-  const sessionRef = React.useRef<{ language: string; userId?: string; sessionId: string } | null>(null);
+  const { activeCase, loadCaseData } = useCases();
+  const activeCaseId = activeCase?.id;
+  const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string } | null>(
+    null
+  );
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
     () => [
@@ -67,12 +71,15 @@ const AssistantThread: React.FC = () => {
           const userId = user?.userId;
           const existingSession = sessionRef.current;
           const session =
-            existingSession?.language === language && existingSession.userId === userId
+            existingSession?.language === language &&
+            existingSession.userId === userId &&
+            existingSession.caseId === activeCaseId
               ? existingSession
               : {
                   language,
                   userId,
-                  sessionId: (await createChatSession({ language, userId })).id
+                  caseId: activeCaseId,
+                  sessionId: (await createChatSession({ language, userId, caseId: activeCaseId })).id
                 };
           sessionRef.current = session;
 
@@ -116,6 +123,9 @@ const AssistantThread: React.FC = () => {
             content: [{ type: "text", text: latestAssistantText || processingMessages.join("\n\n") }],
             status: { type: "complete", reason: "stop" }
           };
+          if (activeCaseId && userId) {
+            void loadCaseData(activeCaseId);
+          }
         } catch (error) {
           const status = error instanceof ApiRequestError && error.status ? String(error.status) : "network";
           const detail = error instanceof Error ? error.message : "Unknown error";
@@ -126,7 +136,7 @@ const AssistantThread: React.FC = () => {
         }
       }
     }),
-    [language, t, user?.userId]
+    [activeCaseId, language, loadCaseData, t, user?.userId]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {
