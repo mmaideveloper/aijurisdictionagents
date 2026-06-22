@@ -70,12 +70,12 @@ describe("language switching", () => {
     );
 
     expect(screen.getByText("Čo by ste dnes chceli preskúmať?")).toBeDefined();
-    expect(screen.getByText("Prípady")).toBeDefined();
+    expect(screen.getByText("Konfigurácie")).toBeDefined();
 
     await user.click(screen.getByRole("button", { name: "EN" }));
 
     expect(screen.getByText("What would you like to explore today?")).toBeDefined();
-    expect(screen.getByText("Cases")).toBeDefined();
+    expect(screen.getByText("Configurations")).toBeDefined();
     expect(window.localStorage.getItem("aj_frontend_lang")).toBe("en");
 
     await user.click(screen.getByRole("link", { name: "Pricing" }));

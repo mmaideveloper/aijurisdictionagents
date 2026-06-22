@@ -7,6 +7,15 @@ import { BsBoxArrowLeft } from "react-icons/bs";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
 
 const statusClass = (status: string) => status.toLowerCase().replace(/\s+/g, "-");
+const CHAT_PREVIEW_LIMIT = 20;
+
+export const buildChatPreview = (actor: string, message: string): string => {
+  const text = `${actor}: ${message}`.replace(/\s+/g, " ").trim();
+  if (text.length <= CHAT_PREVIEW_LIMIT) {
+    return text;
+  }
+  return `${text.slice(0, CHAT_PREVIEW_LIMIT).trimEnd()}...`;
+};
 
 type SidebarProps = {
   onClose?: () => void;
@@ -14,7 +23,7 @@ type SidebarProps = {
 
 export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const navigate = useNavigate();
-  const { cases, activeCase, selectCase, isLoadingCases, caseLoadError } = useCases();
+  const { cases, activeCase, selectCase, setCaseCommunicationMode, isLoadingCases, caseLoadError } = useCases();
   const { user } = useAuth();
   const { t } = useLanguage();
 
@@ -31,6 +40,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       userId: user?.userId ?? ""
     });
     window.open(`/app/documents/view?${params.toString()}`, "_blank", "noopener,noreferrer");
+  };
+
+  const continueChat = () => {
+    if (!activeCase) {
+      return;
+    }
+    selectCase(activeCase.id);
+    setCaseCommunicationMode(activeCase.id, "Chat");
+    navigate("/app/chat");
+    onClose?.();
   };
 
   return (
@@ -158,9 +177,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                     <ul>
                       {activeCase.interactionHistory.slice(-4).map((interaction) => (
                         <li key={interaction.id}>
-                          <span title={`${interaction.actor}: ${interaction.message}`}>
-                            {interaction.actor}: {interaction.message}
-                          </span>
+                          <button
+                            type="button"
+                            className="sidebar-chat-link"
+                            onClick={continueChat}
+                            title={`${interaction.actor}: ${interaction.message}`}
+                          >
+                            <span>{buildChatPreview(interaction.actor, interaction.message)}</span>
+                          </button>
                           <small>{new Date(interaction.createdAt).toLocaleString()}</small>
                         </li>
                       ))}

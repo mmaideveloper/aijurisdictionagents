@@ -1266,7 +1266,30 @@
   text-align: left;
 }
 
-.sidebar-document-link:focus-visible {
+.sidebar-chat-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+}
+
+.sidebar-chat-link span {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.sidebar-chat-link:hover {
+  color: var(--accent);
+}
+
+.sidebar-document-link:focus-visible,
+.sidebar-chat-link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: 6px;
