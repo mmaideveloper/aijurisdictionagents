@@ -760,7 +760,9 @@ const mapApiCase = (
   historyMessages: ApiCaseHistoryMessage[] = [],
   historyDocuments: ApiCaseDocument[] = []
 ): CaseRecord => {
-  const documents = historyDocuments.map((document) => mapApiDocument(apiCase.case_id, document));
+  const documents = historyDocuments
+    .filter((document) => document.kind !== "technical_payload")
+    .map((document) => mapApiDocument(apiCase.case_id, document));
   const createdAt = apiCase.created_at;
   return {
     id: apiCase.case_id,

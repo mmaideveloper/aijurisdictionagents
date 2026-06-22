@@ -258,6 +258,53 @@ def test_generated_case_document_pdf_falls_back_to_latest_document_message(
     assert "Dokument je pripravený na stiahnutie" not in generated_pdf_text
 
 
+def test_generated_case_document_pdf_reads_generated_document_storage(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=23)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Power of attorney"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    generated_doc_id = store.add_case_document(
+        case_id=case_id,
+        kind="generated_document",
+        version=1,
+        original_filename="splnomocnenie.txt",
+        payload=(
+            "**Splnomocnenie**\n\n"
+            "Splnomocnenec: Emilia Matonokova\n"
+            "Spolocnost: Esolutions SK s.r.o.\n"
+            "Prava: Vsetky pravne ukony tykajuce sa pouzivania firemneho auta.\n"
+            "Podpis: ________________________\n"
+        ).encode("utf-8"),
+        uploaded_by_user_id=user_id,
+    )
+
+    generated_pdf = client.get(
+        f"/v1/cases/{case_id}/documents/{generated_doc_id}/pdf?user_id={user_id}",
+        headers=_headers(),
+    )
+    assert generated_pdf.status_code == 200
+    generated_pdf_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
+    )
+    assert "Emilia Matonokova" in generated_pdf_text
+    assert "firemneho auta" in generated_pdf_text
+
+
 def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:
     import app.cases_api as cases_api
 

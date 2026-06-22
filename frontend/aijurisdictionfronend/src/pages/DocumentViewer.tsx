@@ -19,9 +19,9 @@ const DocumentViewer: React.FC = () => {
   const documentKind = params.get("kind") ?? "";
   const filename = params.get("filename") ?? t("documentViewerUntitled");
   const caseTitle = params.get("caseTitle") ?? "";
-  const userId = user?.userId ?? "";
+  const userId = user?.userId ?? params.get("userId") ?? "";
   const canLoadDocument = Boolean(userId && caseId && docId);
-  const documentFormat = ["session_history", "chat_attachment"].includes(documentKind) ? "pdf" : "source";
+  const documentFormat = ["session_history", "chat_attachment", "generated_document"].includes(documentKind) ? "pdf" : "source";
   const previewUrl = canLoadDocument
     ? buildCaseDocumentUrl({ userId, caseId, docId, disposition: "inline", format: documentFormat })
     : "";

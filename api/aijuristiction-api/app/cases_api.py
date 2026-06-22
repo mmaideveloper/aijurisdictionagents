@@ -432,11 +432,13 @@ def download_generated_case_document_pdf(
         document = store.get_case_document(case_id=case_id, doc_id=doc_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    visible_content = _generated_case_document_visible_content(
-        case_id=case_id,
-        doc_id=document.doc_id,
-        store=store,
-    )
+    visible_content = _generated_case_document_storage_content(document=document, store=store)
+    if not visible_content:
+        visible_content = _generated_case_document_visible_content(
+            case_id=case_id,
+            doc_id=document.doc_id,
+            store=store,
+        )
     if not visible_content:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -481,7 +483,7 @@ def send_case_documents_email(
     documents = [
         item
         for item in store.list_case_documents(case_id=case_id)
-        if item.kind in {"uploaded", "chat_attachment", "session_history"}
+        if item.kind in {"uploaded", "chat_attachment", "session_history", "generated_document"}
         and (not requested_doc_ids or item.doc_id in requested_doc_ids)
     ]
     if not documents:
@@ -651,6 +653,25 @@ def _generated_case_document_visible_content(
     return _latest_generated_case_document_visible_content(case_id=case_id, store=store)
 
 
+def _generated_case_document_storage_content(*, document: CaseDocument, store: ApiDatabaseStore) -> str:
+    if document.kind != "generated_document":
+        return ""
+    try:
+        return str(store.read_storage_text(storage_uri=document.storage_uri)).strip()
+    except FileNotFoundError:
+        _LOGGER.info(
+            "Generated case document payload not found; falling back to communication content",
+            extra={"doc_id": document.doc_id, "storage_uri": document.storage_uri},
+        )
+    except Exception:
+        _LOGGER.warning(
+            "Generated case document payload could not be read; falling back to communication content",
+            extra={"doc_id": document.doc_id, "storage_uri": document.storage_uri},
+            exc_info=True,
+        )
+    return ""
+
+
 def _latest_generated_case_document_visible_content(
     *, case_id: str, store: ApiDatabaseStore
 ) -> str:
@@ -688,6 +709,8 @@ def _generated_case_document_title(content: str) -> str:
 def _generated_case_document_type(content: str) -> str:
     normalized = _normalize_for_filename(content)
     type_markers = (
+        ("splnomocnenie", "Splnomocnenie"),
+        ("power of attorney", "Power of Attorney"),
         ("potvrdenie", "Potvrdenie"),
         ("predzalobna vyzva", "Predžalobná výzva"),
         ("najomna zmluva", "Nájomná zmluva"),
@@ -726,6 +749,11 @@ def _looks_like_generated_case_document_message(content: str) -> bool:
     normalized = " ".join(content.lower().split())
     if not normalized:
         return False
+    if (
+        ("splnomocnenie" in normalized or "power of attorney" in normalized)
+        and ("dokumenty su pripravene" in normalized or "finalne verzie" in normalized)
+    ):
+        return True
     document_markers = (
         "potvrdenie o zaplaten",
         "potvrdenie o platbe",
@@ -819,7 +847,7 @@ def _document_context(*, case_id: str, store: ApiDatabaseStore) -> CaseDocumentC
     processed: list[str] = []
     unprocessed: list[str] = []
     for document in store.list_case_documents(case_id=case_id):
-        if document.kind not in {'uploaded', 'chat_attachment', 'session_history'}:
+        if document.kind not in {'uploaded', 'chat_attachment', 'session_history', 'generated_document'}:
             continue
         if document.processing_status == 'processed':
             processed.append(document.original_filename)

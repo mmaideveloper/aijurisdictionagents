@@ -4841,6 +4841,73 @@ def test_assistant_technical_payload_is_saved_as_case_document_and_linked(monkey
     assert '"case"' not in visible
 
 
+def test_generated_assistant_document_is_saved_as_case_document(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Session
+
+    stored_documents: list[dict[str, object]] = []
+
+    class _FakeStore:
+        def list_case_documents(self, *, case_id: str):
+            return []
+
+        def add_case_document(
+            self,
+            *,
+            case_id: str,
+            kind: str,
+            version: int,
+            original_filename: str,
+            payload: bytes,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            stored_documents.append(
+                {
+                    "case_id": case_id,
+                    "kind": kind,
+                    "version": version,
+                    "original_filename": original_filename,
+                    "payload": payload.decode("utf-8"),
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return "doc-generated"
+
+    user_id = uuid4()
+    session = Session(
+        user_id=user_id,
+        case_id="case-123",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    content = (
+        "Tu su finalne verzie splnomocnenia v slovenskej a anglickej verzii.\n\n"
+        "**Splnomocnenie (slovenska verzia)**:\n"
+        "- Splnomocnenec: Emilia Matonokova\n"
+        "- Spolocnost: Esolutions SK s.r.o.\n"
+        "- Prava: Vsetky pravne ukony tykajuce sa pouzivania firemneho auta.\n"
+        "- Podpis: ________________________\n\n"
+        "**Power of Attorney (anglicka verzia)**:\n"
+        "- Attorney-in-fact: Emilia Matonokova\n"
+        "- Company: Esolutions SK s.r.o.\n"
+        "- Rights: All legal acts related to the use of the company vehicle.\n\n"
+        "Dokumenty su pripravene na stiahnutie."
+    )
+
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+
+    doc_id = chat_api._persist_generated_case_document_if_needed(session=session, content=content)
+
+    assert doc_id == "doc-generated"
+    assert len(stored_documents) == 1
+    assert stored_documents[0]["kind"] == "generated_document"
+    assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
+    assert str(stored_documents[0]["original_filename"]).endswith(".txt")
+    assert "Splnomocnenie" in str(stored_documents[0]["payload"])
+    assert "Dokumenty su pripravene" not in str(stored_documents[0]["payload"])
+
+
 def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None:
     from app.chat.api import _build_direct_reply_result
     from app.chat.models import Message, MessageRole, Session
