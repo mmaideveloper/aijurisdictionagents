@@ -669,14 +669,33 @@ start_monitoring() {
   python3 configure_monitoring.py --project-env "$ENV_FILE" --validate --start
 }
 
+wait_for_http() {
+  local name="$1"
+  local url="$2"
+  local attempts="${3:-30}"
+  local sleep_seconds="${4:-2}"
+  local attempt
+
+  for attempt in $(seq 1 "$attempts"); do
+    if curl -fsS "$url" >/dev/null; then
+      log "$name is healthy at $url"
+      return 0
+    fi
+    log "waiting for $name at $url ($attempt/$attempts)"
+    sleep "$sleep_seconds"
+  done
+
+  curl -fsS "$url" >/dev/null
+}
+
 validate_health() {
   log "validating local health endpoints"
-  curl -fsS "http://127.0.0.1:${API_PORT}/health" >/dev/null
-  curl -fsS "http://127.0.0.1:${MCP_PORT}/health" >/dev/null
-  curl -fsS "http://127.0.0.1:${WEB_PORT}/health" >/dev/null
+  wait_for_http "API" "http://127.0.0.1:${API_PORT}/health"
+  wait_for_http "MCP" "http://127.0.0.1:${MCP_PORT}/health"
+  wait_for_http "web" "http://127.0.0.1:${WEB_PORT}/health"
   docker inspect -f '{{.State.Running}}' jurisdigta-email-scheduler | grep -qx true
   if [ "$DOCUMENT_ENGINE_ENABLED" = "1" ]; then
-    curl -fsS "http://127.0.0.1:${DOCUMENT_ENGINE_API_PORT}/health" >/dev/null
+    wait_for_http "document engine" "http://127.0.0.1:${DOCUMENT_ENGINE_API_PORT}/health"
     docker inspect -f '{{.State.Running}}' jurisdigta-document-engine-worker | grep -qx true
   fi
   docker image inspect jurisdigta-document-processor:local >/dev/null
