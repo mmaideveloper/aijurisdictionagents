@@ -629,6 +629,16 @@ def _to_case_document_response(document: CaseDocument) -> CaseDocumentResponse:
 def _generated_case_document_visible_content(
     *, case_id: str, doc_id: str, store: ApiDatabaseStore
 ) -> str:
+    try:
+        document = store.get_case_document(case_id=case_id, doc_id=doc_id)
+    except KeyError:
+        document = None
+    if document is not None and document.kind == "generated_document":
+        try:
+            return str(store.read_storage_text(storage_uri=document.storage_uri)).strip()
+        except (FileNotFoundError, ValueError):
+            return ""
+
     marker = f"/documents/{doc_id}"
     for communication in store.list_case_communications(case_id=case_id, limit=100, offset=0):
         raw_content = _read_case_communication_content(
@@ -688,6 +698,9 @@ def _generated_case_document_title(content: str) -> str:
 def _generated_case_document_type(content: str) -> str:
     normalized = _normalize_for_filename(content)
     type_markers = (
+        ("splnomocnen", "Splnomocnenie"),
+        ("plnomoc", "Splnomocnenie"),
+        ("power of attorney", "Power of Attorney"),
         ("potvrdenie", "Potvrdenie"),
         ("predzalobna vyzva", "Predžalobná výzva"),
         ("najomna zmluva", "Nájomná zmluva"),
@@ -731,6 +744,9 @@ def _looks_like_generated_case_document_message(content: str) -> bool:
         "potvrdenie o platbe",
         "predžalobná výzva",
         "predzalobna vyzva",
+        "splnomocnen",
+        "plnomoc",
+        "power of attorney",
         "nájomná zmluva",
         "najomna zmluva",
         "zmluva",
@@ -742,6 +758,8 @@ def _looks_like_generated_case_document_message(content: str) -> bool:
     ready_markers = (
         "konečná verzia dokumentu",
         "konecna verzia dokumentu",
+        "finalne verzie",
+        "final versions",
         "dokument je pripraven",
         "pripravený na stiahnutie",
         "pripraveny na stiahnutie",

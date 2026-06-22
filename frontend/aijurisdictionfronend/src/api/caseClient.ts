@@ -55,6 +55,21 @@ export type SendCaseDocumentEmailInput = {
   caseSubject?: string;
 };
 
+export type FetchCaseDocumentInput = {
+  userId: string;
+  caseId: string;
+  docId: string;
+  disposition?: "attachment" | "inline";
+  renderPdf?: boolean;
+  signal?: AbortSignal;
+};
+
+export type FetchedCaseDocument = {
+  blob: Blob;
+  contentType: string;
+  filename: string;
+};
+
 export type SendCaseDocumentEmailResult = {
   email_id: string;
   recipient: string;
@@ -167,19 +182,95 @@ export const buildCaseDocumentUrl = ({
   userId,
   caseId,
   docId,
-  disposition = "attachment"
+  disposition = "attachment",
+  renderPdf = false
 }: {
   userId: string;
   caseId: string;
   docId: string;
   disposition?: "attachment" | "inline";
+  renderPdf?: boolean;
 }): string => {
   const config = chatApiRuntimeConfig();
   const params = new URLSearchParams({
     user_id: userId,
     disposition
   });
-  return `${config.baseUrl}/v1/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}?${params.toString()}`;
+  const pdfSuffix = renderPdf ? "/pdf" : "";
+  return `${config.baseUrl}/v1/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}${pdfSuffix}?${params.toString()}`;
+};
+
+const extractFilenameFromContentDisposition = (header: string | null): string | null => {
+  if (!header) {
+    return null;
+  }
+  const encodedMatch = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encodedMatch?.[1]) {
+    try {
+      return decodeURIComponent(encodedMatch[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      return encodedMatch[1].trim().replace(/^"|"$/g, "");
+    }
+  }
+  const plainMatch = header.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1]?.trim() || null;
+};
+
+export const fetchCaseDocumentBlob = async ({
+  userId,
+  caseId,
+  docId,
+  disposition = "attachment",
+  renderPdf = false,
+  signal
+}: FetchCaseDocumentInput): Promise<FetchedCaseDocument> => {
+  const config = chatApiRuntimeConfig();
+  const url = buildCaseDocumentUrl({ userId, caseId, docId, disposition, renderPdf });
+
+  consoleLogger.info("Fetching case document", {
+    path: `/v1/cases/${caseId}/documents/${docId}${renderPdf ? "/pdf" : ""}`,
+    disposition,
+    renderPdf,
+    url
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "x-api-key": config.apiKey
+      },
+      signal
+    });
+  } catch (error) {
+    consoleLogger.error("Case document request failed", { url, disposition }, error);
+    throw new ApiRequestError(
+      "network",
+      "Network request failed. Check API availability, CORS, and URL/protocol."
+    );
+  }
+
+  if (!response.ok) {
+    const detail = await parseErrorBody(response);
+    consoleLogger.warn("Case document request failed", {
+      status: response.status,
+      detail,
+      disposition
+    });
+    throw new ApiRequestError("http", detail, response.status);
+  }
+
+  const contentType = response.headers.get("Content-Type") || "application/octet-stream";
+  const filename =
+    extractFilenameFromContentDisposition(response.headers.get("Content-Disposition")) ||
+    `document-${docId}`;
+
+  return {
+    blob: await response.blob(),
+    contentType,
+    filename
+  };
 };
 
 export const sendCaseDocumentEmail = async (

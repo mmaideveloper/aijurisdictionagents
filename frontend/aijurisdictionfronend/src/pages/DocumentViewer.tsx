@@ -1,6 +1,6 @@
 import React from "react";
 import { useSearchParams } from "react-router-dom";
-import { buildCaseDocumentUrl, sendCaseDocumentEmail } from "../api/caseClient";
+import { fetchCaseDocumentBlob, sendCaseDocumentEmail } from "../api/caseClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
@@ -12,24 +12,99 @@ const DocumentViewer: React.FC = () => {
   const [recipient, setRecipient] = React.useState(user?.email ?? "");
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = React.useState("");
+  const [isLoadingDocument, setIsLoadingDocument] = React.useState(false);
+  const [isDownloading, setIsDownloading] = React.useState(false);
   const [isSending, setIsSending] = React.useState(false);
 
   const caseId = params.get("caseId") ?? "";
   const docId = params.get("docId") ?? "";
   const filename = params.get("filename") ?? t("documentViewerUntitled");
   const caseTitle = params.get("caseTitle") ?? "";
+  const documentKind = params.get("kind") ?? "";
+  const renderPdf = documentKind === "technical_payload" || documentKind === "generated_document";
   const userId = user?.userId ?? "";
   const canLoadDocument = Boolean(userId && caseId && docId);
-  const previewUrl = canLoadDocument
-    ? buildCaseDocumentUrl({ userId, caseId, docId, disposition: "inline" })
-    : "";
-  const downloadUrl = canLoadDocument
-    ? buildCaseDocumentUrl({ userId, caseId, docId, disposition: "attachment" })
-    : "";
+
+  React.useEffect(() => {
+    if (!canLoadDocument) {
+      setPreviewUrl("");
+      setIsLoadingDocument(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let objectUrl = "";
+    setIsLoadingDocument(true);
+    setError(null);
+    setPreviewUrl("");
+
+    fetchCaseDocumentBlob({
+      userId,
+      caseId,
+      docId,
+      disposition: "inline",
+      renderPdf,
+      signal: controller.signal
+    })
+      .then((document) => {
+        objectUrl = URL.createObjectURL(document.blob);
+        setPreviewUrl(objectUrl);
+      })
+      .catch((loadError) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setError(loadError instanceof Error ? loadError.message : t("documentViewerLoadFailed"));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoadingDocument(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [canLoadDocument, caseId, docId, renderPdf, t, userId]);
 
   const handlePrint = () => {
     iframeRef.current?.contentWindow?.focus();
     iframeRef.current?.contentWindow?.print();
+  };
+
+  const handleSave = async () => {
+    if (!canLoadDocument) {
+      return;
+    }
+
+    setIsDownloading(true);
+    try {
+      const document = await fetchCaseDocumentBlob({
+        userId,
+        caseId,
+        docId,
+        disposition: "attachment",
+        renderPdf
+      });
+      const objectUrl = URL.createObjectURL(document.blob);
+      const anchor = window.document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = document.filename || filename;
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      setError(null);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : t("documentViewerDownloadFailed"));
+      setMessage(null);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleSendEmail = async () => {
@@ -67,9 +142,9 @@ const DocumentViewer: React.FC = () => {
             {caseTitle ? <small>{caseTitle}</small> : null}
           </div>
           <div className="document-viewer-actions">
-            <a className="button ghost" href={downloadUrl}>
-              {t("documentViewerSave")}
-            </a>
+            <button type="button" className="button ghost" onClick={handleSave} disabled={!canLoadDocument || isDownloading}>
+              {isDownloading ? t("documentViewerDownloading") : t("documentViewerSave")}
+            </button>
             <button type="button" className="button ghost" onClick={handlePrint} disabled={!previewUrl}>
               {t("documentViewerPrint")}
             </button>
@@ -91,12 +166,16 @@ const DocumentViewer: React.FC = () => {
         ) : null}
         {message ? <p className="hint">{message}</p> : null}
         {canLoadDocument ? (
-          <iframe
-            ref={iframeRef}
-            className="document-viewer-frame"
-            src={previewUrl}
-            title={filename}
-          />
+          isLoadingDocument ? (
+            <p className="hint">{t("documentViewerLoading")}</p>
+          ) : previewUrl ? (
+            <iframe
+              ref={iframeRef}
+              className="document-viewer-frame"
+              src={previewUrl}
+              title={filename}
+            />
+          ) : null
         ) : (
           <p className="hint">{t("documentViewerMissingDocument")}</p>
         )}

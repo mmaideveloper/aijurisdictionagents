@@ -1266,10 +1266,72 @@
   text-align: left;
 }
 
-.sidebar-document-link:focus-visible {
+.sidebar-chat-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+}
+
+.sidebar-chat-link span {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.sidebar-chat-link:hover {
+  color: var(--accent);
+}
+
+.sidebar-chat-link.active {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.sidebar-document-link:focus-visible,
+.sidebar-chat-link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: 6px;
+}
+
+.sidebar-message-parts {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.6rem;
+}
+
+.sidebar-message-part {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.sidebar-message-part span {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.sidebar-message-part strong,
+.sidebar-message-part p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.sidebar-message-part--body {
+  border-top: 1px solid var(--border);
+  padding-top: 0.45rem;
 }
 
 .panel-card {

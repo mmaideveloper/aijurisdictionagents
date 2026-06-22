@@ -101,21 +101,25 @@ def prepare_slovakia_direct_reply(
     if not company_query:
         return DirectReplyPreparation(supplemental_documents=[], prompt_note=address_prompt_note)
 
-    emit_processing_event(
-        events=processing_events,
-        event=build_processing_event(
-            stage="tool_start",
-            tool_name="obchodny_register_company_check",
-            message=_orsr_tool_start_message(
-                company_query=company_query,
-                country=session.country,
-                language=session.language,
+    cached_registry_lookup = _load_cached_slovak_company_registry_document(company_query)
+    if cached_registry_lookup is not None:
+        company_record, registry_document, cache_hit = cached_registry_lookup
+    else:
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
+                stage="tool_start",
+                tool_name="obchodny_register_company_check",
+                message=_orsr_tool_start_message(
+                    company_query=company_query,
+                    country=session.country,
+                    language=session.language,
+                ),
+                details={"query": company_query},
             ),
-            details={"query": company_query},
-        ),
-        callback=processing_event_callback,
-    )
-    company_record, registry_document, cache_hit = _load_slovak_company_registry_document(company_query)
+            callback=processing_event_callback,
+        )
+        company_record, registry_document, cache_hit = _load_slovak_company_registry_document(company_query)
     supplemental_documents = [registry_document] if registry_document is not None else []
     prompt_note = ""
     if cache_hit:
@@ -133,7 +137,7 @@ def prepare_slovakia_direct_reply(
             ),
             callback=processing_event_callback,
         )
-    if company_record:
+    elif company_record:
         emit_processing_event(
             events=processing_events,
             event=build_processing_event(
@@ -149,7 +153,7 @@ def prepare_slovakia_direct_reply(
             ),
             callback=processing_event_callback,
         )
-    else:
+    elif not company_record:
         emit_processing_event(
             events=processing_events,
             event=build_processing_event(
@@ -1177,6 +1181,23 @@ def _normalize_company_query(value: str) -> str:
     if re.search(r"a\.?\s*s$", cleaned, flags=re.IGNORECASE):
         return re.sub(r"a\.?\s*s$", "a.s.", cleaned, flags=re.IGNORECASE)
     return cleaned
+
+
+def _load_cached_slovak_company_registry_document(
+    company_query: str,
+) -> tuple[dict[str, object] | None, CoreDocument | None, bool] | None:
+    normalized_query = _normalize_company_query(company_query)
+    registry = build_default_tool_registry()
+    cache_key = (normalized_query, id(type(registry)))
+    with _ORSR_CACHE_LOCK:
+        cached_payload = _ORSR_CACHE.get(cache_key)
+    if cached_payload is None:
+        return None
+    return _restore_slovak_company_registry_document(
+        company_query=normalized_query,
+        cached_payload=cached_payload,
+        cache_hit=True,
+    )
 
 
 def _load_slovak_company_registry_document(

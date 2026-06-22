@@ -225,7 +225,12 @@ describe("AssistantWorkspace", () => {
       lastResult = await result;
     }
 
-    expect(createChatSession).toHaveBeenCalledWith({ language: "sk", userId: "user-1" });
+    expect(createChatSession).toHaveBeenCalledWith({
+      language: "sk",
+      userId: "user-1",
+      caseId: "case-1",
+      country: undefined
+    });
     expect(streamSession).toHaveBeenCalledWith({
       sessionId: "session-1",
       instruction: prompt,

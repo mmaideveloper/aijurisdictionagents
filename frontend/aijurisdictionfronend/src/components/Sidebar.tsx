@@ -6,6 +6,15 @@ import { BsBoxArrowLeft } from "react-icons/bs";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
 
 const statusClass = (status: string) => status.toLowerCase().replace(/\s+/g, "-");
+const CHAT_PREVIEW_LIMIT = 20;
+
+export const buildChatPreview = (actor: string, message: string): string => {
+  const text = `${actor}: ${message}`.replace(/\s+/g, " ").trim();
+  if (text.length <= CHAT_PREVIEW_LIMIT) {
+    return text;
+  }
+  return `${text.slice(0, CHAT_PREVIEW_LIMIT).trimEnd()}...`;
+};
 
 type SidebarProps = {
   onClose?: () => void;
@@ -15,8 +24,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const navigate = useNavigate();
   const { cases, activeCase, selectCase, isLoadingCases, caseLoadError } = useCases();
   const { t } = useLanguage();
+  const [selectedChatId, setSelectedChatId] = React.useState<string | null>(null);
+  const latestChatId = activeCase?.interactionHistory.at(-1)?.id ?? null;
 
-  const openDocument = (document: { id: string; originalFilename: string }) => {
+  React.useEffect(() => {
+    setSelectedChatId(latestChatId);
+  }, [activeCase?.id, latestChatId]);
+
+  const selectedChat = React.useMemo(() => {
+    if (!activeCase || activeCase.interactionHistory.length === 0) {
+      return null;
+    }
+    return (
+      activeCase.interactionHistory.find((interaction) => interaction.id === selectedChatId) ??
+      activeCase.interactionHistory.at(-1) ??
+      null
+    );
+  }, [activeCase, selectedChatId]);
+
+  const openDocument = (document: { id: string; originalFilename: string; kind?: string }) => {
     if (!activeCase) {
       return;
     }
@@ -26,6 +52,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       filename: document.originalFilename,
       caseTitle: activeCase.title
     });
+    if (document.kind) {
+      params.set("kind", document.kind);
+    }
     window.open(`/app/documents/view?${params.toString()}`, "_blank", "noopener,noreferrer");
   };
 
@@ -151,16 +180,43 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                 <div className="sidebar-selected-block">
                   <h4>{t("sidebarSelectedChats")}</h4>
                   {activeCase.interactionHistory.length > 0 ? (
-                    <ul>
-                      {activeCase.interactionHistory.slice(-4).map((interaction) => (
-                        <li key={interaction.id}>
-                          <span title={`${interaction.actor}: ${interaction.message}`}>
-                            {interaction.actor}: {interaction.message}
-                          </span>
-                          <small>{new Date(interaction.createdAt).toLocaleString()}</small>
-                        </li>
-                      ))}
-                    </ul>
+                    <>
+                      <ul>
+                        {activeCase.interactionHistory.slice(-4).map((interaction) => (
+                          <li key={interaction.id}>
+                            <button
+                              type="button"
+                              className={`sidebar-chat-link${selectedChat?.id === interaction.id ? " active" : ""}`}
+                              onClick={() => {
+                                selectCase(activeCase.id);
+                                setSelectedChatId(interaction.id);
+                              }}
+                              title={`${interaction.actor}: ${interaction.message}`}
+                              aria-pressed={selectedChat?.id === interaction.id}
+                            >
+                              <span>{buildChatPreview(interaction.actor, interaction.message)}</span>
+                            </button>
+                            <small>{new Date(interaction.createdAt).toLocaleString()}</small>
+                          </li>
+                        ))}
+                      </ul>
+                      {selectedChat ? (
+                        <div className="sidebar-message-parts" aria-live="polite">
+                          <div className="sidebar-message-part">
+                            <span>Actor</span>
+                            <strong>{selectedChat.actor}</strong>
+                          </div>
+                          <div className="sidebar-message-part">
+                            <span>Time</span>
+                            <strong>{new Date(selectedChat.createdAt).toLocaleString()}</strong>
+                          </div>
+                          <div className="sidebar-message-part sidebar-message-part--body">
+                            <span>Message</span>
+                            <p>{selectedChat.message}</p>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
                   ) : (
                     <p className="hint">{t("sidebarSelectedChatsEmpty")}</p>
                   )}

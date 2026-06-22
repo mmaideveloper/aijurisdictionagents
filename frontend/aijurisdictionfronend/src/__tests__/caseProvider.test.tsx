@@ -2,7 +2,7 @@
 
 import React from "react";
 import { describe, expect, it, beforeEach, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createChatSession, replyToSession } from "../api/chatClient";
 import { listCases, getCaseHistory, createApiCase, uploadApiCaseDocuments } from "../api/caseClient";
@@ -25,10 +25,15 @@ vi.mock("../api/caseClient", () => ({
   uploadApiCaseDocuments: vi.fn()
 }));
 
+const authState = vi.hoisted(() => ({
+  isAuthenticated: false,
+  user: null as null | { userId: string; email: string; name: string }
+}));
+
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
-    isAuthenticated: false,
-    user: null
+    isAuthenticated: authState.isAuthenticated,
+    user: authState.user
   })
 }));
 
@@ -230,6 +235,24 @@ const FirstUserMessageConsumer: React.FC = () => {
   );
 };
 
+const RefreshCaseDataConsumer: React.FC = () => {
+  const { cases, documents, selectCase, refreshCaseData } = useCases();
+
+  return (
+    <div>
+      <button type="button" onClick={() => selectCase("case-api")}>
+        Select API Case
+      </button>
+      <button type="button" onClick={() => void refreshCaseData("case-api")}>
+        Refresh API Case
+      </button>
+      <div data-testid="case-count">{cases.length}</div>
+      <div data-testid="document-count">{documents.length}</div>
+      <div data-testid="latest-document">{documents[0]?.originalFilename ?? ""}</div>
+    </div>
+  );
+};
+
 describe("CaseProvider", () => {
   beforeEach(() => {
     cleanup();
@@ -240,6 +263,8 @@ describe("CaseProvider", () => {
     vi.mocked(getCaseHistory).mockReset();
     vi.mocked(createApiCase).mockReset();
     vi.mocked(uploadApiCaseDocuments).mockReset();
+    authState.isAuthenticated = false;
+    authState.user = null;
   });
 
   it("starts without seeded fake cases", () => {
@@ -430,5 +455,61 @@ describe("CaseProvider", () => {
     expect(screen.getByTestId("case-stored-history-messages").textContent).toContain(
       "Please review the first issue."
     );
+  });
+
+  it("refreshes an API case so generated documents become visible in the sidebar state", async () => {
+    const user = userEvent.setup();
+    authState.isAuthenticated = true;
+    authState.user = {
+      userId: "user-1",
+      email: "client@example.test",
+      name: "Client"
+    };
+    vi.mocked(listCases).mockResolvedValue([
+      {
+        case_id: "case-api",
+        user_id: "user-1",
+        company_id: null,
+        title: "API case",
+        status: "in_progress",
+        created_at: "2026-06-22T10:00:00.000Z",
+        updated_at: "2026-06-22T10:00:00.000Z"
+      }
+    ]);
+    vi.mocked(getCaseHistory).mockResolvedValue({
+      messages: [],
+      has_more: false,
+      documents: [
+        {
+          doc_id: "doc-generated",
+          kind: "technical_payload",
+          version: 1,
+          original_filename: "splnomocnenie-sk-en.pdf",
+          processing_status: "processed",
+          processing_error: null,
+          processed_at: "2026-06-22T10:05:00.000Z",
+          created_at: "2026-06-22T10:05:00.000Z"
+        }
+      ]
+    });
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <RefreshCaseDataConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("case-count").textContent).toBe("1"));
+    expect(screen.getByTestId("document-count").textContent).toBe("0");
+
+    await user.click(screen.getByRole("button", { name: "Refresh API Case" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("document-count").textContent).toBe("1");
+    });
+    expect(screen.getByTestId("latest-document").textContent).toBe("splnomocnenie-sk-en.pdf");
+    expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-api");
   });
 });

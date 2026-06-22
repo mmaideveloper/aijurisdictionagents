@@ -926,6 +926,7 @@ def _persist_direct_assistant_message(
     agent_name: str,
 ) -> Message:
     content = _validate_lawyer_output_message(session=session, content=content)
+    _persist_case_generated_documents_if_needed(session=session, content=content)
     content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
     persisted_lawyer = _repository.add_message(
         Message(
@@ -2609,6 +2610,111 @@ def _user_visible_text(content: str) -> str:
         return _strip_user_visible_technical_trailer(content)
     start_index, _end_index, _extension = bounds
     return _strip_user_visible_technical_trailer(content[:start_index])
+
+
+def _persist_case_generated_documents_if_needed(*, session: Session, content: str) -> None:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return
+    case_update = _extract_case_update(content)
+    document_entries = _case_update_document_entries(case_update)
+    visible_text = _user_visible_text(content)
+    if not document_entries:
+        if not _looks_like_generated_case_document_message(visible_text):
+            return
+        document_entries = [
+            {
+                "title": _document_export_title_from_recommendation(
+                    context_lines=visible_text.splitlines(),
+                    document_kind="generic_case_document",
+                    language=session.language,
+                ),
+                "filename": "generated-document.txt",
+                "content": visible_text,
+            }
+        ]
+    try:
+        store = _get_store()
+        existing_count = store.count_case_documents(case_id=case_id)
+        next_version = existing_count + 1
+        for index, entry in enumerate(document_entries, start=1):
+            document_body = _generated_case_document_payload(
+                entry=entry,
+                fallback_visible_text=visible_text,
+            )
+            if not document_body:
+                continue
+            filename = _generated_case_document_entry_filename(entry=entry, index=index)
+            store.add_case_document(
+                case_id=case_id,
+                kind="generated_document",
+                version=next_version,
+                original_filename=filename,
+                payload=document_body.encode("utf-8"),
+                uploaded_by_user_id=str(session.user_id) if session.user_id else None,
+            )
+            next_version += 1
+    except Exception:
+        _LOGGER.warning(
+            "Failed to persist generated assistant documents as case documents",
+            extra={"case_id": case_id},
+            exc_info=True,
+        )
+
+
+def _generated_case_document_payload(
+    *,
+    entry: dict[str, Any],
+    fallback_visible_text: str,
+) -> str:
+    title = str(entry.get("title") or entry.get("name") or entry.get("filename") or "").strip()
+    content = str(entry.get("content") or entry.get("body") or entry.get("text") or "").strip()
+    notes = str(entry.get("notes") or "").strip()
+    lines = [line for line in (title, content, notes) if line]
+    if lines:
+        return "\n\n".join(lines)
+    return fallback_visible_text.strip()
+
+
+def _generated_case_document_entry_filename(*, entry: dict[str, Any], index: int) -> str:
+    raw_name = str(entry.get("filename") or entry.get("path") or entry.get("title") or "").strip()
+    filename = Path(raw_name).name if raw_name else ""
+    if not filename:
+        filename = f"generated-document-{index}.txt"
+    stem = Path(filename).stem.strip() or f"generated-document-{index}"
+    return f"{stem}.txt"
+
+
+def _looks_like_generated_case_document_message(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    if not normalized:
+        return False
+    document_markers = (
+        "splnomocnen",
+        "plnomoc",
+        "power of attorney",
+        "potvrdenie",
+        "predzalobna vyzva",
+        "najomna zmluva",
+        "zmluva",
+        "zaloba",
+        "navrh",
+        "legal document",
+    )
+    ready_markers = (
+        "finalne verzie",
+        "finalna verzia",
+        "konecna verzia",
+        "dokument je pripraven",
+        "dokumenty su pripravene",
+        "pripravene na stiahnutie",
+        "ready for download",
+        "final version",
+        "final versions",
+    )
+    return any(marker in normalized for marker in document_markers) and any(
+        marker in normalized for marker in ready_markers
+    )
 
 
 def _attach_technical_payload_to_case_if_needed(*, session: Session, content: str) -> str:

@@ -38,7 +38,13 @@ const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
   const { user } = useAuth();
-  const sessionRef = React.useRef<{ language: string; userId?: string; sessionId: string } | null>(null);
+  const { activeCase, refreshCaseData } = useCases();
+  const sessionRef = React.useRef<{
+    language: string;
+    userId?: string;
+    caseId?: string;
+    sessionId: string;
+  } | null>(null);
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
     () => [
@@ -65,14 +71,25 @@ const AssistantThread: React.FC = () => {
 
         try {
           const userId = user?.userId;
+          const caseId = activeCase?.id;
           const existingSession = sessionRef.current;
           const session =
-            existingSession?.language === language && existingSession.userId === userId
+            existingSession?.language === language &&
+            existingSession.userId === userId &&
+            existingSession.caseId === caseId
               ? existingSession
               : {
                   language,
                   userId,
-                  sessionId: (await createChatSession({ language, userId })).id
+                  caseId,
+                  sessionId: (
+                    await createChatSession({
+                      language,
+                      userId,
+                      caseId,
+                      country: activeCase?.jurisdiction || undefined
+                    })
+                  ).id
                 };
           sessionRef.current = session;
 
@@ -112,6 +129,14 @@ const AssistantThread: React.FC = () => {
             }
           }
 
+          if (session.caseId && userId) {
+            try {
+              await refreshCaseData(session.caseId);
+            } catch {
+              // The answer is still useful if the case-history refresh fails; the next case selection will retry it.
+            }
+          }
+
           yield {
             content: [{ type: "text", text: latestAssistantText || processingMessages.join("\n\n") }],
             status: { type: "complete", reason: "stop" }
@@ -126,7 +151,7 @@ const AssistantThread: React.FC = () => {
         }
       }
     }),
-    [language, t, user?.userId]
+    [activeCase?.id, activeCase?.jurisdiction, language, refreshCaseData, t, user?.userId]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {

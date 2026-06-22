@@ -50,6 +50,7 @@ export type CaseWorkspace = {
 export type CaseDocumentRecord = {
   id: string;
   caseId: string;
+  kind?: string;
   originalFilename: string;
   mimeType: string;
   size: number;
@@ -104,6 +105,7 @@ type CaseContextValue = {
   createCase: (input: CreateCaseInput) => Promise<CaseRecord>;
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
+  refreshCaseData: (caseId: string) => Promise<void>;
   setContinueRequested: (value: boolean) => void;
   addInteraction: (caseId: string, actor: string, message: string) => void;
   sendCaseMessage: (input: SendCaseMessageInput) => Promise<SendCaseMessageResult>;
@@ -328,109 +330,6 @@ const createMockCase = (input: CreateCaseInput, createdAt: string, id: string): 
   };
 };
 
-const defaultCases: CaseRecord[] = [
-  {
-    ...createMockCase(
-      {
-        title: "Keystone Holdings Intake",
-        jurisdiction: "EU + UK",
-        opposingParty: "Northshore Advisory",
-        documents: [
-          {
-            originalFilename: "keystone-timeline.pdf",
-            mimeType: "application/pdf",
-            size: 182_430
-          }
-        ]
-      },
-      "2026-02-03T09:00:00.000Z",
-      "case-001"
-    ),
-    workspace: {
-      meta: "Due in 2 days",
-      objective: "Consolidate jurisdiction analysis and prepare a briefing memo for counsel review.",
-      nextAction: "Schedule a 15-minute voice session with the AI agent to confirm scope.",
-      jurisdiction: "EU + UK",
-      output: "Briefing memo + checklist"
-    }
-  },
-  {
-    ...createMockCase(
-      {
-        title: "Atlas Contract Review",
-        jurisdiction: "US + Canada",
-        opposingParty: "Atlas Procurement Vendor",
-        documents: [
-          {
-            originalFilename: "atlas-vendor-packet.docx",
-            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            size: 95_000
-          }
-        ]
-      },
-      "2026-01-28T14:15:00.000Z",
-      "case-002"
-    ),
-    status: "On hold",
-    selectedRole: "AI Judge",
-    selectedMode: "Review",
-    selectedCommunicationMode: "Voice",
-    workspace: {
-      meta: "Waiting on docs",
-      objective: "Gather missing vendor exhibits and align on scope with procurement leadership.",
-      nextAction: "Follow up with counsel on outstanding document set.",
-      jurisdiction: "US + Canada",
-      output: "Clause redline + risk summary"
-    }
-  },
-  {
-    ...createMockCase(
-      {
-        title: "Meridian Audit Prep",
-        jurisdiction: "EU + US",
-        opposingParty: "External Audit Team",
-        documents: []
-      },
-      "2026-02-05T08:30:00.000Z",
-      "case-003"
-    ),
-    status: "Scheduled",
-    selectedRole: "Opposing Counsel",
-    selectedMode: "Live",
-    selectedCommunicationMode: "Video",
-    workspace: {
-      meta: "Kickoff today",
-      objective: "Align audit prep checklist and confirm timeline with internal teams.",
-      nextAction: "Start kickoff session and capture action items.",
-      jurisdiction: "EU + US",
-      output: "Audit kickoff deck"
-    }
-  },
-  {
-    ...createMockCase(
-      {
-        title: "Northwind Arbitration",
-        jurisdiction: "UK",
-        opposingParty: "Northwind Counterparty",
-        documents: []
-      },
-      "2026-01-12T16:20:00.000Z",
-      "case-004"
-    ),
-    status: "Completed",
-    selectedRole: "AI Lawyer",
-    selectedMode: "Archive",
-    selectedCommunicationMode: "Chat",
-    workspace: {
-      meta: "Closed last week",
-      objective: "Finalize arbitration summary and archive case documentation.",
-      nextAction: "Send closing memo to executive stakeholders.",
-      jurisdiction: "UK",
-      output: "Arbitration summary pack"
-    }
-  }
-];
-
 const localizeCaseRecord = (caseItem: CaseRecord, language: Language): CaseRecord => {
   const documentCount = caseItem.documents.length;
 
@@ -557,6 +456,7 @@ const normalizeStoredDocument = (
     caseId,
     originalFilename: candidate.originalFilename,
     mimeType: typeof candidate.mimeType === "string" ? candidate.mimeType : "application/octet-stream",
+    kind: typeof candidate.kind === "string" ? candidate.kind : undefined,
     size: candidate.size,
     sizeLabel:
       typeof candidate.sizeLabel === "string" && candidate.sizeLabel.trim()
@@ -743,6 +643,7 @@ const mapApiRole = (role: ApiCaseHistoryMessage["role"], agentName: string | nul
 const mapApiDocument = (caseId: string, document: ApiCaseDocument): CaseDocumentRecord => ({
   id: document.doc_id,
   caseId,
+  kind: document.kind,
   originalFilename: document.original_filename,
   mimeType: "application/octet-stream",
   size: 0,
@@ -1087,6 +988,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createCase,
       setActiveCase,
       selectCase,
+      refreshCaseData: loadCaseData,
       setContinueRequested,
       addInteraction,
       sendCaseMessage,
@@ -1107,6 +1009,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createCase,
       setActiveCase,
       selectCase,
+      loadCaseData,
       setContinueRequested,
       addInteraction,
       sendCaseMessage,
