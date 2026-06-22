@@ -8,6 +8,7 @@ export const translations = {
     tagline: "Multi-agent legal intelligence with audit-ready outputs.",
     commonUser: "User",
     navHome: "Home",
+    navNews: "News",
     navPricing: "Pricing",
     navAuth: "Sign in",
     navApp: "App",
@@ -143,6 +144,7 @@ export const translations = {
       "Use a JurisDigta-native assistant workspace with mandatory JurisDigta MCP, transparent AI draft metadata, and human review for legal-risk outputs.",
     assistantDashboardBody:
       "Open the assistant workspace for legal search, document preparation, verification planning, and approval-gated tool calls.",
+    newsSubtitle: "Follow active assistant conversation areas outside the chat workspace.",
     assistantThreadsTitle: "Conversations",
     assistantThreadCurrent: "Current matter",
     assistantThreadDocument: "Document preparation",
@@ -444,6 +446,7 @@ export const translations = {
     tagline: "Multiagentná právna inteligencia s auditovateľnými výstupmi.",
     commonUser: "Používateľ",
     navHome: "Domov",
+    navNews: "Aktuality",
     navPricing: "Cenník",
     navAuth: "Prihlásiť sa",
     navApp: "Aplikácia",
@@ -579,6 +582,7 @@ export const translations = {
       "Použite pracovisko asistenta JurisDigta s povinným JurisDigta MCP, transparentnými metadátami AI návrhov a ľudskou kontrolou právne rizikových výstupov.",
     assistantDashboardBody:
       "Otvorte pracovisko asistenta pre právne vyhľadávanie, prípravu dokumentov, plánovanie overovania a schvaľované volania nástrojov.",
+    newsSubtitle: "Sledujte aktívne konverzačné oblasti asistenta mimo chatovacieho pracoviska.",
     assistantThreadsTitle: "Konverzácie",
     assistantThreadCurrent: "Aktuálna vec",
     assistantThreadDocument: "Príprava dokumentu",
@@ -880,6 +884,7 @@ export const translations = {
     tagline: "Multi-Agenten-Rechtsintelligenz mit auditierbaren Ergebnissen.",
     commonUser: "Benutzer",
     navHome: "Start",
+    navNews: "Aktuelles",
     navPricing: "Preise",
     navAuth: "Anmelden",
     navApp: "App",
@@ -1015,6 +1020,7 @@ export const translations = {
       "Nutzen Sie einen JurisDigta-eigenen Assistenten-Workspace mit verpflichtendem JurisDigta MCP, transparenten KI-Entwurfsmetadaten und menschlicher Prüfung für rechtlich riskante Ausgaben.",
     assistantDashboardBody:
       "Öffnen Sie den Assistenten-Workspace für Rechtssuche, Dokumentvorbereitung, Verifizierungsplanung und genehmigungspflichtige Tool-Aufrufe.",
+    newsSubtitle: "Verfolgen Sie aktive Assistenten-Konversationsbereiche außerhalb des Chat-Workspace.",
     assistantThreadsTitle: "Konversationen",
     assistantThreadCurrent: "Aktuelle Sache",
     assistantThreadDocument: "Dokumentvorbereitung",

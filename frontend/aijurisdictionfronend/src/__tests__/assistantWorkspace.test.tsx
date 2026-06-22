@@ -128,6 +128,8 @@ describe("AssistantWorkspace", () => {
   it("does not show assistant modes or arbitrary MCP URL entry", () => {
     render(<AssistantWorkspace />);
 
+    expect(screen.queryByRole("complementary", { name: "Conversations" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Current matter" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Legal search" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Verify company" })).toBeNull();
     expect(screen.queryByLabelText(/mcp url/i)).toBeNull();

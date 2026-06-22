@@ -25,6 +25,7 @@ const labels: Record<string, string> = {
   appName: "AI Jurisdiction",
   tagline: "Agentic legal workspace",
   navHome: "Home",
+  navNews: "News",
   navPricing: "Pricing",
   navAuth: "Log In",
   navApp: "App",
@@ -136,6 +137,12 @@ describe("Navigation profile actions", () => {
 
     const links = container.querySelectorAll(".nav-links a");
     expect(links[0]?.textContent).toBe("Log In");
+  });
+
+  it("shows the news route in the top menu", () => {
+    renderNavigation({ initialEntries: ["/app"] });
+
+    expect(screen.getByRole("link", { name: "News" }).getAttribute("href")).toBe("/aktuality");
   });
 
   it("does not show the assistant route for signed-in users", () => {

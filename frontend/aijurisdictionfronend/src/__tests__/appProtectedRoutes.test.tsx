@@ -34,6 +34,10 @@ vi.mock("../pages/Pricing", () => ({
   default: () => <div>Pricing Page</div>
 }));
 
+vi.mock("../pages/News", () => ({
+  default: () => <div>News Page</div>
+}));
+
 vi.mock("../pages/AppDashboard", () => ({
   default: () => <div>App Dashboard</div>
 }));
@@ -141,6 +145,18 @@ describe("App protected routes", () => {
 
     expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("Profile Page")).toBeNull();
+  });
+
+  it("allows unauthenticated users to access /aktuality", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/aktuality"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("News Page")).toBeDefined();
   });
 
   it("allows authenticated users to access /profile", () => {

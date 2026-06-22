@@ -6,6 +6,7 @@ import AuthCallbackView from "./auth/AuthCallbackView";
 import Home from "./pages/Home";
 import Auth from "./pages/Auth";
 import Pricing from "./pages/Pricing";
+import News from "./pages/News";
 import AppDashboard from "./pages/AppDashboard";
 import AssistantWorkspace from "./pages/AssistantWorkspace";
 import CaseIntake from "./pages/CaseIntake";
@@ -46,6 +47,7 @@ const App: React.FC = () => {
           element={<AuthCallbackView onSessionReady={() => undefined} />}
         />
         <Route path="/pricing" element={<Pricing />} />
+        <Route path="/aktuality" element={<News />} />
         <Route
           path="/app"
           element={

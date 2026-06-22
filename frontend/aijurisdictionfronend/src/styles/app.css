@@ -307,7 +307,7 @@
 .assistant-workspace {
   min-height: calc(100vh - 7rem);
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 320px;
   background: var(--surface);
   border: none;
   border-radius: 0;
@@ -951,6 +951,31 @@
   font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
+}
+
+.news-page {
+  align-items: center;
+}
+
+.news-shell {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.4rem;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 18px 42px rgba(31, 27, 22, 0.08);
+}
+
+.news-header {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.news-thread-list {
+  display: grid;
+  gap: 0.55rem;
 }
 
 .workspace-page {
@@ -2177,7 +2202,7 @@ textarea {
 
 @media (max-width: 1100px) {
   .assistant-workspace {
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 280px;
   }
 
   .workspace-grid {
