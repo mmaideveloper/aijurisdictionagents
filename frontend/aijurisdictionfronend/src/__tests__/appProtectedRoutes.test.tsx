@@ -95,6 +95,19 @@ describe("App protected routes", () => {
     cleanup();
   });
 
+  it("renders the case workspace at /", () => {
+    authState.isAuthenticated = true;
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.queryByText("Assistant Workspace")).toBeNull();
+  });
+
   it("redirects unauthenticated users from /app to /auth", () => {
     authState.isAuthenticated = false;
 
