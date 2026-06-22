@@ -92,6 +92,7 @@ vi.mock("../pages/NotFound", () => ({
 
 describe("App protected routes", () => {
   afterEach(() => {
+    vi.unstubAllGlobals();
     cleanup();
   });
 
@@ -105,6 +106,34 @@ describe("App protected routes", () => {
     );
 
     expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.queryByText("Assistant Workspace")).toBeNull();
+  });
+
+  it("renders the assistant workspace at / on agent.jurisdigta.eu for authenticated users", () => {
+    authState.isAuthenticated = true;
+    vi.stubGlobal("location", { hostname: "agent.jurisdigta.eu" });
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+    expect(screen.queryByText("Home Page")).toBeNull();
+  });
+
+  it("redirects unauthenticated users from / on agent.jurisdigta.eu to /auth", () => {
+    authState.isAuthenticated = false;
+    vi.stubGlobal("location", { hostname: "agent.jurisdigta.eu" });
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("Assistant Workspace")).toBeNull();
   });
 

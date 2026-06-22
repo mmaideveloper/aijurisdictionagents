@@ -21,6 +21,7 @@ import Disclaimer from "./pages/Disclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import NotFound from "./pages/NotFound";
+import { isAgentHost } from "./routing";
 
 interface ProtectedRouteProps {
   children: React.ReactElement;
@@ -36,11 +37,23 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return children;
 };
 
+const RootRoute: React.FC = () => {
+  if (isAgentHost()) {
+    return (
+      <ProtectedRoute>
+        <AssistantWorkspace />
+      </ProtectedRoute>
+    );
+  }
+
+  return <Home />;
+};
+
 const App: React.FC = () => {
   return (
     <PageLayout>
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<RootRoute />} />
         <Route path="/auth" element={<Auth />} />
         <Route
           path="/auth/callback"

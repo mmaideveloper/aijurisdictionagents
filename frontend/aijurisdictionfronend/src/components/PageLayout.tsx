@@ -3,10 +3,11 @@ import { useLocation } from "react-router-dom";
 import { Navigation } from "./Navigation";
 import { Footer } from "./Footer";
 import { Sidebar } from "./Sidebar";
+import { isAgentHost } from "../routing";
 
 export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { pathname } = useLocation();
-  const hasAssistantLayout = pathname === "/" || pathname === "/app/assistant";
+  const hasAssistantLayout = (pathname === "/" && isAgentHost()) || pathname === "/app/assistant";
 
   if (hasAssistantLayout) {
     return (
