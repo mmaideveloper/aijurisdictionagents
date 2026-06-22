@@ -2640,6 +2640,51 @@ def test_slovak_company_query_removes_case_preposition_prefix() -> None:
     )
 
 
+def test_prepare_slovakia_direct_reply_runs_orsr_for_plain_company_name(monkeypatch) -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizanska 665, 059 18 Spisske Bystre",
+                        "status": "Aktivna",
+                    },
+                ),
+            )
+
+    monkeypatch.setattr(slovakia_service, "build_default_tool_registry", lambda: _FakeRegistry())
+    session = Session(country="SK", language="sk-SK")
+    current_content = "ESolutions SK s.r.o."
+    messages = [Message(session_id=session.id, role=MessageRole.USER, content=current_content)]
+    events: list[dict[str, object]] = []
+
+    preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=messages,
+        current_content=current_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+        processing_event_callback=events.append,
+    )
+
+    assert "TOOL-FIRST COMPANY LOOKUP MODE" in preparation.prompt_note
+    assert "Verified company name: ESolutions SK s.r.o." in preparation.prompt_note
+    assert "Verified registration number: 46491261" in preparation.prompt_note
+    assert any(event.get("tool_name") == "obchodny_register_company_check" for event in events)
+
+
 def test_slovak_payment_confirmation_final_request_uses_tool_first_direct_reply(monkeypatch) -> None:
     from app.chat.country_services import slovakia as slovakia_service
     from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
