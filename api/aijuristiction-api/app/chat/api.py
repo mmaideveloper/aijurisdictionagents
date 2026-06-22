@@ -41,6 +41,7 @@ from app.chat.intent_policy_service import (
     build_document_task_plan_note,
     is_document_modernization_request,
 )
+from app.chat.mcp_law_context import build_mcp_law_context
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.output_validation import AILawyerOutputMessageValidationAgent, LawyerOutputUserProfile
 from app.chat.repository import InMemoryChatRepository
@@ -1205,6 +1206,17 @@ def _run_direct_lawyer_turn(
     )
     if uploaded_contract_note:
         prompt_override = f"{prompt_override}\n\n{uploaded_contract_note}"
+    mcp_law_context = build_mcp_law_context(
+        query=content,
+        country=session.country,
+        language=session.language,
+    )
+    if mcp_law_context is not None:
+        prompt_override = f"{prompt_override}\n\n{mcp_law_context.prompt_note}"
+        if mcp_law_context.document is not None:
+            all_documents.append(mcp_law_context.document)
+        if processing_event_callback is not None:
+            processing_event_callback(mcp_law_context.processing_event)
     lawyer_message = lawyer.respond(
         conversation=conversation,
         documents=all_documents,
