@@ -460,7 +460,7 @@ def download_generated_case_document_pdf(
         case_id=case_id,
         session_id=getattr(document, "session_id", None),
         user_id=user_id,
-        footer_line="AIJ generated case document",
+        footer_line="JurisDigta generated case document",
         verification_score=None,
     )
     return Response(

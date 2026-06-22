@@ -130,6 +130,22 @@ type CaseSessionCacheRecord = {
   sessionId: string;
 };
 
+const USER_VISIBLE_GENERATED_DOCUMENT_KINDS = new Set(["generated_document"]);
+
+export const isUserVisibleGeneratedDocument = (document: Pick<CaseDocumentRecord, "kind" | "originalFilename">): boolean => {
+  if (!USER_VISIBLE_GENERATED_DOCUMENT_KINDS.has(document.kind)) {
+    return false;
+  }
+  const normalizedName = document.originalFilename.trim().toLowerCase();
+  return !(
+    normalizedName.startsWith("assistant-technical-") ||
+    normalizedName.startsWith("session-") ||
+    normalizedName.startsWith("spracovanie-stale-prebieha") ||
+    normalizedName.includes("technical") ||
+    normalizedName.includes("payload")
+  );
+};
+
 export const buildLocalizedInteractionMessage = (
   key: TranslationKey,
   values?: TranslationValues
@@ -658,8 +674,8 @@ const mapApiCase = (
   historyDocuments: ApiCaseDocument[] = []
 ): CaseRecord => {
   const documents = historyDocuments
-    .filter((document) => document.kind !== "technical_payload")
-    .map((document) => mapApiDocument(apiCase.case_id, document));
+    .map((document) => mapApiDocument(apiCase.case_id, document))
+    .filter(isUserVisibleGeneratedDocument);
   const createdAt = apiCase.created_at;
   return {
     id: apiCase.case_id,
@@ -679,7 +695,7 @@ const mapApiCase = (
     selectedMode: "Draft",
     selectedCommunicationMode: "Chat",
     workspace: {
-      meta: `${documents.length} document${documents.length === 1 ? "" : "s"} / ${historyMessages.length} chat${historyMessages.length === 1 ? "" : "s"}`,
+      meta: `${documents.length} legal document${documents.length === 1 ? "" : "s"} / ${historyMessages.length} message${historyMessages.length === 1 ? "" : "s"}`,
       objective: apiCase.title,
       nextAction: "Open the selected case data and continue the chat.",
       jurisdiction: "SK",
@@ -762,10 +778,12 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const documents = React.useMemo(() => {
     return cases
       .flatMap((caseItem) =>
-        caseItem.documents.map((document) => ({
-          ...document,
-          caseTitle: caseItem.title
-        }))
+        caseItem.documents
+          .filter(isUserVisibleGeneratedDocument)
+          .map((document) => ({
+            ...document,
+            caseTitle: caseItem.title
+          }))
       )
       .sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt));
   }, [cases]);
@@ -784,7 +802,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       try {
         const [apiCase] = storedCases.filter((caseItem) => caseItem.id === caseId);
-        const history = await getCaseHistory(user.userId, caseId);
+        const history = await getCaseHistory(user.userId, caseId, 200);
         setStoredCases((prev) =>
           prev.map((caseItem) =>
             caseItem.id === caseId

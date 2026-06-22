@@ -3,19 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { useCases, type CaseDocumentRecord } from "../state/CaseProvider";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "./LanguageProvider";
-import { BsBoxArrowLeft } from "react-icons/bs";
+import { BsBoxArrowLeft, BsChevronDown, BsChevronRight } from "react-icons/bs";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
 
 const statusClass = (status: string) => status.toLowerCase().replace(/\s+/g, "-");
-const CHAT_PREVIEW_LIMIT = 20;
-
-export const buildChatPreview = (actor: string, message: string): string => {
-  const text = `${actor}: ${message}`.replace(/\s+/g, " ").trim();
-  if (text.length <= CHAT_PREVIEW_LIMIT) {
-    return text;
-  }
-  return `${text.slice(0, CHAT_PREVIEW_LIMIT).trimEnd()}...`;
-};
 
 type SidebarProps = {
   onClose?: () => void;
@@ -26,23 +17,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { cases, activeCase, selectCase, isLoadingCases, caseLoadError } = useCases();
   const { user } = useAuth();
   const { t } = useLanguage();
-  const [selectedChatId, setSelectedChatId] = React.useState<string | null>(null);
-  const latestChatId = activeCase?.interactionHistory.at(-1)?.id ?? null;
+  const [isSelectedCaseExpanded, setIsSelectedCaseExpanded] = React.useState(false);
 
   React.useEffect(() => {
-    setSelectedChatId(latestChatId);
-  }, [activeCase?.id, latestChatId]);
-
-  const selectedChat = React.useMemo(() => {
-    if (!activeCase || activeCase.interactionHistory.length === 0) {
-      return null;
-    }
-    return (
-      activeCase.interactionHistory.find((interaction) => interaction.id === selectedChatId) ??
-      activeCase.interactionHistory.at(-1) ??
-      null
-    );
-  }, [activeCase, selectedChatId]);
+    setIsSelectedCaseExpanded(false);
+  }, [activeCase?.id]);
 
   const openDocument = (document: CaseDocumentRecord) => {
     if (!activeCase) {
@@ -133,10 +112,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
           {activeCase ? (
             <div className="sidebar-section sidebar-section--selected-case">
               <div className="sidebar-section__header">
-                <h3>{t("sidebarSelectedCaseTitle")}</h3>
+                <button
+                  type="button"
+                  className="sidebar-section__toggle"
+                  onClick={() => setIsSelectedCaseExpanded((current) => !current)}
+                  aria-expanded={isSelectedCaseExpanded}
+                >
+                  {isSelectedCaseExpanded ? <BsChevronDown aria-hidden="true" /> : <BsChevronRight aria-hidden="true" />}
+                  <h3>{t("sidebarSelectedCaseTitle")}</h3>
+                </button>
                 <span>{t(caseStatusTranslationKeys[activeCase.status])}</span>
               </div>
-              <div className="sidebar-selected-case">
+              <div className="sidebar-selected-case" hidden={!isSelectedCaseExpanded}>
                 <strong>{activeCase.title}</strong>
                 <p className="hint">{activeCase.description}</p>
                 <dl className="sidebar-case-data">
@@ -157,71 +144,35 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                     <dd>{activeCase.workspace.output}</dd>
                   </div>
                 </dl>
-                <div className="sidebar-selected-block">
-                  <h4>{t("sidebarSelectedDocuments")}</h4>
-                  {activeCase.documents.length > 0 ? (
-                    <ul>
-                      {activeCase.documents.map((document) => (
-                        <li key={document.id}>
-                          <button
-                            type="button"
-                            className="sidebar-document-link"
-                            onClick={() => openDocument(document)}
-                          >
-                            <span title={document.originalFilename}>{document.originalFilename}</span>
-                            <small>{document.sizeLabel}</small>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="hint">{t("sidebarSelectedDocumentsEmpty")}</p>
-                  )}
-                </div>
-                <div className="sidebar-selected-block">
-                  <h4>{t("sidebarSelectedChats")}</h4>
-                  {activeCase.interactionHistory.length > 0 ? (
-                    <>
-                      <ul>
-                        {activeCase.interactionHistory.slice(-4).map((interaction) => (
-                          <li key={interaction.id}>
-                            <button
-                              type="button"
-                              className={`sidebar-chat-link${selectedChat?.id === interaction.id ? " active" : ""}`}
-                              onClick={() => {
-                                selectCase(activeCase.id);
-                                setSelectedChatId(interaction.id);
-                              }}
-                              title={`${interaction.actor}: ${interaction.message}`}
-                              aria-pressed={selectedChat?.id === interaction.id}
-                            >
-                              <span>{buildChatPreview(interaction.actor, interaction.message)}</span>
-                            </button>
-                            <small>{new Date(interaction.createdAt).toLocaleString()}</small>
-                          </li>
-                        ))}
-                      </ul>
-                      {selectedChat ? (
-                        <div className="sidebar-message-parts" aria-live="polite">
-                          <div className="sidebar-message-part">
-                            <span>Actor</span>
-                            <strong>{selectedChat.actor}</strong>
-                          </div>
-                          <div className="sidebar-message-part">
-                            <span>Time</span>
-                            <strong>{new Date(selectedChat.createdAt).toLocaleString()}</strong>
-                          </div>
-                          <div className="sidebar-message-part sidebar-message-part--body">
-                            <span>Message</span>
-                            <p>{selectedChat.message}</p>
-                          </div>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <p className="hint">{t("sidebarSelectedChatsEmpty")}</p>
-                  )}
-                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {activeCase ? (
+            <div className="sidebar-section sidebar-section--documents">
+              <div className="sidebar-section__header">
+                <h3>{t("sidebarSelectedDocuments")}</h3>
+                <span>{activeCase.documents.length}</span>
+              </div>
+              <div className="sidebar-selected-block">
+                {activeCase.documents.length > 0 ? (
+                  <ul>
+                    {activeCase.documents.map((document) => (
+                      <li key={document.id}>
+                        <button
+                          type="button"
+                          className="sidebar-document-link"
+                          onClick={() => openDocument(document)}
+                        >
+                          <span title={document.originalFilename}>{document.originalFilename}</span>
+                          <small>{document.sizeLabel}</small>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="hint">{t("sidebarSelectedDocumentsEmpty")}</p>
+                )}
               </div>
             </div>
           ) : null}

@@ -280,7 +280,7 @@ describe("CaseProvider", () => {
     expect(screen.getByTestId("document-count").textContent).toBe("0");
   });
 
-  it("stores created fallback cases and aggregated documents in localStorage", async () => {
+  it("stores created fallback cases without counting uploaded files as generated legal documents", async () => {
     const user = userEvent.setup();
     render(
       <LanguageProvider>
@@ -296,9 +296,9 @@ describe("CaseProvider", () => {
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(Number(screen.getByTestId("case-count").textContent ?? "0")).toBe(initialCases + 1);
-    expect(Number(screen.getByTestId("document-count").textContent ?? "0")).toBe(initialDocuments + 1);
+    expect(Number(screen.getByTestId("document-count").textContent ?? "0")).toBe(initialDocuments);
     expect(screen.getByTestId("latest-case").textContent).toBe("Mock intake");
-    expect(screen.getByTestId("latest-document").textContent).toBe("northwind-evidence.pdf");
+    expect(screen.getByTestId("latest-document").textContent).toBe("");
 
     const rawStoredCases = window.localStorage.getItem(STORAGE_KEY);
     expect(rawStoredCases).not.toBeNull();
@@ -318,9 +318,9 @@ describe("CaseProvider", () => {
     );
 
     expect(screen.getByTestId("case-count").textContent).toBe("1");
-    expect(screen.getByTestId("document-count").textContent).toBe("1");
+    expect(screen.getByTestId("document-count").textContent).toBe("0");
     expect(screen.getByTestId("latest-case").textContent).toBe("Stored case");
-    expect(screen.getByTestId("latest-document").textContent).toBe("stored-evidence.pdf");
+    expect(screen.getByTestId("latest-document").textContent).toBe("");
     expect(screen.getByTestId("active-case").textContent).toBe("");
     expect(screen.getByTestId("has-selected-case").textContent).toBe("false");
   });
@@ -481,6 +481,26 @@ describe("CaseProvider", () => {
       has_more: false,
       documents: [
         {
+          doc_id: "doc-technical",
+          kind: "technical_payload",
+          version: 1,
+          original_filename: "assistant-technical-20260622.json",
+          processing_status: "processed",
+          processing_error: null,
+          processed_at: "2026-06-22T10:04:00.000Z",
+          created_at: "2026-06-22T10:04:00.000Z"
+        },
+        {
+          doc_id: "doc-uploaded",
+          kind: "uploaded",
+          version: 1,
+          original_filename: "session-raw-upload.txt",
+          processing_status: "processed",
+          processing_error: null,
+          processed_at: "2026-06-22T10:04:30.000Z",
+          created_at: "2026-06-22T10:04:30.000Z"
+        },
+        {
           doc_id: "doc-generated",
           kind: "generated_document",
           version: 1,
@@ -510,6 +530,6 @@ describe("CaseProvider", () => {
       expect(screen.getByTestId("document-count").textContent).toBe("1");
     });
     expect(screen.getByTestId("latest-document").textContent).toBe("splnomocnenie-sk-en.pdf");
-    expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-api");
+    expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-api", 200);
   });
 });

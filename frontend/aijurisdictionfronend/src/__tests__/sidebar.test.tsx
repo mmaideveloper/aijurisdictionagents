@@ -4,7 +4,7 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Sidebar, buildChatPreview } from "../components/Sidebar";
+import { Sidebar } from "../components/Sidebar";
 
 const navigate = vi.fn();
 const selectCase = vi.fn();
@@ -36,8 +36,6 @@ vi.mock("../components/LanguageProvider", () => ({
         sidebarSelectedCaseOutput: "Output",
         sidebarSelectedDocuments: "Documents",
         sidebarSelectedDocumentsEmpty: "No documents.",
-        sidebarSelectedChats: "Chats",
-        sidebarSelectedChatsEmpty: "No chats.",
         sidebarNavigationTitle: "Navigation",
         sidebarComingSoon: "Soon",
         sidebarPlaceholder: "Shortcuts",
@@ -68,7 +66,18 @@ vi.mock("../state/CaseProvider", () => ({
         jurisdiction: "SK",
         output: "Case history"
       },
-      documents: [],
+      documents: [
+        {
+          id: "doc-1",
+          caseId: "case-1",
+          kind: "generated_document",
+          originalFilename: "potvrdenie_o_zaplateni_20260622T120000Z.pdf",
+          mimeType: "application/pdf",
+          size: 1024,
+          sizeLabel: "1 KB",
+          uploadedAt: "2026-06-22T09:02:00.000Z"
+        }
+      ],
       interactionHistory: [
         {
           id: "interaction-0",
@@ -99,25 +108,29 @@ describe("Sidebar", () => {
     setCaseCommunicationMode.mockReset();
   });
 
-  it("builds a compact 20 character chat preview", () => {
-    expect(buildChatPreview("You", "Please continue this very long legal conversation")).toBe(
-      "You: Please continue..."
-    );
-  });
-
-  it("shows compact chat previews and opens the selected message in place", async () => {
+  it("keeps selected case details collapsed by default while documents remain visible", async () => {
     const user = userEvent.setup();
     render(<Sidebar />);
 
-    expect(screen.getByText("Please continue this very long legal conversation")).not.toBeNull();
+    expect(screen.queryByText("Please continue this very long legal conversation")).toBeNull();
     expect(screen.queryByText("Earlier legal answer with detailed next steps")).toBeNull();
-    const chatPreview = screen.getByRole("button", { name: "AI Lawyer: Earlier l..." });
+    const selectedCasePanel = screen.getByText("Case ID").closest(".sidebar-selected-case");
+    expect(selectedCasePanel?.hasAttribute("hidden")).toBe(true);
+    expect(screen.getByText("potvrdenie_o_zaplateni_20260622T120000Z.pdf")).not.toBeNull();
 
-    await user.click(chatPreview);
+    await user.click(screen.getByRole("button", { name: "Selected case" }));
 
-    expect(selectCase).toHaveBeenCalledWith("case-1");
+    expect(screen.getByText("Case ID")).not.toBeNull();
+    expect(selectedCasePanel?.hasAttribute("hidden")).toBe(false);
+    expect(screen.getByText("potvrdenie_o_zaplateni_20260622T120000Z.pdf")).not.toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Selected case" }));
+
+    expect(selectedCasePanel?.hasAttribute("hidden")).toBe(true);
+    expect(screen.getByText("potvrdenie_o_zaplateni_20260622T120000Z.pdf")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "AI Lawyer: Earlier l..." })).toBeNull();
+    expect(selectCase).not.toHaveBeenCalled();
     expect(setCaseCommunicationMode).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalledWith("/app/chat");
-    expect(screen.getByText("Earlier legal answer with detailed next steps")).not.toBeNull();
   });
 });

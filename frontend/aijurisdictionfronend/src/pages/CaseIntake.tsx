@@ -69,7 +69,7 @@ const CaseIntake: React.FC = () => {
           file
         }))
       });
-      navigate("/", { replace: true });
+      navigate("/app/chat", { replace: true });
     } finally {
       setIsSubmitting(false);
     }

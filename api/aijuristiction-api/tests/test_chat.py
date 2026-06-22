@@ -4889,7 +4889,8 @@ def test_generated_assistant_document_is_saved_as_case_document(monkeypatch) -> 
         discussion_type="advice",
     )
     content = (
-        "Tu su finalne verzie splnomocnenia v slovenskej a anglickej verzii.\n\n"
+        "Spracovanie stale prebieha....\n\n"
+        "LawyerSlovakia: Tu su finalne verzie splnomocnenia v slovenskej a anglickej verzii.\n\n"
         "**Splnomocnenie (slovenska verzia)**:\n"
         "- Splnomocnenec: Emilia Matonokova\n"
         "- Spolocnost: Esolutions SK s.r.o.\n"
@@ -4910,9 +4911,46 @@ def test_generated_assistant_document_is_saved_as_case_document(monkeypatch) -> 
     assert len(stored_documents) == 1
     assert stored_documents[0]["kind"] == "generated_document"
     assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
-    assert str(stored_documents[0]["original_filename"]).endswith(".txt")
+    assert str(stored_documents[0]["original_filename"]).startswith("splnomocnenie_")
+    assert str(stored_documents[0]["original_filename"]).endswith(".pdf")
     assert "Splnomocnenie" in str(stored_documents[0]["payload"])
     assert "Dokumenty su pripravene" not in str(stored_documents[0]["payload"])
+    assert "Spracovanie stale prebieha" not in str(stored_documents[0]["payload"])
+
+
+def test_generated_payment_confirmation_document_uses_legal_filename() -> None:
+    from app.chat.api import _generated_case_document_filename_for_storage
+
+    content = (
+        "Pripravim potvrdenie o zaplateni na zaklade poskytnutych udajov.\n\n"
+        "**Potvrdenie o zaplatení**\n\n"
+        "Ja, nizsie podpisany, potvrdzujem prijatie sumy 1000 EUR.\n\n"
+        "Podpis: ____________________"
+    )
+
+    filename = _generated_case_document_filename_for_storage(content, timestamp="20260622T152930Z")
+
+    assert filename == "potvrdenie_o_zaplateni_20260622T152930Z.pdf"
+
+
+def test_pending_payment_confirmation_reply_is_synthesized_for_storage() -> None:
+    from app.chat.api import _synthesized_generated_case_document_body_for_storage
+
+    content = (
+        "Pripravim potvrdenie o zaplateni s uvedenymi udajmi.\n\n"
+        "- **Suma:** 1000 EUR\n"
+        "- **Platitel:** Matej Mat, Stromova 10, Poprad\n"
+        "- **Prijemca:** Matej Mat, Stromova 10, Poprad\n"
+        "- **Datum prijatia:** 1.1.2026\n\n"
+        "Teraz pripravim finalne potvrdenie o zaplateni vo formate PDF. Chvilu prosim."
+    )
+
+    body = _synthesized_generated_case_document_body_for_storage(content)
+
+    assert "Potvrdenie" in body
+    assert "Matej Mat" in body
+    assert "1000 EUR" in body
+    assert "Chvilu prosim" not in body
 
 
 def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None:

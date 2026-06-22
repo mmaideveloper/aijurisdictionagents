@@ -110,6 +110,7 @@ const Home: React.FC = () => {
     continueRequested,
     setContinueRequested,
     addInteraction,
+    loadCaseData,
     sendCaseMessage,
     setCaseRole,
     setCaseCommunicationMode
@@ -229,6 +230,7 @@ const Home: React.FC = () => {
           communicationMode
         });
         addInteraction(activeCase.id, response.assistantActor, response.assistantMessage);
+        await loadCaseData(activeCase.id);
         return true;
       } catch (error) {
         const fallbackMessage = "Unknown API error.";

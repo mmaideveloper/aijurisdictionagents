@@ -2687,10 +2687,10 @@ def _persist_generated_case_document_if_needed(*, session: Session, content: str
     if not case_id:
         return None
     visible_text = _user_visible_text(content).strip()
-    if not _looks_like_generated_case_document_for_storage(visible_text):
-        return None
-
-    document_body = _generated_case_document_body_for_storage(visible_text)
+    if _looks_like_generated_case_document_for_storage(visible_text):
+        document_body = _generated_case_document_body_for_storage(visible_text)
+    else:
+        document_body = _synthesized_generated_case_document_body_for_storage(visible_text)
     if not document_body:
         return None
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -2764,11 +2764,15 @@ def _generated_case_document_body_for_storage(content: str) -> str:
     lines = content.strip().splitlines()
     cleaned: list[str] = []
     skip_markers = (
+        "spracovanie stale prebieha",
         "dokument je pripraven",
         "dokumenty su pripravene",
+        "dokumentu su pripravene",
         "pripraveny na stiahnutie",
         "pripravene na stiahnutie",
         "tu su finalne verzie",
+        "teraz ich vygenerujem",
+        "prosim chvilu pockajte",
         "tu su finálne verzie",
     )
     for line in lines:
@@ -2776,27 +2780,62 @@ def _generated_case_document_body_for_storage(content: str) -> str:
         normalized = _canonicalize_document_text(stripped)
         if normalized and any(marker in normalized for marker in skip_markers):
             continue
+        stripped = re.sub(r"^(?:[A-Za-z]+Slovakia|LawyerSlovakia)\s*:\s*", "", stripped).strip()
+        if not stripped:
+            continue
         cleaned.append(stripped)
     body = "\n".join(cleaned).strip()
-    body = re.sub(r"^(?:[A-Za-z]+Slovakia|LawyerSlovakia)\s*:\s*", "", body).strip()
     return body
 
 
+def _synthesized_generated_case_document_body_for_storage(content: str) -> str:
+    normalized = _canonicalize_document_text(content)
+    if not (
+        "potvrdenie" in normalized
+        and any(token in normalized for token in ("zaplat", "uhrad", "platb"))
+        and any(marker in normalized for marker in ("format pdf", "na stiahnutie", "pripravim finalne"))
+    ):
+        return ""
+    if "?" in normalized[-180:]:
+        return ""
+
+    facts = _extract_document_facts(content.splitlines())
+    lines = _build_slovak_payment_confirmation_lines(facts)
+    return "\n".join(lines).strip()
+
+
 def _generated_case_document_filename_for_storage(content: str, *, timestamp: str) -> str:
+    for title in _extract_document_titles_from_text(content):
+        slug = _filename_slug_for_generated_case_document(_generated_case_document_legal_title(title))
+        if slug:
+            return f"{slug}_{timestamp}.pdf"
     for line in content.splitlines():
-        title = line.strip().strip("*#:- ")
+        title = _generated_case_document_legal_title(line.strip().strip("*#:- "))
         if title:
             slug = _filename_slug_for_generated_case_document(title)
             if slug:
-                return f"{slug}-{timestamp}.txt"
-    return f"generated-document-{timestamp}.txt"
+                return f"{slug}_{timestamp}.pdf"
+    return f"generated_document_{timestamp}.pdf"
+
+
+def _generated_case_document_legal_title(value: str) -> str:
+    title = re.sub(r"\([^)]*(?:verzia|version|jazyk|language)[^)]*\)", "", value, flags=re.IGNORECASE)
+    title = re.sub(r"\s+", " ", title.strip().strip("*#:- "))
+    normalized = _canonicalize_document_text(title)
+    if "power of attorney" in normalized:
+        return "Power of Attorney"
+    if "splnomocnenie" in normalized or "plnomocenstvo" in normalized:
+        return "Splnomocnenie"
+    if "potvrdenie" in normalized and any(token in normalized for token in ("zaplat", "uhrad", "platb")):
+        return "Potvrdenie o zaplatení"
+    return title
 
 
 def _filename_slug_for_generated_case_document(value: str) -> str:
     without_accents = unicodedata.normalize("NFKD", value)
     ascii_text = without_accents.encode("ascii", "ignore").decode("ascii").lower()
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_text).strip("-")
-    return slug[:80].strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "_", ascii_text).strip("_")
+    return slug[:80].strip("_")
 
 
 def _next_generated_case_document_version(*, store: ApiDatabaseStore, case_id: str) -> int:

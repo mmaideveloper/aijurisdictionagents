@@ -7,7 +7,8 @@ import { isAgentHost } from "../routing";
 
 export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { pathname } = useLocation();
-  const hasAssistantLayout = (pathname === "/" && isAgentHost()) || pathname === "/app/assistant";
+  const hasAssistantLayout =
+    (pathname === "/" && isAgentHost()) || pathname === "/app/assistant" || pathname === "/app/chat";
 
   if (hasAssistantLayout) {
     return (
