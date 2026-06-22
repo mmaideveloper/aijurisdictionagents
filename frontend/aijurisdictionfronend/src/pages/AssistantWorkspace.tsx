@@ -180,21 +180,6 @@ const AssistantWorkspace: React.FC = () => {
   return (
     <div className="page assistant-workspace-page">
       <section className="assistant-workspace">
-        <aside className="assistant-rail" aria-label={t("assistantThreadsTitle")}>
-          <div>
-            <p className="eyebrow">{t("assistantThreadsTitle")}</p>
-            <h2>{t("assistantThreadCurrent")}</h2>
-          </div>
-          <div className="assistant-thread-list">
-            <button type="button" className="assistant-thread-item active">
-              {t("assistantThreadCurrent")}
-            </button>
-            <button type="button" className="assistant-thread-item">
-              {t("assistantThreadDocument")}
-            </button>
-          </div>
-        </aside>
-
         <main className="assistant-main" aria-labelledby="assistant-title">
           <section className="assistant-main__header">
             <div>

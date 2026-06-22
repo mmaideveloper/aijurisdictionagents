@@ -280,7 +280,7 @@
 .assistant-workspace {
   min-height: calc(100vh - 11rem);
   display: grid;
-  grid-template-columns: minmax(180px, 0.75fr) minmax(360px, 1.7fr) minmax(240px, 0.95fr);
+  grid-template-columns: minmax(360px, 1.7fr) minmax(240px, 0.95fr);
   gap: 1rem;
 }
 
@@ -482,6 +482,31 @@
 
 .assistant-metadata dd {
   color: var(--ink);
+}
+
+.news-page {
+  align-items: center;
+}
+
+.news-shell {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.4rem;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 18px 42px rgba(31, 27, 22, 0.08);
+}
+
+.news-header {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.news-thread-list {
+  display: grid;
+  gap: 0.55rem;
 }
 
 .workspace-page {
