@@ -144,6 +144,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_POSTGRES_STORAGE_SIZE_GB` | Optional PostgreSQL storage size |
 | `CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the API. Include browser-hosted frontend origins such as `https://web.jurisdigta.eu` and `https://agent.jurisdigta.eu`; self-managed prod deploy appends those two origins when starting the API container |
 | `MCP_CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the dedicated MCP service; default production value should include `https://mcp.jurisdigta.eu` |
+| `INTERNAL_MCP_BASE_URL` | Optional API-to-MCP base URL for internal assistant law lookups. Self-managed prod injects `http://jurisdigta-mcp:8070` into the API container so chat answers can call the same MCP `searchLaws` and `getLawText` tools as external assistants |
 | `MCP_PORT` | Local/self-managed MCP service port when using Docker Compose, default `8070` |
 | `CONTACT_CAPTCHA_REQUIRED` | Set `true` in public environments to require Cloudflare Turnstile verification for `POST /v1/contact` |
 | `CONTACT_RATE_LIMIT_MAX_REQUESTS` | Optional backend per-IP contact form throttle, default `5` |
@@ -385,6 +386,7 @@ Server-local `jurisdigta.env` must include at least:
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
 - `MCP_API_JWT_SECRET`
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
+- `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` is injected by the self-managed deploy script for the API container; it normally does not need to be stored in the GitHub Environment.
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
@@ -464,6 +466,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `MCP_CORS_ALLOW_ORIGINS=https://mcp.jurisdigta.eu`
 - `MCP_PORT=8070` for self-managed Docker Compose deployments
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu` for self-managed MCP OAuth metadata and token audience binding
+- `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` for API-to-MCP law-tool calls inside the Docker network; the self-managed deploy script injects this value automatically
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai` for remote connector OAuth callbacks
 - `MCP_OTP_REUSE_WINDOW_HOURS=24` for bounded repeat OTP suppression after successful MCP OTP verification
 - `CONTACT_CAPTCHA_REQUIRED=true`

@@ -1405,6 +1405,77 @@ def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
     assert "§ 588" in context.document.content
 
 
+def test_mcp_law_context_prefers_remote_mcp_endpoint(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    requests: list[dict[str, object]] = []
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            request = requests[-1]
+            params = request["json"]["params"]  # type: ignore[index]
+            name = params["name"]  # type: ignore[index]
+            if name == "searchLaws":
+                text = json.dumps(
+                    {
+                        "results": [
+                            {
+                                "document_id": "doc-40-1964",
+                                "law_identifier_text": "40/1964 Zb.",
+                                "title": "Obciansky zakonnik",
+                            }
+                        ]
+                    }
+                )
+            else:
+                text = json.dumps(
+                    {
+                        "document_id": "doc-40-1964",
+                        "law_identifier_text": "40/1964 Zb.",
+                        "title": "Obciansky zakonnik",
+                        "content_text": "§ 588 text",
+                    }
+                )
+            return {"result": {"content": [{"type": "text", "text": text}]}}
+
+    class _FakeClient:
+        def __init__(self, timeout: float) -> None:
+            assert timeout == 10.0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, *, json: dict[str, object], headers: dict[str, str]):
+            requests.append({"url": url, "json": json, "headers": headers})
+            return _FakeResponse()
+
+    monkeypatch.setenv("INTERNAL_MCP_BASE_URL", "http://jurisdigta-mcp:8070")
+    monkeypatch.setattr("app.chat.mcp_law_context.httpx.Client", _FakeClient)
+    monkeypatch.setattr(
+        "app.mcp_api._call_tool",
+        lambda name, arguments: (_ for _ in ()).throw(AssertionError("unexpected in-process MCP call")),
+    )
+
+    context = build_mcp_law_context(
+        query="Co hovori zakon 40/1964 o kupnej zmluve?",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert [request["url"] for request in requests] == [
+        "http://jurisdigta-mcp:8070/MCP",
+        "http://jurisdigta-mcp:8070/MCP",
+    ]
+    assert "§ 588 text" in context.prompt_note
+
+
 def test_mcp_law_context_skips_non_slovak_non_legal_turn(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 

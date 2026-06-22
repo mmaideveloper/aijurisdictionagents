@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import logging
+import os
 import re
 from typing import Any
+
+import httpx
 
 from aijurisdictionagents.schemas import Document as CoreDocument
 
@@ -146,10 +150,60 @@ def _section_start_from_query(query: str) -> str:
 
 
 def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    remote_base_url = _remote_mcp_base_url()
+    if remote_base_url:
+        return _call_remote_mcp_tool(remote_base_url=remote_base_url, name=name, arguments=arguments)
+
     from app.mcp_api import _call_tool
 
     payload = _call_tool(name, arguments)
     return payload if isinstance(payload, dict) else {}
+
+
+def _remote_mcp_base_url() -> str:
+    raw_value = os.getenv("INTERNAL_MCP_BASE_URL", os.getenv("MCP_PUBLIC_BASE_URL", "")).strip()
+    if raw_value in {"", "unknown-variable"}:
+        return ""
+    return raw_value.rstrip("/")
+
+
+def _call_remote_mcp_tool(*, remote_base_url: str, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": name,
+            "arguments": arguments,
+        },
+    }
+    with httpx.Client(timeout=10.0) as client:
+        response = client.post(
+            f"{remote_base_url}/MCP",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        envelope = response.json()
+    if not isinstance(envelope, dict):
+        return {}
+    error = envelope.get("error")
+    if error:
+        raise RuntimeError(f"MCP tool {name} failed: {error}")
+    result = envelope.get("result")
+    if not isinstance(result, dict):
+        return {}
+    content = result.get("content")
+    if not isinstance(content, list) or not content:
+        return {}
+    first = content[0]
+    if not isinstance(first, dict):
+        return {}
+    text = first.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return {}
+    decoded = json.loads(text)
+    return decoded if isinstance(decoded, dict) else {}
 
 
 def _tool_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -249,8 +303,6 @@ def _unavailable_context() -> McpLawContext:
 
 
 def _compact_json(value: dict[str, Any]) -> str:
-    import json
-
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 

@@ -211,6 +211,7 @@ start_api_and_mcp() {
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
+    -e INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070 \
     -e SYSTEM_STATUS_FILE=/workspace/runs/status/system-status.json \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     aijuristiction-api:local >/dev/null
