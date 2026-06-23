@@ -4922,6 +4922,7 @@ def test_generated_assistant_document_is_saved_as_case_document(monkeypatch) -> 
             payload: bytes,
             uploaded_by_user_id: str | None = None,
         ) -> str:
+            doc_id = f"doc-generated-{len(stored_documents) + 1}"
             stored_documents.append(
                 {
                     "case_id": case_id,
@@ -4932,7 +4933,7 @@ def test_generated_assistant_document_is_saved_as_case_document(monkeypatch) -> 
                     "uploaded_by_user_id": uploaded_by_user_id,
                 }
             )
-            return "doc-generated"
+            return doc_id
 
     user_id = uuid4()
     session = Session(
@@ -4959,17 +4960,24 @@ def test_generated_assistant_document_is_saved_as_case_document(monkeypatch) -> 
 
     monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
 
-    doc_id = chat_api._persist_generated_case_document_if_needed(session=session, content=content)
+    doc_ids = chat_api._persist_generated_case_document_if_needed(session=session, content=content)
 
-    assert doc_id == "doc-generated"
-    assert len(stored_documents) == 1
-    assert stored_documents[0]["kind"] == "generated_document"
-    assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
-    assert str(stored_documents[0]["original_filename"]).startswith("splnomocnenie_")
-    assert str(stored_documents[0]["original_filename"]).endswith(".pdf")
-    assert "Splnomocnenie" in str(stored_documents[0]["payload"])
-    assert "Dokumenty su pripravene" not in str(stored_documents[0]["payload"])
-    assert "Spracovanie stale prebieha" not in str(stored_documents[0]["payload"])
+    assert doc_ids == ["doc-generated-1", "doc-generated-2"]
+    assert len(stored_documents) == 2
+    assert {item["kind"] for item in stored_documents} == {"generated_document"}
+    assert {item["uploaded_by_user_id"] for item in stored_documents} == {str(user_id)}
+    filenames = [str(item["original_filename"]) for item in stored_documents]
+    assert filenames[0].startswith("splnomocnenie_sk_")
+    assert filenames[1].startswith("power_of_attorney_en_")
+    slovak_payload = str(stored_documents[0]["payload"])
+    english_payload = str(stored_documents[1]["payload"])
+    assert "Splnomocniteľ" in slovak_payload
+    assert "Občiansky zákonník" in slovak_payload
+    assert "Power of Attorney" not in slovak_payload
+    assert "Attorney-in-fact" in english_payload
+    assert "Splnomocnenie" not in english_payload
+    assert "Dokumenty su pripravene" not in slovak_payload
+    assert "Spracovanie stale prebieha" not in english_payload
 
 
 def test_generated_payment_confirmation_document_uses_legal_filename() -> None:

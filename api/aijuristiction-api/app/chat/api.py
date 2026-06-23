@@ -96,6 +96,12 @@ class _DocumentExportAsset:
 
 
 @dataclass(frozen=True)
+class _GeneratedCaseDocumentDraft:
+    filename: str
+    body: str
+
+
+@dataclass(frozen=True)
 class _TechnicalPayloadAsset:
     content: str
     extension: str
@@ -2820,38 +2826,209 @@ def _persist_case_technical_payload(
         return None
 
 
-def _persist_generated_case_document_if_needed(*, session: Session, content: str) -> str | None:
+def _persist_generated_case_document_if_needed(*, session: Session, content: str) -> list[str]:
     case_id = (session.case_id or "").strip()
     if not case_id:
-        return None
+        return []
     visible_text = _user_visible_text(content).strip()
-    if _looks_like_generated_case_document_for_storage(visible_text):
-        document_body = _generated_case_document_body_for_storage(visible_text)
-    else:
-        document_body = _synthesized_generated_case_document_body_for_storage(visible_text)
-    if not document_body:
-        return None
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    filename = _generated_case_document_filename_for_storage(document_body, timestamp=timestamp)
+    drafts = _generated_case_document_drafts_for_storage(visible_text, timestamp=timestamp)
+    if not drafts:
+        return []
     try:
         store = _get_store()
         version = _next_generated_case_document_version(store=store, case_id=case_id)
-        doc_id = store.add_case_document(
-            case_id=case_id,
-            kind="generated_document",
-            version=version,
-            original_filename=filename,
-            payload=document_body.encode("utf-8"),
-            uploaded_by_user_id=str(session.user_id) if session.user_id else None,
-        )
-        return doc_id if isinstance(doc_id, str) else None
+        doc_ids: list[str] = []
+        for offset, draft in enumerate(drafts):
+            doc_id = store.add_case_document(
+                case_id=case_id,
+                kind="generated_document",
+                version=version + offset,
+                original_filename=draft.filename,
+                payload=draft.body.encode("utf-8"),
+                uploaded_by_user_id=str(session.user_id) if session.user_id else None,
+            )
+            if isinstance(doc_id, str):
+                doc_ids.append(doc_id)
+        return doc_ids
     except Exception:
         _LOGGER.warning(
             "Failed to persist assistant final answer as a generated case document",
             extra={"case_id": case_id},
             exc_info=True,
         )
-        return None
+        return []
+
+
+def _generated_case_document_drafts_for_storage(
+    content: str,
+    *,
+    timestamp: str,
+) -> list[_GeneratedCaseDocumentDraft]:
+    power_of_attorney_drafts = _bilingual_power_of_attorney_drafts(content, timestamp=timestamp)
+    if power_of_attorney_drafts:
+        return power_of_attorney_drafts
+
+    if _looks_like_generated_case_document_for_storage(content):
+        document_body = _generated_case_document_body_for_storage(content)
+    else:
+        document_body = _synthesized_generated_case_document_body_for_storage(content)
+    if not document_body:
+        return []
+    return [
+        _GeneratedCaseDocumentDraft(
+            filename=_generated_case_document_filename_for_storage(document_body, timestamp=timestamp),
+            body=document_body,
+        )
+    ]
+
+
+def _bilingual_power_of_attorney_drafts(
+    content: str,
+    *,
+    timestamp: str,
+) -> list[_GeneratedCaseDocumentDraft]:
+    normalized = _canonicalize_document_text(content)
+    if not (
+        "splnomocnenie" in normalized
+        and "power of attorney" in normalized
+        and any(token in normalized for token in ("anglick", "english", "en verzi", "en version"))
+    ):
+        return []
+    facts = _extract_power_of_attorney_facts(content)
+    if not facts:
+        return []
+    return [
+        _GeneratedCaseDocumentDraft(
+            filename=f"splnomocnenie_sk_{timestamp}.pdf",
+            body=_render_slovak_power_of_attorney(facts),
+        ),
+        _GeneratedCaseDocumentDraft(
+            filename=f"power_of_attorney_en_{timestamp}.pdf",
+            body=_render_english_power_of_attorney(facts),
+        ),
+    ]
+
+
+def _extract_power_of_attorney_facts(content: str) -> dict[str, str]:
+    facts = {
+        "agent": _extract_labeled_value(content, "Splnomocnenec", "Attorney-in-fact", "Agent"),
+        "company": _extract_labeled_value(content, "Spolocnost", "Spoločnosť", "Company"),
+        "address": _extract_labeled_value(content, "Adresa", "Address"),
+        "scope": _extract_labeled_value(content, "Prava", "Práva", "Rights", "Scope"),
+    }
+    facts = {key: value for key, value in facts.items() if value}
+    if not any(facts.get(key) for key in ("agent", "company", "scope")):
+        return {}
+    return facts
+
+
+def _extract_labeled_value(content: str, *labels: str) -> str:
+    lines = content.splitlines()
+    for index, raw_line in enumerate(lines):
+        line = raw_line.strip().strip("-* ")
+        for label in labels:
+            match = re.match(rf"^{re.escape(label)}\s*:\s*(?P<value>.+)$", line, flags=re.IGNORECASE)
+            if match:
+                value = match.group("value").strip().strip(".")
+                if value:
+                    return value
+            if re.match(rf"^{re.escape(label)}\s*:\s*$", line, flags=re.IGNORECASE):
+                value = _next_non_empty_document_line(lines[index + 1 :])
+                if value:
+                    return value
+    return ""
+
+
+def _next_non_empty_document_line(lines: list[str]) -> str:
+    for raw_line in lines:
+        value = raw_line.strip().strip("-* ").strip(".")
+        if value:
+            return value
+    return ""
+
+
+def _power_of_attorney_principal(facts: dict[str, str]) -> str:
+    company = facts.get("company", "").strip()
+    address = facts.get("address", "").strip()
+    if company and address:
+        return f"{company}, {address}"
+    return company or "Doplniť splnomocniteľa"
+
+
+def _render_slovak_power_of_attorney(facts: dict[str, str]) -> str:
+    principal = _power_of_attorney_principal(facts)
+    agent = facts.get("agent", "Doplniť splnomocnenca")
+    scope = facts.get("scope", "Doplniť rozsah splnomocnenia")
+    return "\n".join(
+        [
+            "Splnomocnenie",
+            "",
+            f"Splnomocniteľ: {principal}",
+            f"Splnomocnenec: {agent}",
+            "",
+            "1. Predmet splnomocnenia",
+            (
+                "Splnomocniteľ týmto podľa § 31 a nasl. zákona č. 40/1964 Zb. "
+                "Občiansky zákonník udeľuje splnomocnencovi plnú moc konať v mene "
+                "splnomocniteľa v rozsahu uvedenom v tomto splnomocnení."
+            ),
+            "",
+            "2. Rozsah oprávnenia",
+            scope,
+            "",
+            "3. Vyhlásenia",
+            (
+                "Splnomocnenec je oprávnený vykonať všetky úkony, podpisovať potrebné "
+                "listiny a preberať alebo odovzdávať dokumenty, ak súvisia s uvedeným "
+                "rozsahom splnomocnenia. Splnomocnenie sa udeľuje do jeho písomného "
+                "odvolania, ak nie je v samostatnej dohode uvedené inak."
+            ),
+            "",
+            "V ____________________, dňa ____________________",
+            "",
+            "Splnomocniteľ: ______________________________",
+            "",
+            "Splnomocnenec: ______________________________",
+        ]
+    )
+
+
+def _render_english_power_of_attorney(facts: dict[str, str]) -> str:
+    principal = _power_of_attorney_principal(facts)
+    agent = facts.get("agent", "To be completed")
+    scope = facts.get("scope", "To be completed")
+    return "\n".join(
+        [
+            "Power of Attorney",
+            "",
+            f"Principal: {principal}",
+            f"Attorney-in-fact: {agent}",
+            "",
+            "1. Grant of authority",
+            (
+                "The Principal hereby authorizes the Attorney-in-fact to act on behalf "
+                "of the Principal within the scope stated in this power of attorney."
+            ),
+            "",
+            "2. Scope of authority",
+            scope,
+            "",
+            "3. Declarations",
+            (
+                "The Attorney-in-fact may perform all acts, sign necessary documents, "
+                "and receive or deliver documents connected with the stated scope of "
+                "authority. This power of attorney remains valid until revoked in "
+                "writing unless a separate agreement provides otherwise."
+            ),
+            "",
+            "Place ____________________, date ____________________",
+            "",
+            "Principal: ______________________________",
+            "",
+            "Attorney-in-fact: ______________________________",
+        ]
+    )
 
 
 def _looks_like_generated_case_document_for_storage(content: str) -> bool:

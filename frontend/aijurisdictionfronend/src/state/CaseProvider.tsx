@@ -668,6 +668,66 @@ const mapApiDocument = (caseId: string, document: ApiCaseDocument): CaseDocument
   uploadedAt: document.created_at
 });
 
+const buildDocumentViewerUrl = ({
+  apiCase,
+  document
+}: {
+  apiCase: ApiCase;
+  document: CaseDocumentRecord;
+}): string => {
+  const params = new URLSearchParams({
+    caseId: apiCase.case_id,
+    docId: document.id,
+    kind: document.kind,
+    filename: document.originalFilename,
+    caseTitle: apiCase.title,
+    userId: apiCase.user_id
+  });
+  return `/app/documents/view?${params.toString()}`;
+};
+
+const appendGeneratedDocumentLinksToHistory = ({
+  apiCase,
+  messages,
+  documents
+}: {
+  apiCase: ApiCase;
+  messages: ApiCaseHistoryMessage[];
+  documents: CaseDocumentRecord[];
+}): ApiCaseHistoryMessage[] => {
+  const generatedDocuments = documents.filter(isUserVisibleGeneratedDocument);
+  if (generatedDocuments.length === 0) {
+    return messages;
+  }
+  let lastAssistantIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "assistant") {
+      lastAssistantIndex = index;
+      break;
+    }
+  }
+  if (lastAssistantIndex < 0) {
+    return messages;
+  }
+  const lastAssistant = messages[lastAssistantIndex];
+  if (!lastAssistant) {
+    return messages;
+  }
+  if (lastAssistant.content.includes("/app/documents/view?")) {
+    return messages;
+  }
+  const heading = generatedDocuments.length === 1 ? "Generated document:" : "Generated documents:";
+  const links = generatedDocuments.map((document) => {
+    const url = buildDocumentViewerUrl({ apiCase, document });
+    return `- [${document.originalFilename}](${url})`;
+  });
+  const appended: ApiCaseHistoryMessage = {
+    ...lastAssistant,
+    content: `${lastAssistant.content.trim()}\n\n${heading}\n${links.join("\n")}`.trim()
+  };
+  return messages.map((message, index) => (index === lastAssistantIndex ? appended : message));
+};
+
 const mapApiCase = (
   apiCase: ApiCase,
   historyMessages: ApiCaseHistoryMessage[] = [],
@@ -676,6 +736,11 @@ const mapApiCase = (
   const documents = historyDocuments
     .map((document) => mapApiDocument(apiCase.case_id, document))
     .filter(isUserVisibleGeneratedDocument);
+  const messagesWithDocumentLinks = appendGeneratedDocumentLinksToHistory({
+    apiCase,
+    messages: historyMessages,
+    documents
+  });
   const createdAt = apiCase.created_at;
   return {
     id: apiCase.case_id,
@@ -685,7 +750,7 @@ const mapApiCase = (
       : `Case ${apiCase.case_id}`,
     status: mapApiStatus(apiCase.status),
     createdAt,
-    interactionHistory: historyMessages.map((message) => ({
+    interactionHistory: messagesWithDocumentLinks.map((message) => ({
       id: message.communication_id,
       createdAt: message.created_at,
       actor: mapApiRole(message.role, message.agent_name),

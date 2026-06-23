@@ -250,6 +250,7 @@ const RefreshCaseDataConsumer: React.FC = () => {
       <div data-testid="case-meta">{cases[0]?.workspace.meta ?? ""}</div>
       <div data-testid="document-count">{documents.length}</div>
       <div data-testid="latest-document">{documents[0]?.originalFilename ?? ""}</div>
+      <div data-testid="latest-interaction">{cases[0]?.interactionHistory.at(-1)?.message ?? ""}</div>
     </div>
   );
 };
@@ -541,6 +542,10 @@ describe("CaseProvider", () => {
     expect(screen.getByTestId("document-count").textContent).toBe("1");
     expect(screen.getByTestId("case-meta").textContent).toBe("1 legal document / 2 messages");
     expect(screen.getByTestId("latest-document").textContent).toBe("splnomocnenie-sk-en.pdf");
+    expect(screen.getByTestId("latest-interaction").textContent).toContain("Generated document:");
+    expect(screen.getByTestId("latest-interaction").textContent).toContain(
+      "/app/documents/view?caseId=case-api&docId=doc-generated"
+    );
     expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-api", 200);
 
     await user.click(screen.getByRole("button", { name: "Refresh API Case" }));
