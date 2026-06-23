@@ -1304,6 +1304,73 @@ def test_signed_in_user_profile_prompt_note_uses_profile_name_and_address(monkey
     assert "800102/1234" not in note
 
 
+def test_current_date_prompt_note_uses_runtime_date() -> None:
+    from datetime import date
+
+    from app.chat.api import _build_current_date_prompt_note
+
+    note = _build_current_date_prompt_note(today=date(2026, 6, 23))
+
+    assert "CURRENT DATE CONTEXT" in note
+    assert "2026-06-23" in note
+    assert "23.6.2026" in note
+    assert "23. juna 2026" in note
+    assert "Do not invent" in note
+
+
+def test_reply_endpoint_includes_current_date_context_in_lawyer_prompt(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_REPLY", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(
+        chat_api,
+        "_build_current_date_prompt_note",
+        lambda: (
+            "CURRENT DATE CONTEXT:\n"
+            "- Today's date is 2026-06-23 (23.6.2026; 23. juna 2026).\n"
+            "- If the user asks for today's/current/date-of-signature date in a document, "
+            "use this date.\n"
+            "- Do not invent, infer from model training data, or reuse old example dates."
+        ),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Priprav splnomocnenie a pouzi dnesny datum."},
+        headers=AUTH_HEADERS,
+    )
+
+    assert reply_response.status_code == 200
+    assert captured_prompts
+    assert "CURRENT DATE CONTEXT" in captured_prompts[-1]
+    assert "2026-06-23" in captured_prompts[-1]
+    assert "23.6.2026" in captured_prompts[-1]
+    assert "23. juna 2026" in captured_prompts[-1]
+
+
 def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api

@@ -14,7 +14,7 @@ import unicodedata
 from zipfile import ZIP_DEFLATED, ZipFile
 from collections import deque
 from collections.abc import Callable, Generator
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from queue import Queue
 from threading import Thread
@@ -993,6 +993,44 @@ def _build_signed_in_user_profile_prompt_note(session: Session) -> str:
     return "\n".join(lines)
 
 
+_SLOVAK_MONTHS_GENITIVE = {
+    1: "januara",
+    2: "februara",
+    3: "marca",
+    4: "aprila",
+    5: "maja",
+    6: "juna",
+    7: "jula",
+    8: "augusta",
+    9: "septembra",
+    10: "oktobra",
+    11: "novembra",
+    12: "decembra",
+}
+
+
+def _build_current_date_prompt_note(*, today: date | None = None) -> str:
+    current_date = today or date.today()
+    numeric_display_date = f"{current_date.day}.{current_date.month}.{current_date.year}"
+    slovak_display_date = (
+        f"{current_date.day}. {_SLOVAK_MONTHS_GENITIVE[current_date.month]} {current_date.year}"
+    )
+    return "\n".join(
+        [
+            "CURRENT DATE CONTEXT:",
+            (
+                f"- Today's date is {current_date.isoformat()} "
+                f"({numeric_display_date}; {slovak_display_date})."
+            ),
+            (
+                "- If the user asks for today's/current/date-of-signature date in a document, "
+                "use this date."
+            ),
+            "- Do not invent, infer from model training data, or reuse old example dates.",
+        ]
+    )
+
+
 def _build_uploaded_document_contract_confirmation_note(
     *,
     content: str,
@@ -1288,6 +1326,7 @@ def _run_direct_lawyer_turn(
         "- Do not include summary/risk/next-step sections while waiting for that single answer.\n"
         "- Keep CASE_UPDATE_JSON.case.open_questions at maximum one item when awaiting user input."
     )
+    prompt_override = f"{prompt_override}\n\n{_build_current_date_prompt_note()}"
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
     if case_memory_note:
         prompt_override = f"{prompt_override}\n\n{case_memory_note}"
