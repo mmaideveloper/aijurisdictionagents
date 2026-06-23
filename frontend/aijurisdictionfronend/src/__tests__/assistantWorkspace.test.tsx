@@ -41,6 +41,10 @@ const labels: Record<string, string> = {
   assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
   assistantApiErrorResponse: "The assistant could not reach the JurisDigta API. Status: {status}. Detail: {detail}",
   workspaceConfigurations: "Configurations",
+  workspaceSystemLabel: "System",
+  workspaceUserLabel: "You",
+  workspaceUserVoiceLabel: "You (Voice)",
+  workspaceUserVideoLabel: "You (Video)",
   commsTitle: "Communication modes",
   commsSubtitle: "Choose chat, voice, or video agent.",
   commsChat: "Chat",
@@ -76,9 +80,28 @@ const caseActions = vi.hoisted(() => ({
 }));
 
 vi.mock("../state/CaseProvider", () => ({
+  isUserVisibleGeneratedDocument: (document: { kind: string; originalFilename: string }) =>
+    document.kind === "generated_document" &&
+    !document.originalFilename.toLowerCase().startsWith("assistant-technical-"),
   useCases: () => ({
     activeCase: {
       id: "case-1",
+      title: "Case 1",
+      documents: [],
+      interactionHistory: [
+        {
+          id: "interaction-1",
+          actor: "You",
+          message: "Existing client question",
+          createdAt: "2026-06-20T00:00:00Z"
+        },
+        {
+          id: "interaction-2",
+          actor: "AI Lawyer",
+          message: "Existing assistant answer",
+          createdAt: "2026-06-20T00:00:01Z"
+        }
+      ],
       selectedCommunicationMode: "Chat",
       selectedRole: "AI Lawyer"
     },
@@ -101,6 +124,7 @@ type CapturedRunResult = { content?: readonly { type: string; text?: string }[] 
 
 let capturedAdapter: { run: (options: unknown) => AsyncGenerator<CapturedRunResult, void> | Promise<CapturedRunResult> } | null =
   null;
+let capturedRuntimeOptions: { initialMessages?: unknown[] } | null = null;
 
 vi.mock("@assistant-ui/react", () => ({
   AssistantRuntimeProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -134,8 +158,10 @@ vi.mock("@assistant-ui/react", () => ({
       return <Message />;
     }
   },
-  useLocalRuntime: (adapter: typeof capturedAdapter) => {
+  useAuiState: () => null,
+  useLocalRuntime: (adapter: typeof capturedAdapter, options?: { initialMessages?: unknown[] }) => {
     capturedAdapter = adapter;
+    capturedRuntimeOptions = options ?? null;
     return {};
   }
 }));
@@ -143,6 +169,7 @@ vi.mock("@assistant-ui/react", () => ({
 describe("AssistantWorkspace", () => {
   afterEach(() => {
     capturedAdapter = null;
+    capturedRuntimeOptions = null;
     caseActions.setCaseRole.mockReset();
     caseActions.setCaseCommunicationMode.mockReset();
     caseActions.loadCaseData.mockReset();
@@ -171,6 +198,25 @@ describe("AssistantWorkspace", () => {
     expect(screen.queryByRole("button", { name: "Legal search" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Verify company" })).toBeNull();
     expect(screen.queryByLabelText(/mcp url/i)).toBeNull();
+  });
+
+  it("hydrates the assistant thread from the selected case history", () => {
+    render(<AssistantWorkspace />);
+
+    expect(capturedRuntimeOptions?.initialMessages).toEqual([
+      expect.objectContaining({
+        id: "interaction-1",
+        role: "user",
+        content: "Existing client question",
+        metadata: { custom: { actor: "You" } }
+      }),
+      expect.objectContaining({
+        id: "interaction-2",
+        role: "assistant",
+        content: "Existing assistant answer",
+        metadata: { custom: { actor: "AI Lawyer" } }
+      })
+    ]);
   });
 
   it("streams assistant messages from the JurisDigta chat API", async () => {
@@ -236,5 +282,80 @@ describe("AssistantWorkspace", () => {
     });
     expect(caseActions.loadCaseData).toHaveBeenCalledWith("case-1");
     expect(lastResult?.content?.[0]?.text).toBe("Real answer from API");
+  });
+
+  it("adds generated document links to the completed assistant response", async () => {
+    const prompt = "Vygeneruj finálne splnomocnenie.";
+    vi.mocked(createChatSession).mockResolvedValue({
+      id: "session-1",
+      user_id: "user-1",
+      case_id: "case-1",
+      country: "SK",
+      language: "sk",
+      discussion_type: "advice",
+      state: "active",
+      created_at: "2026-06-20T00:00:00Z"
+    });
+    vi.mocked(streamSession).mockImplementation(async function* () {
+      yield {
+        event: "message",
+        data: {
+          id: "message-1",
+          session_id: "session-1",
+          role: "assistant",
+          content: "Splnomocnenie je pripravené.",
+          agent_name: "AI Lawyer",
+          created_at: "2026-06-20T00:00:01Z"
+        }
+      };
+      yield {
+        event: "done",
+        data: { session_id: "session-1", status: "completed" }
+      };
+    });
+    caseActions.loadCaseData.mockResolvedValue({
+      id: "case-1",
+      title: "Splnomocnenie",
+      documents: [
+        {
+          id: "doc-generated",
+          caseId: "case-1",
+          kind: "generated_document",
+          originalFilename: "splnomocnenie-sk-en.pdf",
+          mimeType: "application/pdf",
+          size: 0,
+          sizeLabel: "processed",
+          uploadedAt: "2026-06-20T00:00:02Z"
+        }
+      ],
+      interactionHistory: []
+    });
+
+    render(<AssistantWorkspace />);
+
+    const result = capturedAdapter?.run({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: prompt }]
+        }
+      ],
+      abortSignal: new AbortController().signal
+    });
+
+    let lastResult: CapturedRunResult | undefined;
+    if (result && Symbol.asyncIterator in result) {
+      for await (const update of result) {
+        lastResult = update;
+      }
+    } else {
+      lastResult = await result;
+    }
+
+    expect(lastResult?.content?.[0]?.text).toContain("Splnomocnenie je pripravené.");
+    expect(lastResult?.content?.[0]?.text).toContain("Generated document:");
+    expect(lastResult?.content?.[0]?.text).toContain(
+      "[splnomocnenie-sk-en.pdf](/app/documents/view?caseId=case-1&docId=doc-generated"
+    );
   });
 });

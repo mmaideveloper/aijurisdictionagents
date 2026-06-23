@@ -4,7 +4,9 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAuiState,
   useLocalRuntime,
+  useMessagePartText,
   type ChatModelAdapter,
   type ThreadMessageLike
 } from "@assistant-ui/react";
@@ -13,8 +15,8 @@ import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
 import { ApiRequestError, createChatSession, streamSession } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
-import { useCases } from "../state/CaseProvider";
-import type { CaseCommunicationMode, CaseRole } from "../state/CaseProvider";
+import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
+import type { CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
 
@@ -35,6 +37,145 @@ const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
   return "";
 };
 
+const caseThreadKey = (activeCase: CaseRecord | null): string => {
+  if (!activeCase) {
+    return "assistant-no-case";
+  }
+  const historyKey = activeCase.interactionHistory
+    .map((interaction) => `${interaction.id}:${interaction.createdAt}`)
+    .join("|");
+  return `${activeCase.id}:${historyKey}`;
+};
+
+const caseInteractionRole = (
+  interaction: CaseInteraction,
+  t: ReturnType<typeof useLanguage>["t"]
+): ThreadMessageLike["role"] => {
+  const userActors = new Set([
+    "You",
+    "You (Voice)",
+    "You (Video)",
+    t("workspaceUserLabel"),
+    t("workspaceUserVoiceLabel"),
+    t("workspaceUserVideoLabel")
+  ]);
+  return userActors.has(interaction.actor) ? "user" : "assistant";
+};
+
+const caseInteractionToThreadMessage = (
+  interaction: CaseInteraction,
+  t: ReturnType<typeof useLanguage>["t"]
+): ThreadMessageLike | null => {
+  const message = interaction.message.trim();
+  if (!message) {
+    return null;
+  }
+
+  const role = caseInteractionRole(interaction, t);
+  const threadMessage: ThreadMessageLike = {
+    id: interaction.id,
+    role,
+    content: message,
+    createdAt: new Date(interaction.createdAt),
+    metadata: {
+      custom: {
+        actor: interaction.actor
+      }
+    }
+  };
+  if (role === "assistant") {
+    return {
+      ...threadMessage,
+      status: { type: "complete", reason: "stop" }
+    };
+  }
+  return threadMessage;
+};
+
+const buildDocumentViewerUrl = ({
+  caseId,
+  caseTitle,
+  document,
+  userId
+}: {
+  caseId: string;
+  caseTitle: string;
+  document: CaseDocumentRecord;
+  userId?: string;
+}): string => {
+  const params = new URLSearchParams({
+    caseId,
+    docId: document.id,
+    kind: document.kind,
+    filename: document.originalFilename,
+    caseTitle,
+    userId: userId ?? ""
+  });
+  return `/app/documents/view?${params.toString()}`;
+};
+
+const buildGeneratedDocumentsResponseBlock = ({
+  caseItem,
+  previousDocumentIds,
+  userId
+}: {
+  caseItem: CaseRecord | null;
+  previousDocumentIds: Set<string>;
+  userId?: string;
+}): string => {
+  if (!caseItem) {
+    return "";
+  }
+  const newGeneratedDocuments = caseItem.documents.filter(
+    (document) => isUserVisibleGeneratedDocument(document) && !previousDocumentIds.has(document.id)
+  );
+  if (newGeneratedDocuments.length === 0) {
+    return "";
+  }
+  const heading = newGeneratedDocuments.length === 1 ? "Generated document:" : "Generated documents:";
+  const links = newGeneratedDocuments.map((document) => {
+    const url = buildDocumentViewerUrl({
+      caseId: caseItem.id,
+      caseTitle: caseItem.title,
+      document,
+      userId
+    });
+    return `- [${document.originalFilename}](${url})`;
+  });
+  return [heading, ...links].join("\n");
+};
+
+const appendGeneratedDocumentsResponseBlock = (content: string, block: string): string =>
+  block ? `${content.trim()}\n\n${block}`.trim() : content;
+
+const internalDocumentLinkPattern = /\[([^\]]+)]\((\/app\/documents\/view\?[^)\s]+)\)/g;
+
+const AssistantTextPart: React.FC = () => {
+  const { text } = useMessagePartText();
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = internalDocumentLinkPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+    const [, label, href] = match;
+    nodes.push(
+      <a key={`${href}-${match.index}`} href={href} target="_blank" rel="noreferrer">
+        {label}
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return <p className="assistant-message__text">{nodes}</p>;
+};
+
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
   const { user } = useAuth();
@@ -45,14 +186,25 @@ const AssistantThread: React.FC = () => {
   );
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
-    () => [
-      {
-        role: "assistant",
-        content: t("assistantInitialMessage"),
-        status: { type: "complete", reason: "stop" }
+    () => {
+      const caseMessages =
+        activeCase?.interactionHistory
+          .map((interaction) => caseInteractionToThreadMessage(interaction, t))
+          .filter((message): message is ThreadMessageLike => Boolean(message)) ?? [];
+
+      if (caseMessages.length > 0) {
+        return caseMessages;
       }
-    ],
-    [t]
+
+      return [
+        {
+          role: "assistant",
+          content: t("assistantInitialMessage"),
+          status: { type: "complete", reason: "stop" }
+        }
+      ];
+    },
+    [activeCase?.interactionHistory, t]
   );
 
   const assistantAdapter = React.useMemo<ChatModelAdapter>(
@@ -85,6 +237,11 @@ const AssistantThread: React.FC = () => {
 
           let latestAssistantText = "";
           const processingMessages: string[] = [];
+          const visibleDocumentIdsBeforeRun = new Set(
+            (activeCase?.documents ?? [])
+              .filter(isUserVisibleGeneratedDocument)
+              .map((document) => document.id)
+          );
 
           for await (const streamEvent of streamSession({
             sessionId: session.sessionId,
@@ -119,13 +276,22 @@ const AssistantThread: React.FC = () => {
             }
           }
 
+          const refreshedCase =
+            activeCaseId && userId ? await loadCaseData(activeCaseId) : null;
+          const generatedDocumentsBlock = buildGeneratedDocumentsResponseBlock({
+            caseItem: refreshedCase,
+            previousDocumentIds: visibleDocumentIdsBeforeRun,
+            userId
+          });
+          const finalAssistantText = appendGeneratedDocumentsResponseBlock(
+            latestAssistantText || processingMessages.join("\n\n"),
+            generatedDocumentsBlock
+          );
+
           yield {
-            content: [{ type: "text", text: latestAssistantText || processingMessages.join("\n\n") }],
+            content: [{ type: "text", text: finalAssistantText }],
             status: { type: "complete", reason: "stop" }
           };
-          if (activeCaseId && userId) {
-            void loadCaseData(activeCaseId);
-          }
         } catch (error) {
           const status = error instanceof ApiRequestError && error.status ? String(error.status) : "network";
           const detail = error instanceof Error ? error.message : "Unknown error";
@@ -146,13 +312,17 @@ const AssistantThread: React.FC = () => {
   const Message: React.FC = () => (
     <MessagePrimitive.Root className="assistant-message">
       <MessagePrimitive.If user>
-        <div className="assistant-message__role">{t("assistantUserRole")}</div>
+        <div className="assistant-message__role">
+          <CaseMessageActor fallback={t("assistantUserRole")} />
+        </div>
       </MessagePrimitive.If>
       <MessagePrimitive.If assistant>
-        <div className="assistant-message__role">{t("assistantRole")}</div>
+        <div className="assistant-message__role">
+          <CaseMessageActor fallback={t("assistantRole")} />
+        </div>
       </MessagePrimitive.If>
       <div className="assistant-message__body">
-        <MessagePrimitive.Parts />
+        <MessagePrimitive.Parts components={{ Text: AssistantTextPart }} />
       </div>
     </MessagePrimitive.Root>
   );
@@ -176,6 +346,15 @@ const AssistantThread: React.FC = () => {
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
   );
+};
+
+const CaseMessageActor: React.FC<{ fallback: string }> = ({ fallback }) => {
+  const actor = useAuiState((state) => {
+    const custom = state.message.metadata.custom as Record<string, unknown> | undefined;
+    return typeof custom?.actor === "string" ? custom.actor : null;
+  });
+
+  return <>{actor ?? fallback}</>;
 };
 
 const AssistantConfigurations: React.FC = () => {
@@ -293,6 +472,8 @@ const AssistantConfigurations: React.FC = () => {
 
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
+  const { activeCase } = useCases();
+  const threadKey = React.useMemo(() => caseThreadKey(activeCase), [activeCase]);
 
   return (
     <div className="page assistant-workspace-page">
@@ -306,7 +487,7 @@ const AssistantWorkspace: React.FC = () => {
             </div>
           </section>
 
-          <AssistantThread />
+          <AssistantThread key={threadKey} />
         </main>
 
         <aside className="assistant-tool-panel" aria-label={t("workspaceConfigurations")}>

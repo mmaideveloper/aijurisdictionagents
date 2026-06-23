@@ -247,6 +247,7 @@ const RefreshCaseDataConsumer: React.FC = () => {
         Refresh API Case
       </button>
       <div data-testid="case-count">{cases.length}</div>
+      <div data-testid="case-meta">{cases[0]?.workspace.meta ?? ""}</div>
       <div data-testid="document-count">{documents.length}</div>
       <div data-testid="latest-document">{documents[0]?.originalFilename ?? ""}</div>
     </div>
@@ -477,7 +478,22 @@ describe("CaseProvider", () => {
       }
     ]);
     vi.mocked(getCaseHistory).mockResolvedValue({
-      messages: [],
+      messages: [
+        {
+          communication_id: "message-1",
+          role: "user",
+          content: "Prepare power of attorney.",
+          agent_name: null,
+          created_at: "2026-06-22T10:01:00.000Z"
+        },
+        {
+          communication_id: "message-2",
+          role: "assistant",
+          content: "I prepared the draft.",
+          agent_name: "AI Lawyer",
+          created_at: "2026-06-22T10:02:00.000Z"
+        }
+      ],
       has_more: false,
       documents: [
         {
@@ -522,7 +538,10 @@ describe("CaseProvider", () => {
     );
 
     await waitFor(() => expect(screen.getByTestId("case-count").textContent).toBe("1"));
-    expect(screen.getByTestId("document-count").textContent).toBe("0");
+    expect(screen.getByTestId("document-count").textContent).toBe("1");
+    expect(screen.getByTestId("case-meta").textContent).toBe("1 legal document / 2 messages");
+    expect(screen.getByTestId("latest-document").textContent).toBe("splnomocnenie-sk-en.pdf");
+    expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-api", 200);
 
     await user.click(screen.getByRole("button", { name: "Refresh API Case" }));
 

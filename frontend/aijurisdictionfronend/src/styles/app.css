@@ -584,6 +584,18 @@
   line-height: 1.55;
 }
 
+.assistant-message__text {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.assistant-message__text a {
+  color: var(--accent);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .assistant-message--user .assistant-message__body {
   background: var(--surface-contrast);
   color: #fff;

@@ -103,7 +103,7 @@ type CaseContextValue = {
   isLoadingCases: boolean;
   caseLoadError: string | null;
   createCase: (input: CreateCaseInput) => Promise<CaseRecord>;
-  loadCaseData: (caseId: string) => Promise<void>;
+  loadCaseData: (caseId: string) => Promise<CaseRecord | null>;
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
   setContinueRequested: (value: boolean) => void;
@@ -708,6 +708,20 @@ const mapApiCase = (
   };
 };
 
+const loadApiCaseWithHistory = async (userId: string, apiCase: ApiCase): Promise<CaseRecord> => {
+  try {
+    const history = await getCaseHistory(userId, apiCase.case_id, 200);
+    return mapApiCase(apiCase, history.messages, history.documents);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Unable to load case history.";
+    consoleLogger.warn("Unable to load API case history; showing case without counts", {
+      caseId: apiCase.case_id,
+      detail
+    });
+    return mapApiCase(apiCase);
+  }
+};
+
 export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { language } = useLanguage();
   const { isAuthenticated, user } = useAuth();
@@ -738,10 +752,13 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCaseLoadError(null);
       try {
         const apiCases = await listCases(user.userId);
+        const casesWithHistory = await Promise.all(
+          apiCases.map((item) => loadApiCaseWithHistory(user.userId, item))
+        );
         if (isCancelled) {
           return;
         }
-        setStoredCases(apiCases.map((item) => mapApiCase(item)));
+        setStoredCases(casesWithHistory);
       } catch (error) {
         if (isCancelled) {
           return;
@@ -798,37 +815,40 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadCaseData = React.useCallback(
     async (caseId: string) => {
       if (!user?.userId) {
-        return;
+        return null;
       }
       try {
-        const [apiCase] = storedCases.filter((caseItem) => caseItem.id === caseId);
+        const apiCase = storedCases.find((caseItem) => caseItem.id === caseId);
         const history = await getCaseHistory(user.userId, caseId, 200);
+        const refreshedCase = apiCase
+          ? mapApiCase(
+              {
+                case_id: apiCase.id,
+                user_id: user.userId,
+                company_id: null,
+                title: apiCase.title,
+                status: apiCase.status,
+                created_at: apiCase.createdAt,
+                updated_at: apiCase.createdAt
+              },
+              history.messages,
+              history.documents
+            )
+          : null;
         setStoredCases((prev) =>
           prev.map((caseItem) =>
-            caseItem.id === caseId
-              ? mapApiCase(
-                  {
-                    case_id: caseItem.id,
-                    user_id: user.userId,
-                    company_id: null,
-                    title: caseItem.title,
-                    status: caseItem.status,
-                    created_at: caseItem.createdAt,
-                    updated_at: caseItem.createdAt
-                  },
-                  history.messages,
-                  history.documents
-                )
-              : caseItem
+            caseItem.id === caseId && refreshedCase ? refreshedCase : caseItem
           )
         );
         if (!apiCase) {
           consoleLogger.info("Loaded selected case data", { caseId });
         }
+        return refreshedCase;
       } catch (error) {
         const detail = error instanceof Error ? error.message : "Unable to load selected case.";
         setCaseLoadError(detail);
         consoleLogger.warn("Unable to load selected case data", { caseId, detail });
+        return null;
       }
     },
     [storedCases, user?.userId]
