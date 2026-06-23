@@ -150,30 +150,197 @@ const appendGeneratedDocumentsResponseBlock = (content: string, block: string): 
 
 const internalDocumentLinkPattern = /\[([^\]]+)]\((\/app\/documents\/view\?[^)\s]+)\)/g;
 
+type AssistantDocumentLink = {
+  label: string;
+  href: string;
+};
+
+type AssistantDocumentPreview = {
+  title: string;
+  body: string;
+};
+
+type AssistantMessagePresentation = {
+  conversationalText: string;
+  documentPreviews: AssistantDocumentPreview[];
+  documentLinks: AssistantDocumentLink[];
+};
+
+const separatorLinePattern = /^\s*-{3,}\s*$/;
+
+const stripMarkdownHeading = (line: string): string =>
+  line
+    .trim()
+    .replace(/^#{1,4}\s+/, "")
+    .replace(/^\*\*(.+)\*\*$/, "$1")
+    .trim();
+
+const removeInternalDocumentLinks = (text: string): { text: string; links: AssistantDocumentLink[] } => {
+  const links: AssistantDocumentLink[] = [];
+  const cleaned = text.replace(internalDocumentLinkPattern, (_match, label: string, href: string) => {
+    links.push({ label, href });
+    return "";
+  });
+  internalDocumentLinkPattern.lastIndex = 0;
+  return {
+    text: cleaned
+      .split("\n")
+      .filter((line) => !/^Generated documents?:\s*$/i.test(line.trim()) && line.trim() !== "-")
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+    links
+  };
+};
+
+const looksLikeDocumentPreview = (chunk: string, hasSeparators: boolean): boolean => {
+  const normalized = chunk.toLowerCase();
+  const firstLine = chunk.split("\n").find((line) => line.trim()) ?? "";
+  const hasDocumentHeading = /^(\*\*.+\*\*|#{1,4}\s+.+)$/.test(firstLine.trim());
+  const hasLegalBody =
+    normalized.includes("podpis") ||
+    normalized.includes("signature") ||
+    normalized.includes("d\u00e1tum") ||
+    normalized.includes("datum") ||
+    normalized.includes("i, the undersigned") ||
+    normalized.includes("ja, dolu podp\u00edsan");
+
+  return hasSeparators && hasDocumentHeading && hasLegalBody && chunk.trim().length > 120;
+};
+
+export const parseAssistantMessagePresentation = (text: string): AssistantMessagePresentation => {
+  const { text: textWithoutLinks, links } = removeInternalDocumentLinks(text.replace(/\r\n/g, "\n"));
+  if (!textWithoutLinks) {
+    return {
+      conversationalText: "",
+      documentPreviews: [],
+      documentLinks: links
+    };
+  }
+
+  const hasSeparators = textWithoutLinks.split("\n").some((line) => separatorLinePattern.test(line));
+  const chunks = textWithoutLinks
+    .split(/\n\s*-{3,}\s*\n/g)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+  const conversationalChunks: string[] = [];
+  const documentPreviews: AssistantDocumentPreview[] = [];
+
+  chunks.forEach((chunk) => {
+    if (!looksLikeDocumentPreview(chunk, hasSeparators)) {
+      conversationalChunks.push(chunk);
+      return;
+    }
+
+    const lines = chunk.split("\n");
+    const firstContentIndex = lines.findIndex((line) => line.trim());
+    const title = stripMarkdownHeading(lines[firstContentIndex] ?? "") || "Document preview";
+    const body = lines
+      .slice(firstContentIndex + 1)
+      .join("\n")
+      .trim();
+
+    documentPreviews.push({ title, body });
+  });
+
+  return {
+    conversationalText: conversationalChunks.join("\n\n").trim(),
+    documentPreviews,
+    documentLinks: links
+  };
+};
+
+const renderDocumentBody = (body: string): React.ReactNode[] => {
+  const nodes: React.ReactNode[] = [];
+  let listItems: string[] = [];
+
+  const flushList = () => {
+    if (listItems.length === 0) {
+      return;
+    }
+    nodes.push(
+      <ul key={`list-${nodes.length}`} className="assistant-document-preview__list">
+        {listItems.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    );
+    listItems = [];
+  };
+
+  body.split(/\n{2,}/).forEach((block) => {
+    const lines = block
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length === 0) {
+      return;
+    }
+    if (lines.every((line) => /^[-*]\s+/.test(line))) {
+      listItems.push(...lines.map((line) => line.replace(/^[-*]\s+/, "")));
+      return;
+    }
+    flushList();
+    nodes.push(
+      <p key={`paragraph-${nodes.length}`} className="assistant-document-preview__paragraph">
+        {lines.map(stripMarkdownHeading).join(" ")}
+      </p>
+    );
+  });
+
+  flushList();
+  return nodes;
+};
+
+const AssistantDocumentPreviewCard: React.FC<{ preview: AssistantDocumentPreview; index: number }> = ({
+  preview,
+  index
+}) => (
+  <article className="assistant-document-preview" aria-label={`${preview.title} preview`}>
+    <div className="assistant-document-preview__sheet">
+      <header className="assistant-document-preview__letterhead">
+        <span>JurisDigta</span>
+        <small>Document preview</small>
+      </header>
+      <div className="assistant-document-preview__page-marker">A4 preview {index + 1}</div>
+      <h3>{preview.title}</h3>
+      <div className="assistant-document-preview__content">{renderDocumentBody(preview.body)}</div>
+    </div>
+  </article>
+);
+
+const AssistantDocumentLinks: React.FC<{ links: AssistantDocumentLink[] }> = ({ links }) => {
+  if (links.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="assistant-document-actions" aria-label="Generated documents">
+      {links.map((link) => (
+        <a key={link.href} className="assistant-document-actions__item" href={link.href} target="_blank" rel="noreferrer">
+          <span>Generated PDF</span>
+          <strong>{link.label}</strong>
+        </a>
+      ))}
+    </div>
+  );
+};
+
 const AssistantTextPart: React.FC = () => {
   const { text } = useMessagePartText();
-  const nodes: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
+  const presentation = parseAssistantMessagePresentation(text);
 
-  while ((match = internalDocumentLinkPattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
-    }
-    const [, label, href] = match;
-    nodes.push(
-      <a key={`${href}-${match.index}`} href={href} target="_blank" rel="noreferrer">
-        {label}
-      </a>
-    );
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
-  }
-
-  return <p className="assistant-message__text">{nodes}</p>;
+  return (
+    <>
+      {presentation.conversationalText ? (
+        <p className="assistant-message__text">{presentation.conversationalText}</p>
+      ) : null}
+      {presentation.documentPreviews.map((preview, index) => (
+        <AssistantDocumentPreviewCard key={`${preview.title}-${index}`} preview={preview} index={index} />
+      ))}
+      <AssistantDocumentLinks links={presentation.documentLinks} />
+    </>
+  );
 };
 
 const AssistantThread: React.FC = () => {

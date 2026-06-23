@@ -3,7 +3,7 @@
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import AssistantWorkspace from "../pages/AssistantWorkspace";
+import AssistantWorkspace, { parseAssistantMessagePresentation } from "../pages/AssistantWorkspace";
 import { createChatSession, streamSession } from "../api/chatClient";
 
 const labels: Record<string, string> = {
@@ -357,5 +357,52 @@ describe("AssistantWorkspace", () => {
     expect(lastResult?.content?.[0]?.text).toContain(
       "[splnomocnenie-sk-en.pdf](/app/documents/view?caseId=case-1&docId=doc-generated"
     );
+  });
+
+  it("separates document drafts from conversational assistant text for preview rendering", () => {
+    const presentation = parseAssistantMessagePresentation(`Pripravim teraz obidve verzie splnomocnenia.
+
+---
+
+**Splnomocnenie (Slovenska verzia)**
+
+Ja, dolu podpisany, tymto splnomocnujem Emiliu Matonokovu, aby v mojom mene vykonavala vsetky ukony spojene s vedenim firemneho motoroveho vozidla PP472DT.
+
+Datum: [datum]
+Podpis: ______________________
+
+---
+
+**Power of Attorney (English version)**
+
+I, the undersigned, hereby authorize Emilia Matonokova to perform all actions related to the management of the company vehicle PP472DT.
+
+Date: [date]
+Signature: ______________________`);
+
+    expect(presentation.conversationalText).toBe("Pripravim teraz obidve verzie splnomocnenia.");
+    expect(presentation.documentPreviews).toHaveLength(2);
+    expect(presentation.documentPreviews[0]).toEqual({
+      title: "Splnomocnenie (Slovenska verzia)",
+      body: expect.stringContaining("Ja, dolu podpisany")
+    });
+    expect(presentation.documentPreviews[1]?.title).toBe("Power of Attorney (English version)");
+    expect(presentation.documentLinks).toEqual([]);
+  });
+
+  it("moves generated PDF links into separate document actions", () => {
+    const presentation = parseAssistantMessagePresentation(`Splnomocnenie je pripravene.
+
+Generated document:
+- [splnomocnenie-sk-en.pdf](/app/documents/view?caseId=case-1&docId=doc-generated&kind=generated_document)`);
+
+    expect(presentation.conversationalText).toBe("Splnomocnenie je pripravene.");
+    expect(presentation.documentPreviews).toEqual([]);
+    expect(presentation.documentLinks).toEqual([
+      {
+        label: "splnomocnenie-sk-en.pdf",
+        href: "/app/documents/view?caseId=case-1&docId=doc-generated&kind=generated_document"
+      }
+    ]);
   });
 });
