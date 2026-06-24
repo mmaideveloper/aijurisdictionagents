@@ -26,6 +26,6 @@ def test_api_import_loads_repo_dotenv(monkeypatch) -> None:
     dotenv_path, override = calls[0]
     assert dotenv_path is not None
     assert dotenv_path.name == ".env"
-    assert dotenv_path.parent.name.startswith("aijurisdictionagents")
     assert (dotenv_path.parent / "AGENTS.md").exists()
+    assert (dotenv_path.parent / "api" / "aijuristiction-api").is_dir()
     assert override is False

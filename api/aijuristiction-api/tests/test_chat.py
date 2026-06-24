@@ -2768,6 +2768,89 @@ def test_slovak_company_query_removes_case_preposition_prefix() -> None:
     )
 
 
+def test_slovak_company_query_handles_firmy_case_and_typo_prefix() -> None:
+    from app.chat.country_services.slovakia import _extract_slovak_company_query
+
+    assert (
+        _extract_slovak_company_query(
+            messages=[],
+            current_content=(
+                "chcem splnomocnenie pre dceru Emila Matonokova na vedenie firemneho "
+                "motoroveho vozidla PP472DT fimy ESolutions SK s.r.o. od 1.7.2026 "
+                "na dobu neurcitu."
+            ),
+        )
+        == "ESolutions SK s.r.o."
+    )
+    assert (
+        _extract_slovak_company_query(
+            messages=[],
+            current_content="splnomocnenie pre dceru Emila Matonokova na auto firmy ESolutions SK s.r.o.",
+        )
+        == "ESolutions SK s.r.o."
+    )
+
+
+def test_prepare_slovakia_vehicle_authorization_captures_user_facts_and_company_seat(monkeypatch) -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizanska 665, 059 18 Spisske Bystre",
+                        "status": "Aktivna",
+                    },
+                ),
+            )
+
+    slovakia_service._ORSR_CACHE.clear()
+    monkeypatch.setattr(slovakia_service, "build_default_tool_registry", lambda: _FakeRegistry())
+    session = Session(country="SK", language="sk-SK")
+    current_content = (
+        "chcem splnomocnenie pre dceru Emila Matonokova na vedenie firemneho "
+        "motoroveho vozidla PP472DT fimy ESolutions SK s.r.o. od 1.7.2026 "
+        "na dobu neurcitu."
+    )
+    messages = [Message(session_id=session.id, role=MessageRole.USER, content=current_content)]
+    events: list[dict[str, object]] = []
+
+    preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=messages,
+        current_content=current_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+        processing_event_callback=events.append,
+    )
+
+    prompt_note = preparation.prompt_note
+    assert "SLOVAK VEHICLE AUTHORIZATION INTAKE MODE" in prompt_note
+    assert "authorized_person: Emila Matonokova" in prompt_note
+    assert "principal_company: ESolutions SK s.r.o., ICO 46491261, Partizanska 665" in prompt_note
+    assert "vehicle_registration_number: PP472DT" in prompt_note
+    assert "effective_from: 1.7.2026" in prompt_note
+    assert "duration: na dobu neurcitu" in prompt_note
+    assert "do not ask again for the daughter's name" in prompt_note
+    assert any(
+        event.get("tool_name") == "obchodny_register_company_check"
+        and "sidlo: Partizanska 665, 059 18 Spisske Bystre" in str(event.get("message"))
+        for event in events
+    )
+    slovakia_service._ORSR_CACHE.clear()
+
+
 def test_prepare_slovakia_direct_reply_runs_orsr_for_plain_company_name(monkeypatch) -> None:
     from app.chat.country_services import slovakia as slovakia_service
     from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
@@ -4009,6 +4092,15 @@ def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> 
     captured: dict[str, object] = {}
 
     class _FakeStore:
+        def get_case(self, *, case_id: str):
+            assert case_id == "case-123"
+            return SimpleNamespace(user_id="user-1")
+
+        def get_case_write_block_reason(self, *, case_id: str, user_id: str | None = None):
+            assert case_id == "case-123"
+            assert user_id == "user-1"
+            return None
+
         def list_case_communications(self, *, case_id: str, limit=None, offset: int = 0):
             assert case_id == "case-123"
             return [
@@ -4290,6 +4382,15 @@ def test_existing_case_history_falls_back_to_summary_when_transcript_missing(mon
     captured: dict[str, object] = {}
 
     class _FakeStore:
+        def get_case(self, *, case_id: str):
+            assert case_id == "case-123"
+            return SimpleNamespace(user_id="user-1")
+
+        def get_case_write_block_reason(self, *, case_id: str, user_id: str | None = None):
+            assert case_id == "case-123"
+            assert user_id == "user-1"
+            return None
+
         def list_case_communications(self, *, case_id: str, limit=None, offset: int = 0):
             assert case_id == "case-123"
             return [
@@ -4358,6 +4459,15 @@ def test_reply_persists_session_history_document_to_case(monkeypatch) -> None:
     persisted_history: list[dict[str, str | None]] = []
 
     class _FakeStore:
+        def get_case(self, *, case_id: str):
+            assert case_id == "case-123"
+            return SimpleNamespace(user_id="user-1")
+
+        def get_case_write_block_reason(self, *, case_id: str, user_id: str | None = None):
+            assert case_id == "case-123"
+            assert user_id == "user-1"
+            return None
+
         def list_case_communications(self, *, case_id: str, limit=None, offset: int = 0):
             return []
 
