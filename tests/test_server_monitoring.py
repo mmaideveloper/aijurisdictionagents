@@ -15,6 +15,7 @@ from scripts.server.write_system_status import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MONITORING_DIR = REPO_ROOT / "Deployment" / "monitoring"
+DEPLOY_SCRIPT = REPO_ROOT / "Deployment" / "server" / "deploy_jurisdigta_prod.sh"
 
 
 def _load_configure_monitoring_module():
@@ -59,6 +60,15 @@ def test_monitoring_env_defaults_include_log_retention() -> None:
     assert values["PROMETHEUS_RETENTION_DAYS"] == "30"
     assert values["DOCKER_LOG_MAX_SIZE"] == "50m"
     assert values["DOCKER_LOG_MAX_FILE"] == "5"
+
+
+def test_prod_api_container_receives_prometheus_url() -> None:
+    deploy_script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "prometheus_base_url=" in deploy_script
+    assert "http://host.docker.internal:${PROMETHEUS_HOST_PORT:-9091}" in deploy_script
+    assert "--add-host host.docker.internal:host-gateway" in deploy_script
+    assert '-e PROMETHEUS_BASE_URL="$prometheus_base_url"' in deploy_script
 
 
 def test_laws_run_summary_parses_latest_execution() -> None:

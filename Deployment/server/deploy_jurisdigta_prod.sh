@@ -237,9 +237,11 @@ start_api_and_mcp() {
   local api_db_cloud
   local laws_db_cloud
   local api_cors_allow_origins
+  local prometheus_base_url
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
   api_cors_allow_origins="$(production_api_cors_origins)"
+  prometheus_base_url="${PROMETHEUS_BASE_URL:-http://host.docker.internal:${PROMETHEUS_HOST_PORT:-9091}}"
   docker rm -f jurisdigta-api jurisdigta-mcp jurisdigta-email-scheduler >/dev/null 2>&1 || true
   docker run -d \
     --name jurisdigta-api \
@@ -247,6 +249,7 @@ start_api_and_mcp() {
     --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
     --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
     --network aijuristiction-api_default \
+    --add-host host.docker.internal:host-gateway \
     -p "127.0.0.1:${API_PORT}:8080" \
     --env-file "$ENV_FILE" \
     -e DB_OPTION=postgres \
@@ -263,6 +266,7 @@ start_api_and_mcp() {
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
     -e INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070 \
+    -e PROMETHEUS_BASE_URL="$prometheus_base_url" \
     -e SYSTEM_STATUS_FILE=/workspace/runs/status/system-status.json \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     aijuristiction-api:local >/dev/null
