@@ -22,6 +22,9 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from .config import ApiDataConfig
 
+DEFAULT_UNLIMITED_ACCESS_EMAILS = ("mmaideveloper@gmail.com",)
+UNLIMITED_ACCESS_LIMIT = 2_147_483_647
+
 
 @dataclass(frozen=True)
 class User:
@@ -1577,6 +1580,28 @@ class ApiDatabaseStore:
             )
         return int(row[0]) if row else 0
 
+    @staticmethod
+    def unlimited_access_email_allowlist() -> set[str]:
+        raw_value = os.getenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS")
+        if raw_value is None:
+            return set(DEFAULT_UNLIMITED_ACCESS_EMAILS)
+        normalized = raw_value.strip()
+        if normalized.lower() == "unknown-variable":
+            return set(DEFAULT_UNLIMITED_ACCESS_EMAILS)
+        if not normalized:
+            return set()
+        return {
+            chunk.strip().lower()
+            for chunk in normalized.replace(";", ",").split(",")
+            if chunk.strip()
+        }
+
+    def has_unlimited_access(self, *, user_id: str) -> bool:
+        user = self.find_user_by_id(user_id=user_id)
+        if user is None:
+            return False
+        return user.email.strip().lower() in self.unlimited_access_email_allowlist()
+
     def get_case_limit(self, *, user_id: str) -> int:
         return self.get_effective_subscription_plan(user_id=user_id).max_cases
 
@@ -1903,6 +1928,16 @@ class ApiDatabaseStore:
         return int(row[0]) if row else 0
 
     def get_effective_subscription_plan(self, *, user_id: str) -> SubscriptionPlan:
+        if self.has_unlimited_access(user_id=user_id):
+            return SubscriptionPlan(
+                "unlimited",
+                "Unlimited Access",
+                "internal",
+                0,
+                UNLIMITED_ACCESS_LIMIT,
+                UNLIMITED_ACCESS_LIMIT,
+                None,
+            )
         with self._connect() as conn:
             row = self._fetchone(
                 conn,
@@ -1922,9 +1957,6 @@ class ApiDatabaseStore:
         return _row_to_subscription_plan(row)
 
     def get_document_upload_limit(self, *, user_id: str) -> int:
-        user = self.find_user_by_id(user_id=user_id)
-        if user and (user.phone_number or '').strip() == '+421944400166':
-            return 50
         return self.get_effective_subscription_plan(user_id=user_id).max_documents_per_case
 
     def list_unprocessed_case_documents(self, *, limit: int = 20) -> list[CaseDocument]:
