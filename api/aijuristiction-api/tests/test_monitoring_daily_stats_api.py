@@ -63,6 +63,8 @@ def test_daily_stats_endpoint_returns_simple_system_rows(monkeypatch) -> None:
     assert rows["MCP"]["notes"] == "error count uses local status window"
     assert rows["Document Processor"]["minutes_down"] == 5
     assert rows["Document Processor"]["error_count"] == 1
+    assert rows["Web"]["error_count"] == 0
+    assert rows["Web"]["notes"] == "error count uses failed health probes"
     assert any(incident["system"] == "API" for incident in payload["incidents"])
 
 

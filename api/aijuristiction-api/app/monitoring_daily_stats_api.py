@@ -33,6 +33,7 @@ _api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)
 class _SystemSpec:
     name: str
     probe_service: str | None = None
+    up_query: str | None = None
     component: str | None = None
     error_application: str | None = None
     local_app: str | None = None
@@ -58,7 +59,7 @@ _SYSTEMS: tuple[_SystemSpec, ...] = (
         probe_service="jurisdigta-grafana",
         component="monitoring",
     ),
-    _SystemSpec(name="System", component="system"),
+    _SystemSpec(name="System", up_query='up{job="node-exporter"}'),
     _SystemSpec(
         name="Laws Collector",
         component="laws_collector",
@@ -195,6 +196,10 @@ def _system_row(
     status_text, status_notes = _system_status(spec, status_payload, server_apps)
     down_minutes, downtime_notes = _minutes_down(spec, window_hours, window_minutes)
     error_count, error_notes = _error_count(spec, error_counts, server_apps)
+    if error_count == "unknown" and isinstance(down_minutes, int):
+        error_count = down_minutes
+        error_notes = [note for note in error_notes if note != "error count source unavailable"]
+        error_notes.append("error count uses failed health probes")
     notes = [*status_notes, *downtime_notes, *error_notes]
 
     return {
@@ -216,11 +221,21 @@ def _system_status(
     if spec.name == "Laws Collector":
         return str(_nested(status_payload, "laws_collector", "status") or "unknown"), []
     if spec.name == "System":
-        return str(_nested(status_payload, "system", "status") or "unknown"), []
+        value = _prometheus_query_value(spec.up_query or "")
+        if value is not None:
+            return ("ok" if value >= 1 else "error"), []
+        resources = _dict(_nested(status_payload, "system", "resources"))
+        if resources:
+            return "ok", ["live host resource status available"]
+        return "unknown", ["live host status source unavailable"]
     if spec.local_app:
         app_payload = _dict(server_apps.get(spec.local_app))
-        notes = [str(app_payload["message"])] if app_payload.get("message") else []
-        return str(app_payload.get("status") or "unknown"), notes
+        message = str(app_payload.get("message") or "")
+        status_text = str(app_payload.get("status") or "unknown")
+        notes = []
+        if message and not (status_text in {"ok", "idle"} and message == "container not found"):
+            notes.append(message)
+        return status_text, notes
     if spec.probe_service:
         value = _prometheus_query_value(
             f'probe_success{{job="jurisdigta-http-probes",service="{spec.probe_service}"}}'
@@ -240,6 +255,12 @@ def _minutes_down(
         expression = (
             "sum(sum_over_time(("
             f'probe_success{{job="jurisdigta-http-probes",service="{spec.probe_service}"}} == bool 0'
+            f")[{window_hours}h:1m]))"
+        )
+    elif spec.up_query:
+        expression = (
+            "sum(sum_over_time(("
+            f"{spec.up_query} == bool 0"
             f")[{window_hours}h:1m]))"
         )
     elif spec.component:
