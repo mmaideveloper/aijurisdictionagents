@@ -82,6 +82,7 @@ API validation rule:
 - Keep the tracked pre-commit hook under `.githooks/pre-commit` enabled with `git config core.hooksPath .githooks` so API lint/type-check failures are caught before commit and before GitHub workflows start.
 
 Ask for implementation of task.  Create for each task separate branch.
+For every separate task, bug, or product change, create a separate Git branch and a separate Git worktree before editing files. Do not reuse one checkout or shared working directory for multiple independent tasks.
 If you start working move task to in progress.
 Before moving a task to In review:
 - Commit your changes.
