@@ -241,7 +241,7 @@ start_api_and_mcp() {
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
   api_cors_allow_origins="$(production_api_cors_origins)"
-  prometheus_base_url="${PROMETHEUS_BASE_URL:-http://host.docker.internal:${PROMETHEUS_HOST_PORT:-9091}}"
+  prometheus_base_url="${API_PROMETHEUS_BASE_URL:-http://jurisdigta-prometheus:9090}"
   docker rm -f jurisdigta-api jurisdigta-mcp jurisdigta-email-scheduler >/dev/null 2>&1 || true
   docker run -d \
     --name jurisdigta-api \
@@ -249,7 +249,6 @@ start_api_and_mcp() {
     --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
     --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
     --network aijuristiction-api_default \
-    --add-host host.docker.internal:host-gateway \
     -p "127.0.0.1:${API_PORT}:8080" \
     --env-file "$ENV_FILE" \
     -e DB_OPTION=postgres \
@@ -673,6 +672,20 @@ start_monitoring() {
   python3 configure_monitoring.py --project-env "$ENV_FILE" --validate --start
 }
 
+connect_api_to_monitoring_network() {
+  local network="${MONITORING_DOCKER_NETWORK:-monitoring_default}"
+  if ! docker network inspect "$network" >/dev/null 2>&1; then
+    log "monitoring network $network not found; API Prometheus access may be unavailable"
+    return
+  fi
+  if docker inspect -f '{{json .NetworkSettings.Networks}}' jurisdigta-api | grep -q "\"$network\""; then
+    log "API container already connected to $network"
+    return
+  fi
+  log "connecting API container to monitoring network $network"
+  docker network connect "$network" jurisdigta-api
+}
+
 wait_for_http() {
   local name="$1"
   local url="$2"
@@ -757,6 +770,7 @@ install_laws_wrapper
 install_status_writer_cron
 install_log_retention_cron
 start_monitoring
+connect_api_to_monitoring_network
 validate_health
 
 log "production deployment complete"
