@@ -35,6 +35,10 @@ const authMocks = vi.hoisted(() => ({
   }
 }));
 
+const caseMocks = vi.hoisted(() => ({
+  selectCase: vi.fn()
+}));
+
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
     user: authMocks.user,
@@ -57,12 +61,14 @@ vi.mock("../state/CaseProvider", () => ({
     documents: [
       {
         id: "doc-1",
+        caseId: "case-1",
+        kind: "generated_document",
         originalFilename: "keystone-timeline.pdf",
         caseTitle: "Keystone Holdings Intake",
         sizeLabel: "178 KB"
       }
     ],
-    selectCase: vi.fn()
+    selectCase: caseMocks.selectCase
   })
 }));
 
@@ -156,6 +162,7 @@ describe("Profile page", () => {
     authMocks.sendEmailChangeCode.mockReset();
     authMocks.completeEmailChange.mockReset();
     authMocks.refreshUser.mockReset();
+    caseMocks.selectCase.mockReset();
     authMocks.user.mfaTotpEnabled = false;
     authMocks.updateProfile.mockResolvedValue({});
     authMocks.sendEmailChangeCode.mockResolvedValue(undefined);
@@ -209,7 +216,20 @@ describe("Profile page", () => {
     expect(screen.getByText("Keystone Holdings Intake")).toBeDefined();
     expect(screen.getByText("My Documents")).toBeDefined();
     expect(screen.getByText("keystone-timeline.pdf")).toBeDefined();
+    expect(screen.getByText("keystone-timeline.pdf").getAttribute("title")).toBe("keystone-timeline.pdf");
     expect(screen.getByText("Case: Keystone Holdings Intake")).toBeDefined();
+  });
+
+  it("opens a profile document from the document list", () => {
+    render(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /keystone-timeline\.pdf/i }));
+
+    expect(caseMocks.selectCase).toHaveBeenCalledWith("case-1");
   });
 
   it("saves editable profile fields", async () => {

@@ -104,6 +104,19 @@ const Profile: React.FC = () => {
     setProfileMessage(null);
   };
 
+  const handleOpenDocument = (document: (typeof documents)[number]) => {
+    selectCase(document.caseId);
+    const params = new URLSearchParams({
+      caseId: document.caseId,
+      docId: document.id,
+      kind: document.kind,
+      filename: document.originalFilename,
+      caseTitle: document.caseTitle,
+      userId: user?.userId ?? ""
+    });
+    navigate(`/app/documents/view?${params.toString()}`);
+  };
+
   const handleSendEmailCode = async () => {
     if (!normalizedEmail) {
       setProfileError(t("profileEmailRequired"));
@@ -324,8 +337,10 @@ const Profile: React.FC = () => {
                         navigate("/");
                       }}
                     >
-                      <span>{caseItem.title}</span>
-                      <small>{t(caseStatusTranslationKeys[caseItem.status])}</small>
+                      <span title={caseItem.title}>{caseItem.title}</span>
+                      <small title={t(caseStatusTranslationKeys[caseItem.status])}>
+                        {t(caseStatusTranslationKeys[caseItem.status])}
+                      </small>
                     </button>
                   </li>
                 ))}
@@ -341,13 +356,17 @@ const Profile: React.FC = () => {
               <ul className="profile-document-list">
                 {documents.map((document) => (
                   <li key={document.id} className="profile-document-item">
-                    <div>
-                      <strong>{document.originalFilename}</strong>
-                      <small>
+                    <button
+                      type="button"
+                      className="profile-document-button"
+                      onClick={() => handleOpenDocument(document)}
+                    >
+                      <strong title={document.originalFilename}>{document.originalFilename}</strong>
+                      <small title={document.caseTitle}>
                         {t("profileDocumentCaseLabel")}: {document.caseTitle}
                       </small>
-                    </div>
-                    <small className="profile-document-meta">
+                    </button>
+                    <small className="profile-document-meta" title={document.sizeLabel}>
                       {document.sizeLabel}
                     </small>
                   </li>
@@ -585,7 +604,7 @@ const Profile: React.FC = () => {
             {fields.map((field) => (
               <div key={field.label} className="profile-field">
                 <dt>{field.label}</dt>
-                <dd>{field.value}</dd>
+                <dd title={field.value}>{field.value}</dd>
               </div>
             ))}
           </dl>
