@@ -16,7 +16,7 @@ from collections import deque
 from collections.abc import Callable, Generator
 from datetime import date, datetime, timezone
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Queue
 from threading import Thread
 from typing import Any, List, Literal, Optional, cast
 from urllib.parse import quote
@@ -70,6 +70,8 @@ _API_VERSION = get_api_version()
 _CORE_VERSION = get_core_version()
 _LOGGER = logging.getLogger(__name__)
 _LAWYER_OUTPUT_VALIDATOR = AILawyerOutputMessageValidationAgent()
+_STREAM_KEEPALIVE_SECONDS = 15.0
+_STREAM_STATUS_SECONDS = 60.0
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
@@ -1763,15 +1765,10 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
 
     Thread(target=worker, daemon=True).start()
 
-    def stream() -> Generator[str, None, None]:
-        while True:
-            item = event_queue.get()
-            if item is None:
-                break
-            event_name, body = item
-            yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        _stream_event_queue(event_queue=event_queue, session=session),
+        media_type="text/event-stream",
+    )
 
 
 def _stream_read_user_session(
@@ -1937,15 +1934,10 @@ def _stream_read_user_session(
 
     Thread(target=worker, daemon=True).start()
 
-    def stream() -> Generator[str, None, None]:
-        while True:
-            item = event_queue.get()
-            if item is None:
-                break
-            event_name, body = item
-            yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        _stream_event_queue(event_queue=event_queue, session=session),
+        media_type="text/event-stream",
+    )
 
 
 def _is_followup_termination_prompt(prompt: str) -> bool:
@@ -3541,6 +3533,50 @@ def _thank_you_reply(language: str | None) -> str:
     if lang.startswith("de"):
         return "Danke."
     return "Thank you."
+
+
+def _stream_still_working_message(*, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return "Stale pracujem na odpovedi. Overenie alebo priprava dokumentu trva dlhsie, vysledok poslem hned po dokonceni."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return "Stale pracuji na odpovedi. Overeni nebo priprava dokumentu trva dele, vysledek poslu hned po dokonceni."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return "Ich arbeite noch an der Antwort. Pruefung oder Dokumentvorbereitung dauert laenger, ich sende das Ergebnis sofort nach Abschluss."
+    return "Still working on the answer. Verification or document preparation is taking longer; I will send the result as soon as it is ready."
+
+
+def _stream_event_queue(
+    *,
+    event_queue: Queue[tuple[str, dict[str, object]] | None],
+    session: Session,
+) -> Generator[str, None, None]:
+    last_visible_status_at = time.monotonic()
+    while True:
+        try:
+            item = event_queue.get(timeout=_STREAM_KEEPALIVE_SECONDS)
+        except Empty:
+            now = time.monotonic()
+            if now - last_visible_status_at >= _STREAM_STATUS_SECONDS:
+                last_visible_status_at = now
+                status_body: dict[str, object] = {
+                    "stage": "still_working",
+                    "message": _stream_still_working_message(
+                        country=session.country,
+                        language=session.language,
+                    ),
+                }
+                yield f"event: processing\ndata: {json.dumps(status_body)}\n\n"
+                continue
+            yield ": keepalive\n\n"
+            continue
+        if item is None:
+            break
+        event_name, body = item
+        if event_name in {"message", "processing", "waiting_for_reply", "result", "done", "error"}:
+            last_visible_status_at = time.monotonic()
+        yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
 
 
 def _finish_discussion_reply(language: str | None) -> str:

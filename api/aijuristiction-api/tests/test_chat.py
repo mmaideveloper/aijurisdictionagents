@@ -3934,6 +3934,73 @@ def test_stream_read_user_emits_document_name_progress_before_final_message(monk
     assert events.index(third_doc) < events.index('"role": "assistant"')
 
 
+def test_stream_read_user_keeps_connection_alive_during_slow_direct_turn(monkeypatch) -> None:
+    import time
+
+    from app.chat import api as chat_api
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "sk"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    persisted_user = Message(
+        session_id=session_id,
+        role=MessageRole.USER,
+        content="adresa dcery a firmy je rovnaka, zober z ORSR",
+        agent_name="User",
+    )
+    persisted_lawyer = Message(
+        session_id=session_id,
+        role=MessageRole.ASSISTANT,
+        content="Overenie je hotove a dokument mozem pripravit.",
+        agent_name="LawyerSlovakia",
+    )
+
+    def slow_direct_turn(**kwargs):
+        time.sleep(0.05)
+        return persisted_user, persisted_lawyer, persisted_lawyer.content, []
+
+    monkeypatch.setattr(chat_api, "_STREAM_KEEPALIVE_SECONDS", 0.01)
+    monkeypatch.setattr(chat_api, "_STREAM_STATUS_SECONDS", 0.02)
+    monkeypatch.setattr(chat_api, "_run_direct_lawyer_turn", slow_direct_turn)
+    monkeypatch.setattr(
+        chat_api,
+        "_build_direct_reply_result",
+        lambda **kwargs: SessionResult(
+            final_recommendation="Overenie je hotove.",
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={"document_requested": False, "document_confirmed": False, "document_ready": False},
+        ),
+    )
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "adresa dcery a firmy je rovnaka, zober z ORSR",
+            "documents": [],
+            "question_timeout_seconds": 30,
+            "max_discussion_minutes": 1,
+            "communication_minutes": 1,
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert ": keepalive" in events
+    assert '"stage": "still_working"' in events
+    assert "Stale pracujem na odpovedi" in events
+    assert "Overenie je hotove" in events
+    assert events.index('"stage": "still_working"') < events.index('"role": "assistant"')
+
+
 def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     from app.chat.models import MessageRole
