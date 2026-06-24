@@ -91,6 +91,22 @@ Useful Grafana Explore queries:
 {stack="jurisdigta", service="jurisdigta-job-log"} |= "failed"
 ```
 
+The provisioned `JurisDigta System Logs` dashboard is the normal operator view
+for logs. It reads from Loki and provides:
+
+- `Source` filter for API, MCP, web, document engine, email scheduler,
+  Grafana, Prometheus, Loki, Alloy, status exporter, and server job log files.
+- `Level` filter for all logs, errors, warnings, info, or debug lines.
+- `Stream` filter for Docker `stdout`/`stderr`.
+- `Search Regex` textbox for incident-specific text matching.
+- Panels for log rate by source, error events by source, recent logs, and
+  errors only.
+
+Because current application logs are mostly unstructured, the severity filter is
+text-based. Prefer structured log levels in new application code so this
+dashboard can later filter on a real `level` label instead of matching message
+text.
+
 ## JurisDigta Metrics Exporter
 
 By default, Docker Compose starts `status-exporter` as a private container and Prometheus scrapes it at:
@@ -373,6 +389,23 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 - `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
 - `JurisDigta Laws Collector`: execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
+- `JurisDigta System Logs`: Loki log stream with source, severity, stream, and regex search filters for Docker container logs and server job log files.
+
+To create or update the dashboards on `jurisdigta-server`, commit the JSON file
+under `Deployment/monitoring/grafana/dashboards`, deploy the repo, then run:
+
+```bash
+cd /srv/jurisdigta/app/Deployment/monitoring
+python3 configure_monitoring.py --validate --start
+```
+
+Grafana reloads provisioned dashboards from `/var/lib/grafana/dashboards`
+automatically. If the dashboard does not appear within about 30 seconds, restart
+Grafana without exposing any monitoring ports publicly:
+
+```bash
+docker compose up -d --force-recreate grafana
+```
 
 The application dashboards use privacy-preserving aggregate metrics only. Do
 not add panels that expose user chat text, generated legal documents, API keys,
