@@ -19,6 +19,28 @@ The endpoint returns safe operational status only:
 
 The endpoint requires the existing `x-api-key` header.
 
+## Daily Stats API
+
+Use the read-only daily stats endpoint for scheduled operational summaries:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${JURISDIGTA_DAILY_STATS_TOKEN}" \
+  "https://api.jurisdigta.eu/v1/monitoring/daily-stats?window=24h"
+```
+
+The endpoint returns one row per monitored system with `status`,
+`minutes_down`, `error_count`, and `notes`. Downtime minutes come from
+Prometheus probe/component history when `PROMETHEUS_BASE_URL` is configured.
+Error counts come from Application Insights when available, with local server
+status as a limited fallback. If a historical source is unavailable, the field
+is returned as `"unknown"` and the row notes explain which source is missing.
+
+Set `JURISDIGTA_DAILY_STATS_TOKEN` in production to allow external scheduled
+read-only checks without exposing Grafana, Prometheus, Loki, or server
+credentials. If the token is unset, the endpoint falls back to the normal
+`x-api-key` guard for local development.
+
 ## Compliance Baseline
 
 - Do not expose API keys, database passwords, full connection strings, chat text, generated legal documents, user emails, or legal-risk user outputs.
