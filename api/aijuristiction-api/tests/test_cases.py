@@ -75,6 +75,39 @@ def test_case_lifecycle_and_limit(monkeypatch, tmp_path) -> None:
     assert listing.json() == []
 
 
+def test_unlimited_access_email_bypasses_case_limit(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "mmaideveloper@gmail.com")
+
+    client = TestClient(app)
+    response = client.post(
+        "/v1/users/sign-up",
+        headers=_headers(),
+        json={
+            "phone_number": "+421900000370",
+            "email": "mmaideveloper@gmail.com",
+            "password": "secret",
+        },
+    )
+    assert response.status_code == 201
+    user_id = response.json()["user_id"]
+
+    for index in range(3):
+        created = client.post(
+            "/v1/cases",
+            headers=_headers(),
+            json={"user_id": user_id, "title": f"Unlimited case {index}"},
+        )
+        assert created.status_code == 201
+
+    listing = client.get(f"/v1/cases?user_id={user_id}", headers=_headers())
+    assert listing.status_code == 200
+    assert len(listing.json()) == 3
+
+
 def test_free_case_becomes_readonly_after_one_day(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("DB_OPTION", "local")
     monkeypatch.setenv("STORAGE_OPTION", "local")

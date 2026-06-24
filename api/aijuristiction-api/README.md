@@ -422,6 +422,13 @@ same `x-api-key` guard as the chat endpoints.
   - monthly plans start a 30-day window when status changes to `paid`
   - queues an email for every subscription status change (including payment failure)
 
+Privileged test/operator accounts can bypass subscription case count, document upload,
+and free-plan case TTL restrictions through `JURISDIGTA_UNLIMITED_ACCESS_EMAILS`.
+The value is a comma- or semicolon-separated email allowlist, matched
+case-insensitively, and defaults to `mmaideveloper@gmail.com`. Treat this as
+privileged access configuration: keep the list small, review it during deployments,
+and do not use it for normal customer entitlements.
+
 Generated chat documents can also be sent by email through
 `POST /v1/chat/sessions/{session_id}/documents/send-email`. Omit `recipient` to use the
 signed-in user's profile email. The first call with `confirmed=false` returns the email address

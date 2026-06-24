@@ -238,6 +238,32 @@ def test_postgres_store_init_does_not_create_local_dirs(tmp_path: Path) -> None:
     assert not blob_root.exists()
 
 
+def test_default_unlimited_access_email_gets_internal_unlimited_plan(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", raising=False)
+    db_path = tmp_path / "api.sqlite3"
+    store = ApiDatabaseStore(
+        db_path=db_path,
+        blob_root=tmp_path / "blob",
+    )
+    store.initialize()
+    user = store.create_user(
+        phone_number="+421900370370",
+        email="MMAIDEVELOPER@GMAIL.COM",
+        password="secret",
+    )
+
+    plan = store.get_effective_subscription_plan(user_id=user.user_id)
+
+    assert plan.plan_code == "unlimited"
+    assert plan.max_cases > 1_000_000
+    assert plan.max_documents_per_case > 1_000_000
+    assert plan.case_ttl_days is None
+    case = store.create_case(user_id=user.user_id, company_id=None, title="Unlimited access")
+    assert store.get_case_write_block_reason(case_id=case.case_id, user_id=user.user_id) is None
+
+
 def test_list_unprocessed_case_documents_includes_chat_attachments(tmp_path: Path) -> None:
     store = ApiDatabaseStore(
         db_path=tmp_path / "api.sqlite3",
