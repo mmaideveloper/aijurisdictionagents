@@ -245,7 +245,7 @@ class SendMfaEmailCodeRequest(BaseModel):
 
 
 _payment_sessions: dict[str, dict[str, str | int]] = {}
-_ALLOWED_SUCCESS_PHONE = "+421944400166"
+_DISABLED_SUBSCRIPTION_PLAN_CODES = {"basic", "premium"}
 
 
 def get_user_store() -> ApiDatabaseStore:
@@ -728,6 +728,7 @@ def request_subscription_change(
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> UserSubscriptionResponse:
+    _ensure_subscription_plan_enabled(payload.plan_code)
     try:
         item = store.request_subscription_change(user_id=user_id, plan_code=payload.plan_code)
     except Exception as exc:
@@ -784,11 +785,7 @@ def checkout_subscription_change(
     plan_code = payload.plan_code.strip().lower()
     if plan_code not in plans:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan code")
-    if plan_code != "free":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Subscription checkout is coming soon.",
-        )
+    _ensure_subscription_checkout_enabled(plan_code)
 
     try:
         subscription = store.request_subscription_change(user_id=user_id, plan_code=plan_code)
@@ -844,18 +841,6 @@ def confirm_subscription_payment(
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    if user.phone_number != _ALLOWED_SUCCESS_PHONE:
-        payment["payment_status"] = "failed"
-        item = store.update_subscription_status(subscription_id=subscription_id, status="canceled")
-        queue_subscription_status_email(scheduler=scheduler, user=user, item=item)
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail={
-                "message": "Payment failed (simulated). Subscription was not upgraded.",
-                "subscription": _to_subscription_response(item).model_dump(),
-            },
-        )
-
     payment["payment_status"] = "paid"
     item = store.update_subscription_status(subscription_id=subscription_id, status="paid")
     queue_subscription_status_email(scheduler=scheduler, user=user, item=item)
@@ -909,6 +894,29 @@ def _to_device_auth_user_profile_response(*, user: User, token: str) -> DeviceAu
         data_processing_consent_version=user.data_processing_consent_version,
         created_at=user.created_at,
         device_auth_token=token,
+    )
+
+
+def _ensure_subscription_plan_enabled(plan_code: str) -> None:
+    if plan_code.strip().lower() in _DISABLED_SUBSCRIPTION_PLAN_CODES:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="This subscription plan is coming soon.",
+        )
+
+
+def _ensure_subscription_checkout_enabled(plan_code: str) -> None:
+    normalized = plan_code.strip().lower()
+    if normalized == "case":
+        return
+    if normalized in _DISABLED_SUBSCRIPTION_PLAN_CODES:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="This subscription plan is coming soon.",
+        )
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Checkout is available only for the Case plan.",
     )
 
 

@@ -29,7 +29,7 @@ The selection is stored in `localStorage` (`aj_lang`).
 The pricing cards and FAQ mirror the backend subscription and free-case limits:
 
 - `Free`: active, 1 case per account, editable for 1 day, then read-only, uses `gpt-4.1-mini`
-- `Case`: €10 per case, coming soon, planned `gpt-5.3` or similar model
+- `Case`: active, €10 for 1 paid case, no 1-day read-only limit, uses `gpt-5.3` or similar model
 - `Basic`: coming soon
 - `Premium`: coming soon
 

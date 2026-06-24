@@ -655,7 +655,7 @@ def test_subscription_lifecycle_queues_notifications(monkeypatch, tmp_path: Path
     request_response = client.post(
         f"/v1/users/{user_id}/subscriptions",
         headers=AUTH_HEADERS,
-        json={"plan_code": "basic"},
+        json={"plan_code": "case"},
     )
     assert request_response.status_code == 201
     requested = request_response.json()
@@ -768,7 +768,7 @@ def test_email_queue_postgres_config_does_not_create_local_sqlite_dirs(tmp_path:
     assert not sqlite_parent.exists()
 
 
-def test_paid_subscription_checkout_is_coming_soon(monkeypatch, tmp_path: Path) -> None:
+def test_case_subscription_checkout_and_payment_confirmation(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)
 
     sign_up_response = client.post(
@@ -788,19 +788,69 @@ def test_paid_subscription_checkout_is_coming_soon(monkeypatch, tmp_path: Path) 
     checkout_response = client.post(
         f"/v1/users/{user_id}/subscriptions/checkout",
         headers=AUTH_HEADERS,
-        json={"plan_code": "premium", "payment_provider": "paypal"},
+        json={"plan_code": "case", "payment_provider": "paypal"},
     )
-    assert checkout_response.status_code == 503
-    assert checkout_response.json()["detail"] == "Subscription checkout is coming soon."
+    assert checkout_response.status_code == 201
+    checkout = checkout_response.json()
+    assert checkout["plan_code"] == "case"
+    assert checkout["amount_eur"] == 10
+    assert checkout["payment_status"] == "pending"
+    assert checkout["checkout_url"].startswith("https://www.sandbox.paypal.com")
+
+    confirm_response = client.post(
+        f"/v1/users/subscriptions/{checkout['subscription_id']}/confirm-payment",
+        headers=AUTH_HEADERS,
+        json={"payment_id": checkout["payment_id"]},
+    )
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["plan_code"] == "case"
+    assert confirm_response.json()["status"] == "paid"
 
     subscriptions_response = client.get(f"/v1/users/{user_id}/subscriptions", headers=AUTH_HEADERS)
     assert subscriptions_response.status_code == 200
     subscriptions = subscriptions_response.json()
-    assert len(subscriptions) == 1
-    assert subscriptions[0]["plan_code"] == "free"
+    assert subscriptions[0]["plan_code"] == "case"
     assert subscriptions[0]["status"] == "paid"
     rows = _fetch_emails(tmp_path / "email.sqlite3")
-    assert [row[1] for row in rows] == ["Welcome to AI Jurisdiction"]
+    assert [row[1] for row in rows] == [
+        "Welcome to AI Jurisdiction",
+        "Payment confirmed",
+    ]
+
+
+def test_disabled_subscription_checkout_is_rejected(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900565657",
+            "email": "checkout-disabled@example.com",
+            "password": "secret-pass",
+            "first_name": "Checkout",
+            "last_name": "Disabled",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+
+    checkout_response = client.post(
+        f"/v1/users/{user_id}/subscriptions/checkout",
+        headers=AUTH_HEADERS,
+        json={"plan_code": "premium", "payment_provider": "paypal"},
+    )
+    assert checkout_response.status_code == 503
+    assert checkout_response.json()["detail"] == "This subscription plan is coming soon."
+
+    request_response = client.post(
+        f"/v1/users/{user_id}/subscriptions",
+        headers=AUTH_HEADERS,
+        json={"plan_code": "basic"},
+    )
+    assert request_response.status_code == 503
+    assert request_response.json()["detail"] == "This subscription plan is coming soon."
+
 
 def test_user_can_create_and_delete_mcp_api_key_and_call_mcp(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)

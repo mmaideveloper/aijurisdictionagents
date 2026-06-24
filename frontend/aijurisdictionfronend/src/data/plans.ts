@@ -24,8 +24,7 @@ export const plans: Plan[] = [
     descriptionKey: "planProDescription",
     featureKeys: ["planProFeature1", "planProFeature2", "planProFeature3"],
     priceLabelKey: "planProPrice",
-    highlight: true,
-    disabled: true
+    highlight: true
   },
   {
     id: "basic",

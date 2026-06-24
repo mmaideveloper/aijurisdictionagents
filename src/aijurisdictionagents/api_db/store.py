@@ -1953,7 +1953,7 @@ class ApiDatabaseStore:
                 (user_id,),
             )
         if row is None:
-            return SubscriptionPlan('free', 'Free', 'none', 0, 5, 2, 1)
+            return SubscriptionPlan('free', 'Free', 'none', 0, 1, 2, 1)
         return _row_to_subscription_plan(row)
 
     def get_document_upload_limit(self, *, user_id: str) -> int:
