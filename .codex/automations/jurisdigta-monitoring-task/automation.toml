@@ -23,7 +23,7 @@ Healthy rules:
 - API `/health` must include `llm.status=ok`.
 - API `/health` must include `database.status=ok`.
 - API `/version` must return HTTP 200 and include `service` and `version` fields.
-- API `/version` `last_collector_run_at` must be within the last 48 hours.
+- API `/version` `last_collector_run_at` must be within the last 48 hours; parse the timestamp prefix before any parenthetical source marker such as `(SK:slov-lex)`.
 - Web `/health` must return HTTP 200 and body `ok`.
 - Web root and agent root must return HTTP 200.
 - MCP root must return HTTP 200.
