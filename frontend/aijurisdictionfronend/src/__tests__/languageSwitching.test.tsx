@@ -80,7 +80,13 @@ describe("language switching", () => {
 
     await user.click(screen.getByRole("link", { name: "Pricing" }));
 
-    expect(screen.getByText("Choose the cadence that fits your practice.")).toBeDefined();
+    expect(screen.getByText("Free is active now; paid subscriptions are coming soon.")).toBeDefined();
+    expect(screen.getByText("Free access for one case, valid for 1 day.")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Monthly" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Yearly" })).toBeNull();
+    expect(screen.queryByText("Basic")).toBeNull();
+    expect(screen.queryByText("Case")).toBeNull();
+    expect(screen.queryByText("Premium")).toBeNull();
     expect(screen.getByRole("link", { name: "Home" })).toBeDefined();
   });
 });

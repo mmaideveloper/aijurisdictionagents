@@ -1577,6 +1577,27 @@ class ApiDatabaseStore:
             )
         return int(row[0]) if row else 0
 
+    def get_case_limit(self, *, user_id: str) -> int:
+        return self.get_effective_subscription_plan(user_id=user_id).max_cases
+
+    def get_case_write_block_reason(self, *, case_id: str, user_id: str) -> str | None:
+        case = self.get_case(case_id=case_id)
+        if case.user_id != user_id or case.status == "deleted":
+            raise KeyError(f"Case {case_id} not found")
+        plan = self.get_effective_subscription_plan(user_id=user_id)
+        if plan.case_ttl_days is None:
+            return None
+        created_at = datetime.fromisoformat(case.created_at.replace("Z", "+00:00"))
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        expires_at = created_at + timedelta(days=plan.case_ttl_days)
+        if datetime.now(timezone.utc) >= expires_at:
+            return (
+                f"Case is read-only because the {plan.display_name} plan allows edits "
+                f"for {plan.case_ttl_days} day(s) after creation."
+            )
+        return None
+
     def update_case_title(self, *, case_id: str, user_id: str, title: str) -> Case:
         now = _now_iso()
         with self._connect() as conn:
@@ -2371,7 +2392,7 @@ class ApiDatabaseStore:
     def _seed_subscription_plans(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
         now = _now_iso()
         plans = [
-            ("free", "Free", "none", 0, 5, 2, 1),
+            ("free", "Free", "none", 0, 1, 2, 1),
             ("case", "Case", "perCase", 10, 1, 5, None),
             ("basic", "Basic", "monthly", 30, 10, 5, None),
             ("premium", "Premium", "monthly", 100, 100, 50, None),

@@ -784,6 +784,11 @@ def checkout_subscription_change(
     plan_code = payload.plan_code.strip().lower()
     if plan_code not in plans:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan code")
+    if plan_code != "free":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Subscription checkout is coming soon.",
+        )
 
     try:
         subscription = store.request_subscription_change(user_id=user_id, plan_code=plan_code)

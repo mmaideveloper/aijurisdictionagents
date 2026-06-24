@@ -165,6 +165,21 @@ def _get_store() -> ApiDatabaseStore:
     return store
 
 
+def _ensure_case_write_access_for_session(session: Session) -> None:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return
+    store = _get_store()
+    try:
+        case = store.get_case(case_id=case_id)
+        user_id = str(session.user_id) if session.user_id else case.user_id
+        reason = store.get_case_write_block_reason(case_id=case_id, user_id=user_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if reason is not None:
+        raise HTTPException(status_code=403, detail=reason)
+
+
 def _persist_case_message_if_needed(*, session: Session, role: str, content: str, agent_name: str | None = None) -> None:
     case_id = session.case_id
     if case_id is None or not case_id.strip():
@@ -1495,6 +1510,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     session = _repository.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    _ensure_case_write_access_for_session(session)
 
     content = payload.content.strip()
     if not content:
@@ -1533,6 +1549,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if session.state == SessionState.COMPLETED and payload.user_simulation_mode != "ReadUser":
         raise HTTPException(status_code=409, detail="Session already completed")
+    _ensure_case_write_access_for_session(session)
     _persist_inline_case_documents_if_needed(session=session, documents=payload.documents)
     if payload.user_simulation_mode == "ReadUser":
         return _stream_read_user_session(session_id=session_id, session=session, payload=payload)

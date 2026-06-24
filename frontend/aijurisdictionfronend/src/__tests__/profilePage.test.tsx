@@ -106,10 +106,7 @@ const labels: Record<string, string> = {
   profileDocumentsSubtitle: "Uploaded documents from your case intake flow.",
   profileDocumentsEmpty: "No uploaded documents yet.",
   profileDocumentCaseLabel: "Case",
-  profileBilling: "Billing cadence",
-  pricingMonthly: "Monthly",
-  pricingYearly: "Yearly",
-  profileCadenceCurrent: "Current cadence",
+  profileBilling: "Active plan",
   profilePlan: "Subscription tier",
   profilePlanSelected: "Selected",
   profileSave: "Save changes",
@@ -211,7 +208,9 @@ describe("Profile page", () => {
     expect(screen.getByText("Role")).toBeDefined();
     expect(screen.getByText("JurisDigta user")).toBeDefined();
     expect(screen.getByText("Account Created Date")).toBeDefined();
-    expect(screen.getByText("Billing cadence")).toBeDefined();
+    expect(screen.getByText("Active plan")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Monthly" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Yearly" })).toBeNull();
     expect(screen.getByText("Opened cases")).toBeDefined();
     expect(screen.getByText("Keystone Holdings Intake")).toBeDefined();
     expect(screen.getByText("My Documents")).toBeDefined();

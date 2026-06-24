@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { chatApiRuntimeConfig } from "../api/chatClient";
 import { useLanguage } from "../components/LanguageProvider";
 import { useAuth } from "../auth/webAuth";
-import { BillingCadence, plans } from "../data/plans";
+import { plans } from "../data/plans";
 import { useCases } from "../state/CaseProvider";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
 
@@ -17,8 +17,6 @@ const Profile: React.FC = () => {
   const { t } = useLanguage();
   const { user, updateProfile, sendEmailChangeCode, completeEmailChange, refreshUser } = useAuth();
   const { cases, documents, selectCase } = useCases();
-  const [cadence, setCadence] = useState<BillingCadence>("monthly");
-  const [plan, setPlan] = useState(plans[0]?.id ?? "free");
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -49,7 +47,7 @@ const Profile: React.FC = () => {
   const [mfaMessage, setMfaMessage] = useState<string | null>(null);
   const [mfaError, setMfaError] = useState<string | null>(null);
   const [isMfaSubmitting, setIsMfaSubmitting] = useState(false);
-  const selectedPlan = plans.find((option) => option.id === plan) ?? plans[0];
+  const selectedPlan = plans.find((option) => !option.disabled) ?? plans[0];
   const openedCases = cases.filter((caseItem) => caseItem.status !== "Completed");
 
   useEffect(() => {
@@ -286,33 +284,14 @@ const Profile: React.FC = () => {
         <aside className="profile-side-panels">
           <article className="card">
             <h2>{t("profileBilling")}</h2>
-            <div className="toggle">
-              <button
-                type="button"
-                className={cadence === "monthly" ? "active" : ""}
-                onClick={() => setCadence("monthly")}
-              >
-                {t("pricingMonthly")}
-              </button>
-              <button
-                type="button"
-                className={cadence === "yearly" ? "active" : ""}
-                onClick={() => setCadence("yearly")}
-              >
-                {t("pricingYearly")}
-              </button>
-            </div>
-            <p className="hint">
-              {t("profileCadenceCurrent")}: {cadence === "monthly" ? t("pricingMonthly") : t("pricingYearly")}
-            </p>
             <h3>{t("profilePlan")}</h3>
             <div className="plan-selector">
-              {plans.map((option) => (
+              {plans.filter((option) => !option.disabled).map((option) => (
                 <button
                   key={option.id}
                   type="button"
-                  className={`pill ${plan === option.id ? "active" : ""}`}
-                  onClick={() => setPlan(option.id)}
+                  className="pill active"
+                  disabled
                 >
                   {t(option.nameKey)}
                 </button>

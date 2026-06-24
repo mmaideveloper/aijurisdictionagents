@@ -33,7 +33,6 @@ from services.document_processor.runtime import render_documents_for_prompt
 from app.services.email_scheduler import EmailScheduler
 
 router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key)])
-_MAX_ACTIVE_CASES = 5
 _LOGGER = logging.getLogger(__name__)
 _STORE_LOCK = threading.Lock()
 _STORE_CACHE: dict[tuple[str, str, str, str, str], ApiDatabaseStore] = {}
@@ -186,11 +185,12 @@ def list_cases(user_id: str, store: ApiDatabaseStore = Depends(get_store)) -> li
 
 @router.post('', response_model=CaseResponse, status_code=status.HTTP_201_CREATED)
 def create_case(payload: CreateCaseRequest, store: ApiDatabaseStore = Depends(get_store)) -> CaseResponse:
+    max_active_cases = store.get_case_limit(user_id=payload.user_id)
     active = store.count_active_cases(user_id=payload.user_id)
-    if active >= _MAX_ACTIVE_CASES:
+    if active >= max_active_cases:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f'Maximum number of cases reached ({_MAX_ACTIVE_CASES})',
+            detail=f'Maximum number of cases reached ({max_active_cases})',
         )
     case = store.create_case(user_id=payload.user_id, company_id=None, title=payload.title.strip())
     return _to_case_response(case)
@@ -198,6 +198,7 @@ def create_case(payload: CreateCaseRequest, store: ApiDatabaseStore = Depends(ge
 
 @router.patch('/{case_id}', response_model=CaseResponse)
 def rename_case(case_id: str, payload: UpdateCaseRequest, store: ApiDatabaseStore = Depends(get_store)) -> CaseResponse:
+    _ensure_case_write_access(case_id=case_id, user_id=payload.user_id, store=store)
     try:
         case = store.update_case_title(case_id=case_id, user_id=payload.user_id, title=payload.title.strip())
     except KeyError as exc:
@@ -207,6 +208,7 @@ def rename_case(case_id: str, payload: UpdateCaseRequest, store: ApiDatabaseStor
 
 @router.delete('/{case_id}', status_code=status.HTTP_204_NO_CONTENT)
 def delete_case(case_id: str, user_id: str, store: ApiDatabaseStore = Depends(get_store)) -> None:
+    _ensure_case_write_access(case_id=case_id, user_id=user_id, store=store)
     try:
         store.soft_delete_case(case_id=case_id, user_id=user_id)
     except KeyError as exc:
@@ -250,6 +252,7 @@ async def upload_case_documents(
     store: ApiDatabaseStore = Depends(get_store),
 ) -> CaseDocumentUploadResponse:
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    _ensure_case_write_access(case_id=case_id, user_id=user_id, store=store)
     limit = store.get_document_upload_limit(user_id=user_id)
     existing = store.count_case_documents(case_id=case_id)
     if existing + len(files) > limit:
@@ -549,6 +552,15 @@ def _ensure_case_access(*, case_id: str, user_id: str, store: ApiDatabaseStore) 
     if case.user_id != user_id or case.status == 'deleted':
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Case {case_id} not found')
     return case
+
+
+def _ensure_case_write_access(*, case_id: str, user_id: str, store: ApiDatabaseStore) -> None:
+    try:
+        reason = store.get_case_write_block_reason(case_id=case_id, user_id=user_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if reason is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
 
 
 def _read_case_communication_content(

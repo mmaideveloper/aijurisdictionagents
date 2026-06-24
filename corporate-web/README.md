@@ -26,12 +26,12 @@ The selection is stored in `localStorage` (`aj_lang`).
 
 ## Pricing sync
 
-The pricing cards and FAQ mirror the backend subscription limits for document uploads per case:
+The pricing cards and FAQ mirror the backend subscription and free-case limits:
 
-- `Free`: 2 documents per case
-- `Case`: 5 documents per case
-- `Basic`: 5 documents per case
-- `Premium`: 50 documents per case
+- `Free`: active, 1 case per account, editable for 1 day, then read-only, uses `gpt-4.1-mini`
+- `Case`: €10 per case, coming soon, planned `gpt-5.3` or similar model
+- `Basic`: coming soon
+- `Premium`: coming soon
 
 ## News and articles
 
