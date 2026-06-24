@@ -50,6 +50,10 @@ GitHub workflow / infra environment rule:
 - Keep `docs/GITHUB_ENVIRONMENTS.md` aligned with workflow inputs, required GitHub Environment variables, required secrets, and any new manual setup steps.
 - Whenever a task requires manual infrastructure setup outside the repository, update `docs/manual_infrastucture_setup.md` in the same change with the exact future installation/configuration steps, required owners/accounts, secrets, environments, validation steps, and rollback notes.
 
+Production health endpoint rule:
+
+- Whenever you add, expose, rename, or make public a production `/health` endpoint, update `.codex/automations/jurisdigta-monitoring-task/automation.toml` in the same change so the hourly `Jurisdigta Monitoring task` checks it and defines its healthy response contract.
+
 
 Software Development Life Cycle:
 
