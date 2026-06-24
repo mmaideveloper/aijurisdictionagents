@@ -595,7 +595,6 @@ def confirm_totp_enrollment(
     if pending_secret is None or not verify_totp_code(secret=pending_secret, code=payload.verification_code):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
     store.enable_user_totp(user_id=user.user_id)
-    _save_mfa_verification(store=store, user=user)
     return _to_user_profile_response(user, store=store)
 
 
@@ -969,11 +968,11 @@ def _mfa_email_code_key(*, user_id: str) -> str:
 
 
 def _mfa_reuse_window_hours() -> int:
-    raw_value = os.getenv("MFA_REUSE_WINDOW_HOURS", os.getenv("MCP_OTP_REUSE_WINDOW_HOURS", "24")).strip()
+    raw_value = os.getenv("MFA_REUSE_WINDOW_HOURS", "0").strip()
     try:
         value = int(raw_value)
     except ValueError:
-        return 24
+        return 0
     return max(0, min(value, 168))
 
 

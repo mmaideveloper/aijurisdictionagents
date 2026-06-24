@@ -193,10 +193,44 @@ const Profile: React.FC = () => {
         manualSetupKey: payload.manual_setup_key,
         qrCodeUri: payload.qr_code_uri
       });
+      setTotpCode("");
       setMfaMessage(t("profileMfaScanPrompt"));
       setMfaError(null);
     } catch (error) {
       setMfaError(error instanceof Error ? error.message : t("profileMfaStartFailed"));
+    } finally {
+      setIsMfaSubmitting(false);
+    }
+  };
+
+  const disableTotpEnrollment = async () => {
+    if (!user) {
+      return;
+    }
+    if (!totpCode.trim()) {
+      setMfaError(t("profileMfaDisableCodeRequired"));
+      setMfaMessage(null);
+      return;
+    }
+    setIsMfaSubmitting(true);
+    try {
+      const config = chatApiRuntimeConfig();
+      const response = await fetch(`${config.baseUrl}/v1/users/${user.userId}/mfa/totp`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "x-api-key": config.apiKey },
+        body: JSON.stringify({ verification_code: totpCode.trim() })
+      });
+      if (!response.ok) {
+        throw new Error(t("profileMfaInvalidCode"));
+      }
+      await refreshUser(user.userId);
+      setTotpSetup(null);
+      setTotpCode("");
+      setMfaMessage(t("profileMfaDisabled"));
+      setMfaError(null);
+    } catch (error) {
+      setMfaError(error instanceof Error ? error.message : t("profileMfaInvalidCode"));
+      setMfaMessage(null);
     } finally {
       setIsMfaSubmitting(false);
     }
@@ -322,6 +356,80 @@ const Profile: React.FC = () => {
             ) : (
               <p className="hint">{t("profileDocumentsEmpty")}</p>
             )}
+          </article>
+          <article className="card">
+            <h2>{t("profileMfaTitle")}</h2>
+            <p className="hint">
+              {user?.mfaTotpEnabled ? t("profileMfaTotpEnabled") : t("profileMfaTotpDisabled")}
+            </p>
+            <p className="hint">{t("profileMfaEmailFallback")}</p>
+            <div className="mfa-actions">
+              <button
+                type="button"
+                className="button primary"
+                onClick={startTotpEnrollment}
+                disabled={isMfaSubmitting}
+              >
+                {user?.mfaTotpEnabled ? t("profileMfaUpdateTotp") : t("profileMfaStartTotp")}
+              </button>
+              {user?.mfaTotpEnabled ? (
+                <button
+                  type="button"
+                  className="button ghost"
+                  onClick={disableTotpEnrollment}
+                  disabled={isMfaSubmitting || totpCode.trim().length === 0}
+                >
+                  {t("profileMfaDisableTotp")}
+                </button>
+              ) : null}
+            </div>
+            {user?.mfaTotpEnabled && !totpSetup ? (
+              <label className="mfa-code-field">
+                <span>{t("profileMfaCurrentCode")}</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={totpCode}
+                  onChange={(event) => setTotpCode(event.target.value)}
+                />
+              </label>
+            ) : null}
+            {totpSetup ? (
+              <div className="mfa-setup">
+                {totpSetup.qrCodeUri ? (
+                  <img src={totpSetup.qrCodeUri} alt={t("profileMfaQrAlt")} />
+                ) : null}
+                <label>
+                  <span>{t("profileMfaManualKey")}</span>
+                  <input readOnly value={totpSetup.manualSetupKey} />
+                </label>
+                <label>
+                  <span>{t("profileMfaConfirmCode")}</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={totpCode}
+                    onChange={(event) => setTotpCode(event.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="button primary"
+                  onClick={confirmTotpEnrollment}
+                  disabled={isMfaSubmitting || totpCode.trim().length === 0}
+                >
+                  {t("profileMfaConfirm")}
+                </button>
+              </div>
+            ) : null}
+            {mfaError ? (
+              <p className="hint" role="alert">
+                {mfaError}
+              </p>
+            ) : null}
+            {mfaMessage ? <p className="hint">{mfaMessage}</p> : null}
           </article>
         </aside>
         <article className="profile-details card">
@@ -481,58 +589,6 @@ const Profile: React.FC = () => {
               </div>
             ))}
           </dl>
-        </article>
-        <article className="profile-details card">
-          <h2>{t("profileMfaTitle")}</h2>
-          <p className="hint">
-            {user?.mfaTotpEnabled ? t("profileMfaTotpEnabled") : t("profileMfaTotpDisabled")}
-          </p>
-          <p className="hint">{t("profileMfaEmailFallback")}</p>
-          {!user?.mfaTotpEnabled ? (
-            <button
-              type="button"
-              className="button primary"
-              onClick={startTotpEnrollment}
-              disabled={isMfaSubmitting}
-            >
-              {t("profileMfaStartTotp")}
-            </button>
-          ) : null}
-          {totpSetup ? (
-            <div className="mfa-setup">
-              {totpSetup.qrCodeUri ? (
-                <img src={totpSetup.qrCodeUri} alt={t("profileMfaQrAlt")} />
-              ) : null}
-              <label>
-                <span>{t("profileMfaManualKey")}</span>
-                <input readOnly value={totpSetup.manualSetupKey} />
-              </label>
-              <label>
-                <span>{t("profileMfaConfirmCode")}</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={totpCode}
-                  onChange={(event) => setTotpCode(event.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                className="button primary"
-                onClick={confirmTotpEnrollment}
-                disabled={isMfaSubmitting || totpCode.trim().length === 0}
-              >
-                {t("profileMfaConfirm")}
-              </button>
-            </div>
-          ) : null}
-          {mfaError ? (
-            <p className="hint" role="alert">
-              {mfaError}
-            </p>
-          ) : null}
-          {mfaMessage ? <p className="hint">{mfaMessage}</p> : null}
         </article>
       </section>
     </div>

@@ -10,6 +10,7 @@ const authMocks = vi.hoisted(() => ({
   updateProfile: vi.fn(),
   sendEmailChangeCode: vi.fn(),
   completeEmailChange: vi.fn(),
+  refreshUser: vi.fn(),
   user: {
     userId: "user-1",
     phoneNumber: "+421900111222",
@@ -29,7 +30,8 @@ const authMocks = vi.hoisted(() => ({
     mcpApiKeyExpiresAt: "2026-06-22T09:12:28+00:00",
     accountCreatedAt: "2026-06-21T09:12:28+00:00",
     role: "JurisDigta user",
-    name: "Admin User"
+    name: "Admin User",
+    mfaTotpEnabled: false
   }
 }));
 
@@ -38,7 +40,8 @@ vi.mock("../auth/webAuth", () => ({
     user: authMocks.user,
     updateProfile: authMocks.updateProfile,
     sendEmailChangeCode: authMocks.sendEmailChangeCode,
-    completeEmailChange: authMocks.completeEmailChange
+    completeEmailChange: authMocks.completeEmailChange,
+    refreshUser: authMocks.refreshUser
   })
 }));
 
@@ -117,6 +120,24 @@ const labels: Record<string, string> = {
   profileEmailCodeSendFailed: "Could not send OTP.",
   profileEmailOtpCode: "OTP code for email change",
   profileEmailChangeRequiresCode: "Email change requires OTP code.",
+  profileMfaTitle: "Multi-factor authentication",
+  profileMfaTotpEnabled: "Authenticator app MFA is enabled.",
+  profileMfaTotpDisabled: "Authenticator app MFA is not enabled.",
+  profileMfaEmailFallback: "Email OTP remains available as a fallback.",
+  profileMfaStartTotp: "Set up authenticator app",
+  profileMfaUpdateTotp: "Update authenticator app",
+  profileMfaDisableTotp: "Disable authenticator app",
+  profileMfaCurrentCode: "Current authenticator code",
+  profileMfaDisableCodeRequired: "Enter a current authenticator code before disabling MFA.",
+  profileMfaDisabled: "Authenticator app MFA is disabled.",
+  profileMfaScanPrompt: "Scan the QR code or enter the setup key, then confirm with a current code.",
+  profileMfaStartFailed: "Could not start authenticator setup.",
+  profileMfaInvalidCode: "Invalid authenticator code.",
+  profileMfaEnabled: "Authenticator app MFA is enabled.",
+  profileMfaQrAlt: "Authenticator setup QR code",
+  profileMfaManualKey: "Manual setup key",
+  profileMfaConfirmCode: "Confirmation code",
+  profileMfaConfirm: "Confirm authenticator",
   planFreeName: "Free",
   profileOptionalPending: "Coming soon",
   profileRequiredMissing: "Required field is missing",
@@ -134,12 +155,17 @@ describe("Profile page", () => {
     authMocks.updateProfile.mockReset();
     authMocks.sendEmailChangeCode.mockReset();
     authMocks.completeEmailChange.mockReset();
+    authMocks.refreshUser.mockReset();
+    authMocks.user.mfaTotpEnabled = false;
     authMocks.updateProfile.mockResolvedValue({});
     authMocks.sendEmailChangeCode.mockResolvedValue(undefined);
     authMocks.completeEmailChange.mockResolvedValue({});
+    authMocks.refreshUser.mockResolvedValue({});
+    vi.stubGlobal("fetch", vi.fn());
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     cleanup();
   });
 
@@ -244,5 +270,64 @@ describe("Profile page", () => {
     await waitFor(() => {
       expect(authMocks.completeEmailChange).toHaveBeenCalledWith("new@example.com", "123456");
     });
+  });
+
+  it("allows an enabled authenticator app to be updated", async () => {
+    authMocks.user.mfaTotpEnabled = true;
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          manual_setup_key: "ABCDEF",
+          qr_code_uri: "data:image/png;base64,abc"
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    render(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Update authenticator app" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/users/user-1/mfa/totp/start"),
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+    expect(screen.getByDisplayValue("ABCDEF")).toBeDefined();
+    expect(screen.getByLabelText("Confirmation code")).toBeDefined();
+  });
+
+  it("disables an enabled authenticator app with the current code", async () => {
+    authMocks.user.mfaTotpEnabled = true;
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
+
+    render(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText("Current authenticator code"), {
+      target: { value: "123456" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Disable authenticator app" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/users/user-1/mfa/totp"),
+        expect.objectContaining({
+          method: "DELETE",
+          body: JSON.stringify({ verification_code: "123456" })
+        })
+      );
+    });
+    expect(authMocks.refreshUser).toHaveBeenCalledWith("user-1");
   });
 });

@@ -11,6 +11,8 @@ const mockSignIn = vi.fn();
 const mockSendSignUpCode = vi.fn();
 const mockSignUp = vi.fn();
 const mockSignOut = vi.fn();
+const mockSendMfaEmailCode = vi.fn();
+const mockVerifyMfa = vi.fn();
 
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
@@ -19,7 +21,9 @@ vi.mock("../auth/webAuth", () => ({
     signIn: mockSignIn,
     sendSignUpCode: mockSendSignUpCode,
     signUp: mockSignUp,
-    signOut: mockSignOut
+    signOut: mockSignOut,
+    sendMfaEmailCode: mockSendMfaEmailCode,
+    verifyMfa: mockVerifyMfa
   })
 }));
 
@@ -48,6 +52,15 @@ const labels: Record<string, string> = {
   authRegistered: "Account created.",
   authSignedInAs: "Signed in as",
   authResetSession: "Reset session",
+  authMfaRequired: "MFA verification is required.",
+  authMfaMethod: "MFA method",
+  authMfaEmail: "Email OTP",
+  authMfaTotp: "Authenticator app",
+  authMfaEmailCode: "Email code",
+  authMfaTotpCode: "Authenticator code",
+  authMfaVerify: "Verify MFA",
+  authMfaInvalid: "Invalid MFA code.",
+  authMfaEmailSent: "Email OTP code sent.",
   authCreateTitle: "New account",
   authCreateBody: "Create account text.",
   authRegister: "Register",
@@ -81,9 +94,13 @@ describe("Auth page", () => {
     mockSendSignUpCode.mockReset();
     mockSignUp.mockReset();
     mockSignOut.mockReset();
+    mockSendMfaEmailCode.mockReset();
+    mockVerifyMfa.mockReset();
     mockSignIn.mockResolvedValue("signed_in");
     mockSendSignUpCode.mockResolvedValue(undefined);
     mockSignUp.mockResolvedValue(true);
+    mockSendMfaEmailCode.mockResolvedValue(undefined);
+    mockVerifyMfa.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -123,6 +140,36 @@ describe("Auth page", () => {
       expect(screen.getByTestId("current-path").textContent).toBe("/app/assistant");
     });
     expect(mockSignIn).toHaveBeenLastCalledWith("local.dev@jurisdigta.test", "LocalTest123!", "654321");
+  });
+
+  it("shows authenticator MFA when the account has TOTP enabled", async () => {
+    const user = userEvent.setup();
+    mockSignIn.mockResolvedValueOnce({
+      status: "mfa_required",
+      challenge: {
+        mfaRequired: true,
+        mfaToken: "mfa-token",
+        userId: "user-1",
+        email: "local.dev@jurisdigta.test",
+        methods: ["email", "totp"],
+        reuseWindowHours: 0
+      }
+    });
+    renderAuthPage();
+
+    await user.type(screen.getByLabelText("Email"), "local.dev@jurisdigta.test");
+    await user.type(screen.getByLabelText("Password"), "LocalTest123!");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(screen.getByLabelText("MFA method")).toBeDefined();
+    expect(screen.getByLabelText("Authenticator code")).toBeDefined();
+    await user.type(screen.getByLabelText("Authenticator code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify MFA" }));
+
+    await waitFor(() => {
+      expect(mockVerifyMfa).toHaveBeenCalledWith("mfa-token", "totp", "123456");
+    });
+    expect(screen.getByTestId("current-path").textContent).toBe("/app/assistant");
   });
 
   it("creates an account and opens the assistant workspace", async () => {

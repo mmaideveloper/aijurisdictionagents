@@ -2328,19 +2328,22 @@ textarea {
 
 .profile-shell {
   display: grid;
-  gap: 1.2rem;
-  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  align-items: start;
+  gap: 1.5rem;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
 }
 
 .profile-side-panels {
   display: grid;
-  gap: 1.2rem;
+  gap: 0.9rem;
   align-content: start;
+  min-width: 0;
 }
 
 .profile-details {
   align-self: start;
   min-height: 100%;
+  min-width: 0;
 }
 
 .profile-details__header {
@@ -2373,6 +2376,18 @@ textarea {
 
 .mfa-setup {
   margin-top: 1rem;
+}
+
+.mfa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.mfa-code-field {
+  display: grid;
+  gap: 0.45rem;
+  font-weight: 600;
 }
 
 .mfa-setup img {

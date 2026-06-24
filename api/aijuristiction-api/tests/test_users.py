@@ -533,28 +533,15 @@ def test_totp_enrollment_and_web_mfa_login_reuse(monkeypatch, tmp_path: Path) ->
         json={"email": "totp-web@example.com", "password": "secret-pass"},
     )
     assert first_login.status_code == 200
-    assert first_login.json()["user_id"] == user_id
-    assert "mfa_token" not in first_login.json()
-
-    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
-        conn.execute("DELETE FROM mcp_otp_verifications")
-        conn.commit()
-
-    challenged_login = client.post(
-        "/v1/users/sign-in",
-        headers=AUTH_HEADERS,
-        json={"email": "totp-web@example.com", "password": "secret-pass"},
-    )
-    assert challenged_login.status_code == 200
-    challenge = challenged_login.json()
-    assert challenge["mfa_required"] is True
-    assert challenge["methods"] == ["email", "totp"]
+    first_challenge = first_login.json()
+    assert first_challenge["mfa_required"] is True
+    assert first_challenge["methods"] == ["email", "totp"]
 
     verify_response = client.post(
         "/v1/users/sign-in/mfa/verify",
         headers=AUTH_HEADERS,
         json={
-            "mfa_token": challenge["mfa_token"],
+            "mfa_token": first_challenge["mfa_token"],
             "method": "totp",
             "verification_code": current_totp_code(secret=enrollment["manual_setup_key"]),
         },
