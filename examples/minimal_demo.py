@@ -28,6 +28,10 @@ print(
     "assistant chatter, alternate-language blocks, and raw markdown stay out of the PDF."
 )
 print(
+    "multilingual_document_exports => CASE_UPDATE_JSON case.documents entries are saved/exported "
+    "as separate clean documents by default; use bundle=single_pdf only when one combined PDF is requested."
+)
+print(
     "unlimited_access_emails => "
     f"{sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}"
 )
