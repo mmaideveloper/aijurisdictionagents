@@ -264,7 +264,15 @@ If you want only the database container or the repository database rules, use `d
 - `POST /v1/users/sign-in/phone`
 - `PATCH /v1/users/{user_id}`
 
-`GET /health` now verifies the configured API database connection before returning healthy.
+`GET /health` verifies the configured API database connection before returning healthy.
+Healthy responses include `status=ok`, `service=aijuristiction-api`,
+`llm.status`, and `database.status`. Database failures return HTTP 503 with
+`error=database_unavailable` and a sanitized message that does not echo
+connection strings, credentials, raw exception text, prompts, documents, email
+addresses, or generated legal output.
+
+See `docs/SERVICE_HEALTHCHECKS.md` for the reusable health-check rule across
+HTTP services and background workers.
 If the database is unreachable or misconfigured, the endpoint returns `503` with
 `error=database_unavailable` and a `message` field that the mobile app can show directly.
 The response also reports the configured LLM provider so callers can distinguish `mock`

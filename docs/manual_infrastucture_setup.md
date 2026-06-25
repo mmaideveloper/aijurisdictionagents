@@ -320,6 +320,11 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Production API document processing mode: `DOCUMENT_PROCESSOR_OPTION=azure`.
 - Server-local status file path: `/srv/jurisdigta/runs/status/system-status.json`.
 - API status endpoint: `GET /v1/system/status?minutes=60`, protected by `x-api-key`.
+- Service health rule: HTTP-serving services expose privacy-minimized
+  `GET /health`; worker and scheduled services report supervisor state,
+  freshness, latest run result, and sanitized errors through protected status
+  and monitoring paths. Do not publish worker-only services just to expose
+  health checks.
 - Optional Prometheus exporter path: `/srv/jurisdigta/app/scripts/server/export_system_status_metrics.py`.
 - Optional Prometheus exporter port: `127.0.0.1:9108`.
 - Optional monitoring stack path: `/srv/jurisdigta/app/Deployment/monitoring`.
