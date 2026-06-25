@@ -102,6 +102,9 @@ For generated court-facing or client/third-party output documents, including req
 - legal-draft disclaimer page when the document verification score is unknown or lower than `DOCUMENT_SHOW_DISCLAIMER` (default `50`)
 - footer QR code containing traceability metadata: generation date, API version, core
   system version, case ID, session ID when available, user ID when available, and document verification score
+- case-document PDF links render only the selected generated legal-document block; conversational assistant text,
+  summary bullets, follow-up prompts, raw markdown separators/bold markers, and unselected alternate-language
+  document blocks are not included in the final PDF
 - missing party details in generated documents can be filled from the signed-in user's profile by default
   (name, address, tax number, identity card number, date of birth, and social security number); these values
   are used in the document body only and are not added to the QR payload

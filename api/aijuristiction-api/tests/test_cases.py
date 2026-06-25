@@ -384,6 +384,85 @@ def test_generated_case_document_pdf_reads_generated_document_storage(
     assert "firemneho auta" in generated_pdf_text
 
 
+def test_generated_case_document_pdf_uses_first_selected_document_block(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=24)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Power of attorney"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    doc_id = store.add_case_text_document(
+        case_id=case_id,
+        original_filename="assistant-technical.json",
+        content='{"case":{"status":"document_ready"}}',
+        uploaded_by_user_id=user_id,
+    )
+    store.add_case_message(
+        case_id=case_id,
+        role="assistant",
+        content=(
+            "Rozumiem, pripravim dokument.\n\n"
+            "Zhrnutie:\n"
+            "- dokument bude slovensky\n\n"
+            "---\n\n"
+            "**Splnomocnenie (Slovenska verzia)**\n\n"
+            "Ja, Jan Novak, tymto splnomocnujem Mariu Mrkvickovu na zastupovanie.\n\n"
+            "Datum: 25. juna 2026\n\n"
+            "Podpis: ________________________\n\n"
+            "---\n\n"
+            "**Splnomocnenie (English version)**\n\n"
+            "I, Jan Novak, hereby authorize Maria Mrkvickova to represent me in all legal "
+            "and administrative actions related to the matter, including receiving documents "
+            "and signing procedural submissions on my behalf.\n\n"
+            "Datum: June 25, 2026\n\n"
+            "Podpis: ________________________\n\n"
+            "---\n\n"
+            "Technicke udaje som ulozil do dokumentu pripadu: "
+            f"/v1/cases/{case_id}/documents/{doc_id}?user_id={user_id}\n\n"
+            "Prosim, doplnte dalsie udaje, ak chcete dokument rozsirit."
+        ),
+        agent_name="LawyerSlovakia",
+    )
+
+    generated_pdf = client.get(
+        f"/v1/cases/{case_id}/documents/{doc_id}/pdf?user_id={user_id}",
+        headers=_headers(),
+    )
+
+    assert generated_pdf.status_code == 200
+    assert generated_pdf.headers["content-disposition"].endswith(
+        f'filename="power-of-attorney_{doc_id}_splnomocnenie.pdf"'
+    )
+    generated_pdf_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
+    )
+    assert PdfReader(BytesIO(generated_pdf.content)).metadata.title == "Splnomocnenie"
+    assert "Splnomocnenie (Slovenska verzia)" in generated_pdf_text
+    assert "Jan Novak" in generated_pdf_text
+    assert "tymto splnomocnujem" in generated_pdf_text
+    assert "Rozumiem" not in generated_pdf_text
+    assert "Zhrnutie" not in generated_pdf_text
+    assert "English version" not in generated_pdf_text
+    assert "hereby authorize" not in generated_pdf_text
+    assert "Technicke udaje" not in generated_pdf_text
+    assert "Prosim, doplnte" not in generated_pdf_text
+    assert "**" not in generated_pdf_text
+    assert "---" not in generated_pdf_text
+
+
 def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:
     import app.cases_api as cases_api
 
