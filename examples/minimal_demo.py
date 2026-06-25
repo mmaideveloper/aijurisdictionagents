@@ -22,3 +22,7 @@ print(
     "mcp_wire_logging => MCP HTTP middleware logs redacted request/response envelopes; "
     "set MCP_WIRE_LOGGING_ENABLED=false to disable or MCP_WIRE_LOG_MAX_BYTES to adjust preview size."
 )
+print(
+    "case_document_pdf_export => linked generated PDFs export the selected legal-document block only; "
+    "assistant chatter, alternate-language blocks, and raw markdown stay out of the PDF."
+)

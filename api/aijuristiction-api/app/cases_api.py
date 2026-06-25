@@ -668,6 +668,7 @@ def _generated_case_document_title(content: str) -> str:
 def _generated_case_document_type(content: str) -> str:
     normalized = _normalize_for_filename(content)
     type_markers = (
+        ("splnomocnenie", "Splnomocnenie"),
         ("potvrdenie", "Potvrdenie"),
         ("predzalobna vyzva", "Predžalobná výzva"),
         ("najomna zmluva", "Nájomná zmluva"),
@@ -707,6 +708,7 @@ def _looks_like_generated_case_document_message(content: str) -> bool:
     if not normalized:
         return False
     document_markers = (
+        "splnomocnenie",
         "potvrdenie o zaplaten",
         "potvrdenie o platbe",
         "predžalobná výzva",
@@ -759,17 +761,32 @@ def _extract_generated_case_document_body(content: str) -> str:
         return ""
     candidates: list[str] = []
     for section in sections:
-        cleaned = "\n".join(line.strip().strip("*") for line in section).strip()
+        cleaned = _clean_generated_case_document_section(section)
         if _looks_like_generated_case_document_body(cleaned):
             candidates.append(cleaned)
     if not candidates:
         return ""
-    return max(candidates, key=len).strip()
+    return candidates[0].strip()
+
+
+def _clean_generated_case_document_section(lines: list[str]) -> str:
+    cleaned_lines: list[str] = []
+    for line in lines:
+        cleaned = line.strip()
+        cleaned = re.sub(r"^\s{0,3}#{1,6}\s+", "", cleaned)
+        cleaned = cleaned.strip("*_ ")
+        cleaned_lines.append(cleaned)
+    while cleaned_lines and not cleaned_lines[0].strip():
+        cleaned_lines.pop(0)
+    while cleaned_lines and not cleaned_lines[-1].strip():
+        cleaned_lines.pop()
+    return "\n".join(cleaned_lines).strip()
 
 
 def _looks_like_generated_case_document_body(content: str) -> bool:
     normalized = " ".join(content.lower().split())
     title_markers = (
+        "splnomocnenie",
         "potvrdenie",
         "zmluva",
         "výzva",
@@ -785,6 +802,7 @@ def _looks_like_generated_case_document_body(content: str) -> bool:
         "tymto",
         "dátum",
         "datum",
+        "splnomocnujem",
         "podpis",
         "zmluvné strany",
         "zmluvne strany",
