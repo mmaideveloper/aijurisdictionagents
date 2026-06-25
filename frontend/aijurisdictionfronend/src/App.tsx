@@ -81,7 +81,7 @@ const App: React.FC = () => {
           path="/app/chat"
           element={
             <ProtectedRoute>
-              <Home />
+              <Navigate to="/app/assistant" replace />
             </ProtectedRoute>
           }
         />

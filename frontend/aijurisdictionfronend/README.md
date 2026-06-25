@@ -69,6 +69,7 @@ All `/app/*` routes and `/profile` are guarded by API-backed web auth state.
 
 - Unauthenticated users are redirected to `/`
 - Authenticated users can access the full app area (`/app`, `/app/workspace`, etc.) and `/profile`
+- `/app/chat` is kept as a protected compatibility alias that redirects to `/app/assistant`
 - Logging out from the profile dropdown immediately removes access to protected routes
 
 ## JurisDigta Assistant Workspace (Issue #356)
@@ -164,13 +165,29 @@ Task `#242` is implemented as a frontend-only mock flow. It does not create or u
   - jurisdiction
   - opposing party
 - Uploading documents is optional
-- Submitting the form creates a mock case in frontend storage and opens the chat workspace at `/app/chat`
+- Submitting the form creates a mock case in frontend storage and opens `/app/assistant`
 - The new case appears in:
   - the signed-in homepage sidebar
   - `My Profile` under `Opened cases`
 - Uploaded documents appear in `My Profile` under `My Documents`
 - Mock cases/documents are stored in browser `localStorage` for local development and tests
-- `/app/chat` is an authenticated alias for the signed-in chat workspace layout. It uses the same left case sidebar, center chat column, and right AI configuration panel as the signed-in homepage so post-create navigation does not mix layouts or overlap panels.
+
+## Case Creation Assistant Layout (Issue #369)
+
+Creating a case now opens the canonical assistant workspace at `/app/assistant`.
+The legacy `/app/chat` path remains available as a protected redirect to the same assistant
+workspace so older links do not render mixed workspace styles.
+
+The frontend layout regression is covered by:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+API_BASE_URL=http://127.0.0.1:8080 FRONTEND_BASE_URL=http://127.0.0.1:5173 npx playwright test tests/frontend-case-create-layout.spec.ts
+```
+
+The test creates a case through the UI, captures screenshot artifacts, and checks that the
+assistant rail, center conversation area, and right tool panel do not overlap or create
+horizontal page overflow at desktop viewports.
 
 ## Language Switching (Task #243)
 
@@ -296,6 +313,12 @@ Issue #356 assistant workspace minimal demo:
 
 ```bash
 python examples/frontend_assistant_task_356_minimal_demo.py
+```
+
+Issue #369 case-create layout minimal demo:
+
+```bash
+python examples/frontend_case_create_layout_issue_369_minimal_demo.py
 ```
 
 The demo defaults to the shared Azure dev API endpoint. Override it for local API testing with

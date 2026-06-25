@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+const frontendBaseURL = process.env.FRONTEND_BASE_URL;
 const authSessionKey = 'jurisdigta.web.auth.user.v1';
 
 type Bounds = {
@@ -81,24 +82,24 @@ async function getBounds(locator: Locator): Promise<Bounds> {
 }
 
 async function createCaseAndAssertLayout(page: Page, viewport: { width: number; height: number }, testInfoTitle: string) {
+  test.skip(!frontendBaseURL, 'Set FRONTEND_BASE_URL to run frontend layout checks.');
+
   await page.setViewportSize(viewport);
   await mockCaseApi(page, viewport);
   await authenticate(page);
-  await page.goto('/app/case');
+  await page.goto(`${frontendBaseURL}/app/case`);
 
-  await page.getByRole('textbox', { name: /Case name|Nazov pripadu|Názov prípadu/ }).fill(`Layout case ${viewport.width}x${viewport.height}`);
-  await page.getByRole('textbox', { name: /Jurisdiction|Jurisdikcia/ }).fill('Slovakia');
-  await page.getByRole('textbox', { name: /Opposing party|Protistrana/ }).fill('Synthetic Counterparty');
-  await page.getByRole('button', { name: /Start AI lawyer chat|Spustit chat s AI pravnikom|Spustiť chat s AI právnikom/ }).click();
+  await page.getByRole('textbox', { name: 'Case name' }).fill(`Layout case ${viewport.width}x${viewport.height}`);
+  await page.getByRole('textbox', { name: 'Jurisdiction' }).fill('Slovakia');
+  await page.getByRole('textbox', { name: 'Opposing party' }).fill('Synthetic Counterparty');
+  await page.getByRole('button', { name: 'Start AI lawyer chat' }).click();
 
-  await expect(page).toHaveURL(/\/app\/chat$/);
-  await expect(
-    page.getByRole('heading', { name: `Layout case ${viewport.width}x${viewport.height}` }),
-  ).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/assistant$/);
+  await expect(page.getByText(`Layout case ${viewport.width}x${viewport.height}`).first()).toBeVisible();
 
-  const sidebar = page.locator('.workspace-panel--left');
-  const center = page.locator('.workspace-center');
-  const config = page.locator('.workspace-panel--right');
+  const sidebar = page.locator('.sidebar');
+  const center = page.locator('.assistant-main');
+  const config = page.locator('.assistant-tool-panel');
 
   await expect(sidebar).toBeVisible();
   await expect(center).toBeVisible();
@@ -125,10 +126,10 @@ async function createCaseAndAssertLayout(page: Page, viewport: { width: number; 
   });
 }
 
-test('new case opens non-overlapping chat workspace at 1638x942', async ({ page }, testInfo) => {
+test('new case opens non-overlapping assistant workspace at 1638x942', async ({ page }, testInfo) => {
   await createCaseAndAssertLayout(page, { width: 1638, height: 942 }, testInfo.title);
 });
 
-test('new case opens non-overlapping chat workspace at 1280x720', async ({ page }, testInfo) => {
+test('new case opens non-overlapping assistant workspace at 1280x720', async ({ page }, testInfo) => {
   await createCaseAndAssertLayout(page, { width: 1280, height: 720 }, testInfo.title);
 });

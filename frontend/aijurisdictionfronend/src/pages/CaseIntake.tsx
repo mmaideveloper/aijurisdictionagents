@@ -69,7 +69,7 @@ const CaseIntake: React.FC = () => {
           file
         }))
       });
-      navigate("/app/chat", { replace: true });
+      navigate("/app/assistant", { replace: true });
     } finally {
       setIsSubmitting(false);
     }
@@ -165,17 +165,17 @@ const CaseIntake: React.FC = () => {
                         <button
                           type="button"
                           className="button ghost small"
-                        onClick={() =>
-                          setFiles((current) =>
+                          onClick={() =>
+                            setFiles((current) =>
                               current.filter(
                                 (currentFile) =>
                                   `${currentFile.name}-${currentFile.size}-${currentFile.type}` !==
                                   `${file.name}-${file.size}-${file.type}`
                               )
-                          )
-                        }
-                        disabled={isSubmitting}
-                      >
+                            )
+                          }
+                          disabled={isSubmitting}
+                        >
                           {t("caseRemoveFile")}
                         </button>
                       </li>
