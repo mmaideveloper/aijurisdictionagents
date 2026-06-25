@@ -168,6 +168,10 @@ resource lawsCollectorJob 'Microsoft.App/jobs@2024-03-01' = {
                 value: 'live'
               }
               {
+                name: 'LAWS_COLLECTOR_RUN_MODE'
+                value: 'scheduled'
+              }
+              {
                 name: 'LAWS_WORKER_MAX_CYCLES'
                 value: '1'
               }

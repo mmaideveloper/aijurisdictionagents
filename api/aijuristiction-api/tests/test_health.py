@@ -20,7 +20,9 @@ class _UnhealthyStore:
     db_option = "azure"
 
     def check_connection(self) -> None:
-        raise RuntimeError("password authentication failed")
+        raise RuntimeError(
+            "password authentication failed for postgresql://user:secret-token@example/db"
+        )
 
 
 def test_health_endpoint(monkeypatch) -> None:
@@ -30,6 +32,7 @@ def test_health_endpoint(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
+        "service": "aijuristiction-api",
         "llm": {
             "status": "ok",
             "provider": "mock",
@@ -60,7 +63,11 @@ def test_health_endpoint_reports_database_failure(monkeypatch) -> None:
     payload = response.json()
     assert payload["status"] == "error"
     assert payload["error"] == "database_unavailable"
-    assert "password authentication failed" in payload["message"]
+    assert payload["service"] == "aijuristiction-api"
+    assert payload["message"] == 'Database health check failed for backend "azure".'
+    assert "secret-token" not in response.text
+    assert "postgresql://" not in response.text
+    assert "password authentication failed" not in response.text
     assert payload["llm"] == {
         "status": "ok",
         "provider": "mock",

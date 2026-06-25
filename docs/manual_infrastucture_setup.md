@@ -286,9 +286,9 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 13. Start and validate PostgreSQL through Docker using repository storage layout.
 14. Build and smoke-test the API with `curl -fsS http://127.0.0.1:8080/health`.
 15. Build the laws connector image and apply laws database migrations before live import.
-16. Before any laws collector redeploy, gracefully stop an active `jurisdigta-laws-collector-daily` container with `docker stop --time 120 jurisdigta-laws-collector-daily`; use forced removal only after the grace period fails.
+16. Before any laws collector redeploy, gracefully stop active collector containers with `docker stop --time 120 jurisdigta-laws-collector jurisdigta-laws-collector-daily`; use forced removal only after the grace period fails.
 17. Build the document processor image and install the locked cron wrapper through `Deployment/server/deploy_jurisdigta_prod.sh`; validate `/srv/jurisdigta/ops/run_document_processor.sh` before relying on asynchronous document extraction.
-18. Install or update the server-local daily laws collector cron wrapper only after the collector image, PostgreSQL database, migrations, and one bounded live smoke run are validated.
+18. Install or update the server-local laws collector only after the collector image, PostgreSQL database, migrations, and one bounded live smoke run are validated. Use `LAWS_COLLECTOR_RUN_MODE=continuous` for self-managed prod so the restartable container keeps polling hourly; use `scheduled` only to keep the legacy daily cron wrapper.
 19. Install the server status writer cron from `docs/SYSTEM_STATUS_MONITORING.md` so API/system/laws collector status is updated every minute.
 20. Optional but recommended: install the Prometheus/Grafana stack from `Deployment/monitoring/README.md` for real-time dashboards, host metrics, Docker metrics, API probes, and laws collector metrics.
 21. Configure Cloudflare Tunnel public hostnames only after local health checks pass.
@@ -359,11 +359,13 @@ Keep Ollama outside the API container and outside the FastAPI process. JurisDigt
 - Local model health endpoint: `LOCAL_LLM_HEALTH_URL=http://127.0.0.1:11434/api/tags`.
 - PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
 - Required MCP OAuth values in `/srv/jurisdigta/secrets/jurisdigta.env`: `MCP_API_JWT_SECRET`, `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`, and `MCP_OTP_REUSE_WINDOW_HOURS=24`.
+- Required privileged test-account value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`. Keep this allowlist restricted to approved test/operator accounts, validate it before deploy, and roll back by removing the email from the server-local env file and redeploying/restarting the API.
 - The self-managed deploy script injects `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` into the API container so internal assistant law lookups call the dedicated MCP service over the Docker network.
 - Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
-- Server-local laws collector cron wrapper path: `/srv/jurisdigta/ops/run_laws_collector_daily.sh`.
-- Server-local laws collector log path: `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
-- Daily cron schedule on `jurisdigta-server`: `15 2 * * *`, using the server timezone.
+- Self-managed laws collector default: `LAWS_COLLECTOR_RUN_MODE=continuous`, container `jurisdigta-laws-collector`, `LAWS_WORKER_POLL_SECONDS=3600`, and Docker restart policy `unless-stopped`.
+- Legacy scheduled laws collector wrapper path: `/srv/jurisdigta/ops/run_laws_collector_daily.sh`.
+- Legacy scheduled laws collector log path: `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
+- Legacy daily cron schedule on `jurisdigta-server`: `15 2 * * *`, using the server timezone.
 - Server-local document processor cron wrapper path: `/srv/jurisdigta/ops/run_document_processor.sh`.
 - Server-local document processor log path: `/srv/jurisdigta/runs/logs/document-processor-latest.log`.
 - Default document processor cron schedule on `jurisdigta-server`: `*/15 * * * *`.
@@ -371,6 +373,11 @@ Keep Ollama outside the API container and outside the FastAPI process. JurisDigt
 - Production API document processing mode: `DOCUMENT_PROCESSOR_OPTION=azure`.
 - Server-local status file path: `/srv/jurisdigta/runs/status/system-status.json`.
 - API status endpoint: `GET /v1/system/status?minutes=60`, protected by `x-api-key`.
+- Service health rule: HTTP-serving services expose privacy-minimized
+  `GET /health`; worker and scheduled services report supervisor state,
+  freshness, latest run result, and sanitized errors through protected status
+  and monitoring paths. Do not publish worker-only services just to expose
+  health checks.
 - Optional Prometheus exporter path: `/srv/jurisdigta/app/scripts/server/export_system_status_metrics.py`.
 - Optional Prometheus exporter port: `127.0.0.1:9108`.
 - Optional monitoring stack path: `/srv/jurisdigta/app/Deployment/monitoring`.
@@ -404,9 +411,9 @@ Keep Ollama outside the API container and outside the FastAPI process. JurisDigt
 - MCP health check returns HTTP 200 at `http://127.0.0.1:8070/health`.
 - MCP OAuth metadata at `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP` advertises `https://mcp.jurisdigta.eu/MCP` as the protected resource.
 - Repository minimal runnable example succeeds: `python examples/minimal_demo.py`.
-- `crontab -l` contains the daily laws collector wrapper entry.
-- `docker ps -a --filter name=jurisdigta-laws-collector-daily` shows no stuck active collector container after deployment validation.
-- A bounded manual collector cron run succeeds with `LAWS_WORKER_MAX_PROBES=1 LAWS_COLLECTOR_MAX_RUNNING_TIME=5 /srv/jurisdigta/ops/run_laws_collector_daily.sh`.
+- For default continuous mode, `docker ps --filter name=jurisdigta-laws-collector` shows the collector container running and `crontab -l` has no `run_laws_collector_daily.sh` entry.
+- For legacy scheduled mode, `crontab -l` contains the daily laws collector wrapper entry and `docker ps -a --filter name=jurisdigta-laws-collector-daily` shows no stuck active collector container after deployment validation.
+- A bounded manual scheduled collector run succeeds with `LAWS_WORKER_MAX_PROBES=1 LAWS_COLLECTOR_MAX_RUNNING_TIME=5 LAWS_COLLECTOR_RUN_MODE=scheduled /srv/jurisdigta/ops/run_laws_collector_daily.sh`.
 - The latest collector log contains skipped completed ZIP state and either one imported sequential law or `No new laws for SK`.
 - `python3 /srv/jurisdigta/app/scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json` writes valid JSON.
 - `curl -fsS -H "x-api-key: ${API_KEY:-aijuris}" "http://127.0.0.1:8080/v1/system/status?minutes=60"` returns API, system, laws collector, and error-count sections.
@@ -427,6 +434,7 @@ Keep Ollama outside the API container and outside the FastAPI process. JurisDigt
 
 - Stop Docker Compose workloads before changing runtime configuration.
 - Remove the daily laws collector cron entry with `crontab -l | grep -v 'run_laws_collector_daily.sh' | crontab -`.
+- Stop the continuous collector container with `docker stop --time 120 jurisdigta-laws-collector`; use `docker rm -f jurisdigta-laws-collector` only if the container remains stuck.
 - Remove the status writer cron entry with `crontab -l | grep -v 'write_system_status.py' | crontab -`.
 - Stop the optional status metrics exporter with `sudo systemctl disable --now jurisdigta-status-exporter.service`.
 - Stop Ollama with `sudo systemctl disable --now ollama` if local model serving must be rolled back; remove pulled models with `ollama rm <model-tag>` before uninstalling when disk space or licensing requires cleanup.

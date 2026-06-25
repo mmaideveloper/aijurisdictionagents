@@ -180,6 +180,19 @@ describe("App protected routes", () => {
     expect(screen.queryByText("Assistant Workspace")).toBeNull();
   });
 
+  it("redirects unauthenticated users from /app/chat to /auth", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/app/chat"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Auth Page")).toBeDefined();
+    expect(screen.queryByText("Home Page")).toBeNull();
+  });
+
   it("redirects unauthenticated users from /profile to /auth", () => {
     authState.isAuthenticated = false;
 
@@ -235,6 +248,18 @@ describe("App protected routes", () => {
 
     render(
       <MemoryRouter initialEntries={["/app/assistant"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+  });
+
+  it("keeps /app/chat as an authenticated assistant workspace alias", () => {
+    authState.isAuthenticated = true;
+
+    render(
+      <MemoryRouter initialEntries={["/app/chat"]}>
         <App />
       </MemoryRouter>
     );

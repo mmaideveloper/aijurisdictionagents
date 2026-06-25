@@ -22,6 +22,7 @@ logger = logging.getLogger("laws-collector")
 @dataclass(frozen=True)
 class WorkerOptions:
     fixture: str
+    run_mode: str
     poll_seconds: int
     max_cycles: int
     max_probes: int
@@ -32,6 +33,10 @@ class WorkerOptions:
         fixture = os.getenv("LAWS_WORKER_FIXTURE", "baseline").strip().lower()
         if fixture not in {"baseline", "delta", "live"}:
             raise ValueError("LAWS_WORKER_FIXTURE must be baseline, delta, or live")
+
+        run_mode = os.getenv("LAWS_COLLECTOR_RUN_MODE", "scheduled").strip().lower()
+        if run_mode not in {"scheduled", "continuous"}:
+            raise ValueError("LAWS_COLLECTOR_RUN_MODE must be scheduled or continuous")
 
         poll_seconds = int(os.getenv("LAWS_WORKER_POLL_SECONDS", "3600"))
         if poll_seconds < 1:
@@ -51,6 +56,7 @@ class WorkerOptions:
 
         return cls(
             fixture=fixture,
+            run_mode=run_mode,
             poll_seconds=poll_seconds,
             max_cycles=max_cycles,
             max_probes=max_probes,
@@ -90,7 +96,7 @@ def run_worker() -> None:
             cycle += 1
             if options.fixture == "live":
                 max_running_seconds = 0.0
-                if _is_azure_runtime() and options.max_running_minutes > 0:
+                if _is_bounded_runtime(options) and options.max_running_minutes > 0:
                     max_running_seconds = max(0.0, (options.max_running_minutes * 60) - (time.monotonic() - started_at))
                     if max_running_seconds <= 0:
                         logger.info(
@@ -154,13 +160,21 @@ def run_worker() -> None:
                             return
                         if _is_up_to_date_tail_summary(tail_summary):
                             _log_no_new_laws(config.country_code, tail_summary)
+                            if options.run_mode == "scheduled":
+                                logger.info(
+                                    "[laws-collector] worker stopped because laws collector is up to date "
+                                    "last_processed_law=%s next_law_to_check=%s",
+                                    tail_summary.last_processed_law or "",
+                                    tail_summary.next_law_to_check,
+                                )
+                                return
                             logger.info(
-                                "[laws-collector] worker stopped because laws collector is up to date "
-                                "last_processed_law=%s next_law_to_check=%s",
+                                "[laws-collector] worker sleeping because laws collector is up to date "
+                                "poll_seconds=%s last_processed_law=%s next_law_to_check=%s",
+                                options.poll_seconds,
                                 tail_summary.last_processed_law or "",
                                 tail_summary.next_law_to_check,
                             )
-                            return
                 else:
                     summary = SlovLexSequentialImportRunner(
                         config=config,
@@ -188,13 +202,21 @@ def run_worker() -> None:
                         return
                     if _is_up_to_date_tail_summary(summary):
                         _log_no_new_laws(config.country_code, summary)
+                        if options.run_mode == "scheduled":
+                            logger.info(
+                                "[laws-collector] worker stopped because laws collector is up to date "
+                                "last_processed_law=%s next_law_to_check=%s",
+                                summary.last_processed_law or "",
+                                summary.next_law_to_check,
+                            )
+                            return
                         logger.info(
-                            "[laws-collector] worker stopped because laws collector is up to date "
-                            "last_processed_law=%s next_law_to_check=%s",
+                            "[laws-collector] worker sleeping because laws collector is up to date "
+                            "poll_seconds=%s last_processed_law=%s next_law_to_check=%s",
+                            options.poll_seconds,
                             summary.last_processed_law or "",
                             summary.next_law_to_check,
                         )
-                        return
             else:
                 snapshots = (
                     collector_definition.baseline_snapshots()
@@ -210,7 +232,7 @@ def run_worker() -> None:
                     f"skipped={summary.skipped}"
                 )
 
-            if _is_azure_runtime() and options.max_running_minutes > 0:
+            if _is_bounded_runtime(options) and options.max_running_minutes > 0:
                 elapsed_seconds = time.monotonic() - started_at
                 max_running_seconds = options.max_running_minutes * 60
                 if elapsed_seconds >= max_running_seconds:
@@ -234,6 +256,10 @@ def run_worker() -> None:
 
 def _is_azure_runtime() -> bool:
     return os.getenv("LAWS_DB_BACKEND", "").strip().lower() == "postgres"
+
+
+def _is_bounded_runtime(options: WorkerOptions) -> bool:
+    return options.run_mode == "scheduled" and _is_azure_runtime()
 
 
 def _is_up_to_date_tail_summary(summary: object) -> bool:

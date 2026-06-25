@@ -30,3 +30,5 @@ class DocumentRequestResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+    service: str
+    database: dict[str, str]

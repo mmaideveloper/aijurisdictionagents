@@ -1,4 +1,5 @@
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
+from aijurisdictionagents.api_db import ApiDatabaseStore
 
 agent = AIAudioToolRecognizerAgent()
 print("speechtype default => message (review STT transcript before send)")
@@ -21,4 +22,17 @@ print(
 print(
     "mcp_wire_logging => MCP HTTP middleware logs redacted request/response envelopes; "
     "set MCP_WIRE_LOGGING_ENABLED=false to disable or MCP_WIRE_LOG_MAX_BYTES to adjust preview size."
+)
+print(
+    "case_document_pdf_export => linked generated PDFs export the selected legal-document block only; "
+    "assistant chatter, alternate-language blocks, and raw markdown stay out of the PDF."
+)
+print(
+    "unlimited_access_emails => "
+    f"{sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}"
+)
+print(
+    "service_healthchecks => HTTP services expose privacy-minimized /health; "
+    "worker services report supervisor state, freshness, latest run result, "
+    "and sanitized errors through protected operational status."
 )

@@ -48,6 +48,15 @@ credentials. If the token is unset, the endpoint falls back to the normal
 - Logs can support traceability and human oversight, but monitoring payloads should stay minimal and redacted.
 - The laws collector freshness status is an operational safeguard because stale legal corpus data can affect legal-risk outputs.
 
+## Service Health Model
+
+HTTP-serving services provide `GET /health` for lightweight readiness and
+dependency checks. Worker and scheduler services use supervisor/container state,
+freshness timestamps, latest run result, error counts, and sanitized logs through
+this protected status model instead of public worker health endpoints. See
+`docs/SERVICE_HEALTHCHECKS.md` for the reusable rule and the current service
+contracts.
+
 ## Server Status Writer
 
 On `jurisdigta-server`, write host/container status every minute:

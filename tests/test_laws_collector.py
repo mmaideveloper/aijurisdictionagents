@@ -8,6 +8,8 @@ from pathlib import Path
 import sqlite3
 import unicodedata
 
+import pytest
+
 from aijurisdictionagents.llm.embeddings import EmbeddingBatchResult, MockEmbeddingClient
 import aijurisdictionagents.llm.embeddings as embedding_module
 from services.laws_collector import (
@@ -229,9 +231,11 @@ def test_laws_collector_config_defaults_to_country_specific_sqlite_db(monkeypatc
 def test_laws_collector_worker_options_default_to_single_live_probe(monkeypatch) -> None:
     monkeypatch.delenv("LAWS_WORKER_MAX_PROBES", raising=False)
     monkeypatch.delenv("LAWS_COLLECTOR_MAX_RUNNING_TIME", raising=False)
+    monkeypatch.delenv("LAWS_COLLECTOR_RUN_MODE", raising=False)
 
     options = WorkerOptions.from_env()
 
+    assert options.run_mode == "scheduled"
     assert options.max_probes == 1
     assert options.max_running_minutes == 60
 
@@ -801,6 +805,119 @@ def test_laws_collector_stops_when_live_zip_tail_is_up_to_date(monkeypatch, capl
     assert "worker stopped because laws collector is up to date" in caplog.text
     assert "last_processed_law=117/2026" in caplog.text
     assert "next_law_to_check=118/2026" in caplog.text
+
+
+def test_laws_collector_continuous_mode_sleeps_when_live_zip_tail_is_up_to_date(
+    monkeypatch,
+    caplog,
+) -> None:
+    class StopAfterSleep(RuntimeError):
+        pass
+
+    class FakeStore:
+        def initialize(self) -> None:
+            return None
+
+    class FakeService:
+        pass
+
+    class FakeDefinition:
+        collector_name = "fake_collector"
+
+        def create_service(self, *, config: object, store: object) -> FakeService:
+            return FakeService()
+
+    class FakeConfig:
+        country_code = "SK"
+        db_backend = "sqlite"
+        import_mode = "zip"
+        import_zip_max_threads = 5
+
+        def validate(self) -> None:
+            return None
+
+    class FakeZipRunner:
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def run(self, *, max_running_seconds: float = 0) -> object:
+            return type(
+                "ZipSummary",
+                (),
+                {
+                    "phase": "monthly",
+                    "import_key": "slov-lex:zip:monthly:test",
+                    "entries_processed": 0,
+                    "sync_summary": type(
+                        "SyncSummary",
+                        (),
+                        {
+                            "processed": 0,
+                            "new_documents": 0,
+                            "new_versions": 0,
+                            "metadata_updates": 0,
+                            "skipped": 0,
+                        },
+                    )(),
+                    "archive_completed": True,
+                    "monthly_completed": True,
+                    "last_processed_law": "99/2026",
+                    "stopped_due_to_max_running_time": False,
+                },
+            )()
+
+    class FakeSequentialRunner:
+        calls = 0
+
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def run(self, *, max_probes: int, max_running_seconds: float = 0) -> object:
+            FakeSequentialRunner.calls += 1
+            return type(
+                "SequentialSummary",
+                (),
+                {
+                    "probes": 1,
+                    "laws_found": 0,
+                    "failed_laws": 0,
+                    "years_advanced": 0,
+                    "stopped_on_current_year_gap": True,
+                    "last_processed_law": "117/2026",
+                    "last_processed_at": "2026-06-10T09:00:00+00:00",
+                    "next_law_to_check": "118/2026",
+                    "stopped_due_to_max_running_time": False,
+                },
+            )()
+
+    sleep_calls: list[int] = []
+
+    def stop_after_sleep(seconds: int) -> None:
+        sleep_calls.append(seconds)
+        raise StopAfterSleep
+
+    monkeypatch.setenv("SYSTEM_EMBEDDING_MODEL_OPTION", "cloud")
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setenv("LAWS_WORKER_FIXTURE", "live")
+    monkeypatch.setenv("LAWS_COLLECTOR_RUN_MODE", "continuous")
+    monkeypatch.setenv("LAWS_WORKER_MAX_CYCLES", "0")
+    monkeypatch.setenv("LAWS_WORKER_MAX_PROBES", "1")
+    monkeypatch.setenv("LAWS_WORKER_POLL_SECONDS", "3600")
+    caplog.set_level(logging.INFO, logger="laws-collector")
+    monkeypatch.setattr(laws_collector_worker.LawsCollectorConfig, "from_env", lambda: FakeConfig())
+    monkeypatch.setattr(laws_collector_worker, "get_country_laws_collector_definition", lambda _code: FakeDefinition())
+    monkeypatch.setattr(laws_collector_worker.SqliteLawStore, "from_config", lambda _config: FakeStore())
+    monkeypatch.setattr(laws_collector_worker, "SlovLexZipImportRunner", FakeZipRunner)
+    monkeypatch.setattr(laws_collector_worker, "SlovLexSequentialImportRunner", FakeSequentialRunner)
+    monkeypatch.setattr(laws_collector_worker.time, "sleep", stop_after_sleep)
+
+    with pytest.raises(StopAfterSleep):
+        laws_collector_worker.run_worker()
+
+    assert FakeSequentialRunner.calls == 1
+    assert sleep_calls == [3600]
+    assert "worker sleeping because laws collector is up to date" in caplog.text
+    assert "worker stopped because laws collector is up to date" not in caplog.text
 
 
 def test_laws_collector_splits_large_laws_into_multiple_embedding_chunks(tmp_path: Path) -> None:

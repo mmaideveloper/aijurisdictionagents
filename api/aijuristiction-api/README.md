@@ -264,7 +264,15 @@ If you want only the database container or the repository database rules, use `d
 - `POST /v1/users/sign-in/phone`
 - `PATCH /v1/users/{user_id}`
 
-`GET /health` now verifies the configured API database connection before returning healthy.
+`GET /health` verifies the configured API database connection before returning healthy.
+Healthy responses include `status=ok`, `service=aijuristiction-api`,
+`llm.status`, and `database.status`. Database failures return HTTP 503 with
+`error=database_unavailable` and a sanitized message that does not echo
+connection strings, credentials, raw exception text, prompts, documents, email
+addresses, or generated legal output.
+
+See `docs/SERVICE_HEALTHCHECKS.md` for the reusable health-check rule across
+HTTP services and background workers.
 If the database is unreachable or misconfigured, the endpoint returns `503` with
 `error=database_unavailable` and a `message` field that the mobile app can show directly.
 The response also reports the configured LLM provider so callers can distinguish `mock`
@@ -422,6 +430,13 @@ same `x-api-key` guard as the chat endpoints.
   - monthly plans start a 30-day window when status changes to `paid`
   - queues an email for every subscription status change (including payment failure)
 
+Privileged test/operator accounts can bypass subscription case count, document upload,
+and free-plan case TTL restrictions through `JURISDIGTA_UNLIMITED_ACCESS_EMAILS`.
+The value is a comma- or semicolon-separated email allowlist, matched
+case-insensitively, and defaults to `mmaideveloper@gmail.com`. Treat this as
+privileged access configuration: keep the list small, review it during deployments,
+and do not use it for normal customer entitlements.
+
 Generated chat documents can also be sent by email through
 `POST /v1/chat/sessions/{session_id}/documents/send-email`. Omit `recipient` to use the
 signed-in user's profile email. The first call with `confirmed=false` returns the email address
@@ -549,6 +564,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
 - `GET /v1/cases/{case_id}/documents/{doc_id}/pdf?user_id=...` renders the client-visible assistant draft tied to a generated technical case document as a PDF, without exposing the stored JSON payload.
+- When a linked assistant answer contains conversational setup, summaries, multiple separated language versions, and a generated-document link, the PDF renderer exports the first valid selected legal-document block only. Assistant prose, follow-up instructions, raw markdown separators, raw bold markers, and alternate-language drafts are excluded unless they are part of that selected document block.
 - If the original technical-payload marker is no longer present in the latest case history window, the generated case-document PDF endpoint falls back to the newest assistant message that contains a finalized document body and renders only that document body, not the surrounding chat text.
 - Generated case-document PDF downloads use a user-facing filename format: normalized case title, document GUID, and normalized document type, for example `payment-confirmation_<doc_id>_potvrdenie.pdf`; the visible PDF heading and PDF metadata title also use the detected document type such as `Potvrdenie`, so browser PDF tabs do not show `untitled`.
 - `GET /v1/cases/{case_id}/documents/context?user_id=...` now reports processed/unprocessed memory inputs across uploaded files, chat attachments, and generated `session_history` transcripts.

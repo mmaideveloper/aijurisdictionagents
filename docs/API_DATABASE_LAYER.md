@@ -146,13 +146,20 @@ DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijuri
 
 The API database now seeds four subscription plans and tracks user subscription lifecycle:
 
-- `free` (`none`): assigned on sign-up, max 5 cases, 1 day case TTL.
+- `free` (`none`): assigned on sign-up, max 1 case, 1 day case TTL.
 - `case` (`perCase`): €10, max 1 case, unlimited case time, assigned to user/case usage.
 - `basic` (`monthly`): €30/month, max 10 cases.
 - `premium` (`monthly`): €100/month, max 100 cases.
 
 Status model: `pending`, `paying`, `paid`, `canceled`, `expired`.
 For monthly plans, `starts_at` and `ends_at` are set when status switches to `paid`.
+
+`JURISDIGTA_UNLIMITED_ACCESS_EMAILS` defines a comma- or semicolon-separated
+case-insensitive allowlist for controlled test/operator accounts. Allowlisted users
+receive an internal synthetic `unlimited` plan at runtime so case-count limits,
+document-upload limits, and free-plan write TTL restrictions do not apply. The
+setting defaults to `mmaideveloper@gmail.com` and should stay limited to explicitly
+approved accounts for GDPR/EU AI Act traceability and human-oversight controls.
 
 Minimal runnable example:
 

@@ -111,6 +111,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_OPENAI_DEPLOYMENT` | Azure OpenAI chat deployment name used by the API |
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Azure OpenAI embedding deployment name used for document chunk embeddings, recommended `text-embedding-3-large` |
 | `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version, keep aligned with `.env.example` unless you intentionally upgrade |
+| `JURISDIGTA_UNLIMITED_ACCESS_EMAILS` | Privileged comma- or semicolon-separated email allowlist for controlled test/operator accounts with unlimited case/document access; default `mmaideveloper@gmail.com` |
 | `AZURE_POSTGRES_SERVER_NAME` | Azure PostgreSQL Flexible Server name |
 | `AZURE_POSTGRES_DATABASE_NAME` | API database name |
 | `AZURE_POSTGRES_ADMIN_USERNAME` | PostgreSQL admin login |
@@ -355,6 +356,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_API_PORT` | `8080` | Server-local API bind port |
 | `JURISDIGTA_MCP_PORT` | `8070` | Server-local MCP bind port |
 | `JURISDIGTA_WEB_PORT` | `8090` | Server-local web bind port |
+| `JURISDIGTA_LAWS_COLLECTOR_RUN_MODE` | `continuous` | Self-managed laws collector runtime mode. `continuous` runs a restartable Docker container that sleeps between live polls; `scheduled` keeps the legacy daily cron wrapper |
 | `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON` | `1` | Install/update the self-managed document processor cron wrapper; set `0` only for manual worker runs |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT` | `20` | Max pending documents processed per scheduled run |
@@ -395,6 +397,7 @@ Server-local `jurisdigta.env` must include at least:
 - `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` is injected by the self-managed deploy script for the API container; it normally does not need to be stored in the GitHub Environment.
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
+- `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
 - `LOCAL_LLM_PROVIDER=ollama`
 - `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434`
@@ -464,6 +467,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_APPLICATION_INSIGHTS_NAME`
 - `AZURE_DOCUMENT_PROCESSOR_JOB_NAME`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME`
+- `JURISDIGTA_LAWS_COLLECTOR_RUN_MODE=continuous` for self-managed prod; Azure laws collector jobs remain scheduled
 - `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1` for self-managed prod
 - `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION=*/15 * * * *` for self-managed prod
 - `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT=20` for self-managed prod

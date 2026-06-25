@@ -226,14 +226,15 @@ def test_case_document_upload_processes_immediately_by_default(monkeypatch, tmp_
     assert upload.json()["unprocessed_document_count"] == 0
 
 
-def test_whitelisted_phone_gets_extended_free_document_limit(monkeypatch, tmp_path) -> None:
+def test_unlimited_access_email_bypasses_free_document_limit(monkeypatch, tmp_path) -> None:
     _configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "test-email@example.com")
     client = TestClient(app)
-    user_id = _create_user(client, "+421944400166", "test-phone@example.com")
+    user_id = _create_user(client, "+421944400166", "test-email@example.com")
     case_id = client.post(
         "/v1/cases",
         headers=_headers(),
-        json={"user_id": user_id, "title": "Premium by phone"},
+        json={"user_id": user_id, "title": "Unlimited by email"},
     ).json()["case_id"]
 
     files = [("files", (f"doc-{index}.txt", f"evidence-{index}".encode(), "text/plain")) for index in range(3)]
@@ -247,7 +248,7 @@ def test_whitelisted_phone_gets_extended_free_document_limit(monkeypatch, tmp_pa
 
     store = ApiDatabaseStore.from_env()
     store.initialize()
-    assert store.get_document_upload_limit(user_id=user_id) == 50
+    assert store.get_document_upload_limit(user_id=user_id) > 1_000_000
 
 
 def test_chunk_retrieval_adds_relevant_document_excerpt_to_prompt_context(monkeypatch, tmp_path) -> None:

@@ -72,6 +72,20 @@ def test_prod_api_container_receives_prometheus_url() -> None:
     assert "docker network connect \"$network\" jurisdigta-api" in deploy_script
 
 
+def test_self_managed_laws_collector_supports_continuous_container_mode() -> None:
+    deploy_script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'LAWS_COLLECTOR_RUN_MODE="${LAWS_COLLECTOR_RUN_MODE:-continuous}"' in deploy_script
+    assert 'if [ "$LAWS_COLLECTOR_RUN_MODE" = "continuous" ]; then' in deploy_script
+    assert "--name jurisdigta-laws-collector" in deploy_script
+    assert "--restart unless-stopped" in deploy_script
+    assert "-e LAWS_COLLECTOR_RUN_MODE=continuous" in deploy_script
+    assert "-e LAWS_WORKER_MAX_CYCLES=0" in deploy_script
+    assert "-e LAWS_COLLECTOR_MAX_RUNNING_TIME=0" in deploy_script
+    assert "grep -v 'run_laws_collector_daily.sh'" in deploy_script
+    assert "--laws-container $laws_container_name" in deploy_script
+
+
 def test_laws_run_summary_parses_latest_execution() -> None:
     log_text = "\n".join(
         [

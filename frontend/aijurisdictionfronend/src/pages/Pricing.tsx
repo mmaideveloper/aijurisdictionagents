@@ -4,7 +4,6 @@ import { plans } from "../data/plans";
 
 const Pricing: React.FC = () => {
   const { t } = useLanguage();
-  const activePlans = plans.filter((plan) => !plan.disabled);
 
   return (
     <div className="page">
@@ -15,7 +14,7 @@ const Pricing: React.FC = () => {
       </section>
 
       <section className="card-grid pricing-grid">
-        {activePlans.map((plan) => {
+        {plans.map((plan) => {
           const planName = t(plan.nameKey);
           return (
             <article
