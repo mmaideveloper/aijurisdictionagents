@@ -14,6 +14,7 @@ DOCUMENT_ENGINE_DATABASE_NAME="${DOCUMENT_ENGINE_DATABASE_NAME:-document_engine}
 WEB_API_BASE_URL="${WEB_API_BASE_URL:-https://api.jurisdigta.eu}"
 RUN_SCHEMA_MIGRATIONS="${RUN_SCHEMA_MIGRATIONS:-1}"
 INSTALL_LAWS_CRON="${INSTALL_LAWS_CRON:-1}"
+LAWS_COLLECTOR_RUN_MODE="${LAWS_COLLECTOR_RUN_MODE:-continuous}"
 INSTALL_DOCUMENT_PROCESSOR_CRON="${INSTALL_DOCUMENT_PROCESSOR_CRON:-1}"
 DOCUMENT_PROCESSOR_CRON_EXPRESSION="${DOCUMENT_PROCESSOR_CRON_EXPRESSION:-*/15 * * * *}"
 DOCUMENT_PROCESSOR_LIMIT="${DOCUMENT_PROCESSOR_LIMIT:-20}"
@@ -164,6 +165,13 @@ require_boolean_flag() {
   local value="$2"
   if ! printf '%s' "$value" | grep -Eq '^[01]$'; then
     fail "$name must be 0 or 1. Current value: $value"
+  fi
+}
+
+require_laws_collector_run_mode() {
+  local value="$1"
+  if [ "$value" != "scheduled" ] && [ "$value" != "continuous" ]; then
+    fail "LAWS_COLLECTOR_RUN_MODE must be scheduled or continuous. Current value: $value"
   fi
 }
 
@@ -544,11 +552,44 @@ WRAPPER
 
 install_laws_wrapper() {
   if [ "$INSTALL_LAWS_CRON" != "1" ]; then
-    log "laws collector cron skipped by INSTALL_LAWS_CRON=$INSTALL_LAWS_CRON"
+    log "laws collector setup skipped by INSTALL_LAWS_CRON=$INSTALL_LAWS_CRON"
     return
   fi
 
-  log "installing laws collector daily wrapper and cron"
+  if [ "$LAWS_COLLECTOR_RUN_MODE" = "continuous" ]; then
+    log "starting continuous laws collector container"
+    (crontab -l 2>/dev/null | grep -v 'run_laws_collector_daily.sh' || true) | crontab -
+    docker rm -f jurisdigta-laws-collector jurisdigta-laws-collector-daily >/dev/null 2>&1 || true
+
+    local laws_db_cloud_value
+    laws_db_cloud_value="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
+
+    docker run -d \
+      --name jurisdigta-laws-collector \
+      --restart unless-stopped \
+      --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
+      --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
+      --network aijuristiction-api_default \
+      --env-file "$ENV_FILE" \
+      -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
+      -e LAWS_DB_BACKEND=postgres \
+      -e LAWS_DB_CLOUD="$laws_db_cloud_value" \
+      -e LAWS_WORKER_FIXTURE=live \
+      -e LAWS_COLLECTOR_RUN_MODE=continuous \
+      -e LAWS_WORKER_MAX_CYCLES=0 \
+      -e LAWS_WORKER_MAX_PROBES="${LAWS_WORKER_MAX_PROBES:-25}" \
+      -e LAWS_WORKER_POLL_SECONDS="${LAWS_WORKER_POLL_SECONDS:-3600}" \
+      -e LAWS_COLLECTOR_IMPORT="${LAWS_COLLECTOR_IMPORT:-zip}" \
+      -e LAWS_COLLECTOR_MAX_RUNNING_TIME=0 \
+      -v "$DEPLOY_ROOT/runs:/workspace/runs" \
+      -v "$APP_DIR/archivelaws:/app/archivelaws" \
+      -v "$APP_DIR/aimodels:/app/aimodels" \
+      jurisdigta-laws-collector:local >/dev/null
+    return
+  fi
+
+  log "installing scheduled laws collector daily wrapper and cron"
+  docker rm -f jurisdigta-laws-collector >/dev/null 2>&1 || true
   cat > "$DEPLOY_ROOT/ops/run_laws_collector_daily.sh" <<'WRAPPER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -588,6 +629,7 @@ print(f"postgresql://{user}:{password}@postgres:{port}/{database}")
 PY
 )"
 
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] starting laws collector daily job" | tee -a "$LOG_FILE"
 docker run --rm \
   --name jurisdigta-laws-collector-daily \
   --network aijuristiction-api_default \
@@ -596,6 +638,7 @@ docker run --rm \
   -e LAWS_DB_BACKEND=postgres \
   -e LAWS_DB_CLOUD="$LAWS_DB_CLOUD_VALUE" \
   -e LAWS_WORKER_FIXTURE=live \
+  -e LAWS_COLLECTOR_RUN_MODE=scheduled \
   -e LAWS_WORKER_MAX_CYCLES=1 \
   -e LAWS_WORKER_MAX_PROBES="${LAWS_WORKER_MAX_PROBES:-25}" \
   -e LAWS_WORKER_POLL_SECONDS="${LAWS_WORKER_POLL_SECONDS:-3600}" \
@@ -605,6 +648,7 @@ docker run --rm \
   -v "$APP_DIR/archivelaws:/app/archivelaws" \
   -v "$APP_DIR/aimodels:/app/aimodels" \
   jurisdigta-laws-collector:local 2>&1 | tee -a "$LOG_FILE"
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] laws collector daily job finished" | tee -a "$LOG_FILE"
 
 ln -sfn "$LOG_FILE" "$LATEST_LOG"
 WRAPPER
@@ -620,9 +664,14 @@ install_status_writer_cron() {
     return
   fi
 
+  local laws_container_name="jurisdigta-laws-collector-daily"
+  if [ "$LAWS_COLLECTOR_RUN_MODE" = "continuous" ]; then
+    laws_container_name="jurisdigta-laws-collector"
+  fi
+
   log "installing system status writer cron"
   (crontab -l 2>/dev/null | grep -v 'write_system_status.py' || true; \
-    echo '* * * * * cd /srv/jurisdigta/app && python3 scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json --laws-log /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log --document-processor-log /srv/jurisdigta/runs/logs/document-processor-latest.log >/dev/null 2>&1') | crontab -
+    echo "* * * * * cd /srv/jurisdigta/app && python3 scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json --laws-container $laws_container_name --laws-log /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log --document-processor-log /srv/jurisdigta/runs/logs/document-processor-latest.log >/dev/null 2>&1") | crontab -
 }
 
 install_log_retention_cron() {
@@ -719,8 +768,16 @@ validate_health() {
   if [ "$INSTALL_DOCUMENT_PROCESSOR_CRON" = "1" ]; then
     test -x "$DEPLOY_ROOT/ops/run_document_processor.sh"
   fi
+  local laws_container_name="jurisdigta-laws-collector-daily"
+  if [ "$LAWS_COLLECTOR_RUN_MODE" = "continuous" ]; then
+    laws_container_name="jurisdigta-laws-collector"
+    docker inspect -f '{{.State.Running}}' "$laws_container_name" | grep -qx true
+  elif [ "$INSTALL_LAWS_CRON" = "1" ]; then
+    test -x "$DEPLOY_ROOT/ops/run_laws_collector_daily.sh"
+  fi
   python3 "$APP_DIR/scripts/server/write_system_status.py" \
     --output "$DEPLOY_ROOT/runs/status/system-status.json" \
+    --laws-container "$laws_container_name" \
     --laws-log "$DEPLOY_ROOT/runs/logs/laws-collector-daily-latest.log" \
     --document-processor-log "$DEPLOY_ROOT/runs/logs/document-processor-latest.log" >/dev/null
 }
@@ -740,6 +797,7 @@ require_positive_integer "LOG_RETENTION_DAYS" "$LOG_RETENTION_DAYS"
 require_positive_integer "DOCKER_LOG_MAX_FILE" "$DOCKER_LOG_MAX_FILE"
 require_boolean_flag "DOCUMENT_ENGINE_ENABLED" "$DOCUMENT_ENGINE_ENABLED"
 require_boolean_flag "INSTALL_LOG_RETENTION_CRON" "$INSTALL_LOG_RETENTION_CRON"
+require_laws_collector_run_mode "$LAWS_COLLECTOR_RUN_MODE"
 require_tcp_port "DOCUMENT_ENGINE_API_PORT" "$DOCUMENT_ENGINE_API_PORT"
 require_postgres_identifier "DOCUMENT_ENGINE_DATABASE_NAME" "$DOCUMENT_ENGINE_DATABASE_NAME"
 ensure_runtime_layout
@@ -753,6 +811,7 @@ require_positive_integer "LOG_RETENTION_DAYS" "$LOG_RETENTION_DAYS"
 require_positive_integer "DOCKER_LOG_MAX_FILE" "$DOCKER_LOG_MAX_FILE"
 require_boolean_flag "DOCUMENT_ENGINE_ENABLED" "$DOCUMENT_ENGINE_ENABLED"
 require_boolean_flag "INSTALL_LOG_RETENTION_CRON" "$INSTALL_LOG_RETENTION_CRON"
+require_laws_collector_run_mode "$LAWS_COLLECTOR_RUN_MODE"
 require_tcp_port "DOCUMENT_ENGINE_API_PORT" "$DOCUMENT_ENGINE_API_PORT"
 require_postgres_identifier "DOCUMENT_ENGINE_DATABASE_NAME" "$DOCUMENT_ENGINE_DATABASE_NAME"
 start_postgres_and_build_image

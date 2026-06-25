@@ -547,7 +547,9 @@ methods, counts, and compact errors. Do not add logging of uploaded document
 contents, extracted text, embeddings, API keys, or raw database connection
 strings.
 
-For the current self-managed server maintenance path, a daily user cron entry can run the already-built laws collector image against the existing PostgreSQL container. The server-local wrapper is:
+For the current self-managed server maintenance path, the default production mode is a continuously running Docker container. `LAWS_COLLECTOR_RUN_MODE=continuous` starts `jurisdigta-laws-collector` with `--restart unless-stopped`, keeps `LAWS_WORKER_MAX_CYCLES=0`, sets `LAWS_COLLECTOR_MAX_RUNNING_TIME=0`, and sleeps for `LAWS_WORKER_POLL_SECONDS=3600` after the collector reaches the current Slov-Lex tail.
+
+The legacy scheduled mode is still available with `LAWS_COLLECTOR_RUN_MODE=scheduled`. In that mode, a daily user cron entry can run the already-built laws collector image against the existing PostgreSQL container. The server-local wrapper is:
 
 ```text
 /srv/jurisdigta/ops/run_laws_collector_daily.sh
@@ -558,7 +560,7 @@ It should:
 - load shared runtime secrets from `/srv/jurisdigta/secrets/jurisdigta.env`,
 - derive `LAWS_DB_CLOUD` from the running `jurisdigta-api` container instead of writing the database password into crontab,
 - run `jurisdigta-laws-collector:local` on Docker network `aijuristiction-api_default`,
-- set `LAWS_WORKER_FIXTURE=live`, `LAWS_WORKER_MAX_CYCLES=1`, and a bounded `LAWS_WORKER_MAX_PROBES`,
+- set `LAWS_COLLECTOR_RUN_MODE=scheduled`, `LAWS_WORKER_FIXTURE=live`, `LAWS_WORKER_MAX_CYCLES=1`, and a bounded `LAWS_WORKER_MAX_PROBES`,
 - mount `/srv/jurisdigta/runs` for logs/runtime files,
 - mount `/srv/jurisdigta/app/archivelaws` and `/srv/jurisdigta/app/aimodels` so archive files and the local embedding model cache persist between cron runs,
 - use `flock` to prevent overlapping collector executions,
@@ -1066,7 +1068,7 @@ Run behavior:
 - Uses Docker network `aijuristiction-api_default` so the collector can reach PostgreSQL at the existing `postgres` network alias.
 - Reads shared secrets from `/srv/jurisdigta/secrets/jurisdigta.env`.
 - Reads the active `LAWS_DB_CLOUD` value from the running `jurisdigta-api` container at execution time, avoiding a separate plaintext database connection string in cron or the wrapper.
-- Sets `LAWS_COUNTRY=SK`, `LAWS_DB_BACKEND=postgres`, `LAWS_WORKER_FIXTURE=live`, `LAWS_WORKER_MAX_CYCLES=1`, `LAWS_WORKER_MAX_PROBES=25`, `LAWS_WORKER_POLL_SECONDS=3600`, and `LAWS_COLLECTOR_IMPORT=zip`.
+- Sets `LAWS_COUNTRY=SK`, `LAWS_DB_BACKEND=postgres`, `LAWS_WORKER_FIXTURE=live`, `LAWS_COLLECTOR_RUN_MODE=scheduled`, `LAWS_WORKER_MAX_CYCLES=1`, `LAWS_WORKER_MAX_PROBES=25`, `LAWS_WORKER_POLL_SECONDS=3600`, and `LAWS_COLLECTOR_IMPORT=zip`.
 - Mounts `/srv/jurisdigta/runs` to `/workspace/runs`, `/srv/jurisdigta/app/archivelaws` to `/app/archivelaws`, and `/srv/jurisdigta/app/aimodels` to `/app/aimodels`.
 - Uses `/srv/jurisdigta/runs/locks/laws-collector-daily.lock` with `flock` so overlapping daily runs exit without starting another collector.
 - Writes timestamped logs under `/srv/jurisdigta/runs/logs/` and maintains `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
@@ -1091,6 +1093,8 @@ Rollback:
 
 ```bash
 crontab -l | grep -v 'run_laws_collector_daily.sh' | crontab -
+docker stop --time 120 jurisdigta-laws-collector 2>/dev/null || true
+docker rm -f jurisdigta-laws-collector 2>/dev/null || true
 docker stop --time 120 jurisdigta-laws-collector-daily 2>/dev/null || true
 docker rm -f jurisdigta-laws-collector-daily 2>/dev/null || true
 rm -f /srv/jurisdigta/ops/run_laws_collector_daily.sh
