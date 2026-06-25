@@ -1,0 +1,68 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+discovery.docker "jurisdigta" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "jurisdigta" {
+  targets = discovery.docker.jurisdigta.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/jurisdigta-.+"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.+)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+
+  rule {
+    target_label = "stack"
+    replacement  = "jurisdigta"
+  }
+
+  rule {
+    target_label = "environment"
+    replacement  = "prod"
+  }
+}
+
+loki.source.docker "jurisdigta" {
+  host             = "unix:///var/run/docker.sock"
+  targets          = discovery.relabel.jurisdigta.output
+  forward_to       = [loki.write.default.receiver]
+  refresh_interval = "10s"
+}
+
+local.file_match "jurisdigta_job_logs" {
+  path_targets = [{
+    __path__     = "/srv/jurisdigta/runs/logs/*.log",
+    stack        = "jurisdigta",
+    environment  = "prod",
+    service      = "jurisdigta-job-log",
+    source       = "runs-log-file",
+  }]
+  sync_period = "10s"
+}
+
+loki.source.file "jurisdigta_job_logs" {
+  targets    = local.file_match.jurisdigta_job_logs.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

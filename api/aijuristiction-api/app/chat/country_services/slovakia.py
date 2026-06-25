@@ -79,7 +79,14 @@ def prepare_slovakia_direct_reply(
         current_content=current_content,
         prior_messages=prior_messages,
     )
-    if not asks_company_registry_info and not looks_like_company_document and not asks_share_transfer:
+    company_query = _extract_slovak_company_query(messages=messages, current_content=current_content)
+    has_company_query = bool(company_query)
+    if (
+        not asks_company_registry_info
+        and not looks_like_company_document
+        and not asks_share_transfer
+        and not has_company_query
+    ):
         non_company_prompt_note = _merge_prompt_notes(address_prompt_note, property_prompt_note)
         if non_company_prompt_note:
             return DirectReplyPreparation(supplemental_documents=[], prompt_note=non_company_prompt_note)
@@ -97,25 +104,28 @@ def prepare_slovakia_direct_reply(
         callback=processing_event_callback,
     )
 
-    company_query = _extract_slovak_company_query(messages=messages, current_content=current_content)
     if not company_query:
         return DirectReplyPreparation(supplemental_documents=[], prompt_note=address_prompt_note)
 
-    emit_processing_event(
-        events=processing_events,
-        event=build_processing_event(
-            stage="tool_start",
-            tool_name="obchodny_register_company_check",
-            message=_orsr_tool_start_message(
-                company_query=company_query,
-                country=session.country,
-                language=session.language,
+    cached_registry_lookup = _load_cached_slovak_company_registry_document(company_query)
+    if cached_registry_lookup is not None:
+        company_record, registry_document, cache_hit = cached_registry_lookup
+    else:
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
+                stage="tool_start",
+                tool_name="obchodny_register_company_check",
+                message=_orsr_tool_start_message(
+                    company_query=company_query,
+                    country=session.country,
+                    language=session.language,
+                ),
+                details={"query": company_query},
             ),
-            details={"query": company_query},
-        ),
-        callback=processing_event_callback,
-    )
-    company_record, registry_document, cache_hit = _load_slovak_company_registry_document(company_query)
+            callback=processing_event_callback,
+        )
+        company_record, registry_document, cache_hit = _load_slovak_company_registry_document(company_query)
     supplemental_documents = [registry_document] if registry_document is not None else []
     prompt_note = ""
     if cache_hit:
@@ -133,7 +143,7 @@ def prepare_slovakia_direct_reply(
             ),
             callback=processing_event_callback,
         )
-    if company_record:
+    elif company_record:
         emit_processing_event(
             events=processing_events,
             event=build_processing_event(
@@ -142,6 +152,7 @@ def prepare_slovakia_direct_reply(
                 message=_orsr_tool_result_found_message(
                     company_name=str(company_record.get("name") or company_query),
                     registration_number=str(company_record.get("registration_number") or ""),
+                    company_seat=str(company_record.get("seat") or ""),
                     country=session.country,
                     language=session.language,
                 ),
@@ -149,7 +160,7 @@ def prepare_slovakia_direct_reply(
             ),
             callback=processing_event_callback,
         )
-    else:
+    elif not company_record:
         emit_processing_event(
             events=processing_events,
             event=build_processing_event(
@@ -184,6 +195,29 @@ def prepare_slovakia_direct_reply(
             processing_events=processing_events,
         )
 
+    vehicle_authorization_facts = _extract_slovak_vehicle_authorization_facts(
+        current_content=current_content,
+        company_query=company_query,
+        company_record=company_record,
+    )
+    if vehicle_authorization_facts and _looks_like_vehicle_authorization_final_request(current_content):
+        emit_processing_event(
+            events=processing_events,
+            event=build_processing_event(
+                stage="document_ready",
+                message="Pripravil som slovensku a anglicku verziu splnomocnenia na vedenie firemneho vozidla.",
+                details={"document_names": ["Splnomocnenie", "Power of Attorney"]},
+            ),
+            callback=processing_event_callback,
+        )
+        return DirectReplyPreparation(
+            supplemental_documents=supplemental_documents,
+            direct_reply=_build_slovak_vehicle_authorization_ready_reply(
+                facts=vehicle_authorization_facts,
+            ),
+            processing_events=processing_events,
+        )
+
     if asks_company_registry_info and not asks_share_transfer:
         prompt_note = _build_slovak_registry_question_prompt_note(
             company_query=company_query,
@@ -202,6 +236,12 @@ def prepare_slovakia_direct_reply(
             company_query=company_query,
             company_record=company_record,
         )
+        vehicle_authorization_note = _build_slovak_vehicle_authorization_prompt_note(
+            current_content=current_content,
+            company_query=company_query,
+            company_record=company_record,
+        )
+        prompt_note = _merge_prompt_notes(prompt_note, vehicle_authorization_note)
         prompt_note = _merge_prompt_notes(prompt_note, address_prompt_note)
         prompt_note = _merge_prompt_notes(prompt_note, property_prompt_note)
         return DirectReplyPreparation(
@@ -1114,12 +1154,12 @@ def _extract_slovak_company_query(
         re.IGNORECASE,
     )
     labeled_company_pattern = re.compile(
-        rf"(?:obchodné\s+meno|obchodne\s+meno|názov|nazov|firma|fima|spoločnosť|spolocnost)\s*[:=]\s*"
+        rf"(?:obchodné\s+meno|obchodne\s+meno|názov|nazov|firma|firmy|fima|fimy|spoločnosť|spolocnost)\s*[:=]\s*"
         rf"([^,;\n]{{1,120}}?\b{company_suffix}{suffix_boundary})",
         re.IGNORECASE,
     )
     prefixed_company_pattern = re.compile(
-        rf"(?:firma|fima|spoločnosť|spolocnost)\s+"
+        rf"(?:firma|firmy|firmu|fima|fimy|fimu|spoločnosť|spolocnost)\s+"
         rf"([^,;\n]{{1,120}}?\b{company_suffix}{suffix_boundary})",
         re.IGNORECASE,
     )
@@ -1160,10 +1200,24 @@ def _extract_slovak_company_query(
 
 def _normalize_company_query(value: str) -> str:
     cleaned = re.sub(r"\s+", " ", value).strip(" ,.;")
+    company_suffix = r"(?:s\.?\s*r\.?\s*o\.?|a\.?\s*s\.?)"
+    embedded_company_markers = list(
+        re.finditer(
+            rf"(?:firma|firmy|firmu|fima|fimy|fimu|spoločnosť|spolocnost)\s+"
+            rf"([^,;\n]{{1,120}}?\b{company_suffix})(?=$|[\s,;\n\.\?!\)])",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+    )
+    if embedded_company_markers:
+        last_marker = embedded_company_markers[-1]
+        if last_marker.start() > 0:
+            cleaned = last_marker.group(1).strip(" ,.;")
     cleaned = re.sub(
         r"^(?:"
         r"kto\s+je\s+(?:majitel|majiteľ|vlastnik|vlastník)\s+firmy|"
-        r"na\s+firmu|pre\s+firmu|firmu|firma|fima|"
+        r".*?\b(?:obchodné\s+meno|obchodne\s+meno|názov|nazov)\s*[:=]?|"
+        r"na\s+firmu|pre\s+firmu|firmu|firmy|firma|fimu|fimy|fima|"
         r"na\s+spoločnosť|na\s+spolocnost|pre\s+spoločnosť|pre\s+spolocnost|"
         r"spoločnosť|spolocnost"
         r")\s+",
@@ -1177,6 +1231,23 @@ def _normalize_company_query(value: str) -> str:
     if re.search(r"a\.?\s*s$", cleaned, flags=re.IGNORECASE):
         return re.sub(r"a\.?\s*s$", "a.s.", cleaned, flags=re.IGNORECASE)
     return cleaned
+
+
+def _load_cached_slovak_company_registry_document(
+    company_query: str,
+) -> tuple[dict[str, object] | None, CoreDocument | None, bool] | None:
+    normalized_query = _normalize_company_query(company_query)
+    registry = build_default_tool_registry()
+    cache_key = (normalized_query, id(type(registry)))
+    with _ORSR_CACHE_LOCK:
+        cached_payload = _ORSR_CACHE.get(cache_key)
+    if cached_payload is None:
+        return None
+    return _restore_slovak_company_registry_document(
+        company_query=normalized_query,
+        cached_payload=cached_payload,
+        cache_hit=True,
+    )
 
 
 def _load_slovak_company_registry_document(
@@ -1373,6 +1444,188 @@ def _build_slovak_registry_question_prompt_note(
             ]
         )
     return "\n".join(lines)
+
+
+def _build_slovak_vehicle_authorization_prompt_note(
+    *,
+    current_content: str,
+    company_query: str,
+    company_record: dict[str, object] | None,
+) -> str:
+    facts = _extract_slovak_vehicle_authorization_facts(
+        current_content=current_content,
+        company_query=company_query,
+        company_record=company_record,
+    )
+    if not facts:
+        return ""
+
+    lines = [
+        "SLOVAK VEHICLE AUTHORIZATION INTAKE MODE:",
+        "- The user is asking for splnomocnenie/plna moc to use or drive a company motor vehicle.",
+        "- Treat the following extracted facts as already provided. Do not ask the user to repeat them unless they later contradict them.",
+        "- If the authorized person's name is captured from wording like 'pre dceru <name>', do not ask again for the daughter's name.",
+        "- Ask at most one follow-up question only for a legally necessary missing item, such as the principal's statutory representative details, the authorized person's address/birth date, or whether the draft should be generated now.",
+    ]
+    for key, value in facts.items():
+        lines.append(f"- {key}: {value}")
+    return "\n".join(lines)
+
+
+def _extract_slovak_vehicle_authorization_facts(
+    *,
+    current_content: str,
+    company_query: str,
+    company_record: dict[str, object] | None,
+) -> dict[str, str]:
+    normalized = _canonicalize_slovak_text(current_content)
+    if not any(token in normalized for token in ("splnomocnenie", "plna moc", "plnomoc")):
+        return {}
+    if not any(token in normalized for token in ("vozidlo", "vozidla", "motorove", "motoroveho", "auto", "auta")):
+        return {}
+
+    facts: dict[str, str] = {}
+    authorized_person = _extract_vehicle_authorized_person(current_content)
+    authorized_person_address = _extract_vehicle_authorized_person_address(current_content)
+    vehicle_plate = _extract_slovak_spz(current_content)
+    effective_from = _extract_slovak_effective_from_date(current_content)
+
+    company_name = str((company_record or {}).get("name") or company_query or "").strip()
+    company_ico = str((company_record or {}).get("registration_number") or "").strip()
+    company_seat = str((company_record or {}).get("seat") or "").strip()
+    company_parts = [
+        part
+        for part in (company_name, f"ICO {company_ico}" if company_ico else "", company_seat)
+        if part
+    ]
+
+    if authorized_person:
+        facts["authorized_person"] = authorized_person
+    if authorized_person_address:
+        facts["authorized_person_address"] = authorized_person_address
+    if company_parts:
+        facts["principal_company"] = ", ".join(company_parts)
+    if vehicle_plate:
+        facts["vehicle_registration_number"] = vehicle_plate
+    if effective_from:
+        facts["effective_from"] = effective_from
+    if "dobu neurcitu" in normalized or "neurcitu dobu" in normalized:
+        facts["duration"] = "na dobu neurcitu"
+    return facts
+
+
+def _looks_like_vehicle_authorization_final_request(content: str) -> bool:
+    normalized = _canonicalize_slovak_text(content)
+    if not any(token in normalized for token in ("splnomocnenie", "plna moc", "plnomoc")):
+        return False
+    if not any(token in normalized for token in ("vozidlo", "vozidla", "auto", "auta", "motorov")):
+        return False
+    final_markers = ("priprav", "vygeneruj", "vytvor", "document", "dokument")
+    language_markers = ("slovencine", "slovencina", "slovak", "anglictine", "anglicky", "english")
+    return any(marker in normalized for marker in final_markers) and any(
+        marker in normalized for marker in language_markers
+    )
+
+
+def _build_slovak_vehicle_authorization_ready_reply(*, facts: dict[str, str]) -> str:
+    principal_company = facts.get("principal_company") or "[doplnit obchodne meno, ICO a sidlo splnomocnitela]"
+    authorized_person = facts.get("authorized_person") or "[doplnit meno splnomocnenca]"
+    authorized_address = facts.get("authorized_person_address") or "[doplnit adresu splnomocnenca]"
+    vehicle = facts.get("vehicle_registration_number") or "[doplnit identifikaciu vozidla / ECV / VIN]"
+    effective_from = facts.get("effective_from") or "dnom podpisu"
+    duration = facts.get("duration") or "do odvolania"
+
+    return (
+        "Tu su finalne verzie splnomocnenia v slovenskej a anglickej verzii. "
+        "Pred podpisom overte opravnenie osoby konat za spolocnost a doplnte identifikaciu vozidla, "
+        "ak nie je uvedena v tomto navrhu.\n\n"
+        "**Splnomocnenie (slovenska verzia)**\n\n"
+        "Splnomocnitel:\n"
+        f"{principal_company}\n"
+        "konajuci prostrednictvom statutarneho organu alebo inej opravnenej osoby: [doplnit meno, funkciu a pravny titul konania]\n\n"
+        "Splnomocnenec:\n"
+        f"{authorized_person}, adresa: {authorized_address}\n\n"
+        "Rozsah splnomocnenia:\n"
+        f"Splnomocnitel tymto splnomocnuje splnomocnenca na vedenie a bezne uzivanie motoroveho vozidla spolocnosti {principal_company}. "
+        f"Vozidlo: {vehicle}. Splnomocnenec je opravneny vykonavat bezne ukony suvisiace s vedenim vozidla, "
+        "predlozit toto splnomocnenie policajnym, spravnym, poistnym a servisnym organom alebo subjektom, "
+        "a preukazat opravnenie uzivat vozidlo v rozsahu dovolenom pravnym poriadkom.\n\n"
+        "Trvanie:\n"
+        f"Toto splnomocnenie je ucinne od {effective_from} a plati {duration}, pokial ho splnomocnitel pisomne neodvola skor.\n\n"
+        "Pravny ucel a kontrola:\n"
+        "Navrh je pripraveny na pravne ucely podla vseobecnych pravidiel zastupenia v slovenskom sukromnom prave. "
+        "Pred pouzitim odporucam pravnu kontrolu, overenie podpisu podla poziadaviek konkretneho uradu alebo zmluvneho partnera "
+        "a overenie, ze osoba podpisujuca za spolocnost je opravnena konat.\n\n"
+        "Miesto a datum: ____________________________\n\n"
+        "Za splnomocnitela: ____________________________\n"
+        "Meno, funkcia, podpis\n\n"
+        "Splnomocnenec potvrdzuje prevzatie splnomocnenia: ____________________________\n\n"
+        "**Power of Attorney (English version)**\n\n"
+        "Principal:\n"
+        f"{principal_company}\n"
+        "acting through its statutory body or another authorized representative: [insert name, position and authority]\n\n"
+        "Attorney-in-fact:\n"
+        f"{authorized_person}, address: {authorized_address}\n\n"
+        "Scope of authority:\n"
+        f"The Principal authorizes the Attorney-in-fact to drive and ordinarily use the company motor vehicle of {principal_company}. "
+        f"Vehicle: {vehicle}. The Attorney-in-fact may perform ordinary acts connected with driving and using the vehicle, "
+        "present this power of attorney to police, administrative, insurance and service authorities or entities, "
+        "and prove the right to use the vehicle within the scope permitted by applicable law.\n\n"
+        "Term:\n"
+        f"This power of attorney is effective from {effective_from} and remains valid {duration}, unless revoked earlier in writing by the Principal.\n\n"
+        "Legal purpose and review:\n"
+        "This draft is prepared for legal purposes under the general rules of representation in Slovak private law. "
+        "Before use, legal review is recommended, including verification of signature requirements of the relevant authority or contractual partner "
+        "and verification that the person signing on behalf of the company is authorized to act.\n\n"
+        "Place and date: ____________________________\n\n"
+        "For the Principal: ____________________________\n"
+        "Name, position, signature\n\n"
+        "Attorney-in-fact acknowledges receipt of this power of attorney: ____________________________\n\n"
+        "Dokumenty su pripravene na stiahnutie."
+    )
+
+
+def _extract_vehicle_authorized_person(content: str) -> str:
+    explicit_address_match = re.search(
+        r"\bpre\s+([^,.;]+?)\s*,\s*adresa\b",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if explicit_address_match is not None:
+        return " ".join(explicit_address_match.group(1).strip().split())
+
+    match = re.search(
+        r"\bpre\s+(?:dceru|dc[ée]ru|syna|manzelku|manzela|osobu)\s+([^,.;]+?)(?=\s+na\s+|\s+od\s+|[,.;]|$)",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        match = re.search(
+            r"\bsplnomocnenie\s+pre\s+([^,.;]+?)(?=\s+na\s+|\s+od\s+|[,.;]|$)",
+            content,
+            flags=re.IGNORECASE,
+        )
+    if match is None:
+        return ""
+    return " ".join(match.group(1).strip().split())
+
+
+def _extract_vehicle_authorized_person_address(content: str) -> str:
+    match = re.search(
+        r"\badresa\s+([^.;]+?)(?=\s+(?:priprav|vygeneruj|vytvor)\b|[.;]|$)",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return ""
+    return " ".join(match.group(1).strip(" ,").split())
+
+
+def _extract_slovak_effective_from_date(content: str) -> str:
+    match = re.search(r"\bod\s+([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4})", content, flags=re.IGNORECASE)
+    if match is None:
+        return ""
+    return match.group(1)
 
 
 def _build_slovak_share_transfer_model_prompt_note(
@@ -2126,19 +2379,31 @@ def _orsr_tool_result_found_message(
     *,
     company_name: str,
     registration_number: str,
+    company_seat: str = "",
     country: str,
     language: str | None,
 ) -> str:
     normalized_country = (country or "").strip().upper()
     normalized_language = (language or "").strip().lower()
     registration_text = registration_number.strip() or "ICO unavailable"
+    seat_text = company_seat.strip()
+    if not seat_text:
+        if normalized_country == "SK" or normalized_language.startswith("sk"):
+            return f"Overenie spolocnosti v ORSR je hotove: {company_name} ({registration_text})."
+        if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+            return f"Overeni spolecnosti v ORSR je hotove: {company_name} ({registration_text})."
+        if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+            return f"Unternehmenspruefung im ORSR abgeschlossen: {company_name} ({registration_text})."
+        return f"Verification of company done in ORSR: {company_name} ({registration_text})."
+    sk_company_text = f"{company_name}, ICO {registration_text}, sidlo: {seat_text}"
+    localized_company_text = f"{company_name} ({registration_text}), seat: {seat_text}"
     if normalized_country == "SK" or normalized_language.startswith("sk"):
-        return f"Overenie spolocnosti v ORSR je hotove: {company_name} ({registration_text})."
+        return f"Overenie spolocnosti v ORSR je hotove: {sk_company_text}."
     if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
-        return f"Overeni spolecnosti v ORSR je hotove: {company_name} ({registration_text})."
+        return f"Overeni spolecnosti v ORSR je hotove: {localized_company_text}."
     if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
-        return f"Unternehmenspruefung im ORSR abgeschlossen: {company_name} ({registration_text})."
-    return f"Verification of company done in ORSR: {company_name} ({registration_text})."
+        return f"Unternehmenspruefung im ORSR abgeschlossen: {localized_company_text}."
+    return f"Verification of company done in ORSR: {localized_company_text}."
 
 
 def _orsr_tool_result_missing_message(*, company_query: str, country: str, language: str | None) -> str:

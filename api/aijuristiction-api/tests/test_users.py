@@ -13,6 +13,7 @@ from app.services.email import EmailNotificationService
 from app.services.email_scheduler import EmailScheduler
 from app.services.email_queue import EmailQueueConfig, EmailQueueStore
 from app.users.api import get_email_scheduler, get_user_store
+from app.users.totp import current_totp_code
 
 client = TestClient(app)
 mcp_client = TestClient(mcp_app)
@@ -59,6 +60,7 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
     assert signed_up["last_name"] == "Founder"
     assert signed_up["full_name"] == "Marek Founder"
     assert signed_up["address"] == "Partizanska 665"
+    assert signed_up["created_at"]
 
     queued = _fetch_emails(tmp_path / "email.sqlite3")
     assert queued == [("founder@example.com", "Welcome to AI Jurisdiction", "pending", 0)]
@@ -81,6 +83,7 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
     )
     assert email_sign_in_response.status_code == 200
     assert email_sign_in_response.json()["user_id"] == signed_up["user_id"]
+    assert email_sign_in_response.json()["created_at"] == signed_up["created_at"]
 
     update_response = client.patch(
         f"/v1/users/{signed_up['user_id']}",
@@ -125,6 +128,74 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
     assert partially_updated["full_name"] == "Marek Preserved"
     assert partially_updated["address"] == "Partizanska 665"
     assert partially_updated["identity_card_number"] == "AB123456"
+
+
+def test_email_change_requires_valid_code(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900111555",
+            "email": "old-email@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+
+    send_code_response = client.post(
+        f"/v1/users/{user_id}/email-change/send-code",
+        headers=AUTH_HEADERS,
+        json={"email": "new-email@example.com"},
+    )
+    assert send_code_response.status_code == 202
+
+    invalid_response = client.post(
+        f"/v1/users/{user_id}/email-change/complete",
+        headers=AUTH_HEADERS,
+        json={"email": "new-email@example.com", "verification_code": "123456"},
+    )
+    assert invalid_response.status_code == 400
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        code_hash = conn.execute(
+            "SELECT code_hash FROM registration_codes WHERE email = ?",
+            (f"email-change:{user_id}:new-email@example.com",),
+        ).fetchone()[0]
+
+    valid_code = None
+    for candidate in range(0, 1_000_000):
+        code = f"{candidate:06d}"
+        digest = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        if digest == code_hash:
+            valid_code = code
+            break
+    assert valid_code is not None
+
+    complete_response = client.post(
+        f"/v1/users/{user_id}/email-change/complete",
+        headers=AUTH_HEADERS,
+        json={"email": "new-email@example.com", "verification_code": valid_code},
+    )
+    assert complete_response.status_code == 200
+    assert complete_response.json()["email"] == "new-email@example.com"
+
+    old_sign_in = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={"email": "old-email@example.com", "password": "secret-pass"},
+    )
+    assert old_sign_in.status_code == 401
+
+    new_sign_in = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={"email": "new-email@example.com", "password": "secret-pass"},
+    )
+    assert new_sign_in.status_code == 200
+    assert new_sign_in.json()["user_id"] == user_id
 
 
 def test_sign_up_complete_requires_valid_email_code(monkeypatch, tmp_path: Path) -> None:
@@ -306,6 +377,94 @@ def test_device_bound_sign_in_flow(monkeypatch, tmp_path: Path) -> None:
     assert silent_payload["device_auth_token"]
 
 
+def test_web_email_login_requires_daily_otp(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900121316",
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+
+    first_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+            "device_id": "web-device-1",
+        },
+    )
+    assert first_login.status_code == 428
+    assert first_login.json()["detail"] == "OTP code required"
+
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        body = conn.execute(
+            "SELECT body FROM email_outbox WHERE recipient = ? AND subject = ? ORDER BY created_at DESC LIMIT 1",
+            ("web-login@example.com", "Your JurisDigta login code"),
+        ).fetchone()[0]
+    assert "The code expires in 30 minutes." in body
+
+    wrong_code = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+            "device_id": "web-device-1",
+            "verification_code": "123456",
+        },
+    )
+    assert wrong_code.status_code == 400
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        code_hash = conn.execute(
+            "SELECT code_hash FROM registration_codes WHERE email = ?",
+            (f"web-signin:{user_id}:web-device-1",),
+        ).fetchone()[0]
+
+    valid_code = None
+    for candidate in range(0, 1_000_000):
+        code = f"{candidate:06d}"
+        digest = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        if digest == code_hash:
+            valid_code = code
+            break
+    assert valid_code is not None
+
+    verified_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+            "device_id": "web-device-1",
+            "verification_code": valid_code,
+        },
+    )
+    assert verified_login.status_code == 200
+    assert verified_login.json()["user_id"] == user_id
+
+    email_count_before_reuse = len(_fetch_emails(tmp_path / "email.sqlite3"))
+    reused_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "web-login@example.com",
+            "password": "secret-pass",
+            "device_id": "web-device-1",
+        },
+    )
+    assert reused_login.status_code == 200
+    assert reused_login.json()["user_id"] == user_id
+    assert len(_fetch_emails(tmp_path / "email.sqlite3")) == email_count_before_reuse
+
+
 def test_local_auth_accepts_any_sign_in_code_when_enabled(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "1")
@@ -332,6 +491,72 @@ def test_local_auth_accepts_any_sign_in_code_when_enabled(monkeypatch, tmp_path:
 
     assert verify_response.status_code == 200
     assert verify_response.json()["device_auth_token"]
+
+
+def test_totp_enrollment_and_web_mfa_login_reuse(monkeypatch, tmp_path: Path) -> None:
+    _configure_db_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("MFA_REUSE_WINDOW_HOURS", "24")
+
+    sign_up_response = client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900555111",
+            "email": "totp-web@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+
+    start_response = client.post(
+        f"/v1/users/{user_id}/mfa/totp/start",
+        headers=AUTH_HEADERS,
+    )
+    assert start_response.status_code == 200
+    enrollment = start_response.json()
+    assert enrollment["manual_setup_key"]
+    assert enrollment["provisioning_uri"].startswith("otpauth://totp/")
+    assert enrollment["totp_pending"] is True
+
+    confirm_response = client.post(
+        f"/v1/users/{user_id}/mfa/totp/confirm",
+        headers=AUTH_HEADERS,
+        json={"verification_code": current_totp_code(secret=enrollment["manual_setup_key"])},
+    )
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["mfa_totp_enabled"] is True
+
+    first_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={"email": "totp-web@example.com", "password": "secret-pass"},
+    )
+    assert first_login.status_code == 200
+    first_challenge = first_login.json()
+    assert first_challenge["mfa_required"] is True
+    assert first_challenge["methods"] == ["email", "totp"]
+
+    verify_response = client.post(
+        "/v1/users/sign-in/mfa/verify",
+        headers=AUTH_HEADERS,
+        json={
+            "mfa_token": first_challenge["mfa_token"],
+            "method": "totp",
+            "verification_code": current_totp_code(secret=enrollment["manual_setup_key"]),
+        },
+    )
+    assert verify_response.status_code == 200
+    assert verify_response.json()["mfa_totp_enabled"] is True
+
+    reused_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={"email": "totp-web@example.com", "password": "secret-pass"},
+    )
+    assert reused_login.status_code == 200
+    assert reused_login.json()["user_id"] == user_id
+    assert "mfa_token" not in reused_login.json()
 
 
 def test_sign_up_rejects_duplicate_phone_and_email(monkeypatch, tmp_path: Path) -> None:
@@ -430,7 +655,7 @@ def test_subscription_lifecycle_queues_notifications(monkeypatch, tmp_path: Path
     request_response = client.post(
         f"/v1/users/{user_id}/subscriptions",
         headers=AUTH_HEADERS,
-        json={"plan_code": "basic"},
+        json={"plan_code": "case"},
     )
     assert request_response.status_code == 201
     requested = request_response.json()
@@ -543,9 +768,7 @@ def test_email_queue_postgres_config_does_not_create_local_sqlite_dirs(tmp_path:
     assert not sqlite_parent.exists()
 
 
-def test_subscription_checkout_payment_failure_does_not_upgrade_for_non_whitelisted_phone(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_case_subscription_checkout_and_payment_confirmation(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)
 
     sign_up_response = client.post(
@@ -565,13 +788,13 @@ def test_subscription_checkout_payment_failure_does_not_upgrade_for_non_whitelis
     checkout_response = client.post(
         f"/v1/users/{user_id}/subscriptions/checkout",
         headers=AUTH_HEADERS,
-        json={"plan_code": "premium", "payment_provider": "paypal"},
+        json={"plan_code": "case", "payment_provider": "paypal"},
     )
     assert checkout_response.status_code == 201
     checkout = checkout_response.json()
-    assert checkout["payment_provider"] == "paypal"
+    assert checkout["plan_code"] == "case"
+    assert checkout["amount_eur"] == 10
     assert checkout["payment_status"] == "pending"
-    assert checkout["amount_eur"] == 100
     assert checkout["checkout_url"].startswith("https://www.sandbox.paypal.com")
 
     confirm_response = client.post(
@@ -579,36 +802,34 @@ def test_subscription_checkout_payment_failure_does_not_upgrade_for_non_whitelis
         headers=AUTH_HEADERS,
         json={"payment_id": checkout["payment_id"]},
     )
-    assert confirm_response.status_code == 402
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["plan_code"] == "case"
+    assert confirm_response.json()["status"] == "paid"
 
     subscriptions_response = client.get(f"/v1/users/{user_id}/subscriptions", headers=AUTH_HEADERS)
     assert subscriptions_response.status_code == 200
     subscriptions = subscriptions_response.json()
-    assert subscriptions[0]["subscription_id"] == checkout["subscription_id"]
-    assert subscriptions[0]["status"] == "canceled"
-    assert subscriptions[1]["plan_code"] == "free"
-    assert subscriptions[1]["status"] == "paid"
+    assert subscriptions[0]["plan_code"] == "case"
+    assert subscriptions[0]["status"] == "paid"
     rows = _fetch_emails(tmp_path / "email.sqlite3")
     assert [row[1] for row in rows] == [
         "Welcome to AI Jurisdiction",
-        "Subscription status changed",
+        "Payment confirmed",
     ]
 
 
-def test_subscription_checkout_and_payment_confirmation_success_for_whitelisted_phone(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_disabled_subscription_checkout_is_rejected(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)
 
     sign_up_response = client.post(
         "/v1/users/sign-up",
         headers=AUTH_HEADERS,
         json={
-            "phone_number": "+421944400166",
-            "email": "checkout-allowed@example.com",
+            "phone_number": "+421900565657",
+            "email": "checkout-disabled@example.com",
             "password": "secret-pass",
-            "first_name": "Allowed",
-            "last_name": "User",
+            "first_name": "Checkout",
+            "last_name": "Disabled",
         },
     )
     assert sign_up_response.status_code == 201
@@ -619,47 +840,17 @@ def test_subscription_checkout_and_payment_confirmation_success_for_whitelisted_
         headers=AUTH_HEADERS,
         json={"plan_code": "premium", "payment_provider": "paypal"},
     )
-    assert checkout_response.status_code == 201
-    checkout = checkout_response.json()
+    assert checkout_response.status_code == 503
+    assert checkout_response.json()["detail"] == "This subscription plan is coming soon."
 
-    confirm_response = client.post(
-        f"/v1/users/subscriptions/{checkout['subscription_id']}/confirm-payment",
+    request_response = client.post(
+        f"/v1/users/{user_id}/subscriptions",
         headers=AUTH_HEADERS,
-        json={"payment_id": checkout["payment_id"]},
+        json={"plan_code": "basic"},
     )
-    assert confirm_response.status_code == 200
-    assert confirm_response.json()["status"] == "paid"
-    rows = _fetch_emails(tmp_path / "email.sqlite3")
-    assert [row[1] for row in rows] == [
-        "Welcome to AI Jurisdiction",
-        "Payment confirmed",
-    ]
+    assert request_response.status_code == 503
+    assert request_response.json()["detail"] == "This subscription plan is coming soon."
 
-
-def test_subscription_checkout_accepts_google_pay(monkeypatch, tmp_path: Path) -> None:
-    _configure_db_env(monkeypatch, tmp_path)
-
-    sign_up_response = client.post(
-        "/v1/users/sign-up",
-        headers=AUTH_HEADERS,
-        json={
-            "phone_number": "+421900676767",
-            "email": "googlepay@example.com",
-            "password": "secret-pass",
-            "first_name": "Google",
-            "last_name": "Pay",
-        },
-    )
-    assert sign_up_response.status_code == 201
-    user_id = sign_up_response.json()["user_id"]
-
-    checkout_response = client.post(
-        f"/v1/users/{user_id}/subscriptions/checkout",
-        headers=AUTH_HEADERS,
-        json={"plan_code": "basic", "payment_provider": "google_pay"},
-    )
-    assert checkout_response.status_code == 201
-    assert checkout_response.json()["checkout_url"].startswith("https://pay.google.com")
 
 def test_user_can_create_and_delete_mcp_api_key_and_call_mcp(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)

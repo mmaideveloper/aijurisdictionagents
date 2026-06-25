@@ -2,9 +2,10 @@
 
 import React from "react";
 import { describe, expect, it, beforeEach, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createChatSession, replyToSession } from "../api/chatClient";
+import { listCases, getCaseHistory, createApiCase, uploadApiCaseDocuments } from "../api/caseClient";
 import { LanguageProvider, useLanguage } from "../components/LanguageProvider";
 import {
   buildLocalizedInteractionMessage,
@@ -17,6 +18,25 @@ vi.mock("../api/chatClient", () => ({
   replyToSession: vi.fn()
 }));
 
+vi.mock("../api/caseClient", () => ({
+  listCases: vi.fn(),
+  getCaseHistory: vi.fn(),
+  createApiCase: vi.fn(),
+  uploadApiCaseDocuments: vi.fn()
+}));
+
+const authState = vi.hoisted(() => ({
+  isAuthenticated: false,
+  user: null as null | { userId: string; email: string; name: string }
+}));
+
+vi.mock("../auth/webAuth", () => ({
+  useAuth: () => ({
+    isAuthenticated: authState.isAuthenticated,
+    user: authState.user
+  })
+}));
+
 vi.mock("../logging/consoleLogger", () => ({
   consoleLogger: {
     info: vi.fn(),
@@ -26,6 +46,56 @@ vi.mock("../logging/consoleLogger", () => ({
 }));
 
 const STORAGE_KEY = "aijurisdictionfrontend.mock.cases.v1";
+
+const storedCase = {
+  id: "case-stored",
+  title: "Stored case",
+  description: "Stored mock case",
+  status: "In progress",
+  createdAt: "2026-04-14T10:00:00.000Z",
+  interactionHistory: [
+    {
+      id: "case-stored-interaction-1",
+      createdAt: "2026-04-14T10:00:00.000Z",
+      actor: "AI Lawyer",
+      message: buildLocalizedInteractionMessage("mockCreatedCaseOpenMessage")
+    },
+    {
+      id: "case-stored-interaction-2",
+      createdAt: "2026-04-14T10:00:00.000Z",
+      actor: "System",
+      message: buildLocalizedInteractionMessage("mockCreatedCaseStoredDocumentsPlural", { count: 1 })
+    }
+  ],
+  selectedRole: "AI Lawyer",
+  selectedMode: "Draft",
+  selectedCommunicationMode: "Chat",
+  workspace: {
+    meta: "Mock",
+    objective: "Restore from storage",
+    nextAction: "Open the workspace",
+    jurisdiction: "Slovakia",
+    output: "Brief"
+  },
+  jurisdiction: "Slovakia",
+  opposingParty: "Stored opponent",
+  documents: [
+    {
+      id: "doc-stored",
+      caseId: "case-stored",
+      originalFilename: "stored-evidence.pdf",
+      mimeType: "application/pdf",
+      size: 1200,
+      sizeLabel: "2 KB",
+      uploadedAt: "2026-04-14T10:00:00.000Z"
+    }
+  ],
+  source: "mock"
+};
+
+const seedStoredCase = () => {
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify([storedCase]));
+};
 
 const CaseConsumer: React.FC = () => {
   const { cases, documents, createCase, activeCase, hasSelectedCase } = useCases();
@@ -86,28 +156,28 @@ const SessionLanguageConsumer: React.FC = () => {
         type="button"
         onClick={() =>
           void sendCaseMessage({
-            caseId: "case-001",
+            caseId: "case-stored",
             content: "hello",
             communicationMode: "Chat"
           })
         }
       >
-        Send EN
+        Send SK
       </button>
-      <button type="button" onClick={() => setLanguage("sk")}>
-        Switch to SK
+      <button type="button" onClick={() => setLanguage("en")}>
+        Switch to EN
       </button>
       <button
         type="button"
         onClick={() =>
           void sendCaseMessage({
-            caseId: "case-001",
+            caseId: "case-stored",
             content: "ahoj",
             communicationMode: "Chat"
           })
         }
       >
-        Send SK
+        Send EN again
       </button>
     </div>
   );
@@ -123,7 +193,7 @@ const LocalizedSystemMessageConsumer: React.FC = () => {
         type="button"
         onClick={() =>
           addInteraction(
-            "case-001",
+            "case-stored",
             "System",
             buildLocalizedInteractionMessage("workspaceApiUnavailablePrefix", {
               detail: "Network request failed."
@@ -145,22 +215,42 @@ const LocalizedSystemMessageConsumer: React.FC = () => {
 
 const FirstUserMessageConsumer: React.FC = () => {
   const { cases, addInteraction } = useCases();
-  const activeCase = cases.find((caseItem) => caseItem.id === "case-001");
+  const activeCase = cases.find((caseItem) => caseItem.id === "case-stored");
 
   return (
     <div>
       <button
         type="button"
-        onClick={() => addInteraction("case-001", "You", "Please review the first issue.")}
+        onClick={() => addInteraction("case-stored", "You", "Please review the first issue.")}
       >
         Send first user message
       </button>
-      <div data-testid="case-001-history-actors">
+      <div data-testid="case-stored-history-actors">
         {activeCase?.interactionHistory.map((interaction) => interaction.actor).join("|") ?? ""}
       </div>
-      <div data-testid="case-001-history-messages">
+      <div data-testid="case-stored-history-messages">
         {activeCase?.interactionHistory.map((interaction) => interaction.message).join("|") ?? ""}
       </div>
+    </div>
+  );
+};
+
+const RefreshCaseDataConsumer: React.FC = () => {
+  const { cases, documents, selectCase, loadCaseData } = useCases();
+
+  return (
+    <div>
+      <button type="button" onClick={() => selectCase("case-api")}>
+        Select API Case
+      </button>
+      <button type="button" onClick={() => void loadCaseData("case-api")}>
+        Refresh API Case
+      </button>
+      <div data-testid="case-count">{cases.length}</div>
+      <div data-testid="case-meta">{cases[0]?.workspace.meta ?? ""}</div>
+      <div data-testid="document-count">{documents.length}</div>
+      <div data-testid="latest-document">{documents[0]?.originalFilename ?? ""}</div>
+      <div data-testid="latest-interaction">{cases[0]?.interactionHistory.at(-1)?.message ?? ""}</div>
     </div>
   );
 };
@@ -171,9 +261,28 @@ describe("CaseProvider", () => {
     window.localStorage.clear();
     vi.mocked(createChatSession).mockReset();
     vi.mocked(replyToSession).mockReset();
+    vi.mocked(listCases).mockReset();
+    vi.mocked(getCaseHistory).mockReset();
+    vi.mocked(createApiCase).mockReset();
+    vi.mocked(uploadApiCaseDocuments).mockReset();
+    authState.isAuthenticated = false;
+    authState.user = null;
   });
 
-  it("stores created mock cases and aggregated documents in localStorage", async () => {
+  it("starts without seeded fake cases", () => {
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <CaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    expect(screen.getByTestId("case-count").textContent).toBe("0");
+    expect(screen.getByTestId("document-count").textContent).toBe("0");
+  });
+
+  it("stores created fallback cases without counting uploaded files as generated legal documents", async () => {
     const user = userEvent.setup();
     render(
       <LanguageProvider>
@@ -189,9 +298,9 @@ describe("CaseProvider", () => {
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(Number(screen.getByTestId("case-count").textContent ?? "0")).toBe(initialCases + 1);
-    expect(Number(screen.getByTestId("document-count").textContent ?? "0")).toBe(initialDocuments + 1);
+    expect(Number(screen.getByTestId("document-count").textContent ?? "0")).toBe(initialDocuments);
     expect(screen.getByTestId("latest-case").textContent).toBe("Mock intake");
-    expect(screen.getByTestId("latest-document").textContent).toBe("northwind-evidence.pdf");
+    expect(screen.getByTestId("latest-document").textContent).toBe("");
 
     const rawStoredCases = window.localStorage.getItem(STORAGE_KEY);
     expect(rawStoredCases).not.toBeNull();
@@ -199,44 +308,8 @@ describe("CaseProvider", () => {
     expect(rawStoredCases).toContain("northwind-evidence.pdf");
   });
 
-  it("hydrates saved mock cases from localStorage on a fresh mount", () => {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify([
-        {
-          id: "case-stored",
-          title: "Stored case",
-          description: "Stored mock case",
-          status: "In progress",
-          createdAt: "2026-04-14T10:00:00.000Z",
-          interactionHistory: [],
-          selectedRole: "AI Lawyer",
-          selectedMode: "Draft",
-          selectedCommunicationMode: "Chat",
-          workspace: {
-            meta: "Mock",
-            objective: "Restore from storage",
-            nextAction: "Open the workspace",
-            jurisdiction: "Slovakia",
-            output: "Brief"
-          },
-          jurisdiction: "Slovakia",
-          opposingParty: "Stored opponent",
-          documents: [
-            {
-              id: "doc-stored",
-              caseId: "case-stored",
-              originalFilename: "stored-evidence.pdf",
-              mimeType: "application/pdf",
-              size: 1200,
-              sizeLabel: "2 KB",
-              uploadedAt: "2026-04-14T10:00:00.000Z"
-            }
-          ],
-          source: "mock"
-        }
-      ])
-    );
+  it("hydrates saved fallback cases from localStorage on a fresh mount", () => {
+    seedStoredCase();
 
     render(
       <LanguageProvider>
@@ -247,15 +320,16 @@ describe("CaseProvider", () => {
     );
 
     expect(screen.getByTestId("case-count").textContent).toBe("1");
-    expect(screen.getByTestId("document-count").textContent).toBe("1");
+    expect(screen.getByTestId("document-count").textContent).toBe("0");
     expect(screen.getByTestId("latest-case").textContent).toBe("Stored case");
-    expect(screen.getByTestId("latest-document").textContent).toBe("stored-evidence.pdf");
+    expect(screen.getByTestId("latest-document").textContent).toBe("");
     expect(screen.getByTestId("active-case").textContent).toBe("");
     expect(screen.getByTestId("has-selected-case").textContent).toBe("false");
   });
 
-  it("re-localizes seeded mock case content when the language changes", async () => {
+  it("re-localizes stored fallback case content when the language changes", async () => {
     const user = userEvent.setup();
+    seedStoredCase();
 
     render(
       <LanguageProvider>
@@ -265,23 +339,24 @@ describe("CaseProvider", () => {
       </LanguageProvider>
     );
 
-    expect(screen.getByTestId("localized-title").textContent).toBe("Keystone Holdings Intake");
+    expect(screen.getByTestId("localized-title").textContent).toBe("Stored case");
 
     await user.click(screen.getByRole("button", { name: "Switch to SK" }));
 
-    expect(screen.getByTestId("localized-title").textContent).toBe("Intake Keystone Holdings");
-    expect(screen.getByTestId("localized-next-action").textContent).toContain("Naplánujte");
+    expect(screen.getByTestId("localized-title").textContent).toBe("Stored case");
+    expect(screen.getByTestId("localized-next-action").textContent).toContain("Skontrolujte");
   });
 
   it("creates a new API session for a case after the language changes", async () => {
     const user = userEvent.setup();
+    seedStoredCase();
     vi.mocked(createChatSession)
       .mockResolvedValueOnce({
         id: "session-en",
         user_id: null,
         case_id: null,
         country: "SK",
-        language: "en",
+        language: "sk",
         discussion_type: "advice",
         state: "active",
         created_at: "2026-04-14T10:00:00.000Z"
@@ -291,7 +366,7 @@ describe("CaseProvider", () => {
         user_id: null,
         case_id: null,
         country: "SK",
-        language: "sk",
+        language: "en",
         discussion_type: "advice",
         state: "active",
         created_at: "2026-04-14T10:05:00.000Z"
@@ -313,16 +388,25 @@ describe("CaseProvider", () => {
       </LanguageProvider>
     );
 
-    await user.click(screen.getByRole("button", { name: "Send EN" }));
-    await user.click(screen.getByRole("button", { name: "Switch to SK" }));
     await user.click(screen.getByRole("button", { name: "Send SK" }));
+    await user.click(screen.getByRole("button", { name: "Switch to EN" }));
+    await user.click(screen.getByRole("button", { name: "Send EN again" }));
 
-    expect(createChatSession).toHaveBeenNthCalledWith(1, { language: "en" });
-    expect(createChatSession).toHaveBeenNthCalledWith(2, { language: "sk" });
+    expect(createChatSession).toHaveBeenNthCalledWith(1, {
+      language: "sk",
+      userId: undefined,
+      caseId: "case-stored"
+    });
+    expect(createChatSession).toHaveBeenNthCalledWith(2, {
+      language: "en",
+      userId: undefined,
+      caseId: "case-stored"
+    });
   });
 
   it("re-localizes stored system interaction messages after language changes", async () => {
     const user = userEvent.setup();
+    seedStoredCase();
 
     render(
       <LanguageProvider>
@@ -335,7 +419,7 @@ describe("CaseProvider", () => {
     await user.click(screen.getByRole("button", { name: "Add Error" }));
 
     expect(screen.getByTestId("localized-system-message").textContent).toBe(
-      "Unable to reach API. Network request failed."
+      "Nepodarilo sa spojiť s API. Network request failed."
     );
 
     await user.click(screen.getByRole("button", { name: "Switch to DE" }));
@@ -347,6 +431,7 @@ describe("CaseProvider", () => {
 
   it("removes the seeded assistant intro after the first user message is added", async () => {
     const user = userEvent.setup();
+    seedStoredCase();
 
     render(
       <LanguageProvider>
@@ -356,21 +441,119 @@ describe("CaseProvider", () => {
       </LanguageProvider>
     );
 
-    expect(screen.getByTestId("case-001-history-actors").textContent).toContain("AI Lawyer");
-    expect(screen.getByTestId("case-001-history-messages").textContent).toContain(
-      "Opened new case workspace from the intake form."
+    expect(screen.getByTestId("case-stored-history-actors").textContent).toContain("AI právnik");
+    expect(screen.getByTestId("case-stored-history-messages").textContent).toContain(
+      "Nový workspace prípadu bol otvorený z intake formulára."
     );
 
     await user.click(screen.getByRole("button", { name: "Send first user message" }));
 
-    expect(screen.getByTestId("case-001-history-actors").textContent).not.toContain("AI Lawyer");
-    expect(screen.getByTestId("case-001-history-actors").textContent).toContain("System");
-    expect(screen.getByTestId("case-001-history-actors").textContent).toContain("You");
-    expect(screen.getByTestId("case-001-history-messages").textContent).not.toContain(
-      "Opened new case workspace from the intake form."
+    expect(screen.getByTestId("case-stored-history-actors").textContent).not.toContain("AI právnik");
+    expect(screen.getByTestId("case-stored-history-actors").textContent).toContain("Systém");
+    expect(screen.getByTestId("case-stored-history-actors").textContent).toContain("Vy");
+    expect(screen.getByTestId("case-stored-history-messages").textContent).not.toContain(
+      "Nový workspace prípadu bol otvorený z intake formulára."
     );
-    expect(screen.getByTestId("case-001-history-messages").textContent).toContain(
+    expect(screen.getByTestId("case-stored-history-messages").textContent).toContain(
       "Please review the first issue."
     );
+  });
+
+  it("refreshes an API case so generated documents become visible in the sidebar state", async () => {
+    const user = userEvent.setup();
+    authState.isAuthenticated = true;
+    authState.user = {
+      userId: "user-1",
+      email: "client@example.test",
+      name: "Client"
+    };
+    vi.mocked(listCases).mockResolvedValue([
+      {
+        case_id: "case-api",
+        user_id: "user-1",
+        company_id: null,
+        title: "API case",
+        status: "in_progress",
+        created_at: "2026-06-22T10:00:00.000Z",
+        updated_at: "2026-06-22T10:00:00.000Z"
+      }
+    ]);
+    vi.mocked(getCaseHistory).mockResolvedValue({
+      messages: [
+        {
+          communication_id: "message-1",
+          role: "user",
+          content: "Prepare power of attorney.",
+          agent_name: null,
+          created_at: "2026-06-22T10:01:00.000Z"
+        },
+        {
+          communication_id: "message-2",
+          role: "assistant",
+          content: "I prepared the draft.",
+          agent_name: "AI Lawyer",
+          created_at: "2026-06-22T10:02:00.000Z"
+        }
+      ],
+      has_more: false,
+      documents: [
+        {
+          doc_id: "doc-technical",
+          kind: "technical_payload",
+          version: 1,
+          original_filename: "assistant-technical-20260622.json",
+          processing_status: "processed",
+          processing_error: null,
+          processed_at: "2026-06-22T10:04:00.000Z",
+          created_at: "2026-06-22T10:04:00.000Z"
+        },
+        {
+          doc_id: "doc-uploaded",
+          kind: "uploaded",
+          version: 1,
+          original_filename: "session-raw-upload.txt",
+          processing_status: "processed",
+          processing_error: null,
+          processed_at: "2026-06-22T10:04:30.000Z",
+          created_at: "2026-06-22T10:04:30.000Z"
+        },
+        {
+          doc_id: "doc-generated",
+          kind: "generated_document",
+          version: 1,
+          original_filename: "splnomocnenie-sk-en.pdf",
+          processing_status: "processed",
+          processing_error: null,
+          processed_at: "2026-06-22T10:05:00.000Z",
+          created_at: "2026-06-22T10:05:00.000Z"
+        }
+      ]
+    });
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <RefreshCaseDataConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("case-count").textContent).toBe("1"));
+    expect(screen.getByTestId("document-count").textContent).toBe("1");
+    expect(screen.getByTestId("case-meta").textContent).toBe("1 legal document / 2 messages");
+    expect(screen.getByTestId("latest-document").textContent).toBe("splnomocnenie-sk-en.pdf");
+    expect(screen.getByTestId("latest-interaction").textContent).toContain("Generated document:");
+    expect(screen.getByTestId("latest-interaction").textContent).toContain(
+      "/app/documents/view?caseId=case-api&docId=doc-generated"
+    );
+    expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-api", 200);
+
+    await user.click(screen.getByRole("button", { name: "Refresh API Case" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("document-count").textContent).toBe("1");
+    });
+    expect(screen.getByTestId("latest-document").textContent).toBe("splnomocnenie-sk-en.pdf");
+    expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-api", 200);
   });
 });

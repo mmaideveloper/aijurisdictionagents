@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-engine-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: document-engine-worker
+  template:
+    metadata:
+      labels:
+        app: document-engine-worker
+    spec:
+      containers:
+        - name: worker
+          image: document-engine-service:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "document_engine.worker"]
+          envFrom:
+            - configMapRef:
+                name: document-engine-config
+            - secretRef:
+                name: document-engine-secret
+          volumeMounts:
+            - name: generated-documents
+              mountPath: /data/generated-documents
+      volumes:
+        - name: generated-documents
+          emptyDir: {}

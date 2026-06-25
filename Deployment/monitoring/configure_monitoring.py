@@ -15,6 +15,12 @@ from urllib.request import Request, urlopen
 
 DEFAULT_PROJECT_ENV = Path("/srv/jurisdigta/secrets/jurisdigta.env")
 DEFAULT_PROMETHEUS_HOST_PORT = "9091"
+DEFAULT_LOKI_HOST_PORT = "3100"
+DEFAULT_ALLOY_HOST_PORT = "12345"
+DEFAULT_LOG_RETENTION_DAYS = "7"
+DEFAULT_PROMETHEUS_RETENTION_DAYS = "30"
+DEFAULT_DOCKER_LOG_MAX_SIZE = "50m"
+DEFAULT_DOCKER_LOG_MAX_FILE = "5"
 DEFAULT_GRAFANA_DOMAIN = "admin.jurisdigta.eu"
 DEFAULT_GRAFANA_ROOT_URL = "https://admin.jurisdigta.eu/grafana/"
 DEFAULT_ALERT_EMAIL_TO = "info@jurisdigta.eu"
@@ -143,6 +149,32 @@ def _build_monitoring_env(
             or _first(project_values, existing_values, "PROMETHEUS_HOST_PORT")
             or DEFAULT_PROMETHEUS_HOST_PORT
         ),
+        "LOKI_HOST_PORT": (
+            _first(project_values, existing_values, "LOKI_HOST_PORT") or DEFAULT_LOKI_HOST_PORT
+        ),
+        "ALLOY_HOST_PORT": (
+            _first(project_values, existing_values, "ALLOY_HOST_PORT") or DEFAULT_ALLOY_HOST_PORT
+        ),
+        "LOG_RETENTION_DAYS": (
+            _first(project_values, existing_values, "LOG_RETENTION_DAYS")
+            or DEFAULT_LOG_RETENTION_DAYS
+        ),
+        "LOKI_RETENTION_DAYS": (
+            _first(project_values, existing_values, "LOKI_RETENTION_DAYS", "LOG_RETENTION_DAYS")
+            or DEFAULT_LOG_RETENTION_DAYS
+        ),
+        "PROMETHEUS_RETENTION_DAYS": (
+            _first(project_values, existing_values, "PROMETHEUS_RETENTION_DAYS")
+            or DEFAULT_PROMETHEUS_RETENTION_DAYS
+        ),
+        "DOCKER_LOG_MAX_SIZE": (
+            _first(project_values, existing_values, "DOCKER_LOG_MAX_SIZE")
+            or DEFAULT_DOCKER_LOG_MAX_SIZE
+        ),
+        "DOCKER_LOG_MAX_FILE": (
+            _first(project_values, existing_values, "DOCKER_LOG_MAX_FILE")
+            or DEFAULT_DOCKER_LOG_MAX_FILE
+        ),
         "MONITORING_APP_DOCKER_NETWORK": (
             _first(project_values, existing_values, "MONITORING_APP_DOCKER_NETWORK")
             or DEFAULT_APP_DOCKER_NETWORK
@@ -257,7 +289,7 @@ def _set_grafana_home_dashboard(values: dict[str, str]) -> None:
                 with urlopen(request, timeout=5):
                     print("Grafana home dashboard set to JurisDigta Application Performance.")
                     return
-            except URLError:
+            except (OSError, URLError):
                 continue
         time.sleep(2)
     print("Warning: Grafana home dashboard preference could not be updated.", file=sys.stderr)

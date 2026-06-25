@@ -38,7 +38,7 @@ const labels: Record<string, string> = {
   caseSelectedFilesTitle: "Selected files",
   caseNoFilesSelected: "No documents selected yet.",
   caseRemoveFile: "Remove",
-  caseStorageMode: "Stored in mock workspace profile data for this task.",
+  caseStorageMode: "Stored in your JurisDigta case data.",
   caseStartChat: "Start AI lawyer chat"
 };
 
@@ -111,7 +111,8 @@ describe("Case intake page", () => {
         {
           originalFilename: "dispute-brief.pdf",
           mimeType: "application/pdf",
-          size: file.size
+          size: file.size,
+          file
         }
       ]
     });

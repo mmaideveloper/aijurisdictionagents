@@ -50,6 +50,10 @@ GitHub workflow / infra environment rule:
 - Keep `docs/GITHUB_ENVIRONMENTS.md` aligned with workflow inputs, required GitHub Environment variables, required secrets, and any new manual setup steps.
 - Whenever a task requires manual infrastructure setup outside the repository, update `docs/manual_infrastucture_setup.md` in the same change with the exact future installation/configuration steps, required owners/accounts, secrets, environments, validation steps, and rollback notes.
 
+Production health endpoint rule:
+
+- Whenever you add, expose, rename, or make public a production `/health` endpoint, update `.codex/automations/jurisdigta-monitoring-task/automation.toml` in the same change so the hourly `Jurisdigta Monitoring task` checks it and defines its healthy response contract.
+
 
 Software Development Life Cycle:
 
@@ -77,7 +81,11 @@ API validation rule:
 - Before preparing data for commit after API changes, also run the API unit tests with `.\conda\python.exe -m pytest api/aijuristiction-api/tests` from the repository root and fix failures before committing.
 - Keep the tracked pre-commit hook under `.githooks/pre-commit` enabled with `git config core.hooksPath .githooks` so API lint/type-check failures are caught before commit and before GitHub workflows start.
 
-Ask for implementation of task.  Create for each task separate branch.
+Ask for implementation of task. Create for each task separate branch.
+For every separate task, bug, or product change, create a separate Git branch and a separate Git worktree before editing files. Do not reuse one checkout or shared working directory for multiple independent tasks.
+Do not implement multiple tasks, bugs, experiments, or unrelated product changes in the same branch or worktree.
+Before starting work, check the current branch and `git status`; if the branch or worktree already contains changes for another task, stop and create a new branch and worktree from the correct base branch instead of continuing there.
+If a change grows into a second independent task, stop, leave the first task isolated, and move the second task into its own branch and worktree.
 If you start working move task to in progress.
 Before moving a task to In review:
 - Commit your changes.

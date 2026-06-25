@@ -14,6 +14,7 @@ type Bounds = {
 async function authenticate(page: Page) {
   await page.addInitScript(
     ({ key }) => {
+      window.localStorage.setItem('aj_frontend_lang', 'en');
       window.sessionStorage.setItem(
         key,
         JSON.stringify({
@@ -26,6 +27,44 @@ async function authenticate(page: Page) {
     },
     { key: authSessionKey },
   );
+}
+
+async function mockCaseApi(page: Page, viewport: { width: number; height: number }) {
+  const now = new Date().toISOString();
+  const caseId = `layout-case-${viewport.width}-${viewport.height}`;
+  const caseTitle = `Layout case ${viewport.width}x${viewport.height}`;
+
+  await page.route('**/v1/cases?**', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.route('**/v1/cases', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          case_id: caseId,
+          user_id: 'layout-test-user',
+          company_id: null,
+          title: caseTitle,
+          status: 'open',
+          created_at: now,
+          updated_at: now,
+        }),
+      });
+      return;
+    }
+    await route.continue();
+  });
 }
 
 async function getBounds(locator: Locator): Promise<Bounds> {
@@ -43,13 +82,14 @@ async function getBounds(locator: Locator): Promise<Bounds> {
 
 async function createCaseAndAssertLayout(page: Page, viewport: { width: number; height: number }, testInfoTitle: string) {
   await page.setViewportSize(viewport);
+  await mockCaseApi(page, viewport);
   await authenticate(page);
   await page.goto('/app/case');
 
-  await page.getByLabel('Case name').fill(`Layout case ${viewport.width}x${viewport.height}`);
-  await page.getByLabel('Jurisdiction').fill('Slovakia');
-  await page.getByLabel('Opposing party').fill('Synthetic Counterparty');
-  await page.getByRole('button', { name: 'Start AI lawyer chat' }).click();
+  await page.getByRole('textbox', { name: /Case name|Nazov pripadu|Názov prípadu/ }).fill(`Layout case ${viewport.width}x${viewport.height}`);
+  await page.getByRole('textbox', { name: /Jurisdiction|Jurisdikcia/ }).fill('Slovakia');
+  await page.getByRole('textbox', { name: /Opposing party|Protistrana/ }).fill('Synthetic Counterparty');
+  await page.getByRole('button', { name: /Start AI lawyer chat|Spustit chat s AI pravnikom|Spustiť chat s AI právnikom/ }).click();
 
   await expect(page).toHaveURL(/\/app\/chat$/);
   await expect(

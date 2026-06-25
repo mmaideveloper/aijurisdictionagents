@@ -14,9 +14,9 @@ import unicodedata
 from zipfile import ZIP_DEFLATED, ZipFile
 from collections import deque
 from collections.abc import Callable, Generator
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Queue
 from threading import Thread
 from typing import Any, List, Literal, Optional, cast
 from urllib.parse import quote
@@ -41,6 +41,7 @@ from app.chat.intent_policy_service import (
     build_document_task_plan_note,
     is_document_modernization_request,
 )
+from app.chat.mcp_law_context import build_mcp_law_context
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.output_validation import AILawyerOutputMessageValidationAgent, LawyerOutputUserProfile
 from app.chat.repository import InMemoryChatRepository
@@ -69,6 +70,8 @@ _API_VERSION = get_api_version()
 _CORE_VERSION = get_core_version()
 _LOGGER = logging.getLogger(__name__)
 _LAWYER_OUTPUT_VALIDATOR = AILawyerOutputMessageValidationAgent()
+_STREAM_KEEPALIVE_SECONDS = 15.0
+_STREAM_STATUS_SECONDS = 60.0
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
@@ -92,6 +95,12 @@ class _DocumentExportAsset:
     lines: list[str]
     disclaimer: tuple[str, str, str] | None = None
     use_corporate_template: bool = False
+
+
+@dataclass(frozen=True)
+class _GeneratedCaseDocumentDraft:
+    filename: str
+    body: str
 
 
 @dataclass(frozen=True)
@@ -154,6 +163,21 @@ def _get_store() -> ApiDatabaseStore:
     store = ApiDatabaseStore.from_env()
     store.initialize()
     return store
+
+
+def _ensure_case_write_access_for_session(session: Session) -> None:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return
+    store = _get_store()
+    try:
+        case = store.get_case(case_id=case_id)
+        user_id = str(session.user_id) if session.user_id else case.user_id
+        reason = store.get_case_write_block_reason(case_id=case_id, user_id=user_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if reason is not None:
+        raise HTTPException(status_code=403, detail=reason)
 
 
 def _persist_case_message_if_needed(*, session: Session, role: str, content: str, agent_name: str | None = None) -> None:
@@ -322,7 +346,7 @@ def _load_case_documents_for_llm(
     processed_entries: list[tuple[str, str, str, str]] = []
     processed_names_by_doc_id: dict[str, str] = {}
     for document in list_case_documents(case_id=case_id):
-        if document.kind not in {'uploaded', 'chat_attachment', 'session_history'}:
+        if document.kind not in {'uploaded', 'chat_attachment', 'session_history', 'generated_document'}:
             continue
         if document.processing_status == 'processed' and document.doc_id in contents_by_doc_id:
             name, text, vector = contents_by_doc_id[document.doc_id]
@@ -926,6 +950,7 @@ def _persist_direct_assistant_message(
 ) -> Message:
     content = _validate_lawyer_output_message(session=session, content=content)
     content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
+    _persist_generated_case_document_if_needed(session=session, content=content)
     persisted_lawyer = _repository.add_message(
         Message(
             session_id=session_id,
@@ -983,6 +1008,232 @@ def _build_signed_in_user_profile_prompt_note(session: Session) -> str:
     if address_parts:
         lines.append(f"- Client address: {', '.join(address_parts)}")
     return "\n".join(lines)
+
+
+_SLOVAK_MONTHS_GENITIVE = {
+    1: "januara",
+    2: "februara",
+    3: "marca",
+    4: "aprila",
+    5: "maja",
+    6: "juna",
+    7: "jula",
+    8: "augusta",
+    9: "septembra",
+    10: "oktobra",
+    11: "novembra",
+    12: "decembra",
+}
+
+
+def _build_current_date_prompt_note(*, today: date | None = None) -> str:
+    current_date = today or date.today()
+    numeric_display_date = f"{current_date.day}.{current_date.month}.{current_date.year}"
+    slovak_display_date = (
+        f"{current_date.day}. {_SLOVAK_MONTHS_GENITIVE[current_date.month]} {current_date.year}"
+    )
+    return "\n".join(
+        [
+            "CURRENT DATE CONTEXT:",
+            (
+                f"- Today's date is {current_date.isoformat()} "
+                f"({numeric_display_date}; {slovak_display_date})."
+            ),
+            (
+                "- If the user asks for today's/current/date-of-signature date in a document, "
+                "use this date."
+            ),
+            "- Do not invent, infer from model training data, or reuse old example dates.",
+        ]
+    )
+
+
+def _build_uploaded_document_contract_confirmation_note(
+    *,
+    content: str,
+    documents: list[CoreDocument],
+) -> str:
+    if not documents or not _is_contract_preparation_request(content):
+        return ""
+    return (
+        "UPLOADED DOCUMENT CONTRACT INTAKE MODE:\n"
+        "- The user is asking to prepare a new contract/agreement and uploaded documents are available.\n"
+        "- Before asking generic intake questions or drafting the final contract, review every available uploaded "
+        "document provided in this turn or stored in the case.\n"
+        "- Extract all available contract data from the uploaded documents and the conversation first, including "
+        "parties, identification numbers, addresses, subject matter, property or asset details, dates, price/rent, "
+        "payment terms, obligations, attachments, governing law, and any missing or uncertain fields.\n"
+        "- Do not ask for a fact that is already available in the uploaded documents.\n"
+        "- In the user-facing reply, present a concise grouped list headed 'Udaje, ktore som nasiel v dokumentoch' "
+        "or the same meaning in the user's language. Mark uncertain facts as uncertain and mention the source "
+        "document when useful.\n"
+        "- After the extracted-data list, ask exactly one confirmation question asking whether the user agrees "
+        "with these data for the new contract or wants to change/add anything.\n"
+        "- For Slovak replies, use this confirmation wording unless the conversation clearly uses another language: "
+        "'Suhlasite, aby som zmluvu pripravil z tychto udajov, alebo chcete niektory udaj zmenit/doplnit?'\n"
+        "- Do not generate or export the final contract until the user confirms or corrects the extracted data."
+    )
+
+
+def _build_legal_document_preparation_policy_note(*, content: str, country: str) -> str:
+    if not _is_legal_document_preparation_request(content):
+        return ""
+
+    lines = [
+        "LEGAL DOCUMENT PREPARATION MODE:",
+        "- Prepare legally structured documents according to the applicable law and the requested jurisdiction.",
+        "- If the user asks for the same document in multiple languages, multiple versions, or variants, prepare each "
+        "language/version/variant as a separate final document, not as sections combined into one document.",
+        "- If the user provides a table/CSV/list with multiple people, companies, addresses, recipients, attorneys-in-fact, "
+        "principals, or other parties, prepare one separate final document per row/person/entity. Example: a power of "
+        "attorney request with 100 attorneys-in-fact in a CSV requires 100 separate PDF documents.",
+        "- Do not mix Slovak and English final legal texts in one PDF unless the user explicitly requests one bilingual "
+        "comparison document instead of separate documents.",
+        "- For each final document, keep the party data scoped to that document only.",
+        "- When using CASE_UPDATE_JSON, represent each separate final document as its own case.documents entry with a "
+        "clear filename/path so export can create separate PDFs or a ZIP package.",
+        "- Before drafting a legal document, check the managed document-template catalog for the detected document type.",
+    ]
+
+    template_note = _legal_document_template_source_note(content=content, country=country)
+    if template_note:
+        lines.extend(template_note)
+    else:
+        lines.extend(
+            [
+                "- No matching managed template was found for this request.",
+                "- Use AIWebSearchAgent (AIInternetSearchAgent alias, if configured) to locate a reliable current legal "
+                "document body or official/professional template before drafting.",
+                "- In the user-facing response, include the URL/title/location from which the internet template/body was "
+                "downloaded or derived.",
+                "- If no reliable source can be found, state that clearly and ask for confirmation before drafting from "
+                "general legal knowledge.",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _legal_document_template_source_note(*, content: str, country: str) -> list[str]:
+    try:
+        score, template = get_document_template_store().find_best_match(
+            request_text=content,
+            country=(country or "SK").strip() or "SK",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning("Document-template lookup failed for legal document request | reason=%s", exc)
+        return [
+            "- Managed document-template lookup failed for this request.",
+            "- Use AIWebSearchAgent (AIInternetSearchAgent alias, if configured) to locate a reliable current legal "
+            "document body or official/professional template before drafting.",
+            "- In the user-facing response, include the URL/title/location from which the internet template/body was "
+            "downloaded or derived.",
+        ]
+    if score <= 0 or template is None:
+        return []
+
+    lines = [
+        f"- Managed template match: {template.title} ({template.template_key}), score {score}.",
+        f"- Managed template source location: {template.source_url}.",
+        "- Mention this managed template source location in the user-facing response when it influenced the draft.",
+    ]
+    if template.body.strip():
+        lines.append(
+            "- Use the managed template body as the primary drafting structure and replace all placeholders with "
+            "confirmed data."
+        )
+    else:
+        lines.extend(
+            [
+                "- The managed template record has metadata/source only and no stored body.",
+                "- Use AIWebSearchAgent (AIInternetSearchAgent alias, if configured) to fetch or verify the document body "
+                "from that source or another reliable current source before drafting.",
+                "- In the user-facing response, include the URL/title/location from which the internet template/body was "
+                "downloaded or derived.",
+            ]
+        )
+    return lines
+
+
+def _is_legal_document_preparation_request(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    document_markers = (
+        "splnomocnen",
+        "plna moc",
+        "power of attorney",
+        "zmluv",
+        "contract",
+        "agreement",
+        "dohod",
+        "potvrden",
+        "vyhlasen",
+        "navrh",
+        "ziadost",
+        "legal document",
+        "pravny dokument",
+        "dokument",
+        "pdf",
+    )
+    preparation_markers = (
+        "priprav",
+        "vytvor",
+        "vygeneruj",
+        "napis",
+        "spis",
+        "vypracuj",
+        "draft",
+        "prepare",
+        "create",
+        "generate",
+        "write",
+        "new",
+        "novu",
+        "nova",
+        "novy",
+    )
+    review_only_markers = (
+        "skontrol",
+        "posud",
+        "zhrn",
+        "summar",
+        "review",
+        "analyz",
+    )
+    if any(marker in normalized for marker in review_only_markers) and not any(
+        marker in normalized for marker in preparation_markers
+    ):
+        return False
+    return any(marker in normalized for marker in document_markers) and any(
+        marker in normalized for marker in preparation_markers
+    )
+
+
+def _is_contract_preparation_request(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    contract_markers = (
+        "zmluv",
+        "contract",
+        "agreement",
+        "dohod",
+    )
+    preparation_markers = (
+        "priprav",
+        "vytvor",
+        "vygeneruj",
+        "napis",
+        "spis",
+        "draft",
+        "prepare",
+        "create",
+        "generate",
+        "write",
+        "new",
+        "novu",
+        "nova",
+        "novy",
+    )
+    return any(marker in normalized for marker in contract_markers) and any(
+        marker in normalized for marker in preparation_markers
+    )
 
 
 def _run_direct_lawyer_turn(
@@ -1092,6 +1343,7 @@ def _run_direct_lawyer_turn(
         "- Do not include summary/risk/next-step sections while waiting for that single answer.\n"
         "- Keep CASE_UPDATE_JSON.case.open_questions at maximum one item when awaiting user input."
     )
+    prompt_override = f"{prompt_override}\n\n{_build_current_date_prompt_note()}"
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
     if case_memory_note:
         prompt_override = f"{prompt_override}\n\n{case_memory_note}"
@@ -1143,6 +1395,29 @@ def _run_direct_lawyer_turn(
     all_documents = list(preparation.supplemental_documents)
     all_documents.extend(supplemental_documents or [])
     all_documents.extend(case_documents)
+    uploaded_contract_note = _build_uploaded_document_contract_confirmation_note(
+        content=content,
+        documents=all_documents,
+    )
+    if uploaded_contract_note:
+        prompt_override = f"{prompt_override}\n\n{uploaded_contract_note}"
+    legal_document_policy_note = _build_legal_document_preparation_policy_note(
+        content=content,
+        country=session.country,
+    )
+    if legal_document_policy_note:
+        prompt_override = f"{prompt_override}\n\n{legal_document_policy_note}"
+    mcp_law_context = build_mcp_law_context(
+        query=content,
+        country=session.country,
+        language=session.language,
+    )
+    if mcp_law_context is not None:
+        prompt_override = f"{prompt_override}\n\n{mcp_law_context.prompt_note}"
+        if mcp_law_context.document is not None:
+            all_documents.append(mcp_law_context.document)
+        if processing_event_callback is not None:
+            processing_event_callback(mcp_law_context.processing_event)
     lawyer_message = lawyer.respond(
         conversation=conversation,
         documents=all_documents,
@@ -1235,6 +1510,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     session = _repository.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    _ensure_case_write_access_for_session(session)
 
     content = payload.content.strip()
     if not content:
@@ -1273,6 +1549,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if session.state == SessionState.COMPLETED and payload.user_simulation_mode != "ReadUser":
         raise HTTPException(status_code=409, detail="Session already completed")
+    _ensure_case_write_access_for_session(session)
     _persist_inline_case_documents_if_needed(session=session, documents=payload.documents)
     if payload.user_simulation_mode == "ReadUser":
         return _stream_read_user_session(session_id=session_id, session=session, payload=payload)
@@ -1406,6 +1683,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 session=session,
                 content=_validate_lawyer_output_message(session=session, content=core_message.content),
             )
+            _persist_generated_case_document_if_needed(session=session, content=content)
         else:
             content = core_message.content
         core_conversation.append(core_message)
@@ -1504,15 +1782,10 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
 
     Thread(target=worker, daemon=True).start()
 
-    def stream() -> Generator[str, None, None]:
-        while True:
-            item = event_queue.get()
-            if item is None:
-                break
-            event_name, body = item
-            yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        _stream_event_queue(event_queue=event_queue, session=session),
+        media_type="text/event-stream",
+    )
 
 
 def _stream_read_user_session(
@@ -1678,15 +1951,10 @@ def _stream_read_user_session(
 
     Thread(target=worker, daemon=True).start()
 
-    def stream() -> Generator[str, None, None]:
-        while True:
-            item = event_queue.get()
-            if item is None:
-                break
-            event_name, body = item
-            yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        _stream_event_queue(event_queue=event_queue, session=session),
+        media_type="text/event-stream",
+    )
 
 
 def _is_followup_termination_prompt(prompt: str) -> bool:
@@ -2606,6 +2874,345 @@ def _persist_case_technical_payload(
         return None
 
 
+def _persist_generated_case_document_if_needed(*, session: Session, content: str) -> list[str]:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return []
+    visible_text = _user_visible_text(content).strip()
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    drafts = _generated_case_document_drafts_for_storage(visible_text, timestamp=timestamp)
+    if not drafts:
+        return []
+    try:
+        store = _get_store()
+        version = _next_generated_case_document_version(store=store, case_id=case_id)
+        doc_ids: list[str] = []
+        for offset, draft in enumerate(drafts):
+            doc_id = store.add_case_document(
+                case_id=case_id,
+                kind="generated_document",
+                version=version + offset,
+                original_filename=draft.filename,
+                payload=draft.body.encode("utf-8"),
+                uploaded_by_user_id=str(session.user_id) if session.user_id else None,
+            )
+            if isinstance(doc_id, str):
+                doc_ids.append(doc_id)
+        return doc_ids
+    except Exception:
+        _LOGGER.warning(
+            "Failed to persist assistant final answer as a generated case document",
+            extra={"case_id": case_id},
+            exc_info=True,
+        )
+        return []
+
+
+def _generated_case_document_drafts_for_storage(
+    content: str,
+    *,
+    timestamp: str,
+) -> list[_GeneratedCaseDocumentDraft]:
+    power_of_attorney_drafts = _bilingual_power_of_attorney_drafts(content, timestamp=timestamp)
+    if power_of_attorney_drafts:
+        return power_of_attorney_drafts
+
+    if _looks_like_generated_case_document_for_storage(content):
+        document_body = _generated_case_document_body_for_storage(content)
+    else:
+        document_body = _synthesized_generated_case_document_body_for_storage(content)
+    if not document_body:
+        return []
+    return [
+        _GeneratedCaseDocumentDraft(
+            filename=_generated_case_document_filename_for_storage(document_body, timestamp=timestamp),
+            body=document_body,
+        )
+    ]
+
+
+def _bilingual_power_of_attorney_drafts(
+    content: str,
+    *,
+    timestamp: str,
+) -> list[_GeneratedCaseDocumentDraft]:
+    normalized = _canonicalize_document_text(content)
+    if not (
+        "splnomocnenie" in normalized
+        and "power of attorney" in normalized
+        and any(token in normalized for token in ("anglick", "english", "en verzi", "en version"))
+    ):
+        return []
+    facts = _extract_power_of_attorney_facts(content)
+    if not facts:
+        return []
+    return [
+        _GeneratedCaseDocumentDraft(
+            filename=f"splnomocnenie_sk_{timestamp}.pdf",
+            body=_render_slovak_power_of_attorney(facts),
+        ),
+        _GeneratedCaseDocumentDraft(
+            filename=f"power_of_attorney_en_{timestamp}.pdf",
+            body=_render_english_power_of_attorney(facts),
+        ),
+    ]
+
+
+def _extract_power_of_attorney_facts(content: str) -> dict[str, str]:
+    facts = {
+        "agent": _extract_labeled_value(content, "Splnomocnenec", "Attorney-in-fact", "Agent"),
+        "company": _extract_labeled_value(content, "Spolocnost", "Spoločnosť", "Company"),
+        "address": _extract_labeled_value(content, "Adresa", "Address"),
+        "scope": _extract_labeled_value(content, "Prava", "Práva", "Rights", "Scope"),
+    }
+    facts = {key: value for key, value in facts.items() if value}
+    if not any(facts.get(key) for key in ("agent", "company", "scope")):
+        return {}
+    return facts
+
+
+def _extract_labeled_value(content: str, *labels: str) -> str:
+    lines = content.splitlines()
+    for index, raw_line in enumerate(lines):
+        line = raw_line.strip().strip("-* ")
+        for label in labels:
+            match = re.match(rf"^{re.escape(label)}\s*:\s*(?P<value>.+)$", line, flags=re.IGNORECASE)
+            if match:
+                value = match.group("value").strip().strip(".")
+                if value:
+                    return value
+            if re.match(rf"^{re.escape(label)}\s*:\s*$", line, flags=re.IGNORECASE):
+                value = _next_non_empty_document_line(lines[index + 1 :])
+                if value:
+                    return value
+    return ""
+
+
+def _next_non_empty_document_line(lines: list[str]) -> str:
+    for raw_line in lines:
+        value = raw_line.strip().strip("-* ").strip(".")
+        if value:
+            return value
+    return ""
+
+
+def _power_of_attorney_principal(facts: dict[str, str]) -> str:
+    company = facts.get("company", "").strip()
+    address = facts.get("address", "").strip()
+    if company and address:
+        return f"{company}, {address}"
+    return company or "Doplniť splnomocniteľa"
+
+
+def _render_slovak_power_of_attorney(facts: dict[str, str]) -> str:
+    principal = _power_of_attorney_principal(facts)
+    agent = facts.get("agent", "Doplniť splnomocnenca")
+    scope = facts.get("scope", "Doplniť rozsah splnomocnenia")
+    return "\n".join(
+        [
+            "Splnomocnenie",
+            "",
+            f"Splnomocniteľ: {principal}",
+            f"Splnomocnenec: {agent}",
+            "",
+            "1. Predmet splnomocnenia",
+            (
+                "Splnomocniteľ týmto podľa § 31 a nasl. zákona č. 40/1964 Zb. "
+                "Občiansky zákonník udeľuje splnomocnencovi plnú moc konať v mene "
+                "splnomocniteľa v rozsahu uvedenom v tomto splnomocnení."
+            ),
+            "",
+            "2. Rozsah oprávnenia",
+            scope,
+            "",
+            "3. Vyhlásenia",
+            (
+                "Splnomocnenec je oprávnený vykonať všetky úkony, podpisovať potrebné "
+                "listiny a preberať alebo odovzdávať dokumenty, ak súvisia s uvedeným "
+                "rozsahom splnomocnenia. Splnomocnenie sa udeľuje do jeho písomného "
+                "odvolania, ak nie je v samostatnej dohode uvedené inak."
+            ),
+            "",
+            "V ____________________, dňa ____________________",
+            "",
+            "Splnomocniteľ: ______________________________",
+            "",
+            "Splnomocnenec: ______________________________",
+        ]
+    )
+
+
+def _render_english_power_of_attorney(facts: dict[str, str]) -> str:
+    principal = _power_of_attorney_principal(facts)
+    agent = facts.get("agent", "To be completed")
+    scope = facts.get("scope", "To be completed")
+    return "\n".join(
+        [
+            "Power of Attorney",
+            "",
+            f"Principal: {principal}",
+            f"Attorney-in-fact: {agent}",
+            "",
+            "1. Grant of authority",
+            (
+                "The Principal hereby authorizes the Attorney-in-fact to act on behalf "
+                "of the Principal within the scope stated in this power of attorney."
+            ),
+            "",
+            "2. Scope of authority",
+            scope,
+            "",
+            "3. Declarations",
+            (
+                "The Attorney-in-fact may perform all acts, sign necessary documents, "
+                "and receive or deliver documents connected with the stated scope of "
+                "authority. This power of attorney remains valid until revoked in "
+                "writing unless a separate agreement provides otherwise."
+            ),
+            "",
+            "Place ____________________, date ____________________",
+            "",
+            "Principal: ______________________________",
+            "",
+            "Attorney-in-fact: ______________________________",
+        ]
+    )
+
+
+def _looks_like_generated_case_document_for_storage(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    if not normalized or "?" in normalized[-180:]:
+        return False
+    document_markers = (
+        "splnomocnenie",
+        "power of attorney",
+        "potvrdenie",
+        "zmluva",
+        "vyzva",
+        "zaloba",
+        "navrh",
+        "dohoda",
+        "contract",
+        "agreement",
+    )
+    ready_markers = (
+        "dokument je pripraven",
+        "dokumenty su pripravene",
+        "finalne verzie",
+        "finalna verzia",
+        "konecna verzia",
+        "na stiahnutie",
+        "format pdf",
+        "tu je",
+        "tu su",
+    )
+    body_markers = (
+        "tymto",
+        "podpis",
+        "attorney",
+        "rights",
+        "company",
+        "splnomocnenec",
+        "splnomocnitel",
+        "zmluvne strany",
+    )
+    return (
+        any(marker in normalized for marker in document_markers)
+        and any(marker in normalized for marker in ready_markers)
+        and any(marker in normalized for marker in body_markers)
+    )
+
+
+def _generated_case_document_body_for_storage(content: str) -> str:
+    lines = content.strip().splitlines()
+    cleaned: list[str] = []
+    skip_markers = (
+        "spracovanie stale prebieha",
+        "dokument je pripraven",
+        "dokumenty su pripravene",
+        "dokumentu su pripravene",
+        "pripraveny na stiahnutie",
+        "pripravene na stiahnutie",
+        "tu su finalne verzie",
+        "teraz ich vygenerujem",
+        "prosim chvilu pockajte",
+        "tu su finálne verzie",
+    )
+    for line in lines:
+        stripped = line.strip()
+        normalized = _canonicalize_document_text(stripped)
+        if normalized and any(marker in normalized for marker in skip_markers):
+            continue
+        stripped = re.sub(r"^(?:[A-Za-z]+Slovakia|LawyerSlovakia)\s*:\s*", "", stripped).strip()
+        if not stripped:
+            continue
+        cleaned.append(stripped)
+    body = "\n".join(cleaned).strip()
+    return body
+
+
+def _synthesized_generated_case_document_body_for_storage(content: str) -> str:
+    normalized = _canonicalize_document_text(content)
+    if not (
+        "potvrdenie" in normalized
+        and any(token in normalized for token in ("zaplat", "uhrad", "platb"))
+        and any(marker in normalized for marker in ("format pdf", "na stiahnutie", "pripravim finalne"))
+    ):
+        return ""
+    if "?" in normalized[-180:]:
+        return ""
+
+    facts = _extract_document_facts(content.splitlines())
+    lines = _build_slovak_payment_confirmation_lines(facts)
+    return "\n".join(lines).strip()
+
+
+def _generated_case_document_filename_for_storage(content: str, *, timestamp: str) -> str:
+    for title in _extract_document_titles_from_text(content):
+        slug = _filename_slug_for_generated_case_document(_generated_case_document_legal_title(title))
+        if slug:
+            return f"{slug}_{timestamp}.pdf"
+    for line in content.splitlines():
+        title = _generated_case_document_legal_title(line.strip().strip("*#:- "))
+        if title:
+            slug = _filename_slug_for_generated_case_document(title)
+            if slug:
+                return f"{slug}_{timestamp}.pdf"
+    return f"generated_document_{timestamp}.pdf"
+
+
+def _generated_case_document_legal_title(value: str) -> str:
+    title = re.sub(r"\([^)]*(?:verzia|version|jazyk|language)[^)]*\)", "", value, flags=re.IGNORECASE)
+    title = re.sub(r"\s+", " ", title.strip().strip("*#:- "))
+    normalized = _canonicalize_document_text(title)
+    if "power of attorney" in normalized:
+        return "Power of Attorney"
+    if "splnomocnenie" in normalized or "plnomocenstvo" in normalized:
+        return "Splnomocnenie"
+    if "potvrdenie" in normalized and any(token in normalized for token in ("zaplat", "uhrad", "platb")):
+        return "Potvrdenie o zaplatení"
+    return title
+
+
+def _filename_slug_for_generated_case_document(value: str) -> str:
+    without_accents = unicodedata.normalize("NFKD", value)
+    ascii_text = without_accents.encode("ascii", "ignore").decode("ascii").lower()
+    slug = re.sub(r"[^a-z0-9]+", "_", ascii_text).strip("_")
+    return slug[:80].strip("_")
+
+
+def _next_generated_case_document_version(*, store: ApiDatabaseStore, case_id: str) -> int:
+    list_case_documents = getattr(store, "list_case_documents", None)
+    if not callable(list_case_documents):
+        return 1
+    versions = [
+        int(getattr(document, "version", 0) or 0)
+        for document in list_case_documents(case_id=case_id)
+        if getattr(document, "kind", "") == "generated_document"
+    ]
+    return (max(versions) + 1) if versions else 1
+
+
 def _case_document_download_url(*, session: Session, doc_id: str) -> str:
     case_id = quote((session.case_id or "").strip(), safe="")
     encoded_doc_id = quote(doc_id, safe="")
@@ -2943,6 +3550,50 @@ def _thank_you_reply(language: str | None) -> str:
     if lang.startswith("de"):
         return "Danke."
     return "Thank you."
+
+
+def _stream_still_working_message(*, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return "Stale pracujem na odpovedi. Overenie alebo priprava dokumentu trva dlhsie, vysledok poslem hned po dokonceni."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return "Stale pracuji na odpovedi. Overeni nebo priprava dokumentu trva dele, vysledek poslu hned po dokonceni."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return "Ich arbeite noch an der Antwort. Pruefung oder Dokumentvorbereitung dauert laenger, ich sende das Ergebnis sofort nach Abschluss."
+    return "Still working on the answer. Verification or document preparation is taking longer; I will send the result as soon as it is ready."
+
+
+def _stream_event_queue(
+    *,
+    event_queue: Queue[tuple[str, dict[str, object]] | None],
+    session: Session,
+) -> Generator[str, None, None]:
+    last_visible_status_at = time.monotonic()
+    while True:
+        try:
+            item = event_queue.get(timeout=_STREAM_KEEPALIVE_SECONDS)
+        except Empty:
+            now = time.monotonic()
+            if now - last_visible_status_at >= _STREAM_STATUS_SECONDS:
+                last_visible_status_at = now
+                status_body: dict[str, object] = {
+                    "stage": "still_working",
+                    "message": _stream_still_working_message(
+                        country=session.country,
+                        language=session.language,
+                    ),
+                }
+                yield f"event: processing\ndata: {json.dumps(status_body)}\n\n"
+                continue
+            yield ": keepalive\n\n"
+            continue
+        if item is None:
+            break
+        event_name, body = item
+        if event_name in {"message", "processing", "waiting_for_reply", "result", "done", "error"}:
+            last_visible_status_at = time.monotonic()
+        yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
 
 
 def _finish_discussion_reply(language: str | None) -> str:

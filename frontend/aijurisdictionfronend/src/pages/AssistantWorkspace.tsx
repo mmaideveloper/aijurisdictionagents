@@ -4,20 +4,19 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAuiState,
   useLocalRuntime,
+  useMessagePartText,
   type ChatModelAdapter,
   type ThreadMessageLike
 } from "@assistant-ui/react";
-import { BsArrowUpCircle, BsLockFill, BsShieldCheck } from "react-icons/bs";
-import {
-  AssistantResponse,
-  CaseMode as GatewayCaseMode,
-  submitAssistantQuestion
-} from "../assistantGateway";
-import { ApiRequestError, createChatSession, replyToSession } from "../api/chatClient";
+import { BsArrowUpCircle } from "react-icons/bs";
+import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
+import { ApiRequestError, createChatSession, streamSession } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
-import { useCases } from "../state/CaseProvider";
+import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
+import type { CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
 
@@ -38,66 +37,439 @@ const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
   return "";
 };
 
+const caseThreadKey = (activeCase: CaseRecord | null): string => {
+  if (!activeCase) {
+    return "assistant-no-case";
+  }
+  const historyKey = activeCase.interactionHistory
+    .map((interaction) => `${interaction.id}:${interaction.createdAt}`)
+    .join("|");
+  return `${activeCase.id}:${historyKey}`;
+};
+
+const caseInteractionRole = (
+  interaction: CaseInteraction,
+  t: ReturnType<typeof useLanguage>["t"]
+): ThreadMessageLike["role"] => {
+  const userActors = new Set([
+    "You",
+    "You (Voice)",
+    "You (Video)",
+    t("workspaceUserLabel"),
+    t("workspaceUserVoiceLabel"),
+    t("workspaceUserVideoLabel")
+  ]);
+  return userActors.has(interaction.actor) ? "user" : "assistant";
+};
+
+const caseInteractionToThreadMessage = (
+  interaction: CaseInteraction,
+  t: ReturnType<typeof useLanguage>["t"]
+): ThreadMessageLike | null => {
+  const message = interaction.message.trim();
+  if (!message) {
+    return null;
+  }
+
+  const role = caseInteractionRole(interaction, t);
+  const threadMessage: ThreadMessageLike = {
+    id: interaction.id,
+    role,
+    content: message,
+    createdAt: new Date(interaction.createdAt),
+    metadata: {
+      custom: {
+        actor: interaction.actor
+      }
+    }
+  };
+  if (role === "assistant") {
+    return {
+      ...threadMessage,
+      status: { type: "complete", reason: "stop" }
+    };
+  }
+  return threadMessage;
+};
+
+const buildDocumentViewerUrl = ({
+  caseId,
+  caseTitle,
+  document,
+  userId
+}: {
+  caseId: string;
+  caseTitle: string;
+  document: CaseDocumentRecord;
+  userId?: string;
+}): string => {
+  const params = new URLSearchParams({
+    caseId,
+    docId: document.id,
+    kind: document.kind,
+    filename: document.originalFilename,
+    caseTitle,
+    userId: userId ?? ""
+  });
+  return `/app/documents/view?${params.toString()}`;
+};
+
+const buildGeneratedDocumentsResponseBlock = ({
+  caseItem,
+  previousDocumentIds,
+  userId
+}: {
+  caseItem: CaseRecord | null;
+  previousDocumentIds: Set<string>;
+  userId?: string;
+}): string => {
+  if (!caseItem) {
+    return "";
+  }
+  const newGeneratedDocuments = caseItem.documents.filter(
+    (document) => isUserVisibleGeneratedDocument(document) && !previousDocumentIds.has(document.id)
+  );
+  if (newGeneratedDocuments.length === 0) {
+    return "";
+  }
+  const heading = newGeneratedDocuments.length === 1 ? "Generated document:" : "Generated documents:";
+  const links = newGeneratedDocuments.map((document) => {
+    const url = buildDocumentViewerUrl({
+      caseId: caseItem.id,
+      caseTitle: caseItem.title,
+      document,
+      userId
+    });
+    return `- [${document.originalFilename}](${url})`;
+  });
+  return [heading, ...links].join("\n");
+};
+
+const appendGeneratedDocumentsResponseBlock = (content: string, block: string): string =>
+  block ? `${content.trim()}\n\n${block}`.trim() : content;
+
+const internalDocumentLinkPattern = /\[([^\]]+)]\((\/app\/documents\/view\?[^)\s]+)\)/g;
+
+type AssistantDocumentLink = {
+  label: string;
+  href: string;
+};
+
+type AssistantDocumentPreview = {
+  title: string;
+  body: string;
+};
+
+type AssistantMessagePresentation = {
+  conversationalText: string;
+  documentPreviews: AssistantDocumentPreview[];
+  documentLinks: AssistantDocumentLink[];
+};
+
+const separatorLinePattern = /^\s*-{3,}\s*$/;
+
+const stripMarkdownHeading = (line: string): string =>
+  line
+    .trim()
+    .replace(/^#{1,4}\s+/, "")
+    .replace(/^\*\*(.+)\*\*$/, "$1")
+    .trim();
+
+const removeInternalDocumentLinks = (text: string): { text: string; links: AssistantDocumentLink[] } => {
+  const links: AssistantDocumentLink[] = [];
+  const cleaned = text.replace(internalDocumentLinkPattern, (_match, label: string, href: string) => {
+    links.push({ label, href });
+    return "";
+  });
+  internalDocumentLinkPattern.lastIndex = 0;
+  return {
+    text: cleaned
+      .split("\n")
+      .filter((line) => !/^Generated documents?:\s*$/i.test(line.trim()) && line.trim() !== "-")
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+    links
+  };
+};
+
+const looksLikeDocumentPreview = (chunk: string, hasSeparators: boolean): boolean => {
+  const normalized = chunk.toLowerCase();
+  const firstLine = chunk.split("\n").find((line) => line.trim()) ?? "";
+  const hasDocumentHeading = /^(\*\*.+\*\*|#{1,4}\s+.+)$/.test(firstLine.trim());
+  const hasLegalBody =
+    normalized.includes("podpis") ||
+    normalized.includes("signature") ||
+    normalized.includes("d\u00e1tum") ||
+    normalized.includes("datum") ||
+    normalized.includes("i, the undersigned") ||
+    normalized.includes("ja, dolu podp\u00edsan");
+
+  return hasSeparators && hasDocumentHeading && hasLegalBody && chunk.trim().length > 120;
+};
+
+export const parseAssistantMessagePresentation = (text: string): AssistantMessagePresentation => {
+  const { text: textWithoutLinks, links } = removeInternalDocumentLinks(text.replace(/\r\n/g, "\n"));
+  if (!textWithoutLinks) {
+    return {
+      conversationalText: "",
+      documentPreviews: [],
+      documentLinks: links
+    };
+  }
+
+  const hasSeparators = textWithoutLinks.split("\n").some((line) => separatorLinePattern.test(line));
+  const chunks = textWithoutLinks
+    .split(/\n\s*-{3,}\s*\n/g)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+  const conversationalChunks: string[] = [];
+  const documentPreviews: AssistantDocumentPreview[] = [];
+
+  chunks.forEach((chunk) => {
+    if (!looksLikeDocumentPreview(chunk, hasSeparators)) {
+      conversationalChunks.push(chunk);
+      return;
+    }
+
+    const lines = chunk.split("\n");
+    const firstContentIndex = lines.findIndex((line) => line.trim());
+    const title = stripMarkdownHeading(lines[firstContentIndex] ?? "") || "Document preview";
+    const body = lines
+      .slice(firstContentIndex + 1)
+      .join("\n")
+      .trim();
+
+    documentPreviews.push({ title, body });
+  });
+
+  return {
+    conversationalText: conversationalChunks.join("\n\n").trim(),
+    documentPreviews,
+    documentLinks: links
+  };
+};
+
+const renderDocumentBody = (body: string): React.ReactNode[] => {
+  const nodes: React.ReactNode[] = [];
+  let listItems: string[] = [];
+
+  const flushList = () => {
+    if (listItems.length === 0) {
+      return;
+    }
+    nodes.push(
+      <ul key={`list-${nodes.length}`} className="assistant-document-preview__list">
+        {listItems.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    );
+    listItems = [];
+  };
+
+  body.split(/\n{2,}/).forEach((block) => {
+    const lines = block
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length === 0) {
+      return;
+    }
+    if (lines.every((line) => /^[-*]\s+/.test(line))) {
+      listItems.push(...lines.map((line) => line.replace(/^[-*]\s+/, "")));
+      return;
+    }
+    flushList();
+    nodes.push(
+      <p key={`paragraph-${nodes.length}`} className="assistant-document-preview__paragraph">
+        {lines.map(stripMarkdownHeading).join(" ")}
+      </p>
+    );
+  });
+
+  flushList();
+  return nodes;
+};
+
+const AssistantDocumentPreviewCard: React.FC<{ preview: AssistantDocumentPreview; index: number }> = ({
+  preview,
+  index
+}) => (
+  <article className="assistant-document-preview" aria-label={`${preview.title} preview`}>
+    <div className="assistant-document-preview__sheet">
+      <header className="assistant-document-preview__letterhead">
+        <span>JurisDigta</span>
+        <small>Document preview</small>
+      </header>
+      <div className="assistant-document-preview__page-marker">A4 preview {index + 1}</div>
+      <h3>{preview.title}</h3>
+      <div className="assistant-document-preview__content">{renderDocumentBody(preview.body)}</div>
+    </div>
+  </article>
+);
+
+const AssistantDocumentLinks: React.FC<{ links: AssistantDocumentLink[] }> = ({ links }) => {
+  if (links.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="assistant-document-actions" aria-label="Generated documents">
+      {links.map((link) => (
+        <a key={link.href} className="assistant-document-actions__item" href={link.href} target="_blank" rel="noreferrer">
+          <span>Generated PDF</span>
+          <strong>{link.label}</strong>
+        </a>
+      ))}
+    </div>
+  );
+};
+
+const AssistantTextPart: React.FC = () => {
+  const { text } = useMessagePartText();
+  const presentation = parseAssistantMessagePresentation(text);
+
+  return (
+    <>
+      {presentation.conversationalText ? (
+        <p className="assistant-message__text">{presentation.conversationalText}</p>
+      ) : null}
+      {presentation.documentPreviews.map((preview, index) => (
+        <AssistantDocumentPreviewCard key={`${preview.title}-${index}`} preview={preview} index={index} />
+      ))}
+      <AssistantDocumentLinks links={presentation.documentLinks} />
+    </>
+  );
+};
+
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
   const { user } = useAuth();
-  const sessionRef = React.useRef<{ language: string; userId?: string; sessionId: string } | null>(null);
+  const { activeCase, loadCaseData } = useCases();
+  const activeCaseId = activeCase?.id;
+  const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string } | null>(
+    null
+  );
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
-    () => [
-      {
-        role: "assistant",
-        content: t("assistantInitialMessage"),
-        status: { type: "complete", reason: "stop" }
+    () => {
+      const caseMessages =
+        activeCase?.interactionHistory
+          .map((interaction) => caseInteractionToThreadMessage(interaction, t))
+          .filter((message): message is ThreadMessageLike => Boolean(message)) ?? [];
+
+      if (caseMessages.length > 0) {
+        return caseMessages;
       }
-    ],
-    [t]
+
+      return [
+        {
+          role: "assistant",
+          content: t("assistantInitialMessage"),
+          status: { type: "complete", reason: "stop" }
+        }
+      ];
+    },
+    [activeCase?.interactionHistory, t]
   );
 
   const assistantAdapter = React.useMemo<ChatModelAdapter>(
     () => ({
-      async run(options) {
+      async *run(options) {
         const content = latestUserText(options.messages);
         if (!content) {
-          return {
+          yield {
             content: [{ type: "text", text: t("assistantEmptyMessageResponse") }],
             status: { type: "complete", reason: "stop" }
           };
+          return;
         }
 
         try {
           const userId = user?.userId;
           const existingSession = sessionRef.current;
           const session =
-            existingSession?.language === language && existingSession.userId === userId
+            existingSession?.language === language &&
+            existingSession.userId === userId &&
+            existingSession.caseId === activeCaseId
               ? existingSession
               : {
                   language,
                   userId,
-                  sessionId: (await createChatSession({ language, userId })).id
+                  caseId: activeCaseId,
+                  sessionId: (await createChatSession({ language, userId, caseId: activeCaseId })).id
                 };
           sessionRef.current = session;
 
-          const assistantMessage = await replyToSession({
-            sessionId: session.sessionId,
-            content
-          });
+          let latestAssistantText = "";
+          const processingMessages: string[] = [];
+          const visibleDocumentIdsBeforeRun = new Set(
+            (activeCase?.documents ?? [])
+              .filter(isUserVisibleGeneratedDocument)
+              .map((document) => document.id)
+          );
 
-          return {
-            content: [{ type: "text", text: assistantMessage.content }],
+          for await (const streamEvent of streamSession({
+            sessionId: session.sessionId,
+            instruction: content,
+            signal: options.abortSignal
+          })) {
+            if (streamEvent.event === "processing" || streamEvent.event === "waiting_for_reply") {
+              const message = typeof streamEvent.data.message === "string" ? streamEvent.data.message.trim() : "";
+              if (message) {
+                processingMessages.push(message);
+                yield {
+                  content: [{ type: "text", text: processingMessages.join("\n\n") }]
+                };
+              }
+              continue;
+            }
+
+            if (streamEvent.event === "message") {
+              if (streamEvent.data.role === "assistant") {
+                latestAssistantText = streamEvent.data.content;
+                yield {
+                  content: [{ type: "text", text: latestAssistantText }]
+                };
+              }
+              continue;
+            }
+
+            if (streamEvent.event === "error") {
+              const detail =
+                typeof streamEvent.data.message === "string" ? streamEvent.data.message : "Unknown stream error";
+              throw new ApiRequestError("http", detail);
+            }
+          }
+
+          const refreshedCase =
+            activeCaseId && userId ? await loadCaseData(activeCaseId) : null;
+          const generatedDocumentsBlock = buildGeneratedDocumentsResponseBlock({
+            caseItem: refreshedCase,
+            previousDocumentIds: visibleDocumentIdsBeforeRun,
+            userId
+          });
+          const finalAssistantText = appendGeneratedDocumentsResponseBlock(
+            latestAssistantText || processingMessages.join("\n\n"),
+            generatedDocumentsBlock
+          );
+
+          yield {
+            content: [{ type: "text", text: finalAssistantText }],
             status: { type: "complete", reason: "stop" }
           };
         } catch (error) {
           const status = error instanceof ApiRequestError && error.status ? String(error.status) : "network";
           const detail = error instanceof Error ? error.message : "Unknown error";
-          return {
+          yield {
             content: [{ type: "text", text: t("assistantApiErrorResponse", { status, detail }) }],
             status: { type: "complete", reason: "stop" }
           };
         }
       }
     }),
-    [language, t, user?.userId]
+    [activeCaseId, language, loadCaseData, t, user?.userId]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {
@@ -107,13 +479,17 @@ const AssistantThread: React.FC = () => {
   const Message: React.FC = () => (
     <MessagePrimitive.Root className="assistant-message">
       <MessagePrimitive.If user>
-        <div className="assistant-message__role">{t("assistantUserRole")}</div>
+        <div className="assistant-message__role">
+          <CaseMessageActor fallback={t("assistantUserRole")} />
+        </div>
       </MessagePrimitive.If>
       <MessagePrimitive.If assistant>
-        <div className="assistant-message__role">{t("assistantRole")}</div>
+        <div className="assistant-message__role">
+          <CaseMessageActor fallback={t("assistantRole")} />
+        </div>
       </MessagePrimitive.If>
       <div className="assistant-message__body">
-        <MessagePrimitive.Parts />
+        <MessagePrimitive.Parts components={{ Text: AssistantTextPart }} />
       </div>
     </MessagePrimitive.Root>
   );
@@ -139,110 +515,136 @@ const AssistantThread: React.FC = () => {
   );
 };
 
+const CaseMessageActor: React.FC<{ fallback: string }> = ({ fallback }) => {
+  const actor = useAuiState((state) => {
+    const custom = state.message.metadata.custom as Record<string, unknown> | undefined;
+    return typeof custom?.actor === "string" ? custom.actor : null;
+  });
+
+  return <>{actor ?? fallback}</>;
+};
+
+const AssistantConfigurations: React.FC = () => {
+  const { t } = useLanguage();
+  const { activeCase, setCaseRole, setCaseCommunicationMode } = useCases();
+
+  const communicationModeOptions = React.useMemo(
+    () => [
+      {
+        mode: "Chat" as CaseCommunicationMode,
+        label: t("commsChat"),
+        icon: <FiMessageSquare aria-hidden="true" />
+      },
+      {
+        mode: "Voice" as CaseCommunicationMode,
+        label: t("commsVoice"),
+        icon: <FiMic aria-hidden="true" />
+      },
+      {
+        mode: "Video" as CaseCommunicationMode,
+        label: t("commsVideo"),
+        icon: <FiVideo aria-hidden="true" />
+      }
+    ],
+    [t]
+  );
+
+  const roleOptions = React.useMemo(
+    () => [
+      {
+        role: "AI Lawyer" as CaseRole,
+        label: t("workspaceLawyerTitle"),
+        intent: t("roleIntentLawyer")
+      },
+      {
+        role: "AI Judge" as CaseRole,
+        label: t("workspaceJudgeTitle"),
+        intent: t("roleIntentJudge")
+      },
+      {
+        role: "Opposing Counsel" as CaseRole,
+        label: t("workspaceOpposingTitle"),
+        intent: t("roleIntentOpposing")
+      }
+    ],
+    [t]
+  );
+
+  return (
+    <div className="panel-card assistant-config-card">
+      <div className="panel-card__header">
+        <h2>{t("workspaceConfigurations")}</h2>
+      </div>
+      <div className="config-list">
+        <fieldset className="role-selector" disabled={!activeCase}>
+          <legend>{t("commsTitle")}</legend>
+          <p className="hint">{t("commsSubtitle")}</p>
+          <div className="segment-control" role="radiogroup">
+            {communicationModeOptions.map((option) => {
+              const isActive = activeCase?.selectedCommunicationMode === option.mode;
+              return (
+                <button
+                  key={option.mode}
+                  type="button"
+                  className={`segment-control__option${isActive ? " is-active" : ""}`}
+                  aria-pressed={isActive}
+                  aria-label={option.label}
+                  title={option.label}
+                  onClick={() => {
+                    if (activeCase) {
+                      setCaseCommunicationMode(activeCase.id, option.mode);
+                    }
+                  }}
+                >
+                  <span className="segment-control__icon">{option.icon}</span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <fieldset className="role-selector" disabled={!activeCase}>
+          <legend>{t("roleSelectorTitle")}</legend>
+          <p className="hint">{t("roleSelectorHint")}</p>
+          <div className="role-options" role="radiogroup">
+            {roleOptions.map((option) => {
+              const isActive = activeCase?.selectedRole === option.role;
+              return (
+                <label
+                  key={option.role}
+                  className={`role-option${isActive ? " is-active" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name={`assistant-case-role-${activeCase?.id ?? "current"}`}
+                    value={option.role}
+                    checked={isActive}
+                    onChange={() => {
+                      if (activeCase) {
+                        setCaseRole(activeCase.id, option.role);
+                      }
+                    }}
+                  />
+                  <span className="role-option__label">{option.label}</span>
+                  <span className="role-option__intent">{option.intent}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      </div>
+    </div>
+  );
+};
+
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
-  const { activeCase, cases, addInteraction } = useCases();
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-  const [caseMode, setCaseMode] = React.useState<GatewayCaseMode>(activeCase ? "existing" : "new");
-  const [caseId, setCaseId] = React.useState(activeCase?.id ?? "");
-  const [question, setQuestion] = React.useState("");
-  const [files, setFiles] = React.useState<File[]>([]);
-  const [answer, setAnswer] = React.useState<AssistantResponse | null>(null);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [formError, setFormError] = React.useState("");
-
-  React.useEffect(() => {
-    if (activeCase && caseMode === "existing") {
-      setCaseId(activeCase.id);
-    }
-  }, [activeCase, caseMode]);
-
-  const modes = [
-    t("assistantModeLegalSearch"),
-    t("assistantModePrepareDocument"),
-    t("assistantModeDraftDocument"),
-    t("assistantModeVerifyPerson"),
-    t("assistantModeVerifyCompany"),
-    t("assistantModeScreenPerson"),
-    t("assistantModeScreenCompany"),
-    t("assistantModeVerifyCar"),
-    t("assistantModeVerifyLocation")
-  ];
-
-  const capabilities = [
-    t("assistantCapabilityLawSearch"),
-    t("assistantCapabilityOrsr"),
-    t("assistantCapabilityPerson"),
-    t("assistantCapabilityScreening"),
-    t("assistantCapabilityCar"),
-    t("assistantCapabilityLocation")
-  ];
-
-  const canSubmit =
-    question.trim().length > 0 &&
-    (caseMode === "new" || caseId.trim().length > 0) &&
-    !isSubmitting;
-
-  const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const nextFiles = Array.from(event.target.files ?? []);
-    if (nextFiles.length === 0) {
-      return;
-    }
-    setFiles((current) => [...current, ...nextFiles]);
-    event.target.value = "";
-  };
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!canSubmit) {
-      setFormError("Enter a question and select a case target before sending.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    setFormError("");
-
-    const response = await submitAssistantQuestion({
-      question,
-      caseMode,
-      caseId: caseId.trim(),
-      country: "SK",
-      language: "sk",
-      consentGateway: true,
-      consentDocuments: true,
-      consentThirdParty: false,
-      files
-    });
-
-    setAnswer(response);
-    setCaseId(response.caseId);
-
-    if (caseMode === "existing" && cases.some((caseItem) => caseItem.id === response.caseId)) {
-      addInteraction(response.caseId, "User", question);
-      addInteraction(response.caseId, "AI Assistant", response.answer);
-    }
-
-    setIsSubmitting(false);
-  };
+  const { activeCase } = useCases();
+  const threadKey = React.useMemo(() => caseThreadKey(activeCase), [activeCase]);
 
   return (
     <div className="page assistant-workspace-page">
       <section className="assistant-workspace">
-        <aside className="assistant-rail" aria-label={t("assistantThreadsTitle")}>
-          <div>
-            <p className="eyebrow">{t("assistantThreadsTitle")}</p>
-            <h2>{t("assistantThreadCurrent")}</h2>
-          </div>
-          <div className="assistant-thread-list">
-            <button type="button" className="assistant-thread-item active">
-              {t("assistantThreadCurrent")}
-            </button>
-            <button type="button" className="assistant-thread-item">
-              {t("assistantThreadDocument")}
-            </button>
-          </div>
-        </aside>
-
         <main className="assistant-main" aria-labelledby="assistant-title">
           <section className="assistant-main__header">
             <div>
@@ -250,198 +652,13 @@ const AssistantWorkspace: React.FC = () => {
               <h1 id="assistant-title">{t("assistantTitle")}</h1>
               <p>{t("assistantSubtitle")}</p>
             </div>
-            <div className="assistant-access">
-              <BsShieldCheck aria-hidden="true" />
-              <span>{t("assistantApiAuthAccess")}</span>
-            </div>
           </section>
 
-          <section className="assistant-mode-strip" aria-label={t("assistantModesTitle")}>
-            {modes.map((mode, index) => (
-              <button key={mode} type="button" className={index === 0 ? "active" : ""}>
-                {mode}
-              </button>
-            ))}
-          </section>
-
-          <section className="assistant-gateway-card" aria-labelledby="assistant-gateway-title">
-            <div className="assistant-gateway-card__header">
-              <div>
-                <p className="eyebrow">Assistant Gateway</p>
-                <h2 id="assistant-gateway-title">Ask with case documents</h2>
-              </div>
-              <span>{answer?.caseId ?? "No answer yet"}</span>
-            </div>
-            <form className="assistant-gateway-form" onSubmit={handleSubmit}>
-              <div className="assistant-gateway-form__row">
-                <label>
-                  <span>Case target</span>
-                  <select
-                    value={caseMode}
-                    onChange={(event) => setCaseMode(event.target.value as GatewayCaseMode)}
-                  >
-                    <option value="new">Create new case</option>
-                    <option value="existing">Use existing case</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Case ID</span>
-                  <input
-                    type="text"
-                    value={caseId}
-                    disabled={caseMode === "new"}
-                    list="assistant-case-options"
-                    placeholder={caseMode === "new" ? "Generated after answer" : "Select or enter case ID"}
-                    onChange={(event) => setCaseId(event.target.value)}
-                  />
-                  <datalist id="assistant-case-options">
-                    {cases.map((caseItem) => (
-                      <option key={caseItem.id} value={caseItem.id}>
-                        {caseItem.title}
-                      </option>
-                    ))}
-                  </datalist>
-                </label>
-              </div>
-
-              <label>
-                <span>Question</span>
-                <textarea
-                  rows={4}
-                  value={question}
-                  placeholder="Write the legal question and facts to answer."
-                  onChange={(event) => setQuestion(event.target.value)}
-                />
-              </label>
-
-              <div className="assistant-gateway-upload">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".pdf,.txt,.md,.doc,.docx,.png,.jpg,.jpeg"
-                  hidden
-                  onChange={handleFilesSelected}
-                />
-                <button
-                  type="button"
-                  className="button ghost"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Upload documents
-                </button>
-                <span>{files.length} document{files.length === 1 ? "" : "s"} selected</span>
-              </div>
-
-              {files.length > 0 ? (
-                <ul className="assistant-gateway-files">
-                  {files.map((file) => (
-                    <li key={`${file.name}-${file.size}-${file.lastModified}`}>
-                      <span>{file.name}</span>
-                      <button
-                        type="button"
-                        className="button ghost small"
-                        onClick={() =>
-                          setFiles((current) =>
-                            current.filter(
-                              (currentFile) =>
-                                `${currentFile.name}-${currentFile.size}-${currentFile.lastModified}` !==
-                                `${file.name}-${file.size}-${file.lastModified}`
-                            )
-                          )
-                        }
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {formError ? <p className="form-error">{formError}</p> : null}
-
-              <button type="submit" className="button primary" disabled={!canSubmit}>
-                {isSubmitting ? "Sending..." : "Send question"}
-              </button>
-            </form>
-
-            {answer ? (
-              <div className="assistant-gateway-answer">
-                {answer.usedFallback ? (
-                  <p className="assistant-gateway-warning">
-                    Local demo fallback is shown because Assistant Gateway is not reachable.
-                  </p>
-                ) : null}
-                <pre>{answer.answer}</pre>
-                <dl>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>{answer.status}</dd>
-                  </div>
-                  <div>
-                    <dt>Case</dt>
-                    <dd>{answer.caseId}</dd>
-                  </div>
-                  <div>
-                    <dt>Documents</dt>
-                    <dd>{answer.storedDocuments.length}</dd>
-                  </div>
-                </dl>
-                {answer.nextActions.length > 0 ? (
-                  <ul>
-                    {answer.nextActions.map((action) => (
-                      <li key={action}>{action}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
-
-          <AssistantThread />
+          <AssistantThread key={threadKey} />
         </main>
 
-        <aside className="assistant-tool-panel" aria-label={t("assistantToolsTitle")}>
-          <section>
-            <div className="assistant-panel-title">
-              <BsLockFill aria-hidden="true" />
-              <h2>{t("assistantMandatoryMcpTitle")}</h2>
-            </div>
-            <p>{t("assistantMandatoryMcpBody")}</p>
-            <span className="assistant-status">{t("assistantMcpLocked")}</span>
-          </section>
-
-          <section>
-            <h2>{t("assistantToolsTitle")}</h2>
-            <ul className="assistant-capability-list">
-              {capabilities.map((capability) => (
-                <li key={capability}>{capability}</li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h2>{t("assistantApprovalTitle")}</h2>
-            <p>{t("assistantApprovalBody")}</p>
-          </section>
-
-          <section>
-            <h2>{t("assistantMetadataTitle")}</h2>
-            <dl className="assistant-metadata">
-              <div>
-                <dt>{t("assistantMetadataGenerated")}</dt>
-                <dd>{t("assistantMetadataAiDraft")}</dd>
-              </div>
-              <div>
-                <dt>{t("assistantMetadataRisk")}</dt>
-                <dd>{t("assistantMetadataRiskValue")}</dd>
-              </div>
-              <div>
-                <dt>{t("assistantMetadataReview")}</dt>
-                <dd>{t("assistantMetadataReviewValue")}</dd>
-              </div>
-            </dl>
-          </section>
+        <aside className="assistant-tool-panel" aria-label={t("workspaceConfigurations")}>
+          <AssistantConfigurations />
         </aside>
       </section>
     </div>

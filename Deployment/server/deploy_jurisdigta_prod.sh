@@ -8,13 +8,21 @@ REPO_REF="${REPO_REF:-main}"
 API_PORT="${API_PORT:-8080}"
 MCP_PORT="${MCP_PORT:-8070}"
 WEB_PORT="${WEB_PORT:-8090}"
+DOCUMENT_ENGINE_ENABLED="${DOCUMENT_ENGINE_ENABLED:-1}"
+DOCUMENT_ENGINE_API_PORT="${DOCUMENT_ENGINE_API_PORT:-8060}"
+DOCUMENT_ENGINE_DATABASE_NAME="${DOCUMENT_ENGINE_DATABASE_NAME:-document_engine}"
 WEB_API_BASE_URL="${WEB_API_BASE_URL:-https://api.jurisdigta.eu}"
 RUN_SCHEMA_MIGRATIONS="${RUN_SCHEMA_MIGRATIONS:-1}"
 INSTALL_LAWS_CRON="${INSTALL_LAWS_CRON:-1}"
 INSTALL_DOCUMENT_PROCESSOR_CRON="${INSTALL_DOCUMENT_PROCESSOR_CRON:-1}"
 DOCUMENT_PROCESSOR_CRON_EXPRESSION="${DOCUMENT_PROCESSOR_CRON_EXPRESSION:-*/15 * * * *}"
 DOCUMENT_PROCESSOR_LIMIT="${DOCUMENT_PROCESSOR_LIMIT:-20}"
+EMAIL_SCHEDULER_INTERVAL_SECONDS="${EMAIL_SCHEDULER_INTERVAL_SECONDS:-5}"
 INSTALL_STATUS_CRON="${INSTALL_STATUS_CRON:-1}"
+INSTALL_LOG_RETENTION_CRON="${INSTALL_LOG_RETENTION_CRON:-1}"
+LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
+DOCKER_LOG_MAX_SIZE="${DOCKER_LOG_MAX_SIZE:-50m}"
+DOCKER_LOG_MAX_FILE="${DOCKER_LOG_MAX_FILE:-5}"
 START_MONITORING="${START_MONITORING:-0}"
 
 log() {
@@ -44,6 +52,23 @@ user = quote(os.environ.get("LOCAL_POSTGRES_USER", "postgres"), safe="")
 password = quote(os.environ.get("LOCAL_POSTGRES_PASSWORD", "postgres"), safe="")
 port = os.environ.get("LOCAL_POSTGRES_PORT", "5432")
 print(f"postgresql://{user}:{password}@{host}:{port}/{database}")
+PY
+}
+
+postgres_sqlalchemy_url() {
+  local host="$1"
+  local database="$2"
+  python3 - "$host" "$database" <<'PY'
+import os
+import sys
+from urllib.parse import quote
+
+host = sys.argv[1]
+database = sys.argv[2]
+user = quote(os.environ.get("LOCAL_POSTGRES_USER", "postgres"), safe="")
+password = quote(os.environ.get("LOCAL_POSTGRES_PASSWORD", "postgres"), safe="")
+port = os.environ.get("LOCAL_POSTGRES_PORT", "5432")
+print(f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}")
 PY
 }
 
@@ -134,6 +159,30 @@ require_positive_integer() {
   fi
 }
 
+require_boolean_flag() {
+  local name="$1"
+  local value="$2"
+  if ! printf '%s' "$value" | grep -Eq '^[01]$'; then
+    fail "$name must be 0 or 1. Current value: $value"
+  fi
+}
+
+require_tcp_port() {
+  local name="$1"
+  local value="$2"
+  if ! printf '%s' "$value" | grep -Eq '^[1-9][0-9]{1,4}$' || [ "$value" -lt 1024 ] || [ "$value" -gt 65535 ]; then
+    fail "$name must be a TCP port between 1024 and 65535. Current value: $value"
+  fi
+}
+
+require_postgres_identifier() {
+  local name="$1"
+  local value="$2"
+  if ! printf '%s' "$value" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]{0,62}$'; then
+    fail "$name must be a PostgreSQL-safe identifier. Current value: $value"
+  fi
+}
+
 ensure_runtime_layout() {
   mkdir -p \
     "$DEPLOY_ROOT/ops" \
@@ -144,6 +193,7 @@ ensure_runtime_layout() {
     "$DEPLOY_ROOT/runs/storage/api/sqlite" \
     "$DEPLOY_ROOT/runs/storage/api/files" \
     "$DEPLOY_ROOT/runs/storage/document-processor" \
+    "$DEPLOY_ROOT/runs/storage/document-engine/generated-documents" \
     "$DEPLOY_ROOT/runs/storage/laws-collector/postgres/data" \
     "$DEPLOY_ROOT/runs/storage/laws-collector/files" \
     "$DEPLOY_ROOT/runs/storage/laws-collector/sqlite"
@@ -187,13 +237,17 @@ start_api_and_mcp() {
   local api_db_cloud
   local laws_db_cloud
   local api_cors_allow_origins
+  local prometheus_base_url
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
   api_cors_allow_origins="$(production_api_cors_origins)"
+  prometheus_base_url="${API_PROMETHEUS_BASE_URL:-http://jurisdigta-prometheus:9090}"
   docker rm -f jurisdigta-api jurisdigta-mcp jurisdigta-email-scheduler >/dev/null 2>&1 || true
   docker run -d \
     --name jurisdigta-api \
     --restart unless-stopped \
+    --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
+    --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
     --network aijuristiction-api_default \
     -p "127.0.0.1:${API_PORT}:8080" \
     --env-file "$ENV_FILE" \
@@ -210,6 +264,8 @@ start_api_and_mcp() {
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
+    -e INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070 \
+    -e PROMETHEUS_BASE_URL="$prometheus_base_url" \
     -e SYSTEM_STATUS_FILE=/workspace/runs/status/system-status.json \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     aijuristiction-api:local >/dev/null
@@ -217,6 +273,8 @@ start_api_and_mcp() {
   docker run -d \
     --name jurisdigta-mcp \
     --restart unless-stopped \
+    --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
+    --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
     --network aijuristiction-api_default \
     -p "127.0.0.1:${MCP_PORT}:8070" \
     --health-cmd "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8070/health')\"" \
@@ -245,6 +303,8 @@ start_api_and_mcp() {
   docker run -d \
     --name jurisdigta-email-scheduler \
     --restart unless-stopped \
+    --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
+    --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
     --no-healthcheck \
     --network aijuristiction-api_default \
     --env-file "$ENV_FILE" \
@@ -255,6 +315,7 @@ start_api_and_mcp() {
     -e EMAIL_DB_CLOUD="$api_db_cloud" \
     -e EMAIL_DB_LOCAL=/workspace/runs/storage/api/sqlite/email.sqlite3 \
     -e EMAIL_SCHEDULER_ENABLED=true \
+    -e EMAIL_SCHEDULER_INTERVAL_SECONDS="$EMAIL_SCHEDULER_INTERVAL_SECONDS" \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     aijuristiction-api:local \
     python -m app.email_scheduler_main >/dev/null
@@ -267,6 +328,19 @@ create_laws_database() {
   docker exec aijurisdiction-postgres psql -U "$pg_user" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -tc "SELECT 1 FROM pg_database WHERE datname = '$db'" | grep -q 1 || \
     docker exec aijurisdiction-postgres psql -U "$pg_user" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -c "CREATE DATABASE $db;"
   docker exec aijurisdiction-postgres psql -U "$pg_user" -d "$db" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+}
+
+create_document_engine_database() {
+  if [ "$DOCUMENT_ENGINE_ENABLED" != "1" ]; then
+    log "document engine database skipped by DOCUMENT_ENGINE_ENABLED=$DOCUMENT_ENGINE_ENABLED"
+    return
+  fi
+
+  local db="$DOCUMENT_ENGINE_DATABASE_NAME"
+  local pg_user="${LOCAL_POSTGRES_USER:-postgres}"
+  log "ensuring document engine PostgreSQL database exists"
+  docker exec aijurisdiction-postgres psql -U "$pg_user" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -tc "SELECT 1 FROM pg_database WHERE datname = '$db'" | grep -q 1 || \
+    docker exec aijurisdiction-postgres psql -U "$pg_user" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -c "CREATE DATABASE $db;"
 }
 
 run_schema_migrations() {
@@ -320,6 +394,8 @@ deploy_web() {
   docker run -d \
     --name jurisdigta-web \
     --restart unless-stopped \
+    --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
+    --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
     -p "127.0.0.1:${WEB_PORT}:80" \
     jurisdigta-web:local >/dev/null
 }
@@ -334,6 +410,59 @@ build_document_processor() {
   log "building document processor image"
   cd "$APP_DIR"
   docker build -t jurisdigta-document-processor:local -f src/services/document_processor/Dockerfile .
+}
+
+build_document_engine() {
+  if [ "$DOCUMENT_ENGINE_ENABLED" != "1" ]; then
+    log "document engine build skipped by DOCUMENT_ENGINE_ENABLED=$DOCUMENT_ENGINE_ENABLED"
+    return
+  fi
+
+  log "building document engine image"
+  cd "$APP_DIR/services/document-engine-service"
+  docker build -t jurisdigta-document-engine:local .
+}
+
+start_document_engine() {
+  if [ "$DOCUMENT_ENGINE_ENABLED" != "1" ]; then
+    log "document engine start skipped by DOCUMENT_ENGINE_ENABLED=$DOCUMENT_ENGINE_ENABLED"
+    docker rm -f jurisdigta-document-engine-api jurisdigta-document-engine-worker >/dev/null 2>&1 || true
+    return
+  fi
+
+  log "starting document engine API and worker"
+  local document_engine_db_url
+  document_engine_db_url="$(postgres_sqlalchemy_url "postgres" "$DOCUMENT_ENGINE_DATABASE_NAME")"
+
+  docker rm -f jurisdigta-document-engine-api jurisdigta-document-engine-worker >/dev/null 2>&1 || true
+
+  docker run -d \
+    --name jurisdigta-document-engine-api \
+    --restart unless-stopped \
+    --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
+    --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
+    --network aijuristiction-api_default \
+    --user "$(id -u):$(id -g)" \
+    -p "127.0.0.1:${DOCUMENT_ENGINE_API_PORT}:8000" \
+    -e DATABASE_URL="$document_engine_db_url" \
+    -e GENERATED_DOCUMENTS_DIR=/data/generated-documents \
+    -v "$DEPLOY_ROOT/runs/storage/document-engine/generated-documents:/data/generated-documents" \
+    jurisdigta-document-engine:local >/dev/null
+
+  docker run -d \
+    --name jurisdigta-document-engine-worker \
+    --restart unless-stopped \
+    --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
+    --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
+    --network aijuristiction-api_default \
+    --user "$(id -u):$(id -g)" \
+    -e DATABASE_URL="$document_engine_db_url" \
+    -e GENERATED_DOCUMENTS_DIR=/data/generated-documents \
+    -e WORKER_POLL_INTERVAL_SECONDS="${DOCUMENT_ENGINE_WORKER_POLL_INTERVAL_SECONDS:-2}" \
+    -e WORKER_BATCH_SIZE="${DOCUMENT_ENGINE_WORKER_BATCH_SIZE:-5}" \
+    -v "$DEPLOY_ROOT/runs/storage/document-engine/generated-documents:/data/generated-documents" \
+    jurisdigta-document-engine:local \
+    python -m document_engine.worker >/dev/null
 }
 
 install_document_processor_wrapper() {
@@ -496,25 +625,96 @@ install_status_writer_cron() {
     echo '* * * * * cd /srv/jurisdigta/app && python3 scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json --laws-log /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log --document-processor-log /srv/jurisdigta/runs/logs/document-processor-latest.log >/dev/null 2>&1') | crontab -
 }
 
+install_log_retention_cron() {
+  if [ "$INSTALL_LOG_RETENTION_CRON" != "1" ]; then
+    log "log retention cron skipped by INSTALL_LOG_RETENTION_CRON=$INSTALL_LOG_RETENTION_CRON"
+    return
+  fi
+
+  log "installing log retention cleanup with LOG_RETENTION_DAYS=$LOG_RETENTION_DAYS"
+  cat > "$DEPLOY_ROOT/ops/cleanup_logs.sh" <<'WRAPPER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DEPLOY_ROOT="${DEPLOY_ROOT:-/srv/jurisdigta}"
+ENV_FILE="${ENV_FILE:-$DEPLOY_ROOT/secrets/jurisdigta.env}"
+
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+fi
+
+LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
+if ! printf '%s' "$LOG_RETENTION_DAYS" | grep -Eq '^[1-9][0-9]{0,3}$'; then
+  echo "[log-retention] invalid LOG_RETENTION_DAYS=$LOG_RETENTION_DAYS" >&2
+  exit 1
+fi
+
+LOG_DIR="$DEPLOY_ROOT/runs/logs"
+mkdir -p "$LOG_DIR"
+find "$LOG_DIR" -type f -name '*.log' -mtime +"$LOG_RETENTION_DAYS" -delete
+WRAPPER
+  chmod 700 "$DEPLOY_ROOT/ops/cleanup_logs.sh"
+
+  (crontab -l 2>/dev/null | grep -v 'cleanup_logs.sh' || true; \
+    echo '35 3 * * * /srv/jurisdigta/ops/cleanup_logs.sh >/dev/null 2>&1') | crontab -
+}
+
 start_monitoring() {
   if [ "$START_MONITORING" != "1" ]; then
     log "monitoring stack not started by START_MONITORING=$START_MONITORING"
     return
   fi
-  if [ ! -f "$APP_DIR/Deployment/monitoring/.env" ]; then
-    fail "Create $APP_DIR/Deployment/monitoring/.env with GRAFANA_ADMIN_PASSWORD before START_MONITORING=1"
-  fi
-  log "starting monitoring stack"
+  log "configuring and starting monitoring stack"
   cd "$APP_DIR/Deployment/monitoring"
-  docker compose up -d
+  python3 configure_monitoring.py --project-env "$ENV_FILE" --validate --start
+}
+
+connect_api_to_monitoring_network() {
+  local network="${MONITORING_DOCKER_NETWORK:-monitoring_default}"
+  if ! docker network inspect "$network" >/dev/null 2>&1; then
+    log "monitoring network $network not found; API Prometheus access may be unavailable"
+    return
+  fi
+  if docker inspect -f '{{json .NetworkSettings.Networks}}' jurisdigta-api | grep -q "\"$network\""; then
+    log "API container already connected to $network"
+    return
+  fi
+  log "connecting API container to monitoring network $network"
+  docker network connect "$network" jurisdigta-api
+}
+
+wait_for_http() {
+  local name="$1"
+  local url="$2"
+  local attempts="${3:-30}"
+  local sleep_seconds="${4:-2}"
+  local attempt
+
+  for attempt in $(seq 1 "$attempts"); do
+    if curl -fsS "$url" >/dev/null; then
+      log "$name is healthy at $url"
+      return 0
+    fi
+    log "waiting for $name at $url ($attempt/$attempts)"
+    sleep "$sleep_seconds"
+  done
+
+  curl -fsS "$url" >/dev/null
 }
 
 validate_health() {
   log "validating local health endpoints"
-  curl -fsS "http://127.0.0.1:${API_PORT}/health" >/dev/null
-  curl -fsS "http://127.0.0.1:${MCP_PORT}/health" >/dev/null
-  curl -fsS "http://127.0.0.1:${WEB_PORT}/health" >/dev/null
+  wait_for_http "API" "http://127.0.0.1:${API_PORT}/health"
+  wait_for_http "MCP" "http://127.0.0.1:${MCP_PORT}/health"
+  wait_for_http "web" "http://127.0.0.1:${WEB_PORT}/health"
   docker inspect -f '{{.State.Running}}' jurisdigta-email-scheduler | grep -qx true
+  if [ "$DOCUMENT_ENGINE_ENABLED" = "1" ]; then
+    wait_for_http "document engine" "http://127.0.0.1:${DOCUMENT_ENGINE_API_PORT}/health"
+    docker inspect -f '{{.State.Running}}' jurisdigta-document-engine-worker | grep -qx true
+  fi
   docker image inspect jurisdigta-document-processor:local >/dev/null
   if [ "$INSTALL_DOCUMENT_PROCESSOR_CRON" = "1" ]; then
     test -x "$DEPLOY_ROOT/ops/run_document_processor.sh"
@@ -536,6 +736,12 @@ require_azurefoundry_settings
 require_email_delivery_settings
 require_cron_expression "DOCUMENT_PROCESSOR_CRON_EXPRESSION" "$DOCUMENT_PROCESSOR_CRON_EXPRESSION"
 require_positive_integer "DOCUMENT_PROCESSOR_LIMIT" "$DOCUMENT_PROCESSOR_LIMIT"
+require_positive_integer "LOG_RETENTION_DAYS" "$LOG_RETENTION_DAYS"
+require_positive_integer "DOCKER_LOG_MAX_FILE" "$DOCKER_LOG_MAX_FILE"
+require_boolean_flag "DOCUMENT_ENGINE_ENABLED" "$DOCUMENT_ENGINE_ENABLED"
+require_boolean_flag "INSTALL_LOG_RETENTION_CRON" "$INSTALL_LOG_RETENTION_CRON"
+require_tcp_port "DOCUMENT_ENGINE_API_PORT" "$DOCUMENT_ENGINE_API_PORT"
+require_postgres_identifier "DOCUMENT_ENGINE_DATABASE_NAME" "$DOCUMENT_ENGINE_DATABASE_NAME"
 ensure_runtime_layout
 update_checkout
 load_env
@@ -543,17 +749,28 @@ require_azurefoundry_settings
 require_email_delivery_settings
 require_cron_expression "DOCUMENT_PROCESSOR_CRON_EXPRESSION" "$DOCUMENT_PROCESSOR_CRON_EXPRESSION"
 require_positive_integer "DOCUMENT_PROCESSOR_LIMIT" "$DOCUMENT_PROCESSOR_LIMIT"
+require_positive_integer "LOG_RETENTION_DAYS" "$LOG_RETENTION_DAYS"
+require_positive_integer "DOCKER_LOG_MAX_FILE" "$DOCKER_LOG_MAX_FILE"
+require_boolean_flag "DOCUMENT_ENGINE_ENABLED" "$DOCUMENT_ENGINE_ENABLED"
+require_boolean_flag "INSTALL_LOG_RETENTION_CRON" "$INSTALL_LOG_RETENTION_CRON"
+require_tcp_port "DOCUMENT_ENGINE_API_PORT" "$DOCUMENT_ENGINE_API_PORT"
+require_postgres_identifier "DOCUMENT_ENGINE_DATABASE_NAME" "$DOCUMENT_ENGINE_DATABASE_NAME"
 start_postgres_and_build_image
 create_laws_database
+create_document_engine_database
 run_schema_migrations
 start_api_and_mcp
 deploy_web
 build_document_processor
 install_document_processor_wrapper
+build_document_engine
+start_document_engine
 build_laws_collector
 install_laws_wrapper
 install_status_writer_cron
+install_log_retention_cron
 start_monitoring
+connect_api_to_monitoring_network
 validate_health
 
 log "production deployment complete"

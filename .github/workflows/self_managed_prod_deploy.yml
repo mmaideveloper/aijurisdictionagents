@@ -34,9 +34,13 @@ jobs:
       JURISDIGTA_API_PORT: ${{ vars.JURISDIGTA_API_PORT || '8080' }}
       JURISDIGTA_MCP_PORT: ${{ vars.JURISDIGTA_MCP_PORT || '8070' }}
       JURISDIGTA_WEB_PORT: ${{ vars.JURISDIGTA_WEB_PORT || '8090' }}
+      JURISDIGTA_DOCUMENT_ENGINE_ENABLED: ${{ vars.JURISDIGTA_DOCUMENT_ENGINE_ENABLED || '1' }}
+      JURISDIGTA_DOCUMENT_ENGINE_API_PORT: ${{ vars.JURISDIGTA_DOCUMENT_ENGINE_API_PORT || '8060' }}
+      JURISDIGTA_DOCUMENT_ENGINE_DATABASE_NAME: ${{ vars.JURISDIGTA_DOCUMENT_ENGINE_DATABASE_NAME || 'document_engine' }}
       JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON: ${{ vars.JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON || '1' }}
       JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION: ${{ vars.JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION || '*/15 * * * *' }}
       JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT: ${{ vars.JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT || '20' }}
+      JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS: ${{ vars.JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS || '5' }}
       JURISDIGTA_SSH_PRIVATE_KEY: ${{ secrets.JURISDIGTA_SSH_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v5
@@ -69,6 +73,26 @@ jobs:
             echo "JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT must be a positive integer"
             exit 1
           fi
+          if ! printf '%s' "$JURISDIGTA_DOCUMENT_ENGINE_ENABLED" | grep -Eq '^[01]$'; then
+            echo "JURISDIGTA_DOCUMENT_ENGINE_ENABLED must be 0 or 1"
+            exit 1
+          fi
+          if ! printf '%s' "$JURISDIGTA_DOCUMENT_ENGINE_API_PORT" | grep -Eq '^[1-9][0-9]{1,4}$'; then
+            echo "JURISDIGTA_DOCUMENT_ENGINE_API_PORT must be a valid TCP port"
+            exit 1
+          fi
+          if [ "$JURISDIGTA_DOCUMENT_ENGINE_API_PORT" -lt 1024 ] || [ "$JURISDIGTA_DOCUMENT_ENGINE_API_PORT" -gt 65535 ]; then
+            echo "JURISDIGTA_DOCUMENT_ENGINE_API_PORT must be between 1024 and 65535"
+            exit 1
+          fi
+          if ! printf '%s' "$JURISDIGTA_DOCUMENT_ENGINE_DATABASE_NAME" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]{0,62}$'; then
+            echo "JURISDIGTA_DOCUMENT_ENGINE_DATABASE_NAME must be a PostgreSQL-safe database identifier"
+            exit 1
+          fi
+          if ! printf '%s' "$JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS" | grep -Eq '^[5-9]$|^[1-9][0-9]{1,3}$'; then
+            echo "JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS must be an integer >= 5"
+            exit 1
+          fi
 
       - name: Configure SSH
         run: |
@@ -91,7 +115,7 @@ jobs:
           ssh -p "$JURISDIGTA_SSH_PORT" \
             -i ~/.ssh/jurisdigta_deploy_key \
             "${JURISDIGTA_SSH_USER}@${JURISDIGTA_SSH_HOST}" \
-            "chmod 700 /tmp/deploy_jurisdigta_prod.sh && DEPLOY_ROOT='$JURISDIGTA_DEPLOY_ROOT' ENV_FILE='$JURISDIGTA_ENV_FILE' REPO_REF='${{ inputs.repo_ref }}' WEB_API_BASE_URL='$JURISDIGTA_WEB_API_BASE_URL' API_PORT='$JURISDIGTA_API_PORT' MCP_PORT='$JURISDIGTA_MCP_PORT' WEB_PORT='$JURISDIGTA_WEB_PORT' RUN_SCHEMA_MIGRATIONS='$run_schema_migrations' START_MONITORING='$start_monitoring' INSTALL_DOCUMENT_PROCESSOR_CRON='$JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON' DOCUMENT_PROCESSOR_CRON_EXPRESSION='$JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION' DOCUMENT_PROCESSOR_LIMIT='$JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT' /tmp/deploy_jurisdigta_prod.sh"
+            "chmod 700 /tmp/deploy_jurisdigta_prod.sh && DEPLOY_ROOT='$JURISDIGTA_DEPLOY_ROOT' ENV_FILE='$JURISDIGTA_ENV_FILE' REPO_REF='${{ inputs.repo_ref }}' WEB_API_BASE_URL='$JURISDIGTA_WEB_API_BASE_URL' API_PORT='$JURISDIGTA_API_PORT' MCP_PORT='$JURISDIGTA_MCP_PORT' WEB_PORT='$JURISDIGTA_WEB_PORT' DOCUMENT_ENGINE_ENABLED='$JURISDIGTA_DOCUMENT_ENGINE_ENABLED' DOCUMENT_ENGINE_API_PORT='$JURISDIGTA_DOCUMENT_ENGINE_API_PORT' DOCUMENT_ENGINE_DATABASE_NAME='$JURISDIGTA_DOCUMENT_ENGINE_DATABASE_NAME' RUN_SCHEMA_MIGRATIONS='$run_schema_migrations' START_MONITORING='$start_monitoring' INSTALL_DOCUMENT_PROCESSOR_CRON='$JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON' DOCUMENT_PROCESSOR_CRON_EXPRESSION='$JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION' DOCUMENT_PROCESSOR_LIMIT='$JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT' EMAIL_SCHEDULER_INTERVAL_SECONDS='$JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS' /tmp/deploy_jurisdigta_prod.sh"
 
       - name: Summarize deployment
         run: |
@@ -106,7 +130,11 @@ jobs:
             echo "| API | http://127.0.0.1:${JURISDIGTA_API_PORT}/health on server |"
             echo "| MCP | http://127.0.0.1:${JURISDIGTA_MCP_PORT}/health on server |"
             echo "| Web | http://127.0.0.1:${JURISDIGTA_WEB_PORT}/health on server |"
+            echo "| Document engine | ${JURISDIGTA_DOCUMENT_ENGINE_ENABLED} |"
+            echo "| Document engine API | http://127.0.0.1:${JURISDIGTA_DOCUMENT_ENGINE_API_PORT}/health on server |"
+            echo "| Document engine database | ${JURISDIGTA_DOCUMENT_ENGINE_DATABASE_NAME} |"
             echo "| Document processor cron | ${JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON} |"
             echo "| Document processor schedule | ${JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION} |"
             echo "| Document processor limit | ${JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT} |"
+            echo "| Email scheduler interval | ${JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS}s |"
           } >> "$GITHUB_STEP_SUMMARY"

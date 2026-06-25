@@ -9,6 +9,7 @@ __pycache__/**
 *.pyc
 *.pyo
 *.pyd
+*.tsbuildinfo
 *.swp
 *.egg-info/
 dist/
@@ -25,6 +26,7 @@ src/avatar-speech-demo/dist/
 frontend/**/node_modules/
 frontend/**/dist/
 frontend/**/.vite/
+frontend/**/output/
 frontend_design/**/node_modules/
 frontend_design/**/dist/
 frontend_design/**/.vite/
