@@ -164,12 +164,13 @@ Task `#242` is implemented as a frontend-only mock flow. It does not create or u
   - jurisdiction
   - opposing party
 - Uploading documents is optional
-- Submitting the form creates a mock case in frontend storage and returns the user to `/`
+- Submitting the form creates a mock case in frontend storage and opens the chat workspace at `/app/chat`
 - The new case appears in:
   - the signed-in homepage sidebar
   - `My Profile` under `Opened cases`
 - Uploaded documents appear in `My Profile` under `My Documents`
 - Mock cases/documents are stored in browser `localStorage` for local development and tests
+- `/app/chat` is an authenticated alias for the signed-in chat workspace layout. It uses the same left case sidebar, center chat column, and right AI configuration panel as the signed-in homepage so post-create navigation does not mix layouts or overlap panels.
 
 ## Language Switching (Task #243)
 

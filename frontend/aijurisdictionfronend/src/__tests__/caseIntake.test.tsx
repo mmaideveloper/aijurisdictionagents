@@ -83,10 +83,10 @@ describe("Case intake page", () => {
       opposingParty: "Northwind LLC",
       documents: []
     });
-    expect(navigateMock).toHaveBeenCalledWith("/", { replace: true });
+    expect(navigateMock).toHaveBeenCalledWith("/app/chat", { replace: true });
   });
 
-  it("creates a mock case and navigates home when the form is complete", async () => {
+  it("creates a mock case and navigates to the chat workspace when the form is complete", async () => {
     const user = userEvent.setup();
     render(<CaseIntake />);
 
@@ -116,6 +116,6 @@ describe("Case intake page", () => {
         }
       ]
     });
-    expect(navigateMock).toHaveBeenCalledWith("/", { replace: true });
+    expect(navigateMock).toHaveBeenCalledWith("/app/chat", { replace: true });
   });
 });
