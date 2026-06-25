@@ -11,7 +11,7 @@ export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }
   const { isAuthenticated } = useAuth();
   const { t } = useLanguage();
   const { pathname } = useLocation();
-  const hasWorkspaceLayout = isAuthenticated && pathname === "/";
+  const hasWorkspaceLayout = isAuthenticated && (pathname === "/" || pathname === "/app/chat");
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const toggleSidebar = () => {
     setSidebarOpen((prev) => !prev);

@@ -62,6 +62,14 @@ const App: React.FC = () => {
           }
         />
         <Route
+          path="/app/chat"
+          element={
+            <ProtectedRoute>
+              <Home />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/app/case"
           element={
             <ProtectedRoute>

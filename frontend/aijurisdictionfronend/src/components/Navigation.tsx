@@ -147,7 +147,8 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
   const profileName = user?.name ?? t("commonUser");
   const profileEmail = user?.email ?? "";
   const profileInitial = profileName.slice(0, 1).toUpperCase();
-  const showBrand = !isAuthenticated || pathname !== "/" || isSidebarCollapsed;
+  const isWorkspacePath = pathname === "/" || pathname === "/app/chat";
+  const showBrand = !isAuthenticated || !isWorkspacePath || isSidebarCollapsed;
 
   return (
     <header className="site-header">

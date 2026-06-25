@@ -65,7 +65,7 @@ const CaseIntake: React.FC = () => {
         size: file.size
       }))
     });
-    navigate("/", { replace: true });
+    navigate("/app/chat", { replace: true });
   };
 
   return (
