@@ -277,6 +277,19 @@ def _law_snapshot_payload(*, country_code: str | None) -> dict[str, Any]:
     }
 
 
+def _database_health_error_payload(*, backend: str) -> dict[str, Any]:
+    return {
+        "status": "error",
+        "service": "jurisdigta-mcp-server",
+        "error": "database_unavailable",
+        "message": f'Database health check failed for backend "{backend}".',
+        "database": {
+            "status": "error",
+            "backend": backend,
+        },
+    }
+
+
 def _public_base_url(request: fastapi.Request) -> str:
     forwarded_proto = request.headers.get("x-forwarded-proto")
     forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
@@ -626,19 +639,14 @@ def health() -> JSONResponse:
         database_backend = store.db_option
         store.check_connection()
     except Exception as exc:
-        message = f'Database health check failed for backend "{database_backend}": {exc}'
-        logger.warning(message)
+        logger.warning(
+            'MCP database health check failed for backend "%s": %s',
+            database_backend,
+            exc.__class__.__name__,
+        )
         return JSONResponse(
             status_code=503,
-            content={
-                "status": "error",
-                "error": "database_unavailable",
-                "message": message,
-                "database": {
-                    "status": "error",
-                    "backend": database_backend,
-                },
-            },
+            content=_database_health_error_payload(backend=database_backend),
         )
     return JSONResponse(
         {

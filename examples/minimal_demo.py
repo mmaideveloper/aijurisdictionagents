@@ -31,3 +31,8 @@ print(
     "unlimited_access_emails => "
     f"{sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}"
 )
+print(
+    "service_healthchecks => HTTP services expose privacy-minimized /health; "
+    "worker services report supervisor state, freshness, latest run result, "
+    "and sanitized errors through protected operational status."
+)
