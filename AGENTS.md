@@ -83,6 +83,7 @@ API validation rule:
 
 Ask for implementation of task. Create for each task separate branch.
 For every separate task, bug, or product change, create a separate Git branch and a separate Git worktree before editing files. Do not reuse one checkout or shared working directory for multiple independent tasks.
+When creating a new task worktree, use `.\scripts\new_task_worktree.ps1` from an existing repo checkout instead of raw `git worktree add` whenever possible. The helper creates the branch/worktree and bootstraps the local `.\conda` environment from `environment.yml`, so API validation scripts can run inside the new worktree.
 Do not implement multiple tasks, bugs, experiments, or unrelated product changes in the same branch or worktree.
 Before starting work, check the current branch and `git status`; if the branch or worktree already contains changes for another task, stop and create a new branch and worktree from the correct base branch instead of continuing there.
 If a change grows into a second independent task, stop, leave the first task isolated, and move the second task into its own branch and worktree.

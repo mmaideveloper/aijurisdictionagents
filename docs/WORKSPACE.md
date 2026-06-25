@@ -12,6 +12,31 @@ conda env create -f environment.yml -p ./.conda
 conda activate ./.conda
 ```
 
+## Create a task worktree with a local environment
+
+When starting a new Codex task, create the branch and worktree through the helper
+so the new checkout also contains its own ignored `conda/` environment:
+
+```powershell
+.\scripts\new_task_worktree.ps1 `
+  -Branch codex/issue-123-short-name `
+  -WorktreePath C:\Users\maton\.codex\worktrees\issue-123-short-name\aijurisdictionagents
+```
+
+The helper runs `git worktree add`, then creates `conda/` from `environment.yml`.
+After it finishes, run API validation from inside the new worktree:
+
+```powershell
+cd C:\Users\maton\.codex\worktrees\issue-123-short-name\aijurisdictionagents
+.\scripts\validate_api.ps1
+.\conda\python.exe -m pytest api\aijuristiction-api\tests
+```
+
+If `conda` is not on `PATH`, pass `-CondaExecutable` with the full path to
+`conda.exe`. Use `-CloneEnvFrom` only when you intentionally want to clone an
+existing conda prefix; the helper refreshes editable installs afterward so they
+point at the new worktree.
+
 ## Open the workspace
 
 Open the workspace file (recommended):
