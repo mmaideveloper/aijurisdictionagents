@@ -62,6 +62,14 @@ const App: React.FC = () => {
           }
         />
         <Route
+          path="/app/chat"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/app/assistant" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/app/case"
           element={
             <ProtectedRoute>

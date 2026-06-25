@@ -166,4 +166,16 @@ describe("App protected routes", () => {
 
     expect(screen.getByText("Assistant Workspace")).toBeDefined();
   });
+
+  it("keeps /app/chat as an authenticated assistant workspace alias", () => {
+    authState.isAuthenticated = true;
+
+    render(
+      <MemoryRouter initialEntries={["/app/chat"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+  });
 });

@@ -63,8 +63,8 @@ if __name__ == "__main__":
     )
     _require_contains(
         CASE_INTAKE_PATH,
-        'navigate("/", { replace: true })',
-        "Successful intake submission must return the user to the homepage workspace.",
+        'navigate("/app/assistant", { replace: true })',
+        "Successful intake submission must open the assistant workspace.",
     )
     _require_contains(
         PROFILE_PATH,
