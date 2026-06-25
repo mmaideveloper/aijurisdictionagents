@@ -35,12 +35,14 @@ def get_system_status(
     laws_status = _laws_collector_status_payload()
     server_status = _server_status_payload()
     errors = _error_counts_payload(minutes=minutes)
+    ai_model_usage = _ai_model_usage_payload(minutes=minutes)
 
     component_states = [
         str(api_status.get("status", "unknown")),
         str(laws_status.get("status", "unknown")),
         str(server_status.get("status", "unknown")),
         str(errors.get("status", "unknown")),
+        str(ai_model_usage.get("status", "unknown")),
     ]
     return {
         "generated_at": _utc_now(),
@@ -50,6 +52,7 @@ def get_system_status(
         "system": server_status,
         "laws_collector": laws_status,
         "errors": errors,
+        "ai_model_usage": ai_model_usage,
     }
 
 
@@ -211,6 +214,47 @@ def _error_counts_payload(*, minutes: int) -> dict[str, Any]:
         "source": "application_insights",
         "by_application": counts,
         "failures": failures,
+    }
+
+
+def _ai_model_usage_payload(*, minutes: int) -> dict[str, Any]:
+    try:
+        from aijurisdictionagents.api_db import ApiDatabaseStore
+
+        store = ApiDatabaseStore.from_env()
+        summaries = store.summarize_ai_model_usage(minutes=minutes)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "window_minutes": minutes,
+            "message": str(exc),
+            "summaries": [],
+        }
+
+    return {
+        "status": "ok",
+        "window_minutes": minutes,
+        "summaries": [
+            {
+                "case_id": item.case_id,
+                "user_id": item.user_id,
+                "subscription_id": item.subscription_id,
+                "plan_code": item.plan_code,
+                "task_type": item.task_type,
+                "provider": item.provider,
+                "model": item.model,
+                "route_type": item.route_type,
+                "status": item.status,
+                "fallback_reason": item.fallback_reason,
+                "input_tokens": item.input_tokens,
+                "cached_input_tokens": item.cached_input_tokens,
+                "output_tokens": item.output_tokens,
+                "total_tokens": item.total_tokens,
+                "estimated_cost_eur": item.estimated_cost_eur,
+                "request_count": item.request_count,
+            }
+            for item in summaries
+        ],
     }
 
 

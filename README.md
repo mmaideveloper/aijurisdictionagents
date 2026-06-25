@@ -552,6 +552,7 @@ Technical design details: `docs/MOBILE_TECHNICAL_DESIGN.md`.
 
 - API database minimal demo: `python examples/api_database_minimal_demo.py`
 - Database layout minimal demo: `python examples/database_layout_minimal_demo.py`
+- AI model routing demo: `python examples/model_routing_minimal_demo.py`
 - Laws collector Postgres launcher demo: `powershell -ExecutionPolicy Bypass -File examples/start_laws_collector_postgres_demo.ps1`
 - Laws collector live first-law demo: `python examples/laws_collector_live_first_law_demo.py`
 - Slovak law corpus solution note: `docs/SLOVAK_LAW_DATA_PLATFORM.md`

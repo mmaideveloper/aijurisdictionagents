@@ -277,24 +277,70 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 4. The bootstrap script installs base packages: `git`, `curl`, `unzip`, `jq`, `rsync`, `ufw`, `nginx`, `certbot`, Python venv/pip tooling, PostgreSQL client tools, Docker, Docker Compose v2, Node.js, npm, and OpenSSH.
 5. Reconnect SSH after the script adds `jurisdigta-admin` to the `docker` group.
 6. Install Cloudflare Tunnel with `INSTALL_CLOUDFLARED=1 bash Deployment/server/setup_jurisdigta_server.sh` when this server will expose public subdomains through Cloudflare.
-7. Create `/srv/jurisdigta` deployment, runtime storage, log, and secrets directories.
-8. Clone `https://github.com/mmaideveloper/aijurisdictionagents.git` to `/srv/jurisdigta/app`.
-9. Create server-local environment configuration under `/srv/jurisdigta/secrets/` and keep it out of Git.
-10. Start and validate PostgreSQL through Docker using repository storage layout.
-11. Build and smoke-test the API with `curl -fsS http://127.0.0.1:8080/health`.
-12. Build the laws connector image and apply laws database migrations before live import.
-13. Before any laws collector redeploy, gracefully stop an active `jurisdigta-laws-collector-daily` container with `docker stop --time 120 jurisdigta-laws-collector-daily`; use forced removal only after the grace period fails.
-14. Build the document processor image and install the locked cron wrapper through `Deployment/server/deploy_jurisdigta_prod.sh`; validate `/srv/jurisdigta/ops/run_document_processor.sh` before relying on asynchronous document extraction.
-15. Install or update the server-local daily laws collector cron wrapper only after the collector image, PostgreSQL database, migrations, and one bounded live smoke run are validated.
-16. Install the server status writer cron from `docs/SYSTEM_STATUS_MONITORING.md` so API/system/laws collector status is updated every minute.
-17. Optional but recommended: install the Prometheus/Grafana stack from `Deployment/monitoring/README.md` for real-time dashboards, host metrics, Docker metrics, API probes, and laws collector metrics.
-18. Configure Cloudflare Tunnel public hostnames only after local health checks pass.
-19. Configure firewall to keep direct public ingress closed except SSH or explicitly approved maintenance access.
-20. Use nginx/Certbot only as a future static-IP fallback; for the current no-static-IP production server, Cloudflare Tunnel is the public HTTPS path.
-21. Add systemd units or timers only after the exact smoke deployment commands are validated.
-22. Configure the GitHub `prod` Environment values documented in `docs/GITHUB_ENVIRONMENTS.md`.
-23. Register a repository self-hosted GitHub Actions runner on the trusted server or private network with labels `self-hosted`, `Linux`, `X64`, and `jurisdigta-prod`.
-24. Run `Self-Managed Prod Deploy` from GitHub Actions after the server-local environment file is complete.
+7. Install Ollama as a separate local model service on `jurisdigta-server`; keep it bound to `127.0.0.1:11434` and never expose it directly through Cloudflare Tunnel or public firewall rules.
+8. Pull the configured local model, for example `ollama pull qwen3.6:27b`, and pull a smaller fallback model when server RAM/VRAM cannot safely run the preferred model.
+9. Validate Ollama through localhost endpoints before wiring it into the model-router configuration.
+10. Create `/srv/jurisdigta` deployment, runtime storage, log, and secrets directories.
+11. Clone `https://github.com/mmaideveloper/aijurisdictionagents.git` to `/srv/jurisdigta/app`.
+12. Create server-local environment configuration under `/srv/jurisdigta/secrets/` and keep it out of Git.
+13. Start and validate PostgreSQL through Docker using repository storage layout.
+14. Build and smoke-test the API with `curl -fsS http://127.0.0.1:8080/health`.
+15. Build the laws connector image and apply laws database migrations before live import.
+16. Before any laws collector redeploy, gracefully stop an active `jurisdigta-laws-collector-daily` container with `docker stop --time 120 jurisdigta-laws-collector-daily`; use forced removal only after the grace period fails.
+17. Build the document processor image and install the locked cron wrapper through `Deployment/server/deploy_jurisdigta_prod.sh`; validate `/srv/jurisdigta/ops/run_document_processor.sh` before relying on asynchronous document extraction.
+18. Install or update the server-local daily laws collector cron wrapper only after the collector image, PostgreSQL database, migrations, and one bounded live smoke run are validated.
+19. Install the server status writer cron from `docs/SYSTEM_STATUS_MONITORING.md` so API/system/laws collector status is updated every minute.
+20. Optional but recommended: install the Prometheus/Grafana stack from `Deployment/monitoring/README.md` for real-time dashboards, host metrics, Docker metrics, API probes, and laws collector metrics.
+21. Configure Cloudflare Tunnel public hostnames only after local health checks pass.
+22. Configure firewall to keep direct public ingress closed except SSH or explicitly approved maintenance access.
+23. Use nginx/Certbot only as a future static-IP fallback; for the current no-static-IP production server, Cloudflare Tunnel is the public HTTPS path.
+24. Add systemd units or timers only after the exact smoke deployment commands are validated.
+25. Configure the GitHub `prod` Environment values documented in `docs/GITHUB_ENVIRONMENTS.md`.
+26. Register a repository self-hosted GitHub Actions runner on the trusted server or private network with labels `self-hosted`, `Linux`, `X64`, and `jurisdigta-prod`.
+27. Run `Self-Managed Prod Deploy` from GitHub Actions after the server-local environment file is complete.
+
+### Ollama Local Model Service Setup
+
+Install Ollama from a trusted server shell and review the installer before production use:
+
+```bash
+curl -fsSL https://ollama.com/install.sh -o /tmp/install-ollama.sh
+less /tmp/install-ollama.sh
+sh /tmp/install-ollama.sh
+```
+
+Bind the Ollama service to localhost only:
+
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+cat <<'EOF' | sudo tee /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf >/dev/null
+[Service]
+Environment="OLLAMA_HOST=127.0.0.1:11434"
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now ollama
+sudo systemctl restart ollama
+```
+
+Pull the configured model and inspect the installed inventory:
+
+```bash
+ollama pull qwen3.6:27b
+ollama list
+ollama ps
+```
+
+If `qwen3.6:27b` does not fit the available CPU/RAM/VRAM on `jurisdigta-server`, choose and document a smaller validated fallback model in `LOCAL_LLM_FALLBACK_MODEL` instead of allowing production startup to fail silently.
+
+Validate the local service:
+
+```bash
+systemctl is-active --quiet ollama
+curl -fsS http://127.0.0.1:11434/api/tags
+curl -fsS http://127.0.0.1:11434/v1/models
+```
+
+Keep Ollama outside the API container and outside the FastAPI process. JurisDigta API should call Ollama over localhost through the model router; Ollama owns model download, storage, loading, unloading, and runtime memory pressure.
 
 ### Secrets And Environment Values
 
@@ -305,6 +351,12 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Keep the dedicated SSH folder local to the workstation. Only public keys belong in `/home/jurisdigta-admin/.ssh/authorized_keys` on the server.
 - Required production LLM default: `LLM_PROVIDER=azurefoundry`.
 - Required Azure Foundry values when `LLM_PROVIDER=azurefoundry`: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and `AZURE_OPENAI_API_KEY`.
+- Required local model runtime default for task #365 model routing: `LOCAL_LLM_PROVIDER=ollama`.
+- Local Ollama API URL: `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434`.
+- Local Ollama OpenAI-compatible URL: `LOCAL_LLM_OPENAI_BASE_URL=http://127.0.0.1:11434/v1`.
+- Preferred local model tag: `LOCAL_LLM_MODEL=qwen3.6:27b` when `jurisdigta-server` hardware supports it.
+- Optional smaller local fallback tag: `LOCAL_LLM_FALLBACK_MODEL=<validated-smaller-model>`.
+- Local model health endpoint: `LOCAL_LLM_HEALTH_URL=http://127.0.0.1:11434/api/tags`.
 - PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
 - Required MCP OAuth values in `/srv/jurisdigta/secrets/jurisdigta.env`: `MCP_API_JWT_SECRET`, `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`, and `MCP_OTP_REUSE_WINDOW_HOURS=24`.
 - The self-managed deploy script injects `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` into the API container so internal assistant law lookups call the dedicated MCP service over the Docker network.
@@ -342,6 +394,8 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 
 - `sudo -n true` succeeds for automation-enabled setup.
 - `docker --version`, `docker compose version`, `node --version`, `npm --version`, `python3 --version`, `psql --version`, and `gh --version` succeed.
+- `systemctl is-active --quiet ollama` succeeds and `curl -fsS http://127.0.0.1:11434/api/tags` lists the configured local model.
+- `curl -fsS http://127.0.0.1:11434/v1/models` succeeds for OpenAI-compatible local model clients.
 - `bash /srv/jurisdigta/app/Deployment/server/setup_jurisdigta_server.sh` is idempotent and completes without package or permission errors.
 - `docker run --rm hello-world` succeeds after reconnecting with Docker group membership.
 - Repository checkout under `/srv/jurisdigta/app` is on the intended branch.
@@ -375,6 +429,7 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Remove the daily laws collector cron entry with `crontab -l | grep -v 'run_laws_collector_daily.sh' | crontab -`.
 - Remove the status writer cron entry with `crontab -l | grep -v 'write_system_status.py' | crontab -`.
 - Stop the optional status metrics exporter with `sudo systemctl disable --now jurisdigta-status-exporter.service`.
+- Stop Ollama with `sudo systemctl disable --now ollama` if local model serving must be rolled back; remove pulled models with `ollama rm <model-tag>` before uninstalling when disk space or licensing requires cleanup.
 - Stop the optional Prometheus/Grafana stack with `cd /srv/jurisdigta/app/Deployment/monitoring && docker compose down`.
 - Stop the frontend web container with `docker rm -f jurisdigta-web` and remove the local image with `docker image rm jurisdigta-web:local`.
 - Stop any active daily collector container gracefully with `docker stop --time 120 jurisdigta-laws-collector-daily`; use `docker rm -f jurisdigta-laws-collector-daily` only if the container remains stuck.
@@ -393,5 +448,7 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 - Keep PostgreSQL and document runtime files outside `databases/` and under `/srv/jurisdigta/.../runs/storage`.
 - Preserve deployment and collector logs for traceability, while avoiding personal data and legal-risk content in logs.
 - Use `azurefoundry` for production-like local starts unless deterministic offline testing was explicitly requested.
+- Run Ollama as a separate localhost-only model service; do not expose `11434` publicly and do not send free-user case data to external model providers by default.
+- Local model routing keeps case content inside JurisDigta-controlled infrastructure, but normal server access controls, retention, deletion, and privacy-safe logging still apply.
 - Keep legal-risk outputs subject to human oversight before production traffic is enabled.
 - For Cloudflare Tunnel and Access, avoid logging personal data, legal documents, API keys, database credentials, or full user prompts in edge, dashboard, or application logs.

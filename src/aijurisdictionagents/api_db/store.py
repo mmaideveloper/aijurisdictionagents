@@ -150,6 +150,95 @@ class PermanentMemoryEntry:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class AIModelProvider:
+    provider_id: str
+    provider_code: str
+    provider_type: str
+    display_name: str
+    base_url: str
+    api_version: str
+    region: str
+    data_zone: str
+    is_external: bool
+    is_local: bool
+    health_check_url: str
+    enabled: bool
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class AIModelProfile:
+    model_profile_id: str
+    provider_id: str
+    model_code: str
+    deployment_name: str
+    context_window_tokens: int
+    input_price_per_1m: float
+    cached_input_price_per_1m: float
+    output_price_per_1m: float
+    billing_currency: str
+    effective_from: str | None
+    effective_to: str | None
+    eu_data_zone_capable: bool
+    enabled: bool
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class AITaskRoutePolicy:
+    policy_id: str
+    task_type: str
+    plan_code: str
+    model_group_id: str | None
+    preferred_external_model_profile_id: str | None
+    preferred_local_model_profile_id: str | None
+    allow_external: bool
+    require_external_ack: bool
+    require_eu_data_zone: bool
+    fallback_local_on_error: bool
+    fallback_local_on_budget: bool
+    max_cost_eur: float
+    priority: int
+    enabled: bool
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class AIModelRouteSelection:
+    policy: AITaskRoutePolicy | None
+    provider: AIModelProvider | None
+    model_profile: AIModelProfile | None
+    route_type: str
+    task_type: str
+    plan_code: str
+    requires_external_ack: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class AIModelUsageSummary:
+    case_id: str
+    user_id: str
+    subscription_id: str
+    plan_code: str
+    task_type: str
+    provider: str
+    model: str
+    route_type: str
+    status: str
+    fallback_reason: str
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    estimated_cost_eur: float
+    request_count: int
+
+
 class ApiDatabaseStore:
     """Local-first API metadata store using SQLite + external blob storage references.
 
@@ -410,7 +499,9 @@ class ApiDatabaseStore:
             self._ensure_case_document_schema(conn)
             self._ensure_subscription_schema(conn)
             self._ensure_permanent_memory_schema(conn)
+            self._ensure_ai_model_routing_schema(conn)
             self._seed_subscription_plans(conn)
+            self._seed_ai_model_routing(conn)
 
     def get_permanent_memory(self, key: str) -> PermanentMemoryEntry | None:
         with self._connect() as conn:
@@ -467,6 +558,475 @@ class ApiDatabaseStore:
     def check_connection(self) -> None:
         with self._connect() as conn:
             self._execute(conn, "SELECT 1").fetchone()
+
+    def upsert_ai_model_provider(
+        self,
+        *,
+        provider_code: str,
+        provider_type: str,
+        display_name: str,
+        base_url: str = "",
+        api_version: str = "",
+        region: str = "",
+        data_zone: str = "",
+        is_external: bool = False,
+        is_local: bool = False,
+        health_check_url: str = "",
+        enabled: bool = True,
+        provider_id: str | None = None,
+    ) -> AIModelProvider:
+        now = _now_iso()
+        normalized_code = provider_code.strip().lower()
+        resolved_id = provider_id or normalized_code
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO ai_model_providers(
+                    provider_id, provider_code, provider_type, display_name, base_url,
+                    api_version, region, data_zone, is_external, is_local, health_check_url,
+                    enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(provider_code) DO UPDATE SET
+                    provider_type = excluded.provider_type,
+                    display_name = excluded.display_name,
+                    base_url = excluded.base_url,
+                    api_version = excluded.api_version,
+                    region = excluded.region,
+                    data_zone = excluded.data_zone,
+                    is_external = excluded.is_external,
+                    is_local = excluded.is_local,
+                    health_check_url = excluded.health_check_url,
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    resolved_id,
+                    normalized_code,
+                    provider_type.strip().lower(),
+                    display_name.strip(),
+                    base_url.strip(),
+                    api_version.strip(),
+                    region.strip(),
+                    data_zone.strip(),
+                    _bool_int(is_external),
+                    _bool_int(is_local),
+                    health_check_url.strip(),
+                    _bool_int(enabled),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT provider_id, provider_code, provider_type, display_name, base_url,
+                       api_version, region, data_zone, is_external, is_local, health_check_url,
+                       enabled, created_at, updated_at
+                FROM ai_model_providers
+                WHERE provider_code = ?
+                """,
+                (normalized_code,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model provider was not saved: {normalized_code}")
+        return _row_to_ai_model_provider(row)
+
+    def upsert_ai_model_profile(
+        self,
+        *,
+        provider_id: str,
+        model_code: str,
+        deployment_name: str = "",
+        context_window_tokens: int = 0,
+        input_price_per_1m: float = 0.0,
+        cached_input_price_per_1m: float = 0.0,
+        output_price_per_1m: float = 0.0,
+        billing_currency: str = "USD",
+        effective_from: str | None = None,
+        effective_to: str | None = None,
+        eu_data_zone_capable: bool = False,
+        enabled: bool = True,
+        model_profile_id: str | None = None,
+    ) -> AIModelProfile:
+        now = _now_iso()
+        normalized_model = model_code.strip()
+        resolved_id = model_profile_id or f"{provider_id}:{normalized_model}"
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO ai_model_profiles(
+                    model_profile_id, provider_id, model_code, deployment_name,
+                    context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
+                    output_price_per_1m, billing_currency, effective_from, effective_to,
+                    eu_data_zone_capable, enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(model_profile_id) DO UPDATE SET
+                    model_code = excluded.model_code,
+                    deployment_name = excluded.deployment_name,
+                    context_window_tokens = excluded.context_window_tokens,
+                    input_price_per_1m = excluded.input_price_per_1m,
+                    cached_input_price_per_1m = excluded.cached_input_price_per_1m,
+                    output_price_per_1m = excluded.output_price_per_1m,
+                    billing_currency = excluded.billing_currency,
+                    effective_from = excluded.effective_from,
+                    effective_to = excluded.effective_to,
+                    eu_data_zone_capable = excluded.eu_data_zone_capable,
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    resolved_id,
+                    provider_id,
+                    normalized_model,
+                    deployment_name.strip(),
+                    max(context_window_tokens, 0),
+                    max(input_price_per_1m, 0.0),
+                    max(cached_input_price_per_1m, 0.0),
+                    max(output_price_per_1m, 0.0),
+                    billing_currency.strip().upper() or "USD",
+                    effective_from,
+                    effective_to,
+                    _bool_int(eu_data_zone_capable),
+                    _bool_int(enabled),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT model_profile_id, provider_id, model_code, deployment_name,
+                       context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
+                       output_price_per_1m, billing_currency, effective_from, effective_to,
+                       eu_data_zone_capable, enabled, created_at, updated_at
+                FROM ai_model_profiles
+                WHERE model_profile_id = ?
+                """,
+                (resolved_id,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model profile was not saved: {resolved_id}")
+        return _row_to_ai_model_profile(row)
+
+    def upsert_ai_task_route_policy(
+        self,
+        *,
+        task_type: str,
+        plan_code: str = "",
+        model_group_id: str | None = None,
+        preferred_external_model_profile_id: str | None = None,
+        preferred_local_model_profile_id: str | None = None,
+        allow_external: bool = False,
+        require_external_ack: bool = True,
+        require_eu_data_zone: bool = True,
+        fallback_local_on_error: bool = True,
+        fallback_local_on_budget: bool = True,
+        max_cost_eur: float = 0.0,
+        priority: int = 0,
+        enabled: bool = True,
+        policy_id: str | None = None,
+    ) -> AITaskRoutePolicy:
+        now = _now_iso()
+        normalized_task = _normalize_route_key(task_type, default="default")
+        normalized_plan = _normalize_route_key(plan_code, default="")
+        resolved_id = policy_id or f"{normalized_task}:{normalized_plan}:{model_group_id or 'default'}"
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO ai_task_route_policies(
+                    policy_id, task_type, plan_code, model_group_id,
+                    preferred_external_model_profile_id, preferred_local_model_profile_id,
+                    allow_external, require_external_ack, require_eu_data_zone,
+                    fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
+                    priority, enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(policy_id) DO UPDATE SET
+                    task_type = excluded.task_type,
+                    plan_code = excluded.plan_code,
+                    model_group_id = excluded.model_group_id,
+                    preferred_external_model_profile_id = excluded.preferred_external_model_profile_id,
+                    preferred_local_model_profile_id = excluded.preferred_local_model_profile_id,
+                    allow_external = excluded.allow_external,
+                    require_external_ack = excluded.require_external_ack,
+                    require_eu_data_zone = excluded.require_eu_data_zone,
+                    fallback_local_on_error = excluded.fallback_local_on_error,
+                    fallback_local_on_budget = excluded.fallback_local_on_budget,
+                    max_cost_eur = excluded.max_cost_eur,
+                    priority = excluded.priority,
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    resolved_id,
+                    normalized_task,
+                    normalized_plan,
+                    model_group_id,
+                    preferred_external_model_profile_id,
+                    preferred_local_model_profile_id,
+                    _bool_int(allow_external),
+                    _bool_int(require_external_ack),
+                    _bool_int(require_eu_data_zone),
+                    _bool_int(fallback_local_on_error),
+                    _bool_int(fallback_local_on_budget),
+                    max(max_cost_eur, 0.0),
+                    priority,
+                    _bool_int(enabled),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT policy_id, task_type, plan_code, model_group_id,
+                       preferred_external_model_profile_id, preferred_local_model_profile_id,
+                       allow_external, require_external_ack, require_eu_data_zone,
+                       fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
+                       priority, enabled, created_at, updated_at
+                FROM ai_task_route_policies
+                WHERE policy_id = ?
+                """,
+                (resolved_id,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI task route policy was not saved: {resolved_id}")
+        return _row_to_ai_task_route_policy(row)
+
+    def resolve_ai_model_route(
+        self,
+        *,
+        user_id: str,
+        plan_code: str,
+        task_type: str,
+        prefer_local: bool = False,
+        external_acknowledged: bool = False,
+    ) -> AIModelRouteSelection:
+        normalized_task = _normalize_route_key(task_type, default="default")
+        normalized_plan = _normalize_route_key(plan_code, default="free")
+        with self._connect() as conn:
+            policy = self._select_ai_task_route_policy(
+                conn,
+                user_id=user_id,
+                plan_code=normalized_plan,
+                task_type=normalized_task,
+            )
+            if policy is None:
+                return AIModelRouteSelection(
+                    policy=None,
+                    provider=None,
+                    model_profile=None,
+                    route_type="unconfigured",
+                    task_type=normalized_task,
+                    plan_code=normalized_plan,
+                    requires_external_ack=False,
+                    reason="No enabled route policy matched this task and plan.",
+                )
+
+            local = (
+                self._get_ai_model_route_target(conn, policy.preferred_local_model_profile_id)
+                if policy.preferred_local_model_profile_id
+                else None
+            )
+            external = (
+                self._get_ai_model_route_target(conn, policy.preferred_external_model_profile_id)
+                if policy.preferred_external_model_profile_id
+                else None
+            )
+
+        if prefer_local and local is not None:
+            return _route_selection(
+                policy=policy,
+                target=local,
+                route_type="paid_local_override" if normalized_plan != "free" else "free_local",
+                task_type=normalized_task,
+                plan_code=normalized_plan,
+                reason="Local model was requested for this task.",
+            )
+        if normalized_plan == "free" or not policy.allow_external:
+            if local is None:
+                return _route_selection_without_target(
+                    policy=policy,
+                    route_type="local_unavailable",
+                    task_type=normalized_task,
+                    plan_code=normalized_plan,
+                    reason="Route policy requires local model routing but no enabled local model is configured.",
+                )
+            return _route_selection(
+                policy=policy,
+                target=local,
+                route_type="free_local" if normalized_plan == "free" else "local",
+                task_type=normalized_task,
+                plan_code=normalized_plan,
+                reason="Route policy selected local model routing.",
+            )
+        if external is None:
+            if local is not None and policy.fallback_local_on_error:
+                return _route_selection(
+                    policy=policy,
+                    target=local,
+                    route_type="local_fallback",
+                    task_type=normalized_task,
+                    plan_code=normalized_plan,
+                    reason="External routing is allowed but no enabled external model is configured.",
+                )
+            return _route_selection_without_target(
+                policy=policy,
+                route_type="external_unavailable",
+                task_type=normalized_task,
+                plan_code=normalized_plan,
+                reason="External routing is allowed but no enabled external model is configured.",
+            )
+
+        external_provider, external_profile = external
+        if policy.require_external_ack and not external_acknowledged:
+            return AIModelRouteSelection(
+                policy=policy,
+                provider=None,
+                model_profile=None,
+                route_type="external_ack_required",
+                task_type=normalized_task,
+                plan_code=normalized_plan,
+                requires_external_ack=True,
+                reason="External paid model routing requires user acknowledgement before use.",
+            )
+        if policy.require_eu_data_zone and not external_profile.eu_data_zone_capable:
+            if local is not None and policy.fallback_local_on_error:
+                return _route_selection(
+                    policy=policy,
+                    target=local,
+                    route_type="local_fallback",
+                    task_type=normalized_task,
+                    plan_code=normalized_plan,
+                    reason="External model is not marked EU data zone capable.",
+                )
+            return AIModelRouteSelection(
+                policy=policy,
+                provider=external_provider,
+                model_profile=external_profile,
+                route_type="blocked_non_eu_external",
+                task_type=normalized_task,
+                plan_code=normalized_plan,
+                requires_external_ack=False,
+                reason="External model is not marked EU data zone capable.",
+            )
+        return _route_selection(
+            policy=policy,
+            target=external,
+            route_type="external",
+            task_type=normalized_task,
+            plan_code=normalized_plan,
+            reason="Route policy selected external model routing.",
+        )
+
+    def record_ai_model_usage(
+        self,
+        *,
+        provider: str,
+        model: str,
+        route_type: str,
+        input_tokens: int,
+        output_tokens: int,
+        case_id: str = "",
+        user_id: str = "",
+        subscription_id: str = "",
+        plan_code: str = "",
+        task_type: str = "default",
+        model_group_id: str = "",
+        cached_input_tokens: int = 0,
+        estimated_cost_provider_currency: float = 0.0,
+        estimated_cost_eur: float = 0.0,
+        provider_currency: str = "USD",
+        exchange_rate_used: float = 1.0,
+        request_started_at: str | None = None,
+        request_completed_at: str | None = None,
+        latency_ms: int = 0,
+        status: str = "ok",
+        fallback_reason: str = "",
+        confidentiality_warning_ack_id: str = "",
+        usage_id: str | None = None,
+    ) -> str:
+        now = _now_iso()
+        resolved_usage_id = usage_id or str(uuid.uuid4())
+        total_tokens = max(input_tokens, 0) + max(output_tokens, 0)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO ai_model_usage_ledger(
+                    usage_id, user_id, subscription_id, plan_code, case_id, task_type,
+                    model_group_id, provider, model, route_type, input_tokens,
+                    cached_input_tokens, output_tokens, total_tokens,
+                    estimated_cost_provider_currency, estimated_cost_eur, provider_currency,
+                    exchange_rate_used, request_started_at, request_completed_at,
+                    latency_ms, status, fallback_reason, confidentiality_warning_ack_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    resolved_usage_id,
+                    user_id,
+                    subscription_id,
+                    _normalize_route_key(plan_code, default=""),
+                    case_id,
+                    _normalize_route_key(task_type, default="default"),
+                    model_group_id,
+                    provider.strip().lower(),
+                    model.strip(),
+                    route_type.strip().lower(),
+                    max(input_tokens, 0),
+                    max(cached_input_tokens, 0),
+                    max(output_tokens, 0),
+                    total_tokens,
+                    max(estimated_cost_provider_currency, 0.0),
+                    max(estimated_cost_eur, 0.0),
+                    provider_currency.strip().upper() or "USD",
+                    max(exchange_rate_used, 0.0),
+                    request_started_at or now,
+                    request_completed_at or now,
+                    max(latency_ms, 0),
+                    status.strip().lower() or "ok",
+                    fallback_reason.strip(),
+                    confidentiality_warning_ack_id.strip(),
+                    now,
+                ),
+            )
+            conn.commit()
+        return resolved_usage_id
+
+    def summarize_ai_model_usage(
+        self,
+        *,
+        minutes: int = 60,
+        case_id: str | None = None,
+    ) -> list[AIModelUsageSummary]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max(minutes, 1))).isoformat().replace("+00:00", "Z")
+        params: list[Any] = [cutoff]
+        case_filter = ""
+        if case_id is not None:
+            case_filter = " AND case_id = ?"
+            params.append(case_id)
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                f"""
+                SELECT case_id, user_id, subscription_id, plan_code, task_type, provider,
+                       model, route_type, status, fallback_reason,
+                       SUM(input_tokens), SUM(cached_input_tokens), SUM(output_tokens),
+                       SUM(total_tokens), SUM(estimated_cost_eur), COUNT(*)
+                FROM ai_model_usage_ledger
+                WHERE request_completed_at >= ?{case_filter}
+                GROUP BY case_id, user_id, subscription_id, plan_code, task_type, provider,
+                         model, route_type, status, fallback_reason
+                ORDER BY SUM(estimated_cost_eur) DESC, SUM(total_tokens) DESC
+                """,
+                tuple(params),
+            ).fetchall()
+        return [_row_to_ai_model_usage_summary(row) for row in rows]
 
     def create_user(
         self,
@@ -2145,6 +2705,211 @@ class ApiDatabaseStore:
             return query.replace("?", "%s")
         return query
 
+    def _select_ai_task_route_policy(
+        self,
+        conn: sqlite3.Connection | PostgresConnection[Any],
+        *,
+        user_id: str,
+        plan_code: str,
+        task_type: str,
+    ) -> AITaskRoutePolicy | None:
+        group_rows = self._execute(
+            conn,
+            """
+            SELECT model_group_id
+            FROM ai_model_group_users
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        ).fetchall()
+        group_ids = [str(row[0]) for row in group_rows]
+        group_clause = "model_group_id IS NULL OR model_group_id = ''"
+        params: list[Any] = [task_type, "default", plan_code, "", "*"]
+        if group_ids:
+            placeholders = ", ".join("?" for _ in group_ids)
+            group_clause = f"{group_clause} OR model_group_id IN ({placeholders})"
+            params.extend(group_ids)
+        params.extend([task_type, plan_code])
+        if group_ids:
+            params.extend(group_ids)
+        query = f"""
+            SELECT policy_id, task_type, plan_code, model_group_id,
+                   preferred_external_model_profile_id, preferred_local_model_profile_id,
+                   allow_external, require_external_ack, require_eu_data_zone,
+                   fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
+                   priority, enabled, created_at, updated_at
+            FROM ai_task_route_policies
+            WHERE enabled = 1
+              AND task_type IN (?, ?)
+              AND plan_code IN (?, ?, ?)
+              AND ({group_clause})
+            ORDER BY
+              CASE WHEN task_type = ? THEN 0 ELSE 1 END,
+              CASE WHEN plan_code = ? THEN 0 WHEN plan_code = '' THEN 1 ELSE 2 END,
+              CASE
+                WHEN model_group_id IS NULL OR model_group_id = '' THEN 1
+                {"WHEN model_group_id IN (" + ", ".join("?" for _ in group_ids) + ") THEN 0" if group_ids else ""}
+                ELSE 2
+              END,
+              priority DESC,
+              created_at DESC
+            LIMIT 1
+        """
+        row = self._fetchone(conn, query, tuple(params))
+        return _row_to_ai_task_route_policy(row) if row is not None else None
+
+    def _get_ai_model_route_target(
+        self,
+        conn: sqlite3.Connection | PostgresConnection[Any],
+        model_profile_id: str | None,
+    ) -> tuple[AIModelProvider, AIModelProfile] | None:
+        if not model_profile_id:
+            return None
+        row = self._fetchone(
+            conn,
+            """
+            SELECT p.provider_id, p.provider_code, p.provider_type, p.display_name, p.base_url,
+                   p.api_version, p.region, p.data_zone, p.is_external, p.is_local,
+                   p.health_check_url, p.enabled, p.created_at, p.updated_at,
+                   m.model_profile_id, m.provider_id, m.model_code, m.deployment_name,
+                   m.context_window_tokens, m.input_price_per_1m, m.cached_input_price_per_1m,
+                   m.output_price_per_1m, m.billing_currency, m.effective_from, m.effective_to,
+                   m.eu_data_zone_capable, m.enabled, m.created_at, m.updated_at
+            FROM ai_model_profiles m
+            JOIN ai_model_providers p ON p.provider_id = m.provider_id
+            WHERE m.model_profile_id = ?
+              AND m.enabled = 1
+              AND p.enabled = 1
+            """,
+            (model_profile_id,),
+        )
+        if row is None:
+            return None
+        return _row_to_ai_model_provider(row[:14]), _row_to_ai_model_profile(row[14:])
+
+    def _ensure_ai_model_routing_schema(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        self._execute_script(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS ai_model_providers (
+                provider_id TEXT PRIMARY KEY,
+                provider_code TEXT UNIQUE NOT NULL,
+                provider_type TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                base_url TEXT NOT NULL DEFAULT '',
+                api_version TEXT NOT NULL DEFAULT '',
+                region TEXT NOT NULL DEFAULT '',
+                data_zone TEXT NOT NULL DEFAULT '',
+                is_external INTEGER NOT NULL DEFAULT 0,
+                is_local INTEGER NOT NULL DEFAULT 0,
+                health_check_url TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_model_profiles (
+                model_profile_id TEXT PRIMARY KEY,
+                provider_id TEXT NOT NULL,
+                model_code TEXT NOT NULL,
+                deployment_name TEXT NOT NULL DEFAULT '',
+                context_window_tokens INTEGER NOT NULL DEFAULT 0,
+                input_price_per_1m REAL NOT NULL DEFAULT 0,
+                cached_input_price_per_1m REAL NOT NULL DEFAULT 0,
+                output_price_per_1m REAL NOT NULL DEFAULT 0,
+                billing_currency TEXT NOT NULL DEFAULT 'USD',
+                effective_from TEXT,
+                effective_to TEXT,
+                eu_data_zone_capable INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(provider_id, model_code),
+                FOREIGN KEY(provider_id) REFERENCES ai_model_providers(provider_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_model_groups (
+                model_group_id TEXT PRIMARY KEY,
+                group_code TEXT UNIQUE NOT NULL,
+                display_name TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_model_group_users (
+                model_group_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(model_group_id, user_id),
+                FOREIGN KEY(model_group_id) REFERENCES ai_model_groups(model_group_id) ON DELETE CASCADE,
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_task_route_policies (
+                policy_id TEXT PRIMARY KEY,
+                task_type TEXT NOT NULL,
+                plan_code TEXT NOT NULL DEFAULT '',
+                model_group_id TEXT,
+                preferred_external_model_profile_id TEXT,
+                preferred_local_model_profile_id TEXT,
+                allow_external INTEGER NOT NULL DEFAULT 0,
+                require_external_ack INTEGER NOT NULL DEFAULT 1,
+                require_eu_data_zone INTEGER NOT NULL DEFAULT 1,
+                fallback_local_on_error INTEGER NOT NULL DEFAULT 1,
+                fallback_local_on_budget INTEGER NOT NULL DEFAULT 1,
+                max_cost_eur REAL NOT NULL DEFAULT 0,
+                priority INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(model_group_id) REFERENCES ai_model_groups(model_group_id) ON DELETE SET NULL,
+                FOREIGN KEY(preferred_external_model_profile_id) REFERENCES ai_model_profiles(model_profile_id) ON DELETE SET NULL,
+                FOREIGN KEY(preferred_local_model_profile_id) REFERENCES ai_model_profiles(model_profile_id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_model_usage_ledger (
+                usage_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL DEFAULT '',
+                subscription_id TEXT NOT NULL DEFAULT '',
+                plan_code TEXT NOT NULL DEFAULT '',
+                case_id TEXT NOT NULL DEFAULT '',
+                task_type TEXT NOT NULL DEFAULT '',
+                model_group_id TEXT NOT NULL DEFAULT '',
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                route_type TEXT NOT NULL,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                total_tokens INTEGER NOT NULL DEFAULT 0,
+                estimated_cost_provider_currency REAL NOT NULL DEFAULT 0,
+                estimated_cost_eur REAL NOT NULL DEFAULT 0,
+                provider_currency TEXT NOT NULL DEFAULT 'USD',
+                exchange_rate_used REAL NOT NULL DEFAULT 1,
+                request_started_at TEXT NOT NULL,
+                request_completed_at TEXT NOT NULL,
+                latency_ms INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'ok',
+                fallback_reason TEXT NOT NULL DEFAULT '',
+                confidentiality_warning_ack_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ai_task_route_policies_lookup
+            ON ai_task_route_policies(task_type, plan_code, enabled, priority);
+
+            CREATE INDEX IF NOT EXISTS idx_ai_model_usage_case_model_time
+            ON ai_model_usage_ledger(case_id, provider, model, request_completed_at);
+
+            CREATE INDEX IF NOT EXISTS idx_ai_model_usage_task_model_time
+            ON ai_model_usage_ledger(task_type, provider, model, request_completed_at);
+            """,
+        )
+
     def _ensure_user_schema(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
     ) -> None:
@@ -2416,6 +3181,119 @@ class ApiDatabaseStore:
                 (*plan, now, now),
             )
 
+    def _seed_ai_model_routing(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
+        now = _now_iso()
+        local_base_url = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434").strip()
+        local_model = os.getenv("LOCAL_LLM_MODEL", "qwen3.6:27b").strip() or "qwen3.6:27b"
+        local_profile_id = "local_ollama_default"
+        self._execute(
+            conn,
+            """
+            INSERT INTO ai_model_providers(
+                provider_id, provider_code, provider_type, display_name, base_url,
+                api_version, region, data_zone, is_external, is_local, health_check_url,
+                enabled, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(provider_code) DO UPDATE SET
+                provider_type = excluded.provider_type,
+                display_name = excluded.display_name,
+                base_url = excluded.base_url,
+                health_check_url = excluded.health_check_url,
+                is_external = excluded.is_external,
+                is_local = excluded.is_local,
+                enabled = excluded.enabled,
+                updated_at = excluded.updated_at
+            """,
+            (
+                "local_ollama",
+                "local_ollama",
+                "ollama",
+                "Local Ollama",
+                local_base_url.rstrip("/"),
+                "",
+                "",
+                "local",
+                0,
+                1,
+                os.getenv("LOCAL_LLM_HEALTH_URL", f"{local_base_url.rstrip('/')}/api/tags").strip(),
+                1,
+                now,
+                now,
+            ),
+        )
+        self._execute(
+            conn,
+            """
+            INSERT INTO ai_model_profiles(
+                model_profile_id, provider_id, model_code, deployment_name,
+                context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
+                output_price_per_1m, billing_currency, effective_from, effective_to,
+                eu_data_zone_capable, enabled, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(model_profile_id) DO UPDATE SET
+                model_code = excluded.model_code,
+                deployment_name = excluded.deployment_name,
+                updated_at = excluded.updated_at
+            """,
+            (
+                local_profile_id,
+                "local_ollama",
+                local_model,
+                local_model,
+                0,
+                0.0,
+                0.0,
+                0.0,
+                "EUR",
+                None,
+                None,
+                1,
+                1,
+                now,
+                now,
+            ),
+        )
+        for plan_code in ("", "free", "case", "basic", "premium"):
+            allow_external = 0 if plan_code in ("", "free") else 1
+            self._execute(
+                conn,
+                """
+                INSERT INTO ai_task_route_policies(
+                    policy_id, task_type, plan_code, model_group_id,
+                    preferred_external_model_profile_id, preferred_local_model_profile_id,
+                    allow_external, require_external_ack, require_eu_data_zone,
+                    fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
+                    priority, enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(policy_id) DO UPDATE SET
+                    preferred_local_model_profile_id = excluded.preferred_local_model_profile_id,
+                    allow_external = excluded.allow_external,
+                    require_external_ack = excluded.require_external_ack,
+                    require_eu_data_zone = excluded.require_eu_data_zone,
+                    fallback_local_on_error = excluded.fallback_local_on_error,
+                    fallback_local_on_budget = excluded.fallback_local_on_budget,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    f"default:{plan_code}:default",
+                    "default",
+                    plan_code,
+                    None,
+                    None,
+                    local_profile_id,
+                    allow_external,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0.0,
+                    0,
+                    1,
+                    now,
+                    now,
+                ),
+            )
+
     def _resolve_subscription_end(
         self,
         conn: sqlite3.Connection | PostgresConnection[Any],
@@ -2463,6 +3341,146 @@ def _row_to_user_subscription(row: tuple[object, ...]) -> UserSubscription:
         created_at=str(values[7]),
         updated_at=str(values[8]),
     )
+
+
+def _row_to_ai_model_provider(row: tuple[object, ...]) -> AIModelProvider:
+    return AIModelProvider(
+        provider_id=str(row[0]),
+        provider_code=str(row[1]),
+        provider_type=str(row[2]),
+        display_name=str(row[3]),
+        base_url=str(row[4]),
+        api_version=str(row[5]),
+        region=str(row[6]),
+        data_zone=str(row[7]),
+        is_external=_row_bool(row[8]),
+        is_local=_row_bool(row[9]),
+        health_check_url=str(row[10]),
+        enabled=_row_bool(row[11]),
+        created_at=str(row[12]),
+        updated_at=str(row[13]),
+    )
+
+
+def _row_to_ai_model_profile(row: tuple[object, ...]) -> AIModelProfile:
+    return AIModelProfile(
+        model_profile_id=str(row[0]),
+        provider_id=str(row[1]),
+        model_code=str(row[2]),
+        deployment_name=str(row[3]),
+        context_window_tokens=int(row[4]),
+        input_price_per_1m=float(row[5]),
+        cached_input_price_per_1m=float(row[6]),
+        output_price_per_1m=float(row[7]),
+        billing_currency=str(row[8]),
+        effective_from=str(row[9]) if row[9] is not None else None,
+        effective_to=str(row[10]) if row[10] is not None else None,
+        eu_data_zone_capable=_row_bool(row[11]),
+        enabled=_row_bool(row[12]),
+        created_at=str(row[13]),
+        updated_at=str(row[14]),
+    )
+
+
+def _row_to_ai_task_route_policy(row: tuple[object, ...]) -> AITaskRoutePolicy:
+    return AITaskRoutePolicy(
+        policy_id=str(row[0]),
+        task_type=str(row[1]),
+        plan_code=str(row[2]),
+        model_group_id=str(row[3]) if row[3] is not None else None,
+        preferred_external_model_profile_id=str(row[4]) if row[4] is not None else None,
+        preferred_local_model_profile_id=str(row[5]) if row[5] is not None else None,
+        allow_external=_row_bool(row[6]),
+        require_external_ack=_row_bool(row[7]),
+        require_eu_data_zone=_row_bool(row[8]),
+        fallback_local_on_error=_row_bool(row[9]),
+        fallback_local_on_budget=_row_bool(row[10]),
+        max_cost_eur=float(row[11]),
+        priority=int(row[12]),
+        enabled=_row_bool(row[13]),
+        created_at=str(row[14]),
+        updated_at=str(row[15]),
+    )
+
+
+def _row_to_ai_model_usage_summary(row: tuple[object, ...]) -> AIModelUsageSummary:
+    return AIModelUsageSummary(
+        case_id=str(row[0]),
+        user_id=str(row[1]),
+        subscription_id=str(row[2]),
+        plan_code=str(row[3]),
+        task_type=str(row[4]),
+        provider=str(row[5]),
+        model=str(row[6]),
+        route_type=str(row[7]),
+        status=str(row[8]),
+        fallback_reason=str(row[9]),
+        input_tokens=int(row[10] or 0),
+        cached_input_tokens=int(row[11] or 0),
+        output_tokens=int(row[12] or 0),
+        total_tokens=int(row[13] or 0),
+        estimated_cost_eur=float(row[14] or 0),
+        request_count=int(row[15] or 0),
+    )
+
+
+def _route_selection(
+    *,
+    policy: AITaskRoutePolicy,
+    target: tuple[AIModelProvider, AIModelProfile],
+    route_type: str,
+    task_type: str,
+    plan_code: str,
+    reason: str,
+) -> AIModelRouteSelection:
+    provider, profile = target
+    return AIModelRouteSelection(
+        policy=policy,
+        provider=provider,
+        model_profile=profile,
+        route_type=route_type,
+        task_type=task_type,
+        plan_code=plan_code,
+        requires_external_ack=False,
+        reason=reason,
+    )
+
+
+def _route_selection_without_target(
+    *,
+    policy: AITaskRoutePolicy,
+    route_type: str,
+    task_type: str,
+    plan_code: str,
+    reason: str,
+) -> AIModelRouteSelection:
+    return AIModelRouteSelection(
+        policy=policy,
+        provider=None,
+        model_profile=None,
+        route_type=route_type,
+        task_type=task_type,
+        plan_code=plan_code,
+        requires_external_ack=False,
+        reason=reason,
+    )
+
+
+def _bool_int(value: bool) -> int:
+    return 1 if value else 0
+
+
+def _row_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_route_key(value: str, *, default: str) -> str:
+    normalized = value.strip().lower().replace(" ", "_")
+    return normalized or default
 
 
 def _now_iso() -> str:

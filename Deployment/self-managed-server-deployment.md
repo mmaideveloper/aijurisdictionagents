@@ -170,6 +170,51 @@ Required scopes when project automation is used later:
 gh auth refresh -s read:project,project
 ```
 
+## 4a. Install Ollama Local Model Service
+
+Install Ollama as a separate local model service for free-plan traffic and paid fallback routing. Do not load large model files directly inside the API process for normal production traffic; the API should stay lightweight and call the local model service through the model router.
+
+Install from a trusted server shell and review the installer before production use:
+
+```bash
+curl -fsSL https://ollama.com/install.sh -o /tmp/install-ollama.sh
+less /tmp/install-ollama.sh
+sh /tmp/install-ollama.sh
+```
+
+Bind Ollama to localhost only:
+
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+cat <<'EOF' | sudo tee /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf >/dev/null
+[Service]
+Environment="OLLAMA_HOST=127.0.0.1:11434"
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now ollama
+sudo systemctl restart ollama
+```
+
+Pull the configured local model:
+
+```bash
+ollama pull qwen3.6:27b
+ollama list
+ollama ps
+```
+
+If `qwen3.6:27b` does not fit the server hardware, pull and configure a smaller validated fallback model rather than changing free-plan routing to a paid cloud provider.
+
+Validate the service:
+
+```bash
+systemctl is-active --quiet ollama
+curl -fsS http://127.0.0.1:11434/api/tags
+curl -fsS http://127.0.0.1:11434/v1/models
+```
+
+Security rule: do not expose port `11434` through Cloudflare Tunnel, nginx, router NAT, or public firewall rules. Only the API/model-router should call Ollama on localhost or a private server network.
+
 ## 5. Prepare Deployment Directories
 
 Use `/srv/jurisdigta` as the server deployment root and keep runtime data out of Git.
@@ -218,6 +263,12 @@ nano /srv/jurisdigta/secrets/jurisdigta.env
 Minimum deployment values to decide before production:
 
 - `LLM_PROVIDER=azurefoundry` unless deterministic offline testing was explicitly requested.
+- `LOCAL_LLM_PROVIDER=ollama` for task #365 local-model routing.
+- `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434`.
+- `LOCAL_LLM_OPENAI_BASE_URL=http://127.0.0.1:11434/v1`.
+- `LOCAL_LLM_MODEL=qwen3.6:27b` when server hardware supports it.
+- `LOCAL_LLM_FALLBACK_MODEL` set to a smaller validated model when needed.
+- `LOCAL_LLM_HEALTH_URL=http://127.0.0.1:11434/api/tags`.
 - `AZURE_OPENAI_ENDPOINT`
 - `AZURE_OPENAI_DEPLOYMENT`
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`
@@ -599,6 +650,8 @@ psql --version
 gh --version
 sudo ufw status verbose
 curl -fsS http://127.0.0.1:8080/health
+curl -fsS http://127.0.0.1:11434/api/tags
+curl -fsS http://127.0.0.1:11434/v1/models
 crontab -l
 test -x /srv/jurisdigta/ops/run_laws_collector_daily.sh
 LAWS_WORKER_MAX_PROBES=1 LAWS_COLLECTOR_MAX_RUNNING_TIME=5 /srv/jurisdigta/ops/run_laws_collector_daily.sh

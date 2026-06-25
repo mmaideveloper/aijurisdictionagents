@@ -90,6 +90,15 @@ def test_system_status_endpoint_combines_api_system_laws_and_errors(
             },
         },
     )
+    monkeypatch.setattr(
+        system_status_api,
+        "_ai_model_usage_payload",
+        lambda *, minutes: {
+            "status": "ok",
+            "window_minutes": minutes,
+            "summaries": [],
+        },
+    )
 
     response = client.get("/v1/system/status?minutes=30", headers=AUTH_HEADERS)
 
@@ -103,6 +112,7 @@ def test_system_status_endpoint_combines_api_system_laws_and_errors(
     assert payload["laws_collector"]["last_processed_law"] == "120/2026"
     assert payload["laws_collector"]["next_law_to_check"] == "121/2026"
     assert payload["errors"]["by_application"]["api"] == 2
+    assert payload["ai_model_usage"]["window_minutes"] == 30
 
 
 def test_error_counts_uses_local_status_file_when_azure_is_not_configured(

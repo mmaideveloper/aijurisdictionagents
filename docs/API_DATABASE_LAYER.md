@@ -159,3 +159,25 @@ Minimal runnable example:
 ```bash
 python examples/subscription_minimal_demo.py
 ```
+
+## AI Model Routing And Usage Ledger (Task #365)
+
+The API database now includes a policy-driven model routing foundation:
+
+- `ai_model_providers`: local or external provider metadata such as `local_ollama`, `azure_foundry`, `openai`, base URL, region, data zone, and health URL. Store credentials in environment variables or secret stores, not in this table.
+- `ai_model_profiles`: provider model/deployment metadata plus context window and price-per-1M-token metadata.
+- `ai_model_groups` and `ai_model_group_users`: optional assignment of users to model groups for staged rollout or premium routing.
+- `ai_task_route_policies`: task type plus plan policy with preferred local/external profile, external acknowledgement, EU data-zone requirement, and local fallback flags.
+- `ai_model_usage_ledger`: per-request token and estimated cost ledger by user, subscription, case, task type, provider, model, route, and time.
+
+SQLite bootstrap is handled by `ApiDatabaseStore.initialize()`. PostgreSQL/Azure upgrades are handled by:
+
+```bash
+PYTHONPATH=src python scripts/databases/apply_api_db_schema.py
+```
+
+Minimal runnable example:
+
+```bash
+python examples/model_routing_minimal_demo.py
+```

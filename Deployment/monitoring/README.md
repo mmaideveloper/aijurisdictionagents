@@ -18,6 +18,7 @@ GET /v1/system/status?minutes=60
 - Last processed law, next law to check, latest laws collector run timestamps, and latest run duration.
 - Email sent counts, email queue counts, and aggregate email send duration from the outbox.
 - Document processor queue counts, processed document counts, latest run duration, and aggregate processing duration.
+- AI model token and cost telemetry after task #365 lands: input tokens, cached input tokens, output tokens, total tokens, estimated EUR cost, fallback count, and latency by case, provider, model, task type, plan, user, group, and hour/day/month window.
 - Host CPU, memory, disk, filesystem, and kernel metrics through Node Exporter.
 - Docker container CPU, memory, filesystem, and restart behavior through cAdvisor.
 - Prometheus health and scrape status.
@@ -43,6 +44,78 @@ http://127.0.0.1:3000
 - If Grafana must be reachable through `admin.jurisdigta.eu`, publish it through Cloudflare Tunnel and protect it with Cloudflare Access plus Grafana login.
 - Keep dashboard panels operational only. Do not display user chat text, generated legal documents, API keys, database connection strings, or legal-risk user outputs.
 - Email and document processor panels must stay aggregate-only: queue counts, sent/processed counts, and timing gauges. Do not add recipients, filenames, case titles, extracted document text, verification codes, embeddings, or raw connection strings as labels.
+- AI model panels must stay metadata-only. Allowed labels include internal IDs and categories such as case ID, user ID, subscription ID, plan code, provider, model, task type, route type, and fallback reason. Do not add prompts, answers, document text, filenames, party names, citations, emails, phone numbers, addresses, or other legal-case facts as metric labels.
+
+## AI Model Token And Cost Monitoring
+
+Task #365 model routing must emit or export Prometheus-compatible metrics for input and output token usage per case and per model. The source of truth should be the API usage ledger; Prometheus/Grafana should read aggregate counters/gauges derived from that ledger rather than raw prompts or documents.
+
+Required ledger fields for every model call:
+
+- `user_id`
+- `subscription_id`
+- `plan_code`
+- `case_id`
+- `task_type`
+- `model_group_id`
+- `provider`
+- `model`
+- `route_type`
+- `input_tokens`
+- `cached_input_tokens`
+- `output_tokens`
+- `total_tokens`
+- `estimated_cost_provider_currency`
+- `estimated_cost_eur`
+- `provider_currency`
+- `exchange_rate_used`
+- `request_started_at`
+- `request_completed_at`
+- `latency_ms`
+- `status`
+- `fallback_reason`
+- `confidentiality_warning_ack_id`
+
+Recommended metric names:
+
+- `jurisdigta_ai_model_input_tokens_total`
+- `jurisdigta_ai_model_cached_input_tokens_total`
+- `jurisdigta_ai_model_output_tokens_total`
+- `jurisdigta_ai_model_tokens_total`
+- `jurisdigta_ai_model_cost_eur_total`
+- `jurisdigta_ai_model_requests_total`
+- `jurisdigta_ai_model_budget_remaining_eur`
+- `jurisdigta_ai_model_fallbacks_total`
+- `jurisdigta_ai_model_latency_seconds`
+
+Recommended labels:
+
+- `provider`
+- `model`
+- `task_type`
+- `route_type`
+- `plan_code`
+- `model_group_id`
+- `case_id`
+- `user_id`
+- `subscription_id`
+- `status`
+- `fallback_reason`
+
+Grafana panels to add when the metrics exist:
+
+- input tokens by model for the selected case
+- output tokens by model for the selected case
+- total tokens by model and task type
+- estimated EUR cost by model for the selected case
+- model cost per user over hour/day/month windows
+- top models by output-token cost
+- paid budget remaining per active case/subscription
+- local versus external model traffic share
+- fallback count by reason and model
+- latency by provider/model
+
+`1M output tokens` in provider pricing means one million generated tokens. For document workflows, this is the legal text, clauses, summaries, structured fields, or JSON the model generates before the document renderer creates DOCX/PDF. Rendering a PDF from already-generated text does not create provider output-token cost unless another model call is made.
 
 ## Logs
 
@@ -452,6 +525,11 @@ Useful starter queries:
 - `jurisdigta_document_processing_duration_seconds_avg{window="24h"}`
 - `jurisdigta_document_processing_duration_seconds_max{window="24h"}`
 - `jurisdigta_document_processor_last_run_duration_seconds`
+- `jurisdigta_ai_model_input_tokens_total{model="...",case_id="..."}`
+- `jurisdigta_ai_model_output_tokens_total{model="...",case_id="..."}`
+- `jurisdigta_ai_model_cost_eur_total{model="...",case_id="..."}`
+- `jurisdigta_ai_model_budget_remaining_eur{case_id="..."}`
+- `jurisdigta_ai_model_fallbacks_total{model="...",fallback_reason="..."}`
 - `up{job="node-exporter"}`
 - `up{job="cadvisor"}`
 
@@ -460,6 +538,8 @@ Suggested alert rules:
 - Overall JurisDigta status below `1` for more than 5 minutes.
 - API blackbox probe failure for more than 2 minutes.
 - Any `jurisdigta_errors_window` above `0` for 10 minutes.
+- Paid case model budget remaining below 10%.
+- Model output-token spend spike above normal threshold for any provider/model.
 - Disk used above 80%.
 - Memory used above 85%.
 - Laws collector last run older than 36 hours.
