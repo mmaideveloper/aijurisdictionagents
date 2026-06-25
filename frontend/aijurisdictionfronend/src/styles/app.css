@@ -61,6 +61,29 @@
   margin-top: 0.15rem;
 }
 
+.app-shell--assistant .workspace-page {
+  height: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.app-shell--assistant .workspace-shell {
+  height: 100%;
+  padding-left: 10px;
+}
+
+.app-shell--assistant .workspace-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 280px);
+  height: 100%;
+  padding: 0 3vw 2rem 0;
+}
+
+.app-shell--assistant .workspace-center,
+.app-shell--assistant .workspace-panel--right {
+  height: 100%;
+  overflow-y: auto;
+}
+
 .site-header {
   position: sticky;
   top: 0;
@@ -2616,6 +2639,27 @@ textarea {
   .app-shell--assistant .main-content {
     overflow: visible;
     min-width: 0;
+  }
+
+  .app-shell--assistant .workspace-page,
+  .app-shell--assistant .workspace-shell {
+    height: auto;
+    overflow: visible;
+  }
+
+  .app-shell--assistant .workspace-shell {
+    padding: 1.2rem 6vw 3rem;
+  }
+
+  .app-shell--assistant .workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+  }
+
+  .app-shell--assistant .workspace-center,
+  .app-shell--assistant .workspace-panel--right {
+    height: auto;
+    overflow: visible;
   }
 
   .app-shell--assistant .assistant-workspace-page {

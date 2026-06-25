@@ -45,8 +45,8 @@ if __name__ == "__main__":
     )
     _require_contains(
         E2E_SPEC,
-        "metrics.rail.right",
-        "Playwright layout test must assert the left rail does not overlap the center column.",
+        "metrics.sidebar.right",
+        "Playwright layout test must assert the left sidebar does not overlap the center column.",
     )
     _require_contains(
         E2E_SPEC,
