@@ -1,12 +1,19 @@
+x-jurisdigta-logging: &jurisdigta-logging
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-50m}
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
 services:
   prometheus:
     image: prom/prometheus:latest
     container_name: jurisdigta-prometheus
     restart: unless-stopped
+    logging: *jurisdigta-logging
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_DAYS:-30}d
       - --web.enable-lifecycle
     ports:
       - "127.0.0.1:${PROMETHEUS_HOST_PORT:-9091}:9090"
@@ -25,6 +32,7 @@ services:
     image: python:3.11-slim
     container_name: jurisdigta-status-exporter
     restart: unless-stopped
+    logging: *jurisdigta-logging
     working_dir: /app
     env_file:
       - .env
@@ -51,6 +59,7 @@ services:
     image: grafana/grafana-oss:latest
     container_name: jurisdigta-grafana
     restart: unless-stopped
+    logging: *jurisdigta-logging
     env_file:
       - .env
     ports:
@@ -78,11 +87,47 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:latest
+    container_name: jurisdigta-loki
+    restart: unless-stopped
+    logging: *jurisdigta-logging
+    command:
+      - --config.file=/etc/loki/loki.yml
+      - --config.expand-env=true
+    environment:
+      LOKI_RETENTION_DAYS: ${LOKI_RETENTION_DAYS:-7}
+    ports:
+      - "127.0.0.1:${LOKI_HOST_PORT:-3100}:3100"
+    volumes:
+      - ./loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: jurisdigta-alloy
+    restart: unless-stopped
+    logging: *jurisdigta-logging
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    ports:
+      - "127.0.0.1:${ALLOY_HOST_PORT:-12345}:12345"
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../../runs/logs:/srv/jurisdigta/runs/logs:ro
+    depends_on:
+      - loki
 
   node-exporter:
     image: prom/node-exporter:latest
     container_name: jurisdigta-node-exporter
     restart: unless-stopped
+    logging: *jurisdigta-logging
     pid: host
     command:
       - --path.rootfs=/host
@@ -93,6 +138,7 @@ services:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: jurisdigta-cadvisor
     restart: unless-stopped
+    logging: *jurisdigta-logging
     privileged: true
     devices:
       - /dev/kmsg:/dev/kmsg
@@ -106,6 +152,7 @@ services:
     image: prom/blackbox-exporter:latest
     container_name: jurisdigta-blackbox-exporter
     restart: unless-stopped
+    logging: *jurisdigta-logging
     command:
       - --config.file=/etc/blackbox_exporter/config.yml
     extra_hosts:
@@ -119,6 +166,7 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  loki-data:
 
 networks:
   app-network:

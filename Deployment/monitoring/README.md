@@ -1,4 +1,4 @@
-# JurisDigta Prometheus And Grafana Monitoring
+# JurisDigta Prometheus, Loki, Alloy, And Grafana Monitoring
 
 This stack is the recommended self-managed monitoring layer for `jurisdigta-server`.
 
@@ -21,10 +21,11 @@ GET /v1/system/status?minutes=60
 - Host CPU, memory, disk, filesystem, and kernel metrics through Node Exporter.
 - Docker container CPU, memory, filesystem, and restart behavior through cAdvisor.
 - Prometheus health and scrape status.
+- Docker stdout/stderr logs and server job log files through Grafana Alloy and Loki.
 
 ## Security Baseline
 
-- Grafana and Prometheus bind only to `127.0.0.1` by default.
+- Grafana, Prometheus, Loki, and Alloy bind only to `127.0.0.1` by default.
 - Monitoring containers join the existing API Docker network through `MONITORING_APP_DOCKER_NETWORK`, defaulting to `aijuristiction-api_default`, so API and MCP host ports can remain bound to `127.0.0.1`.
 - Access Grafana through SSH tunneling first:
 
@@ -38,10 +39,73 @@ Then open:
 http://127.0.0.1:3000
 ```
 
-- Do not expose ports `3000`, `9090`, `9100`, `9108`, or `9115` directly to the public internet.
+- Do not expose ports `3000`, `9090`, `9100`, `9108`, `9115`, `3100`, or `12345` directly to the public internet.
 - If Grafana must be reachable through `admin.jurisdigta.eu`, publish it through Cloudflare Tunnel and protect it with Cloudflare Access plus Grafana login.
 - Keep dashboard panels operational only. Do not display user chat text, generated legal documents, API keys, database connection strings, or legal-risk user outputs.
 - Email and document processor panels must stay aggregate-only: queue counts, sent/processed counts, and timing gauges. Do not add recipients, filenames, case titles, extracted document text, verification codes, embeddings, or raw connection strings as labels.
+
+## Logs
+
+Use Grafana Loki for troubleshooting logs. Prometheus remains the metrics and
+alerting store; it is not the right backend for stack traces or raw log lines.
+Grafana Alloy collects:
+
+- Docker stdout/stderr from containers named `jurisdigta-*`.
+- Server-side job logs from `runs/logs/*.log`, including document processor and laws collector wrapper logs.
+
+Default retention:
+
+```text
+LOG_RETENTION_DAYS=7
+LOKI_RETENTION_DAYS=7
+PROMETHEUS_RETENTION_DAYS=30
+DOCKER_LOG_MAX_SIZE=50m
+DOCKER_LOG_MAX_FILE=5
+```
+
+`LOG_RETENTION_DAYS` controls cleanup for files under `/srv/jurisdigta/runs/logs`.
+`LOKI_RETENTION_DAYS` controls queryable Loki log retention. Docker raw
+`json-file` logs are capped by size through `DOCKER_LOG_MAX_SIZE` and
+`DOCKER_LOG_MAX_FILE`; Loki is the intended operational log store.
+
+For current development debugging, set application verbosity in the
+server-local env file:
+
+```text
+API_LOG_LEVEL=DEBUG
+LOG_LEVEL=DEBUG
+```
+
+Do not intentionally log plaintext access tokens, OTP codes, SMTP passwords,
+private keys, or full database URLs. If a temporary incident requires unusually
+verbose payload logging, keep access limited to Grafana behind Cloudflare
+Access, lower retention, and remove the setting after the incident. Audit trail
+events for legal actions should be a separate structured event store, not the
+debug log stream.
+
+Useful Grafana Explore queries:
+
+```logql
+{stack="jurisdigta"} |= "ERROR"
+{stack="jurisdigta", container="jurisdigta-api"}
+{stack="jurisdigta", service="jurisdigta-job-log"} |= "failed"
+```
+
+The provisioned `JurisDigta System Logs` dashboard is the normal operator view
+for logs. It reads from Loki and provides:
+
+- `Source` filter for API, MCP, web, document engine, email scheduler,
+  Grafana, Prometheus, Loki, Alloy, status exporter, and server job log files.
+- `Level` filter for all logs, errors, warnings, info, or debug lines.
+- `Stream` filter for Docker `stdout`/`stderr`.
+- `Search Regex` textbox for incident-specific text matching.
+- Panels for log rate by source, error events by source, recent logs, and
+  errors only.
+
+Because current application logs are mostly unstructured, the severity filter is
+text-based. Prefer structured log levels in new application code so this
+dashboard can later filter on a real `level` label instead of matching message
+text.
 
 ## JurisDigta Metrics Exporter
 
@@ -123,7 +187,7 @@ sudo systemctl enable --now jurisdigta-status-exporter.service
 systemctl status jurisdigta-status-exporter.service --no-pager
 ```
 
-## Start Prometheus And Grafana
+## Start Prometheus, Loki, Alloy, And Grafana
 
 Create or update server-local Prometheus/Grafana settings:
 
@@ -196,10 +260,11 @@ Then open this on your workstation:
 http://127.0.0.1:3000
 ```
 
-Prometheus can be tunneled the same way when needed:
+Prometheus and Loki can be tunneled the same way when needed:
 
 ```bash
 ssh -L 9091:127.0.0.1:9091 jurisdigta-server
+ssh -L 3100:127.0.0.1:3100 jurisdigta-server
 ```
 
 Then open:
@@ -299,7 +364,7 @@ sudo systemctl reload nginx
 Security notes:
 
 - Keep Grafana's own login enabled with a strong password.
-- Do not publish Prometheus, Node Exporter, cAdvisor, Blackbox Exporter, or status exporter ports.
+- Do not publish Prometheus, Loki, Alloy, Node Exporter, cAdvisor, Blackbox Exporter, or status exporter ports.
 - Use Cloudflare Access for operator identity control before production use.
 - Do not display personal data, legal documents, chat contents, API keys, SMTP passwords, or database connection strings on dashboards.
 
@@ -311,6 +376,12 @@ Prometheus is provisioned automatically as a Grafana data source:
 http://prometheus:9090
 ```
 
+Loki is provisioned automatically as a Grafana data source:
+
+```text
+http://loki:3100
+```
+
 Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 `JurisDigta` folder:
 
@@ -318,6 +389,23 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 - `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
 - `JurisDigta Laws Collector`: execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
+- `JurisDigta System Logs`: Loki log stream with source, severity, stream, and regex search filters for Docker container logs and server job log files.
+
+To create or update the dashboards on `jurisdigta-server`, commit the JSON file
+under `Deployment/monitoring/grafana/dashboards`, deploy the repo, then run:
+
+```bash
+cd /srv/jurisdigta/app/Deployment/monitoring
+python3 configure_monitoring.py --validate --start
+```
+
+Grafana reloads provisioned dashboards from `/var/lib/grafana/dashboards`
+automatically. If the dashboard does not appear within about 30 seconds, restart
+Grafana without exposing any monitoring ports publicly:
+
+```bash
+docker compose up -d --force-recreate grafana
+```
 
 The application dashboards use privacy-preserving aggregate metrics only. Do
 not add panels that expose user chat text, generated legal documents, API keys,
@@ -428,7 +516,7 @@ docker compose down
 Remove persistent monitoring data only after confirming it is not needed:
 
 ```bash
-docker volume rm monitoring_prometheus-data monitoring_grafana-data
+docker volume rm monitoring_prometheus-data monitoring_grafana-data monitoring_loki-data
 ```
 
 Stop and remove the exporter service:

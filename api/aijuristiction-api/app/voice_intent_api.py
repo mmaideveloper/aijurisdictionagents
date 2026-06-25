@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.cases_api import _MAX_ACTIVE_CASES, get_store
+from app.cases_api import get_store
 from app.security import require_api_key
 from app.voice_intent import VoiceIntentName, classify_voice_intent
 from aijurisdictionagents.api_db import ApiDatabaseStore
@@ -90,10 +90,11 @@ def _execute_create_case(
             message="Case title is required before creating a case.",
         )
     active = store.count_active_cases(user_id=payload.user_id)
-    if active >= _MAX_ACTIVE_CASES:
+    max_active_cases = store.get_case_limit(user_id=payload.user_id)
+    if active >= max_active_cases:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Maximum number of cases reached ({_MAX_ACTIVE_CASES})",
+            detail=f"Maximum number of cases reached ({max_active_cases})",
         )
     case = store.create_case(user_id=payload.user_id, company_id=None, title=title.strip())
     return VoiceIntentExecutionResult(

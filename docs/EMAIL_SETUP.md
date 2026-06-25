@@ -72,6 +72,11 @@ Stop-Process -Id (Get-Content .\runs\email-scheduler-local.pid) -Force
 containers only enqueue messages into `email_outbox`; the scheduler container
 claims pending rows and performs delivery.
 
+Self-managed production defaults `EMAIL_SCHEDULER_INTERVAL_SECONDS=5` for the
+scheduler container, so queued transactional emails are claimed within about
+five seconds under normal load. Keep the value at or above `5`, which is the
+runtime minimum enforced by the scheduler.
+
 The scheduler, API, and MCP containers are wired to the same PostgreSQL API
 database for email outbox access:
 

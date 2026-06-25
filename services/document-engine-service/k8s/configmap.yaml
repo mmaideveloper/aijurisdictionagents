@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: document-engine-config
+data:
+  WORKER_POLL_INTERVAL_SECONDS: "2"
+  WORKER_BATCH_SIZE: "5"
+  GENERATED_DOCUMENTS_DIR: "/data/generated-documents"

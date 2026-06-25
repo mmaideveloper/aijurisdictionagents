@@ -24,6 +24,7 @@ test.describe('frontend case creation assistant layout', () => {
           role: 'JurisDigta user',
         }),
       );
+      window.localStorage.setItem('aj_frontend_lang', 'en');
       window.localStorage.removeItem('aijurisdictionfrontend.mock.cases.v1');
     }, authSessionKey);
   });
@@ -69,17 +70,17 @@ test.describe('frontend case creation assistant layout', () => {
         return {
           viewportWidth: window.innerWidth,
           scrollWidth: document.documentElement.scrollWidth,
-          rail: rectFor('.assistant-rail'),
+          sidebar: rectFor('.sidebar'),
           main: rectFor('.assistant-main'),
           panel: rectFor('.assistant-tool-panel'),
         };
       });
 
       expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.viewportWidth + 1);
-      expect(metrics.rail.right).toBeLessThanOrEqual(metrics.main.left);
+      expect(metrics.sidebar.right).toBeLessThanOrEqual(metrics.main.left);
       expect(metrics.main.right).toBeLessThanOrEqual(metrics.panel.left);
       expect(metrics.panel.right).toBeLessThanOrEqual(metrics.viewportWidth);
-      expect(metrics.rail.width).toBeGreaterThan(0);
+      expect(metrics.sidebar.width).toBeGreaterThan(0);
       expect(metrics.main.width).toBeGreaterThan(0);
       expect(metrics.panel.width).toBeGreaterThan(0);
     });

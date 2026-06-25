@@ -41,6 +41,38 @@ export type ReplyToSessionInput = {
   content: string;
 };
 
+export type StreamSessionInput = {
+  sessionId: string;
+  instruction: string;
+  signal?: AbortSignal;
+};
+
+export type ChatStreamEvent =
+  | {
+      event: "message";
+      data: ChatMessage;
+    }
+  | {
+      event: "processing";
+      data: {
+        stage?: string;
+        message?: string;
+        details?: unknown;
+      };
+    }
+  | {
+      event: "waiting_for_reply";
+      data: {
+        session_id?: string;
+        mode?: string;
+        message?: string;
+      };
+    }
+  | {
+      event: "result" | "done" | "error";
+      data: Record<string, unknown>;
+    };
+
 export class ApiRequestError extends Error {
   kind: "network" | "http";
   status?: number;
@@ -167,5 +199,112 @@ export const replyToSession = async (input: ReplyToSessionInput): Promise<ChatMe
     })
   });
 };
+
+const parseSseBlock = (block: string): ChatStreamEvent | null => {
+  let eventName = "message";
+  const dataLines: string[] = [];
+
+  for (const line of block.split(/\r?\n/)) {
+    if (!line.trim() || line.startsWith(":")) {
+      continue;
+    }
+    if (line.startsWith("event:")) {
+      eventName = line.slice("event:".length).trim();
+      continue;
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+  }
+
+  if (dataLines.length === 0) {
+    return null;
+  }
+
+  return {
+    event: eventName,
+    data: JSON.parse(dataLines.join("\n")) as Record<string, unknown>
+  } as ChatStreamEvent;
+};
+
+export async function* streamSession(input: StreamSessionInput): AsyncGenerator<ChatStreamEvent, void> {
+  const config = resolveApiConfig();
+  const path = `/v1/chat/sessions/${input.sessionId}/stream`;
+  const url = `${config.baseUrl}${path}`;
+
+  consoleLogger.info("Starting API stream request", {
+    method: "POST",
+    path,
+    url
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": config.apiKey
+      },
+      body: JSON.stringify({
+        instruction: input.instruction,
+        user_simulation_mode: "ReadUser"
+      }),
+      signal: input.signal
+    });
+  } catch (error) {
+    consoleLogger.error("API stream request failed before response", { path, url }, error);
+    throw new ApiRequestError(
+      "network",
+      "Network request failed. Check API availability, CORS, and URL/protocol."
+    );
+  }
+
+  if (!response.ok) {
+    const detail = await parseErrorBody(response);
+    consoleLogger.warn("API stream request failed", {
+      path,
+      status: response.status,
+      detail
+    });
+    throw new ApiRequestError("http", detail, response.status);
+  }
+
+  if (!response.body) {
+    throw new ApiRequestError("network", "Streaming body is not available in this browser.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop() ?? "";
+
+      for (const block of blocks) {
+        const event = parseSseBlock(block);
+        if (event) {
+          yield event;
+        }
+      }
+    }
+
+    buffer += decoder.decode();
+    const trailingEvent = parseSseBlock(buffer);
+    if (trailingEvent) {
+      yield trailingEvent;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 export const chatApiRuntimeConfig = resolveApiConfig;

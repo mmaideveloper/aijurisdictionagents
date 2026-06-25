@@ -15,6 +15,7 @@ from app.main import app as api_app
 from app.mcp_main import app as mcp_app
 from app.mcp_main import _redact_header_value
 from app.mcp_main import _redact_payload
+from app.users.totp import current_totp_code
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 api_client = TestClient(api_app)
@@ -171,6 +172,140 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     )
     assert text_response.status_code == 200
     assert _tool_payload(text_response)["content_text"] == "Civil code full text."
+
+
+def test_mcp_search_prefers_base_law_over_newer_amendment(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-40-1964",
+        version_id="ver-40-1964",
+        metadata_id="meta-40-1964",
+        artifact_id="artifact-40-1964",
+        law_year=1964,
+        law_number=40,
+        official_name="Obciansky zakonnik",
+        lawyer_title="Obciansky zakonnik",
+        law_identifier_text="40/1964 Zb.",
+        title="Obciansky zakonnik",
+        content_text="Aktualne konsolidovane znenie Obcianskeho zakonnika.",
+    )
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-254-2024",
+        version_id="ver-254-2024",
+        metadata_id="meta-254-2024",
+        artifact_id="artifact-254-2024",
+        law_year=2024,
+        law_number=254,
+        official_name="Zakon, ktorym sa meni a doplna zakon c. 40/1964 Zb. Obciansky zakonnik",
+        lawyer_title="Novela Obcianskeho zakonnika",
+        law_identifier_text="254/2024 Z. z.",
+        title="Zakon, ktorym sa meni a doplna Obciansky zakonnik",
+        content_text="Novelizacny zakon.",
+    )
+
+    title_search = _mcp_call(
+        "searchLaws",
+        {"query": "Obciansky zakonnik"},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    identifier_search = _mcp_call(
+        "searchLaws",
+        {"query": "40/1964"},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    explicit_identifier_search = _mcp_call(
+        "searchLaws",
+        {"query": "Obciansky zakonnik", "law_year": 1964, "law_number": 40},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert title_search.status_code == 200
+    assert identifier_search.status_code == 200
+    assert explicit_identifier_search.status_code == 200
+    assert _tool_payload(title_search)["results"][0]["document_id"] == "doc-40-1964"
+    assert _tool_payload(identifier_search)["results"][0]["document_id"] == "doc-40-1964"
+    explicit_results = _tool_payload(explicit_identifier_search)["results"]
+    assert [result["document_id"] for result in explicit_results] == ["doc-40-1964"]
+
+
+def test_mcp_get_law_text_caps_large_default_payload(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    large_text = "Civil code full text.\n" + ("A" * 25_000)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE source_artifacts SET content_text = ? WHERE document_id = ?",
+            (large_text, "doc-1"),
+        )
+        conn.commit()
+
+    text_response = _mcp_call(
+        "getLawText",
+        {"document_id": "doc-1"},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert text_response.status_code == 200
+    payload = _tool_payload(text_response)
+    assert len(payload["content_text"]) == 20_000
+    assert payload["content_truncated"] is True
+    assert payload["next_offset"] == 20_000
+    assert payload["total_content_length"] == len(large_text)
+
+
+def test_mcp_get_law_text_returns_requested_section_range(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    civil_code_text = "\n".join(
+        [
+            "Prva cast",
+            "§ 684 Predchadzajuce ustanovenie.",
+            "§ 685 Najom bytu vznika najomnou zmluvou.",
+            "§ 686 Najomna zmluva musi obsahovat oznacenie predmetu najmu.",
+            "§ 716 Skoncenie najmu bytu.",
+            "§ 717 Ubytovanie mimo najmu bytu.",
+        ]
+    )
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-40-1964",
+        version_id="ver-40-1964",
+        metadata_id="meta-40-1964",
+        artifact_id="artifact-40-1964",
+        law_year=1964,
+        law_number=40,
+        official_name="Obciansky zakonnik",
+        lawyer_title="Obciansky zakonnik",
+        law_identifier_text="40/1964 Zb.",
+        title="Obciansky zakonnik",
+        content_text=civil_code_text,
+    )
+
+    text_response = _mcp_call(
+        "getLawText",
+        {"document_id": "doc-40-1964", "section_start": 685, "section_end": 716},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert text_response.status_code == 200
+    payload = _tool_payload(text_response)
+    assert payload["content_scope"] == "sections"
+    assert payload["requested_sections"][0] == 685
+    assert payload["requested_sections"][-1] == 716
+    assert payload["section_found"] is True
+    assert "§ 685 Najom bytu" in payload["content_text"]
+    assert "§ 716 Skoncenie najmu" in payload["content_text"]
+    assert "§ 684" not in payload["content_text"]
+    assert "§ 717" not in payload["content_text"]
 
 
 def test_mcp_logs_tool_events_without_sensitive_payloads(monkeypatch, tmp_path: Path, caplog) -> None:
@@ -411,6 +546,59 @@ def test_mcp_login_invalid_otp_returns_localized_html_warning(monkeypatch, tmp_p
     assert "Overovaci kod je neplatny alebo expiroval" in verify_response.text
     assert 'name="email" type="hidden" value="mcp-login-warning@example.com"' in verify_response.text
     assert 'name="expires_in_days" type="hidden" value="7"' in verify_response.text
+
+
+def test_mcp_login_supports_totp_mfa_choice(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("MFA_REUSE_WINDOW_HOURS", "0")
+    sign_up_response = api_client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421900777222",
+            "email": "mcp-totp@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+    user_id = sign_up_response.json()["user_id"]
+    start_response = api_client.post(f"/v1/users/{user_id}/mfa/totp/start", headers=AUTH_HEADERS)
+    assert start_response.status_code == 200
+    secret = start_response.json()["manual_setup_key"]
+    confirm_response = api_client.post(
+        f"/v1/users/{user_id}/mfa/totp/confirm",
+        headers=AUTH_HEADERS,
+        json={"verification_code": current_totp_code(secret=secret)},
+    )
+    assert confirm_response.status_code == 200
+
+    login_response = mcp_client.post(
+        "/MCP/login",
+        data={"email": "mcp-totp@example.com", "password": "secret-pass", "expires_in_days": "1"},
+    )
+    assert login_response.status_code == 200
+    assert "Choose MFA method" in login_response.text
+    assert 'option value="email"' in login_response.text
+    assert 'option value="totp"' in login_response.text
+
+    method_response = mcp_client.post(
+        "/MCP/login/mfa",
+        data={"email": "mcp-totp@example.com", "mfa_method": "totp", "expires_in_days": "1"},
+    )
+    assert method_response.status_code == 200
+    assert "Authenticator code" in method_response.text
+
+    verify_response = mcp_client.post(
+        "/MCP/login/verify",
+        data={
+            "email": "mcp-totp@example.com",
+            "mfa_method": "totp",
+            "verification_code": current_totp_code(secret=secret),
+            "expires_in_days": "1",
+        },
+    )
+    assert verify_response.status_code == 200
+    assert "MCP API key created" in verify_response.text
 
 
 def test_mcp_sign_up_requires_email_otp_and_profile_fields(monkeypatch, tmp_path: Path) -> None:
@@ -1213,5 +1401,80 @@ def _create_laws_db(path: Path) -> None:
         conn.execute(
             "INSERT INTO archive_import_assets(country_code, processing_status) VALUES (?, ?)",
             ("SK", "processed"),
+        )
+        conn.commit()
+
+
+def _insert_law_search_fixture(
+    path: Path,
+    *,
+    document_id: str,
+    version_id: str,
+    metadata_id: str,
+    artifact_id: str,
+    law_year: int,
+    law_number: int,
+    official_name: str,
+    lawyer_title: str,
+    law_identifier_text: str,
+    title: str,
+    content_text: str,
+) -> None:
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """
+            INSERT INTO law_documents(
+                document_id, country_code, collection_code, law_year, law_number,
+                official_name, lawyer_title, source_url, current_status, last_stored_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                document_id,
+                "SK",
+                "ZZ",
+                law_year,
+                law_number,
+                official_name,
+                lawyer_title,
+                f"https://example.test/laws/{law_year}/{law_number}",
+                "published",
+                "2026-06-01T12:00:00Z",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO law_versions(
+                version_id, document_id, version_token, effective_from,
+                embedding_model, embedding_dimensions, embedding_vector
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (version_id, document_id, f"{law_year}0101", f"{law_year}-01-01", "test-model", 8, "[0.1]"),
+        )
+        conn.execute(
+            """
+            INSERT INTO law_metadata(
+                law_metadata_id, document_id, version_id, law_identifier_text, title, law_type
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (metadata_id, document_id, version_id, law_identifier_text, title, "act"),
+        )
+        conn.execute(
+            """
+            INSERT INTO source_artifacts(
+                artifact_id, document_id, version_id, artifact_kind, source_url,
+                storage_backend, storage_path, content_text, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                artifact_id,
+                document_id,
+                version_id,
+                "html",
+                f"https://example.test/laws/{law_year}/{law_number}",
+                "local_file",
+                "ignored",
+                content_text,
+                "2026-06-01T12:00:00Z",
+            ),
         )
         conn.commit()

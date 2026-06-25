@@ -6,6 +6,7 @@ import AuthCallbackView from "./auth/AuthCallbackView";
 import Home from "./pages/Home";
 import Auth from "./pages/Auth";
 import Pricing from "./pages/Pricing";
+import News from "./pages/News";
 import AppDashboard from "./pages/AppDashboard";
 import AssistantWorkspace from "./pages/AssistantWorkspace";
 import CaseIntake from "./pages/CaseIntake";
@@ -15,10 +16,12 @@ import Communication from "./pages/Communication";
 import LawValidation from "./pages/LawValidation";
 import LawRecommendation from "./pages/LawRecommendation";
 import Profile from "./pages/Profile";
+import DocumentViewer from "./pages/DocumentViewer";
 import Disclaimer from "./pages/Disclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import NotFound from "./pages/NotFound";
+import { isAgentHost } from "./routing";
 
 interface ProtectedRouteProps {
   children: React.ReactElement;
@@ -28,23 +31,36 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated } = useAuth();
 
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/auth" replace />;
   }
 
   return children;
+};
+
+const RootRoute: React.FC = () => {
+  if (isAgentHost()) {
+    return (
+      <ProtectedRoute>
+        <AssistantWorkspace />
+      </ProtectedRoute>
+    );
+  }
+
+  return <Home />;
 };
 
 const App: React.FC = () => {
   return (
     <PageLayout>
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<RootRoute />} />
         <Route path="/auth" element={<Auth />} />
         <Route
           path="/auth/callback"
           element={<AuthCallbackView onSessionReady={() => undefined} />}
         />
         <Route path="/pricing" element={<Pricing />} />
+        <Route path="/aktuality" element={<News />} />
         <Route
           path="/app"
           element={
@@ -128,6 +144,10 @@ const App: React.FC = () => {
               <Profile />
             </ProtectedRoute>
           }
+        />
+        <Route
+          path="/app/documents/view"
+          element={<DocumentViewer />}
         />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/disclaimer" element={<Disclaimer />} />

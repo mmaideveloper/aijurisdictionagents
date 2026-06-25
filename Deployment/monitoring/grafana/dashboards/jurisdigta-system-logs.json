@@ -1,0 +1,516 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Open In Explore",
+      "tooltip": "Open Loki Explore with the same time range.",
+      "type": "link",
+      "url": "/explore?left={\"datasource\":\"jurisdigta-loki\",\"queries\":[{\"expr\":\"{stack=\\\"jurisdigta\\\"}\"}],\"range\":{\"from\":\"${__from}\",\"to\":\"${__to}\"}}"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "jurisdigta-loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "logs/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "jurisdigta-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (container) (rate({stack=\"jurisdigta\", container=~\"${log_source:regex}\", stream=~\"${stream:regex}\"} |~ \"${level_regex:raw}\" |~ \"${search:raw}\" [$__auto]))",
+          "legendFormat": "{{container}}",
+          "queryType": "range",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "jurisdigta-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (rate({stack=\"jurisdigta\", service=~\"${log_source:regex}\"} |~ \"${level_regex:raw}\" |~ \"${search:raw}\" [$__auto]))",
+          "hide": false,
+          "legendFormat": "{{service}}",
+          "queryType": "range",
+          "refId": "B"
+        }
+      ],
+      "title": "Log Rate By Source",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "jurisdigta-loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "jurisdigta-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (container) (count_over_time({stack=\"jurisdigta\", container=~\"${log_source:regex}\", stream=~\"${stream:regex}\"} |~ \"(?i)(error|exception|traceback|failed|fatal)\" |~ \"${search:raw}\" [$__auto]))",
+          "legendFormat": "{{container}}",
+          "queryType": "range",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "jurisdigta-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (count_over_time({stack=\"jurisdigta\", service=~\"${log_source:regex}\"} |~ \"(?i)(error|exception|traceback|failed|fatal)\" |~ \"${search:raw}\" [$__auto]))",
+          "legendFormat": "{{service}}",
+          "queryType": "range",
+          "refId": "B"
+        }
+      ],
+      "title": "Error Events By Source",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "jurisdigta-loki"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "jurisdigta-loki"
+          },
+          "editorMode": "code",
+          "expr": "{stack=\"jurisdigta\", container=~\"${log_source:regex}\", stream=~\"${stream:regex}\"} |~ \"${level_regex:raw}\" |~ \"${search:raw}\"",
+          "queryType": "range",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "jurisdigta-loki"
+          },
+          "editorMode": "code",
+          "expr": "{stack=\"jurisdigta\", service=~\"${log_source:regex}\"} |~ \"${level_regex:raw}\" |~ \"${search:raw}\"",
+          "queryType": "range",
+          "refId": "B"
+        }
+      ],
+      "title": "Recent Logs",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "jurisdigta-loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 4,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "jurisdigta-loki"
+          },
+          "editorMode": "code",
+          "expr": "{stack=\"jurisdigta\", container=~\"${log_source:regex}\", stream=~\"${stream:regex}\"} |~ \"(?i)(error|exception|traceback|failed|fatal)\" |~ \"${search:raw}\"",
+          "queryType": "range",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "jurisdigta-loki"
+          },
+          "editorMode": "code",
+          "expr": "{stack=\"jurisdigta\", service=~\"${log_source:regex}\"} |~ \"(?i)(error|exception|traceback|failed|fatal)\" |~ \"${search:raw}\"",
+          "queryType": "range",
+          "refId": "B"
+        }
+      ],
+      "title": "Errors Only",
+      "type": "logs"
+    }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": [
+    "jurisdigta",
+    "logs",
+    "loki"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "description": "Filter Docker container logs and server job logs by source.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Source",
+        "multi": true,
+        "name": "log_source",
+        "options": [
+          {
+            "selected": false,
+            "text": "API",
+            "value": "jurisdigta-api"
+          },
+          {
+            "selected": false,
+            "text": "MCP",
+            "value": "jurisdigta-mcp"
+          },
+          {
+            "selected": false,
+            "text": "Web",
+            "value": "jurisdigta-web"
+          },
+          {
+            "selected": false,
+            "text": "Document Engine",
+            "value": "jurisdigta-document-engine"
+          },
+          {
+            "selected": false,
+            "text": "Email Scheduler",
+            "value": "jurisdigta-email-scheduler"
+          },
+          {
+            "selected": false,
+            "text": "Status Exporter",
+            "value": "jurisdigta-status-exporter"
+          },
+          {
+            "selected": false,
+            "text": "Grafana",
+            "value": "jurisdigta-grafana"
+          },
+          {
+            "selected": false,
+            "text": "Prometheus",
+            "value": "jurisdigta-prometheus"
+          },
+          {
+            "selected": false,
+            "text": "Loki",
+            "value": "jurisdigta-loki"
+          },
+          {
+            "selected": false,
+            "text": "Alloy",
+            "value": "jurisdigta-alloy"
+          },
+          {
+            "selected": false,
+            "text": "Job Log Files",
+            "value": "jurisdigta-job-log"
+          }
+        ],
+        "query": "API : jurisdigta-api, MCP : jurisdigta-mcp, Web : jurisdigta-web, Document Engine : jurisdigta-document-engine, Email Scheduler : jurisdigta-email-scheduler, Status Exporter : jurisdigta-status-exporter, Grafana : jurisdigta-grafana, Prometheus : jurisdigta-prometheus, Loki : jurisdigta-loki, Alloy : jurisdigta-alloy, Job Log Files : jurisdigta-job-log",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": ".*"
+        },
+        "description": "Text-level severity filter for unstructured logs.",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Level",
+        "multi": false,
+        "name": "level_regex",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": ".*"
+          },
+          {
+            "selected": false,
+            "text": "Error",
+            "value": "(?i)(error|exception|traceback|failed|fatal)"
+          },
+          {
+            "selected": false,
+            "text": "Warning",
+            "value": "(?i)(warn|warning)"
+          },
+          {
+            "selected": false,
+            "text": "Info",
+            "value": "(?i)\\binfo\\b"
+          },
+          {
+            "selected": false,
+            "text": "Debug",
+            "value": "(?i)\\bdebug\\b"
+          }
+        ],
+        "query": "All : .*, Error : (?i)(error|exception|traceback|failed|fatal), Warning : (?i)(warn|warning), Info : (?i)\\binfo\\b, Debug : (?i)\\bdebug\\b",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "jurisdigta-loki"
+        },
+        "definition": "label_values({stack=\"jurisdigta\"}, stream)",
+        "description": "Docker stdout/stderr stream. Job log files do not have this label.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Stream",
+        "multi": true,
+        "name": "stream",
+        "query": {
+          "label": "stream",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{stack=\"jurisdigta\"}",
+          "type": 1
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": ".*",
+          "value": ".*"
+        },
+        "description": "Optional regex text filter. Keep .* to match everything.",
+        "hide": 0,
+        "label": "Search Regex",
+        "name": "search",
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "query": ".*",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "JurisDigta System Logs",
+  "uid": "jurisdigta-system-logs",
+  "version": 1,
+  "weekStart": ""
+}

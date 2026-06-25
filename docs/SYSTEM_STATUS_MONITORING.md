@@ -19,6 +19,28 @@ The endpoint returns safe operational status only:
 
 The endpoint requires the existing `x-api-key` header.
 
+## Daily Stats API
+
+Use the read-only daily stats endpoint for scheduled operational summaries:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${JURISDIGTA_DAILY_STATS_TOKEN}" \
+  "https://api.jurisdigta.eu/v1/monitoring/daily-stats?window=24h"
+```
+
+The endpoint returns one row per monitored system with `status`,
+`minutes_down`, `error_count`, and `notes`. Downtime minutes come from
+Prometheus probe/component history when `PROMETHEUS_BASE_URL` is configured.
+Error counts come from Application Insights when available, with local server
+status as a limited fallback. If a historical source is unavailable, the field
+is returned as `"unknown"` and the row notes explain which source is missing.
+
+Set `JURISDIGTA_DAILY_STATS_TOKEN` in production to allow external scheduled
+read-only checks without exposing Grafana, Prometheus, Loki, or server
+credentials. If the token is unset, the endpoint falls back to the normal
+`x-api-key` guard for local development.
+
 ## Compliance Baseline
 
 - Do not expose API keys, database passwords, full connection strings, chat text, generated legal documents, user emails, or legal-risk user outputs.
@@ -90,17 +112,20 @@ When `APPLICATIONINSIGHTS_CONNECTION_STRING` and Log Analytics settings are conf
 
 When Azure telemetry is not configured, the endpoint falls back to local counts written by `scripts/server/write_system_status.py`.
 
-## Prometheus And Grafana Dashboard
+## Prometheus, Loki, Alloy, And Grafana Dashboard
 
 Recommended self-managed dashboard stack for `jurisdigta-server`:
 
 - Prometheus for metrics storage and alert rule evaluation.
+- Loki for queryable server-local troubleshooting logs.
+- Grafana Alloy for Docker and local job log collection into Loki.
 - Grafana for dashboards and alert visualization.
 - Node Exporter for Linux host CPU, memory, disk, filesystem, and kernel metrics.
 - cAdvisor for Docker container CPU, memory, filesystem, and restart behavior.
 - Blackbox Exporter for HTTP availability probes. In Docker Compose it probes API and MCP through the internal service URLs `http://jurisdigta-api:8080/health` and `http://jurisdigta-mcp:8070/health` on `MONITORING_APP_DOCKER_NETWORK`, keeping host ports bound to loopback.
 - `scripts/server/export_system_status_metrics.py` for JurisDigta-specific Prometheus metrics from `/v1/system/status`.
 - `scripts/server/write_system_status.py` also records privacy-minimized aggregate request metrics from API/MCP Docker logs and aggregate PostgreSQL user/case counts. It does not persist request IDs, user IDs, case IDs, prompts, documents, or response bodies in Prometheus labels.
+- Raw troubleshooting logs are available through Grafana Explore using the Loki data source. Loki retention defaults to `LOKI_RETENTION_DAYS=7`.
 
 Deployment assets are in:
 
@@ -125,7 +150,7 @@ Validate:
 curl -fsS http://127.0.0.1:9108/metrics | head
 ```
 
-Start Prometheus and Grafana:
+Start Prometheus, Loki, Alloy, and Grafana:
 
 ```bash
 cd /srv/jurisdigta/app/Deployment/monitoring
@@ -161,7 +186,9 @@ curl -fsS http://127.0.0.1:3000/api/health
 If the server has a browser session, open `http://127.0.0.1:3000` locally. On a headless server, use the SSH tunnel flow above.
 
 For mobile/public HTTPS access on the current no-static-IP production server,
-publish Grafana through Cloudflare Tunnel and protect it with Cloudflare Access:
+publish only Grafana through Cloudflare Tunnel and protect it with Cloudflare
+Access. Do not publish Prometheus, Loki, Alloy, exporters, or status exporter
+directly:
 
 ```text
 https://admin.jurisdigta.eu/grafana/

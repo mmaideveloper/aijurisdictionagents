@@ -111,6 +111,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_OPENAI_DEPLOYMENT` | Azure OpenAI chat deployment name used by the API |
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Azure OpenAI embedding deployment name used for document chunk embeddings, recommended `text-embedding-3-large` |
 | `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version, keep aligned with `.env.example` unless you intentionally upgrade |
+| `JURISDIGTA_UNLIMITED_ACCESS_EMAILS` | Privileged comma- or semicolon-separated email allowlist for controlled test/operator accounts with unlimited case/document access; default `mmaideveloper@gmail.com` |
 | `AZURE_POSTGRES_SERVER_NAME` | Azure PostgreSQL Flexible Server name |
 | `AZURE_POSTGRES_DATABASE_NAME` | API database name |
 | `AZURE_POSTGRES_ADMIN_USERNAME` | PostgreSQL admin login |
@@ -136,7 +137,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `EMAIL_SMTP_USE_TLS` | SMTP STARTTLS flag, default `true` |
 | `EMAIL_SMTP_USERNAME` | SMTP username, default `no-reply@jurisdigta.eu` |
 | `EMAIL_SCHEDULER_ENABLED` | Optional email scheduler toggle for API replicas, default `true`; set `false` when a dedicated Azure email scheduler job is deployed |
-| `EMAIL_SCHEDULER_INTERVAL_SECONDS` | Optional scheduler interval, default `60` |
+| `EMAIL_SCHEDULER_INTERVAL_SECONDS` | Optional scheduler interval for Azure API replicas, default `60` |
 | `CAR_VALIDATION_API_BASE_URL` | Optional vehicle validation API base URL, for example `https://www.databazavozidiel.sk`; leave unset to skip live car API checks |
 | `AZURE_POSTGRES_SKU_NAME` | Optional infra sizing value |
 | `AZURE_POSTGRES_SKU_TIER` | Optional infra sizing value |
@@ -144,6 +145,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_POSTGRES_STORAGE_SIZE_GB` | Optional PostgreSQL storage size |
 | `CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the API. Include browser-hosted frontend origins such as `https://web.jurisdigta.eu` and `https://agent.jurisdigta.eu`; self-managed prod deploy appends those two origins when starting the API container |
 | `MCP_CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the dedicated MCP service; default production value should include `https://mcp.jurisdigta.eu` |
+| `INTERNAL_MCP_BASE_URL` | Optional API-to-MCP base URL for internal assistant law lookups. Self-managed prod injects `http://jurisdigta-mcp:8070` into the API container so chat answers can call the same MCP `searchLaws` and `getLawText` tools as external assistants |
 | `MCP_PORT` | Local/self-managed MCP service port when using Docker Compose, default `8070` |
 | `CONTACT_CAPTCHA_REQUIRED` | Set `true` in public environments to require Cloudflare Turnstile verification for `POST /v1/contact` |
 | `CONTACT_RATE_LIMIT_MAX_REQUESTS` | Optional backend per-IP contact form throttle, default `5` |
@@ -357,6 +359,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON` | `1` | Install/update the self-managed document processor cron wrapper; set `0` only for manual worker runs |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT` | `20` | Max pending documents processed per scheduled run |
+| `JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS` | `5` | Email outbox poll interval in seconds for near-immediate self-managed delivery; minimum accepted value is `5` |
 
 Required `prod` GitHub Environment secret:
 
@@ -384,8 +387,10 @@ Server-local `jurisdigta.env` must include at least:
 - `AZURE_LAWS_POSTGRES_DATABASE_NAME_SK=laws_sk`
 - `MCP_API_JWT_SECRET`
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
+- `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` is injected by the self-managed deploy script for the API container; it normally does not need to be stored in the GitHub Environment.
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
+- `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` or another bounded runtime in minutes
 - email/Turnstile settings when those production features are enabled
@@ -463,6 +468,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `MCP_CORS_ALLOW_ORIGINS=https://mcp.jurisdigta.eu`
 - `MCP_PORT=8070` for self-managed Docker Compose deployments
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu` for self-managed MCP OAuth metadata and token audience binding
+- `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` for API-to-MCP law-tool calls inside the Docker network; the self-managed deploy script injects this value automatically
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai` for remote connector OAuth callbacks
 - `MCP_OTP_REUSE_WINDOW_HOURS=24` for bounded repeat OTP suppression after successful MCP OTP verification
 - `CONTACT_CAPTCHA_REQUIRED=true`

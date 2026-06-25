@@ -51,3 +51,4 @@ Automation chain contract: `idea-task-agent` -> `prepare-task` -> `implementatio
 - `implementation-agent`: selects ready implementation tasks, moves them through project status, implements, fixes required validation failures, opens a PR, and moves successful work to In review.
 - `deployment-agent`: monitors failed deployment/build workflows and creates implementation-ready GitHub tasks for distinct unresolved failures.
 - `merge-agent`: closes out safe PRs by checking review status, checks, mergeability, linked task state, merge, issue comments, branch cleanup, and project status.
+- `jurisdigta-monitoring-task`: runs hourly public production checks for API, web, agent, MCP, Grafana, and the laws collector recency contract; sends a short email only on a problem or meaningful change.

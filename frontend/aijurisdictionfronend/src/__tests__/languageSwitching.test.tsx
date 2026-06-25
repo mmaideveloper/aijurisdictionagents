@@ -69,18 +69,30 @@ describe("language switching", () => {
       </LanguageProvider>
     );
 
-    expect(screen.getByText("What would you like to explore today?")).toBeDefined();
-    expect(screen.getByText("Cases")).toBeDefined();
-
-    await user.click(screen.getByRole("button", { name: "SK" }));
-
     expect(screen.getByText("Čo by ste dnes chceli preskúmať?")).toBeDefined();
-    expect(screen.getByText("Prípady")).toBeDefined();
-    expect(window.localStorage.getItem("aj_frontend_lang")).toBe("sk");
+    expect(screen.getByText("Konfigurácie")).toBeDefined();
 
-    await user.click(screen.getByRole("link", { name: "Cenník" }));
+    await user.click(screen.getByRole("button", { name: "EN" }));
 
-    expect(screen.getByText("Zvoľte si tempo, ktoré vám vyhovuje.")).toBeDefined();
-    expect(screen.getByRole("link", { name: "Domov" })).toBeDefined();
+    expect(screen.getByText("What would you like to explore today?")).toBeDefined();
+    expect(screen.getByText("Configurations")).toBeDefined();
+    expect(window.localStorage.getItem("aj_frontend_lang")).toBe("en");
+
+    await user.click(screen.getByRole("link", { name: "Pricing" }));
+
+    expect(
+      screen.getByText("Free is active now. A paid €10 Case plan is available; Basic and Premium are coming soon.")
+    ).toBeDefined();
+    expect(screen.getByText("Free access for one case, valid for 1 day.")).toBeDefined();
+    expect(screen.getByText("Single paid case plan from the corporate pricing.")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Monthly" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Yearly" })).toBeNull();
+    expect(screen.getByText("Basic")).toBeDefined();
+    expect(screen.getByText("Case")).toBeDefined();
+    expect(screen.getByText("Premium")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Choose Free" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Choose Case" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getAllByRole("button", { name: "Coming soon" })).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "Home" })).toBeDefined();
   });
 });

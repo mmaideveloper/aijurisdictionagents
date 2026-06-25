@@ -1060,6 +1060,7 @@ def test_document_export_uses_user_profile_defaults_for_missing_party_data() -> 
         data_processing_consent_version=None,
         mcp_api_key_hash=None,
         mcp_api_key_expires_at=None,
+        created_at="2026-06-21T00:00:00Z",
     )
 
     title, lines = _build_document_export_content(
@@ -1178,6 +1179,7 @@ def test_document_export_extracts_rental_data_from_draft_text_and_profile() -> N
         data_processing_consent_version=None,
         mcp_api_key_hash=None,
         mcp_api_key_expires_at=None,
+        created_at="2026-06-21T00:00:00Z",
     )
 
     _title, lines = _build_document_export_content(
@@ -1242,6 +1244,7 @@ def test_document_export_does_not_use_phone_number_as_profile_name() -> None:
         data_processing_consent_version=None,
         mcp_api_key_hash=None,
         mcp_api_key_expires_at=None,
+        created_at="2026-06-21T00:00:00Z",
     )
 
     _title, lines = _build_document_export_content(
@@ -1283,6 +1286,7 @@ def test_signed_in_user_profile_prompt_note_uses_profile_name_and_address(monkey
         data_processing_consent_version=None,
         mcp_api_key_hash=None,
         mcp_api_key_expires_at=None,
+        created_at="2026-06-21T00:00:00Z",
     )
     monkeypatch.setattr(
         chat_api,
@@ -1298,6 +1302,73 @@ def test_signed_in_user_profile_prompt_note_uses_profile_name_and_address(monkey
     assert "1070000001" not in note
     assert "AB123456" not in note
     assert "800102/1234" not in note
+
+
+def test_current_date_prompt_note_uses_runtime_date() -> None:
+    from datetime import date
+
+    from app.chat.api import _build_current_date_prompt_note
+
+    note = _build_current_date_prompt_note(today=date(2026, 6, 23))
+
+    assert "CURRENT DATE CONTEXT" in note
+    assert "2026-06-23" in note
+    assert "23.6.2026" in note
+    assert "23. juna 2026" in note
+    assert "Do not invent" in note
+
+
+def test_reply_endpoint_includes_current_date_context_in_lawyer_prompt(monkeypatch) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    captured_prompts: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            return SimpleNamespace(content="MODEL_REPLY", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(
+        chat_api,
+        "_build_current_date_prompt_note",
+        lambda: (
+            "CURRENT DATE CONTEXT:\n"
+            "- Today's date is 2026-06-23 (23.6.2026; 23. juna 2026).\n"
+            "- If the user asks for today's/current/date-of-signature date in a document, "
+            "use this date.\n"
+            "- Do not invent, infer from model training data, or reuse old example dates."
+        ),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Priprav splnomocnenie a pouzi dnesny datum."},
+        headers=AUTH_HEADERS,
+    )
+
+    assert reply_response.status_code == 200
+    assert captured_prompts
+    assert "CURRENT DATE CONTEXT" in captured_prompts[-1]
+    assert "2026-06-23" in captured_prompts[-1]
+    assert "23.6.2026" in captured_prompts[-1]
+    assert "23. juna 2026" in captured_prompts[-1]
 
 
 def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(monkeypatch) -> None:
@@ -1343,6 +1414,377 @@ def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(mon
     assert captured_prompts
     assert "SIGNED-IN USER PROFILE DEFAULTS" in captured_prompts[-1]
     assert "Client full name: Marek Matonok" in captured_prompts[-1]
+
+
+def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        if name == "searchLaws":
+            return {
+                "results": [
+                    {
+                        "document_id": "doc-40-1964",
+                        "law_identifier_text": "40/1964 Zb.",
+                        "title": "Obciansky zakonnik",
+                    }
+                ]
+            }
+        if name == "getLawText":
+            return {
+                "document_id": arguments["document_id"],
+                "law_identifier_text": "40/1964 Zb.",
+                "title": "Obciansky zakonnik",
+                "content_text": "§ 588: Z kupnej zmluvy vznikne predavajucemu povinnost predmet kupy odovzdat.",
+            }
+        raise AssertionError(name)
+
+    monkeypatch.setattr("app.mcp_api._call_tool", fake_call_tool)
+
+    context = build_mcp_law_context(
+        query="Co hovori zakon 40/1964 o kupnej zmluve?",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert calls[0] == (
+        "searchLaws",
+        {
+            "query": "40/1964",
+            "country_code": "SK",
+            "limit": 3,
+            "law_number": 40,
+            "law_year": 1964,
+        },
+    )
+    assert calls[1][0] == "getLawText"
+    assert calls[1][1]["document_id"] == "doc-40-1964"
+    assert "INTERNAL MCP LAW TOOL CONTEXT" in context.prompt_note
+    assert "searchLaws" in context.prompt_note
+    assert "getLawText" in context.prompt_note
+    assert "40/1964 Zb." in context.prompt_note
+    assert context.document is not None
+    assert context.document.path == "internal-mcp-law-context.txt"
+    assert "§ 588" in context.document.content
+
+
+def test_mcp_law_context_prefers_remote_mcp_endpoint(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    requests: list[dict[str, object]] = []
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            request = requests[-1]
+            params = request["json"]["params"]  # type: ignore[index]
+            name = params["name"]  # type: ignore[index]
+            if name == "searchLaws":
+                text = json.dumps(
+                    {
+                        "results": [
+                            {
+                                "document_id": "doc-40-1964",
+                                "law_identifier_text": "40/1964 Zb.",
+                                "title": "Obciansky zakonnik",
+                            }
+                        ]
+                    }
+                )
+            else:
+                text = json.dumps(
+                    {
+                        "document_id": "doc-40-1964",
+                        "law_identifier_text": "40/1964 Zb.",
+                        "title": "Obciansky zakonnik",
+                        "content_text": "§ 588 text",
+                    }
+                )
+            return {"result": {"content": [{"type": "text", "text": text}]}}
+
+    class _FakeClient:
+        def __init__(self, timeout: float) -> None:
+            assert timeout == 10.0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, *, json: dict[str, object], headers: dict[str, str]):
+            requests.append({"url": url, "json": json, "headers": headers})
+            return _FakeResponse()
+
+    monkeypatch.setenv("INTERNAL_MCP_BASE_URL", "http://jurisdigta-mcp:8070")
+    monkeypatch.setattr("app.chat.mcp_law_context.httpx.Client", _FakeClient)
+    monkeypatch.setattr(
+        "app.mcp_api._call_tool",
+        lambda name, arguments: (_ for _ in ()).throw(AssertionError("unexpected in-process MCP call")),
+    )
+
+    context = build_mcp_law_context(
+        query="Co hovori zakon 40/1964 o kupnej zmluve?",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert [request["url"] for request in requests] == [
+        "http://jurisdigta-mcp:8070/MCP",
+        "http://jurisdigta-mcp:8070/MCP",
+    ]
+    assert "§ 588 text" in context.prompt_note
+
+
+def test_mcp_law_context_skips_non_slovak_non_legal_turn(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    monkeypatch.setattr(
+        "app.mcp_api._call_tool",
+        lambda name, arguments: (_ for _ in ()).throw(AssertionError("unexpected MCP call")),
+    )
+
+    context = build_mcp_law_context(
+        query="Write a short greeting.",
+        country="US",
+        language="en-US",
+    )
+
+    assert context is None
+
+
+def test_mcp_law_context_skips_plain_document_drafting_turn(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    monkeypatch.setattr(
+        "app.mcp_api._call_tool",
+        lambda name, arguments: (_ for _ in ()).throw(AssertionError("unexpected MCP call")),
+    )
+
+    context = build_mcp_law_context(
+        query="Priprav mi vsetky dokumenty na prevod obchodneho podielu.",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is None
+
+
+def test_reply_endpoint_injects_internal_mcp_law_context_in_prompt_and_documents(monkeypatch) -> None:
+    from aijurisdictionagents.schemas import Document as CoreDocument
+    from app.chat.mcp_law_context import McpLawContext
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    captured_prompts: list[str] = []
+    captured_document_paths: list[str] = []
+    captured_events: list[dict[str, object]] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            captured_document_paths.extend(document.path for document in documents)
+            return SimpleNamespace(content="MODEL_REPLY_WITH_LAW_CONTEXT", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        chat_api,
+        "prepare_country_direct_reply",
+        lambda **_kwargs: SimpleNamespace(
+            direct_reply=None,
+            prompt_note="",
+            supplemental_documents=[],
+            processing_events=[],
+        ),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "build_mcp_law_context",
+        lambda **_kwargs: McpLawContext(
+            prompt_note="INTERNAL MCP LAW TOOL CONTEXT:\n- cite 40/1964 Zb.",
+            document=CoreDocument(
+                doc_id="internal-mcp-law-context",
+                path="internal-mcp-law-context.txt",
+                content="40/1964 Zb. § 588",
+            ),
+            processing_event={
+                "stage": "mcp_law_context",
+                "message": "MCP searched",
+                "details": {"result_count": 1},
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    _user, lawyer, visible, _events = chat_api._run_direct_lawyer_turn(
+        session_id=UUID(session_id),
+        session=chat_api._repository.get_session(UUID(session_id)),
+        content="Co hovori Obciansky zakonnik o kupnej zmluve?",
+        processing_event_callback=captured_events.append,
+    )
+
+    assert lawyer.agent_name == "LawyerSlovakia"
+    assert visible == "MODEL_REPLY_WITH_LAW_CONTEXT"
+    assert captured_prompts
+    assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_prompts[-1]
+    assert "40/1964 Zb." in captured_prompts[-1]
+    assert "internal-mcp-law-context.txt" in captured_document_paths
+    assert any(event.get("stage") == "mcp_law_context" for event in captured_events)
+
+
+def test_uploaded_documents_contract_request_requires_extract_then_confirm_prompt(monkeypatch) -> None:
+    from aijurisdictionagents.schemas import Document as CoreDocument
+    from app.chat.models import Session
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    captured_prompts: list[str] = []
+    captured_document_paths: list[str] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            captured_document_paths.extend(document.path for document in documents)
+            return SimpleNamespace(content="MODEL_CONFIRM_EXTRACTED_DATA_REPLY", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        chat_api,
+        "get_document_template_store",
+        lambda: SimpleNamespace(find_best_match=lambda **_kwargs: (0, None)),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "prepare_country_direct_reply",
+        lambda **_kwargs: SimpleNamespace(
+            direct_reply=None,
+            prompt_note="",
+            supplemental_documents=[],
+            processing_events=[],
+        ),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session = repository.create_session(Session(country="SK", language="SK", discussion_type="advice"))
+
+    _user, lawyer, visible, events = chat_api._run_direct_lawyer_turn(
+        session_id=session.id,
+        session=session,
+        content="Priprav novu najomnu zmluvu z prilozenych dokumentov.",
+        supplemental_documents=[
+            CoreDocument(
+                doc_id="lease-source",
+                path="podklady-najom.txt",
+                content=(
+                    "Prenajimatel: Jana Novotna. Najomca: Tomas Hlavaty. "
+                    "Byt: Dunajska 12, Bratislava. Najomne: 850 EUR."
+                ),
+            )
+        ],
+    )
+
+    assert visible == "MODEL_CONFIRM_EXTRACTED_DATA_REPLY"
+    assert lawyer.agent_name == "LawyerSlovakia"
+    assert events == []
+    assert captured_document_paths == ["podklady-najom.txt"]
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "UPLOADED DOCUMENT CONTRACT INTAKE MODE" in prompt
+    assert "review every available uploaded document" in prompt
+    assert "Udaje, ktore som nasiel v dokumentoch" in prompt
+    assert "Suhlasite, aby som zmluvu pripravil z tychto udajov" in prompt
+    assert "Do not generate or export the final contract until the user confirms" in prompt
+
+
+def test_legal_document_preparation_policy_requires_separate_outputs_and_web_source(monkeypatch) -> None:
+    import app.chat.api as chat_api
+
+    monkeypatch.setattr(
+        chat_api,
+        "get_document_template_store",
+        lambda: SimpleNamespace(find_best_match=lambda **_kwargs: (0, None)),
+    )
+
+    note = chat_api._build_legal_document_preparation_policy_note(
+        content="Priprav splnomocnenie v slovenskej a anglickej verzii z CSV so 100 splnomocnencami.",
+        country="SK",
+    )
+
+    assert "LEGAL DOCUMENT PREPARATION MODE" in note
+    assert "multiple languages" in note
+    assert "separate final document" in note
+    assert "100 separate PDF documents" in note
+    assert "case.documents entry" in note
+    assert "AIWebSearchAgent" in note
+    assert "include the URL/title/location" in note
+
+
+def test_legal_document_preparation_policy_includes_managed_template_source(monkeypatch) -> None:
+    import app.chat.api as chat_api
+
+    template = SimpleNamespace(
+        title="Splnomocnenie",
+        template_key="sk.civil.power_of_attorney",
+        source_url="https://example.test/templates/splnomocnenie",
+        body="",
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "get_document_template_store",
+        lambda: SimpleNamespace(find_best_match=lambda **_kwargs: (7, template)),
+    )
+
+    note = chat_api._build_legal_document_preparation_policy_note(
+        content="Priprav splnomocnenie na pouzivanie firemneho auta.",
+        country="SK",
+    )
+
+    assert "Managed template match: Splnomocnenie (sk.civil.power_of_attorney), score 7." in note
+    assert "Managed template source location: https://example.test/templates/splnomocnenie." in note
+    assert "metadata/source only and no stored body" in note
+    assert "AIWebSearchAgent" in note
+
+
+def test_uploaded_document_contract_confirmation_note_ignores_review_only_request() -> None:
+    from aijurisdictionagents.schemas import Document as CoreDocument
+    from app.chat.api import _build_uploaded_document_contract_confirmation_note
+
+    note = _build_uploaded_document_contract_confirmation_note(
+        content="Pozri zmluvu a zhrn rizika.",
+        documents=[CoreDocument(doc_id="doc-1", path="zmluva.txt", content="Text zmluvy")],
+    )
+
+    assert note == ""
 
 
 def test_lawyer_output_validation_removes_profile_missing_message_when_profile_complete() -> None:
@@ -2236,7 +2678,14 @@ def test_prepare_country_direct_reply_reuses_cached_registry_lookup_for_followup
     assert fake_registry.calls == 1
     assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in second_preparation.prompt_note
     assert "Verified registration number: 46491261" in second_preparation.prompt_note
-    assert any(event.get("stage") == "tool_cache" for event in second_preparation.processing_events)
+    followup_stages = [event.get("stage") for event in second_preparation.processing_events]
+    assert "tool_cache" in followup_stages
+    assert "tool_start" not in followup_stages
+    assert "tool_result" not in followup_stages
+    assert not any(
+        "idem overit spolocnost" in str(event.get("message", "")).lower()
+        for event in second_preparation.processing_events
+    )
     slovakia_service._ORSR_CACHE.clear()
 
 
@@ -2317,6 +2766,134 @@ def test_slovak_company_query_removes_case_preposition_prefix() -> None:
         )
         == "Esolutions SK s.r.o."
     )
+
+
+def test_slovak_company_query_handles_firmy_case_and_typo_prefix() -> None:
+    from app.chat.country_services.slovakia import _extract_slovak_company_query
+
+    assert (
+        _extract_slovak_company_query(
+            messages=[],
+            current_content=(
+                "chcem splnomocnenie pre dceru Emila Matonokova na vedenie firemneho "
+                "motoroveho vozidla PP472DT fimy ESolutions SK s.r.o. od 1.7.2026 "
+                "na dobu neurcitu."
+            ),
+        )
+        == "ESolutions SK s.r.o."
+    )
+    assert (
+        _extract_slovak_company_query(
+            messages=[],
+            current_content="splnomocnenie pre dceru Emila Matonokova na auto firmy ESolutions SK s.r.o.",
+        )
+        == "ESolutions SK s.r.o."
+    )
+
+
+def test_prepare_slovakia_vehicle_authorization_captures_user_facts_and_company_seat(monkeypatch) -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizanska 665, 059 18 Spisske Bystre",
+                        "status": "Aktivna",
+                    },
+                ),
+            )
+
+    slovakia_service._ORSR_CACHE.clear()
+    monkeypatch.setattr(slovakia_service, "build_default_tool_registry", lambda: _FakeRegistry())
+    session = Session(country="SK", language="sk-SK")
+    current_content = (
+        "chcem splnomocnenie pre dceru Emila Matonokova na vedenie firemneho "
+        "motoroveho vozidla PP472DT fimy ESolutions SK s.r.o. od 1.7.2026 "
+        "na dobu neurcitu."
+    )
+    messages = [Message(session_id=session.id, role=MessageRole.USER, content=current_content)]
+    events: list[dict[str, object]] = []
+
+    preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=messages,
+        current_content=current_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+        processing_event_callback=events.append,
+    )
+
+    prompt_note = preparation.prompt_note
+    assert "SLOVAK VEHICLE AUTHORIZATION INTAKE MODE" in prompt_note
+    assert "authorized_person: Emila Matonokova" in prompt_note
+    assert "principal_company: ESolutions SK s.r.o., ICO 46491261, Partizanska 665" in prompt_note
+    assert "vehicle_registration_number: PP472DT" in prompt_note
+    assert "effective_from: 1.7.2026" in prompt_note
+    assert "duration: na dobu neurcitu" in prompt_note
+    assert "do not ask again for the daughter's name" in prompt_note
+    assert any(
+        event.get("tool_name") == "obchodny_register_company_check"
+        and "sidlo: Partizanska 665, 059 18 Spisske Bystre" in str(event.get("message"))
+        for event in events
+    )
+    slovakia_service._ORSR_CACHE.clear()
+
+
+def test_prepare_slovakia_direct_reply_runs_orsr_for_plain_company_name(monkeypatch) -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizanska 665, 059 18 Spisske Bystre",
+                        "status": "Aktivna",
+                    },
+                ),
+            )
+
+    monkeypatch.setattr(slovakia_service, "build_default_tool_registry", lambda: _FakeRegistry())
+    session = Session(country="SK", language="sk-SK")
+    current_content = "ESolutions SK s.r.o."
+    messages = [Message(session_id=session.id, role=MessageRole.USER, content=current_content)]
+    events: list[dict[str, object]] = []
+
+    preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=messages,
+        current_content=current_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+        processing_event_callback=events.append,
+    )
+
+    assert "TOOL-FIRST COMPANY LOOKUP MODE" in preparation.prompt_note
+    assert "Verified company name: ESolutions SK s.r.o." in preparation.prompt_note
+    assert "Verified registration number: 46491261" in preparation.prompt_note
+    assert any(event.get("tool_name") == "obchodny_register_company_check" for event in events)
 
 
 def test_slovak_payment_confirmation_final_request_uses_tool_first_direct_reply(monkeypatch) -> None:
@@ -3440,6 +4017,73 @@ def test_stream_read_user_emits_document_name_progress_before_final_message(monk
     assert events.index(third_doc) < events.index('"role": "assistant"')
 
 
+def test_stream_read_user_keeps_connection_alive_during_slow_direct_turn(monkeypatch) -> None:
+    import time
+
+    from app.chat import api as chat_api
+    from app.chat.models import Message, MessageRole, SessionResult
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "sk"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    persisted_user = Message(
+        session_id=session_id,
+        role=MessageRole.USER,
+        content="adresa dcery a firmy je rovnaka, zober z ORSR",
+        agent_name="User",
+    )
+    persisted_lawyer = Message(
+        session_id=session_id,
+        role=MessageRole.ASSISTANT,
+        content="Overenie je hotove a dokument mozem pripravit.",
+        agent_name="LawyerSlovakia",
+    )
+
+    def slow_direct_turn(**kwargs):
+        time.sleep(0.05)
+        return persisted_user, persisted_lawyer, persisted_lawyer.content, []
+
+    monkeypatch.setattr(chat_api, "_STREAM_KEEPALIVE_SECONDS", 0.01)
+    monkeypatch.setattr(chat_api, "_STREAM_STATUS_SECONDS", 0.02)
+    monkeypatch.setattr(chat_api, "_run_direct_lawyer_turn", slow_direct_turn)
+    monkeypatch.setattr(
+        chat_api,
+        "_build_direct_reply_result",
+        lambda **kwargs: SessionResult(
+            final_recommendation="Overenie je hotove.",
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={"document_requested": False, "document_confirmed": False, "document_ready": False},
+        ),
+    )
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "adresa dcery a firmy je rovnaka, zober z ORSR",
+            "documents": [],
+            "question_timeout_seconds": 30,
+            "max_discussion_minutes": 1,
+            "communication_minutes": 1,
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert ": keepalive" in events
+    assert '"stage": "still_working"' in events
+    assert "Stale pracujem na odpovedi" in events
+    assert "Overenie je hotove" in events
+    assert events.index('"stage": "still_working"') < events.index('"role": "assistant"')
+
+
 def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     from app.chat.models import MessageRole
@@ -3448,6 +4092,15 @@ def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> 
     captured: dict[str, object] = {}
 
     class _FakeStore:
+        def get_case(self, *, case_id: str):
+            assert case_id == "case-123"
+            return SimpleNamespace(user_id="user-1")
+
+        def get_case_write_block_reason(self, *, case_id: str, user_id: str | None = None):
+            assert case_id == "case-123"
+            assert user_id == "user-1"
+            return None
+
         def list_case_communications(self, *, case_id: str, limit=None, offset: int = 0):
             assert case_id == "case-123"
             return [
@@ -3729,6 +4382,15 @@ def test_existing_case_history_falls_back_to_summary_when_transcript_missing(mon
     captured: dict[str, object] = {}
 
     class _FakeStore:
+        def get_case(self, *, case_id: str):
+            assert case_id == "case-123"
+            return SimpleNamespace(user_id="user-1")
+
+        def get_case_write_block_reason(self, *, case_id: str, user_id: str | None = None):
+            assert case_id == "case-123"
+            assert user_id == "user-1"
+            return None
+
         def list_case_communications(self, *, case_id: str, limit=None, offset: int = 0):
             assert case_id == "case-123"
             return [
@@ -3797,6 +4459,15 @@ def test_reply_persists_session_history_document_to_case(monkeypatch) -> None:
     persisted_history: list[dict[str, str | None]] = []
 
     class _FakeStore:
+        def get_case(self, *, case_id: str):
+            assert case_id == "case-123"
+            return SimpleNamespace(user_id="user-1")
+
+        def get_case_write_block_reason(self, *, case_id: str, user_id: str | None = None):
+            assert case_id == "case-123"
+            assert user_id == "user-1"
+            return None
+
         def list_case_communications(self, *, case_id: str, limit=None, offset: int = 0):
             return []
 
@@ -4473,6 +5144,119 @@ def test_assistant_technical_payload_is_saved_as_case_document_and_linked(monkey
     assert "Technick" not in visible
     assert f"/v1/cases/case-123/documents/doc-technical?user_id={user_id}" not in visible
     assert '"case"' not in visible
+
+
+def test_generated_assistant_document_is_saved_as_case_document(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Session
+
+    stored_documents: list[dict[str, object]] = []
+
+    class _FakeStore:
+        def list_case_documents(self, *, case_id: str):
+            return []
+
+        def add_case_document(
+            self,
+            *,
+            case_id: str,
+            kind: str,
+            version: int,
+            original_filename: str,
+            payload: bytes,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            doc_id = f"doc-generated-{len(stored_documents) + 1}"
+            stored_documents.append(
+                {
+                    "case_id": case_id,
+                    "kind": kind,
+                    "version": version,
+                    "original_filename": original_filename,
+                    "payload": payload.decode("utf-8"),
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return doc_id
+
+    user_id = uuid4()
+    session = Session(
+        user_id=user_id,
+        case_id="case-123",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    content = (
+        "Spracovanie stale prebieha....\n\n"
+        "LawyerSlovakia: Tu su finalne verzie splnomocnenia v slovenskej a anglickej verzii.\n\n"
+        "**Splnomocnenie (slovenska verzia)**:\n"
+        "- Splnomocnenec: Emilia Matonokova\n"
+        "- Spolocnost: Esolutions SK s.r.o.\n"
+        "- Prava: Vsetky pravne ukony tykajuce sa pouzivania firemneho auta.\n"
+        "- Podpis: ________________________\n\n"
+        "**Power of Attorney (anglicka verzia)**:\n"
+        "- Attorney-in-fact: Emilia Matonokova\n"
+        "- Company: Esolutions SK s.r.o.\n"
+        "- Rights: All legal acts related to the use of the company vehicle.\n\n"
+        "Dokumenty su pripravene na stiahnutie."
+    )
+
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+
+    doc_ids = chat_api._persist_generated_case_document_if_needed(session=session, content=content)
+
+    assert doc_ids == ["doc-generated-1", "doc-generated-2"]
+    assert len(stored_documents) == 2
+    assert {item["kind"] for item in stored_documents} == {"generated_document"}
+    assert {item["uploaded_by_user_id"] for item in stored_documents} == {str(user_id)}
+    filenames = [str(item["original_filename"]) for item in stored_documents]
+    assert filenames[0].startswith("splnomocnenie_sk_")
+    assert filenames[1].startswith("power_of_attorney_en_")
+    slovak_payload = str(stored_documents[0]["payload"])
+    english_payload = str(stored_documents[1]["payload"])
+    assert "Splnomocniteľ" in slovak_payload
+    assert "Občiansky zákonník" in slovak_payload
+    assert "Power of Attorney" not in slovak_payload
+    assert "Attorney-in-fact" in english_payload
+    assert "Splnomocnenie" not in english_payload
+    assert "Dokumenty su pripravene" not in slovak_payload
+    assert "Spracovanie stale prebieha" not in english_payload
+
+
+def test_generated_payment_confirmation_document_uses_legal_filename() -> None:
+    from app.chat.api import _generated_case_document_filename_for_storage
+
+    content = (
+        "Pripravim potvrdenie o zaplateni na zaklade poskytnutych udajov.\n\n"
+        "**Potvrdenie o zaplatení**\n\n"
+        "Ja, nizsie podpisany, potvrdzujem prijatie sumy 1000 EUR.\n\n"
+        "Podpis: ____________________"
+    )
+
+    filename = _generated_case_document_filename_for_storage(content, timestamp="20260622T152930Z")
+
+    assert filename == "potvrdenie_o_zaplateni_20260622T152930Z.pdf"
+
+
+def test_pending_payment_confirmation_reply_is_synthesized_for_storage() -> None:
+    from app.chat.api import _synthesized_generated_case_document_body_for_storage
+
+    content = (
+        "Pripravim potvrdenie o zaplateni s uvedenymi udajmi.\n\n"
+        "- **Suma:** 1000 EUR\n"
+        "- **Platitel:** Matej Mat, Stromova 10, Poprad\n"
+        "- **Prijemca:** Matej Mat, Stromova 10, Poprad\n"
+        "- **Datum prijatia:** 1.1.2026\n\n"
+        "Teraz pripravim finalne potvrdenie o zaplateni vo formate PDF. Chvilu prosim."
+    )
+
+    body = _synthesized_generated_case_document_body_for_storage(content)
+
+    assert "Potvrdenie" in body
+    assert "Matej Mat" in body
+    assert "1000 EUR" in body
+    assert "Chvilu prosim" not in body
 
 
 def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None:

@@ -1,0 +1,76 @@
+version = 1
+id = "jurisdigta-monitoring-task"
+kind = "cron"
+name = "Jurisdigta Monitoring task"
+prompt = """
+Act as the JurisDigta production monitor.
+
+Run one production health check pass for these public targets:
+- https://api.jurisdigta.eu/health
+- https://api.jurisdigta.eu/version
+- https://web.jurisdigta.eu/health
+- https://web.jurisdigta.eu/
+- https://agent.jurisdigta.eu/
+- https://mcp.jurisdigta.eu/
+- https://mcp.jurisdigta.eu/MCP
+- https://mcp.jurisdigta.eu/.well-known/oauth-authorization-server/MCP
+- https://mcp.jurisdigta.eu/health
+- https://admin.jurisdigta.eu/grafana/api/health
+- https://admin.jurisdigta.eu/grafana/login
+
+Healthy rules:
+- API `/health` must return HTTP 200 and JSON `status=ok`.
+- API `/health` must include `llm.status=ok`.
+- API `/health` must include `database.status=ok`.
+- API `/version` must return HTTP 200 and include `service` and `version` fields.
+- API `/version` `last_collector_run_at` must be within the last 48 hours; parse the timestamp prefix before any parenthetical source marker such as `(SK:slov-lex)`.
+- Web `/health` must return HTTP 200 and body `ok`.
+- Web root and agent root must return HTTP 200.
+- MCP root must return HTTP 200.
+- MCP OAuth discovery must return HTTP 200 and `issuer=https://mcp.jurisdigta.eu`.
+- GET `/MCP` on `mcp.jurisdigta.eu` must return HTTP 405; treat 405 as healthy only for that endpoint.
+- MCP `/health` must return HTTP 200.
+- Grafana `/grafana/api/health` must return HTTP 200.
+- Grafana `/grafana/login` must return HTTP 200.
+
+Classify the pass as:
+- `OK` when every healthy rule passes and there is no meaningful change from the previous run.
+- `WARNING` when a non-critical rule fails, a response is degraded, or there is a meaningful change that does not yet block core service.
+- `INCIDENT` when any core public service is unavailable, API LLM/database is not ok, the laws collector is older than 48 hours, MCP OAuth discovery is wrong, or Grafana is unavailable.
+
+Notify the user by email only when there is a problem or meaningful change. If everything is healthy, do not send an alert.
+
+Use this mobile-readable email format:
+
+Subject:
+JurisDigta PROD Monitor: OK / WARNING / INCIDENT
+
+Body:
+Status: OK / WARNING / INCIDENT
+Checked at: Europe/Bratislava time
+
+Summary:
+- API:
+- Web:
+- Agent:
+- MCP:
+- Grafana:
+- Laws collector:
+
+Problems:
+- Endpoint:
+- Expected:
+- Actual:
+- Likely cause:
+- Recommended next action:
+
+Keep the email short. Avoid wide tables. Put the most important failure first.
+"""
+status = "ACTIVE"
+rrule = "RRULE:FREQ=HOURLY;INTERVAL=1;BYMINUTE=0;BYDAY=SU,MO,TU,WE,TH,FR,SA"
+model = "gpt-5.5"
+reasoning_effort = "high"
+execution_environment = "worktree"
+cwds = ["__REPO_ROOT__"]
+created_at = 1782297191006
+updated_at = 1782297191006

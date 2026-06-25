@@ -5,6 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_SCRIPT = REPO_ROOT / "Deployment" / "server" / "deploy_jurisdigta_prod.sh"
+DOCUMENT_ENGINE_DOCKERFILE = REPO_ROOT / "services" / "document-engine-service" / "Dockerfile"
 
 
 def test_api_and_mcp_containers_override_email_outbox_database() -> None:
@@ -14,10 +15,29 @@ def test_api_and_mcp_containers_override_email_outbox_database() -> None:
 
     for block in (api_block, mcp_block):
         assert '--env-file "$ENV_FILE"' in block
+        assert '--log-opt "max-size=$DOCKER_LOG_MAX_SIZE"' in block
+        assert '--log-opt "max-file=$DOCKER_LOG_MAX_FILE"' in block
         assert '-e DB_CLOUD="$api_db_cloud"' in block
         assert "-e EMAIL_DB_OPTION=postgres" in block
         assert '-e EMAIL_DB_CLOUD="$api_db_cloud"' in block
         assert "-e EMAIL_DB_LOCAL=/workspace/runs/storage/api/sqlite/email.sqlite3" in block
+
+
+def test_deploy_installs_log_retention_and_configures_monitoring() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"' in script
+    assert "install_log_retention_cron" in script
+    assert "cleanup_logs.sh" in script
+    assert 'find "$LOG_DIR" -type f -name \'*.log\' -mtime +"$LOG_RETENTION_DAYS" -delete' in script
+    assert 'python3 configure_monitoring.py --project-env "$ENV_FILE" --validate --start' in script
+
+
+def test_document_engine_image_defaults_to_writable_sqlite_path() -> None:
+    dockerfile = DOCUMENT_ENGINE_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert "DATABASE_URL=sqlite:////tmp/document_engine.db" in dockerfile
+    assert "GENERATED_DOCUMENTS_DIR=/tmp/generated-documents" in dockerfile
 
 
 def _docker_run_block(script: str, container_name_marker: str) -> str:

@@ -22,6 +22,9 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from .config import ApiDataConfig
 
+DEFAULT_UNLIMITED_ACCESS_EMAILS = ("mmaideveloper@gmail.com",)
+UNLIMITED_ACCESS_LIMIT = 2_147_483_647
+
 
 @dataclass(frozen=True)
 class User:
@@ -43,6 +46,18 @@ class User:
     data_processing_consent_version: str | None
     mcp_api_key_hash: str | None
     mcp_api_key_expires_at: str | None
+    created_at: str | None
+
+
+@dataclass(frozen=True)
+class UserMfaSettings:
+    user_id: str
+    totp_enabled: bool
+    totp_pending: bool
+    totp_secret_protected: str | None
+    pending_totp_secret_protected: str | None
+    totp_enabled_at: str | None
+    updated_at: str
 
 
 @dataclass(frozen=True)
@@ -255,6 +270,24 @@ class ApiDatabaseStore:
                     expires_at TEXT NOT NULL,
                     verified_at TEXT NOT NULL,
                     PRIMARY KEY(user_id, purpose),
+                    FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS user_mfa_settings (
+                    user_id TEXT PRIMARY KEY,
+                    totp_secret_protected TEXT,
+                    pending_totp_secret_protected TEXT,
+                    totp_enabled_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS mfa_login_challenges (
+                    challenge_token_hash TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
                     FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
                 );
 
@@ -544,6 +577,7 @@ class ApiDatabaseStore:
             data_processing_consent_version=data_processing_consent_version,
             mcp_api_key_hash=None,
             mcp_api_key_expires_at=None,
+            created_at=now,
         )
 
     def save_registration_code(
@@ -781,6 +815,163 @@ class ApiDatabaseStore:
             conn.commit()
             return False
 
+    def save_mfa_verification(self, *, user_id: str, purpose: str, expires_in_hours: int) -> None:
+        self.save_mcp_otp_verification(
+            user_id=user_id,
+            purpose=purpose,
+            expires_in_hours=expires_in_hours,
+        )
+
+    def has_valid_mfa_verification(self, *, user_id: str, purpose: str) -> bool:
+        return self.has_valid_mcp_otp_verification(user_id=user_id, purpose=purpose)
+
+    def get_user_mfa_settings(self, *, user_id: str) -> UserMfaSettings:
+        normalized_user_id = user_id.strip()
+        now = _now_iso()
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT
+                    user_id, totp_secret_protected, pending_totp_secret_protected,
+                    totp_enabled_at, created_at, updated_at
+                FROM user_mfa_settings
+                WHERE user_id = ?
+                """,
+                (normalized_user_id,),
+            )
+        if row is None:
+            return UserMfaSettings(
+                user_id=normalized_user_id,
+                totp_enabled=False,
+                totp_pending=False,
+                totp_secret_protected=None,
+                pending_totp_secret_protected=None,
+                totp_enabled_at=None,
+                updated_at=now,
+            )
+        return _row_to_user_mfa_settings(row)
+
+    def start_user_totp_enrollment(self, *, user_id: str, protected_secret: str) -> UserMfaSettings:
+        normalized_user_id = user_id.strip()
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO user_mfa_settings(
+                    user_id, totp_secret_protected, pending_totp_secret_protected,
+                    totp_enabled_at, created_at, updated_at
+                )
+                VALUES (?, NULL, ?, NULL, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    pending_totp_secret_protected = excluded.pending_totp_secret_protected,
+                    updated_at = excluded.updated_at
+                """,
+                (normalized_user_id, protected_secret, now, now),
+            )
+            conn.commit()
+        return self.get_user_mfa_settings(user_id=normalized_user_id)
+
+    def enable_user_totp(self, *, user_id: str) -> UserMfaSettings:
+        normalized_user_id = user_id.strip()
+        now = _now_iso()
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                "SELECT pending_totp_secret_protected FROM user_mfa_settings WHERE user_id = ?",
+                (normalized_user_id,),
+            )
+            if row is None or row[0] is None:
+                raise KeyError(f"Pending TOTP enrollment for user {normalized_user_id} not found")
+            self._execute(
+                conn,
+                """
+                UPDATE user_mfa_settings
+                SET
+                    totp_secret_protected = pending_totp_secret_protected,
+                    pending_totp_secret_protected = NULL,
+                    totp_enabled_at = ?,
+                    updated_at = ?
+                WHERE user_id = ?
+                """,
+                (now, now, normalized_user_id),
+            )
+            conn.commit()
+        return self.get_user_mfa_settings(user_id=normalized_user_id)
+
+    def disable_user_totp(self, *, user_id: str) -> UserMfaSettings:
+        normalized_user_id = user_id.strip()
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO user_mfa_settings(
+                    user_id, totp_secret_protected, pending_totp_secret_protected,
+                    totp_enabled_at, created_at, updated_at
+                )
+                VALUES (?, NULL, NULL, NULL, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    totp_secret_protected = NULL,
+                    pending_totp_secret_protected = NULL,
+                    totp_enabled_at = NULL,
+                    updated_at = excluded.updated_at
+                """,
+                (normalized_user_id, now, now),
+            )
+            conn.commit()
+        return self.get_user_mfa_settings(user_id=normalized_user_id)
+
+    def create_mfa_login_challenge(
+        self,
+        *,
+        user_id: str,
+        token: str,
+        expires_in_minutes: int = 10,
+    ) -> None:
+        normalized_user_id = user_id.strip()
+        now = datetime.now(timezone.utc)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO mfa_login_challenges(challenge_token_hash, user_id, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    _hash_mfa_challenge_token(token),
+                    normalized_user_id,
+                    (now + timedelta(minutes=max(expires_in_minutes, 1))).isoformat(),
+                    now.isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def consume_mfa_login_challenge(self, *, token: str) -> str | None:
+        token_hash = _hash_mfa_challenge_token(token)
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT user_id, expires_at
+                FROM mfa_login_challenges
+                WHERE challenge_token_hash = ?
+                """,
+                (token_hash,),
+            )
+            if row is None:
+                return None
+            self._execute(
+                conn,
+                "DELETE FROM mfa_login_challenges WHERE challenge_token_hash = ?",
+                (token_hash,),
+            )
+            conn.commit()
+        if not _is_future_iso_datetime(str(row[1])):
+            return None
+        return str(row[0])
+
     def issue_device_auth_token(
         self,
         *,
@@ -981,7 +1172,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, password_hash
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at, password_hash
                 FROM users
                 WHERE email = ?
                 """,
@@ -989,7 +1180,7 @@ class ApiDatabaseStore:
             )
         if row is None:
             return None
-        if not _verify_password(password, row[18]):
+        if not _verify_password(password, row[19]):
             return None
         return _row_to_user(row)
 
@@ -1005,7 +1196,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE phone_number = ?
                 """,
@@ -1024,7 +1215,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE email = ?
                 """,
@@ -1043,7 +1234,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -1062,7 +1253,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -1109,7 +1300,7 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -1200,6 +1391,64 @@ class ApiDatabaseStore:
             data_processing_consent_version=current_user.data_processing_consent_version,
             mcp_api_key_hash=current_user.mcp_api_key_hash,
             mcp_api_key_expires_at=current_user.mcp_api_key_expires_at,
+            created_at=current_user.created_at,
+        )
+
+    def update_user_email(self, *, user_id: str, email: str) -> User:
+        normalized_email = email.strip().lower()
+        with self._connect() as conn:
+            current = self._fetchone(
+                conn,
+                """
+                SELECT
+                    user_id, phone_number, email, first_name, last_name, full_name,
+                    address, city, country, zip_code, tax_number, identity_card_number,
+                    date_of_birth, social_security_number,
+                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                FROM users
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+            if current is None:
+                raise KeyError(f"User {user_id} not found")
+            current_user = _row_to_user(current)
+            resolved_full_name = _resolve_full_name(
+                full_name=current_user.full_name,
+                first_name=current_user.first_name,
+                last_name=current_user.last_name,
+                phone_number=current_user.phone_number,
+                email=normalized_email,
+            )
+            self._execute(
+                conn,
+                """
+                UPDATE users
+                SET email = ?, full_name = ?
+                WHERE user_id = ?
+                """,
+                (normalized_email, resolved_full_name, user_id),
+            )
+        return User(
+            user_id=user_id,
+            phone_number=current_user.phone_number,
+            email=normalized_email,
+            first_name=current_user.first_name,
+            last_name=current_user.last_name,
+            full_name=resolved_full_name,
+            address=current_user.address,
+            city=current_user.city,
+            country=current_user.country,
+            zip_code=current_user.zip_code,
+            tax_number=current_user.tax_number,
+            identity_card_number=current_user.identity_card_number,
+            date_of_birth=current_user.date_of_birth,
+            social_security_number=current_user.social_security_number,
+            data_processing_consent_at=current_user.data_processing_consent_at,
+            data_processing_consent_version=current_user.data_processing_consent_version,
+            mcp_api_key_hash=current_user.mcp_api_key_hash,
+            mcp_api_key_expires_at=current_user.mcp_api_key_expires_at,
+            created_at=current_user.created_at,
         )
 
 
@@ -1237,7 +1486,7 @@ class ApiDatabaseStore:
                 SELECT user_id, phone_number, email, first_name, last_name, full_name,
                        address, city, country, zip_code, tax_number, identity_card_number,
                        date_of_birth, social_security_number,
-                       data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at
+                       data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
                 FROM users
                 WHERE mcp_api_key_hash IS NOT NULL
                 """,
@@ -1330,6 +1579,49 @@ class ApiDatabaseStore:
                 (user_id,),
             )
         return int(row[0]) if row else 0
+
+    @staticmethod
+    def unlimited_access_email_allowlist() -> set[str]:
+        raw_value = os.getenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS")
+        if raw_value is None:
+            return set(DEFAULT_UNLIMITED_ACCESS_EMAILS)
+        normalized = raw_value.strip()
+        if normalized.lower() == "unknown-variable":
+            return set(DEFAULT_UNLIMITED_ACCESS_EMAILS)
+        if not normalized:
+            return set()
+        return {
+            chunk.strip().lower()
+            for chunk in normalized.replace(";", ",").split(",")
+            if chunk.strip()
+        }
+
+    def has_unlimited_access(self, *, user_id: str) -> bool:
+        user = self.find_user_by_id(user_id=user_id)
+        if user is None:
+            return False
+        return user.email.strip().lower() in self.unlimited_access_email_allowlist()
+
+    def get_case_limit(self, *, user_id: str) -> int:
+        return self.get_effective_subscription_plan(user_id=user_id).max_cases
+
+    def get_case_write_block_reason(self, *, case_id: str, user_id: str) -> str | None:
+        case = self.get_case(case_id=case_id)
+        if case.user_id != user_id or case.status == "deleted":
+            raise KeyError(f"Case {case_id} not found")
+        plan = self.get_effective_subscription_plan(user_id=user_id)
+        if plan.case_ttl_days is None:
+            return None
+        created_at = datetime.fromisoformat(case.created_at.replace("Z", "+00:00"))
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        expires_at = created_at + timedelta(days=plan.case_ttl_days)
+        if datetime.now(timezone.utc) >= expires_at:
+            return (
+                f"Case is read-only because the {plan.display_name} plan allows edits "
+                f"for {plan.case_ttl_days} day(s) after creation."
+            )
+        return None
 
     def update_case_title(self, *, case_id: str, user_id: str, title: str) -> Case:
         now = _now_iso()
@@ -1636,6 +1928,16 @@ class ApiDatabaseStore:
         return int(row[0]) if row else 0
 
     def get_effective_subscription_plan(self, *, user_id: str) -> SubscriptionPlan:
+        if self.has_unlimited_access(user_id=user_id):
+            return SubscriptionPlan(
+                "unlimited",
+                "Unlimited Access",
+                "internal",
+                0,
+                UNLIMITED_ACCESS_LIMIT,
+                UNLIMITED_ACCESS_LIMIT,
+                None,
+            )
         with self._connect() as conn:
             row = self._fetchone(
                 conn,
@@ -1651,13 +1953,10 @@ class ApiDatabaseStore:
                 (user_id,),
             )
         if row is None:
-            return SubscriptionPlan('free', 'Free', 'none', 0, 5, 2, 1)
+            return SubscriptionPlan('free', 'Free', 'none', 0, 1, 2, 1)
         return _row_to_subscription_plan(row)
 
     def get_document_upload_limit(self, *, user_id: str) -> int:
-        user = self.find_user_by_id(user_id=user_id)
-        if user and (user.phone_number or '').strip() == '+421944400166':
-            return 50
         return self.get_effective_subscription_plan(user_id=user_id).max_documents_per_case
 
     def list_unprocessed_case_documents(self, *, limit: int = 20) -> list[CaseDocument]:
@@ -1987,6 +2286,32 @@ class ApiDatabaseStore:
             )
             """,
         )
+        self._execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS user_mfa_settings (
+                user_id TEXT PRIMARY KEY,
+                totp_secret_protected TEXT,
+                pending_totp_secret_protected TEXT,
+                totp_enabled_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+            """,
+        )
+        self._execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mfa_login_challenges (
+                challenge_token_hash TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+            """,
+        )
 
     def _ensure_case_document_schema(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -2099,7 +2424,7 @@ class ApiDatabaseStore:
     def _seed_subscription_plans(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
         now = _now_iso()
         plans = [
-            ("free", "Free", "none", 0, 5, 2, 1),
+            ("free", "Free", "none", 0, 1, 2, 1),
             ("case", "Case", "perCase", 10, 1, 5, None),
             ("basic", "Basic", "monthly", 30, 10, 5, None),
             ("premium", "Premium", "monthly", 100, 100, 50, None),
@@ -2295,6 +2620,22 @@ def _row_to_user(row: tuple[object, ...]) -> User:
         data_processing_consent_version=str(values[15]) if len(values) > 15 and values[15] is not None else None,
         mcp_api_key_hash=str(values[16]) if len(values) > 16 and values[16] is not None else None,
         mcp_api_key_expires_at=str(values[17]) if len(values) > 17 and values[17] is not None else None,
+        created_at=str(values[18]) if len(values) > 18 and values[18] is not None else None,
+    )
+
+
+def _row_to_user_mfa_settings(row: tuple[object, ...]) -> UserMfaSettings:
+    totp_secret = str(row[1]) if row[1] is not None else None
+    pending_secret = str(row[2]) if row[2] is not None else None
+    totp_enabled_at = str(row[3]) if row[3] is not None else None
+    return UserMfaSettings(
+        user_id=str(row[0]),
+        totp_enabled=bool(totp_secret and totp_enabled_at),
+        totp_pending=bool(pending_secret),
+        totp_secret_protected=totp_secret,
+        pending_totp_secret_protected=pending_secret,
+        totp_enabled_at=totp_enabled_at,
+        updated_at=str(row[5]),
     )
 
 
@@ -2323,6 +2664,10 @@ def _verify_password(password: str, encoded: str) -> bool:
     expected = bytes.fromhex(digest_hex)
     candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
     return hmac.compare_digest(candidate, expected)
+
+
+def _hash_mfa_challenge_token(token: str) -> str:
+    return hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
 
 
 def _to_json(value: dict[str, Any]) -> str:
