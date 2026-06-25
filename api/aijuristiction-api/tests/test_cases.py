@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
+import sqlite3
 import time
 from types import SimpleNamespace
 
@@ -38,22 +40,21 @@ def test_case_lifecycle_and_limit(monkeypatch, tmp_path) -> None:
     client = TestClient(app)
     user_id = _create_user(client)
 
-    created_ids: list[str] = []
-    for index in range(5):
-        response = client.post(
-            "/v1/cases",
-            headers=_headers(),
-            json={"user_id": user_id, "title": f"Case {index}"},
-        )
-        assert response.status_code == 201
-        created_ids.append(response.json()["case_id"])
-
-    sixth = client.post(
+    response = client.post(
         "/v1/cases",
         headers=_headers(),
-        json={"user_id": user_id, "title": "Case 6"},
+        json={"user_id": user_id, "title": "Case 0"},
     )
-    assert sixth.status_code == 409
+    assert response.status_code == 201
+    created_ids = [response.json()["case_id"]]
+
+    second = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Case 2"},
+    )
+    assert second.status_code == 409
+    assert second.json()["detail"] == "Maximum number of cases reached (1)"
 
     rename = client.patch(
         f"/v1/cases/{created_ids[0]}",
@@ -64,14 +65,92 @@ def test_case_lifecycle_and_limit(monkeypatch, tmp_path) -> None:
     assert rename.json()["title"] == "Renamed"
 
     delete = client.delete(
-        f"/v1/cases/{created_ids[1]}?user_id={user_id}",
+        f"/v1/cases/{created_ids[0]}?user_id={user_id}",
         headers=_headers(),
     )
     assert delete.status_code == 204
 
     listing = client.get(f"/v1/cases?user_id={user_id}", headers=_headers())
     assert listing.status_code == 200
-    assert len(listing.json()) == 4
+    assert listing.json() == []
+
+
+def test_unlimited_access_email_bypasses_case_limit(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "mmaideveloper@gmail.com")
+
+    client = TestClient(app)
+    response = client.post(
+        "/v1/users/sign-up",
+        headers=_headers(),
+        json={
+            "phone_number": "+421900000370",
+            "email": "mmaideveloper@gmail.com",
+            "password": "secret",
+        },
+    )
+    assert response.status_code == 201
+    user_id = response.json()["user_id"]
+
+    for index in range(3):
+        created = client.post(
+            "/v1/cases",
+            headers=_headers(),
+            json={"user_id": user_id, "title": f"Unlimited case {index}"},
+        )
+        assert created.status_code == 201
+
+    listing = client.get(f"/v1/cases?user_id={user_id}", headers=_headers())
+    assert listing.status_code == 200
+    assert len(listing.json()) == 3
+
+
+def test_free_case_becomes_readonly_after_one_day(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    db_path = tmp_path / "api.sqlite3"
+    monkeypatch.setenv("DB_LOCAL", str(db_path))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=21)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Readonly case"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+    expired_at = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat().replace("+00:00", "Z")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE cases SET created_at = ?, updated_at = ? WHERE case_id = ?",
+            (expired_at, expired_at, case_id),
+        )
+
+    history = client.get(
+        f"/v1/cases/{case_id}/history?user_id={user_id}",
+        headers=_headers(),
+    )
+    assert history.status_code == 200
+
+    rename = client.patch(
+        f"/v1/cases/{case_id}",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Should fail"},
+    )
+    assert rename.status_code == 403
+    assert "read-only" in rename.json()["detail"]
+
+    upload = client.post(
+        f"/v1/cases/{case_id}/documents?user_id={user_id}",
+        headers=_headers(),
+        files=[("files", ("evidence.txt", b"payload", "text/plain"))],
+    )
+    assert upload.status_code == 403
 
 
 def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> None:
@@ -79,6 +158,9 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     monkeypatch.setenv("STORAGE_OPTION", "local")
     monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
     monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv("EMAIL_DB_OPTION", "local")
+    monkeypatch.setenv("EMAIL_DB_LOCAL", str(tmp_path / "email.sqlite3"))
+    monkeypatch.setenv("EMAIL_SCHEDULER_ENABLED", "false")
 
     client = TestClient(app)
     user_id = _create_user(client, idx=2)
@@ -136,6 +218,26 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert document.status_code == 200
     assert document.content == b"Case evidence payload"
     assert document.headers["content-disposition"].endswith('filename="evidence.txt"')
+
+    inline_document = client.get(
+        f"/v1/cases/{case_id}/documents/{doc_id}?user_id={user_id}&disposition=inline",
+        headers=_headers(),
+    )
+    assert inline_document.status_code == 200
+    assert inline_document.headers["content-disposition"].startswith("inline;")
+
+    selected_email = client.post(
+        f"/v1/cases/{case_id}/documents/send-email",
+        headers=_headers(),
+        json={
+            "user_id": user_id,
+            "recipient": "client@example.com",
+            "case_subject": "History case",
+            "doc_ids": [doc_id],
+        },
+    )
+    assert selected_email.status_code == 200
+    assert selected_email.json()["attachment_count"] == 1
 
     generated_doc_id = store.add_case_text_document(
         case_id=case_id,
@@ -235,7 +337,7 @@ def test_generated_case_document_pdf_falls_back_to_latest_document_message(
     assert "Dokument je pripravený na stiahnutie" not in generated_pdf_text
 
 
-def test_generated_case_document_pdf_uses_first_selected_document_block(
+def test_generated_case_document_pdf_reads_generated_document_storage(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setenv("DB_OPTION", "local")
@@ -245,6 +347,53 @@ def test_generated_case_document_pdf_uses_first_selected_document_block(
 
     client = TestClient(app)
     user_id = _create_user(client, idx=23)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Power of attorney"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    generated_doc_id = store.add_case_document(
+        case_id=case_id,
+        kind="generated_document",
+        version=1,
+        original_filename="splnomocnenie.txt",
+        payload=(
+            "**Splnomocnenie**\n\n"
+            "Splnomocnenec: Emilia Matonokova\n"
+            "Spolocnost: Esolutions SK s.r.o.\n"
+            "Prava: Vsetky pravne ukony tykajuce sa pouzivania firemneho auta.\n"
+            "Podpis: ________________________\n"
+        ).encode("utf-8"),
+        uploaded_by_user_id=user_id,
+    )
+
+    generated_pdf = client.get(
+        f"/v1/cases/{case_id}/documents/{generated_doc_id}/pdf?user_id={user_id}",
+        headers=_headers(),
+    )
+    assert generated_pdf.status_code == 200
+    generated_pdf_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
+    )
+    assert "Emilia Matonokova" in generated_pdf_text
+    assert "firemneho auta" in generated_pdf_text
+
+
+def test_generated_case_document_pdf_uses_first_selected_document_block(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=24)
     created = client.post(
         "/v1/cases",
         headers=_headers(),

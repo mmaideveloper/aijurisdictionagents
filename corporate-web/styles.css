@@ -677,6 +677,19 @@ main {
   transform: translateY(-6px);
 }
 
+.pricing-card.disabled {
+  background: #f1f5f9;
+  border: 1px solid rgba(100, 116, 139, 0.22);
+  box-shadow: 0 10px 24px rgba(71, 85, 105, 0.08);
+  filter: grayscale(0.2);
+  opacity: 0.68;
+}
+
+.pricing-card.disabled .price,
+.pricing-card.disabled h3 {
+  color: #475569;
+}
+
 .pricing-note {
   margin-top: 1.5rem;
   font-family: "Space Grotesk", sans-serif;

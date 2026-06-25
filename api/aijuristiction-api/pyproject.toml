@@ -1,6 +1,6 @@
 [project]
 name = "aijuristiction-api"
-version = "1.0.260464"
+version = "1.0.260470"
 description = "Dedicated API service for aijurisdictionagents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,6 +17,7 @@ dependencies = [
   "opentelemetry-sdk>=1.27.0",
   "python-dotenv>=1.0",
   "python-multipart>=0.0.9",
+  "qrcode>=8.2",
   "reportlab>=4.0",
   "starlette<1.0",
   "truststore>=0.10.0",

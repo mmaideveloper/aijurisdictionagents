@@ -19,6 +19,7 @@ const CaseIntake: React.FC = () => {
   const [opposingParty, setOpposingParty] = React.useState("");
   const [files, setFiles] = React.useState<File[]>([]);
   const [showErrors, setShowErrors] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const errors: IntakeErrors = {
     title: title.trim().length === 0,
@@ -48,24 +49,30 @@ const CaseIntake: React.FC = () => {
     event.target.value = "";
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setShowErrors(true);
     if (hasErrors) {
       return;
     }
 
-    createCase({
-      title,
-      jurisdiction,
-      opposingParty,
-      documents: files.map((file) => ({
-        originalFilename: file.name,
-        mimeType: file.type || "application/octet-stream",
-        size: file.size
-      }))
-    });
-    navigate("/", { replace: true });
+    setIsSubmitting(true);
+    try {
+      await createCase({
+        title,
+        jurisdiction,
+        opposingParty,
+        documents: files.map((file) => ({
+          originalFilename: file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
+          file
+        }))
+      });
+      navigate("/app/assistant", { replace: true });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -86,6 +93,7 @@ const CaseIntake: React.FC = () => {
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 aria-invalid={showErrors && errors.title}
+                disabled={isSubmitting}
               />
               {showErrors && errors.title ? (
                 <small className="form-error">{t("caseFieldRequired")}</small>
@@ -99,6 +107,7 @@ const CaseIntake: React.FC = () => {
                 value={jurisdiction}
                 onChange={(event) => setJurisdiction(event.target.value)}
                 aria-invalid={showErrors && errors.jurisdiction}
+                disabled={isSubmitting}
               />
               {showErrors && errors.jurisdiction ? (
                 <small className="form-error">{t("caseFieldRequired")}</small>
@@ -112,6 +121,7 @@ const CaseIntake: React.FC = () => {
                 value={opposingParty}
                 onChange={(event) => setOpposingParty(event.target.value)}
                 aria-invalid={showErrors && errors.opposingParty}
+                disabled={isSubmitting}
               />
               {showErrors && errors.opposingParty ? (
                 <small className="form-error">{t("caseFieldRequired")}</small>
@@ -136,6 +146,7 @@ const CaseIntake: React.FC = () => {
                   type="button"
                   className="button ghost"
                   onClick={() => fileInputRef.current?.click()}
+                  disabled={isSubmitting}
                 >
                   {t("caseUploadButton")}
                 </button>
@@ -163,6 +174,7 @@ const CaseIntake: React.FC = () => {
                               )
                             )
                           }
+                          disabled={isSubmitting}
                         >
                           {t("caseRemoveFile")}
                         </button>
@@ -180,8 +192,8 @@ const CaseIntake: React.FC = () => {
               <p className="form-error">{t("caseFormValidationMessage")}</p>
             ) : null}
 
-            <button type="submit" className="button primary full">
-              {t("caseStartChat")}
+            <button type="submit" className="button primary full" disabled={isSubmitting}>
+              {isSubmitting ? t("workspaceSending") : t("caseStartChat")}
             </button>
           </form>
         </div>

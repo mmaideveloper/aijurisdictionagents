@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-engine-api
+spec:
+  selector:
+    app: document-engine-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000

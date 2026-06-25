@@ -108,12 +108,9 @@ def test_voice_intent_execute_create_case_after_case_store_dependency_warmup(
     assert user_response.status_code == 201
     user_id = user_response.json()["user_id"]
 
-    warmup_response = client.post(
-        "/v1/cases",
-        headers=AUTH_HEADERS,
-        json={"user_id": user_id, "title": "warmup"},
-    )
-    assert warmup_response.status_code == 201
+    warmup_response = client.get(f"/v1/cases?user_id={user_id}", headers=AUTH_HEADERS)
+    assert warmup_response.status_code == 200
+    assert warmup_response.json() == []
 
     voice_response = client.post(
         "/v1/voice/intent",

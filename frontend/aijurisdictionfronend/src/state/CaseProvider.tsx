@@ -1,5 +1,15 @@
 import React from "react";
+import {
+  createApiCase,
+  getCaseHistory,
+  listCases,
+  uploadApiCaseDocuments,
+  type ApiCase,
+  type ApiCaseDocument,
+  type ApiCaseHistoryMessage
+} from "../api/caseClient";
 import { createChatSession, replyToSession } from "../api/chatClient";
+import { useAuth } from "../auth/webAuth";
 import { getMockCaseTemplate, isSeededCaseTemplateId } from "../content/mockCaseTemplates";
 import { translate, type Language, type TranslationKey, type TranslationValues } from "../data/translations";
 import { consoleLogger } from "../logging/consoleLogger";
@@ -40,6 +50,7 @@ export type CaseWorkspace = {
 export type CaseDocumentRecord = {
   id: string;
   caseId: string;
+  kind: string;
   originalFilename: string;
   mimeType: string;
   size: number;
@@ -55,6 +66,7 @@ export type CreateCaseDocumentInput = {
   originalFilename: string;
   mimeType: string;
   size: number;
+  file?: File;
 };
 
 export type CreateCaseInput = {
@@ -78,7 +90,7 @@ export type CaseRecord = {
   jurisdiction: string;
   opposingParty: string;
   documents: CaseDocumentRecord[];
-  source: "mock";
+  source: "api" | "mock";
 };
 
 type CaseContextValue = {
@@ -88,7 +100,10 @@ type CaseContextValue = {
   activeCase: CaseRecord | null;
   hasSelectedCase: boolean;
   continueRequested: boolean;
-  createCase: (input: CreateCaseInput) => CaseRecord;
+  isLoadingCases: boolean;
+  caseLoadError: string | null;
+  createCase: (input: CreateCaseInput) => Promise<CaseRecord>;
+  loadCaseData: (caseId: string) => Promise<CaseRecord | null>;
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
   setContinueRequested: (value: boolean) => void;
@@ -113,6 +128,22 @@ type LocalizedInteractionDescriptor = {
 type CaseSessionCacheRecord = {
   language: Language;
   sessionId: string;
+};
+
+const USER_VISIBLE_GENERATED_DOCUMENT_KINDS = new Set(["generated_document"]);
+
+export const isUserVisibleGeneratedDocument = (document: Pick<CaseDocumentRecord, "kind" | "originalFilename">): boolean => {
+  if (!USER_VISIBLE_GENERATED_DOCUMENT_KINDS.has(document.kind)) {
+    return false;
+  }
+  const normalizedName = document.originalFilename.trim().toLowerCase();
+  return !(
+    normalizedName.startsWith("assistant-technical-") ||
+    normalizedName.startsWith("session-") ||
+    normalizedName.startsWith("spracovanie-stale-prebieha") ||
+    normalizedName.includes("technical") ||
+    normalizedName.includes("payload")
+  );
 };
 
 export const buildLocalizedInteractionMessage = (
@@ -262,6 +293,7 @@ const buildDocumentRecord = (
 ): CaseDocumentRecord => ({
   id: `${caseId}-document-${index + 1}`,
   caseId,
+  kind: "uploaded",
   originalFilename: document.originalFilename,
   mimeType: document.mimeType,
   size: document.size,
@@ -314,109 +346,6 @@ const createMockCase = (input: CreateCaseInput, createdAt: string, id: string): 
     source: "mock"
   };
 };
-
-const defaultCases: CaseRecord[] = [
-  {
-    ...createMockCase(
-      {
-        title: "Keystone Holdings Intake",
-        jurisdiction: "EU + UK",
-        opposingParty: "Northshore Advisory",
-        documents: [
-          {
-            originalFilename: "keystone-timeline.pdf",
-            mimeType: "application/pdf",
-            size: 182_430
-          }
-        ]
-      },
-      "2026-02-03T09:00:00.000Z",
-      "case-001"
-    ),
-    workspace: {
-      meta: "Due in 2 days",
-      objective: "Consolidate jurisdiction analysis and prepare a briefing memo for counsel review.",
-      nextAction: "Schedule a 15-minute voice session with the AI agent to confirm scope.",
-      jurisdiction: "EU + UK",
-      output: "Briefing memo + checklist"
-    }
-  },
-  {
-    ...createMockCase(
-      {
-        title: "Atlas Contract Review",
-        jurisdiction: "US + Canada",
-        opposingParty: "Atlas Procurement Vendor",
-        documents: [
-          {
-            originalFilename: "atlas-vendor-packet.docx",
-            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            size: 95_000
-          }
-        ]
-      },
-      "2026-01-28T14:15:00.000Z",
-      "case-002"
-    ),
-    status: "On hold",
-    selectedRole: "AI Judge",
-    selectedMode: "Review",
-    selectedCommunicationMode: "Voice",
-    workspace: {
-      meta: "Waiting on docs",
-      objective: "Gather missing vendor exhibits and align on scope with procurement leadership.",
-      nextAction: "Follow up with counsel on outstanding document set.",
-      jurisdiction: "US + Canada",
-      output: "Clause redline + risk summary"
-    }
-  },
-  {
-    ...createMockCase(
-      {
-        title: "Meridian Audit Prep",
-        jurisdiction: "EU + US",
-        opposingParty: "External Audit Team",
-        documents: []
-      },
-      "2026-02-05T08:30:00.000Z",
-      "case-003"
-    ),
-    status: "Scheduled",
-    selectedRole: "Opposing Counsel",
-    selectedMode: "Live",
-    selectedCommunicationMode: "Video",
-    workspace: {
-      meta: "Kickoff today",
-      objective: "Align audit prep checklist and confirm timeline with internal teams.",
-      nextAction: "Start kickoff session and capture action items.",
-      jurisdiction: "EU + US",
-      output: "Audit kickoff deck"
-    }
-  },
-  {
-    ...createMockCase(
-      {
-        title: "Northwind Arbitration",
-        jurisdiction: "UK",
-        opposingParty: "Northwind Counterparty",
-        documents: []
-      },
-      "2026-01-12T16:20:00.000Z",
-      "case-004"
-    ),
-    status: "Completed",
-    selectedRole: "AI Lawyer",
-    selectedMode: "Archive",
-    selectedCommunicationMode: "Chat",
-    workspace: {
-      meta: "Closed last week",
-      objective: "Finalize arbitration summary and archive case documentation.",
-      nextAction: "Send closing memo to executive stakeholders.",
-      jurisdiction: "UK",
-      output: "Arbitration summary pack"
-    }
-  }
-];
 
 const localizeCaseRecord = (caseItem: CaseRecord, language: Language): CaseRecord => {
   const documentCount = caseItem.documents.length;
@@ -542,6 +471,7 @@ const normalizeStoredDocument = (
   return {
     id: candidate.id,
     caseId,
+    kind: typeof candidate.kind === "string" && candidate.kind.trim() ? candidate.kind : "uploaded",
     originalFilename: candidate.originalFilename,
     mimeType: typeof candidate.mimeType === "string" ? candidate.mimeType : "application/octet-stream",
     size: candidate.size,
@@ -661,24 +591,25 @@ const normalizeStoredCase = (value: unknown): CaseRecord | null => {
 
 const loadStoredCases = (): CaseRecord[] => {
   if (typeof window === "undefined") {
-    return defaultCases;
+    return [];
   }
 
   try {
     const rawCases = window.localStorage.getItem(CASE_STORAGE_KEY);
     if (!rawCases) {
-      return defaultCases;
+      return [];
     }
     const parsedCases: unknown = JSON.parse(rawCases);
     if (!Array.isArray(parsedCases)) {
-      return defaultCases;
+      return [];
     }
     const normalized = parsedCases
       .map((item) => normalizeStoredCase(item))
-      .filter((item): item is CaseRecord => item !== null);
-    return normalized.length > 0 ? normalized : defaultCases;
+      .filter((item): item is CaseRecord => item !== null)
+      .filter((item) => !isSeededCaseTemplateId(item.id));
+    return normalized;
   } catch {
-    return defaultCases;
+    return [];
   }
 };
 
@@ -702,17 +633,218 @@ const toApiMessageContent = (
   return content;
 };
 
+const mapApiStatus = (status: string): CaseStatus => {
+  const normalized = status.trim().toLowerCase();
+  if (["completed", "closed", "done"].includes(normalized)) {
+    return "Completed";
+  }
+  if (["on_hold", "on hold", "paused"].includes(normalized)) {
+    return "On hold";
+  }
+  if (["scheduled", "planned"].includes(normalized)) {
+    return "Scheduled";
+  }
+  return "In progress";
+};
+
+const mapApiRole = (role: ApiCaseHistoryMessage["role"], agentName: string | null): string => {
+  if (role === "user") {
+    return "You";
+  }
+  if (role === "system") {
+    return "System";
+  }
+  return agentName?.trim() || "AI Lawyer";
+};
+
+const mapApiDocument = (caseId: string, document: ApiCaseDocument): CaseDocumentRecord => ({
+  id: document.doc_id,
+  caseId,
+  kind: document.kind,
+  originalFilename: document.original_filename,
+  mimeType: "application/octet-stream",
+  size: 0,
+  sizeLabel: document.processing_status,
+  uploadedAt: document.created_at
+});
+
+const buildDocumentViewerUrl = ({
+  apiCase,
+  document
+}: {
+  apiCase: ApiCase;
+  document: CaseDocumentRecord;
+}): string => {
+  const params = new URLSearchParams({
+    caseId: apiCase.case_id,
+    docId: document.id,
+    kind: document.kind,
+    filename: document.originalFilename,
+    caseTitle: apiCase.title,
+    userId: apiCase.user_id
+  });
+  return `/app/documents/view?${params.toString()}`;
+};
+
+const appendGeneratedDocumentLinksToHistory = ({
+  apiCase,
+  messages,
+  documents
+}: {
+  apiCase: ApiCase;
+  messages: ApiCaseHistoryMessage[];
+  documents: CaseDocumentRecord[];
+}): ApiCaseHistoryMessage[] => {
+  const generatedDocuments = documents.filter(isUserVisibleGeneratedDocument);
+  if (generatedDocuments.length === 0) {
+    return messages;
+  }
+  let lastAssistantIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "assistant") {
+      lastAssistantIndex = index;
+      break;
+    }
+  }
+  if (lastAssistantIndex < 0) {
+    return messages;
+  }
+  const lastAssistant = messages[lastAssistantIndex];
+  if (!lastAssistant) {
+    return messages;
+  }
+  if (lastAssistant.content.includes("/app/documents/view?")) {
+    return messages;
+  }
+  const heading = generatedDocuments.length === 1 ? "Generated document:" : "Generated documents:";
+  const links = generatedDocuments.map((document) => {
+    const url = buildDocumentViewerUrl({ apiCase, document });
+    return `- [${document.originalFilename}](${url})`;
+  });
+  const appended: ApiCaseHistoryMessage = {
+    ...lastAssistant,
+    content: `${lastAssistant.content.trim()}\n\n${heading}\n${links.join("\n")}`.trim()
+  };
+  return messages.map((message, index) => (index === lastAssistantIndex ? appended : message));
+};
+
+const mapApiCase = (
+  apiCase: ApiCase,
+  historyMessages: ApiCaseHistoryMessage[] = [],
+  historyDocuments: ApiCaseDocument[] = []
+): CaseRecord => {
+  const documents = historyDocuments
+    .map((document) => mapApiDocument(apiCase.case_id, document))
+    .filter(isUserVisibleGeneratedDocument);
+  const messagesWithDocumentLinks = appendGeneratedDocumentLinksToHistory({
+    apiCase,
+    messages: historyMessages,
+    documents
+  });
+  const createdAt = apiCase.created_at;
+  return {
+    id: apiCase.case_id,
+    title: apiCase.title,
+    description: apiCase.company_id
+      ? `Company case ${apiCase.company_id}`
+      : `Case ${apiCase.case_id}`,
+    status: mapApiStatus(apiCase.status),
+    createdAt,
+    interactionHistory: messagesWithDocumentLinks.map((message) => ({
+      id: message.communication_id,
+      createdAt: message.created_at,
+      actor: mapApiRole(message.role, message.agent_name),
+      message: message.content
+    })),
+    selectedRole: "AI Lawyer",
+    selectedMode: "Draft",
+    selectedCommunicationMode: "Chat",
+    workspace: {
+      meta: `${documents.length} legal document${documents.length === 1 ? "" : "s"} / ${historyMessages.length} message${historyMessages.length === 1 ? "" : "s"}`,
+      objective: apiCase.title,
+      nextAction: "Open the selected case data and continue the chat.",
+      jurisdiction: "SK",
+      output: "Case history + documents"
+    },
+    jurisdiction: "SK",
+    opposingParty: "",
+    documents,
+    source: "api"
+  };
+};
+
+const loadApiCaseWithHistory = async (userId: string, apiCase: ApiCase): Promise<CaseRecord> => {
+  try {
+    const history = await getCaseHistory(userId, apiCase.case_id, 200);
+    return mapApiCase(apiCase, history.messages, history.documents);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Unable to load case history.";
+    consoleLogger.warn("Unable to load API case history; showing case without counts", {
+      caseId: apiCase.case_id,
+      detail
+    });
+    return mapApiCase(apiCase);
+  }
+};
+
 export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { language } = useLanguage();
+  const { isAuthenticated, user } = useAuth();
   const [storedCases, setStoredCases] = React.useState<CaseRecord[]>(() => loadStoredCases());
   const [activeCaseId, setActiveCaseId] = React.useState<string | null>(null);
   const [hasSelectedCase, setHasSelectedCase] = React.useState(false);
   const [continueRequested, setContinueRequested] = React.useState(false);
+  const [isLoadingCases, setIsLoadingCases] = React.useState(false);
+  const [caseLoadError, setCaseLoadError] = React.useState<string | null>(null);
   const sessionIdsByCaseRef = React.useRef<Record<string, CaseSessionCacheRecord>>({});
 
   React.useEffect(() => {
-    persistCases(storedCases);
+    persistCases(storedCases.filter((caseItem) => caseItem.source === "mock"));
   }, [storedCases]);
+
+  React.useEffect(() => {
+    let isCancelled = false;
+
+    const loadApiCases = async () => {
+      if (!isAuthenticated || !user?.userId) {
+        setStoredCases(loadStoredCases());
+        setActiveCaseId(null);
+        setHasSelectedCase(false);
+        return;
+      }
+
+      setIsLoadingCases(true);
+      setCaseLoadError(null);
+      try {
+        const apiCases = await listCases(user.userId);
+        const casesWithHistory = await Promise.all(
+          apiCases.map((item) => loadApiCaseWithHistory(user.userId, item))
+        );
+        if (isCancelled) {
+          return;
+        }
+        setStoredCases(casesWithHistory);
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+        const detail = error instanceof Error ? error.message : "Unable to load cases.";
+        setCaseLoadError(detail);
+        consoleLogger.warn("Unable to load API cases; using local fallback cases", { detail });
+        setStoredCases(loadStoredCases());
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingCases(false);
+        }
+      }
+    };
+
+    void loadApiCases();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isAuthenticated, user?.userId]);
 
   React.useEffect(() => {
     if (activeCaseId && !storedCases.some((caseItem) => caseItem.id === activeCaseId)) {
@@ -728,10 +860,12 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const documents = React.useMemo(() => {
     return cases
       .flatMap((caseItem) =>
-        caseItem.documents.map((document) => ({
-          ...document,
-          caseTitle: caseItem.title
-        }))
+        caseItem.documents
+          .filter(isUserVisibleGeneratedDocument)
+          .map((document) => ({
+            ...document,
+            caseTitle: caseItem.title
+          }))
       )
       .sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt));
   }, [cases]);
@@ -743,10 +877,77 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return cases.find((caseItem) => caseItem.id === activeCaseId) ?? null;
   }, [activeCaseId, cases]);
 
-  const createCase = React.useCallback((input: CreateCaseInput) => {
+  const loadCaseData = React.useCallback(
+    async (caseId: string) => {
+      if (!user?.userId) {
+        return null;
+      }
+      try {
+        const apiCase = storedCases.find((caseItem) => caseItem.id === caseId);
+        const history = await getCaseHistory(user.userId, caseId, 200);
+        const refreshedCase = apiCase
+          ? mapApiCase(
+              {
+                case_id: apiCase.id,
+                user_id: user.userId,
+                company_id: null,
+                title: apiCase.title,
+                status: apiCase.status,
+                created_at: apiCase.createdAt,
+                updated_at: apiCase.createdAt
+              },
+              history.messages,
+              history.documents
+            )
+          : null;
+        setStoredCases((prev) =>
+          prev.map((caseItem) =>
+            caseItem.id === caseId && refreshedCase ? refreshedCase : caseItem
+          )
+        );
+        if (!apiCase) {
+          consoleLogger.info("Loaded selected case data", { caseId });
+        }
+        return refreshedCase;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Unable to load selected case.";
+        setCaseLoadError(detail);
+        consoleLogger.warn("Unable to load selected case data", { caseId, detail });
+        return null;
+      }
+    },
+    [storedCases, user?.userId]
+  );
+
+  const createCase = React.useCallback(async (input: CreateCaseInput) => {
     const createdAt = new Date().toISOString();
-    const id = `case-${Date.now()}`;
-    const newCase = createMockCase(input, createdAt, id);
+    let newCase: CaseRecord;
+    if (user?.userId) {
+      try {
+        const apiCase = await createApiCase({ userId: user.userId, title: input.title.trim() });
+        let history: Awaited<ReturnType<typeof getCaseHistory>> = {
+          messages: [],
+          documents: [],
+          has_more: false
+        };
+        const files = input.documents.map((document) => document.file).filter((file): file is File => Boolean(file));
+        if (files.length > 0) {
+          history = await uploadApiCaseDocuments({
+            userId: user.userId,
+            caseId: apiCase.case_id,
+            files
+          });
+        }
+        newCase = mapApiCase(apiCase, history.messages, history.documents);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Unable to create API case.";
+        setCaseLoadError(detail);
+        consoleLogger.warn("Unable to create API case; using local fallback case", { detail });
+        newCase = createMockCase(input, createdAt, `case-${Date.now()}`);
+      }
+    } else {
+      newCase = createMockCase(input, createdAt, `case-${Date.now()}`);
+    }
     setStoredCases((prev) => [newCase, ...prev]);
     setActiveCaseId(newCase.id);
     setHasSelectedCase(true);
@@ -756,7 +957,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       documentCount: newCase.documents.length
     });
     return localizeCaseRecord(newCase, language);
-  }, [language]);
+  }, [language, user?.userId]);
 
   const setActiveCase = React.useCallback((caseId: string) => {
     setActiveCaseId(caseId);
@@ -766,7 +967,11 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveCaseId(caseId);
     setHasSelectedCase(true);
     setContinueRequested(false);
-  }, []);
+    const selected = storedCases.find((caseItem) => caseItem.id === caseId);
+    if (selected?.source === "api") {
+      void loadCaseData(caseId);
+    }
+  }, [loadCaseData, storedCases]);
 
   const updateCase = React.useCallback((caseId: string, update: Partial<CaseRecord>) => {
     setStoredCases((prev) =>
@@ -808,7 +1013,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return existingSession.sessionId;
     }
 
-    const session = await createChatSession({ language });
+      const session = await createChatSession({ language, userId: user?.userId, caseId });
     sessionIdsByCaseRef.current[caseId] = {
       language,
       sessionId: session.id
@@ -820,7 +1025,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return session.id;
-  }, [language]);
+  }, [language, user?.userId]);
 
   const sendCaseMessage = React.useCallback(
     async (input: SendCaseMessageInput): Promise<SendCaseMessageResult> => {
@@ -884,7 +1089,10 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       activeCase,
       hasSelectedCase,
       continueRequested,
+      isLoadingCases,
+      caseLoadError,
       createCase,
+      loadCaseData,
       setActiveCase,
       selectCase,
       setContinueRequested,
@@ -902,7 +1110,10 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       activeCase,
       hasSelectedCase,
       continueRequested,
+      isLoadingCases,
+      caseLoadError,
       createCase,
+      loadCaseData,
       setActiveCase,
       selectCase,
       setContinueRequested,

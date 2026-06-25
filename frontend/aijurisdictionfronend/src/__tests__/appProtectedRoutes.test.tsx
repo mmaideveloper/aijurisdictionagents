@@ -34,6 +34,10 @@ vi.mock("../pages/Pricing", () => ({
   default: () => <div>Pricing Page</div>
 }));
 
+vi.mock("../pages/News", () => ({
+  default: () => <div>News Page</div>
+}));
+
 vi.mock("../pages/AppDashboard", () => ({
   default: () => <div>App Dashboard</div>
 }));
@@ -70,6 +74,10 @@ vi.mock("../pages/Profile", () => ({
   default: () => <div>Profile Page</div>
 }));
 
+vi.mock("../pages/DocumentViewer", () => ({
+  default: () => <div>Document Viewer</div>
+}));
+
 vi.mock("../pages/Disclaimer", () => ({
   default: () => <div>Disclaimer</div>
 }));
@@ -88,40 +96,15 @@ vi.mock("../pages/NotFound", () => ({
 
 describe("App protected routes", () => {
   afterEach(() => {
+    vi.unstubAllGlobals();
     cleanup();
   });
 
-  it("redirects unauthenticated users from /app to /", () => {
-    authState.isAuthenticated = false;
+  it("renders the case workspace at /", () => {
+    authState.isAuthenticated = true;
 
     render(
-      <MemoryRouter initialEntries={["/app"]}>
-        <App />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText("Home Page")).toBeDefined();
-    expect(screen.queryByText("App Dashboard")).toBeNull();
-  });
-
-  it("redirects unauthenticated users from nested /app route to /", () => {
-    authState.isAuthenticated = false;
-
-    render(
-      <MemoryRouter initialEntries={["/app/workspace"]}>
-        <App />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText("Home Page")).toBeDefined();
-    expect(screen.queryByText("Lawyer Workspace")).toBeNull();
-  });
-
-  it("redirects unauthenticated users from /app/assistant to /", () => {
-    authState.isAuthenticated = false;
-
-    render(
-      <MemoryRouter initialEntries={["/app/assistant"]}>
+      <MemoryRouter initialEntries={["/"]}>
         <App />
       </MemoryRouter>
     );
@@ -130,7 +113,87 @@ describe("App protected routes", () => {
     expect(screen.queryByText("Assistant Workspace")).toBeNull();
   });
 
-  it("redirects unauthenticated users from /profile to /", () => {
+  it("renders the assistant workspace at / on agent.jurisdigta.eu for authenticated users", () => {
+    authState.isAuthenticated = true;
+    vi.stubGlobal("location", { hostname: "agent.jurisdigta.eu" });
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+    expect(screen.queryByText("Home Page")).toBeNull();
+  });
+
+  it("redirects unauthenticated users from / on agent.jurisdigta.eu to /auth", () => {
+    authState.isAuthenticated = false;
+    vi.stubGlobal("location", { hostname: "agent.jurisdigta.eu" });
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Auth Page")).toBeDefined();
+    expect(screen.queryByText("Assistant Workspace")).toBeNull();
+  });
+
+  it("redirects unauthenticated users from /app to /auth", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/app"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Auth Page")).toBeDefined();
+    expect(screen.queryByText("App Dashboard")).toBeNull();
+  });
+
+  it("redirects unauthenticated users from nested /app route to /auth", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/app/workspace"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Auth Page")).toBeDefined();
+    expect(screen.queryByText("Lawyer Workspace")).toBeNull();
+  });
+
+  it("redirects unauthenticated users from /app/assistant to /auth", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/app/assistant"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Auth Page")).toBeDefined();
+    expect(screen.queryByText("Assistant Workspace")).toBeNull();
+  });
+
+  it("redirects unauthenticated users from /app/chat to /auth", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/app/chat"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Auth Page")).toBeDefined();
+    expect(screen.queryByText("Home Page")).toBeNull();
+  });
+
+  it("redirects unauthenticated users from /profile to /auth", () => {
     authState.isAuthenticated = false;
 
     render(
@@ -139,8 +202,33 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.getByText("Auth Page")).toBeDefined();
     expect(screen.queryByText("Profile Page")).toBeNull();
+  });
+
+  it("allows document viewer links to open without redirecting to auth", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/app/documents/view?caseId=case-1&docId=doc-1&userId=user-1"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Document Viewer")).toBeDefined();
+    expect(screen.queryByText("Auth Page")).toBeNull();
+  });
+
+  it("allows unauthenticated users to access /aktuality", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/aktuality"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("News Page")).toBeDefined();
   });
 
   it("allows authenticated users to access /profile", () => {
@@ -160,6 +248,18 @@ describe("App protected routes", () => {
 
     render(
       <MemoryRouter initialEntries={["/app/assistant"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+  });
+
+  it("keeps /app/chat as an authenticated assistant workspace alias", () => {
+    authState.isAuthenticated = true;
+
+    render(
+      <MemoryRouter initialEntries={["/app/chat"]}>
         <App />
       </MemoryRouter>
     );

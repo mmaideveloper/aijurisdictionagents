@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-engine-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: document-engine-api
+  template:
+    metadata:
+      labels:
+        app: document-engine-api
+    spec:
+      containers:
+        - name: api
+          image: document-engine-service:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: document-engine-config
+            - secretRef:
+                name: document-engine-secret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: generated-documents
+              mountPath: /data/generated-documents
+      volumes:
+        - name: generated-documents
+          emptyDir: {}

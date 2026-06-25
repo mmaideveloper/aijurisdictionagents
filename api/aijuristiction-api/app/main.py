@@ -23,6 +23,7 @@ from app.document_templates.api import router as document_templates_router
 from app.flow_packs.api import router as flow_packs_router
 from app.laws_api import router as laws_router
 from app.logging_config import configure_logging
+from app.monitoring_daily_stats_api import router as monitoring_daily_stats_router
 from app.observability_api import router as observability_router
 from app.telemetry import configure_telemetry, instrument_fastapi
 from app.system_status_api import router as system_status_router
@@ -242,6 +243,7 @@ app.include_router(users_router)
 app.include_router(cases_router)
 app.include_router(voice_intent_router)
 app.include_router(observability_router)
+app.include_router(monitoring_daily_stats_router)
 app.include_router(system_status_router)
 instrument_fastapi(app)
 

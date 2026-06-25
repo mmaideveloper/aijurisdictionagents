@@ -33,7 +33,6 @@ from services.document_processor.runtime import render_documents_for_prompt
 from app.services.email_scheduler import EmailScheduler
 
 router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key)])
-_MAX_ACTIVE_CASES = 5
 _LOGGER = logging.getLogger(__name__)
 _STORE_LOCK = threading.Lock()
 _STORE_CACHE: dict[tuple[str, str, str, str, str], ApiDatabaseStore] = {}
@@ -113,6 +112,7 @@ class SendCaseDocumentsEmailRequest(BaseModel):
     recipient: str = Field(min_length=3)
     case_subject: str = Field(default="")
     version: str = Field(default="v1")
+    doc_ids: list[str] | None = None
     correlation_id: str | None = None
 
 
@@ -185,11 +185,12 @@ def list_cases(user_id: str, store: ApiDatabaseStore = Depends(get_store)) -> li
 
 @router.post('', response_model=CaseResponse, status_code=status.HTTP_201_CREATED)
 def create_case(payload: CreateCaseRequest, store: ApiDatabaseStore = Depends(get_store)) -> CaseResponse:
+    max_active_cases = store.get_case_limit(user_id=payload.user_id)
     active = store.count_active_cases(user_id=payload.user_id)
-    if active >= _MAX_ACTIVE_CASES:
+    if active >= max_active_cases:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f'Maximum number of cases reached ({_MAX_ACTIVE_CASES})',
+            detail=f'Maximum number of cases reached ({max_active_cases})',
         )
     case = store.create_case(user_id=payload.user_id, company_id=None, title=payload.title.strip())
     return _to_case_response(case)
@@ -197,6 +198,7 @@ def create_case(payload: CreateCaseRequest, store: ApiDatabaseStore = Depends(ge
 
 @router.patch('/{case_id}', response_model=CaseResponse)
 def rename_case(case_id: str, payload: UpdateCaseRequest, store: ApiDatabaseStore = Depends(get_store)) -> CaseResponse:
+    _ensure_case_write_access(case_id=case_id, user_id=payload.user_id, store=store)
     try:
         case = store.update_case_title(case_id=case_id, user_id=payload.user_id, title=payload.title.strip())
     except KeyError as exc:
@@ -206,6 +208,7 @@ def rename_case(case_id: str, payload: UpdateCaseRequest, store: ApiDatabaseStor
 
 @router.delete('/{case_id}', status_code=status.HTTP_204_NO_CONTENT)
 def delete_case(case_id: str, user_id: str, store: ApiDatabaseStore = Depends(get_store)) -> None:
+    _ensure_case_write_access(case_id=case_id, user_id=user_id, store=store)
     try:
         store.soft_delete_case(case_id=case_id, user_id=user_id)
     except KeyError as exc:
@@ -249,6 +252,7 @@ async def upload_case_documents(
     store: ApiDatabaseStore = Depends(get_store),
 ) -> CaseDocumentUploadResponse:
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    _ensure_case_write_access(case_id=case_id, user_id=user_id, store=store)
     limit = store.get_document_upload_limit(user_id=user_id)
     existing = store.count_case_documents(case_id=case_id)
     if existing + len(files) > limit:
@@ -388,6 +392,7 @@ def download_case_document(
     case_id: str,
     doc_id: str,
     user_id: str,
+    disposition: str = Query(default="attachment", pattern="^(attachment|inline)$"),
     store: ApiDatabaseStore = Depends(get_store),
 ) -> Response:
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
@@ -412,7 +417,7 @@ def download_case_document(
         content=payload,
         media_type=media_type,
         headers={
-            'Content-Disposition': f'attachment; filename="{document.original_filename}"',
+            'Content-Disposition': f'{disposition}; filename="{document.original_filename}"',
         },
     )
 
@@ -422,6 +427,7 @@ def download_generated_case_document_pdf(
     case_id: str,
     doc_id: str,
     user_id: str,
+    disposition: str = Query(default="attachment", pattern="^(attachment|inline)$"),
     store: ApiDatabaseStore = Depends(get_store),
 ) -> Response:
     case = _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
@@ -429,11 +435,13 @@ def download_generated_case_document_pdf(
         document = store.get_case_document(case_id=case_id, doc_id=doc_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    visible_content = _generated_case_document_visible_content(
-        case_id=case_id,
-        doc_id=document.doc_id,
-        store=store,
-    )
+    visible_content = _generated_case_document_storage_content(document=document, store=store)
+    if not visible_content:
+        visible_content = _generated_case_document_visible_content(
+            case_id=case_id,
+            doc_id=document.doc_id,
+            store=store,
+        )
     if not visible_content:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -455,14 +463,14 @@ def download_generated_case_document_pdf(
         case_id=case_id,
         session_id=getattr(document, "session_id", None),
         user_id=user_id,
-        footer_line="AIJ generated case document",
+        footer_line="JurisDigta generated case document",
         verification_score=None,
     )
     return Response(
         content=pdf_content,
         media_type="application/pdf",
         headers={
-            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Content-Disposition': f'{disposition}; filename="{filename}"',
         },
     )
 
@@ -474,7 +482,13 @@ def send_case_documents_email(
     store: ApiDatabaseStore = Depends(get_store),
 ) -> SendCaseDocumentsEmailResponse:
     case = _ensure_case_access(case_id=case_id, user_id=payload.user_id, store=store)
-    documents = [item for item in store.list_case_documents(case_id=case_id) if item.kind in {"uploaded", "chat_attachment", "session_history"}]
+    requested_doc_ids = {item.strip() for item in payload.doc_ids or [] if item.strip()}
+    documents = [
+        item
+        for item in store.list_case_documents(case_id=case_id)
+        if item.kind in {"uploaded", "chat_attachment", "session_history", "generated_document"}
+        and (not requested_doc_ids or item.doc_id in requested_doc_ids)
+    ]
     if not documents:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No case documents available to send.")
     correlation_id = (payload.correlation_id or str(uuid4())).strip()
@@ -483,7 +497,18 @@ def send_case_documents_email(
     html = _build_lawyer_email_html(case_subject=subject, version=payload.version.strip() or "v1", correlation_id=correlation_id)
     attachments: list[dict[str, str]] = []
     for document in documents:
-        raw = store.read_storage_bytes(storage_uri=document.storage_uri)
+        try:
+            raw = store.read_storage_bytes(storage_uri=document.storage_uri)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Stored payload is unavailable for document {document.doc_id}",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Case storage backend is not reachable for this document",
+            ) from exc
         attachments.append(
             {
                 "filename": document.original_filename,
@@ -527,6 +552,15 @@ def _ensure_case_access(*, case_id: str, user_id: str, store: ApiDatabaseStore) 
     if case.user_id != user_id or case.status == 'deleted':
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Case {case_id} not found')
     return case
+
+
+def _ensure_case_write_access(*, case_id: str, user_id: str, store: ApiDatabaseStore) -> None:
+    try:
+        reason = store.get_case_write_block_reason(case_id=case_id, user_id=user_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if reason is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
 
 
 def _read_case_communication_content(
@@ -631,6 +665,25 @@ def _generated_case_document_visible_content(
     return _latest_generated_case_document_visible_content(case_id=case_id, store=store)
 
 
+def _generated_case_document_storage_content(*, document: CaseDocument, store: ApiDatabaseStore) -> str:
+    if document.kind != "generated_document":
+        return ""
+    try:
+        return str(store.read_storage_text(storage_uri=document.storage_uri)).strip()
+    except FileNotFoundError:
+        _LOGGER.info(
+            "Generated case document payload not found; falling back to communication content",
+            extra={"doc_id": document.doc_id, "storage_uri": document.storage_uri},
+        )
+    except Exception:
+        _LOGGER.warning(
+            "Generated case document payload could not be read; falling back to communication content",
+            extra={"doc_id": document.doc_id, "storage_uri": document.storage_uri},
+            exc_info=True,
+        )
+    return ""
+
+
 def _latest_generated_case_document_visible_content(
     *, case_id: str, store: ApiDatabaseStore
 ) -> str:
@@ -669,6 +722,7 @@ def _generated_case_document_type(content: str) -> str:
     normalized = _normalize_for_filename(content)
     type_markers = (
         ("splnomocnenie", "Splnomocnenie"),
+        ("power of attorney", "Power of Attorney"),
         ("potvrdenie", "Potvrdenie"),
         ("predzalobna vyzva", "Predžalobná výzva"),
         ("najomna zmluva", "Nájomná zmluva"),
@@ -707,6 +761,11 @@ def _looks_like_generated_case_document_message(content: str) -> bool:
     normalized = " ".join(content.lower().split())
     if not normalized:
         return False
+    if (
+        ("splnomocnenie" in normalized or "power of attorney" in normalized)
+        and ("dokumenty su pripravene" in normalized or "finalne verzie" in normalized)
+    ):
+        return True
     document_markers = (
         "splnomocnenie",
         "potvrdenie o zaplaten",
@@ -817,7 +876,7 @@ def _document_context(*, case_id: str, store: ApiDatabaseStore) -> CaseDocumentC
     processed: list[str] = []
     unprocessed: list[str] = []
     for document in store.list_case_documents(case_id=case_id):
-        if document.kind not in {'uploaded', 'chat_attachment', 'session_history'}:
+        if document.kind not in {'uploaded', 'chat_attachment', 'session_history', 'generated_document'}:
             continue
         if document.processing_status == 'processed':
             processed.append(document.original_filename)

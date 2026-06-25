@@ -38,7 +38,7 @@ const labels: Record<string, string> = {
   caseSelectedFilesTitle: "Selected files",
   caseNoFilesSelected: "No documents selected yet.",
   caseRemoveFile: "Remove",
-  caseStorageMode: "Stored in mock workspace profile data for this task.",
+  caseStorageMode: "Stored in your JurisDigta case data.",
   caseStartChat: "Start AI lawyer chat"
 };
 
@@ -83,10 +83,10 @@ describe("Case intake page", () => {
       opposingParty: "Northwind LLC",
       documents: []
     });
-    expect(navigateMock).toHaveBeenCalledWith("/", { replace: true });
+    expect(navigateMock).toHaveBeenCalledWith("/app/assistant", { replace: true });
   });
 
-  it("creates a mock case and navigates home when the form is complete", async () => {
+  it("creates a mock case and navigates to the assistant workspace when the form is complete", async () => {
     const user = userEvent.setup();
     render(<CaseIntake />);
 
@@ -111,10 +111,11 @@ describe("Case intake page", () => {
         {
           originalFilename: "dispute-brief.pdf",
           mimeType: "application/pdf",
-          size: file.size
+          size: file.size,
+          file
         }
       ]
     });
-    expect(navigateMock).toHaveBeenCalledWith("/", { replace: true });
+    expect(navigateMock).toHaveBeenCalledWith("/app/assistant", { replace: true });
   });
 });

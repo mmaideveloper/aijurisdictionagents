@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+from pathlib import Path
 
 from scripts.server.export_system_status_metrics import _merge_local_runtime, _render_metrics
 from scripts.server.write_system_status import (
@@ -9,6 +11,65 @@ from scripts.server.write_system_status import (
     _latest_laws_run_summary,
     _recent_error_lines,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MONITORING_DIR = REPO_ROOT / "Deployment" / "monitoring"
+DEPLOY_SCRIPT = REPO_ROOT / "Deployment" / "server" / "deploy_jurisdigta_prod.sh"
+
+
+def _load_configure_monitoring_module():
+    module_path = MONITORING_DIR / "configure_monitoring.py"
+    spec = importlib.util.spec_from_file_location("configure_monitoring", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_monitoring_stack_includes_loki_alloy_and_datasource() -> None:
+    compose = (MONITORING_DIR / "docker-compose.yml").read_text(encoding="utf-8")
+    datasources = (
+        MONITORING_DIR / "grafana" / "provisioning" / "datasources" / "prometheus.yml"
+    ).read_text(encoding="utf-8")
+    alloy_config = (MONITORING_DIR / "alloy" / "config.alloy").read_text(encoding="utf-8")
+    loki_config = (MONITORING_DIR / "loki.yml").read_text(encoding="utf-8")
+
+    assert "jurisdigta-loki" in compose
+    assert "grafana/alloy" in compose
+    assert "LOKI_RETENTION_DAYS" in compose
+    assert "max-size: ${DOCKER_LOG_MAX_SIZE:-50m}" in compose
+    assert "type: loki" in datasources
+    assert "loki.source.docker" in alloy_config
+    assert "loki.source.file" in alloy_config
+    assert "retention_period: ${LOKI_RETENTION_DAYS}d" in loki_config
+
+
+def test_monitoring_env_defaults_include_log_retention() -> None:
+    module = _load_configure_monitoring_module()
+
+    values = module._build_monitoring_env(
+        project_values={},
+        existing_values={},
+        prometheus_host_port=None,
+    )
+
+    assert values["LOG_RETENTION_DAYS"] == "7"
+    assert values["LOKI_RETENTION_DAYS"] == "7"
+    assert values["PROMETHEUS_RETENTION_DAYS"] == "30"
+    assert values["DOCKER_LOG_MAX_SIZE"] == "50m"
+    assert values["DOCKER_LOG_MAX_FILE"] == "5"
+
+
+def test_prod_api_container_receives_prometheus_url() -> None:
+    deploy_script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "prometheus_base_url=" in deploy_script
+    assert "http://jurisdigta-prometheus:9090" in deploy_script
+    assert '-e PROMETHEUS_BASE_URL="$prometheus_base_url"' in deploy_script
+    assert "connect_api_to_monitoring_network" in deploy_script
+    assert "docker network connect \"$network\" jurisdigta-api" in deploy_script
 
 
 def test_laws_run_summary_parses_latest_execution() -> None:
