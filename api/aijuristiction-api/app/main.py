@@ -120,6 +120,19 @@ def _llm_health_payload() -> dict[str, str]:
     return payload
 
 
+def _database_health_error_payload(*, backend: str) -> dict[str, Any]:
+    return {
+        "status": "error",
+        "service": "aijuristiction-api",
+        "error": "database_unavailable",
+        "message": f'Database health check failed for backend "{backend}".',
+        "database": {
+            "status": "error",
+            "backend": backend,
+        },
+    }
+
+
 def _law_snapshot_payload(*, country_code: str | None) -> dict[str, Any]:
     snapshot = get_law_knowledge_snapshot(country_code)
     return {
@@ -342,27 +355,21 @@ def health() -> JSONResponse:
         database_backend = store.db_option
         store.check_connection()
     except Exception as exc:
-        message = (
-            f"Database health check failed for backend "
-            f'"{database_backend}": {exc}'
+        logger.warning(
+            'Database health check failed for backend "%s": %s',
+            database_backend,
+            exc.__class__.__name__,
         )
-        logger.warning(message)
+        payload = _database_health_error_payload(backend=database_backend)
+        payload["llm"] = llm_payload
         return JSONResponse(
             status_code=503,
-            content={
-                "status": "error",
-                "error": "database_unavailable",
-                "message": message,
-                "llm": llm_payload,
-                "database": {
-                    "status": "error",
-                    "backend": database_backend,
-                },
-            },
+            content=payload,
         )
     return JSONResponse(
         {
             "status": "ok",
+            "service": "aijuristiction-api",
             "llm": llm_payload,
             "database": {
                 "status": "ok",

@@ -119,11 +119,33 @@ The self-managed production API is intentionally bound to loopback only:
 http://127.0.0.1:8060/health
 ```
 
+The health response checks database connectivity and returns only
+privacy-minimized operational fields:
+
+```json
+{
+  "status": "ok",
+  "service": "document-engine-service",
+  "database": {
+    "status": "ok",
+    "backend": "postgresql"
+  }
+}
+```
+
+If the database is unavailable, `/health` returns HTTP 503 with
+`error=database_unavailable` and a sanitized message. It does not echo
+connection strings, credentials, document payloads, or raw exception text.
+
 Do not publish the document engine directly to a public hostname in the current
 phase. It has no standalone end-user authentication, rate limiting, or public
 audit boundary. Public document workflows should go through the main JurisDigta
 API, which can enforce user auth, authorization, request validation, audit
 events, and retention policy before delegating to this private service.
+
+The document-engine worker does not expose a public HTTP health endpoint. Monitor
+it through container/supervisor state, worker lifecycle tests, request status
+counts, and the protected aggregate JurisDigta system status.
 
 ## Recommendations
 

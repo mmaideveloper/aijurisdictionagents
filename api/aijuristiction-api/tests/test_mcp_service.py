@@ -19,7 +19,7 @@ class _UnhealthyStore:
     db_option = "postgres"
 
     def check_connection(self) -> None:
-        raise RuntimeError("connection refused")
+        raise RuntimeError("connection refused for postgresql://user:token@example/db")
 
 
 def test_mcp_health_endpoint(monkeypatch) -> None:
@@ -43,7 +43,11 @@ def test_mcp_health_endpoint_reports_database_failure(monkeypatch) -> None:
     payload = response.json()
     assert payload["status"] == "error"
     assert payload["error"] == "database_unavailable"
-    assert "connection refused" in payload["message"]
+    assert payload["service"] == "jurisdigta-mcp-server"
+    assert payload["message"] == 'Database health check failed for backend "postgres".'
+    assert "token" not in response.text
+    assert "postgresql://" not in response.text
+    assert "connection refused" not in response.text
     assert payload["database"] == {
         "status": "error",
         "backend": "postgres",
