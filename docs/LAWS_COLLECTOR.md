@@ -548,6 +548,7 @@ The Azure job now runs the real sequential live collector path (`LAWS_WORKER_FIX
 
 - `LAWS_COLLECTOR_IMPORT` to choose the live ingestion path; default `zip`, optional `one_law_url`
 - `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS` to control parallel zip entry decoding/import workers for archive and monthly bundles (default `4`; local example `5`; bootstrap example `10`)
+- `LAWS_COLLECTOR_RUN_MODE` to choose worker lifecycle; Azure jobs use `scheduled`, self-managed prod uses `continuous`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES` to control how many Slov-Lex probes execute in each scheduled run (default `1`)
 - `LAWS_COLLECTOR_MAX_RUNNING_TIME` to cap a single Azure run in minutes (default `60`, set `0` for unlimited)
 
@@ -667,6 +668,7 @@ Use a monthly+live maintenance profile (avoid unnecessary archive replay):
 
 - `LAWS_COLLECTOR_IMPORT=zip`
 - `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS=4` (or `2` for low CPU plans)
+- `LAWS_COLLECTOR_RUN_MODE=scheduled`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES=5` (or higher for faster catch-up)
 - `LAWS_COLLECTOR_MAX_RUNNING_TIME=60`
 - `LAWS_WORKER_FIXTURE=live`
@@ -680,6 +682,7 @@ Use a bootstrap profile with stronger ZIP throughput:
 
 - `LAWS_COLLECTOR_IMPORT=zip`
 - `LAWS_COLLECTOR_IMPORT_ZIP_MAX_THREADS=10`
+- `LAWS_COLLECTOR_RUN_MODE=scheduled`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES=1` during bootstrap (most work comes from ZIP import)
 - `LAWS_COLLECTOR_MAX_RUNNING_TIME=120` (or `0` for unlimited dedicated bootstrap runs)
 - `LAWS_WORKER_FIXTURE=live`
