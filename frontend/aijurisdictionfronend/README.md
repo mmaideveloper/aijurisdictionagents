@@ -324,6 +324,19 @@ Issue #398 assistant model disclosure minimal demo:
 python examples/frontend_assistant_model_disclosure_issue_398_minimal_demo.py
 ```
 
+Issue #401 document preview formatting minimal demo:
+
+```bash
+python examples/frontend_document_preview_issue_401_minimal_demo.py
+```
+
+Issue #401 browser regression check:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+FRONTEND_BASE_URL=http://127.0.0.1:5173 npx playwright test tests/frontend-document-preview-formatting.spec.ts
+```
+
 Issue #369 case-create layout minimal demo:
 
 ```bash

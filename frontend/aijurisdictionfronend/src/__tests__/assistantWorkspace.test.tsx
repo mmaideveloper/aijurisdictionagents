@@ -393,6 +393,44 @@ Signature: ______________________`);
     expect(presentation.documentLinks).toEqual([]);
   });
 
+  it("strips internal audience labels and previews a legal draft without separators", () => {
+    const presentation = parseAssistantMessagePresentation(`LawyerSlovakia: USER-FACING: Pripravujem splnomocnenie pre Emiliu Testovu na pouzivanie firemneho auta firmy ESolutions SK s.r.o. s nasledujucimi udajmi:
+
+**Splnomocnenie**
+
+**Splnomocnitel:**
+Marek Matonok
+ESolutions SK s.r.o.
+Partizanska 665,
+059 18 Spisske Bystre
+
+**Splnomocnenec:**
+Emilia Testova
+
+**Predmet splnomocnenia:**
+Pouzivanie firemneho auta firmy ESolutions SK s.r.o.
+
+**SPZ vozidla:** PP472DT
+
+**Doba platnosti splnomocnenia:**
+Od 1. jula 2026 do 31. decembra 2026
+
+Datum: 25. juna 2026
+Podpis: ______________________`);
+
+    expect(presentation.conversationalText).toBe(
+      "Pripravujem splnomocnenie pre Emiliu Testovu na pouzivanie firemneho auta firmy ESolutions SK s.r.o. s nasledujucimi udajmi:"
+    );
+    expect(presentation.conversationalText).not.toContain("USER-FACING");
+    expect(presentation.conversationalText).not.toContain("LawyerSlovakia");
+    expect(presentation.documentPreviews).toHaveLength(1);
+    expect(presentation.documentPreviews[0]).toEqual({
+      title: "Splnomocnenie",
+      body: expect.stringContaining("Marek Matonok")
+    });
+    expect(presentation.documentPreviews[0]?.body).toContain("PP472DT");
+  });
+
   it("moves generated PDF links into separate document actions", () => {
     const presentation = parseAssistantMessagePresentation(`Splnomocnenie je pripravene.
 
