@@ -94,6 +94,13 @@ Optional env vars for the OpenAI provider:
 
 Local API startup loads the repository root `.env` automatically. If you override variables in the shell before starting `uvicorn`, those explicit shell values still win because `.env` is loaded with `override=False`.
 
+AI model admin management:
+
+- `GET /v1/admin/ai-models` returns providers, model price profiles, route policies, user groups, group memberships, users eligible for assignment, and recent admin audit events.
+- `POST /v1/admin/ai-models/providers`, `/profiles`, `/groups`, `/groups/{model_group_id}/members`, and `/policies` update routine model-router settings without editing environment files.
+- Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header and the `JURISDIGTA_ADMIN_EMAILS` allowlist. Local loopback development may send `x-jurisdigta-admin-user-id`.
+- Admin responses never return provider secrets or legal case content. External provider changes are audited with actor, entity, old/new summaries, reason, and correlation id.
+
 Document processing mode:
 
 - `DOCUMENT_PROCESSOR_OPTION=api`: uploaded case documents are processed immediately inside the API and stored with extracted text plus vector data.

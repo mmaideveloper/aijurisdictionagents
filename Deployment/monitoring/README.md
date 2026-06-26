@@ -23,6 +23,7 @@ GET /v1/system/status?minutes=60
 - Docker container CPU, memory, filesystem, and restart behavior through cAdvisor.
 - Prometheus health and scrape status.
 - Docker stdout/stderr logs and server job log files through Grafana Alloy and Loki.
+- Provisioned AI model usage panels in `JurisDigta Application Performance` for aggregate status, cost, requests by route, input/output tokens by model, and top cost by plan/task/provider/model route.
 
 ## Security Baseline
 
@@ -102,10 +103,18 @@ Recommended labels:
 - `status`
 - `fallback_reason`
 
-Grafana panels to add when the metrics exist:
+Provisioned Grafana panels:
 
-- input tokens by model for the selected case
-- output tokens by model for the selected case
+- AI model usage status
+- AI model cost in the current status window
+- AI model requests by task, provider, model, route type, and status
+- input and output tokens by model
+- top AI model cost by plan, task, provider, model, and route type
+
+Optional drill-down panels for a protected admin-only dashboard:
+
+- input tokens by model for a selected case
+- output tokens by model for a selected case
 - total tokens by model and task type
 - estimated EUR cost by model for the selected case
 - model cost per user over hour/day/month windows

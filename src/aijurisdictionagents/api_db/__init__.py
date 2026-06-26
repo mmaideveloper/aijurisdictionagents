@@ -1,5 +1,8 @@
 from .config import ApiDataConfig
 from .store import (
+    AIModelAdminAuditEvent,
+    AIModelGroup,
+    AIModelGroupMembership,
     AIModelProfile,
     AIModelProvider,
     AIModelRouteSelection,
@@ -21,6 +24,9 @@ from .store import (
 )
 
 __all__ = [
+    "AIModelAdminAuditEvent",
+    "AIModelGroup",
+    "AIModelGroupMembership",
     "AIModelProfile",
     "AIModelProvider",
     "AIModelRouteSelection",
