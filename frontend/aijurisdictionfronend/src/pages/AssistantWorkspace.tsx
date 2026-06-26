@@ -167,12 +167,29 @@ type AssistantMessagePresentation = {
 };
 
 const separatorLinePattern = /^\s*-{3,}\s*$/;
+const internalAudienceLabelPattern = /^\s*(?:USER|USERT)-FACING\s*:\s*/i;
+const assistantAgentPrefixPattern = /^\s*(?:LawyerSlovakia|[A-Za-z]+Slovakia)\s*:\s*/;
+const documentTitlePattern = /^\s*(?:#{1,4}\s+.+|\*\*(?![^*]{1,80}:\*\*$).+\*\*)\s*$/;
 
 const stripMarkdownHeading = (line: string): string =>
   line
     .trim()
     .replace(/^#{1,4}\s+/, "")
     .replace(/^\*\*(.+)\*\*$/, "$1")
+    .trim();
+
+const cleanDocumentLine = (line: string): string =>
+  stripMarkdownHeading(line).replace(/\*\*([^*]+)\*\*/g, "$1");
+
+const normalizeVisibleAssistantText = (text: string): string =>
+  text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line, index) => {
+      const withoutAgent = index === 0 ? line.replace(assistantAgentPrefixPattern, "") : line;
+      return withoutAgent.replace(internalAudienceLabelPattern, "").trimEnd();
+    })
+    .join("\n")
     .trim();
 
 const removeInternalDocumentLinks = (text: string): { text: string; links: AssistantDocumentLink[] } => {
@@ -193,10 +210,10 @@ const removeInternalDocumentLinks = (text: string): { text: string; links: Assis
   };
 };
 
-const looksLikeDocumentPreview = (chunk: string, hasSeparators: boolean): boolean => {
+const looksLikeDocumentPreview = (chunk: string): boolean => {
   const normalized = chunk.toLowerCase();
   const firstLine = chunk.split("\n").find((line) => line.trim()) ?? "";
-  const hasDocumentHeading = /^(\*\*.+\*\*|#{1,4}\s+.+)$/.test(firstLine.trim());
+  const hasDocumentHeading = documentTitlePattern.test(firstLine.trim());
   const hasLegalBody =
     normalized.includes("podpis") ||
     normalized.includes("signature") ||
@@ -205,11 +222,46 @@ const looksLikeDocumentPreview = (chunk: string, hasSeparators: boolean): boolea
     normalized.includes("i, the undersigned") ||
     normalized.includes("ja, dolu podp\u00edsan");
 
-  return hasSeparators && hasDocumentHeading && hasLegalBody && chunk.trim().length > 120;
+  return hasDocumentHeading && hasLegalBody && chunk.trim().length > 80;
+};
+
+const splitChunkIntoPresentationParts = (chunk: string): { conversational: string[]; documents: string[] } => {
+  const lines = chunk.split("\n");
+  const documentStartIndexes = lines.reduce<number[]>((indexes, line, index) => {
+    if (documentTitlePattern.test(line.trim())) {
+      indexes.push(index);
+    }
+    return indexes;
+  }, []);
+
+  if (documentStartIndexes.length === 0) {
+    return { conversational: [chunk], documents: [] };
+  }
+
+  const conversational: string[] = [];
+  const documents: string[] = [];
+  const firstDocumentIndex = documentStartIndexes[0] ?? 0;
+  const intro = lines.slice(0, firstDocumentIndex).join("\n").trim();
+  if (intro) {
+    conversational.push(intro);
+  }
+
+  documentStartIndexes.forEach((startIndex, index) => {
+    const endIndex = documentStartIndexes[index + 1] ?? lines.length;
+    const candidate = lines.slice(startIndex, endIndex).join("\n").trim();
+    if (looksLikeDocumentPreview(candidate)) {
+      documents.push(candidate);
+    } else {
+      conversational.push(candidate);
+    }
+  });
+
+  return { conversational, documents };
 };
 
 export const parseAssistantMessagePresentation = (text: string): AssistantMessagePresentation => {
-  const { text: textWithoutLinks, links } = removeInternalDocumentLinks(text.replace(/\r\n/g, "\n"));
+  const normalizedText = normalizeVisibleAssistantText(text);
+  const { text: textWithoutLinks, links } = removeInternalDocumentLinks(normalizedText);
   if (!textWithoutLinks) {
     return {
       conversationalText: "",
@@ -227,20 +279,23 @@ export const parseAssistantMessagePresentation = (text: string): AssistantMessag
   const documentPreviews: AssistantDocumentPreview[] = [];
 
   chunks.forEach((chunk) => {
-    if (!looksLikeDocumentPreview(chunk, hasSeparators)) {
-      conversationalChunks.push(chunk);
-      return;
-    }
+    const candidateParts =
+      hasSeparators && looksLikeDocumentPreview(chunk)
+        ? { conversational: [], documents: [chunk] }
+        : splitChunkIntoPresentationParts(chunk);
 
-    const lines = chunk.split("\n");
-    const firstContentIndex = lines.findIndex((line) => line.trim());
-    const title = stripMarkdownHeading(lines[firstContentIndex] ?? "") || "Document preview";
-    const body = lines
-      .slice(firstContentIndex + 1)
-      .join("\n")
-      .trim();
+    conversationalChunks.push(...candidateParts.conversational);
+    candidateParts.documents.forEach((documentChunk) => {
+      const lines = documentChunk.split("\n");
+      const firstContentIndex = lines.findIndex((line) => line.trim());
+      const title = stripMarkdownHeading(lines[firstContentIndex] ?? "") || "Document preview";
+      const body = lines
+        .slice(firstContentIndex + 1)
+        .join("\n")
+        .trim();
 
-    documentPreviews.push({ title, body });
+      documentPreviews.push({ title, body });
+    });
   });
 
   return {
@@ -283,7 +338,7 @@ const renderDocumentBody = (body: string): React.ReactNode[] => {
     flushList();
     nodes.push(
       <p key={`paragraph-${nodes.length}`} className="assistant-document-preview__paragraph">
-        {lines.map(stripMarkdownHeading).join(" ")}
+        {lines.map(cleanDocumentLine).join(" ")}
       </p>
     );
   });
