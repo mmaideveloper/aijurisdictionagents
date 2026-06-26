@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+import hashlib
 from io import BytesIO
 import json
 import logging
@@ -189,6 +190,92 @@ def _persist_case_message_if_needed(*, session: Session, role: str, content: str
     if role.strip().lower() == "assistant":
         content = _user_visible_text(content)
     store.add_case_message(case_id=case_id, role=role, content=content, agent_name=agent_name)
+
+
+def _record_case_ai_model_audit(
+    *,
+    session: Session,
+    question: Message,
+    answer: Message,
+    task_type: str,
+    source: str,
+    model_used: bool,
+) -> None:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return
+    question_text = _user_visible_text(question.content)
+    answer_text = _user_visible_text(answer.content)
+    provider, model, route_type = _resolve_audit_model_identity(model_used=model_used)
+    try:
+        store = _get_store()
+        user_id = str(session.user_id) if session.user_id else ""
+        if not user_id:
+            try:
+                user_id = store.get_case(case_id=case_id).user_id
+            except KeyError:
+                user_id = ""
+        store.record_ai_model_usage(
+            provider=provider,
+            model=model,
+            route_type=route_type,
+            input_tokens=_estimate_audit_tokens(question_text),
+            output_tokens=_estimate_audit_tokens(answer_text),
+            case_id=case_id,
+            user_id=user_id,
+            task_type=task_type,
+            session_id=str(session.id),
+            question_id=str(question.id),
+            question_text=question_text,
+            question_sha256=hashlib.sha256(question_text.strip().encode("utf-8")).hexdigest()
+            if question_text.strip()
+            else "",
+            answer_id=str(answer.id),
+            audit_metadata={
+                "source": source,
+                "agent_name": answer.agent_name or "",
+                "model_used": model_used,
+                "token_counting": "estimated_characters_div_4",
+                "full_question_source": "case_history",
+            },
+        )
+    except Exception:
+        _LOGGER.warning(
+            "Could not record case AI model audit entry",
+            extra={"case_id": case_id, "session_id": str(session.id), "task_type": task_type},
+            exc_info=True,
+        )
+
+
+def _resolve_audit_model_identity(*, model_used: bool) -> tuple[str, str, str]:
+    if not model_used:
+        return "jurisdigta_rules", "deterministic_case_logic", "deterministic"
+    provider = os.getenv("LLM_PROVIDER", "azurefoundry").strip().lower()
+    if provider in {"", "azure", "azureopenai"}:
+        provider = "azurefoundry"
+    if provider == "azurefoundry":
+        model = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip() or "azurefoundry"
+        return provider, model, "external"
+    if provider == "openai":
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+        return provider, model, "external"
+    if provider in {"ollama", "local", "local_ollama"}:
+        model = (
+            os.getenv("LOCAL_LLM_MODEL", "").strip()
+            or os.getenv("OLLAMA_MODEL", "").strip()
+            or "local"
+        )
+        return "local_ollama", model, "local"
+    if provider == "mock":
+        return provider, "mock", "mock"
+    return provider or "unknown", provider or "unknown", "configured"
+
+
+def _estimate_audit_tokens(text: str) -> int:
+    normalized = " ".join(text.split()).strip()
+    if not normalized:
+        return 0
+    return max(1, (len(normalized) + 3) // 4)
 
 
 def _persist_session_history_document_if_needed(*, session: Session, session_id: UUID) -> None:
@@ -1291,6 +1378,14 @@ def _run_direct_lawyer_turn(
             content=status_reply,
             agent_name="LawyerStatus",
         )
+        _record_case_ai_model_audit(
+            session=session,
+            question=persisted_user,
+            answer=persisted_lawyer,
+            task_type="chat_status",
+            source="chat.direct_reply",
+            model_used=False,
+        )
         return (
             persisted_user,
             persisted_lawyer,
@@ -1320,6 +1415,14 @@ def _run_direct_lawyer_turn(
             session=session,
             content=normalized_direct_reply,
             agent_name="Assistant",
+        )
+        _record_case_ai_model_audit(
+            session=session,
+            question=persisted_user,
+            answer=persisted_lawyer,
+            task_type="chat_direct_reply",
+            source="chat.direct_reply",
+            model_used=False,
         )
         return (
             persisted_user,
@@ -1445,6 +1548,14 @@ def _run_direct_lawyer_turn(
         session=session,
         content=normalized_lawyer_content,
         agent_name=lawyer_message.agent_name,
+    )
+    _record_case_ai_model_audit(
+        session=session,
+        question=persisted_user,
+        answer=persisted_lawyer,
+        task_type="chat_reply",
+        source="chat.direct_reply",
+        model_used=True,
     )
     return persisted_user, persisted_lawyer, _user_visible_text(persisted_lawyer.content), preparation.processing_events
 
@@ -1576,6 +1687,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
     assistant_messages_seen = len(
         [item for item in seeded_messages if item.role == MessageRole.ASSISTANT]
     )
+    last_audit_user_message: Message | None = None
     answered_agent_questions = 0
     followup_prompts_seen = 0
     pdf_request_sent = False
@@ -1676,6 +1788,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         return None
 
     def message_callback(core_message: CoreMessage) -> None:
+        nonlocal last_audit_user_message
         nonlocal assistant_messages_seen
         normalized_role = core_message_role(core_message.role)
         if normalized_role == "assistant":
@@ -1702,6 +1815,18 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
             content=content,
             agent_name=core_message.agent_name,
         )
+        if normalized_role == "user":
+            last_audit_user_message = persisted
+        elif normalized_role == "assistant" and last_audit_user_message is not None:
+            _record_case_ai_model_audit(
+                session=session,
+                question=last_audit_user_message,
+                answer=persisted,
+                task_type="discussion_stream",
+                source="chat.stream",
+                model_used=True,
+            )
+            last_audit_user_message = None
         event_queue.put(("message", _message_payload(persisted)))
         if normalized_role == "user":
             event_queue.put(
@@ -1839,6 +1964,14 @@ def _stream_read_user_session(
                     content=email_reply,
                     agent_name="LawyerEmail",
                 )
+                _record_case_ai_model_audit(
+                    session=session,
+                    question=persisted_user,
+                    answer=persisted_lawyer,
+                    task_type="chat_email_flow",
+                    source="chat.read_user_stream",
+                    model_used=False,
+                )
                 _persist_session_history_document_if_needed(session=session, session_id=session_id)
                 event_queue.put(("message", _message_payload(persisted_lawyer)))
                 event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
@@ -1870,6 +2003,14 @@ def _stream_read_user_session(
                     session=session,
                     content=status_reply,
                     agent_name="LawyerStatus",
+                )
+                _record_case_ai_model_audit(
+                    session=session,
+                    question=persisted_user,
+                    answer=persisted_lawyer,
+                    task_type="chat_status",
+                    source="chat.read_user_stream",
+                    model_used=False,
                 )
                 current_messages = _repository.list_messages(session_id)
                 event_queue.put(

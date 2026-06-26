@@ -23,7 +23,20 @@ so the new checkout also contains its own ignored `conda/` environment:
   -WorktreePath C:\Users\maton\.codex\worktrees\issue-123-short-name\aijurisdictionagents
 ```
 
-The helper runs `git worktree add`, then creates `conda/` from `environment.yml`.
+The helper runs `git worktree add`, then prepares an ignored `conda/` runtime for
+the new checkout. On this Windows Codex machine it stores the actual environment
+under `C:\Users\maton\.codex-envs` and creates a `conda/` junction in the
+worktree. That avoids Windows blocking direct `python.exe` creation under
+`.codex\worktrees` while keeping `.\scripts\validate_api.ps1` compatible.
+
+With conda, the helper prefers cloning the existing repo runtime from
+`C:\Users\maton\Projects\aijurisdictionagents\conda`. If no reusable repo
+environment is found, it falls back to creating a fresh environment from
+`environment.yml`. Micromamba installed through WinGet is detected automatically,
+called with `--ssl-no-revoke`, and uses `environment.yml` directly because
+micromamba prefix clone can fail on pip-heavy environments during metadata
+inspection.
+
 After it finishes, run API validation from inside the new worktree:
 
 ```powershell
@@ -32,10 +45,10 @@ cd C:\Users\maton\.codex\worktrees\issue-123-short-name\aijurisdictionagents
 .\conda\python.exe -m pytest api\aijuristiction-api\tests
 ```
 
-If `conda` is not on `PATH`, pass `-CondaExecutable` with the full path to
-`conda.exe`. Use `-CloneEnvFrom` only when you intentionally want to clone an
-existing conda prefix; the helper refreshes editable installs afterward so they
-point at the new worktree.
+Use `-FreshEnv` to force a new environment from `environment.yml`. Use
+`-CloneEnvFrom` to clone a specific conda prefix. The helper refreshes editable
+installs with the `dev` extras afterward so they point at the new worktree and
+include validation tools such as `ruff`, `mypy`, and `pytest`.
 
 ## Open the workspace
 

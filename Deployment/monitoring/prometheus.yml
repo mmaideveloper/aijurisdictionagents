@@ -24,6 +24,12 @@ scrape_configs:
       - targets:
           - status-exporter:9108
 
+  - job_name: jurisdigta-ollama
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - host.docker.internal:9109
+
   - job_name: jurisdigta-http-probes
     metrics_path: /probe
     params:

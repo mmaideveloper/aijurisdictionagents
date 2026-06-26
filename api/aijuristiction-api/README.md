@@ -562,6 +562,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 ## Case history + documents
 
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
+- `GET /v1/cases/{case_id}/ai-model-audit?user_id=...&offset=0&limit=50` returns the case model audit trail for authorized case users, including the session, question message, answer message, provider, model, route type, estimated input/output tokens, estimated cost, and a bounded question preview plus SHA-256 hash. The full question remains in the authorized case history instead of being duplicated in the audit ledger.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
 - `GET /v1/cases/{case_id}/documents/{doc_id}/pdf?user_id=...` renders the client-visible assistant draft tied to a generated technical case document as a PDF, without exposing the stored JSON payload.
 - When a linked assistant answer contains conversational setup, summaries, multiple separated language versions, and a generated-document link, the PDF renderer exports the first valid selected legal-document block only. Assistant prose, follow-up instructions, raw markdown separators, raw bold markers, and alternate-language drafts are excluded unless they are part of that selected document block.

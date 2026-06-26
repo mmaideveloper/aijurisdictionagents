@@ -24,9 +24,34 @@ services:
       - prometheus-data:/prometheus
     depends_on:
       - status-exporter
+      - ollama-exporter
       - node-exporter
       - cadvisor
       - blackbox-exporter
+
+  ollama-exporter:
+    image: python:3.11-slim
+    container_name: jurisdigta-ollama-exporter
+    restart: unless-stopped
+    logging: *jurisdigta-logging
+    network_mode: host
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://127.0.0.1:11434}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-qwen3.6:27b}
+    command:
+      - python
+      - /app/export_ollama_metrics.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9109"
+      - --ollama-url
+      - ${LOCAL_LLM_BASE_URL:-http://127.0.0.1:11434}
+    volumes:
+      - ../../scripts/server/export_ollama_metrics.py:/app/export_ollama_metrics.py:ro
 
   status-exporter:
     image: python:3.11-slim
