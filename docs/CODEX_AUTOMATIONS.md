@@ -112,6 +112,7 @@ To install into another profile or test location:
 ## Existing Automation Tasks
 
 - `implementation-agent`: active implementation worker for Project 5 ready tasks. It must first prove that `gh` can read Project V2 metadata, then select exactly one issue whose Project V2 Status is `Ready` and whose readiness section contains `Status: Ready for implementation.`. If Project V2 cannot be read, including missing `read:project` or `project` scopes, it stops instead of selecting work from issue text alone. It rechecks status before claiming, moves the task to In progress, implements the requested change, fixes required test/lint/type-check failures before review, opens a PR, comments `Implemented by Codex`, and moves successful work to In review.
+- `jurisdigta-weekly-prod-readiness-review`: active Monday morning review that reports remaining production blockers under Technical, Business, and Legal, checks GitHub issues/projects, and creates non-duplicate ready tasks for missing blockers.
 - `deployment-agent`: paused monitor that checks recent build and deployment workflow failures, deduplicates unresolved failure patterns, and creates ready GitHub tasks in the correct project.
 - `merge-agent`: paused closer that reviews open PRs, skips anything with unresolved reviews or failed/missing checks, merges safe PRs into `main`, comments on linked issues, deletes branches, and moves completed tasks to Done.
 
