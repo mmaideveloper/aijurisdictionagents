@@ -228,14 +228,14 @@ install_ollama_service() {
   fi
 
   log "configuring Ollama localhost bind at $OLLAMA_HOST_BIND"
-  mkdir -p /etc/systemd/system/ollama.service.d
-  cat > /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf <<EOF
+  sudo install -d -m 755 /etc/systemd/system/ollama.service.d
+  cat <<EOF | sudo tee /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf >/dev/null
 [Service]
 Environment="OLLAMA_HOST=$OLLAMA_HOST_BIND"
 EOF
-  systemctl daemon-reload
-  systemctl enable --now ollama
-  systemctl restart ollama
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now ollama
+  sudo systemctl restart ollama
 
   wait_for_http "Ollama" "$LOCAL_LLM_HEALTH_URL" 30 2
   log "pulling Ollama model $LOCAL_LLM_MODEL"
