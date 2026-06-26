@@ -133,6 +133,7 @@ Recommended self-managed dashboard stack for `jurisdigta-server`:
 - cAdvisor for Docker container CPU, memory, filesystem, and restart behavior.
 - Blackbox Exporter for HTTP availability probes. In Docker Compose it probes API and MCP through the internal service URLs `http://jurisdigta-api:8080/health` and `http://jurisdigta-mcp:8070/health` on `MONITORING_APP_DOCKER_NETWORK`, keeping host ports bound to loopback.
 - `scripts/server/export_system_status_metrics.py` for JurisDigta-specific Prometheus metrics from `/v1/system/status`.
+- `scripts/server/export_ollama_metrics.py` for localhost-only Ollama runtime health, model inventory, loaded model VRAM, and configured-model presence.
 - `scripts/server/write_system_status.py` also records privacy-minimized aggregate request metrics from API/MCP Docker logs and aggregate PostgreSQL user/case counts. It does not persist request IDs, user IDs, case IDs, prompts, documents, or response bodies in Prometheus labels.
 - Raw troubleshooting logs are available through Grafana Explore using the Loki data source. Loki retention defaults to `LOKI_RETENTION_DAYS=7`.
 
@@ -254,6 +255,12 @@ Useful Grafana panels:
 - `jurisdigta_users_new_window{window="24h"}`
 - `jurisdigta_cases_total{state="active"}`
 - `jurisdigta_cases_new_window{window="24h"}`
+- `jurisdigta_ollama_up`
+- `jurisdigta_ollama_configured_model_present`
+- `jurisdigta_ollama_running_model_vram_bytes`
+- `jurisdigta_ai_model_input_tokens_window`
+- `jurisdigta_ai_model_output_tokens_window`
+- `jurisdigta_ai_model_estimated_cost_eur_window`
 
 Email notification setup:
 

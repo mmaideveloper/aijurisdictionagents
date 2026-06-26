@@ -25,6 +25,13 @@ LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
 DOCKER_LOG_MAX_SIZE="${DOCKER_LOG_MAX_SIZE:-50m}"
 DOCKER_LOG_MAX_FILE="${DOCKER_LOG_MAX_FILE:-5}"
 START_MONITORING="${START_MONITORING:-0}"
+INSTALL_OLLAMA="${INSTALL_OLLAMA:-1}"
+LOCAL_LLM_PROVIDER="${LOCAL_LLM_PROVIDER:-ollama}"
+LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3.6:27b}"
+LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-http://127.0.0.1:11434}"
+LOCAL_LLM_OPENAI_BASE_URL="${LOCAL_LLM_OPENAI_BASE_URL:-http://127.0.0.1:11434/v1}"
+LOCAL_LLM_HEALTH_URL="${LOCAL_LLM_HEALTH_URL:-http://127.0.0.1:11434/api/tags}"
+OLLAMA_HOST_BIND="${OLLAMA_HOST_BIND:-127.0.0.1:11434}"
 
 log() {
   printf '[jurisdigta-deploy] %s\n' "$*"
@@ -175,6 +182,18 @@ require_laws_collector_run_mode() {
   fi
 }
 
+require_local_model_settings() {
+  if [ "$LOCAL_LLM_PROVIDER" != "ollama" ]; then
+    fail "Self-managed prod local model routing currently requires LOCAL_LLM_PROVIDER=ollama. Current value: $LOCAL_LLM_PROVIDER"
+  fi
+  if [ -z "$LOCAL_LLM_MODEL" ]; then
+    fail "LOCAL_LLM_MODEL must be set for Ollama deployment"
+  fi
+  if [ "$OLLAMA_HOST_BIND" != "127.0.0.1:11434" ]; then
+    fail "OLLAMA_HOST_BIND must stay 127.0.0.1:11434 for prod security. Current value: $OLLAMA_HOST_BIND"
+  fi
+}
+
 require_tcp_port() {
   local name="$1"
   local value="$2"
@@ -189,6 +208,41 @@ require_postgres_identifier() {
   if ! printf '%s' "$value" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]{0,62}$'; then
     fail "$name must be a PostgreSQL-safe identifier. Current value: $value"
   fi
+}
+
+install_ollama_service() {
+  if [ "$INSTALL_OLLAMA" != "1" ]; then
+    log "Ollama install skipped by INSTALL_OLLAMA=$INSTALL_OLLAMA"
+    return
+  fi
+  require_local_model_settings
+  require_command systemctl
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    log "installing Ollama"
+    local installer="/tmp/install-ollama.sh"
+    curl -fsSL https://ollama.com/install.sh -o "$installer"
+    sh "$installer"
+  else
+    log "Ollama already installed"
+  fi
+
+  log "configuring Ollama localhost bind at $OLLAMA_HOST_BIND"
+  mkdir -p /etc/systemd/system/ollama.service.d
+  cat > /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf <<EOF
+[Service]
+Environment="OLLAMA_HOST=$OLLAMA_HOST_BIND"
+EOF
+  systemctl daemon-reload
+  systemctl enable --now ollama
+  systemctl restart ollama
+
+  wait_for_http "Ollama" "$LOCAL_LLM_HEALTH_URL" 30 2
+  log "pulling Ollama model $LOCAL_LLM_MODEL"
+  ollama pull "$LOCAL_LLM_MODEL"
+  ollama list | grep -F "$LOCAL_LLM_MODEL" >/dev/null || fail "Ollama model was not found after pull: $LOCAL_LLM_MODEL"
+  curl -fsS "$LOCAL_LLM_HEALTH_URL" >/dev/null
+  curl -fsS "$LOCAL_LLM_OPENAI_BASE_URL/models" >/dev/null
 }
 
 ensure_runtime_layout() {
@@ -756,6 +810,11 @@ wait_for_http() {
 
 validate_health() {
   log "validating local health endpoints"
+  if [ "$INSTALL_OLLAMA" = "1" ]; then
+    wait_for_http "Ollama" "$LOCAL_LLM_HEALTH_URL"
+    curl -fsS "$LOCAL_LLM_OPENAI_BASE_URL/models" >/dev/null
+    ollama list | grep -F "$LOCAL_LLM_MODEL" >/dev/null
+  fi
   wait_for_http "API" "http://127.0.0.1:${API_PORT}/health"
   wait_for_http "MCP" "http://127.0.0.1:${MCP_PORT}/health"
   wait_for_http "web" "http://127.0.0.1:${WEB_PORT}/health"
@@ -797,6 +856,7 @@ require_positive_integer "LOG_RETENTION_DAYS" "$LOG_RETENTION_DAYS"
 require_positive_integer "DOCKER_LOG_MAX_FILE" "$DOCKER_LOG_MAX_FILE"
 require_boolean_flag "DOCUMENT_ENGINE_ENABLED" "$DOCUMENT_ENGINE_ENABLED"
 require_boolean_flag "INSTALL_LOG_RETENTION_CRON" "$INSTALL_LOG_RETENTION_CRON"
+require_boolean_flag "INSTALL_OLLAMA" "$INSTALL_OLLAMA"
 require_laws_collector_run_mode "$LAWS_COLLECTOR_RUN_MODE"
 require_tcp_port "DOCUMENT_ENGINE_API_PORT" "$DOCUMENT_ENGINE_API_PORT"
 require_postgres_identifier "DOCUMENT_ENGINE_DATABASE_NAME" "$DOCUMENT_ENGINE_DATABASE_NAME"
@@ -811,9 +871,11 @@ require_positive_integer "LOG_RETENTION_DAYS" "$LOG_RETENTION_DAYS"
 require_positive_integer "DOCKER_LOG_MAX_FILE" "$DOCKER_LOG_MAX_FILE"
 require_boolean_flag "DOCUMENT_ENGINE_ENABLED" "$DOCUMENT_ENGINE_ENABLED"
 require_boolean_flag "INSTALL_LOG_RETENTION_CRON" "$INSTALL_LOG_RETENTION_CRON"
+require_boolean_flag "INSTALL_OLLAMA" "$INSTALL_OLLAMA"
 require_laws_collector_run_mode "$LAWS_COLLECTOR_RUN_MODE"
 require_tcp_port "DOCUMENT_ENGINE_API_PORT" "$DOCUMENT_ENGINE_API_PORT"
 require_postgres_identifier "DOCUMENT_ENGINE_DATABASE_NAME" "$DOCUMENT_ENGINE_DATABASE_NAME"
+install_ollama_service
 start_postgres_and_build_image
 create_laws_database
 create_document_engine_database

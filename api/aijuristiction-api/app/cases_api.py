@@ -23,6 +23,7 @@ from app.chat.api import (
 from app.security import require_api_key
 
 from aijurisdictionagents.api_db import (
+    AIModelUsageAuditEntry,
     ApiDatabaseStore,
     Case,
     CaseCommunication,
@@ -93,6 +94,36 @@ class CaseHistoryResponse(BaseModel):
     messages: list[CaseHistoryMessageResponse]
     has_more: bool
     documents: list[CaseDocumentResponse]
+
+
+class CaseAIModelAuditEntryResponse(BaseModel):
+    usage_id: str
+    session_id: str
+    question_id: str
+    question_preview: str
+    question_sha256: str
+    answer_id: str
+    task_type: str
+    provider: str
+    model: str
+    route_type: str
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    estimated_cost_eur: float
+    status: str
+    fallback_reason: str
+    request_started_at: str
+    request_completed_at: str
+    latency_ms: int
+    audit_metadata: dict[str, object]
+
+
+class CaseAIModelAuditResponse(BaseModel):
+    case_id: str
+    has_more: bool
+    entries: list[CaseAIModelAuditEntryResponse]
 
 
 class CaseDocumentUploadResponse(BaseModel):
@@ -242,6 +273,31 @@ def get_case_history(
         for item in store.list_case_documents(case_id=case_id)
     ]
     return CaseHistoryResponse(messages=messages, has_more=has_more, documents=documents)
+
+
+@router.get('/{case_id}/ai-model-audit', response_model=CaseAIModelAuditResponse)
+def get_case_ai_model_audit(
+    case_id: str,
+    user_id: str,
+    offset: int = 0,
+    limit: int = 50,
+    store: ApiDatabaseStore = Depends(get_store),
+) -> CaseAIModelAuditResponse:
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    bounded_limit = min(max(limit, 1), 200)
+    bounded_offset = max(offset, 0)
+    entries = store.list_ai_model_usage_audit(
+        case_id=case_id,
+        limit=bounded_limit + 1,
+        offset=bounded_offset,
+    )
+    has_more = len(entries) > bounded_limit
+    visible_entries = entries[:bounded_limit]
+    return CaseAIModelAuditResponse(
+        case_id=case_id,
+        has_more=has_more,
+        entries=[_to_case_ai_model_audit_entry_response(item) for item in visible_entries],
+    )
 
 
 @router.post('/{case_id}/documents', response_model=CaseDocumentUploadResponse, status_code=status.HTTP_201_CREATED)
@@ -637,6 +693,34 @@ def _to_case_document_response(document: CaseDocument) -> CaseDocumentResponse:
         processing_error=document.processing_error,
         processed_at=document.processed_at,
         created_at=document.created_at,
+    )
+
+
+def _to_case_ai_model_audit_entry_response(
+    item: AIModelUsageAuditEntry,
+) -> CaseAIModelAuditEntryResponse:
+    return CaseAIModelAuditEntryResponse(
+        usage_id=item.usage_id,
+        session_id=item.session_id,
+        question_id=item.question_id,
+        question_preview=item.question_preview,
+        question_sha256=item.question_sha256,
+        answer_id=item.answer_id,
+        task_type=item.task_type,
+        provider=item.provider,
+        model=item.model,
+        route_type=item.route_type,
+        input_tokens=item.input_tokens,
+        cached_input_tokens=item.cached_input_tokens,
+        output_tokens=item.output_tokens,
+        total_tokens=item.total_tokens,
+        estimated_cost_eur=item.estimated_cost_eur,
+        status=item.status,
+        fallback_reason=item.fallback_reason,
+        request_started_at=item.request_started_at,
+        request_completed_at=item.request_completed_at,
+        latency_ms=item.latency_ms,
+        audit_metadata=dict(item.audit_metadata),
     )
 
 

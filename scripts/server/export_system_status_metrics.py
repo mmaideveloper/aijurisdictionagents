@@ -147,6 +147,7 @@ def _render_metrics(payload: dict[str, Any]) -> str:
         "email_scheduler": _nested(payload, "system", "apps", "email_scheduler", "status"),
         "document_processor": _nested(payload, "system", "apps", "document_processor", "status"),
         "errors": _nested(payload, "errors", "status"),
+        "ai_model_usage": _nested(payload, "ai_model_usage", "status"),
     }
     for component, status in components.items():
         status_text = str(status or "unknown")
@@ -188,6 +189,10 @@ def _render_metrics(payload: dict[str, Any]) -> str:
         business = system.get("business")
     if isinstance(business, dict):
         _append_business_metrics(lines, business)
+
+    ai_model_usage = payload.get("ai_model_usage")
+    if isinstance(ai_model_usage, dict):
+        _append_ai_model_usage_metrics(lines, ai_model_usage)
 
     generated_at = _timestamp(payload.get("generated_at"))
     if generated_at is not None:
@@ -418,6 +423,47 @@ def _append_business_metrics(lines: list[str], business: dict[str, Any]) -> None
     _append_help(lines, "jurisdigta_cases_new_window", "New cases in the local monitoring window.", "gauge")
     lines.append(f'jurisdigta_cases_new_window{{window="1h"}} {_number(cases.get("new_1h"), 0)}')
     lines.append(f'jurisdigta_cases_new_window{{window="24h"}} {_number(cases.get("new_24h"), 0)}')
+
+
+def _append_ai_model_usage_metrics(lines: list[str], ai_model_usage: dict[str, Any]) -> None:
+    summaries = ai_model_usage.get("summaries")
+    if not isinstance(summaries, list):
+        return
+    window_minutes = int(_number(ai_model_usage.get("window_minutes"), 60))
+    _append_help(lines, "jurisdigta_ai_model_requests_window", "AI model request count in the status query window.", "gauge")
+    _append_help(lines, "jurisdigta_ai_model_input_tokens_window", "AI input tokens in the status query window.", "gauge")
+    _append_help(lines, "jurisdigta_ai_model_cached_input_tokens_window", "AI cached input tokens in the status query window.", "gauge")
+    _append_help(lines, "jurisdigta_ai_model_output_tokens_window", "AI output tokens in the status query window.", "gauge")
+    _append_help(lines, "jurisdigta_ai_model_total_tokens_window", "AI total tokens in the status query window.", "gauge")
+    _append_help(lines, "jurisdigta_ai_model_estimated_cost_eur_window", "Estimated AI model cost in EUR in the status query window.", "gauge")
+    for summary in summaries:
+        if not isinstance(summary, dict):
+            continue
+        labels = (
+            f'provider="{_label(str(summary.get("provider") or ""))}",'
+            f'model="{_label(str(summary.get("model") or ""))}",'
+            f'task_type="{_label(str(summary.get("task_type") or ""))}",'
+            f'route_type="{_label(str(summary.get("route_type") or ""))}",'
+            f'plan_code="{_label(str(summary.get("plan_code") or ""))}",'
+            f'case_id="{_label(str(summary.get("case_id") or ""))}",'
+            f'user_id="{_label(str(summary.get("user_id") or ""))}",'
+            f'subscription_id="{_label(str(summary.get("subscription_id") or ""))}",'
+            f'status="{_label(str(summary.get("status") or ""))}",'
+            f'fallback_reason="{_label(str(summary.get("fallback_reason") or ""))}",'
+            f'window_minutes="{window_minutes}"'
+        )
+        lines.append(f"jurisdigta_ai_model_requests_window{{{labels}}} {_number(summary.get('request_count'), 0)}")
+        lines.append(f"jurisdigta_ai_model_input_tokens_window{{{labels}}} {_number(summary.get('input_tokens'), 0)}")
+        lines.append(
+            "jurisdigta_ai_model_cached_input_tokens_window"
+            f"{{{labels}}} {_number(summary.get('cached_input_tokens'), 0)}"
+        )
+        lines.append(f"jurisdigta_ai_model_output_tokens_window{{{labels}}} {_number(summary.get('output_tokens'), 0)}")
+        lines.append(f"jurisdigta_ai_model_total_tokens_window{{{labels}}} {_number(summary.get('total_tokens'), 0)}")
+        lines.append(
+            "jurisdigta_ai_model_estimated_cost_eur_window"
+            f"{{{labels}}} {_number(summary.get('estimated_cost_eur'), 0)}"
+        )
 
 
 def _render_exporter_error(exc: Exception) -> str:

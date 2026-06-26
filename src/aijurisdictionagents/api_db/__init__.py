@@ -1,5 +1,11 @@
 from .config import ApiDataConfig
 from .store import (
+    AIModelProfile,
+    AIModelProvider,
+    AIModelRouteSelection,
+    AIModelUsageAuditEntry,
+    AIModelUsageSummary,
+    AITaskRoutePolicy,
     ApiDatabaseStore,
     Case,
     CaseCommunication,
@@ -15,6 +21,12 @@ from .store import (
 )
 
 __all__ = [
+    "AIModelProfile",
+    "AIModelProvider",
+    "AIModelRouteSelection",
+    "AIModelUsageAuditEntry",
+    "AIModelUsageSummary",
+    "AITaskRoutePolicy",
     "ApiDataConfig",
     "ApiDatabaseStore",
     "Case",

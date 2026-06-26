@@ -33,6 +33,19 @@ def test_deploy_installs_log_retention_and_configures_monitoring() -> None:
     assert 'python3 configure_monitoring.py --project-env "$ENV_FILE" --validate --start' in script
 
 
+def test_deploy_installs_ollama_and_pulls_default_model() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'INSTALL_OLLAMA="${INSTALL_OLLAMA:-1}"' in script
+    assert 'LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3.6:27b}"' in script
+    assert "install_ollama_service" in script
+    assert "OLLAMA_HOST_BIND must stay 127.0.0.1:11434" in script
+    assert 'curl -fsSL https://ollama.com/install.sh -o "$installer"' in script
+    assert 'Environment="OLLAMA_HOST=$OLLAMA_HOST_BIND"' in script
+    assert 'ollama pull "$LOCAL_LLM_MODEL"' in script
+    assert 'ollama list | grep -F "$LOCAL_LLM_MODEL"' in script
+
+
 def test_document_engine_image_defaults_to_writable_sqlite_path() -> None:
     dockerfile = DOCUMENT_ENGINE_DOCKERFILE.read_text(encoding="utf-8")
 
