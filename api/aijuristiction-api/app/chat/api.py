@@ -3036,7 +3036,17 @@ def _persist_generated_case_document_if_needed(*, session: Session, content: str
     visible_text = _user_visible_text(content).strip()
     drafts = _generated_case_document_drafts_for_storage(visible_text, timestamp=timestamp)
     if not drafts:
-        return []
+        if not _looks_like_fake_download_response(content):
+            return []
+        store = _get_store()
+        if _has_generated_case_documents(store=store, case_id=case_id):
+            return []
+        drafts = _generated_case_document_drafts_from_previous_assistant_message(
+            session=session,
+            timestamp=timestamp,
+        )
+        if not drafts:
+            return []
     return _persist_generated_case_document_drafts(session=session, case_id=case_id, drafts=drafts)
 
 
@@ -3114,6 +3124,37 @@ def _generated_case_document_drafts_for_storage(
             filename=_generated_case_document_filename_for_storage(document_body, timestamp=timestamp),
             body=document_body,
         )
+    ]
+
+
+def _generated_case_document_drafts_from_previous_assistant_message(
+    *,
+    session: Session,
+    timestamp: str,
+) -> list[_GeneratedCaseDocumentDraft]:
+    session_id = getattr(session, "id", None)
+    if session_id is None:
+        return []
+    previous_assistant_messages = [
+        message.content
+        for message in _repository.list_messages(session_id)
+        if message.role == MessageRole.ASSISTANT
+    ]
+    source = _pick_document_message(previous_assistant_messages)
+    if not source:
+        return []
+    visible_source = _user_visible_text(source).strip()
+    drafts = _generated_case_document_drafts_for_storage(visible_source, timestamp=timestamp)
+    if drafts:
+        return drafts
+    sections = _extract_visible_document_sections_for_export(visible_source)
+    return [
+        _GeneratedCaseDocumentDraft(
+            filename=_generated_case_document_filename_for_storage(section["content"], timestamp=timestamp),
+            body=section["content"],
+        )
+        for section in sections
+        if section.get("content")
     ]
 
 
@@ -3477,6 +3518,16 @@ def _next_generated_case_document_version(*, store: ApiDatabaseStore, case_id: s
     return (max(versions) + 1) if versions else 1
 
 
+def _has_generated_case_documents(*, store: ApiDatabaseStore, case_id: str) -> bool:
+    list_case_documents = getattr(store, "list_case_documents", None)
+    if not callable(list_case_documents):
+        return False
+    return any(
+        getattr(document, "kind", "") == "generated_document"
+        for document in list_case_documents(case_id=case_id)
+    )
+
+
 def _case_document_download_url(*, session: Session, doc_id: str) -> str:
     case_id = quote((session.case_id or "").strip(), safe="")
     encoded_doc_id = quote(doc_id, safe="")
@@ -3621,10 +3672,18 @@ def _looks_like_fake_download_link(line: str) -> bool:
         return False
     return bool(
         re.match(
-            r"^\d+\.\s*\[[^\]]+\]\(\s*documents/[^)]+\)$",
+            r"^(?:[-*]\s*|\d+\.\s*)?\[[^\]]+\]\(\s*documents/[^)]+\)$",
             stripped,
             flags=re.IGNORECASE,
         )
+    )
+
+
+def _looks_like_fake_download_response(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    return "documents/" in content.lower() or (
+        any(marker in normalized for marker in ("na stiahnutie", "download", "stiahnut"))
+        and any(marker in normalized for marker in ("dokument", "document"))
     )
 
 

@@ -27,6 +27,8 @@ frontend/**/node_modules/
 frontend/**/dist/
 frontend/**/.vite/
 frontend/**/output/
+frontend/**/test-results/
+frontend/**/playwright-report/
 frontend_design/**/node_modules/
 frontend_design/**/dist/
 frontend_design/**/.vite/
