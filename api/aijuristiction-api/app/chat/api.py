@@ -3167,7 +3167,7 @@ def _generated_case_document_drafts_from_visible_sections(
     *,
     timestamp: str,
 ) -> list[_GeneratedCaseDocumentDraft]:
-    sections = _extract_visible_document_sections_for_export(content)
+    sections = _exportable_visible_document_sections_for_storage(content)
     if len(sections) <= 1:
         return []
     return [
@@ -3203,7 +3203,7 @@ def _generated_case_document_drafts_from_previous_assistant_message(
     drafts = _generated_case_document_drafts_for_storage(visible_source, timestamp=timestamp)
     if drafts:
         return drafts
-    sections = _extract_visible_document_sections_for_export(visible_source)
+    sections = _exportable_visible_document_sections_for_storage(visible_source)
     return [
         _GeneratedCaseDocumentDraft(
             filename=_generated_case_document_filename_for_storage(section["content"], timestamp=timestamp),
@@ -3211,6 +3211,14 @@ def _generated_case_document_drafts_from_previous_assistant_message(
         )
         for section in sections
         if section.get("content")
+    ]
+
+
+def _exportable_visible_document_sections_for_storage(content: str) -> list[dict[str, str]]:
+    return [
+        section
+        for section in _extract_visible_document_sections_for_export(content)
+        if section.get("content") and _looks_like_exportable_legal_document_body(section["content"])
     ]
 
 

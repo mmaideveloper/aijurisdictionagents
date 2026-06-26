@@ -2646,6 +2646,7 @@ def test_stream_share_transfer_with_labeled_company_name_uses_registry_first(mon
 
 def test_prepare_country_direct_reply_emits_tool_lifecycle_callbacks(monkeypatch) -> None:
     from app.chat.country_services import prepare_country_direct_reply
+    from app.chat.country_services import slovakia as slovakia_service
     from app.chat.models import Message, MessageRole, Session
 
     class _FakeRegistry:
@@ -2664,7 +2665,8 @@ def test_prepare_country_direct_reply_emits_tool_lifecycle_callbacks(monkeypatch
                 ),
             )
 
-    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+    monkeypatch.setattr(slovakia_service, "_ORSR_CACHE", {})
+    monkeypatch.setattr(slovakia_service, "build_default_tool_registry", lambda: _FakeRegistry())
 
     session = Session(country="SK", discussion_type="advice", language="SK")
     messages = [
@@ -5890,6 +5892,73 @@ def test_unstructured_relative_download_link_uses_previous_draft_for_case_docume
     assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
     assert "Splnomocniteľ: Esolutions SK s.r.o." in str(stored_documents[0]["payload"])
     assert "PP472DT" in str(stored_documents[0]["payload"])
+
+
+def test_summary_only_previous_assistant_reply_is_not_saved_as_generated_document(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Message, MessageRole, Session
+    from app.chat.repository import InMemoryChatRepository
+
+    stored_documents: list[dict[str, object]] = []
+
+    class _FakeStore:
+        def list_case_documents(self, *, case_id: str):
+            return []
+
+        def add_case_document(
+            self,
+            *,
+            case_id: str,
+            kind: str,
+            version: int,
+            original_filename: str,
+            payload: bytes,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            stored_documents.append(
+                {
+                    "case_id": case_id,
+                    "kind": kind,
+                    "version": version,
+                    "original_filename": original_filename,
+                    "payload": payload.decode("utf-8"),
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return "doc-generated-1"
+
+    repository = InMemoryChatRepository()
+    session_id = uuid4()
+    user_id = uuid4()
+    session = Session(
+        id=session_id,
+        user_id=user_id,
+        case_id="case-411",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    repository.create_session(session)
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="- Splnomocnenie pre Emiliu Testovu na pouzivanie firemneho auta.",
+        )
+    )
+    current_reply = (
+        "USER-FACING: Dokument je pripraveny na stiahnutie.\n\n"
+        "[Stiahnut splnomocnenie](documents/splnomocnenie_20260626T183932Z.pdf)"
+    )
+
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+
+    doc_ids = chat_api._persist_generated_case_document_if_needed(session=session, content=current_reply)
+
+    assert doc_ids == []
+    assert stored_documents == []
 
 
 def test_completed_read_user_session_returns_document_status_followup() -> None:
