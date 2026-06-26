@@ -61,9 +61,16 @@ describe("Case intake page", () => {
 
     await user.click(screen.getByRole("button", { name: "Start AI lawyer chat" }));
 
-    expect(screen.getAllByText("This field is required.")).toHaveLength(3);
+    expect(screen.getAllByText("This field is required.")).toHaveLength(1);
     expect(screen.getByText("Fill out all case fields before creating the case.")).toBeDefined();
     expect(createCaseMock).not.toHaveBeenCalled();
+  });
+
+  it("prepopulates Slovak default case values", () => {
+    render(<CaseIntake />);
+
+    expect((screen.getByLabelText("Jurisdiction") as HTMLInputElement).value).toBe("Slovensko");
+    expect((screen.getByLabelText("Opposing party") as HTMLInputElement).value).toBe("ziadna");
   });
 
   it("creates a mock case without uploaded documents", async () => {
@@ -71,16 +78,14 @@ describe("Case intake page", () => {
     render(<CaseIntake />);
 
     await user.type(screen.getByLabelText("Case name"), "No-doc intake");
-    await user.type(screen.getByLabelText("Jurisdiction"), "Slovakia");
-    await user.type(screen.getByLabelText("Opposing party"), "Northwind LLC");
 
     await user.click(screen.getByRole("button", { name: "Start AI lawyer chat" }));
 
     expect(createCaseMock).toHaveBeenCalledTimes(1);
     expect(createCaseMock).toHaveBeenCalledWith({
       title: "No-doc intake",
-      jurisdiction: "Slovakia",
-      opposingParty: "Northwind LLC",
+      jurisdiction: "Slovensko",
+      opposingParty: "ziadna",
       documents: []
     });
     expect(navigateMock).toHaveBeenCalledWith("/app/assistant", { replace: true });
@@ -91,7 +96,9 @@ describe("Case intake page", () => {
     render(<CaseIntake />);
 
     await user.type(screen.getByLabelText("Case name"), "Contract dispute intake");
+    await user.clear(screen.getByLabelText("Jurisdiction"));
     await user.type(screen.getByLabelText("Jurisdiction"), "Slovakia");
+    await user.clear(screen.getByLabelText("Opposing party"));
     await user.type(screen.getByLabelText("Opposing party"), "Northwind LLC");
 
     const file = new File(["sample pdf"], "dispute-brief.pdf", {

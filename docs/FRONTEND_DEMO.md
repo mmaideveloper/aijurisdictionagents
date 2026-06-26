@@ -41,6 +41,9 @@ The protected assistant page lets a signed-in user:
 - upload supporting documents
 - receive an answer with case ID, status, document count, and next actions
 
+The new-case intake form defaults the jurisdiction to `Slovensko` and the
+opposing party to `ziadna`; users can edit both values before creating the case.
+
 The browser does not call MCP tools directly. Production execution must go through:
 
 ```text

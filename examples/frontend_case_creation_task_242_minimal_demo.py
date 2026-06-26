@@ -67,6 +67,16 @@ if __name__ == "__main__":
         "Successful intake submission must open the assistant workspace.",
     )
     _require_contains(
+        CASE_INTAKE_PATH,
+        'const DEFAULT_CASE_JURISDICTION = "Slovensko";',
+        "Case intake form must prepopulate the Slovak jurisdiction default.",
+    )
+    _require_contains(
+        CASE_INTAKE_PATH,
+        'const DEFAULT_OPPOSING_PARTY = "ziadna";',
+        "Case intake form must prepopulate the requested opposing-party default.",
+    )
+    _require_contains(
         PROFILE_PATH,
         't("profileDocumentsTitle")',
         "Profile page must render the My Documents section.",

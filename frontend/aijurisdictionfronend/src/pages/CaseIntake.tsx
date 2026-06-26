@@ -9,14 +9,17 @@ type IntakeErrors = {
   opposingParty: boolean;
 };
 
+const DEFAULT_CASE_JURISDICTION = "Slovensko";
+const DEFAULT_OPPOSING_PARTY = "ziadna";
+
 const CaseIntake: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const { createCase } = useCases();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [title, setTitle] = React.useState("");
-  const [jurisdiction, setJurisdiction] = React.useState("");
-  const [opposingParty, setOpposingParty] = React.useState("");
+  const [jurisdiction, setJurisdiction] = React.useState(DEFAULT_CASE_JURISDICTION);
+  const [opposingParty, setOpposingParty] = React.useState(DEFAULT_OPPOSING_PARTY);
   const [files, setFiles] = React.useState<File[]>([]);
   const [showErrors, setShowErrors] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
