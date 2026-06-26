@@ -31,6 +31,7 @@ Frontend environment variables:
 - `VITE_API_KEY` (default: `aijuris`)
 - `VITE_API_COUNTRY` (default: `SK`)
 - `VITE_API_LANGUAGE` (default: `en`)
+- `VITE_CHAT_MODEL_LABEL` (default: `Azure Foundry model`; public label shown in the assistant chat header)
 - `VITE_AIJ_SPEECHTYPE` (default: `message`; use `conversation` for the existing Voice-agent transcript flow)
 
 Speech input:
@@ -86,6 +87,7 @@ Implementation notes:
 - Does not execute arbitrary third-party MCP calls from the browser.
 - Marks sensitive verification/screening flows as explicit-approval and consent/legal-basis gated before execution.
 - Shows transparency metadata: AI-assisted draft, legal-review-required risk level, and required human oversight.
+- Shows the public AI model/runtime label used for the chat. Do not put API keys, URLs, connection strings, or secret deployment values into `VITE_CHAT_MODEL_LABEL`; it is compiled into the browser bundle.
 - All user-facing assistant strings are translated for `en`, `sk`, and `de`.
 
 Production deployment preparation:
@@ -264,6 +266,7 @@ fallbacks for `BrowserRouter` routes.
 cd frontend/aijurisdictionfronend
 docker build \
   --build-arg VITE_API_BASE_URL=https://api.jurisdigta.eu \
+  --build-arg "VITE_CHAT_MODEL_LABEL=Azure Foundry model" \
   -t jurisdigta-web:local .
 docker run -d \
   --name jurisdigta-web \
@@ -313,6 +316,12 @@ Issue #356 assistant workspace minimal demo:
 
 ```bash
 python examples/frontend_assistant_task_356_minimal_demo.py
+```
+
+Issue #398 assistant model disclosure minimal demo:
+
+```bash
+python examples/frontend_assistant_model_disclosure_issue_398_minimal_demo.py
 ```
 
 Issue #369 case-create layout minimal demo:

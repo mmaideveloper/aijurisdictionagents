@@ -5,6 +5,7 @@ const DEFAULT_API_BASE_URL =
 const DEFAULT_API_KEY = "aijuris";
 const DEFAULT_COUNTRY = "SK";
 const DEFAULT_LANGUAGE = "en";
+const DEFAULT_CHAT_MODEL_LABEL = "Azure Foundry model";
 
 export type ChatMessageRole = "user" | "assistant" | "system";
 
@@ -90,6 +91,7 @@ type RuntimeApiConfig = {
   apiKey: string;
   country: string;
   language: string;
+  chatModelLabel: string;
 };
 
 const resolveApiConfig = (): RuntimeApiConfig => {
@@ -97,12 +99,30 @@ const resolveApiConfig = (): RuntimeApiConfig => {
   const apiKey = import.meta.env.VITE_API_KEY?.trim() || DEFAULT_API_KEY;
   const country = import.meta.env.VITE_API_COUNTRY?.trim() || DEFAULT_COUNTRY;
   const language = import.meta.env.VITE_API_LANGUAGE?.trim() || DEFAULT_LANGUAGE;
+  const chatModelLabel = sanitizePublicModelLabel(
+    import.meta.env.VITE_CHAT_MODEL_LABEL?.trim() || DEFAULT_CHAT_MODEL_LABEL
+  );
   return {
     baseUrl: baseUrl.replace(/\/+$/, ""),
     apiKey,
     country,
-    language
+    language,
+    chatModelLabel
   };
+};
+
+const sanitizePublicModelLabel = (label: string): string => {
+  const trimmed = label.trim();
+  const looksLikeSecret =
+    /^sk-[A-Za-z0-9_-]{12,}/.test(trimmed) ||
+    /^gh[pousr]_[A-Za-z0-9_]{12,}/.test(trimmed) ||
+    /^eyJ[A-Za-z0-9_-]+\./.test(trimmed) ||
+    trimmed.includes("://") ||
+    trimmed.includes("=");
+  if (!trimmed || looksLikeSecret) {
+    return DEFAULT_CHAT_MODEL_LABEL;
+  }
+  return trimmed.slice(0, 80);
 };
 
 const parseErrorBody = async (response: Response): Promise<string> => {

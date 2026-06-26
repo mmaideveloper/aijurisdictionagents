@@ -12,7 +12,7 @@ import {
 } from "@assistant-ui/react";
 import { BsArrowUpCircle } from "react-icons/bs";
 import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
-import { ApiRequestError, createChatSession, streamSession } from "../api/chatClient";
+import { ApiRequestError, chatApiRuntimeConfig, createChatSession, streamSession } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
@@ -641,6 +641,7 @@ const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
   const { activeCase } = useCases();
   const threadKey = React.useMemo(() => caseThreadKey(activeCase), [activeCase]);
+  const modelLabel = React.useMemo(() => chatApiRuntimeConfig().chatModelLabel, []);
 
   return (
     <div className="page assistant-workspace-page">
@@ -651,6 +652,10 @@ const AssistantWorkspace: React.FC = () => {
               <p className="eyebrow">{t("assistantEyebrow")}</p>
               <h1 id="assistant-title">{t("assistantTitle")}</h1>
               <p>{t("assistantSubtitle")}</p>
+            </div>
+            <div className="assistant-model-disclosure" aria-label={t("assistantModelDisclosureAria")}>
+              <span>{t("assistantModelDisclosureLabel")}</span>
+              <strong>{modelLabel}</strong>
             </div>
           </section>
 
