@@ -269,7 +269,7 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
         page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
     )
     assert PdfReader(BytesIO(generated_pdf.content)).metadata.title == "Dokument"
-    assert "JurisDicta" in generated_pdf_text
+    assert "JurisDigta" in generated_pdf_text
     assert "Skore overenia dokumentu: -" in generated_pdf_text
     assert "právny návrh" in generated_pdf_text
     assert "Poprad, Slovakia, 05801" in generated_pdf_text

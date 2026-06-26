@@ -160,7 +160,7 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
         page.extract_text() or "" for page in PdfReader(BytesIO(preview_response.content)).pages
     )
     assert "Dolezite upozornenie" in preview_text
-    assert "JurisDicta" in preview_text
+    assert "JurisDigta" in preview_text
     assert "Skore overenia dokumentu: -" in preview_text
     assert "právny návrh" in preview_text
     assert "Poprad, Slovakia, 05801" in preview_text
