@@ -40,6 +40,11 @@ print(
     "groups, route policies, and audit events through server-authorized admin APIs."
 )
 print(
+    "ai_model_grafana_monitoring => JurisDigta Application Performance shows aggregate "
+    "AI model status, request, token, and EUR cost panels without prompts, documents, "
+    "emails, phone numbers, or legal-case facts in labels."
+)
+print(
     "service_healthchecks => HTTP services expose privacy-minimized /health; "
     "worker services report supervisor state, freshness, latest run result, "
     "and sanitized errors through protected operational status."

@@ -239,6 +239,7 @@ Useful Grafana panels:
 - `jurisdigta_component_status{component="overall"}`
 - `jurisdigta_component_status{component="api"}`
 - `jurisdigta_component_status{component="system"}`
+- `jurisdigta_component_status{component="ai_model_usage"}`
 - `jurisdigta_component_status{component="laws_collector"}`
 - `jurisdigta_errors_window`
 - `jurisdigta_laws_last_processed_number`
@@ -258,6 +259,19 @@ Useful Grafana panels:
 - `jurisdigta_ollama_up`
 - `jurisdigta_ollama_configured_model_present`
 - `jurisdigta_ollama_running_model_vram_bytes`
+- `jurisdigta_ai_model_requests_window`
+- `jurisdigta_ai_model_input_tokens_window`
+- `jurisdigta_ai_model_output_tokens_window`
+- `jurisdigta_ai_model_estimated_cost_eur_window`
+
+The provisioned `JurisDigta Application Performance` dashboard includes
+aggregate AI model panels for usage status, current-window EUR cost, requests by
+route, tokens by provider/model/route, and top cost by plan/task/provider/model
+route. Keep these dashboard queries aggregate-only. Case IDs, user IDs, prompts,
+answers, generated documents, filenames, emails, phone numbers, addresses, or
+legal-case facts must not be added to the shared application dashboard labels or
+legends. If an incident requires case/user drill-down, create a separate
+admin-only dashboard protected by Cloudflare Access and Grafana permissions.
 - `jurisdigta_ai_model_input_tokens_window`
 - `jurisdigta_ai_model_output_tokens_window`
 - `jurisdigta_ai_model_estimated_cost_eur_window`
