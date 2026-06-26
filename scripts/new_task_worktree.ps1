@@ -110,11 +110,23 @@ function Invoke-EnvironmentTool {
         [string[]]$Arguments
     )
 
-    $effectiveArguments = @()
-    if ($Tool.Kind -eq "micromamba") {
-        $effectiveArguments += "--ssl-no-revoke"
+    $effectiveArguments = $Arguments
+    if ($Tool.Kind -eq "micromamba" -and $Arguments.Count -gt 0) {
+        if ($Arguments[0] -eq "create") {
+            $tail = @()
+            if ($Arguments.Count -gt 1) {
+                $tail = $Arguments[1..($Arguments.Count - 1)]
+            }
+            $effectiveArguments = @("create", "--ssl-no-revoke") + $tail
+        }
+        elseif ($Arguments.Count -gt 1 -and $Arguments[0] -eq "env" -and $Arguments[1] -eq "create") {
+            $tail = @()
+            if ($Arguments.Count -gt 2) {
+                $tail = $Arguments[2..($Arguments.Count - 1)]
+            }
+            $effectiveArguments = @("env", "create", "--ssl-no-revoke") + $tail
+        }
     }
-    $effectiveArguments += $Arguments
     & $Tool.Path @effectiveArguments
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
@@ -146,11 +158,12 @@ function New-DirectoryJunction {
 function Refresh-EditableInstalls {
     param([string]$PythonPath, [string]$WorktreeRoot)
 
-    & $PythonPath -m pip install -e $WorktreeRoot --no-deps
+    & $PythonPath -m pip install -e "$WorktreeRoot[dev]"
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
-    & $PythonPath -m pip install -e (Join-Path $WorktreeRoot "api\aijuristiction-api") --no-deps
+    $apiProject = Join-Path $WorktreeRoot "api\aijuristiction-api"
+    & $PythonPath -m pip install -e "$apiProject[dev]"
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
@@ -225,11 +238,14 @@ else {
         $ResolvedCloneSource = Find-CloneSourceEnv -RepoRoot $RepoRoot
     }
 
-    if ($ResolvedCloneSource) {
+    if ($ResolvedCloneSource -and $Tool.Kind -ne "micromamba") {
         Write-Host "Cloning conda environment from $ResolvedCloneSource."
         Invoke-EnvironmentTool -Tool $Tool -Arguments @("create", "--prefix", $ActualEnvPath, "--clone", $ResolvedCloneSource, "-y")
     }
     else {
+        if ($ResolvedCloneSource -and $Tool.Kind -eq "micromamba") {
+            Write-Host "Micromamba does not reliably clone pip-heavy prefixes; creating from environment.yml instead."
+        }
         Write-Host "Creating fresh conda environment from environment.yml."
         if ($Tool.Kind -eq "micromamba") {
             Invoke-EnvironmentTool -Tool $Tool -Arguments @("env", "create", "--prefix", $ActualEnvPath, "--file", $EnvironmentFile)
