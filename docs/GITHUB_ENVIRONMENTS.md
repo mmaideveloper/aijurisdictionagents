@@ -104,7 +104,6 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_FRONTEND_CONTAINER_APP_NAME` | Frontend Azure Container App name provisioned by `infra_deploy` and updated by `web_build_deploy` |
 | `AZURE_APPLICATION_INSIGHTS_NAME` | Application Insights resource name |
 | `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` | Long random secret used to encrypt model provider credentials stored in API database routing tables |
-| `JURISDIGTA_ADMIN_API_KEY` | Admin API key for `/v1/admin/ai-models` credential/profile management; send as `x-admin-api-key` together with the normal `x-api-key` |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for API + workers; worker deployments now default to `local`, while `cloud` remains available when you want Azure/OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, recommended default `all-MiniLM-L6-v2` |
 | `SYSTEM_EMBEDDING_DEVICE` | Local embedding device selector, default `auto`; workers try CUDA/MPS when supported and fall back to CPU on unavailable GPU support or runtime errors |
@@ -112,6 +111,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Azure OpenAI embedding deployment name used for document chunk embeddings, recommended `text-embedding-3-large` |
 | `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version, keep aligned with `.env.example` unless you intentionally upgrade |
 | `JURISDIGTA_UNLIMITED_ACCESS_EMAILS` | Privileged comma- or semicolon-separated email allowlist for controlled test/operator accounts with unlimited case/document access; default `mmaideveloper@gmail.com` |
+| `JURISDIGTA_ADMIN_EMAILS` | Admin-only model management allowlist. Cloudflare Access must provide `cf-access-authenticated-user-email`; keep this restricted to approved operator accounts. |
 | `AZURE_POSTGRES_SERVER_NAME` | Azure PostgreSQL Flexible Server name |
 | `AZURE_POSTGRES_DATABASE_NAME` | API database name |
 | `AZURE_POSTGRES_ADMIN_USERNAME` | PostgreSQL admin login |
@@ -383,7 +383,6 @@ Recommended environment protection:
 Server-local `jurisdigta.env` must include at least:
 
 - `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`
-- `JURISDIGTA_ADMIN_API_KEY`
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`
 - `AZURE_OPENAI_API_VERSION`
 - `LOCAL_POSTGRES_DB`
@@ -396,6 +395,7 @@ Server-local `jurisdigta.env` must include at least:
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
 - `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
+- `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
 - `INSTALL_OLLAMA=1` so the self-managed deploy installs Ollama and pulls `qwen3.6:27b`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` or another bounded runtime in minutes
@@ -459,7 +459,6 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_CONTAINER_APP_NAME`
 - `AZURE_FRONTEND_CONTAINER_APP_NAME`
 - `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`
-- `JURISDIGTA_ADMIN_API_KEY`
 - `AZURE_OPENAI_ENDPOINT` for embeddings when cloud embeddings are enabled
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local`

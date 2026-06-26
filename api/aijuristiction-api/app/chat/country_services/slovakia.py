@@ -21,7 +21,7 @@ from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.tools import build_default_tool_registry
 
 _ORSR_CACHE_LOCK = Lock()
-_ORSR_CACHE: dict[tuple[str, int], tuple[dict[str, object] | None, str | None]] = {}
+_ORSR_CACHE: dict[tuple[str, str, str], tuple[dict[str, object] | None, str | None]] = {}
 
 
 class ShareTransferConflictResolution(TypedDict):
@@ -1238,7 +1238,7 @@ def _load_cached_slovak_company_registry_document(
 ) -> tuple[dict[str, object] | None, CoreDocument | None, bool] | None:
     normalized_query = _normalize_company_query(company_query)
     registry = build_default_tool_registry()
-    cache_key = (normalized_query, id(type(registry)))
+    cache_key = _orsr_cache_key(normalized_query, registry)
     with _ORSR_CACHE_LOCK:
         cached_payload = _ORSR_CACHE.get(cache_key)
     if cached_payload is None:
@@ -1255,7 +1255,7 @@ def _load_slovak_company_registry_document(
 ) -> tuple[dict[str, object] | None, CoreDocument | None, bool]:
     normalized_query = _normalize_company_query(company_query)
     registry = build_default_tool_registry()
-    cache_key = (normalized_query, id(type(registry)))
+    cache_key = _orsr_cache_key(normalized_query, registry)
     with _ORSR_CACHE_LOCK:
         cached_payload = _ORSR_CACHE.get(cache_key)
     if cached_payload is not None:
@@ -1377,6 +1377,15 @@ def _restore_slovak_company_registry_document(
             content=cached_content,
         )
     return restored_record, restored_document, cache_hit
+
+
+def _orsr_cache_key(company_query: str, registry: object) -> tuple[str, str, str]:
+    registry_type = type(registry)
+    return (
+        company_query,
+        getattr(registry_type, "__module__", ""),
+        getattr(registry_type, "__qualname__", registry_type.__name__),
+    )
 
 
 def _build_slovak_company_prompt_note(

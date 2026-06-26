@@ -15,13 +15,17 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
   const { isAuthenticated, user, signOut } = useAuth();
 
   const handleMenuAction = React.useCallback(
-    (action: "profile" | "cases" | "logout") => {
+    (action: "profile" | "cases" | "admin" | "logout") => {
       if (action === "profile") {
         navigate("/profile");
         return;
       }
       if (action === "cases") {
         navigate("/");
+        return;
+      }
+      if (action === "admin") {
+        navigate("/app/admin/ai-models");
         return;
       }
       signOut();
@@ -31,12 +35,18 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
   );
 
   const menuOptions = React.useMemo(
-    () => [
-      { key: "profile" as const, label: t("navMyProfile") },
-      { key: "cases" as const, label: t("navMyCases") },
-      { key: "logout" as const, label: t("navLogOut") }
-    ],
-    [t]
+    () => {
+      const options: Array<{ key: "profile" | "cases" | "admin" | "logout"; label: string }> = [
+        { key: "profile", label: t("navMyProfile") },
+        { key: "cases", label: t("navMyCases") }
+      ];
+      if (user?.email.toLowerCase() === "mmaideveloper@gmail.com") {
+        options.push({ key: "admin", label: t("navAdmin") });
+      }
+      options.push({ key: "logout", label: t("navLogOut") });
+      return options;
+    },
+    [t, user?.email]
   );
 
   const profileName = user?.name ?? t("commonUser");

@@ -2509,6 +2509,34 @@ def _extract_document_titles_from_text(content: str) -> list[str]:
 
 def _looks_like_document_title(value: str) -> bool:
     lowered = _canonicalize_document_text(value)
+    non_document_titles = (
+        "zhrnutie",
+        "zhrnutie pripadu",
+        "summary",
+        "case summary",
+        "chybajuce informacie",
+        "chybajuce informacie dokumenty",
+        "missing information",
+        "missing information documents",
+        "rizika",
+        "rizika slabe miesta",
+        "risks",
+        "risk",
+        "weak points",
+        "navrhovany postup",
+        "recommended next steps",
+        "next steps",
+        "dalsi postup",
+        "navrh terminu dalsej konzultacie",
+        "next consultation",
+        "export",
+        "download",
+        "stiahnutie",
+    )
+    if lowered in non_document_titles or any(
+        lowered.startswith(f"{title} ") for title in non_document_titles
+    ):
+        return False
     document_prefixes = (
         "zmluva",
         "inventarny zoznam",
@@ -3163,6 +3191,13 @@ def _generated_case_document_drafts_for_storage(
     *,
     timestamp: str,
 ) -> list[_GeneratedCaseDocumentDraft]:
+    section_drafts = _generated_case_document_drafts_from_visible_sections(
+        content,
+        timestamp=timestamp,
+    )
+    if section_drafts:
+        return section_drafts
+
     power_of_attorney_drafts = _bilingual_power_of_attorney_drafts(content, timestamp=timestamp)
     if power_of_attorney_drafts:
         return power_of_attorney_drafts
@@ -3178,6 +3213,27 @@ def _generated_case_document_drafts_for_storage(
             filename=_generated_case_document_filename_for_storage(document_body, timestamp=timestamp),
             body=document_body,
         )
+    ]
+
+
+def _generated_case_document_drafts_from_visible_sections(
+    content: str,
+    *,
+    timestamp: str,
+) -> list[_GeneratedCaseDocumentDraft]:
+    sections = _extract_visible_document_sections_for_export(content)
+    if len(sections) <= 1:
+        return []
+    return [
+        _GeneratedCaseDocumentDraft(
+            filename=_generated_case_document_filename_for_storage(
+                section["content"],
+                timestamp=timestamp,
+            ),
+            body=section["content"],
+        )
+        for section in sections
+        if section.get("content")
     ]
 
 
@@ -4609,7 +4665,7 @@ def _build_simple_pdf(
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=(page_width, page_height), pageCompression=0)
     pdf.setTitle(title.strip() or "Dokument")
-    pdf.setAuthor("JurisDicta")
+    pdf.setAuthor("JurisDigta")
     pdf.setSubject(title.strip() or "Generated legal document")
 
     def start_page() -> float:
@@ -4767,7 +4823,7 @@ def _draw_jurisdicta_corporate_header(
 
     pdf.setFillColor(brand_blue)
     pdf.setFont(bold_font, 12)
-    pdf.drawString(logo_x + 66.0, logo_y + 18.0, "JurisDicta")
+    pdf.drawString(logo_x + 66.0, logo_y + 18.0, "JurisDigta")
 
     card_w = 150.0
     card_h = 84.0
@@ -4924,7 +4980,7 @@ def _draw_jurisdicta_professional_footer(
     )
     pdf.setFillColor(brand_color)
     pdf.setFont(bold_font, 8.5)
-    pdf.drawString(logo_x + logo_size + 7.0, footer_top - 2.0, "JurisDicta")
+    pdf.drawString(logo_x + logo_size + 7.0, footer_top - 2.0, "JurisDigta")
     pdf.setFillColor(muted_color)
     pdf.setFont(regular_font, 7.0)
     pdf.drawString(
@@ -5636,10 +5692,20 @@ def _extract_visible_document_sections_for_export(content: str) -> list[dict[str
 def _document_section_title_from_line(line: str) -> str:
     if not line:
         return ""
+    original = line.strip()
+    if re.match(r"^[-*]\s+", original) and not original.startswith(("**", "__")):
+        return ""
+    explicit_title = bool(
+        re.match(r"^(?:#{1,6}\s+|\*\*[^*]+\*\*$|__[^_]+__$|\d+[\.)]\s+)", original)
+    )
     normalized = re.sub(r"^\d+[\.)]\s*", "", line)
     normalized = normalized.strip("*_#:- ")
     if ":" in normalized:
         normalized = normalized.split(":", 1)[0].strip()
+    if not explicit_title:
+        words = normalized.split()
+        if len(words) > 8 or normalized.endswith((".", "?", "!")):
+            return ""
     display_name = _repair_common_mojibake(normalized)
     return display_name if _looks_like_document_title(display_name) else ""
 

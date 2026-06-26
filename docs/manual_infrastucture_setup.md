@@ -356,7 +356,6 @@ The self-managed production deployment script performs the Ollama install, local
 - The sync script copies SSH key material from `E:\jurisdigta\ssh` to `%USERPROFILE%\.ssh\jurisdigta` and uses SSH/SCP to publish the full local `.env` to `/srv/jurisdigta/secrets/jurisdigta.env`.
 - Keep the dedicated SSH folder local to the workstation. Only public keys belong in `/home/jurisdigta-admin/.ssh/authorized_keys` on the server.
 - Required model-credential encryption secret: `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`.
-- Required admin model-management secret: `JURISDIGTA_ADMIN_API_KEY`.
 - Chat provider/model/deployment routing is stored in API database tables, not `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, or `AZURE_OPENAI_DEPLOYMENT`.
 - Seeded free/default local route: provider `local_ollama`, OpenAI-compatible base URL `http://127.0.0.1:11434/v1`, exact model `qwen3.6:27b`, profile `local_ollama_default`.
 - Seeded paid route for `case`, `basic`, `premium`, and `unlimited`: provider `azure_foundry`, exact model/deployment `gpt-4o-mini`, profile `azure_foundry_gpt_4o_mini`.
@@ -365,6 +364,7 @@ The self-managed production deployment script performs the Ollama install, local
 - PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
 - Required MCP OAuth values in `/srv/jurisdigta/secrets/jurisdigta.env`: `MCP_API_JWT_SECRET`, `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`, and `MCP_OTP_REUSE_WINDOW_HOURS=24`.
 - Required privileged test-account value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`. Keep this allowlist restricted to approved test/operator accounts, validate it before deploy, and roll back by removing the email from the server-local env file and redeploying/restarting the API.
+- Required admin model-management value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com` or another approved operator list. Required owner: JurisDigta infrastructure operator with Cloudflare Access admin rights. Cloudflare Access must protect the admin hostname and forward `cf-access-authenticated-user-email`; validate with an allowlisted account opening `/app/admin/ai-models` and a non-admin account receiving `403`. Roll back by removing the email from `JURISDIGTA_ADMIN_EMAILS`, redeploying/restarting the API, and confirming the admin API rejects the account.
 - The self-managed deploy script injects `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` into the API container so internal assistant law lookups call the dedicated MCP service over the Docker network.
 - Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
 - Self-managed laws collector default: `LAWS_COLLECTOR_RUN_MODE=continuous`, container `jurisdigta-laws-collector`, `LAWS_WORKER_POLL_SECONDS=3600`, and Docker restart policy `unless-stopped`.

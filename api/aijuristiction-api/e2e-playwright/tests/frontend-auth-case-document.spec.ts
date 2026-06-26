@@ -105,7 +105,7 @@ test('registration and login can create, reopen, and preview a generated potvrde
   expect(pdf.ok()).toBeTruthy();
   expect(pdf.headers()['content-type']).toContain('application/pdf');
   const pdfText = await extractPdfText(Buffer.from(await pdf.body()));
-  expect(pdfText).toContain('JurisDicta');
+  expect(pdfText).toContain('JurisDigta');
   expect(pdfText).toMatch(/Potvrdenie/i);
   expect(pdfText).toContain('Matej Mat');
   expect(pdfText).toContain('1000');

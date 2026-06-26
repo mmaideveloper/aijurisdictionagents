@@ -78,7 +78,7 @@ Required setup for chat model routing:
 - Paid `case`, `basic`, `premium`, and `unlimited` users use the seeded Azure Foundry route `azure_foundry_gpt_4o_mini`: exact model/deployment `gpt-4o-mini`.
 - Azure Foundry chat endpoint belongs in `ai_model_providers.base_url`.
 - Azure Foundry API key or token belongs in encrypted `ai_model_credentials`, managed through `/v1/admin/ai-models`.
-- Set `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` and `JURISDIGTA_ADMIN_API_KEY` in deployed environments.
+- Set `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` and `JURISDIGTA_ADMIN_EMAILS` in deployed environments.
 
 Shared embedding selection:
 
@@ -97,8 +97,10 @@ Embedding env vars:
 
 Local API startup loads the repository root `.env` automatically. If you override variables in the shell before starting `uvicorn`, those explicit shell values still win because `.env` is loaded with `override=False`.
 
-Admin model routing API:
+AI model admin management and routing API:
 
+- `GET /v1/admin/ai-models` returns providers, model price profiles, route policies, user groups, group memberships, users eligible for assignment, and recent admin audit events.
+- `POST /v1/admin/ai-models/providers`, `/profiles`, `/groups`, `/groups/{model_group_id}/members`, and `/policies` update routine model-router settings without editing environment files.
 - `GET /v1/admin/ai-models/providers`
 - `PUT /v1/admin/ai-models/providers/{provider_id}`
 - `GET /v1/admin/ai-models/profiles`
@@ -107,7 +109,8 @@ Admin model routing API:
 - `PUT /v1/admin/ai-models/providers/{provider_id}/credentials`
 - `PATCH /v1/admin/ai-models/credentials/{credential_id}`
 
-These endpoints require both `x-api-key` and `x-admin-api-key`. Credential responses show only a preview by default; `reveal=true` is reserved for authorized admin maintenance.
+Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header and the `JURISDIGTA_ADMIN_EMAILS` allowlist. Local loopback development may send `x-jurisdigta-admin-user-id`. The credential endpoints also require API authentication and reserve `reveal=true` for authorized admin maintenance.
+- Admin responses never return provider secrets or legal case content. External provider changes are audited with actor, entity, old/new summaries, reason, and correlation id.
 
 Document processing mode:
 
@@ -580,6 +583,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - `GET /v1/cases/{case_id}/ai-model-audit?user_id=...&offset=0&limit=50` returns the case model audit trail for authorized case users, including the session, question message, answer message, provider, model, route type, estimated input/output tokens, estimated cost, and a bounded question preview plus SHA-256 hash. The full question remains in the authorized case history instead of being duplicated in the audit ledger.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
 - `GET /v1/cases/{case_id}/documents/{doc_id}/pdf?user_id=...` renders the client-visible assistant draft tied to a generated technical case document as a PDF, without exposing the stored JSON payload.
+- Generated case-document storage sanitizes visible assistant replies before saving document payloads. When one assistant answer contains separate Slovak and English legal drafts, each language is stored as its own `generated_document`; progress text, assistant/system names, apologies, summaries, export/download instructions, raw separators, and raw markdown markers must not be persisted into the PDF body.
 - When a linked assistant answer contains conversational setup, summaries, multiple separated language versions, and a generated-document link, the PDF renderer exports the first valid selected legal-document block only. Assistant prose, follow-up instructions, raw markdown separators, raw bold markers, and alternate-language drafts are excluded unless they are part of that selected document block.
 - If the original technical-payload marker is no longer present in the latest case history window, the generated case-document PDF endpoint falls back to the newest assistant message that contains a finalized document body and renders only that document body, not the surrounding chat text.
 - Generated case-document PDF downloads use a user-facing filename format: normalized case title, document GUID, and normalized document type, for example `payment-confirmation_<doc_id>_potvrdenie.pdf`; the visible PDF heading and PDF metadata title also use the detected document type such as `Potvrdenie`, so browser PDF tabs do not show `untitled`.
@@ -605,7 +609,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 - The summary PDF now includes generation date, API version, system core version, the latest law update date available to the system, the law-update source, the final recommendation for the user case, official law links stored by the law processor, and a dedicated case-validation section at the end with accuracy and validation summary.
 - When the user asks to review and recreate an uploaded document under current law, the summary PDF also includes a dedicated legal-basis section that states which legal dataset and official law links were used to evaluate the document.
 - `GET /v1/chat/sessions/{session_id}/export?format=pdf&kind=document` now builds a document that matches the detected case topic instead of always returning a lease template.
-- Client-facing legal documents, including requests such as `potvrdenie o zaplateni`, now render with the professional JurisDicta template layout plus a footer QR code containing traceability metadata: generation date, API version, core system version, case ID, session ID when available, user ID when available, and document verification score. The footer also shows the document verification score; when that score is unknown or below `DOCUMENT_SHOW_DISCLAIMER` (default `50`), the PDF adds the legal-draft warning on a final standalone page.
+- Client-facing legal documents, including requests such as `potvrdenie o zaplateni`, now render with the professional JurisDigta template layout plus a footer QR code containing traceability metadata: generation date, API version, core system version, case ID, session ID when available, user ID when available, and document verification score. The footer also shows the document verification score; when that score is unknown or below `DOCUMENT_SHOW_DISCLAIMER` (default `50`), the PDF adds the legal-draft warning on a final standalone page.
 - Payment-confirmation exports are detected before older rental/easement case context, so a request for `potvrdenie o zaplateni` does not reuse a stale lease or pre-litigation-demand body. Generated PDF lines also repair common Slovak mojibake before rendering.
 - Exported law citations identify the laws connector DB as source score `1.0`. If a future export has no managed template or relevant laws-DB source and must fall back to `AIWebSearchAgent`, the internet source must be logged with URL/title and source score `0.9`.
 - Single-document exports derive the visible PDF title from the lawyer recommendation and detected legal document type, such as `Najomna zmluva` or `Kupno-predajna zmluva`, instead of displaying the session ID.

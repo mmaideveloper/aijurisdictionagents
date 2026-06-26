@@ -206,7 +206,7 @@ def test_pdf_builder_renders_professional_footer_only_when_template_enabled() ->
     corporate_text = _pdf_text(corporate_pdf).lower()
     plain_text = _pdf_text(plain_pdf).lower()
 
-    assert "jurisdicta" in corporate_text
+    assert "jurisdigta" in corporate_text
     assert "skore overenia dokumentu: 88.4%" in corporate_text
     assert "poprad, slovakia, 05801" in corporate_text
     assert "info@jurisdigta.eu" in corporate_text
@@ -409,7 +409,7 @@ def test_default_inputs_meaningful_discussion_and_pdf_exports() -> None:
     summary_text = _pdf_text(summary_pdf.content).lower()
     document_text = _pdf_text(document_pdf.content).lower()
     assert "ai jurisdiction" in summary_text
-    assert "jurisdicta" in document_text
+    assert "jurisdigta" in document_text
     assert "skore overenia dokumentu:" in document_text
     assert "%" in document_text
     assert "poprad, slovakia, 05801" in document_text
@@ -5424,6 +5424,107 @@ def test_structured_multilingual_case_documents_are_saved_separately(monkeypatch
     assert "CASE_UPDATE_JSON" not in english_payload
     assert "---" not in slovak_payload
     assert "**" not in english_payload
+
+
+def test_contaminated_multilingual_assistant_reply_persists_clean_separate_documents(
+    monkeypatch,
+) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Session
+
+    stored_documents: list[dict[str, object]] = []
+
+    class _FakeStore:
+        def list_case_documents(self, *, case_id: str):
+            return []
+
+        def add_case_document(
+            self,
+            *,
+            case_id: str,
+            kind: str,
+            version: int,
+            original_filename: str,
+            payload: bytes,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            doc_id = f"doc-generated-{len(stored_documents) + 1}"
+            stored_documents.append(
+                {
+                    "case_id": case_id,
+                    "kind": kind,
+                    "version": version,
+                    "original_filename": original_filename,
+                    "payload": payload.decode("utf-8"),
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return doc_id
+
+    user_id = uuid4()
+    session = Session(
+        user_id=user_id,
+        case_id="case-407",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    content = (
+        "Spracovanie stale prebieha.... LawyerSlovakia: Ospravedlnujem sa za chyby. "
+        "Tu su finalne verzie splnomocnenia v slovencine a anglictine:\n\n"
+        "---\n\n"
+        "**SPLNOMOCNENIE**\n\n"
+        "Ja, RNDr. Marek Matonok, konatel spolocnosti ESolutions SK s.r.o., "
+        "tymto splnomocnujem Emiliu Testovu na vsetky ukony suvisiace s pouzivanim "
+        "firemneho vozidla s evidencnym cislom PP472DT.\n\n"
+        "Toto splnomocnenie je platne od 1. jula 2026 do 31. decembra 2026.\n\n"
+        "V Spisskych Bystrych, dna 26. juna 2026.\n\n"
+        "Podpis: ________________________\n\n"
+        "---\n\n"
+        "**POWER OF ATTORNEY**\n\n"
+        "I, RNDr. Marek Matonok, the managing director of ESolutions SK s.r.o., "
+        "hereby authorize Emilia Testova to perform all acts related to the use of "
+        "the company vehicle with registration number PP472DT.\n\n"
+        "This power of attorney is valid from July 1, 2026, to December 31, 2026.\n\n"
+        "In Spisske Bystre, on June 26, 2026.\n\n"
+        "Signature: ________________________\n\n"
+        "---\n\n"
+        "Teraz pripravim oba dokumenty na export do PDF. Prosim, chvilu pockajte.\n\n"
+        "**Zhrnutie pripadu:**\n"
+        "- Splnomocnenie pre Emiliu Testovu.\n\n"
+        "**Chybajuce informacie / dokumenty:**\n"
+        "- Adresa Emilie Testovej.\n\n"
+        "**Rizika / slabe miesta:**\n"
+        "- Neuplne udaje o adrese.\n\n"
+        "**Navrhovany postup:**\n"
+        "- Doplnit adresu pred podpisom."
+    )
+
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+
+    doc_ids = chat_api._persist_generated_case_document_if_needed(session=session, content=content)
+
+    assert doc_ids == ["doc-generated-1", "doc-generated-2"]
+    assert [item["version"] for item in stored_documents] == [1, 2]
+    assert str(stored_documents[0]["original_filename"]).startswith("splnomocnenie_")
+    assert str(stored_documents[1]["original_filename"]).startswith("power_of_attorney_")
+    slovak_payload = str(stored_documents[0]["payload"])
+    english_payload = str(stored_documents[1]["payload"])
+    assert "SPLNOMOCNENIE" in slovak_payload
+    assert "POWER OF ATTORNEY" not in slovak_payload
+    assert "POWER OF ATTORNEY" in english_payload
+    assert "SPLNOMOCNENIE" not in english_payload
+    for payload in (slovak_payload, english_payload):
+        assert "Spracovanie stale prebieha" not in payload
+        assert "LawyerSlovakia" not in payload
+        assert "Ospravedlnujem" not in payload
+        assert "Zhrnutie pripadu" not in payload
+        assert "Chybajuce informacie" not in payload
+        assert "Rizika" not in payload
+        assert "Navrhovany postup" not in payload
+        assert "export do PDF" not in payload
+        assert "---" not in payload
+        assert "**" not in payload
 
 
 def test_generated_payment_confirmation_document_uses_legal_filename() -> None:

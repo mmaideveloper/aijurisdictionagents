@@ -454,12 +454,13 @@ Mozete si ho stiahnut pomocou nasledujuceho odkazu:
 
 [Stiahnut splnomocnenie](documents/splnomocnenie_ESolutions_SK.pdf)
 
-Generated document:
+    Generated document:
 - [splnomocnenie_ESolutions_SK.pdf](/app/documents/view?caseId=case-1&docId=doc-generated&kind=generated_document)`);
 
     expect(presentation.conversationalText).toBe(
-      "USER-FACING: Splnomocnenie bolo uspesne pripravene a je pripravene na stiahnutie."
+      "Splnomocnenie bolo uspesne pripravene a je pripravene na stiahnutie."
     );
+    expect(presentation.conversationalText).not.toContain("USER-FACING");
     expect(presentation.documentLinks).toEqual([
       {
         label: "splnomocnenie_ESolutions_SK.pdf",

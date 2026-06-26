@@ -193,6 +193,21 @@ class AIModelProfile:
 
 
 @dataclass(frozen=True)
+class AIModelCredential:
+    credential_id: str
+    provider_id: str
+    credential_name: str
+    secret_type: str
+    protected_secret: str
+    secret_preview: str
+    secret_value: str | None
+    enabled: bool
+    created_at: str
+    updated_at: str
+    last_revealed_at: str | None
+
+
+@dataclass(frozen=True)
 class AITaskRoutePolicy:
     policy_id: str
     task_type: str
@@ -213,18 +228,38 @@ class AITaskRoutePolicy:
 
 
 @dataclass(frozen=True)
-class AIModelCredential:
-    credential_id: str
-    provider_id: str
-    credential_name: str
-    secret_type: str
-    protected_secret: str
-    secret_preview: str
-    secret_value: str | None
+class AIModelGroup:
+    model_group_id: str
+    group_code: str
+    display_name: str
+    priority: int
     enabled: bool
     created_at: str
     updated_at: str
-    last_revealed_at: str | None
+
+
+@dataclass(frozen=True)
+class AIModelGroupMembership:
+    model_group_id: str
+    user_id: str
+    email: str
+    full_name: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class AIModelAdminAuditEvent:
+    audit_event_id: str
+    admin_user_id: str
+    admin_email: str
+    action: str
+    entity_type: str
+    entity_id: str
+    old_value_summary: str
+    new_value_summary: str
+    reason: str
+    correlation_id: str
+    created_at: str
 
 
 @dataclass(frozen=True)
@@ -697,7 +732,7 @@ class ApiDatabaseStore:
                        api_version, region, data_zone, is_external, is_local, health_check_url,
                        enabled, created_at, updated_at
                 FROM ai_model_providers
-                ORDER BY provider_code
+                ORDER BY is_local DESC, display_name, provider_code
                 """,
             ).fetchall()
         return [_row_to_ai_model_provider(row) for row in rows]
@@ -811,7 +846,7 @@ class ApiDatabaseStore:
                        eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
                 FROM ai_model_profiles
                 {where}
-                ORDER BY provider_id, is_default_for_free DESC, model_code
+                ORDER BY enabled DESC, provider_id, is_default_for_free DESC, model_code
                 """,
                 params,
             ).fetchall()
@@ -902,6 +937,22 @@ class ApiDatabaseStore:
         if row is None:
             raise RuntimeError(f"AI task route policy was not saved: {resolved_id}")
         return _row_to_ai_task_route_policy(row)
+
+    def list_ai_task_route_policies(self) -> list[AITaskRoutePolicy]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT policy_id, task_type, plan_code, model_group_id,
+                       preferred_external_model_profile_id, preferred_local_model_profile_id,
+                       allow_external, require_external_ack, require_eu_data_zone,
+                       fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
+                       priority, enabled, created_at, updated_at
+                FROM ai_task_route_policies
+                ORDER BY enabled DESC, priority DESC, task_type, plan_code, model_group_id
+                """,
+            ).fetchall()
+        return [_row_to_ai_task_route_policy(row) for row in rows]
 
     def upsert_ai_model_credential(
         self,
@@ -996,8 +1047,7 @@ class ApiDatabaseStore:
             ).fetchall()
             if reveal and rows:
                 now = _now_iso()
-                credential_ids = [str(row[0]) for row in rows]
-                for credential_id in credential_ids:
+                for credential_id in [str(row[0]) for row in rows]:
                     self._execute(
                         conn,
                         """
@@ -1061,7 +1111,6 @@ class ApiDatabaseStore:
         provider_id: str,
         secret_type: str = "api_key",
     ) -> str | None:
-        row: tuple[Any, ...] | None
         with self._connect() as conn:
             row = self._fetchone(
                 conn,
@@ -1081,6 +1130,236 @@ class ApiDatabaseStore:
         if row is None:
             return None
         return _row_to_ai_model_credential(row, reveal_secret=True).secret_value
+
+    def upsert_ai_model_group(
+        self,
+        *,
+        group_code: str,
+        display_name: str,
+        priority: int = 0,
+        enabled: bool = True,
+        model_group_id: str | None = None,
+    ) -> AIModelGroup:
+        now = _now_iso()
+        normalized_code = _normalize_route_key(group_code, default="")
+        if not normalized_code:
+            raise ValueError("group_code is required")
+        resolved_id = model_group_id or normalized_code
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO ai_model_groups(
+                    model_group_id, group_code, display_name, priority,
+                    enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(group_code) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    priority = excluded.priority,
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    resolved_id,
+                    normalized_code,
+                    display_name.strip(),
+                    priority,
+                    _bool_int(enabled),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT model_group_id, group_code, display_name, priority, enabled, created_at, updated_at
+                FROM ai_model_groups
+                WHERE group_code = ?
+                """,
+                (normalized_code,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model group was not saved: {normalized_code}")
+        return _row_to_ai_model_group(row)
+
+    def delete_ai_model_group(self, *, model_group_id: str) -> None:
+        with self._connect() as conn:
+            self._execute(conn, "DELETE FROM ai_model_groups WHERE model_group_id = ?", (model_group_id,))
+            conn.commit()
+
+    def list_ai_model_groups(self) -> list[AIModelGroup]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT model_group_id, group_code, display_name, priority, enabled, created_at, updated_at
+                FROM ai_model_groups
+                ORDER BY enabled DESC, priority DESC, display_name
+                """,
+            ).fetchall()
+        return [_row_to_ai_model_group(row) for row in rows]
+
+    def add_ai_model_group_user(self, *, model_group_id: str, user_id: str) -> AIModelGroupMembership:
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO ai_model_group_users(model_group_id, user_id, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(model_group_id, user_id) DO UPDATE SET
+                    created_at = excluded.created_at
+                """,
+                (model_group_id, user_id, now),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT gu.model_group_id, gu.user_id, u.email, u.full_name, gu.created_at
+                FROM ai_model_group_users gu
+                JOIN users u ON u.user_id = gu.user_id
+                WHERE gu.model_group_id = ? AND gu.user_id = ?
+                """,
+                (model_group_id, user_id),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model group user was not saved: {model_group_id}:{user_id}")
+        return _row_to_ai_model_group_membership(row)
+
+    def remove_ai_model_group_user(self, *, model_group_id: str, user_id: str) -> None:
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                "DELETE FROM ai_model_group_users WHERE model_group_id = ? AND user_id = ?",
+                (model_group_id, user_id),
+            )
+            conn.commit()
+
+    def list_ai_model_group_users(
+        self, *, model_group_id: str | None = None
+    ) -> list[AIModelGroupMembership]:
+        params: tuple[Any, ...] = ()
+        filter_clause = ""
+        if model_group_id:
+            filter_clause = "WHERE gu.model_group_id = ?"
+            params = (model_group_id,)
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                f"""
+                SELECT gu.model_group_id, gu.user_id, u.email, u.full_name, gu.created_at
+                FROM ai_model_group_users gu
+                JOIN users u ON u.user_id = gu.user_id
+                {filter_clause}
+                ORDER BY gu.model_group_id, u.email
+                """,
+                params,
+            ).fetchall()
+        return [_row_to_ai_model_group_membership(row) for row in rows]
+
+    def list_users_for_admin(self, *, limit: int = 100, query: str = "") -> list[User]:
+        bounded_limit = min(max(limit, 1), 500)
+        normalized_query = query.strip().lower()
+        params: tuple[Any, ...]
+        filter_clause = ""
+        if normalized_query:
+            filter_clause = "WHERE lower(email) LIKE ? OR lower(full_name) LIKE ?"
+            like_query = f"%{normalized_query}%"
+            params = (like_query, like_query, bounded_limit)
+        else:
+            params = (bounded_limit,)
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                f"""
+                SELECT user_id, phone_number, email, first_name, last_name, full_name,
+                       address, city, country, zip_code, tax_number, identity_card_number,
+                       date_of_birth, social_security_number,
+                       data_processing_consent_at, data_processing_consent_version,
+                       mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                FROM users
+                {filter_clause}
+                ORDER BY created_at DESC, email
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [_row_to_user(row) for row in rows]
+
+    def record_ai_model_admin_audit_event(
+        self,
+        *,
+        admin_user_id: str,
+        admin_email: str,
+        action: str,
+        entity_type: str,
+        entity_id: str,
+        old_value_summary: dict[str, Any] | None = None,
+        new_value_summary: dict[str, Any] | None = None,
+        reason: str = "",
+        correlation_id: str = "",
+        audit_event_id: str | None = None,
+    ) -> AIModelAdminAuditEvent:
+        now = _now_iso()
+        resolved_id = audit_event_id or str(uuid.uuid4())
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO ai_model_admin_audit_events(
+                    audit_event_id, admin_user_id, admin_email, action, entity_type,
+                    entity_id, old_value_summary_json, new_value_summary_json,
+                    reason, correlation_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    resolved_id,
+                    admin_user_id.strip(),
+                    admin_email.strip().lower(),
+                    action.strip().lower(),
+                    entity_type.strip().lower(),
+                    entity_id.strip(),
+                    _to_json(old_value_summary or {}),
+                    _to_json(new_value_summary or {}),
+                    reason.strip(),
+                    correlation_id.strip(),
+                    now,
+                ),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT audit_event_id, admin_user_id, admin_email, action, entity_type,
+                       entity_id, old_value_summary_json, new_value_summary_json,
+                       reason, correlation_id, created_at
+                FROM ai_model_admin_audit_events
+                WHERE audit_event_id = ?
+                """,
+                (resolved_id,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model admin audit event was not saved: {resolved_id}")
+        return _row_to_ai_model_admin_audit_event(row)
+
+    def list_ai_model_admin_audit_events(self, *, limit: int = 100) -> list[AIModelAdminAuditEvent]:
+        bounded_limit = min(max(limit, 1), 500)
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT audit_event_id, admin_user_id, admin_email, action, entity_type,
+                       entity_id, old_value_summary_json, new_value_summary_json,
+                       reason, correlation_id, created_at
+                FROM ai_model_admin_audit_events
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (bounded_limit,),
+            ).fetchall()
+        return [_row_to_ai_model_admin_audit_event(row) for row in rows]
 
     def resolve_ai_model_route(
         self,
@@ -1979,21 +2258,6 @@ class ApiDatabaseStore:
             ).fetchall()
         return [_row_to_user_subscription(row) for row in rows]
 
-    def get_effective_user_subscription(self, *, user_id: str) -> UserSubscription | None:
-        with self._connect() as conn:
-            row = self._fetchone(
-                conn,
-                """
-                SELECT subscription_id, user_id, plan_code, status, starts_at, ends_at, case_ids_json, created_at, updated_at
-                FROM user_subscriptions
-                WHERE user_id = ? AND status = 'paid'
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
-                (user_id,),
-            )
-        return _row_to_user_subscription(row) if row is not None else None
-
     def request_subscription_change(self, *, user_id: str, plan_code: str) -> UserSubscription:
         now = _now_iso()
         subscription_id = str(uuid.uuid4())
@@ -2838,6 +3102,22 @@ class ApiDatabaseStore:
             row = self._fetchone(conn, query, params)
         return int(row[0]) if row else 0
 
+    def get_effective_user_subscription(self, *, user_id: str) -> UserSubscription | None:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT subscription_id, user_id, plan_code, status, starts_at, ends_at,
+                       case_ids_json, created_at, updated_at
+                FROM user_subscriptions
+                WHERE user_id = ? AND status = 'paid'
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+        return _row_to_user_subscription(row) if row is not None else None
+
     def get_effective_subscription_plan(self, *, user_id: str) -> SubscriptionPlan:
         if self.has_unlimited_access(user_id=user_id):
             return SubscriptionPlan(
@@ -3157,7 +3437,7 @@ class ApiDatabaseStore:
                    m.model_profile_id, m.provider_id, m.model_code, m.deployment_name,
                    m.context_window_tokens, m.input_price_per_1m, m.cached_input_price_per_1m,
                    m.output_price_per_1m, m.billing_currency, m.effective_from, m.effective_to,
-                    m.eu_data_zone_capable, m.is_default_for_free, m.enabled, m.created_at, m.updated_at
+                   m.eu_data_zone_capable, m.is_default_for_free, m.enabled, m.created_at, m.updated_at
             FROM ai_model_profiles m
             JOIN ai_model_providers p ON p.provider_id = m.provider_id
             WHERE m.model_profile_id = ?
@@ -3304,6 +3584,20 @@ class ApiDatabaseStore:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS ai_model_admin_audit_events (
+                audit_event_id TEXT PRIMARY KEY,
+                admin_user_id TEXT NOT NULL DEFAULT '',
+                admin_email TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                old_value_summary_json TEXT NOT NULL DEFAULT '{}',
+                new_value_summary_json TEXT NOT NULL DEFAULT '{}',
+                reason TEXT NOT NULL DEFAULT '',
+                correlation_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_ai_task_route_policies_lookup
             ON ai_task_route_policies(task_type, plan_code, enabled, priority);
 
@@ -3312,6 +3606,9 @@ class ApiDatabaseStore:
 
             CREATE INDEX IF NOT EXISTS idx_ai_model_usage_task_model_time
             ON ai_model_usage_ledger(task_type, provider, model, request_completed_at);
+
+            CREATE INDEX IF NOT EXISTS idx_ai_model_admin_audit_entity_time
+            ON ai_model_admin_audit_events(entity_type, entity_id, created_at);
 
             """,
         )
@@ -3967,6 +4264,44 @@ def _row_to_ai_task_route_policy(row: tuple[object, ...]) -> AITaskRoutePolicy:
         enabled=_row_bool(row[13]),
         created_at=str(row[14]),
         updated_at=str(row[15]),
+    )
+
+
+def _row_to_ai_model_group(row: tuple[object, ...]) -> AIModelGroup:
+    return AIModelGroup(
+        model_group_id=str(row[0]),
+        group_code=str(row[1]),
+        display_name=str(row[2]),
+        priority=int(row[3] or 0),
+        enabled=_row_bool(row[4]),
+        created_at=str(row[5]),
+        updated_at=str(row[6]),
+    )
+
+
+def _row_to_ai_model_group_membership(row: tuple[object, ...]) -> AIModelGroupMembership:
+    return AIModelGroupMembership(
+        model_group_id=str(row[0]),
+        user_id=str(row[1]),
+        email=str(row[2]),
+        full_name=str(row[3]),
+        created_at=str(row[4]),
+    )
+
+
+def _row_to_ai_model_admin_audit_event(row: tuple[object, ...]) -> AIModelAdminAuditEvent:
+    return AIModelAdminAuditEvent(
+        audit_event_id=str(row[0]),
+        admin_user_id=str(row[1]),
+        admin_email=str(row[2]),
+        action=str(row[3]),
+        entity_type=str(row[4]),
+        entity_id=str(row[5]),
+        old_value_summary=str(row[6]),
+        new_value_summary=str(row[7]),
+        reason=str(row[8]),
+        correlation_id=str(row[9]),
+        created_at=str(row[10]),
     )
 
 

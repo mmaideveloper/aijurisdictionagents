@@ -269,6 +269,134 @@
   gap: 0.25rem;
 }
 
+.admin-models {
+  display: grid;
+  gap: 24px;
+}
+
+.admin-models .page-heading {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.admin-alert {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  color: #7c2d12;
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+}
+
+.admin-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-panel,
+.admin-table-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.admin-panel--wide {
+  grid-column: 1 / -1;
+}
+
+.admin-panel h2,
+.admin-table-section h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.admin-section-heading {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.admin-panel label {
+  color: var(--ink-muted);
+  display: grid;
+  font-size: 0.84rem;
+  gap: 5px;
+}
+
+.admin-panel input,
+.admin-panel select {
+  min-height: 40px;
+}
+
+.admin-toggle-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.admin-toggle-row label {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+}
+
+.admin-price-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-table-scroll {
+  overflow-x: auto;
+}
+
+.admin-table-section table {
+  border-collapse: collapse;
+  min-width: 760px;
+  width: 100%;
+}
+
+.admin-table-section th,
+.admin-table-section td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-table-section th {
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.admin-models .primary-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.admin-models .secondary-button {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
 .profile-inline-copy {
   display: grid;
   line-height: 1.15;
@@ -3175,5 +3303,16 @@ textarea {
 
   .app-shell--workspace .workspace-shell {
     padding: 1rem 4vw 2rem;
+  }
+}
+
+@media (max-width: 860px) {
+  .admin-grid,
+  .admin-price-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-models .page-heading {
+    align-items: flex-start;
   }
 }

@@ -1,5 +1,5 @@
 ALTER TABLE ai_model_profiles
-ADD COLUMN IF NOT EXISTS is_default_for_free INTEGER NOT NULL DEFAULT 0;
+ADD COLUMN is_default_for_free INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS ai_model_credentials (
     credential_id TEXT PRIMARY KEY,
