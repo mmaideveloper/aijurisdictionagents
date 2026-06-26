@@ -211,6 +211,35 @@ Validate:
 curl -fsS http://127.0.0.1:9108/metrics | head
 ```
 
+## Ollama Metrics Exporter
+
+Self-managed production also starts `ollama-exporter` when the monitoring stack is enabled. It runs with host networking so it can read the localhost-only Ollama API at `LOCAL_LLM_BASE_URL`, which defaults to:
+
+```text
+http://127.0.0.1:11434
+```
+
+Prometheus scrapes it at:
+
+```text
+http://host.docker.internal:9109/metrics
+```
+
+Keep host port `9109` blocked from public ingress the same way as Prometheus, Grafana, and the status exporter. It is only for the private Prometheus scrape path.
+
+The exporter emits privacy-preserving runtime metrics only:
+
+- `jurisdigta_ollama_up`
+- `jurisdigta_ollama_probe_duration_seconds`
+- `jurisdigta_ollama_configured_model_present`
+- `jurisdigta_ollama_models_total`
+- `jurisdigta_ollama_running_models_total`
+- `jurisdigta_ollama_model_size_bytes`
+- `jurisdigta_ollama_running_model_vram_bytes`
+- `jurisdigta_ollama_running_model_expires_timestamp_seconds`
+
+It does not send prompts, legal documents, model responses, or case facts to Prometheus.
+
 Optional fallback systemd unit:
 
 ```ini
@@ -460,6 +489,7 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 
 - `JurisDigta Server Performance`: CPU, RAM, disk, load, network, disk I/O, and container memory.
 - `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
+- `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, input/output tokens, requests, estimated cost, and top cases by token volume.
 - `JurisDigta Laws Collector`: execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
 - `JurisDigta System Logs`: Loki log stream with source, severity, stream, and regex search filters for Docker container logs and server job log files.

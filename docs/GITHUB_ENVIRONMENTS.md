@@ -367,6 +367,9 @@ Optional `prod` GitHub Environment variables:
 | `LOCAL_LLM_FALLBACK_MODEL` | unset | Smaller local fallback model tag when the preferred model is unavailable or too large for server capacity |
 | `LOCAL_LLM_HEALTH_URL` | `http://127.0.0.1:11434/api/tags` | Local model service health/list endpoint used by operators and future health checks |
 | `LOCAL_LLM_OPENAI_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible local base URL for future router adapters |
+| `INSTALL_OLLAMA` | `1` | Self-managed deploy installs/configures Ollama and pulls `LOCAL_LLM_MODEL`; set `0` only for controlled rollback or prevalidated manual install |
+| `OLLAMA_METRICS_PORT` | `9109` | Host-local Prometheus exporter port for Ollama runtime metrics |
+| `OLLAMA_METRICS_TIMEOUT` | `5` | Timeout in seconds for Ollama exporter API probes |
 
 Required `prod` GitHub Environment secret:
 
@@ -404,6 +407,7 @@ Server-local `jurisdigta.env` must include at least:
 - `LOCAL_LLM_MODEL=qwen3.6:27b` or a smaller validated model if server RAM/VRAM is insufficient
 - `LOCAL_LLM_HEALTH_URL=http://127.0.0.1:11434/api/tags`
 - `LOCAL_LLM_OPENAI_BASE_URL=http://127.0.0.1:11434/v1`
+- `INSTALL_OLLAMA=1` so the self-managed deploy installs Ollama and pulls `qwen3.6:27b`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` or another bounded runtime in minutes
 - email/Turnstile settings when those production features are enabled
 
@@ -413,6 +417,7 @@ Optional server-local monitoring setting in `/srv/jurisdigta/app/Deployment/moni
 | --- | --- | --- |
 | `MONITORING_APP_DOCKER_NETWORK` | `aijuristiction-api_default` | Docker network where Prometheus Blackbox Exporter and status-exporter resolve `jurisdigta-api` and `jurisdigta-mcp` by container name |
 | `GRAFANA_DEFAULT_HOME_DASHBOARD_PATH` | `/var/lib/grafana/dashboards/jurisdigta-application-performance.json` | Grafana dashboard JSON shown as the default home dashboard after login |
+| `OLLAMA_METRICS_PORT` | `9109` | Host-local Ollama Prometheus exporter port scraped by Prometheus through `host.docker.internal` |
 
 Minimal workflow validation after setup:
 

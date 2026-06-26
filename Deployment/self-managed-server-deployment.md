@@ -174,6 +174,8 @@ gh auth refresh -s read:project,project
 
 Install Ollama as a separate local model service for free-plan traffic and paid fallback routing. Do not load large model files directly inside the API process for normal production traffic; the API should stay lightweight and call the local model service through the model router.
 
+The self-managed production deployment script runs this step by default with `INSTALL_OLLAMA=1`. It installs Ollama when missing, keeps it bound to `127.0.0.1:11434`, pulls the configured `LOCAL_LLM_MODEL`, and validates both `/api/tags` and `/v1/models`. The default initial production model is `qwen3.6:27b`.
+
 Install from a trusted server shell and review the installer before production use:
 
 ```bash
@@ -1182,6 +1184,7 @@ Components:
 - Blackbox Exporter: API availability probes.
 - Monitoring containers join `MONITORING_APP_DOCKER_NETWORK`, defaulting to `aijuristiction-api_default`, so API and MCP are probed by container name while their host ports stay bound to `127.0.0.1`.
 - `scripts/server/export_system_status_metrics.py`: converts `GET /v1/system/status?minutes=60` into Prometheus text metrics.
+- `scripts/server/export_ollama_metrics.py`: exports localhost-only Ollama health, model inventory, loaded model, and VRAM gauges.
 - `scripts/server/write_system_status.py`: records aggregate API/MCP request counts, average/max request latency, total users, new users, total cases, and new cases without exposing personal data or legal case content in Prometheus labels.
 
 Start the JurisDigta status exporter:

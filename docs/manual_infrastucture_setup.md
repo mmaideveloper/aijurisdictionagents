@@ -342,6 +342,8 @@ curl -fsS http://127.0.0.1:11434/v1/models
 
 Keep Ollama outside the API container and outside the FastAPI process. JurisDigta API should call Ollama over localhost through the model router; Ollama owns model download, storage, loading, unloading, and runtime memory pressure.
 
+The self-managed production deployment script performs the Ollama install, localhost bind, `qwen3.6:27b` pull, and health validation by default when `INSTALL_OLLAMA=1`. Set `INSTALL_OLLAMA=0` only for a controlled rollback or a server where Ollama has already been installed and validated manually.
+
 ### Secrets And Environment Values
 
 - Server-local environment file path: `/srv/jurisdigta/secrets/jurisdigta.env`.
@@ -380,6 +382,8 @@ Keep Ollama outside the API container and outside the FastAPI process. JurisDigt
   health checks.
 - Optional Prometheus exporter path: `/srv/jurisdigta/app/scripts/server/export_system_status_metrics.py`.
 - Optional Prometheus exporter port: `127.0.0.1:9108`.
+- Optional Ollama Prometheus exporter path: `/srv/jurisdigta/app/scripts/server/export_ollama_metrics.py`.
+- Optional Ollama Prometheus exporter port: `127.0.0.1:9109`.
 - Optional monitoring stack path: `/srv/jurisdigta/app/Deployment/monitoring`.
 - Optional monitoring Docker network setting: `MONITORING_APP_DOCKER_NETWORK=aijuristiction-api_default`, used by status-exporter and Blackbox Exporter to reach `jurisdigta-api` and `jurisdigta-mcp` without exposing API/MCP beyond loopback host ports.
 - Optional Grafana default dashboard setting: `GRAFANA_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/jurisdigta-application-performance.json`.
@@ -419,10 +423,11 @@ Keep Ollama outside the API container and outside the FastAPI process. JurisDigt
 - `curl -fsS -H "x-api-key: ${API_KEY:-aijuris}" "http://127.0.0.1:8080/v1/system/status?minutes=60"` returns API, system, laws collector, and error-count sections.
 - If Prometheus/Grafana monitoring is enabled, `systemctl status jurisdigta-status-exporter.service --no-pager` shows the exporter active.
 - If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9108/metrics | head` returns Prometheus text metrics.
-- If Prometheus/Grafana monitoring is enabled, `docker compose -f /srv/jurisdigta/app/Deployment/monitoring/docker-compose.yml ps` shows Prometheus, Grafana, Node Exporter, cAdvisor, and Blackbox Exporter running.
+- If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9109/metrics | grep jurisdigta_ollama_up` returns the Ollama exporter health gauge.
+- If Prometheus/Grafana monitoring is enabled, `docker compose -f /srv/jurisdigta/app/Deployment/monitoring/docker-compose.yml ps` shows Prometheus, Grafana, Ollama Exporter, Node Exporter, cAdvisor, and Blackbox Exporter running.
 - If Prometheus/Grafana monitoring is enabled, `curl -fsS http://127.0.0.1:9091/-/ready` and `curl -fsS http://127.0.0.1:3000/grafana/api/health` succeed.
 - If Prometheus/Grafana monitoring is enabled, `cd /srv/jurisdigta/app && PROMETHEUS_BASE_URL=http://127.0.0.1:9091 python3 examples/monitoring_scrape_demo.py` reports all scrapes and HTTP probes healthy.
-- If Prometheus/Grafana monitoring is enabled, Prometheus queries for `jurisdigta_http_requests_total_window`, `jurisdigta_http_request_duration_seconds_avg`, `jurisdigta_users_total`, and `jurisdigta_cases_total` return aggregate samples.
+- If Prometheus/Grafana monitoring is enabled, Prometheus queries for `jurisdigta_http_requests_total_window`, `jurisdigta_http_request_duration_seconds_avg`, `jurisdigta_users_total`, `jurisdigta_cases_total`, `jurisdigta_ollama_up`, and `jurisdigta_ai_model_output_tokens_window` return aggregate samples.
 - `systemctl status cloudflared --no-pager` shows the Cloudflare tunnel active when public hostnames are enabled.
 - If Cloudflare Tunnel public hostnames are enabled, `curl -fsS https://api.jurisdigta.eu/health`, `curl -fsS https://agent.jurisdigta.eu/health`, `curl -I https://agent.jurisdigta.eu/app/assistant`, `curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`, and `curl -I https://admin.jurisdigta.eu/grafana/` succeed from outside the server.
 - If the frontend web container is enabled, `curl -fsS http://127.0.0.1:8090/health` and `curl -I http://127.0.0.1:8090/privacy` succeed on the server.
