@@ -35,7 +35,7 @@ it should verify official/current sources where possible.
 | Area | Issue | Required outcome |
 | --- | --- | --- |
 | Paid subscription commercial launch package | #390 | Pricing, plan limits, refund/cancellation policy, support/SLA, checkout wording, complaint process, and subscription operations are owner-approved and aligned with payment/invoicing. |
-| Grant and funding readiness | none yet | Track suitable Slovak/EU funding routes, prepare business plan, innovation narrative, budget, pilots, and compliance evidence before applying. Create a task when a concrete call or application target is chosen. |
+| Grant and funding readiness | #393 | Prepare JurisDigta grant dossier and application path. Recommended sequence: EIC Accelerator as the strategic target, SIEA EIC advisory voucher after an EIC short-proposal GO, Digital Europe cascade calls as a parallel watch, and EDIH support for test-before-invest and funding guidance. |
 | Production operating model | linked to #385 / #388 / #390 | Define who approves releases, monitors incidents, handles user support, processes refunds, and owns legal/compliance escalations. |
 
 ### Legal
