@@ -361,6 +361,15 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT` | `20` | Max pending documents processed per scheduled run |
 | `JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS` | `5` | Email outbox poll interval in seconds for near-immediate self-managed delivery; minimum accepted value is `5` |
+| `LOCAL_LLM_PROVIDER` | `ollama` | Local model runtime used by the future model router for free-plan traffic and paid fallback on `jurisdigta-server` |
+| `LOCAL_LLM_BASE_URL` | `http://127.0.0.1:11434` | Local Ollama API base URL; keep it localhost-only and do not publish it through Cloudflare Tunnel |
+| `LOCAL_LLM_MODEL` | `qwen3.6:27b` | Preferred local model tag when server hardware supports it |
+| `LOCAL_LLM_FALLBACK_MODEL` | unset | Smaller local fallback model tag when the preferred model is unavailable or too large for server capacity |
+| `LOCAL_LLM_HEALTH_URL` | `http://127.0.0.1:11434/api/tags` | Local model service health/list endpoint used by operators and future health checks |
+| `LOCAL_LLM_OPENAI_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible local base URL for future router adapters |
+| `INSTALL_OLLAMA` | `1` | Self-managed deploy installs/configures Ollama and pulls `LOCAL_LLM_MODEL`; set `0` only for controlled rollback or prevalidated manual install |
+| `OLLAMA_METRICS_PORT` | `9109` | Host-local Prometheus exporter port for Ollama runtime metrics |
+| `OLLAMA_METRICS_TIMEOUT` | `5` | Timeout in seconds for Ollama exporter API probes |
 
 Required `prod` GitHub Environment secret:
 
@@ -393,6 +402,12 @@ Server-local `jurisdigta.env` must include at least:
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
 - `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
+- `LOCAL_LLM_PROVIDER=ollama`
+- `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434`
+- `LOCAL_LLM_MODEL=qwen3.6:27b` or a smaller validated model if server RAM/VRAM is insufficient
+- `LOCAL_LLM_HEALTH_URL=http://127.0.0.1:11434/api/tags`
+- `LOCAL_LLM_OPENAI_BASE_URL=http://127.0.0.1:11434/v1`
+- `INSTALL_OLLAMA=1` so the self-managed deploy installs Ollama and pulls `qwen3.6:27b`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` or another bounded runtime in minutes
 - email/Turnstile settings when those production features are enabled
 
@@ -402,6 +417,7 @@ Optional server-local monitoring setting in `/srv/jurisdigta/app/Deployment/moni
 | --- | --- | --- |
 | `MONITORING_APP_DOCKER_NETWORK` | `aijuristiction-api_default` | Docker network where Prometheus Blackbox Exporter and status-exporter resolve `jurisdigta-api` and `jurisdigta-mcp` by container name |
 | `GRAFANA_DEFAULT_HOME_DASHBOARD_PATH` | `/var/lib/grafana/dashboards/jurisdigta-application-performance.json` | Grafana dashboard JSON shown as the default home dashboard after login |
+| `OLLAMA_METRICS_PORT` | `9109` | Host-local Ollama Prometheus exporter port scraped by Prometheus through `host.docker.internal` |
 
 Minimal workflow validation after setup:
 
@@ -413,6 +429,9 @@ Minimal workflow validation after setup:
 docker image inspect jurisdigta-document-processor:local >/dev/null
 test -x /srv/jurisdigta/ops/run_document_processor.sh
 crontab -l | grep run_document_processor.sh
+systemctl is-active --quiet ollama
+curl -fsS http://127.0.0.1:11434/api/tags
+curl -fsS http://127.0.0.1:11434/v1/models
 ```
 
 4. From outside the server, validate the Cloudflare Tunnel routes:
@@ -457,6 +476,10 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1` for self-managed prod
 - `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION=*/15 * * * *` for self-managed prod
 - `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT=20` for self-managed prod
+- `LOCAL_LLM_PROVIDER=ollama` for self-managed prod local-model routing
+- `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434` for self-managed prod local-model routing
+- `LOCAL_LLM_MODEL=qwen3.6:27b` or a smaller validated local model for weaker hardware
+- `LOCAL_LLM_OPENAI_BASE_URL=http://127.0.0.1:11434/v1`
 - `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES`
 - `AZURE_LAWS_STORAGE_CONTAINER_NAME=laws-collection-sk`
@@ -554,6 +577,7 @@ After setup, verify:
 - `TURNSTILE_SITE_KEY` is set on the corporate web GitHub Environment and `TURNSTILE_SECRET_KEY` is set on the API GitHub Environment when `CONTACT_CAPTCHA_REQUIRED=true`
 - `AZURE_EMAIL_SCHEDULER_JOB_NAME` and `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION` are set when the dedicated email ACA job should run
 - self-managed prod document processor settings are set or accepted at defaults: `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON`, `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION`, and `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT`
+- self-managed prod Ollama is installed as a separate localhost-only service and `curl -fsS http://127.0.0.1:11434/api/tags` succeeds
 - optional `CAR_VALIDATION_API_BASE_URL` and `CAR_VALIDATION_API_KEY` are set together when live vehicle validation should be enabled
 - `workflow_dispatch` works with `github_environment=test`
 - `workflow_dispatch` works with `github_environment=prod`

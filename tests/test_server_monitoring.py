@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+from scripts.server.export_ollama_metrics import _render_ollama_metrics
 from scripts.server.export_system_status_metrics import _merge_local_runtime, _render_metrics
 from scripts.server.write_system_status import (
     _http_log_metrics,
@@ -30,6 +31,7 @@ def _load_configure_monitoring_module():
 
 def test_monitoring_stack_includes_loki_alloy_and_datasource() -> None:
     compose = (MONITORING_DIR / "docker-compose.yml").read_text(encoding="utf-8")
+    prometheus_config = (MONITORING_DIR / "prometheus.yml").read_text(encoding="utf-8")
     datasources = (
         MONITORING_DIR / "grafana" / "provisioning" / "datasources" / "prometheus.yml"
     ).read_text(encoding="utf-8")
@@ -38,12 +40,29 @@ def test_monitoring_stack_includes_loki_alloy_and_datasource() -> None:
 
     assert "jurisdigta-loki" in compose
     assert "grafana/alloy" in compose
+    assert "jurisdigta-ollama-exporter" in compose
+    assert "export_ollama_metrics.py" in compose
+    assert "network_mode: host" in compose
+    assert "jurisdigta-ollama" in prometheus_config
+    assert "host.docker.internal:9109" in prometheus_config
     assert "LOKI_RETENTION_DAYS" in compose
     assert "max-size: ${DOCKER_LOG_MAX_SIZE:-50m}" in compose
     assert "type: loki" in datasources
     assert "loki.source.docker" in alloy_config
     assert "loki.source.file" in alloy_config
     assert "retention_period: ${LOKI_RETENTION_DAYS}d" in loki_config
+
+
+def test_monitoring_dashboards_include_ollama_ai_models_dashboard() -> None:
+    dashboard_path = MONITORING_DIR / "grafana" / "dashboards" / "jurisdigta-ollama-models.json"
+    dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    panel_titles = {str(panel.get("title")) for panel in dashboard["panels"]}
+
+    assert dashboard["uid"] == "jurisdigta-ollama-models"
+    assert "Ollama API" in panel_titles
+    assert "Loaded Model VRAM" in panel_titles
+    assert "Input And Output Tokens By Model" in panel_titles
+    assert "Top Cases By Tokens" in panel_titles
 
 
 def test_monitoring_env_defaults_include_log_retention() -> None:
@@ -293,6 +312,57 @@ def test_exporter_renders_email_and_document_processor_metrics() -> None:
     assert 'jurisdigta_document_processing_duration_seconds_avg{window="24h"} 12.5' in metrics
     assert "jurisdigta_document_processor_last_run_duration_seconds 15.0" in metrics
     assert "jurisdigta_document_processor_last_run_processed 6.0" in metrics
+
+
+def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
+    responses = {
+        "http://127.0.0.1:11434/api/tags": (
+            {
+                "models": [
+                    {
+                        "name": "qwen3.6:27b",
+                        "size": 1234,
+                        "modified_at": "2026-06-25T12:00:00Z",
+                        "details": {
+                            "family": "qwen",
+                            "parameter_size": "27B",
+                            "quantization_level": "Q4_K_M",
+                        },
+                    }
+                ]
+            },
+            0.02,
+        ),
+        "http://127.0.0.1:11434/api/ps": (
+            {
+                "models": [
+                    {
+                        "name": "qwen3.6:27b",
+                        "size": 1234,
+                        "size_vram": 987,
+                        "processor": "gpu",
+                        "expires_at": "2026-06-25T12:05:00Z",
+                    }
+                ]
+            },
+            0.03,
+        ),
+    }
+
+    monkeypatch.setenv("LOCAL_LLM_MODEL", "qwen3.6:27b")
+    monkeypatch.setattr(
+        "scripts.server.export_ollama_metrics._fetch_json",
+        lambda url, *, timeout: responses[url],
+    )
+
+    metrics = _render_ollama_metrics(base_url="http://127.0.0.1:11434", timeout=5)
+
+    assert 'jurisdigta_ollama_up{error=""} 1' in metrics
+    assert 'jurisdigta_ollama_configured_model_present{model="qwen3.6:27b"} 1' in metrics
+    assert "jurisdigta_ollama_models_total 1" in metrics
+    assert "jurisdigta_ollama_running_models_total 1" in metrics
+    assert 'jurisdigta_ollama_model_loaded{model="qwen3.6:27b"' in metrics
+    assert 'jurisdigta_ollama_running_model_vram_bytes{model="qwen3.6:27b",processor="gpu"} 987.0' in metrics
 
 
 def test_exporter_merges_laws_runtime_from_local_status_file(monkeypatch, tmp_path) -> None:
