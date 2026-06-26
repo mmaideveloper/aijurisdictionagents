@@ -149,6 +149,7 @@ const appendGeneratedDocumentsResponseBlock = (content: string, block: string): 
   block ? `${content.trim()}\n\n${block}`.trim() : content;
 
 const internalDocumentLinkPattern = /\[([^\]]+)]\((\/app\/documents\/view\?[^)\s]+)\)/g;
+const relativeDocumentLinkPattern = /\[([^\]]+)]\(\s*documents\/[^)\s]+\)/gi;
 
 type AssistantDocumentLink = {
   label: string;
@@ -177,15 +178,27 @@ const stripMarkdownHeading = (line: string): string =>
 
 const removeInternalDocumentLinks = (text: string): { text: string; links: AssistantDocumentLink[] } => {
   const links: AssistantDocumentLink[] = [];
-  const cleaned = text.replace(internalDocumentLinkPattern, (_match, label: string, href: string) => {
-    links.push({ label, href });
-    return "";
-  });
+  const cleaned = text
+    .replace(internalDocumentLinkPattern, (_match, label: string, href: string) => {
+      links.push({ label, href });
+      return "";
+    })
+    .replace(relativeDocumentLinkPattern, "");
   internalDocumentLinkPattern.lastIndex = 0;
+  relativeDocumentLinkPattern.lastIndex = 0;
   return {
     text: cleaned
       .split("\n")
-      .filter((line) => !/^Generated documents?:\s*$/i.test(line.trim()) && line.trim() !== "-")
+      .filter((line) => {
+        const normalized = line.trim().toLowerCase();
+        return (
+          !/^Generated documents?:\s*$/i.test(normalized) &&
+          normalized !== "-" &&
+          !normalized.includes("môžete si ho stiahnuť pomocou nasledujúceho odkazu") &&
+          !normalized.includes("mozete si ho stiahnut pomocou nasledujuceho odkazu") &&
+          !normalized.includes("download using the following link")
+        );
+      })
       .join("\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim(),

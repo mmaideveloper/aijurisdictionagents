@@ -20,6 +20,16 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## E2E Regression Tests
+
+Run the browser regression suite with:
+
+```bash
+npm run test:e2e
+```
+
+The suite starts Vite locally and uses mocked JurisDigta API responses. Deployment workflows run this Playwright gate before deployment so a failed document-download or document-listing regression blocks release.
+
 ## API Chat Integration (Task #238)
 
 The signed-in workspace now uses the live API for case communication in all three modes (`Chat`, `Voice`, `Video`).

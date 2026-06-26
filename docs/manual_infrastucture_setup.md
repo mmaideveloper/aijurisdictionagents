@@ -301,7 +301,7 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 24. Add systemd units or timers only after the exact smoke deployment commands are validated.
 25. Configure the GitHub `prod` Environment values documented in `docs/GITHUB_ENVIRONMENTS.md`.
 26. Register a repository self-hosted GitHub Actions runner on the trusted server or private network with labels `self-hosted`, `Linux`, `X64`, and `jurisdigta-prod`.
-27. Run `Self-Managed Prod Deploy` from GitHub Actions after the server-local environment file is complete.
+27. Run `Self-Managed Prod Deploy` from GitHub Actions after the server-local environment file is complete. The workflow first runs the frontend Playwright E2E gate on GitHub-hosted Ubuntu; if any E2E test fails, the SSH deployment job does not start.
 
 ### Ollama Local Model Service Setup
 
@@ -435,7 +435,7 @@ The self-managed production deployment script performs the Ollama install, local
 - `systemctl status cloudflared --no-pager` shows the Cloudflare tunnel active when public hostnames are enabled.
 - If Cloudflare Tunnel public hostnames are enabled, `curl -fsS https://api.jurisdigta.eu/health`, `curl -fsS https://agent.jurisdigta.eu/health`, `curl -I https://agent.jurisdigta.eu/app/assistant`, `curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`, and `curl -I https://admin.jurisdigta.eu/grafana/` succeed from outside the server.
 - If the frontend web container is enabled, `curl -fsS http://127.0.0.1:8090/health` and `curl -I http://127.0.0.1:8090/privacy` succeed on the server.
-- GitHub Actions workflow `Self-Managed Prod Deploy` completes for `repo_ref=main`.
+- GitHub Actions workflow `Self-Managed Prod Deploy` completes for `repo_ref=main` only after the frontend Playwright E2E gate passes.
 - Cloudflare Access protects `agent.jurisdigta.eu` and `admin.jurisdigta.eu` before public use.
 - UFW allows only expected ingress, typically SSH; do not expose PostgreSQL, API, Grafana, Prometheus, or exporter ports directly.
 
