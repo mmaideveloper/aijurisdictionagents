@@ -32,6 +32,8 @@ const labels: Record<string, string> = {
   assistantMetadataRiskValue: "Legal review required",
   assistantMetadataReview: "Human oversight",
   assistantMetadataReviewValue: "Required before final use",
+  assistantModelDisclosureAria: "AI model used for this chat",
+  assistantModelDisclosureLabel: "Model",
   assistantComposerLabel: "Assistant message",
   assistantComposerPlaceholder: "Ask for legal research or document preparation...",
   assistantSend: "Send message",
@@ -182,6 +184,7 @@ describe("AssistantWorkspace", () => {
     render(<AssistantWorkspace />);
 
     expect(screen.getByRole("heading", { name: "JurisDigta Assistant" })).toBeDefined();
+    expect(screen.getByLabelText("AI model used for this chat").textContent).toContain("Azure Foundry model");
     expect(screen.getByRole("heading", { name: "Configurations" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Chat" })).toBeDefined();
     expect(screen.getByText("AI lawyer")).toBeDefined();

@@ -1271,6 +1271,7 @@ Build and deploy:
 cd /srv/jurisdigta/app/frontend/aijurisdictionfronend
 docker build \
   --build-arg VITE_API_BASE_URL=https://api.jurisdigta.eu \
+  --build-arg "VITE_CHAT_MODEL_LABEL=Azure Foundry model" \
   -t jurisdigta-web:local .
 docker rm -f jurisdigta-web 2>/dev/null || true
 docker run -d \

@@ -449,8 +449,10 @@ run_schema_migrations() {
 deploy_web() {
   log "building and starting frontend web container"
   cd "$APP_DIR/frontend/aijurisdictionfronend"
+  local chat_model_label="${AZURE_OPENAI_DEPLOYMENT:-Azure Foundry model}"
   docker build \
     --build-arg "VITE_API_BASE_URL=$WEB_API_BASE_URL" \
+    --build-arg "VITE_CHAT_MODEL_LABEL=$chat_model_label" \
     -t jurisdigta-web:local .
   docker rm -f jurisdigta-web >/dev/null 2>&1 || true
   docker run -d \
