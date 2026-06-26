@@ -176,6 +176,8 @@ These are used by the web frontend deployment workflow:
 | --- | --- |
 | `AZURE_FRONTEND_CONTAINER_APP_NAME` | Frontend Azure Container App name |
 
+The frontend deployment workflow runs the full frontend gate before deployment: lint, unit tests, Playwright E2E tests, and build. `npm run test:e2e` starts the Vite app locally and uses mocked API responses, so no additional GitHub Environment variables or secrets are required for the E2E gate. If any Playwright test fails, `web_build_deploy` stops before building or deploying the Azure Container App image.
+
 The frontend workflow also reuses these shared Azure deployment variables:
 
 - `AZURE_CLIENT_ID`
@@ -325,6 +327,8 @@ the selected GitHub Environment contains stale or mismatched signing secrets.
 ## 11. Configure Self-Managed Production Server Variables
 
 These are used by `.github/workflows/self_managed_prod_deploy.yml` to deploy API, MCP, frontend web, the document processor, laws collector, and system status monitoring to the Ubuntu `jurisdigta-server`.
+
+Before the SSH deployment job starts, the workflow runs a GitHub-hosted `e2e_gate` job with `npm ci`, Chromium installation, and `npm run test:e2e` from `frontend/aijurisdictionfronend`. The E2E tests use local Vite plus mocked API responses, so the `prod` environment does not need extra secrets for this gate. If any E2E test fails, the deploy job is skipped and production is not updated.
 
 The workflow must run on a repository self-hosted runner with labels `self-hosted`, `Linux`, `X64`, and `jurisdigta-prod`. Keep this runner on the trusted server or trusted private network that can reach `jurisdigta-server` over SSH. Do not run the production deployment from a GitHub-hosted runner when `JURISDIGTA_SSH_HOST` is a private LAN address such as `192.168.1.50`.
 

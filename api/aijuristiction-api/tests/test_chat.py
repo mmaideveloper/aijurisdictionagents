@@ -5710,6 +5710,87 @@ def test_user_visible_text_strips_fake_relative_download_links_and_json_preamble
     assert export_response.content.startswith(b"%PDF")
 
 
+def test_unstructured_relative_download_link_uses_previous_draft_for_case_document(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Message, MessageRole, Session
+    from app.chat.repository import InMemoryChatRepository
+
+    stored_documents: list[dict[str, object]] = []
+
+    class _FakeStore:
+        def list_case_documents(self, *, case_id: str):
+            return []
+
+        def add_case_document(
+            self,
+            *,
+            case_id: str,
+            kind: str,
+            version: int,
+            original_filename: str,
+            payload: bytes,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            stored_documents.append(
+                {
+                    "case_id": case_id,
+                    "kind": kind,
+                    "version": version,
+                    "original_filename": original_filename,
+                    "payload": payload.decode("utf-8"),
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return "doc-generated-1"
+
+    repository = InMemoryChatRepository()
+    session_id = uuid4()
+    user_id = uuid4()
+    session = Session(
+        id=session_id,
+        user_id=user_id,
+        case_id="case-123",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    repository.create_session(session)
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=(
+                "**Splnomocnenie**\n\n"
+                "Splnomocniteľ: Esolutions SK s.r.o.\n"
+                "Splnomocnenec: Marek Matonok\n"
+                "Predmet splnomocnenia: používanie firemného vozidla PP472DT.\n\n"
+                "Podpis splnomocniteľa:\n"
+                "________________________"
+            ),
+        )
+    )
+    current_reply = (
+        "USER-FACING: Splnomocnenie bolo úspešne pripravené a je pripravené na stiahnutie.\n"
+        "Môžete si ho stiahnuť pomocou nasledujúceho odkazu:\n\n"
+        "[Stiahnuť splnomocnenie](documents/splnomocnenie_ESolutions_SK.pdf)"
+    )
+
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+
+    visible = chat_api._user_visible_text(current_reply)
+    doc_ids = chat_api._persist_generated_case_document_if_needed(session=session, content=current_reply)
+
+    assert "documents/" not in visible
+    assert "Stiahnuť splnomocnenie" not in visible
+    assert doc_ids == ["doc-generated-1"]
+    assert stored_documents[0]["kind"] == "generated_document"
+    assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
+    assert "Splnomocniteľ: Esolutions SK s.r.o." in str(stored_documents[0]["payload"])
+    assert "PP472DT" in str(stored_documents[0]["payload"])
+
+
 def test_completed_read_user_session_returns_document_status_followup() -> None:
     from app.chat import api as chat_api
     from app.chat.models import Message, MessageRole, SessionResult
