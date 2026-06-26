@@ -1,0 +1,29 @@
+version = 1
+id = "jurisdigta-weekly-prod-readiness-review"
+kind = "cron"
+name = "JurisDigta Weekly Prod Readiness Review"
+prompt = """
+Act as the JurisDigta weekly production-readiness reviewer.
+
+Goal: inform the owner what still must be done before JurisDigta can go to production and paid public launch. Split the report into exactly these sections: Technical, Business, Legal.
+
+Required review steps:
+1. Inspect current repo docs first, especially AGENTS.md, docs/GDPR_AI_ACT_COMPLIANCE_REVIEW.md, docs/GITHUB_ENVIRONMENTS.md, docs/manual_infrastucture_setup.md, docs/SYSTEM_STATUS_MONITORING.md, API docs, deployment docs, and docs/PROD_READINESS_WEEKLY_REVIEW.md.
+2. Inspect GitHub issues and Project 5/6 status for production blockers. Include at least these known issue groups if still open: payment #363/#362, invoicing #364, user data encryption #384/#182, audit trail #206, disaster recovery #385, AI/model validation #297/#298/#301/#303, admin web #378, model-routing production validation #387, test/pre-prod environment #388, consent/DSAR/retention/transparency #389, commercial launch package #390, and Slovak legal-service positioning #391.
+3. Check whether main contains the model-router work and whether prod/test deployment evidence exists.
+4. For Business and Legal items whose requirements may have changed, use official/current sources where possible and cite links in the report.
+5. Group all findings into Technical, Business, Legal. For each blocker include status, linked issue, owner action needed, and next concrete step.
+6. If a missing production blocker has no equivalent open issue, create one GitHub issue in mmaideveloper/aijurisdictionagents, add it to Project 5 with status Ready when possible, and include it in the report. Do not create duplicates; search open and closed issues first by title and topic.
+7. Keep GDPR and EU AI Act baseline explicit: privacy by design, data minimization, consent, retention/deletion, transparency, traceable logging, and human oversight for legal-risk outputs.
+8. Keep the report concise and implementation-oriented. End with a prioritized Top 5 next actions for the week.
+
+If GitHub Project V2 access is blocked, report the exact missing scope/command needed, for example `gh auth refresh -s read:project -s project`, and still produce the readiness report from accessible repo and issue data.
+"""
+status = "ACTIVE"
+rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0"
+model = "gpt-5.4"
+reasoning_effort = "medium"
+execution_environment = "worktree"
+cwds = ["__REPO_ROOT__"]
+created_at = 1782453600000
+updated_at = 1782453600000
