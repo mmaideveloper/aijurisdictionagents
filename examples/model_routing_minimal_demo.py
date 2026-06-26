@@ -33,9 +33,10 @@ def main() -> None:
             is_external=True,
         )
         external_profile = store.upsert_ai_model_profile(
+            model_profile_id="azure_foundry_gpt_4o_mini",
             provider_id=external_provider.provider_id,
-            model_code="gpt-4.1",
-            deployment_name="jurisdigta-gpt-4-1",
+            model_code="gpt-4o-mini",
+            deployment_name="gpt-4o-mini",
             input_price_per_1m=2.0,
             output_price_per_1m=8.0,
             billing_currency="USD",

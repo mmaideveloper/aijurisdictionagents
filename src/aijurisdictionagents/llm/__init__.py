@@ -24,22 +24,14 @@ from .embeddings import (
 
 
 def get_llm_client() -> LLMClient:
-    provider = os.getenv("LLM_PROVIDER", "azurefoundry").lower()
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
     if provider == "mock":
         return MockLLMClient()
-    if provider == "openai":
-        openai_client_type = __getattr__("OpenAIClient")
-        load_openai_config = __getattr__("load_openai_config_from_env")
-        config = load_openai_config()
-        return openai_client_type(config)
-    if provider in {"azurefoundry", "azure"}:
-        azure_foundry_client_type = __getattr__("AzureFoundryClient")
-        load_azure_foundry_config = __getattr__("load_azure_foundry_config_from_env")
-        config = load_azure_foundry_config()
-        return azure_foundry_client_type(config)
 
     raise ValueError(
-        f"Unsupported LLM_PROVIDER '{provider}'. Implement a client in aijurisdictionagents.llm."
+        "Direct chat LLM setup from LLM_PROVIDER/.env is disabled. "
+        "Use database model routing via get_routed_llm_client(), or set LLM_PROVIDER=mock "
+        "only for deterministic offline tests."
     )
 
 

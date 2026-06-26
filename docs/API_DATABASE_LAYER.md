@@ -171,8 +171,9 @@ python examples/subscription_minimal_demo.py
 
 The API database now includes a policy-driven model routing foundation:
 
-- `ai_model_providers`: local or external provider metadata such as `local_ollama`, `azure_foundry`, `openai`, base URL, region, data zone, and health URL. Store credentials in environment variables or secret stores, not in this table.
-- `ai_model_profiles`: provider model/deployment metadata plus context window and price-per-1M-token metadata.
+- `ai_model_providers`: local or external provider metadata such as `local_ollama`, `azure_foundry`, `openai`, base URL, region, data zone, API version, and health URL.
+- `ai_model_profiles`: provider model/deployment metadata plus context window, default-free-plan marker, and price-per-1M-token metadata.
+- `ai_model_credentials`: encrypted provider secrets such as API keys or Azure AD tokens. The runtime decrypts these only when a selected route needs them; admin endpoints redact secret values unless an authorized admin explicitly requests reveal.
 - `ai_model_groups` and `ai_model_group_users`: optional assignment of users to model groups for staged rollout or premium routing.
 - `ai_task_route_policies`: task type plus plan policy with preferred local/external profile, external acknowledgement, EU data-zone requirement, and local fallback flags.
 - `ai_model_usage_ledger`: per-request token and estimated cost ledger by user, subscription, case, task type, provider, model, route, and time. Case audit fields also store `session_id`, `question_id`, bounded `question_preview`, `question_sha256`, `answer_id`, and minimal audit metadata so JurisDigta can show which model answered which question without duplicating full legal prompts outside the case history.
@@ -181,6 +182,13 @@ The API database now includes a policy-driven model routing foundation:
 Admin management is exposed through `GET/POST /v1/admin/ai-models...` and the React route `/app/admin/ai-models`.
 Production admin access is server-authorized from `cf-access-authenticated-user-email` and `JURISDIGTA_ADMIN_EMAILS`; local development may send `x-jurisdigta-admin-user-id` from loopback only.
 Keep external-provider API keys in backend secrets and store only provider references, base URLs, deployment names, data-zone flags, prices, and health URLs in these tables.
+
+Chat model provider, model, deployment, and credentials are resolved from these database tables, not from `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, or `AZURE_OPENAI_DEPLOYMENT` environment settings. The only supported `LLM_PROVIDER` chat override is explicit `mock` for deterministic offline tests.
+
+Seeded defaults:
+
+- Free/default users route to `local_ollama_default`, provider `local_ollama`, model `qwen3.6:27b`, base URL `http://127.0.0.1:11434/v1`.
+- `case`, `basic`, `premium`, and `unlimited` plan routes prefer `azure_foundry_gpt_4o_mini`, provider `azure_foundry`, model/deployment `gpt-4o-mini`, EU data-zone capable. Operators must set the Azure provider endpoint and encrypted credential before paid traffic can use this route.
 
 Authorized case users can inspect this trail through:
 
@@ -198,5 +206,6 @@ PYTHONPATH=src python scripts/databases/apply_api_db_schema.py
 Minimal runnable example:
 
 ```bash
+python examples/minimal_demo.py
 python examples/model_routing_minimal_demo.py
 ```

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.security import require_api_key
 from aijurisdictionagents.api_db import (
     AIModelAdminAuditEvent,
+    AIModelCredential,
     AIModelGroup,
     AIModelGroupMembership,
     AIModelProfile,
@@ -80,6 +81,7 @@ class AIModelProfileResponse(BaseModel):
     effective_from: str | None
     effective_to: str | None
     eu_data_zone_capable: bool
+    is_default_for_free: bool
     enabled: bool
     created_at: str
     updated_at: str
@@ -97,8 +99,36 @@ class AIModelProfileUpsertRequest(BaseModel):
     effective_from: str | None = None
     effective_to: str | None = None
     eu_data_zone_capable: bool = False
+    is_default_for_free: bool = False
     enabled: bool = True
     model_profile_id: str | None = None
+    reason: str = ""
+
+
+class AIModelCredentialResponse(BaseModel):
+    credential_id: str
+    provider_id: str
+    credential_name: str
+    secret_type: str
+    secret_preview: str
+    secret_value: str | None
+    enabled: bool
+    created_at: str
+    updated_at: str
+    last_revealed_at: str | None
+
+
+class AIModelCredentialUpsertRequest(BaseModel):
+    credential_name: str = "default"
+    secret_type: str = "api_key"
+    secret_value: str = Field(min_length=1)
+    enabled: bool = True
+    credential_id: str | None = None
+    reason: str = ""
+
+
+class AIModelCredentialPatchRequest(BaseModel):
+    enabled: bool
     reason: str = ""
 
 
@@ -189,6 +219,7 @@ class AIModelAdminDashboardResponse(BaseModel):
     admin: AdminContext
     providers: list[AIModelProviderResponse]
     profiles: list[AIModelProfileResponse]
+    credentials: list[AIModelCredentialResponse]
     policies: list[AITaskRoutePolicyResponse]
     groups: list[AIModelGroupResponse]
     memberships: list[AIModelGroupMembershipResponse]
@@ -210,8 +241,12 @@ def require_ai_model_admin(
     store: ApiDatabaseStore = Depends(get_admin_store),
     _: None = Depends(require_api_key),
     cf_access_email: str | None = Header(default=None, alias="cf-access-authenticated-user-email"),
+    admin_api_key: str | None = Header(default=None, alias="x-admin-api-key"),
     local_admin_user_id: str | None = Header(default=None, alias="x-jurisdigta-admin-user-id"),
 ) -> AdminContext:
+    if _legacy_admin_key_valid(admin_api_key):
+        return AdminContext(user_id="", email="legacy-admin-key")
+
     admin_emails = _configured_admin_emails()
     candidate_email = (cf_access_email or "").strip().lower()
     candidate_user_id = ""
@@ -238,6 +273,7 @@ def get_ai_model_admin_dashboard(
         admin=admin,
         providers=[_provider_response(item) for item in store.list_ai_model_providers()],
         profiles=[_profile_response(item) for item in store.list_ai_model_profiles()],
+        credentials=[_credential_response(item) for item in store.list_ai_model_credentials(reveal=False)],
         policies=[_policy_response(item) for item in store.list_ai_task_route_policies()],
         groups=[_group_response(item) for item in store.list_ai_model_groups()],
         memberships=[_membership_response(item) for item in store.list_ai_model_group_users()],
@@ -318,6 +354,7 @@ def upsert_ai_model_profile(
             effective_from=payload.effective_from,
             effective_to=payload.effective_to,
             eu_data_zone_capable=payload.eu_data_zone_capable,
+            is_default_for_free=payload.is_default_for_free,
             enabled=payload.enabled,
             model_profile_id=payload.model_profile_id,
         )
@@ -337,6 +374,83 @@ def upsert_ai_model_profile(
         reason=payload.reason,
     )
     return _profile_response(profile)
+
+
+@router.get("/credentials", response_model=list[AIModelCredentialResponse])
+def list_ai_model_credentials(
+    reveal: bool = False,
+    _: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> list[AIModelCredentialResponse]:
+    return [_credential_response(item) for item in store.list_ai_model_credentials(reveal=reveal)]
+
+
+@router.post("/providers/{provider_id}/credentials", response_model=AIModelCredentialResponse)
+def upsert_ai_model_credential(
+    provider_id: str,
+    payload: AIModelCredentialUpsertRequest,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AIModelCredentialResponse:
+    existing = {item.credential_id: item for item in store.list_ai_model_credentials()}.get(
+        payload.credential_id or f"{provider_id}:{payload.secret_type.strip().lower()}:{payload.credential_name.strip().lower()}"
+    )
+    try:
+        credential = store.upsert_ai_model_credential(
+            provider_id=provider_id,
+            credential_name=payload.credential_name,
+            secret_type=payload.secret_type,
+            secret_value=payload.secret_value,
+            enabled=payload.enabled,
+            credential_id=payload.credential_id,
+        )
+    except Exception as exc:
+        if "foreign key" not in str(exc).lower():
+            raise
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provider does not exist") from exc
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="upsert",
+        entity_type="ai_model_credential",
+        entity_id=credential.credential_id,
+        old=existing,
+        new=credential,
+        reason=payload.reason,
+    )
+    return _credential_response(credential)
+
+
+@router.patch("/credentials/{credential_id}", response_model=AIModelCredentialResponse)
+def patch_ai_model_credential(
+    credential_id: str,
+    payload: AIModelCredentialPatchRequest,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AIModelCredentialResponse:
+    existing = {item.credential_id: item for item in store.list_ai_model_credentials()}.get(credential_id)
+    try:
+        credential = store.set_ai_model_credential_enabled(
+            credential_id=credential_id,
+            enabled=payload.enabled,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credential not found") from exc
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="update",
+        entity_type="ai_model_credential",
+        entity_id=credential.credential_id,
+        old=existing,
+        new=credential,
+        reason=payload.reason,
+    )
+    return _credential_response(credential)
 
 
 @router.post("/policies", response_model=AITaskRoutePolicyResponse)
@@ -504,6 +618,11 @@ def _is_local_request(request: Request) -> bool:
     return host in {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
+def _legacy_admin_key_valid(value: str | None) -> bool:
+    expected = os.getenv("JURISDIGTA_ADMIN_API_KEY", "").strip() or os.getenv("ADMIN_API_KEY", "").strip()
+    return bool(expected and value and value.strip() == expected)
+
+
 def _record_audit(
     *,
     store: ApiDatabaseStore,
@@ -536,7 +655,15 @@ def _summary(value: Any) -> dict[str, Any]:
     return {
         key: item
         for key, item in data.items()
-        if key not in {"mcp_api_key_hash", "password_hash", "question_preview", "audit_metadata"}
+        if key
+        not in {
+            "mcp_api_key_hash",
+            "password_hash",
+            "question_preview",
+            "audit_metadata",
+            "protected_secret",
+            "secret_value",
+        }
     }
 
 
@@ -546,6 +673,21 @@ def _provider_response(item: AIModelProvider) -> AIModelProviderResponse:
 
 def _profile_response(item: AIModelProfile) -> AIModelProfileResponse:
     return AIModelProfileResponse(**asdict(item))
+
+
+def _credential_response(item: AIModelCredential) -> AIModelCredentialResponse:
+    return AIModelCredentialResponse(
+        credential_id=item.credential_id,
+        provider_id=item.provider_id,
+        credential_name=item.credential_name,
+        secret_type=item.secret_type,
+        secret_preview=item.secret_preview,
+        secret_value=item.secret_value,
+        enabled=item.enabled,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        last_revealed_at=item.last_revealed_at,
+    )
 
 
 def _policy_response(item: AITaskRoutePolicy) -> AITaskRoutePolicyResponse:

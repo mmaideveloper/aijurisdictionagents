@@ -11,7 +11,7 @@ python examples/minimal_demo.py
 ## Main CLI entrypoint
 
 ```bash
-python -m aijurisdictionagents --country SK --instruction "We believe the contract was breached due to late delivery."
+LLM_PROVIDER=mock python -m aijurisdictionagents --country SK --instruction "We believe the contract was breached due to late delivery."
 ```
 
 ## Discussion types
@@ -105,22 +105,17 @@ Set logging verbosity:
 python -m aijurisdictionagents --country SK --log-level INFO --discussion-type advice --instruction "Run with concise logs."
 ```
 
-## Provider setup examples
+## Model setup
 
-OpenAI:
+Production chat/API model setup is owned by the API database model-routing tables:
 
-```powershell
-$env:LLM_PROVIDER="openai"
-$env:OPENAI_KEY="..."
-python -m aijurisdictionagents --country SK --discussion-type advice --instruction "Provide legal guidance."
-```
+- Free/default traffic is seeded to `local_ollama_default` with exact model `qwen3.6:27b`.
+- Paid case traffic is seeded to Azure Foundry `azure_foundry_gpt_4o_mini` with exact model/deployment `gpt-4o-mini`.
+- Provider endpoints, profiles, and encrypted credentials are managed through the API database/admin model-routing endpoints, not provider/model `.env` variables.
 
-Azure Foundry:
+For deterministic offline CLI debugging only:
 
 ```powershell
-$env:LLM_PROVIDER="azurefoundry"
-$env:AZURE_OPENAI_ENDPOINT="https://YOUR_RESOURCE_NAME.openai.azure.com/"
-$env:AZURE_OPENAI_DEPLOYMENT="your_deployment_name"
-$env:AZURE_OPENAI_API_KEY="..."
-python -m aijurisdictionagents --country SK --discussion-type court --instruction "Run court discussion."
+$env:LLM_PROVIDER="mock"
+python -m aijurisdictionagents --country SK --discussion-type advice --instruction "Run offline demo."
 ```

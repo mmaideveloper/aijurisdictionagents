@@ -18,12 +18,17 @@ class OpenAIConfig:
     api_key: str
     model: str = "gpt-4o-mini"
     temperature: float = 0.2
+    base_url: str | None = None
+    provider_label: str = "openai"
 
 
 class OpenAIClient:
     def __init__(self, config: OpenAIConfig) -> None:
         self._config = config
-        self._client = OpenAI(api_key=config.api_key)
+        if config.base_url:
+            self._client = OpenAI(api_key=config.api_key, base_url=config.base_url.rstrip("/"))
+        else:
+            self._client = OpenAI(api_key=config.api_key)
 
     def complete(
         self,
@@ -53,7 +58,7 @@ class OpenAIClient:
 
         log_llm_request(
             logger,
-            provider="openai",
+            provider=self._config.provider_label,
             agent_name=agent_name,
             request_payload=messages,
         )
@@ -66,7 +71,7 @@ class OpenAIClient:
         normalized = (content or "").strip()
         log_llm_response(
             logger,
-            provider="openai",
+            provider=self._config.provider_label,
             agent_name=agent_name,
             raw_response=normalized,
         )

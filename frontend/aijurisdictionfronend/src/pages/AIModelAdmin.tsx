@@ -3,8 +3,10 @@ import { FaPlus, FaSyncAlt, FaUserPlus } from "react-icons/fa";
 import {
   AIModelAdminDashboard,
   fetchAIModelAdminDashboard,
+  fetchAIModelCredentials,
   upsertAIModelProvider,
   upsertAIModelProfile,
+  upsertAIModelCredential,
   upsertAIModelGroup,
   addAIModelGroupMember,
   upsertAIModelRoutePolicy
@@ -35,6 +37,16 @@ const emptyProfile = {
   output_price_per_1m: 0,
   billing_currency: "EUR",
   eu_data_zone_capable: true,
+  is_default_for_free: false,
+  enabled: true,
+  reason: ""
+};
+
+const emptyCredential = {
+  provider_id: "",
+  credential_name: "default",
+  secret_type: "api_key",
+  secret_value: "",
   enabled: true,
   reason: ""
 };
@@ -70,6 +82,7 @@ const AIModelAdmin: React.FC = () => {
   const [dashboard, setDashboard] = React.useState<AIModelAdminDashboard | null>(null);
   const [providerForm, setProviderForm] = React.useState(emptyProvider);
   const [profileForm, setProfileForm] = React.useState(emptyProfile);
+  const [credentialForm, setCredentialForm] = React.useState(emptyCredential);
   const [groupForm, setGroupForm] = React.useState(emptyGroup);
   const [policyForm, setPolicyForm] = React.useState(emptyPolicy);
   const [selectedGroupId, setSelectedGroupId] = React.useState("");
@@ -88,6 +101,10 @@ const AIModelAdmin: React.FC = () => {
       const firstProvider = nextDashboard.providers[0];
       const localProfile = nextDashboard.profiles.find((profile) => profile.model_profile_id === "local_ollama_default");
       setProfileForm((current) => ({
+        ...current,
+        provider_id: current.provider_id || firstProvider?.provider_id || ""
+      }));
+      setCredentialForm((current) => ({
         ...current,
         provider_id: current.provider_id || firstProvider?.provider_id || ""
       }));
@@ -115,6 +132,17 @@ const AIModelAdmin: React.FC = () => {
       await reload();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : t("adminSaveFailed"));
+    }
+  };
+
+  const revealCredentials = async () => {
+    if (!dashboard || !adminUserId) return;
+    setError("");
+    try {
+      const credentials = await fetchAIModelCredentials(adminUserId, true);
+      setDashboard({ ...dashboard, credentials });
+    } catch (revealError) {
+      setError(revealError instanceof Error ? revealError.message : t("adminCredentialRevealFailed"));
     }
   };
 
@@ -248,6 +276,10 @@ const AIModelAdmin: React.FC = () => {
               {t("adminEuDataZone")}
             </label>
             <label>
+              <input type="checkbox" checked={profileForm.is_default_for_free} onChange={(event) => setProfileForm({ ...profileForm, is_default_for_free: event.target.checked })} />
+              {t("adminDefaultFreeModel")}
+            </label>
+            <label>
               <input type="checkbox" checked={profileForm.enabled} onChange={(event) => setProfileForm({ ...profileForm, enabled: event.target.checked })} />
               {t("adminEnabled")}
             </label>
@@ -255,6 +287,52 @@ const AIModelAdmin: React.FC = () => {
           <button className="primary-button" type="submit">
             <FaPlus aria-hidden="true" />
             {t("adminSaveProfile")}
+          </button>
+        </form>
+
+        <form
+          className="admin-panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void runAction(() => upsertAIModelCredential(adminUserId, credentialForm), t("adminSaved"));
+          }}
+        >
+          <h2>{t("adminCredentialsTitle")}</h2>
+          <label>
+            {t("adminProvider")}
+            <select value={credentialForm.provider_id} onChange={(event) => setCredentialForm({ ...credentialForm, provider_id: event.target.value })}>
+              <option value="">{t("adminSelect")}</option>
+              {dashboard?.providers.map((provider) => (
+                <option key={provider.provider_id} value={provider.provider_id}>
+                  {provider.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t("adminCredentialName")}
+            <input value={credentialForm.credential_name} onChange={(event) => setCredentialForm({ ...credentialForm, credential_name: event.target.value })} />
+          </label>
+          <label>
+            {t("adminCredentialType")}
+            <select value={credentialForm.secret_type} onChange={(event) => setCredentialForm({ ...credentialForm, secret_type: event.target.value })}>
+              <option value="api_key">api_key</option>
+              <option value="azure_ad_token">azure_ad_token</option>
+            </select>
+          </label>
+          <label>
+            {t("adminCredentialValue")}
+            <input type="password" value={credentialForm.secret_value} onChange={(event) => setCredentialForm({ ...credentialForm, secret_value: event.target.value })} />
+          </label>
+          <div className="admin-toggle-row">
+            <label>
+              <input type="checkbox" checked={credentialForm.enabled} onChange={(event) => setCredentialForm({ ...credentialForm, enabled: event.target.checked })} />
+              {t("adminEnabled")}
+            </label>
+          </div>
+          <button className="primary-button" type="submit">
+            <FaPlus aria-hidden="true" />
+            {t("adminSaveCredential")}
           </button>
         </form>
 
@@ -417,6 +495,39 @@ const AIModelAdmin: React.FC = () => {
                     {profile.input_price_per_1m}/{profile.cached_input_price_per_1m}/{profile.output_price_per_1m} {profile.billing_currency}
                   </td>
                   <td>{profile.enabled ? t("adminEnabled") : t("adminDisabled")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="admin-table-section">
+        <div className="admin-section-heading">
+          <h2>{t("adminCredentialsTitle")}</h2>
+          <button className="secondary-button" type="button" onClick={() => void revealCredentials()}>
+            {t("adminRevealCredentials")}
+          </button>
+        </div>
+        <div className="admin-table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{t("adminProvider")}</th>
+                <th>{t("adminCredentialName")}</th>
+                <th>{t("adminCredentialType")}</th>
+                <th>{t("adminCredentialPreview")}</th>
+                <th>{t("adminStatus")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dashboard?.credentials.map((credential) => (
+                <tr key={credential.credential_id}>
+                  <td>{credential.provider_id}</td>
+                  <td>{credential.credential_name}</td>
+                  <td>{credential.secret_type}</td>
+                  <td>{credential.secret_value ?? credential.secret_preview}</td>
+                  <td>{credential.enabled ? t("adminEnabled") : t("adminDisabled")}</td>
                 </tr>
               ))}
             </tbody>

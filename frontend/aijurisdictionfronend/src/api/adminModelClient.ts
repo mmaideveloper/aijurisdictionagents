@@ -30,9 +30,23 @@ export interface AIModelProfile {
   effective_from: string | null;
   effective_to: string | null;
   eu_data_zone_capable: boolean;
+  is_default_for_free: boolean;
   enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface AIModelCredential {
+  credential_id: string;
+  provider_id: string;
+  credential_name: string;
+  secret_type: string;
+  secret_preview: string;
+  secret_value: string | null;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_revealed_at: string | null;
 }
 
 export interface AIModelRoutePolicy {
@@ -96,6 +110,7 @@ export interface AIModelAdminAuditEvent {
 export interface AIModelAdminDashboard {
   providers: AIModelProvider[];
   profiles: AIModelProfile[];
+  credentials: AIModelCredential[];
   policies: AIModelRoutePolicy[];
   groups: AIModelGroup[];
   memberships: AIModelGroupMembership[];
@@ -129,6 +144,16 @@ export interface ProfileUpsertInput {
   output_price_per_1m: number;
   billing_currency: string;
   eu_data_zone_capable: boolean;
+  is_default_for_free: boolean;
+  enabled: boolean;
+  reason: string;
+}
+
+export interface CredentialUpsertInput {
+  provider_id: string;
+  credential_name: string;
+  secret_type: string;
+  secret_value: string;
   enabled: boolean;
   reason: string;
 }
@@ -192,6 +217,14 @@ const adminRequest = async <T>(path: string, adminUserId: string, init?: Request
 export const fetchAIModelAdminDashboard = (adminUserId: string): Promise<AIModelAdminDashboard> =>
   adminRequest<AIModelAdminDashboard>("/v1/admin/ai-models", adminUserId, { method: "GET" });
 
+export const fetchAIModelCredentials = (
+  adminUserId: string,
+  reveal: boolean
+): Promise<AIModelCredential[]> =>
+  adminRequest<AIModelCredential[]>(`/v1/admin/ai-models/credentials?reveal=${reveal ? "true" : "false"}`, adminUserId, {
+    method: "GET"
+  });
+
 export const upsertAIModelProvider = (
   adminUserId: string,
   input: ProviderUpsertInput
@@ -208,6 +241,21 @@ export const upsertAIModelProfile = (
   adminRequest<AIModelProfile>("/v1/admin/ai-models/profiles", adminUserId, {
     method: "POST",
     body: JSON.stringify(input)
+  });
+
+export const upsertAIModelCredential = (
+  adminUserId: string,
+  input: CredentialUpsertInput
+): Promise<AIModelCredential> =>
+  adminRequest<AIModelCredential>(`/v1/admin/ai-models/providers/${input.provider_id}/credentials`, adminUserId, {
+    method: "POST",
+    body: JSON.stringify({
+      credential_name: input.credential_name,
+      secret_type: input.secret_type,
+      secret_value: input.secret_value,
+      enabled: input.enabled,
+      reason: input.reason
+    })
   });
 
 export const upsertAIModelGroup = (adminUserId: string, input: GroupUpsertInput): Promise<AIModelGroup> =>

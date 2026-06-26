@@ -56,6 +56,11 @@ from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument, User
 from aijurisdictionagents.llm import get_embedding_client
+from aijurisdictionagents.llm.routing import (
+    ModelRouteUnavailable,
+    RoutedLLMClient,
+    get_routed_llm_client,
+)
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
 from services.document_processor.runtime import (
@@ -200,13 +205,17 @@ def _record_case_ai_model_audit(
     task_type: str,
     source: str,
     model_used: bool,
+    route: RoutedLLMClient | None = None,
 ) -> None:
     case_id = (session.case_id or "").strip()
     if not case_id:
         return
     question_text = _user_visible_text(question.content)
     answer_text = _user_visible_text(answer.content)
-    provider, model, route_type = _resolve_audit_model_identity(model_used=model_used)
+    provider, model, route_type, subscription_id, plan_code, fallback_reason = _resolve_audit_model_identity(
+        model_used=model_used,
+        route=route,
+    )
     try:
         store = _get_store()
         user_id = str(session.user_id) if session.user_id else ""
@@ -223,6 +232,8 @@ def _record_case_ai_model_audit(
             output_tokens=_estimate_audit_tokens(answer_text),
             case_id=case_id,
             user_id=user_id,
+            subscription_id=subscription_id,
+            plan_code=plan_code,
             task_type=task_type,
             session_id=str(session.id),
             question_id=str(question.id),
@@ -235,9 +246,17 @@ def _record_case_ai_model_audit(
                 "source": source,
                 "agent_name": answer.agent_name or "",
                 "model_used": model_used,
+                "model_profile_id": route.route.model_profile.model_profile_id
+                if route and route.route.model_profile
+                else "",
+                "provider_code": route.route.provider.provider_code
+                if route and route.route.provider
+                else "",
+                "route_reason": route.route.reason if route else "",
                 "token_counting": "estimated_characters_div_4",
                 "full_question_source": "case_history",
             },
+            fallback_reason=fallback_reason,
         )
     except Exception:
         _LOGGER.warning(
@@ -247,28 +266,41 @@ def _record_case_ai_model_audit(
         )
 
 
-def _resolve_audit_model_identity(*, model_used: bool) -> tuple[str, str, str]:
+def _resolve_audit_model_identity(
+    *,
+    model_used: bool,
+    route: RoutedLLMClient | None = None,
+) -> tuple[str, str, str, str, str, str]:
     if not model_used:
-        return "jurisdigta_rules", "deterministic_case_logic", "deterministic"
-    provider = os.getenv("LLM_PROVIDER", "azurefoundry").strip().lower()
-    if provider in {"", "azure", "azureopenai"}:
-        provider = "azurefoundry"
-    if provider == "azurefoundry":
-        model = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip() or "azurefoundry"
-        return provider, model, "external"
-    if provider == "openai":
-        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
-        return provider, model, "external"
-    if provider in {"ollama", "local", "local_ollama"}:
-        model = (
-            os.getenv("LOCAL_LLM_MODEL", "").strip()
-            or os.getenv("OLLAMA_MODEL", "").strip()
-            or "local"
+        return "jurisdigta_rules", "deterministic_case_logic", "deterministic", "", "", ""
+    if route is None:
+        return "unresolved_model_route", "unresolved_model_route", "unresolved", "", "", "missing_route_context"
+    return (
+        route.provider,
+        route.model,
+        route.route_type,
+        route.subscription_id,
+        route.plan_code,
+        route.fallback_reason,
+    )
+
+
+def _resolve_session_llm_route(*, session: Session, task_type: str) -> RoutedLLMClient:
+    store = _get_store()
+    user_id = str(session.user_id) if session.user_id else ""
+    if not user_id and session.case_id:
+        try:
+            user_id = store.get_case(case_id=session.case_id).user_id
+        except KeyError:
+            user_id = ""
+    try:
+        return get_routed_llm_client(
+            store=store,
+            user_id=user_id,
+            task_type=task_type,
         )
-        return "local_ollama", model, "local"
-    if provider == "mock":
-        return provider, "mock", "mock"
-    return provider or "unknown", provider or "unknown", "configured"
+    except ModelRouteUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def _estimate_audit_tokens(text: str) -> int:
@@ -1332,7 +1364,7 @@ def _run_direct_lawyer_turn(
     supplemental_documents: list[CoreDocument] | None = None,
     processing_event_callback: Callable[[dict[str, object]], None] | None = None,
     user_message_callback: Callable[[Message], None] | None = None,
-) -> tuple[Message, Message, str, list[dict[str, object]]]:
+) -> tuple[Message, Message, str, list[dict[str, object]], RoutedLLMClient | None]:
     persisted_user = _repository.add_message(
         Message(
             session_id=session_id,
@@ -1391,6 +1423,7 @@ def _run_direct_lawyer_turn(
             persisted_lawyer,
             _user_visible_text(persisted_lawyer.content),
             [],
+            None,
         )
 
     preparation = prepare_country_direct_reply(
@@ -1429,13 +1462,13 @@ def _run_direct_lawyer_turn(
             persisted_lawyer,
             _user_visible_text(persisted_lawyer.content),
             preparation.processing_events,
+            None,
         )
 
     from aijurisdictionagents.agents import create_lawyer_agent
-    from aijurisdictionagents.llm import get_llm_client
 
-    llm = get_llm_client()
-    lawyer = create_lawyer_agent(llm, session.country)
+    routed_llm = _resolve_session_llm_route(session=session, task_type="chat_reply")
+    lawyer = create_lawyer_agent(routed_llm.client, session.country)
     prompt_override = lawyer.system_prompt
     if session.language and session.language.strip():
         prompt_override = f"{lawyer.system_prompt}\nRespond in {session.language.strip()}."
@@ -1556,8 +1589,15 @@ def _run_direct_lawyer_turn(
         task_type="chat_reply",
         source="chat.direct_reply",
         model_used=True,
+        route=routed_llm,
     )
-    return persisted_user, persisted_lawyer, _user_visible_text(persisted_lawyer.content), preparation.processing_events
+    return (
+        persisted_user,
+        persisted_lawyer,
+        _user_visible_text(persisted_lawyer.content),
+        preparation.processing_events,
+        routed_llm,
+    )
 
 
 def _warn_if_flow_pack_missing(*, session_id: UUID, session: Session, request_text: str) -> None:
@@ -1628,10 +1668,12 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     if not content:
         raise HTTPException(status_code=400, detail="Reply content is required")
 
-    _persisted_user, persisted_lawyer, visible_lawyer_content, _processing_events = _run_direct_lawyer_turn(
-        session_id=session_id,
-        session=session,
-        content=content,
+    _persisted_user, persisted_lawyer, visible_lawyer_content, _processing_events, routed_llm = (
+        _run_direct_lawyer_turn(
+            session_id=session_id,
+            session=session,
+            content=content,
+        )
     )
     _persist_session_history_document_if_needed(session=session, session_id=session_id)
     _repository.set_result(
@@ -1641,6 +1683,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
             session=session,
             messages=_repository.list_messages(session_id),
             lawyer_message=visible_lawyer_content,
+            route=routed_llm,
         ),
     )
 
@@ -1692,14 +1735,15 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
     followup_prompts_seen = 0
     pdf_request_sent = False
     thank_you_sent = False
+    stream_route: RoutedLLMClient | None = None
 
     simulator = None
     simulator_documents = [CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content) for d in payload.documents]
     if payload.user_simulation_mode == "AIUserSimulatorAgent":
         from aijurisdictionagents.agents import AIUserSimulatorAgent
-        from aijurisdictionagents.llm import get_llm_client
 
-        simulator = AIUserSimulatorAgent(get_llm_client(), language=session.language)
+        simulator_route = _resolve_session_llm_route(session=session, task_type="user_simulator")
+        simulator = AIUserSimulatorAgent(simulator_route.client, language=session.language)
 
     def user_response_provider(_question: str, _timeout: float) -> str | None:
         nonlocal simulation_turn, last_simulator_reply
@@ -1825,6 +1869,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 task_type="discussion_stream",
                 source="chat.stream",
                 model_used=True,
+                route=stream_route,
             )
             last_audit_user_message = None
         event_queue.put(("message", _message_payload(persisted)))
@@ -1855,6 +1900,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
             )
 
     def worker() -> None:
+        nonlocal stream_route
         try:
             docs = [
                 CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content)
@@ -1866,6 +1912,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                     query=payload.instruction,
                 )
                 docs.extend(case_documents)
+            stream_route = _resolve_session_llm_route(session=session, task_type="discussion_stream")
             result = run_orchestration(
                 session=session,
                 instruction=payload.instruction,
@@ -1874,6 +1921,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 max_discussion_minutes=payload.max_discussion_minutes,
                 user_response_provider=user_response_provider,
                 message_callback=message_callback,
+                llm_client=stream_route.client,
             )
             persisted_messages = _repository.list_messages(session_id)
             metadata = build_session_result_metadata(
@@ -1881,6 +1929,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 messages=persisted_messages,
                 final_recommendation=result.final_recommendation,
                 base_metadata={"message_count": len(result.messages), "mode": "discussion_stream"},
+                routed_model_name=stream_route.model if stream_route is not None else None,
             )
             session_result = SessionResult(
                 final_recommendation=result.final_recommendation,
@@ -2029,13 +2078,15 @@ def _stream_read_user_session(
                 return
             if session.state == SessionState.COMPLETED:
                 _repository.reactivate_session(session_id)
-            _persisted_user, persisted_lawyer, visible_lawyer_content, _processing_events = _run_direct_lawyer_turn(
-                session_id=session_id,
-                session=session,
-                content=payload.instruction,
-                supplemental_documents=inline_documents,
-                processing_event_callback=processing_event_callback,
-                user_message_callback=user_message_callback,
+            _persisted_user, persisted_lawyer, visible_lawyer_content, _processing_events, routed_llm = (
+                _run_direct_lawyer_turn(
+                    session_id=session_id,
+                    session=session,
+                    content=payload.instruction,
+                    supplemental_documents=inline_documents,
+                    processing_event_callback=processing_event_callback,
+                    user_message_callback=user_message_callback,
+                )
             )
             current_messages = _repository.list_messages(session_id)
             if not current_messages:
@@ -2069,6 +2120,7 @@ def _stream_read_user_session(
                     session=session,
                     messages=current_messages,
                     lawyer_message=visible_lawyer_content,
+                    route=routed_llm,
                 )
                 _persist_session_history_document_if_needed(session=session, session_id=session_id)
                 _repository.set_result(session_id, session_result)
@@ -2784,6 +2836,7 @@ def _build_direct_reply_result(
     session: Session,
     messages: list[Message],
     lawyer_message: str,
+    route: RoutedLLMClient | None = None,
 ) -> SessionResult:
     visible_text = _user_visible_text(lawyer_message)
     document_requested = _document_generation_requested(messages)
@@ -2807,6 +2860,7 @@ def _build_direct_reply_result(
             "document_confirmed": document_confirmed,
             "document_ready": document_ready,
         },
+        routed_model_name=route.model if route is not None else None,
     )
     return SessionResult(
         final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
