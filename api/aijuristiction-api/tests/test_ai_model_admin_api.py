@@ -33,6 +33,52 @@ def test_admin_dashboard_requires_allowlisted_admin_user(tmp_path: Path, monkeyp
     assert response.status_code == 403
 
 
+def test_admin_dashboard_allows_global_admin_role(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "")
+    store = _store(tmp_path)
+    admin = store.create_user(email="role-admin@example.com", password="secret", full_name="Role Admin")
+    store.update_admin_user(user_id=admin.user_id, role="admin", is_enabled=True)
+    app.dependency_overrides[get_admin_store] = lambda: store
+    try:
+        response = TestClient(app).get(
+            "/v1/admin/ai-models",
+            headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["admin"]["email"] == "role-admin@example.com"
+
+
+def test_admin_can_update_user_role_and_enabled_status(tmp_path: Path, monkeypatch) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    target = store.create_user(email="target@example.com", password="secret", full_name="Target User")
+    app.dependency_overrides[get_admin_store] = lambda: store
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id}
+    try:
+        response = client.patch(
+            f"/v1/admin/users/{target.user_id}",
+            headers=headers,
+            json={"role": "admin", "is_enabled": False, "reason": "Test admin update."},
+        )
+        sign_in_response = client.post(
+            "/v1/users/sign-in",
+            headers=AUTH_HEADERS,
+            json={"email": "target@example.com", "password": "secret"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "admin"
+    assert response.json()["is_enabled"] is False
+    assert sign_in_response.status_code == 401
+
+
 def test_admin_can_manage_models_groups_and_audit_events(tmp_path: Path, monkeypatch) -> None:
     store = _store(tmp_path)
     admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
@@ -77,6 +123,18 @@ def test_admin_can_manage_models_groups_and_audit_events(tmp_path: Path, monkeyp
         assert profile_response.status_code == 200
         profile_id = profile_response.json()["model_profile_id"]
 
+        credential_response = client.post(
+            "/v1/admin/ai-models/credentials",
+            headers=headers,
+            json={
+                "provider_id": provider_id,
+                "display_name": "Azure Foundry API key",
+                "secret_ref": "AZURE_OPENAI_API_KEY",
+                "enabled": True,
+            },
+        )
+        assert credential_response.status_code == 200
+
         group_response = client.post(
             "/v1/admin/ai-models/groups",
             headers=headers,
@@ -118,6 +176,7 @@ def test_admin_can_manage_models_groups_and_audit_events(tmp_path: Path, monkeyp
     payload = dashboard_response.json()
     assert payload["admin"]["email"] == "admin@example.com"
     assert any(item["provider_code"] == "azure_foundry" for item in payload["providers"])
+    assert any(item["secret_ref"] == "AZURE_OPENAI_API_KEY" for item in payload["credentials"])
     assert any(item["model_group_id"] == group_id for item in payload["groups"])
     assert any(item["user_id"] == member.user_id for item in payload["memberships"])
     assert len(payload["audit_events"]) >= 4

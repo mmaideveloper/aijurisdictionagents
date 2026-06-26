@@ -35,6 +35,16 @@ export interface AIModelProfile {
   updated_at: string;
 }
 
+export interface AIModelCredential {
+  credential_id: string;
+  provider_id: string;
+  display_name: string;
+  secret_ref: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AIModelRoutePolicy {
   policy_id: string;
   task_type: string;
@@ -74,8 +84,11 @@ export interface AIModelGroupMembership {
 
 export interface AdminUserSummary {
   user_id: string;
+  phone_number: string | null;
   email: string;
   full_name: string;
+  role: string;
+  is_enabled: boolean;
   created_at: string | null;
 }
 
@@ -96,6 +109,7 @@ export interface AIModelAdminAuditEvent {
 export interface AIModelAdminDashboard {
   providers: AIModelProvider[];
   profiles: AIModelProfile[];
+  credentials: AIModelCredential[];
   policies: AIModelRoutePolicy[];
   groups: AIModelGroup[];
   memberships: AIModelGroupMembership[];
@@ -130,6 +144,20 @@ export interface ProfileUpsertInput {
   billing_currency: string;
   eu_data_zone_capable: boolean;
   enabled: boolean;
+  reason: string;
+}
+
+export interface CredentialUpsertInput {
+  provider_id: string;
+  display_name: string;
+  secret_ref: string;
+  enabled: boolean;
+  reason: string;
+}
+
+export interface UserAdminUpdateInput {
+  role: "admin" | "user";
+  is_enabled: boolean;
   reason: string;
 }
 
@@ -207,6 +235,25 @@ export const upsertAIModelProfile = (
 ): Promise<AIModelProfile> =>
   adminRequest<AIModelProfile>("/v1/admin/ai-models/profiles", adminUserId, {
     method: "POST",
+    body: JSON.stringify(input)
+  });
+
+export const upsertAIModelCredential = (
+  adminUserId: string,
+  input: CredentialUpsertInput
+): Promise<AIModelCredential> =>
+  adminRequest<AIModelCredential>("/v1/admin/ai-models/credentials", adminUserId, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+
+export const updateAdminUser = (
+  adminUserId: string,
+  userId: string,
+  input: UserAdminUpdateInput
+): Promise<AdminUserSummary> =>
+  adminRequest<AdminUserSummary>(`/v1/admin/users/${encodeURIComponent(userId)}`, adminUserId, {
+    method: "PATCH",
     body: JSON.stringify(input)
   });
 

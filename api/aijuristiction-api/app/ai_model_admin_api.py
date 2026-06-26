@@ -10,13 +10,14 @@ from pydantic import BaseModel, Field
 from app.security import require_api_key
 from aijurisdictionagents.api_db import (
     AIModelAdminAuditEvent,
+    AIModelCredential,
     AIModelGroup,
     AIModelGroupMembership,
     AIModelProfile,
     AIModelProvider,
     AITaskRoutePolicy,
+    AdminUser,
     ApiDatabaseStore,
-    User,
 )
 
 router = APIRouter(prefix="/v1/admin/ai-models", tags=["ai-model-admin"])
@@ -30,8 +31,11 @@ class AdminContext(BaseModel):
 
 class AdminUserSummaryResponse(BaseModel):
     user_id: str
+    phone_number: str | None = None
     email: str
     full_name: str
+    role: str
+    is_enabled: bool
     created_at: str | None = None
 
 
@@ -99,6 +103,25 @@ class AIModelProfileUpsertRequest(BaseModel):
     eu_data_zone_capable: bool = False
     enabled: bool = True
     model_profile_id: str | None = None
+    reason: str = ""
+
+
+class AIModelCredentialResponse(BaseModel):
+    credential_id: str
+    provider_id: str
+    display_name: str
+    secret_ref: str
+    enabled: bool
+    created_at: str
+    updated_at: str
+
+
+class AIModelCredentialUpsertRequest(BaseModel):
+    provider_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    secret_ref: str = Field(min_length=1)
+    enabled: bool = True
+    credential_id: str | None = None
     reason: str = ""
 
 
@@ -189,6 +212,7 @@ class AIModelAdminDashboardResponse(BaseModel):
     admin: AdminContext
     providers: list[AIModelProviderResponse]
     profiles: list[AIModelProfileResponse]
+    credentials: list[AIModelCredentialResponse]
     policies: list[AITaskRoutePolicyResponse]
     groups: list[AIModelGroupResponse]
     memberships: list[AIModelGroupMembershipResponse]
@@ -215,16 +239,20 @@ def require_ai_model_admin(
     admin_emails = _configured_admin_emails()
     candidate_email = (cf_access_email or "").strip().lower()
     candidate_user_id = ""
+    candidate_is_admin_role = False
     if candidate_email:
         user = store.find_user_by_email(email=candidate_email)
-        candidate_user_id = user.user_id if user is not None else ""
+        if user is not None:
+            candidate_user_id = user.user_id
+            candidate_is_admin_role = user.role == "admin"
     elif local_admin_user_id and _is_local_request(request):
         user = store.find_user_by_id(user_id=local_admin_user_id.strip())
         if user is not None:
             candidate_email = user.email.strip().lower()
             candidate_user_id = user.user_id
+            candidate_is_admin_role = user.role == "admin"
 
-    if not candidate_email or candidate_email not in admin_emails:
+    if not candidate_email or (candidate_email not in admin_emails and not candidate_is_admin_role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required")
     return AdminContext(user_id=candidate_user_id, email=candidate_email)
 
@@ -238,6 +266,7 @@ def get_ai_model_admin_dashboard(
         admin=admin,
         providers=[_provider_response(item) for item in store.list_ai_model_providers()],
         profiles=[_profile_response(item) for item in store.list_ai_model_profiles()],
+        credentials=[_credential_response(item) for item in store.list_ai_model_credentials()],
         policies=[_policy_response(item) for item in store.list_ai_task_route_policies()],
         groups=[_group_response(item) for item in store.list_ai_model_groups()],
         memberships=[_membership_response(item) for item in store.list_ai_model_group_users()],
@@ -337,6 +366,42 @@ def upsert_ai_model_profile(
         reason=payload.reason,
     )
     return _profile_response(profile)
+
+
+@router.post("/credentials", response_model=AIModelCredentialResponse)
+def upsert_ai_model_credential(
+    payload: AIModelCredentialUpsertRequest,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AIModelCredentialResponse:
+    existing = {item.credential_id: item for item in store.list_ai_model_credentials()}.get(
+        payload.credential_id or ""
+    )
+    try:
+        credential = store.upsert_ai_model_credential(
+            provider_id=payload.provider_id,
+            display_name=payload.display_name,
+            secret_ref=payload.secret_ref,
+            enabled=payload.enabled,
+            credential_id=payload.credential_id,
+        )
+    except Exception as exc:
+        if "foreign key" not in str(exc).lower():
+            raise
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provider does not exist") from exc
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="upsert",
+        entity_type="ai_model_credential",
+        entity_id=credential.credential_id,
+        old=existing,
+        new=credential,
+        reason=payload.reason,
+    )
+    return _credential_response(credential)
 
 
 @router.post("/policies", response_model=AITaskRoutePolicyResponse)
@@ -492,11 +557,10 @@ def remove_ai_model_group_member(
 
 def _configured_admin_emails() -> set[str]:
     raw = os.getenv("JURISDIGTA_ADMIN_EMAILS", "").strip()
-    if not raw or raw.lower() == "unknown-variable":
-        raw = os.getenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "").strip()
-    if not raw or raw.lower() == "unknown-variable":
-        raw = _DEFAULT_ADMIN_EMAIL
-    return {item.strip().lower() for item in raw.replace(";", ",").split(",") if item.strip()}
+    emails = {item.strip().lower() for item in raw.replace(";", ",").split(",") if item.strip()}
+    emails.discard("unknown-variable")
+    emails.add(_DEFAULT_ADMIN_EMAIL)
+    return emails
 
 
 def _is_local_request(request: Request) -> bool:
@@ -548,6 +612,10 @@ def _profile_response(item: AIModelProfile) -> AIModelProfileResponse:
     return AIModelProfileResponse(**asdict(item))
 
 
+def _credential_response(item: AIModelCredential) -> AIModelCredentialResponse:
+    return AIModelCredentialResponse(**asdict(item))
+
+
 def _policy_response(item: AITaskRoutePolicy) -> AITaskRoutePolicyResponse:
     return AITaskRoutePolicyResponse(**asdict(item))
 
@@ -564,10 +632,13 @@ def _audit_response(item: AIModelAdminAuditEvent) -> AIModelAdminAuditEventRespo
     return AIModelAdminAuditEventResponse(**asdict(item))
 
 
-def _user_summary_response(item: User) -> AdminUserSummaryResponse:
+def _user_summary_response(item: AdminUser) -> AdminUserSummaryResponse:
     return AdminUserSummaryResponse(
         user_id=item.user_id,
+        phone_number=item.phone_number,
         email=item.email,
         full_name=item.full_name,
+        role=item.role,
+        is_enabled=item.is_enabled,
         created_at=item.created_at,
     )

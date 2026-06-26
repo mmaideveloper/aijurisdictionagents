@@ -69,6 +69,8 @@ class UserProfileResponse(BaseModel):
     mfa_totp_enabled: bool = False
     mfa_totp_pending: bool = False
     mfa_totp_enabled_at: str | None = None
+    role: str = "user"
+    is_enabled: bool = True
 
 
 class SignUpRequest(BaseModel):
@@ -359,6 +361,8 @@ def sign_in_by_phone(
     user = store.find_user_by_phone(phone_number=payload.phone_number)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not user.is_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is disabled")
     return _to_user_profile_response(user)
 
 
@@ -371,6 +375,8 @@ def send_sign_in_code(
     user = store.find_user_by_phone(phone_number=payload.phone_number)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not user.is_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is disabled")
     code = generate_one_time_code()
     store.save_registration_code(
         email=_sign_in_code_key(phone_number=payload.phone_number, device_id=payload.device_id),
@@ -397,6 +403,8 @@ def verify_sign_in_code(
     user = store.find_user_by_phone(phone_number=payload.phone_number)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not user.is_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is disabled")
     if not _accepts_any_local_auth_code() and not store.verify_registration_code(
         email=_sign_in_code_key(phone_number=payload.phone_number, device_id=payload.device_id),
         code=payload.verification_code,
@@ -476,6 +484,8 @@ def send_mfa_email_code(
 ) -> dict[str, str]:
     user_id = _consume_and_reissue_mfa_challenge(store=store, token=payload.mfa_token)
     user = store.get_user(user_id=user_id)
+    if not user.is_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is disabled")
     code = generate_one_time_code()
     store.save_registration_code(email=_mfa_email_code_key(user_id=user.user_id), code=code)
     scheduler.enqueue(
@@ -500,6 +510,8 @@ def verify_mfa(
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired MFA challenge")
     user = store.get_user(user_id=user_id)
+    if not user.is_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is disabled")
     method = payload.method.strip().lower()
     if method == "email":
         if not _accepts_any_local_auth_code() and not store.verify_registration_code(
@@ -871,6 +883,8 @@ def _to_user_profile_response(user: User, store: ApiDatabaseStore | None = None)
         mfa_totp_enabled=bool(mfa_settings and mfa_settings.totp_enabled),
         mfa_totp_pending=bool(mfa_settings and mfa_settings.totp_pending),
         mfa_totp_enabled_at=mfa_settings.totp_enabled_at if mfa_settings else None,
+        role=user.role,
+        is_enabled=user.is_enabled,
     )
 
 

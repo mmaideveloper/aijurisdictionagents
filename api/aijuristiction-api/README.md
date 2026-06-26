@@ -96,9 +96,10 @@ Local API startup loads the repository root `.env` automatically. If you overrid
 
 AI model admin management:
 
-- `GET /v1/admin/ai-models` returns providers, model price profiles, route policies, user groups, group memberships, users eligible for assignment, and recent admin audit events.
-- `POST /v1/admin/ai-models/providers`, `/profiles`, `/groups`, `/groups/{model_group_id}/members`, and `/policies` update routine model-router settings without editing environment files.
-- Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header and the `JURISDIGTA_ADMIN_EMAILS` allowlist. Local loopback development may send `x-jurisdigta-admin-user-id`.
+- `GET /v1/admin/ai-models` returns providers, model price profiles, credential references, route policies, user groups, group memberships, users eligible for assignment, and recent admin audit events.
+- `POST /v1/admin/ai-models/providers`, `/profiles`, `/credentials`, `/groups`, `/groups/{model_group_id}/members`, and `/policies` update routine model-router settings without editing environment files.
+- `GET /v1/admin/users` and `PATCH /v1/admin/users/{user_id}` let admins review users, assign global `admin`/`user` role, and enable or disable accounts.
+- Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header plus either global `users.role=admin` or `JURISDIGTA_ADMIN_EMAILS`. Local loopback development may send `x-jurisdigta-admin-user-id`.
 - Admin responses never return provider secrets or legal case content. External provider changes are audited with actor, entity, old/new summaries, reason, and correlation id.
 
 Document processing mode:

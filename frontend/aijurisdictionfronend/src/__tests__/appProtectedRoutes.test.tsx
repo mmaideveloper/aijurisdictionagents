@@ -6,11 +6,12 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "../App";
 
-const authState = vi.hoisted(() => ({ isAuthenticated: false }));
+const authState = vi.hoisted(() => ({ isAuthenticated: false, role: "user" }));
 
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
-    isAuthenticated: authState.isAuthenticated
+    isAuthenticated: authState.isAuthenticated,
+    user: { role: authState.role }
   })
 }));
 
@@ -74,6 +75,10 @@ vi.mock("../pages/Profile", () => ({
   default: () => <div>Profile Page</div>
 }));
 
+vi.mock("../pages/AIModelAdmin", () => ({
+  default: () => <div>Admin Page</div>
+}));
+
 vi.mock("../pages/DocumentViewer", () => ({
   default: () => <div>Document Viewer</div>
 }));
@@ -97,6 +102,7 @@ vi.mock("../pages/NotFound", () => ({
 describe("App protected routes", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    authState.role = "user";
     cleanup();
   });
 
@@ -253,6 +259,33 @@ describe("App protected routes", () => {
     );
 
     expect(screen.getByText("Assistant Workspace")).toBeDefined();
+  });
+
+  it("redirects authenticated non-admin users from /app/admin", () => {
+    authState.isAuthenticated = true;
+    authState.role = "user";
+
+    render(
+      <MemoryRouter initialEntries={["/app/admin"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Home Page")).toBeDefined();
+    expect(screen.queryByText("Admin Page")).toBeNull();
+  });
+
+  it("allows global admin users to access /app/admin", () => {
+    authState.isAuthenticated = true;
+    authState.role = "admin";
+
+    render(
+      <MemoryRouter initialEntries={["/app/admin"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Admin Page")).toBeDefined();
   });
 
   it("keeps /app/chat as an authenticated assistant workspace alias", () => {

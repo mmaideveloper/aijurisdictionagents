@@ -25,7 +25,7 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
         return;
       }
       if (action === "admin") {
-        navigate("/app/admin/ai-models");
+        navigate("/app/admin");
         return;
       }
       signOut();
@@ -40,13 +40,13 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
         { key: "profile", label: t("navMyProfile") },
         { key: "cases", label: t("navMyCases") }
       ];
-      if (user?.email.toLowerCase() === "mmaideveloper@gmail.com") {
+      if (user?.role?.toLowerCase() === "admin") {
         options.push({ key: "admin", label: t("navAdmin") });
       }
       options.push({ key: "logout", label: t("navLogOut") });
       return options;
     },
-    [t, user?.email]
+    [t, user?.role]
   );
 
   const profileName = user?.name ?? t("commonUser");

@@ -1,6 +1,7 @@
 from .config import ApiDataConfig
 from .store import (
     AIModelAdminAuditEvent,
+    AIModelCredential,
     AIModelGroup,
     AIModelGroupMembership,
     AIModelProfile,
@@ -9,6 +10,7 @@ from .store import (
     AIModelUsageAuditEntry,
     AIModelUsageSummary,
     AITaskRoutePolicy,
+    AdminUser,
     ApiDatabaseStore,
     Case,
     CaseCommunication,
@@ -25,6 +27,7 @@ from .store import (
 
 __all__ = [
     "AIModelAdminAuditEvent",
+    "AIModelCredential",
     "AIModelGroup",
     "AIModelGroupMembership",
     "AIModelProfile",
@@ -33,6 +36,7 @@ __all__ = [
     "AIModelUsageAuditEntry",
     "AIModelUsageSummary",
     "AITaskRoutePolicy",
+    "AdminUser",
     "ApiDataConfig",
     "ApiDatabaseStore",
     "Case",

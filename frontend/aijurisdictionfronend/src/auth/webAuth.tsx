@@ -23,6 +23,7 @@ export interface AuthUser {
   dataProcessingConsentVersion?: string;
   mcpApiKeyExpiresAt?: string;
   role?: string;
+  isEnabled?: boolean;
   accountCreatedAt?: string;
   mfaTotpEnabled?: boolean;
   mfaTotpPending?: boolean;
@@ -51,6 +52,8 @@ interface ApiUserProfile {
   mfa_totp_enabled?: boolean;
   mfa_totp_pending?: boolean;
   mfa_totp_enabled_at?: string | null;
+  role?: string | null;
+  is_enabled?: boolean | null;
 }
 
 export interface MfaChallenge {
@@ -134,7 +137,8 @@ export function apiProfileToAuthUser(profile: ApiUserProfile): AuthUser {
     dataProcessingConsentVersion: profile.data_processing_consent_version?.trim() || undefined,
     mcpApiKeyExpiresAt: profile.mcp_api_key_expires_at?.trim() || undefined,
     accountCreatedAt: profile.created_at?.trim() || undefined,
-    role: "JurisDigta user"
+    role: profile.role?.trim().toLowerCase() || "user",
+    isEnabled: profile.is_enabled ?? true
   };
   if ("mfa_totp_enabled" in profile) {
     authUser.mfaTotpEnabled = Boolean(profile.mfa_totp_enabled);
