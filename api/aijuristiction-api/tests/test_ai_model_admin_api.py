@@ -124,12 +124,12 @@ def test_admin_can_manage_models_groups_and_audit_events(tmp_path: Path, monkeyp
         profile_id = profile_response.json()["model_profile_id"]
 
         credential_response = client.post(
-            "/v1/admin/ai-models/credentials",
+            f"/v1/admin/ai-models/providers/{provider_id}/credentials",
             headers=headers,
             json={
-                "provider_id": provider_id,
-                "display_name": "Azure Foundry API key",
-                "secret_ref": "AZURE_OPENAI_API_KEY",
+                "credential_name": "default",
+                "secret_type": "api_key",
+                "secret_value": "test-secret",
                 "enabled": True,
             },
         )
@@ -176,7 +176,7 @@ def test_admin_can_manage_models_groups_and_audit_events(tmp_path: Path, monkeyp
     payload = dashboard_response.json()
     assert payload["admin"]["email"] == "admin@example.com"
     assert any(item["provider_code"] == "azure_foundry" for item in payload["providers"])
-    assert any(item["secret_ref"] == "AZURE_OPENAI_API_KEY" for item in payload["credentials"])
+    assert any(item["secret_preview"].endswith("cret") for item in payload["credentials"])
     assert any(item["model_group_id"] == group_id for item in payload["groups"])
     assert any(item["user_id"] == member.user_id for item in payload["memberships"])
     assert len(payload["audit_events"]) >= 4

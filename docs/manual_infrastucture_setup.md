@@ -334,7 +334,7 @@ ollama list
 ollama ps
 ```
 
-If `qwen3.6:27b` does not fit the available CPU/RAM/VRAM on `jurisdigta-server`, choose and document a smaller validated fallback model in `LOCAL_LLM_FALLBACK_MODEL` instead of allowing production startup to fail silently.
+If `qwen3.6:27b` does not fit the available CPU/RAM/VRAM on `jurisdigta-server`, choose and document a smaller validated fallback model, pull it with Ollama, and update the free/default `ai_model_profiles` row instead of allowing production startup to fail silently.
 
 Validate the local service:
 
@@ -355,14 +355,12 @@ The self-managed production deployment script performs the Ollama install, local
 - Workstation `.env` files are synced from `.env.example` with `.\scripts\sync_jurisdigta_env.ps1`. Missing keys from `.env.example` must be written as `unknown-variable` so local startup and sync checks can warn without guessing secrets.
 - The sync script copies SSH key material from `E:\jurisdigta\ssh` to `%USERPROFILE%\.ssh\jurisdigta` and uses SSH/SCP to publish the full local `.env` to `/srv/jurisdigta/secrets/jurisdigta.env`.
 - Keep the dedicated SSH folder local to the workstation. Only public keys belong in `/home/jurisdigta-admin/.ssh/authorized_keys` on the server.
-- Required production LLM default: `LLM_PROVIDER=azurefoundry`.
-- Required Azure Foundry values when `LLM_PROVIDER=azurefoundry`: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and `AZURE_OPENAI_API_KEY`.
-- Required local model runtime default for task #365 model routing: `LOCAL_LLM_PROVIDER=ollama`.
-- Local Ollama API URL: `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434`.
-- Local Ollama OpenAI-compatible URL: `LOCAL_LLM_OPENAI_BASE_URL=http://127.0.0.1:11434/v1`.
-- Preferred local model tag: `LOCAL_LLM_MODEL=qwen3.6:27b` when `jurisdigta-server` hardware supports it.
-- Optional smaller local fallback tag: `LOCAL_LLM_FALLBACK_MODEL=<validated-smaller-model>`.
-- Local model health endpoint: `LOCAL_LLM_HEALTH_URL=http://127.0.0.1:11434/api/tags`.
+- Required model-credential encryption secret: `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`.
+- Chat provider/model/deployment routing is stored in API database tables, not `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, or `AZURE_OPENAI_DEPLOYMENT`.
+- Seeded free/default local route: provider `local_ollama`, OpenAI-compatible base URL `http://127.0.0.1:11434/v1`, exact model `qwen3.6:27b`, profile `local_ollama_default`.
+- Seeded paid route for `case`, `basic`, `premium`, and `unlimited`: provider `azure_foundry`, exact model/deployment `gpt-4o-mini`, profile `azure_foundry_gpt_4o_mini`.
+- Required Azure Foundry paid-route setup after database initialization: set `ai_model_providers.base_url` and add the API key or token through `/v1/admin/ai-models/providers/{provider_id}/credentials` so the secret is encrypted in `ai_model_credentials`.
+- Required embedding values when cloud embeddings are enabled: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and one of `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`.
 - PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
 - Required MCP OAuth values in `/srv/jurisdigta/secrets/jurisdigta.env`: `MCP_API_JWT_SECRET`, `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`, and `MCP_OTP_REUSE_WINDOW_HOURS=24`.
 - Required privileged test-account value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`. Keep this allowlist restricted to approved test/operator accounts, validate it before deploy, and roll back by removing the email from the server-local env file and redeploying/restarting the API.
@@ -417,6 +415,7 @@ The self-managed production deployment script performs the Ollama install, local
 - Repository checkout under `/srv/jurisdigta/app` is on the intended branch.
 - PostgreSQL health check succeeds.
 - API health check returns HTTP 200 at `http://127.0.0.1:8080/health`.
+- Admin model route check with both API keys returns the seeded `local_ollama_default` and `azure_foundry_gpt_4o_mini` profiles, and credential reads are redacted unless `reveal=true` is used by an authorized admin.
 - MCP health check returns HTTP 200 at `http://127.0.0.1:8070/health`.
 - MCP OAuth metadata at `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP` advertises `https://mcp.jurisdigta.eu/MCP` as the protected resource.
 - Repository minimal runnable example succeeds: `python examples/minimal_demo.py`.
@@ -465,7 +464,7 @@ The self-managed production deployment script performs the Ollama install, local
 - Do not commit or print API keys, PostgreSQL passwords, full connection strings, access tokens, or generated legal documents.
 - Keep PostgreSQL and document runtime files outside `databases/` and under `/srv/jurisdigta/.../runs/storage`.
 - Preserve deployment and collector logs for traceability, while avoiding personal data and legal-risk content in logs.
-- Use `azurefoundry` for production-like local starts unless deterministic offline testing was explicitly requested.
+- Use database-backed model routing for production-like local starts; `LLM_PROVIDER=mock` is only for deterministic offline testing when explicitly requested.
 - Run Ollama as a separate localhost-only model service; do not expose `11434` publicly and do not send free-user case data to external model providers by default.
 - Local model routing keeps case content inside JurisDigta-controlled infrastructure, but normal server access controls, retention, deletion, and privacy-safe logging still apply.
 - Keep legal-risk outputs subject to human oversight before production traffic is enabled.

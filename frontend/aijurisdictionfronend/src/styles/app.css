@@ -358,6 +358,13 @@
   margin: 0;
 }
 
+.admin-section-heading {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
 .admin-panel label {
   color: var(--ink-muted);
   display: grid;
@@ -419,6 +426,16 @@
   display: inline-flex;
   gap: 8px;
   justify-content: center;
+}
+
+.admin-models .secondary-button {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 36px;
+  padding: 0 12px;
 }
 
 .profile-inline-copy {

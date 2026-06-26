@@ -44,14 +44,14 @@ def test_health_endpoint(monkeypatch) -> None:
     }
 
 
-def test_health_endpoint_normalizes_azure_llm_provider(monkeypatch) -> None:
+def test_health_endpoint_reports_model_routing_when_legacy_llm_provider_is_set(monkeypatch) -> None:
     monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _HealthyStore())
     monkeypatch.setenv("LLM_PROVIDER", "azure")
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["llm"] == {
         "status": "ok",
-        "provider": "azurefoundry",
+        "provider": "model_routing",
     }
 
 
@@ -78,15 +78,14 @@ def test_health_endpoint_reports_database_failure(monkeypatch) -> None:
     }
 
 
-def test_health_endpoint_reports_unsupported_llm_provider(monkeypatch) -> None:
+def test_health_endpoint_ignores_unsupported_legacy_llm_provider(monkeypatch) -> None:
     monkeypatch.setattr("app.main.ApiDatabaseStore.from_env", lambda: _HealthyStore())
     monkeypatch.setenv("LLM_PROVIDER", "custom-provider")
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["llm"] == {
-        "status": "error",
-        "provider": "custom-provider",
-        "message": 'Unsupported LLM_PROVIDER "custom-provider"',
+        "status": "ok",
+        "provider": "model_routing",
     }
 
 

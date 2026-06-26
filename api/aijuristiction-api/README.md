@@ -65,19 +65,20 @@ If the `.conda` environment already exists, skip `conda env create`.
 
 - API now writes request logs to console by default (method, path, status, duration, request id, correlation id, origin, user agent).
 - On startup, API prints `API Starting` with API/core version and active log level.
-- API defaults `LLM_PROVIDER` to `azurefoundry` when not explicitly set.
+- API chat provider/model selection is resolved from the database model-routing tables. `LLM_PROVIDER` is only honored when explicitly set to `mock` for deterministic offline tests.
 - Set log level with `API_LOG_LEVEL` (fallback: `LOG_LEVEL`), for example:
 
 ```bash
 API_LOG_LEVEL=DEBUG uvicorn app.main:app --reload --port 8080
 ```
 
-Required env vars for default Azure Foundry provider:
+Required setup for chat model routing:
 
-- `AZURE_OPENAI_ENDPOINT`
-- `AZURE_OPENAI_DEPLOYMENT`
-- `AZURE_OPENAI_EMBEDDINGS_MODEL` (embedding deployment name, recommended: `text-embedding-3-large`)
-- one of: `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`
+- Free/default users use the seeded `local_ollama_default` route: provider `local_ollama`, base URL `http://127.0.0.1:11434/v1`, exact model `qwen3.6:27b`.
+- Paid `case`, `basic`, `premium`, and `unlimited` users use the seeded Azure Foundry route `azure_foundry_gpt_4o_mini`: exact model/deployment `gpt-4o-mini`.
+- Azure Foundry chat endpoint belongs in `ai_model_providers.base_url`.
+- Azure Foundry API key or token belongs in encrypted `ai_model_credentials`, managed through `/v1/admin/ai-models`.
+- Set `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` and `JURISDIGTA_ADMIN_EMAILS` in deployed environments.
 
 Shared embedding selection:
 
@@ -86,20 +87,31 @@ Shared embedding selection:
 - local model files are cached under the repo `aimodels/` directory
 - deployed Azure environments should keep `SYSTEM_EMBEDDING_MODEL_OPTION=cloud`
 
-Optional env vars for the OpenAI provider:
+Embedding env vars:
 
 - `OPENAI_KEY`
-- `OPENAI_MODEL`
 - `OPENAI_EMBEDDINGS_MODEL` (recommended: `text-embedding-3-large`)
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_EMBEDDINGS_MODEL` (embedding deployment name, recommended: `text-embedding-3-large`)
+- one of: `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN` when cloud embeddings are enabled
 
 Local API startup loads the repository root `.env` automatically. If you override variables in the shell before starting `uvicorn`, those explicit shell values still win because `.env` is loaded with `override=False`.
 
-AI model admin management:
+AI model admin management and routing API:
 
-- `GET /v1/admin/ai-models` returns providers, model price profiles, credential references, route policies, user groups, group memberships, users eligible for assignment, and recent admin audit events.
-- `POST /v1/admin/ai-models/providers`, `/profiles`, `/credentials`, `/groups`, `/groups/{model_group_id}/members`, and `/policies` update routine model-router settings without editing environment files.
-- `GET /v1/admin/users` and `PATCH /v1/admin/users/{user_id}` let admins review users, assign global `admin`/`user` role, and enable or disable accounts.
-- Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header plus either global `users.role=admin` or `JURISDIGTA_ADMIN_EMAILS`. Local loopback development may send `x-jurisdigta-admin-user-id`.
+- `GET /v1/admin/ai-models` returns providers, model price profiles, route policies, user groups, group memberships, users eligible for assignment, and recent admin audit events.
+- `POST /v1/admin/ai-models/providers`, `/profiles`, `/groups`, `/groups/{model_group_id}/members`, and `/policies` update routine model-router settings without editing environment files.
+- `GET /v1/admin/ai-models/providers`
+- `PUT /v1/admin/ai-models/providers/{provider_id}`
+- `GET /v1/admin/ai-models/profiles`
+- `PUT /v1/admin/ai-models/profiles/{model_profile_id}`
+- `GET /v1/admin/ai-models/credentials?reveal=false`
+- `PUT /v1/admin/ai-models/providers/{provider_id}/credentials`
+- `PATCH /v1/admin/ai-models/credentials/{credential_id}`
+- `GET /v1/admin/users`
+- `PATCH /v1/admin/users/{user_id}`
+
+Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header with either a database `role=admin` user or the `JURISDIGTA_ADMIN_EMAILS` fallback allowlist. Local loopback development may send `x-jurisdigta-admin-user-id`. The credential endpoints also require API authentication and reserve `reveal=true` for authorized admin maintenance.
 - Admin responses never return provider secrets or legal case content. External provider changes are audited with actor, entity, old/new summaries, reason, and correlation id.
 
 Document processing mode:
@@ -283,8 +295,8 @@ See `docs/SERVICE_HEALTHCHECKS.md` for the reusable health-check rule across
 HTTP services and background workers.
 If the database is unreachable or misconfigured, the endpoint returns `503` with
 `error=database_unavailable` and a `message` field that the mobile app can show directly.
-The response also reports the configured LLM provider so callers can distinguish `mock`
-from `azurefoundry` mode.
+The response reports `provider=model_routing` for normal chat routing and `provider=mock`
+only when deterministic offline testing was explicitly requested.
 
 Minimal runnable example:
 

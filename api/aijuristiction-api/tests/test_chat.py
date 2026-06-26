@@ -1743,7 +1743,7 @@ def test_reply_endpoint_injects_internal_mcp_law_context_in_prompt_and_documents
     assert session_response.status_code == 200
     session_id = session_response.json()["id"]
 
-    _user, lawyer, visible, _events = chat_api._run_direct_lawyer_turn(
+    _user, lawyer, visible, _events, _route = chat_api._run_direct_lawyer_turn(
         session_id=UUID(session_id),
         session=chat_api._repository.get_session(UUID(session_id)),
         content="Co hovori Obciansky zakonnik o kupnej zmluve?",
@@ -1802,7 +1802,7 @@ def test_uploaded_documents_contract_request_requires_extract_then_confirm_promp
 
     session = repository.create_session(Session(country="SK", language="SK", discussion_type="advice"))
 
-    _user, lawyer, visible, events = chat_api._run_direct_lawyer_turn(
+    _user, lawyer, visible, events, _route = chat_api._run_direct_lawyer_turn(
         session_id=session.id,
         session=session,
         content="Priprav novu najomnu zmluvu z prilozenych dokumentov.",
@@ -2646,6 +2646,7 @@ def test_stream_share_transfer_with_labeled_company_name_uses_registry_first(mon
 
 def test_prepare_country_direct_reply_emits_tool_lifecycle_callbacks(monkeypatch) -> None:
     from app.chat.country_services import prepare_country_direct_reply
+    from app.chat.country_services import slovakia as slovakia_service
     from app.chat.models import Message, MessageRole, Session
 
     class _FakeRegistry:
@@ -2664,7 +2665,8 @@ def test_prepare_country_direct_reply_emits_tool_lifecycle_callbacks(monkeypatch
                 ),
             )
 
-    monkeypatch.setattr("app.chat.country_services.slovakia.build_default_tool_registry", lambda: _FakeRegistry())
+    monkeypatch.setattr(slovakia_service, "_ORSR_CACHE", {})
+    monkeypatch.setattr(slovakia_service, "build_default_tool_registry", lambda: _FakeRegistry())
 
     session = Session(country="SK", discussion_type="advice", language="SK")
     messages = [
@@ -3100,7 +3102,7 @@ def test_run_direct_lawyer_turn_does_not_initialize_llm_for_tool_capability_ques
     monkeypatch.setattr(chat_api, "_repository", repository)
     monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", fail_get_llm_client)
 
-    _user_message, assistant_message, visible_text, processing_events = chat_api._run_direct_lawyer_turn(
+    _user_message, assistant_message, visible_text, processing_events, _route = chat_api._run_direct_lawyer_turn(
         session_id=session.id,
         session=session,
         content="Ake tools mozem pouzit na overenie firmy, auta, adresy a katastra?",
@@ -4083,7 +4085,7 @@ def test_stream_read_user_emits_document_name_progress_before_final_message(monk
     monkeypatch.setattr(
         chat_api,
         "_run_direct_lawyer_turn",
-        lambda **kwargs: (persisted_user, persisted_lawyer, persisted_lawyer.content, []),
+        lambda **kwargs: (persisted_user, persisted_lawyer, persisted_lawyer.content, [], None),
     )
     monkeypatch.setattr(
         chat_api,
@@ -4151,7 +4153,7 @@ def test_stream_read_user_keeps_connection_alive_during_slow_direct_turn(monkeyp
 
     def slow_direct_turn(**kwargs):
         time.sleep(0.05)
-        return persisted_user, persisted_lawyer, persisted_lawyer.content, []
+        return persisted_user, persisted_lawyer, persisted_lawyer.content, [], None
 
     monkeypatch.setattr(chat_api, "_STREAM_KEEPALIVE_SECONDS", 0.01)
     monkeypatch.setattr(chat_api, "_STREAM_STATUS_SECONDS", 0.02)
@@ -5007,7 +5009,7 @@ def test_standalone_affirmative_after_ready_document_returns_status_without_llm(
     monkeypatch.setattr("aijurisdictionagents.agents.create_lawyer_agent", _unexpected_lawyer_agent)
     monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
-    _user, lawyer, visible, events = chat_api._run_direct_lawyer_turn(
+    _user, lawyer, visible, events, _route = chat_api._run_direct_lawyer_turn(
         session_id=session_id,
         session=session,
         content="�no",
@@ -5068,6 +5070,7 @@ def test_document_export_ready_after_confirmation_with_prior_case_update() -> No
         session=session,
         messages=messages,
         lawyer_message=messages[-1].content,
+        route=SimpleNamespace(model="gpt-4o-mini"),
     )
 
     assert result.metadata["document_requested"] is True
@@ -5601,6 +5604,7 @@ def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None
         session=session,
         messages=messages,
         lawyer_message=messages[-1].content,
+        route=SimpleNamespace(model="gpt-4o-mini"),
     )
 
     assert result.metadata["document_ready"] is True
@@ -5672,7 +5676,7 @@ def test_stream_read_user_completes_when_bare_technical_json_contains_question(m
     monkeypatch.setattr(
         chat_api,
         "_run_direct_lawyer_turn",
-        lambda **kwargs: (persisted_user, persisted_lawyer, persisted_lawyer.content, []),
+        lambda **kwargs: (persisted_user, persisted_lawyer, persisted_lawyer.content, [], None),
     )
 
     with client.stream(
@@ -5771,7 +5775,7 @@ def test_user_visible_text_strips_fake_relative_download_links_and_json_preamble
     monkeypatch.setattr(
         chat_api,
         "_run_direct_lawyer_turn",
-        lambda **kwargs: (persisted_user, persisted_lawyer, persisted_lawyer.content, []),
+        lambda **kwargs: (persisted_user, persisted_lawyer, persisted_lawyer.content, [], None),
     )
 
     with client.stream(
@@ -5890,6 +5894,73 @@ def test_unstructured_relative_download_link_uses_previous_draft_for_case_docume
     assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
     assert "Splnomocniteľ: Esolutions SK s.r.o." in str(stored_documents[0]["payload"])
     assert "PP472DT" in str(stored_documents[0]["payload"])
+
+
+def test_summary_only_previous_assistant_reply_is_not_saved_as_generated_document(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Message, MessageRole, Session
+    from app.chat.repository import InMemoryChatRepository
+
+    stored_documents: list[dict[str, object]] = []
+
+    class _FakeStore:
+        def list_case_documents(self, *, case_id: str):
+            return []
+
+        def add_case_document(
+            self,
+            *,
+            case_id: str,
+            kind: str,
+            version: int,
+            original_filename: str,
+            payload: bytes,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            stored_documents.append(
+                {
+                    "case_id": case_id,
+                    "kind": kind,
+                    "version": version,
+                    "original_filename": original_filename,
+                    "payload": payload.decode("utf-8"),
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return "doc-generated-1"
+
+    repository = InMemoryChatRepository()
+    session_id = uuid4()
+    user_id = uuid4()
+    session = Session(
+        id=session_id,
+        user_id=user_id,
+        case_id="case-411",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    repository.create_session(session)
+    repository.add_message(
+        Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content="- Splnomocnenie pre Emiliu Testovu na pouzivanie firemneho auta.",
+        )
+    )
+    current_reply = (
+        "USER-FACING: Dokument je pripraveny na stiahnutie.\n\n"
+        "[Stiahnut splnomocnenie](documents/splnomocnenie_20260626T183932Z.pdf)"
+    )
+
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+
+    doc_ids = chat_api._persist_generated_case_document_if_needed(session=session, content=current_reply)
+
+    assert doc_ids == []
+    assert stored_documents == []
 
 
 def test_completed_read_user_session_returns_document_status_followup() -> None:
@@ -6025,8 +6096,6 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
 
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(laws_db))
-    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
-    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
     monkeypatch.setattr(
         result_metadata.ApiDatabaseStore,
         "from_env",
@@ -6063,6 +6132,7 @@ def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_pa
         session=session,
         messages=messages,
         lawyer_message=messages[-1].content,
+        route=SimpleNamespace(model="gpt-4o-mini"),
     )
 
     assert result.metadata["knowledge_last_updated_at"] == "2026-03-11T08:15:00Z"
@@ -6105,7 +6175,7 @@ def test_direct_reply_result_includes_structured_law_citations(monkeypatch) -> N
     monkeypatch.setattr(
         result_metadata,
         "get_law_knowledge_snapshot",
-        lambda _country: result_metadata.LawKnowledgeSnapshot(
+        lambda _country, **_kwargs: result_metadata.LawKnowledgeSnapshot(
             last_law_update_date="2026-04-01T00:00:00Z",
             last_law_update_source="law_documents_country",
             model_knowledge_cutoff_date="2023-10-01",
@@ -6195,7 +6265,7 @@ def test_law_snapshot_falls_back_to_model_cutoff_and_writes_cache(monkeypatch, t
         ),
     )
 
-    snapshot = result_metadata.get_law_knowledge_snapshot("SK")
+    snapshot = result_metadata.get_law_knowledge_snapshot("SK", model_name="gpt-4o-mini")
 
     assert snapshot.last_law_update_date is None
     assert snapshot.last_law_update_source == "unavailable"
@@ -6232,8 +6302,6 @@ def test_law_snapshot_reuses_cached_model_cutoff_without_expiration(monkeypatch,
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
     monkeypatch.setenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", str(cache_path))
-    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
-    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
     monkeypatch.setattr(
         result_metadata.ApiDatabaseStore,
         "from_env",
@@ -6245,10 +6313,10 @@ def test_law_snapshot_reuses_cached_model_cutoff_without_expiration(monkeypatch,
         lambda: SimpleNamespace(search=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected web search"))),
     )
 
-    first_snapshot = result_metadata.get_law_knowledge_snapshot("SK")
+    first_snapshot = result_metadata.get_law_knowledge_snapshot("SK", model_name="gpt-4o-mini")
     assert first_snapshot.model_knowledge_cutoff_date == "2023-10-01"
 
-    second_snapshot = result_metadata.get_law_knowledge_snapshot("SK")
+    second_snapshot = result_metadata.get_law_knowledge_snapshot("SK", model_name="gpt-4o-mini")
 
     assert second_snapshot.last_law_update_date is None
     assert second_snapshot.last_collector_run_at is None
@@ -6267,8 +6335,6 @@ def test_law_snapshot_uses_direct_openai_model_page_when_search_returns_no_resul
 
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
-    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
-    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1")
     monkeypatch.delenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", raising=False)
     monkeypatch.setattr(
         result_metadata.ApiDatabaseStore,
@@ -6291,7 +6357,7 @@ def test_law_snapshot_uses_direct_openai_model_page_when_search_returns_no_resul
         else None,
     )
 
-    snapshot = result_metadata.get_law_knowledge_snapshot("SK")
+    snapshot = result_metadata.get_law_knowledge_snapshot("SK", model_name="gpt-4.1")
 
     assert snapshot.model_knowledge_cutoff_date == "2025-04-14"
     assert snapshot.model_knowledge_cutoff_source == "https://platform.openai.com/docs/models/gpt-4.1"
@@ -6304,8 +6370,6 @@ def test_law_snapshot_uses_known_model_fallback_for_custom_deployment_name(
 
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
-    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
-    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "juris-gpt-4o-mini-dev")
     monkeypatch.delenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", raising=False)
     monkeypatch.setattr(
         result_metadata.ApiDatabaseStore,
@@ -6322,7 +6386,7 @@ def test_law_snapshot_uses_known_model_fallback_for_custom_deployment_name(
     )
     monkeypatch.setattr(result_metadata, "_fetch_text_from_url", lambda _url: None)
 
-    snapshot = result_metadata.get_law_knowledge_snapshot("SK")
+    snapshot = result_metadata.get_law_knowledge_snapshot("SK", model_name="juris-gpt-4o-mini-dev")
 
     assert snapshot.model_knowledge_cutoff_date == "2023-10-01"
     assert (
@@ -6338,8 +6402,6 @@ def test_law_snapshot_returns_unavailable_model_cutoff_when_all_resolution_paths
 
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
-    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
-    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "unknown-custom-model")
     monkeypatch.delenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", raising=False)
     monkeypatch.setattr(
         result_metadata.ApiDatabaseStore,
@@ -6356,7 +6418,7 @@ def test_law_snapshot_returns_unavailable_model_cutoff_when_all_resolution_paths
     )
     monkeypatch.setattr(result_metadata, "_fetch_text_from_url", lambda _url: None)
 
-    snapshot = result_metadata.get_law_knowledge_snapshot("SK")
+    snapshot = result_metadata.get_law_knowledge_snapshot("SK", model_name="unknown-custom-model")
 
     assert snapshot.model_knowledge_cutoff_date is None
     assert snapshot.model_knowledge_cutoff_source == "unavailable"

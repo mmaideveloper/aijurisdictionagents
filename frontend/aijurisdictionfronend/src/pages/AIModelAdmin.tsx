@@ -39,14 +39,16 @@ const emptyProfile = {
   output_price_per_1m: 0,
   billing_currency: "EUR",
   eu_data_zone_capable: true,
+  is_default_for_free: false,
   enabled: true,
   reason: ""
 };
 
 const emptyCredential = {
   provider_id: "",
-  display_name: "",
-  secret_ref: "",
+  credential_name: "default",
+  secret_type: "api_key",
+  secret_value: "",
   enabled: true,
   reason: ""
 };
@@ -286,11 +288,12 @@ const AIModelAdmin: React.FC = () => {
             }}>
               <h2>{t("adminCredentialsTitle")}</h2>
               <label>{t("adminProvider")}<select value={credentialForm.provider_id} onChange={(event) => setCredentialForm({ ...credentialForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{dashboard?.providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
-              <label>{t("adminDisplayName")}<input value={credentialForm.display_name} onChange={(event) => setCredentialForm({ ...credentialForm, display_name: event.target.value })} /></label>
-              <label>{t("adminSecretRef")}<input value={credentialForm.secret_ref} onChange={(event) => setCredentialForm({ ...credentialForm, secret_ref: event.target.value })} /></label>
+              <label>{t("adminCredentialName")}<input value={credentialForm.credential_name} onChange={(event) => setCredentialForm({ ...credentialForm, credential_name: event.target.value })} /></label>
+              <label>{t("adminCredentialType")}<input value={credentialForm.secret_type} onChange={(event) => setCredentialForm({ ...credentialForm, secret_type: event.target.value })} /></label>
+              <label>{t("adminCredentialValue")}<input type="password" value={credentialForm.secret_value} onChange={(event) => setCredentialForm({ ...credentialForm, secret_value: event.target.value })} /></label>
               <div className="admin-toggle-row"><label><input type="checkbox" checked={credentialForm.enabled} onChange={(event) => setCredentialForm({ ...credentialForm, enabled: event.target.checked })} />{t("adminEnabled")}</label></div>
               <button className="primary-button" type="submit"><FaKey aria-hidden="true" />{t("adminSaveCredential")}</button>
-              <div className="admin-table-scroll"><table><thead><tr><th>{t("adminProvider")}</th><th>{t("adminDisplayName")}</th><th>{t("adminSecretRef")}</th><th>{t("adminStatus")}</th></tr></thead><tbody>{dashboard?.credentials.map((credential) => <tr key={credential.credential_id}><td>{credential.provider_id}</td><td>{credential.display_name}</td><td>{credential.secret_ref}</td><td>{credential.enabled ? t("adminEnabled") : t("adminDisabled")}</td></tr>)}</tbody></table></div>
+              <div className="admin-table-scroll"><table><thead><tr><th>{t("adminProvider")}</th><th>{t("adminCredentialName")}</th><th>{t("adminCredentialType")}</th><th>{t("adminCredentialPreview")}</th><th>{t("adminStatus")}</th></tr></thead><tbody>{dashboard?.credentials.map((credential) => <tr key={credential.credential_id}><td>{credential.provider_id}</td><td>{credential.credential_name}</td><td>{credential.secret_type}</td><td>{credential.secret_preview}</td><td>{credential.enabled ? t("adminEnabled") : t("adminDisabled")}</td></tr>)}</tbody></table></div>
             </form>
           ) : null}
 

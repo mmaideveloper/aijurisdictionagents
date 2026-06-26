@@ -39,8 +39,7 @@ _REPO_ENV_PATH = _REPO_ROOT / ".env"
 dotenv.load_dotenv(_REPO_ENV_PATH, override=False)
 
 MCP_VERSION = get_mcp_server_version()
-DEFAULT_MCP_LLM_PROVIDER = "azurefoundry"
-os.environ.setdefault("LLM_PROVIDER", DEFAULT_MCP_LLM_PROVIDER)
+DEFAULT_MCP_LLM_PROVIDER = "model_routing"
 
 LOG_LEVEL = configure_logging()
 _SUPPORTED_MCP_PAGE_LOCALES = {"en", "sk"}

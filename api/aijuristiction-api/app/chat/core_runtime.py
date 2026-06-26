@@ -11,6 +11,7 @@ from app.chat.models import Session
 
 if TYPE_CHECKING:
     from aijurisdictionagents.schemas import Document, OrchestrationResult
+    from aijurisdictionagents.llm import LLMClient
     from aijurisdictionagents.orchestration.orchestrator import MessageCallback, UserResponseProvider
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -36,11 +37,12 @@ def run_orchestration(
     max_discussion_minutes: float,
     user_response_provider: UserResponseProvider,
     message_callback: MessageCallback,
+    llm_client: LLMClient | None = None,
 ) -> OrchestrationResult:
     create_judge, create_lawyer_agent, get_llm_client, trace_recorder, orchestrator_class = (
         _load_core_dependencies()
     )
-    llm = get_llm_client()
+    llm = llm_client or get_llm_client()
     lawyer = create_lawyer_agent(llm, session.country)
     judge = create_judge(llm) if session.discussion_type == "court" else None
 
