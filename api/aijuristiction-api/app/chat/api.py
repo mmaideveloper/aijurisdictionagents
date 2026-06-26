@@ -34,6 +34,7 @@ from reportlab.lib.pagesizes import A4  # type: ignore[import-untyped]
 from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
 from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
 from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
+from pypdf import PdfReader, PdfWriter
 
 from app.chat.core_runtime import core_message_role, run_orchestration
 from app.chat.country_services import prepare_country_direct_reply
@@ -2469,6 +2470,9 @@ def _looks_like_document_title(value: str) -> bool:
         "aktualizovane",
         "podanie na orsr",
         "navrh rozhodnutia",
+        "splnomocnenie",
+        "plnomocenstvo",
+        "power of attorney",
         "share transfer agreement",
         "sole shareholder decision",
         "updated articles",
@@ -2489,6 +2493,9 @@ def _looks_like_document_title(value: str) -> bool:
         "zakladatelskej listiny",
         "podanie na orsr",
         "obchodneho registra",
+        "splnomocnenie",
+        "plnomocenstvo",
+        "power of attorney",
         "share transfer agreement",
         "sole shareholder decision",
         "updated articles",
@@ -2528,6 +2535,8 @@ def _looks_like_document_title(value: str) -> bool:
         ("darovac", "zmluv"),
         ("potvrdenie", "zaplat"),
         ("potvrdenie", "uhrad"),
+        ("power", "attorney"),
+        ("splnomoc", "verzia"),
         ("pisnica", "rozhodnut"),
         ("aktualiz", "zmluv"),
         ("inventar", "zoznam"),
@@ -3019,11 +3028,24 @@ def _persist_generated_case_document_if_needed(*, session: Session, content: str
     case_id = (session.case_id or "").strip()
     if not case_id:
         return []
-    visible_text = _user_visible_text(content).strip()
+    case_update = _extract_case_update(content)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    drafts = _generated_case_document_drafts_from_case_update(case_update, timestamp=timestamp)
+    if drafts:
+        return _persist_generated_case_document_drafts(session=session, case_id=case_id, drafts=drafts)
+    visible_text = _user_visible_text(content).strip()
     drafts = _generated_case_document_drafts_for_storage(visible_text, timestamp=timestamp)
     if not drafts:
         return []
+    return _persist_generated_case_document_drafts(session=session, case_id=case_id, drafts=drafts)
+
+
+def _persist_generated_case_document_drafts(
+    *,
+    session: Session,
+    case_id: str,
+    drafts: list[_GeneratedCaseDocumentDraft],
+) -> list[str]:
     try:
         store = _get_store()
         version = _next_generated_case_document_version(store=store, case_id=case_id)
@@ -3049,6 +3071,29 @@ def _persist_generated_case_document_if_needed(*, session: Session, content: str
         return []
 
 
+def _generated_case_document_drafts_from_case_update(
+    case_update: dict[str, Any] | None,
+    *,
+    timestamp: str,
+) -> list[_GeneratedCaseDocumentDraft]:
+    drafts: list[_GeneratedCaseDocumentDraft] = []
+    for index, entry in enumerate(_case_update_document_entries(case_update), start=1):
+        body = _document_entry_content(entry)
+        if not body:
+            continue
+        sanitized = _sanitize_generated_legal_document_body(body)
+        if not sanitized:
+            continue
+        filename = _generated_case_document_filename_from_entry(
+            entry=entry,
+            body=sanitized,
+            timestamp=timestamp,
+            fallback_index=index,
+        )
+        drafts.append(_GeneratedCaseDocumentDraft(filename=filename, body=sanitized))
+    return drafts
+
+
 def _generated_case_document_drafts_for_storage(
     content: str,
     *,
@@ -3070,6 +3115,84 @@ def _generated_case_document_drafts_for_storage(
             body=document_body,
         )
     ]
+
+
+def _document_entry_content(entry: dict[str, Any]) -> str:
+    for key in ("content", "body", "text", "markdown", "document_text"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _sanitize_generated_legal_document_body(content: str) -> str:
+    visible = _user_visible_text(content)
+    cleaned_lines: list[str] = []
+    skip_markers = (
+        "case_update_json",
+        "ready for export",
+        "ready for download",
+        "pripraveny na export",
+        "pripravene na export",
+        "pripraveny na stiahnutie",
+        "pripravene na stiahnutie",
+        "vyborne pripravim",
+        "výborne pripravím",
+        "pripravim splnomocnenie",
+        "pripravim dokument",
+        "technicke udaje som ulozil",
+        "technical data was saved",
+    )
+    for raw_line in visible.splitlines():
+        line = raw_line.strip()
+        if not line:
+            cleaned_lines.append("")
+            continue
+        normalized = _canonicalize_document_text(line)
+        if line in {"---", "___", "***"}:
+            continue
+        if line.startswith("```") or line.endswith("```"):
+            continue
+        if normalized and any(marker in normalized for marker in skip_markers):
+            continue
+        line = re.sub(r"^\s{0,3}#{1,6}\s+", "", line)
+        line = line.strip("* ")
+        line = re.sub(r"\*\*([^*]+)\*\*", r"\1", line)
+        line = re.sub(r"__([^_]+)__", r"\1", line)
+        cleaned_lines.append(line.strip())
+    while cleaned_lines and not cleaned_lines[0].strip():
+        cleaned_lines.pop(0)
+    while cleaned_lines and not cleaned_lines[-1].strip():
+        cleaned_lines.pop()
+    collapsed: list[str] = []
+    previous_blank = False
+    for line in cleaned_lines:
+        is_blank = not line.strip()
+        if is_blank and previous_blank:
+            continue
+        collapsed.append(line)
+        previous_blank = is_blank
+    return "\n".join(collapsed).strip()
+
+
+def _generated_case_document_filename_from_entry(
+    *,
+    entry: dict[str, Any],
+    body: str,
+    timestamp: str,
+    fallback_index: int,
+) -> str:
+    raw_name = str(entry.get("filename") or entry.get("path") or "").strip()
+    if raw_name:
+        stem = Path(raw_name).stem.strip()
+        if stem:
+            return f"{_filename_slug_for_generated_case_document(stem)}_{timestamp}.pdf"
+    title = _document_asset_title(entry=entry, language=str(entry.get("language") or ""), fallback_index=fallback_index)
+    if title:
+        slug = _filename_slug_for_generated_case_document(_generated_case_document_legal_title(title))
+        if slug:
+            return f"{slug}_{timestamp}.pdf"
+    return _generated_case_document_filename_for_storage(body, timestamp=timestamp)
 
 
 def _bilingual_power_of_attorney_drafts(
@@ -3930,6 +4053,7 @@ def export_session_result(
     session_id: UUID,
     format: Literal["json", "pdf"] = Query("json"),
     kind: Literal["summary", "document"] = Query("summary"),
+    bundle: Literal["auto", "zip", "single_pdf"] = Query("auto"),
 ) -> Response:
     result = _get_or_build_session_result(session_id)
     if result is None:
@@ -3960,6 +4084,24 @@ def export_session_result(
             language=session.language,
             user_profile=user_profile,
         )
+        if len(document_assets) > 1 and bundle == "single_pdf":
+            filename = _build_pdf_filename(session_id=session_id, kind="document")
+            pdf_content = _build_combined_document_export_pdf(
+                assets=document_assets,
+                country=session.country,
+                language=session.language,
+                generated_at=generated_at,
+                footer_line=footer_line,
+                case_id=session.case_id or str(session.id),
+                session_id=str(session.id),
+                user_id=str(session.user_id) if session.user_id else None,
+                verification_score=_document_verification_score(result),
+            )
+            return Response(
+                content=pdf_content,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
         if len(document_assets) > 1:
             archive_name = _build_document_archive_filename(session_id=session_id)
             archive_content = _build_document_export_archive(
@@ -4884,6 +5026,41 @@ def _build_document_export_archive(
     return archive_buffer.getvalue()
 
 
+def _build_combined_document_export_pdf(
+    *,
+    assets: list[_DocumentExportAsset],
+    country: str,
+    language: str | None,
+    generated_at: str,
+    footer_line: str,
+    case_id: str,
+    session_id: str | None,
+    user_id: str | None,
+    verification_score: str | None,
+) -> bytes:
+    writer = PdfWriter()
+    for asset in assets:
+        pdf_content = _build_professional_document_pdf(
+            title=asset.title,
+            lines=asset.lines,
+            country=country,
+            language=language,
+            generated_at=generated_at,
+            case_id=case_id,
+            session_id=session_id,
+            user_id=user_id,
+            footer_line=footer_line,
+            verification_score=verification_score,
+            disclaimer=asset.disclaimer,
+        )
+        reader = PdfReader(BytesIO(pdf_content))
+        for page in reader.pages:
+            writer.add_page(page)
+    buffer = BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
 def _build_summary_export_content(
     *,
     session_id: UUID,
@@ -5280,11 +5457,12 @@ def _fallback_document_entries_for_export(
     ]
     result_text = [result.final_recommendation] if result is not None else []
     source = _pick_document_message(lawyer_messages) or _pick_document_message(discussion_messages) or "\n".join(result_text)
-    titles = _extract_document_titles_from_text(_user_visible_text(source))
-    if len(titles) <= 1:
+    sections = _extract_visible_document_sections_for_export(_user_visible_text(source))
+    if len(sections) <= 1:
         return []
     entries: list[dict[str, Any]] = []
-    for index, title in enumerate(titles, start=1):
+    for index, section in enumerate(sections, start=1):
+        title = section["title"]
         entry_type = _fallback_document_entry_type(title=title, document_kind=document_kind)
         filename = _fallback_document_entry_filename(
             title=title,
@@ -5297,9 +5475,90 @@ def _fallback_document_entries_for_export(
                 "type": entry_type,
                 "filename": filename,
                 "path": f"documents/{filename}",
+                "content": section["content"],
             }
         )
     return entries
+
+
+def _extract_visible_document_sections_for_export(content: str) -> list[dict[str, str]]:
+    sections: list[dict[str, str]] = []
+    current_title = ""
+    current_lines: list[str] = []
+    for raw_line in content.splitlines():
+        stripped = raw_line.strip()
+        if stripped in {"---", "___", "***"}:
+            if current_title and current_lines:
+                sections.append({"title": current_title, "content": "\n".join(current_lines)})
+            current_title = ""
+            current_lines = []
+            continue
+        title_candidate = _document_section_title_from_line(stripped)
+        if title_candidate:
+            if current_title and current_lines:
+                sections.append({"title": current_title, "content": "\n".join(current_lines)})
+            current_title = title_candidate
+            current_lines = [title_candidate]
+            continue
+        if current_title:
+            current_lines.append(raw_line)
+    if current_title and current_lines:
+        sections.append({"title": current_title, "content": "\n".join(current_lines)})
+    cleaned_sections: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for section in sections:
+        body = _sanitize_generated_legal_document_body(section["content"])
+        if not body or not _looks_like_exportable_legal_document_body(body):
+            continue
+        key = _canonicalize_document_text(section["title"])
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned_sections.append({"title": section["title"], "content": body})
+    if cleaned_sections:
+        return cleaned_sections
+    return [{"title": title, "content": title} for title in _extract_document_titles_from_text(content)]
+
+
+def _document_section_title_from_line(line: str) -> str:
+    if not line:
+        return ""
+    normalized = re.sub(r"^\d+[\.)]\s*", "", line)
+    normalized = normalized.strip("*_#:- ")
+    if ":" in normalized:
+        normalized = normalized.split(":", 1)[0].strip()
+    display_name = _repair_common_mojibake(normalized)
+    return display_name if _looks_like_document_title(display_name) else ""
+
+
+def _looks_like_exportable_legal_document_body(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    title_markers = (
+        "splnomocnenie",
+        "power of attorney",
+        "potvrdenie",
+        "zmluva",
+        "vyzva",
+        "zaloba",
+        "navrh",
+        "agreement",
+        "contract",
+    )
+    body_markers = (
+        "ja,",
+        "tymto",
+        "hereby",
+        "authorize",
+        "datum",
+        "date:",
+        "podpis",
+        "signature",
+        "zmluvne strany",
+        "predmet",
+    )
+    return any(marker in normalized for marker in title_markers) and any(
+        marker in normalized for marker in body_markers
+    )
 
 
 def _fallback_document_entry_type(*, title: str, document_kind: str) -> str:
@@ -5794,6 +6053,12 @@ def _build_document_asset_content(
     law_citation_lines: list[str],
     fallback_index: int,
 ) -> tuple[str, list[str]]:
+    entry_body = _document_entry_content(entry)
+    if entry_body:
+        title = _document_asset_title(entry=entry, language=language, fallback_index=fallback_index)
+        lines = _normalize_document_lines(_sanitize_generated_legal_document_body(entry_body))
+        return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+
     if document_kind == "rental_agreement":
         return _build_rental_document_asset_content(
             entry=entry,
@@ -5827,6 +6092,9 @@ def _document_asset_title(
     language: str | None,
     fallback_index: int,
 ) -> str:
+    raw_title = str(entry.get("title") or entry.get("name") or entry.get("label") or "").strip()
+    if raw_title:
+        return _repair_common_mojibake(raw_title.strip("*#:- "))
     raw_name = str(entry.get("filename") or entry.get("path") or "").strip()
     if raw_name:
         stem = Path(raw_name).stem.replace("_", " ").replace("-", " ").strip()

@@ -80,8 +80,10 @@ now recognizes visible Slovak rental-package sections such as:
 - `Inventárny zoznam`
 - `Potvrdenie o prevzatí bytu` / odovzdávací protokol
 
-When at least two separate package documents are detected, the endpoint returns a ZIP archive instead of
-collapsing the package into one PDF. Slovak rental export text is generated with UTF-8 Slovak literals and the
+When at least two separate package documents are detected, including multilingual variants such as Slovak plus
+English versions, the default endpoint response returns a ZIP archive instead of collapsing the package into one PDF.
+If the client explicitly needs one combined PDF, call the same endpoint with `bundle=single_pdf`; each generated legal
+document starts on a new page in the combined PDF. Slovak rental export text is generated with UTF-8 Slovak literals and the
 Central-European PDF font profile, so headings such as `Nájomná zmluva`, `Čl. I`, `prenajímateľ`, and
 `nájomca` render without mojibake.
 
@@ -105,6 +107,9 @@ For generated court-facing or client/third-party output documents, including req
 - case-document PDF links render only the selected generated legal-document block; conversational assistant text,
   summary bullets, follow-up prompts, raw markdown separators/bold markers, and unselected alternate-language
   document blocks are not included in the final PDF
+- structured `CASE_UPDATE_JSON.case.documents` entries are treated as the source of truth for generated legal
+  documents; each entry with its own `content`/`body`/`text` field is persisted and exported as a separate
+  generated document by default, so case history, download, and email attachment flows expose all language variants
 - missing party details in generated documents can be filled from the signed-in user's profile by default
   (name, address, tax number, identity card number, date of birth, and social security number); these values
   are used in the document body only and are not added to the QR payload

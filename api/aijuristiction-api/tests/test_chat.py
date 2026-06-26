@@ -490,6 +490,111 @@ def test_document_export_returns_zip_from_visible_multi_document_sections_withou
             assert archive.read(name).startswith(b"%PDF")
 
 
+def test_multilingual_case_update_documents_export_as_clean_separate_assets(monkeypatch) -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    monkeypatch.setattr(chat_api, "_repository", repository)
+
+    session = repository.create_session(Session(country="SK", discussion_type="advice", language="sk-SK"))
+    case_update = {
+        "case": {
+            "documents": [
+                {
+                    "title": "Splnomocnenie",
+                    "filename": "splnomocnenie_sk.pdf",
+                    "language": "sk-SK",
+                    "content": (
+                        "**SPLNOMOCNENIE**\n\n"
+                        "Ja, RNDr. Marek Matonok, tymto splnomocnujem Emiliu Testovu "
+                        "na pouzivanie firemneho vozidla s evidencnym cislom PP472DT.\n\n"
+                        "Datum: 25. jun 2026\n\n"
+                        "Podpis: ______________________"
+                    ),
+                },
+                {
+                    "title": "Power of Attorney",
+                    "filename": "power_of_attorney_en.pdf",
+                    "language": "en",
+                    "content": (
+                        "**POWER OF ATTORNEY**\n\n"
+                        "I, RNDr. Marek Matonok, hereby authorize Emilia Testova to use "
+                        "the company vehicle with registration number PP472DT.\n\n"
+                        "Date: June 25, 2026\n\n"
+                        "Signature: ______________________"
+                    ),
+                },
+            ]
+        }
+    }
+    assistant_content = (
+        "Vyborne, pripravim splnomocnenie v slovenskej a anglickej verzii na export do PDF.\n\n"
+        "---\n\n"
+        "CASE_UPDATE_JSON:\n"
+        f"{json.dumps(case_update, ensure_ascii=False)}"
+    )
+    repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=assistant_content,
+        )
+    )
+    repository.set_result(
+        session.id,
+        SessionResult(
+            final_recommendation=assistant_content,
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={},
+        ),
+    )
+
+    options = client.get(f"/v1/chat/sessions/{session.id}/export/documents", headers=AUTH_HEADERS)
+    assert options.status_code == 200
+    assert [item["filename"] for item in options.json()["documents"]] == [
+        "splnomocnenie_sk.pdf",
+        "power_of_attorney_en.pdf",
+    ]
+
+    default_export = client.get(
+        f"/v1/chat/sessions/{session.id}/export?format=pdf&kind=document",
+        headers=AUTH_HEADERS,
+    )
+    assert default_export.status_code == 200
+    assert default_export.headers["content-type"].startswith("application/zip")
+    with ZipFile(BytesIO(default_export.content)) as archive:
+        assert sorted(archive.namelist()) == ["power_of_attorney_en.pdf", "splnomocnenie_sk.pdf"]
+        slovak_text = _pdf_text(archive.read("splnomocnenie_sk.pdf"))
+        english_text = _pdf_text(archive.read("power_of_attorney_en.pdf"))
+    assert "Splnomocnenie" in slovak_text
+    assert "Marek Matonok" in slovak_text
+    assert "splnomocnujem Emiliu" in slovak_text
+    assert "______________________" in slovak_text
+    assert "POWER OF ATTORNEY" not in slovak_text
+    assert "Power of Attorney" in english_text
+    assert "hereby authorize Emilia" in english_text
+    assert "______________________" in english_text
+    assert "SPLNOMOCNENIE" not in english_text
+    polluted_tokens = ("Vyborne", "CASE_UPDATE_JSON", "---", "**", "ready for export")
+    assert not any(token in slovak_text for token in polluted_tokens)
+    assert not any(token in english_text for token in polluted_tokens)
+
+    single_pdf = client.get(
+        f"/v1/chat/sessions/{session.id}/export?format=pdf&kind=document&bundle=single_pdf",
+        headers=AUTH_HEADERS,
+    )
+    assert single_pdf.status_code == 200
+    assert single_pdf.headers["content-type"].startswith("application/pdf")
+    reader = PdfReader(BytesIO(single_pdf.content))
+    page_texts = [page.extract_text() or "" for page in reader.pages]
+    assert "Splnomocnenie" in page_texts[0]
+    assert "Marek Matonok" in page_texts[0]
+    assert any("Power of Attorney" in page_text for page_text in page_texts[1:])
+
+
 def test_fallback_document_entries_ignore_single_contract_section_headings() -> None:
     from app.chat.api import _fallback_document_entries_for_export
     from app.chat.models import Message, MessageRole
@@ -5222,6 +5327,102 @@ def test_generated_assistant_document_is_saved_as_case_document(monkeypatch) -> 
     assert "Splnomocnenie" not in english_payload
     assert "Dokumenty su pripravene" not in slovak_payload
     assert "Spracovanie stale prebieha" not in english_payload
+
+
+def test_structured_multilingual_case_documents_are_saved_separately(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Session
+
+    stored_documents: list[dict[str, object]] = []
+
+    class _FakeStore:
+        def list_case_documents(self, *, case_id: str):
+            return []
+
+        def add_case_document(
+            self,
+            *,
+            case_id: str,
+            kind: str,
+            version: int,
+            original_filename: str,
+            payload: bytes,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            doc_id = f"doc-generated-{len(stored_documents) + 1}"
+            stored_documents.append(
+                {
+                    "case_id": case_id,
+                    "kind": kind,
+                    "version": version,
+                    "original_filename": original_filename,
+                    "payload": payload.decode("utf-8"),
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return doc_id
+
+    user_id = uuid4()
+    session = Session(
+        user_id=user_id,
+        case_id="case-380",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    case_update = {
+        "case": {
+            "documents": [
+                {
+                    "title": "Splnomocnenie",
+                    "filename": "splnomocnenie_sk.pdf",
+                    "language": "sk-SK",
+                    "content": (
+                        "**SPLNOMOCNENIE**\n\n"
+                        "Ja, RNDr. Marek Matonok, tymto splnomocnujem Emiliu Testovu.\n\n"
+                        "---\n\n"
+                        "Podpis: ______________________"
+                    ),
+                },
+                {
+                    "title": "Power of Attorney",
+                    "filename": "power_of_attorney_en.pdf",
+                    "language": "en",
+                    "content": (
+                        "**POWER OF ATTORNEY**\n\n"
+                        "I, RNDr. Marek Matonok, hereby authorize Emilia Testova.\n\n"
+                        "Signature: ______________________"
+                    ),
+                },
+            ]
+        }
+    }
+    content = (
+        "Vyborne, pripravim splnomocnenie v slovenskej a anglickej verzii na export do PDF.\n\n"
+        "CASE_UPDATE_JSON:\n"
+        f"{json.dumps(case_update, ensure_ascii=False)}"
+    )
+
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+
+    doc_ids = chat_api._persist_generated_case_document_if_needed(session=session, content=content)
+
+    assert doc_ids == ["doc-generated-1", "doc-generated-2"]
+    assert len(stored_documents) == 2
+    assert [item["version"] for item in stored_documents] == [1, 2]
+    assert str(stored_documents[0]["original_filename"]).startswith("splnomocnenie_sk_")
+    assert str(stored_documents[1]["original_filename"]).startswith("power_of_attorney_en_")
+    slovak_payload = str(stored_documents[0]["payload"])
+    english_payload = str(stored_documents[1]["payload"])
+    assert "SPLNOMOCNENIE" in slovak_payload
+    assert "______________________" in slovak_payload
+    assert "POWER OF ATTORNEY" not in slovak_payload
+    assert "POWER OF ATTORNEY" in english_payload
+    assert "______________________" in english_payload
+    assert "Vyborne" not in slovak_payload
+    assert "CASE_UPDATE_JSON" not in english_payload
+    assert "---" not in slovak_payload
+    assert "**" not in english_payload
 
 
 def test_generated_payment_confirmation_document_uses_legal_filename() -> None:
