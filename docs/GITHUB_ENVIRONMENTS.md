@@ -103,12 +103,12 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_CONTAINER_APP_NAME` | API Azure Container App name |
 | `AZURE_FRONTEND_CONTAINER_APP_NAME` | Frontend Azure Container App name provisioned by `infra_deploy` and updated by `web_build_deploy` |
 | `AZURE_APPLICATION_INSIGHTS_NAME` | Application Insights resource name |
-| `LLM_PROVIDER` | Runtime LLM provider, keep `azurefoundry` for deployed Azure environments |
+| `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` | Long random secret used to encrypt model provider credentials stored in API database routing tables |
+| `JURISDIGTA_ADMIN_API_KEY` | Admin API key for `/v1/admin/ai-models` credential/profile management; send as `x-admin-api-key` together with the normal `x-api-key` |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for API + workers; worker deployments now default to `local`, while `cloud` remains available when you want Azure/OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, recommended default `all-MiniLM-L6-v2` |
 | `SYSTEM_EMBEDDING_DEVICE` | Local embedding device selector, default `auto`; workers try CUDA/MPS when supported and fall back to CPU on unavailable GPU support or runtime errors |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used by chat and document embeddings |
-| `AZURE_OPENAI_DEPLOYMENT` | Azure OpenAI chat deployment name used by the API |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI / Foundry endpoint URL used by document embeddings; chat endpoint belongs in `ai_model_providers` |
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Azure OpenAI embedding deployment name used for document chunk embeddings, recommended `text-embedding-3-large` |
 | `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version, keep aligned with `.env.example` unless you intentionally upgrade |
 | `JURISDIGTA_UNLIMITED_ACCESS_EMAILS` | Privileged comma- or semicolon-separated email allowlist for controlled test/operator accounts with unlimited case/document access; default `mmaideveloper@gmail.com` |
@@ -215,7 +215,6 @@ These are used by the document processor deployment workflow and by `infra_deplo
 
 | Variable | Purpose |
 | --- | --- |
-| `LLM_PROVIDER` | Runtime provider for the job, keep `azurefoundry` in Azure deployments |
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; default `local`, or set `cloud` for Azure OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name; keep default `all-MiniLM-L6-v2` unless you intentionally switch models. In `local` mode the deploy prefetches that model into the worker image before `az acr build` |
 | `SYSTEM_EMBEDDING_DEVICE` | Local embedding device selector for `local` mode, default `auto`; use `cpu` to force CPU-only execution |
@@ -365,13 +364,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT` | `20` | Max pending documents processed per scheduled run |
 | `JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS` | `5` | Email outbox poll interval in seconds for near-immediate self-managed delivery; minimum accepted value is `5` |
-| `LOCAL_LLM_PROVIDER` | `ollama` | Local model runtime used by the future model router for free-plan traffic and paid fallback on `jurisdigta-server` |
-| `LOCAL_LLM_BASE_URL` | `http://127.0.0.1:11434` | Local Ollama API base URL; keep it localhost-only and do not publish it through Cloudflare Tunnel |
-| `LOCAL_LLM_MODEL` | `qwen3.6:27b` | Preferred local model tag when server hardware supports it |
-| `LOCAL_LLM_FALLBACK_MODEL` | unset | Smaller local fallback model tag when the preferred model is unavailable or too large for server capacity |
-| `LOCAL_LLM_HEALTH_URL` | `http://127.0.0.1:11434/api/tags` | Local model service health/list endpoint used by operators and future health checks |
-| `LOCAL_LLM_OPENAI_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible local base URL for future router adapters |
-| `INSTALL_OLLAMA` | `1` | Self-managed deploy installs/configures Ollama and pulls `LOCAL_LLM_MODEL`; set `0` only for controlled rollback or prevalidated manual install |
+| `INSTALL_OLLAMA` | `1` | Self-managed deploy installs/configures Ollama and pulls the seeded free-plan model `qwen3.6:27b`; set `0` only for controlled rollback or prevalidated manual install |
 | `OLLAMA_METRICS_PORT` | `9109` | Host-local Prometheus exporter port for Ollama runtime metrics |
 | `OLLAMA_METRICS_TIMEOUT` | `5` | Timeout in seconds for Ollama exporter API probes |
 
@@ -389,12 +382,10 @@ Recommended environment protection:
 
 Server-local `jurisdigta.env` must include at least:
 
-- `LLM_PROVIDER=azurefoundry`
-- `AZURE_OPENAI_ENDPOINT`
-- `AZURE_OPENAI_DEPLOYMENT`
+- `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`
+- `JURISDIGTA_ADMIN_API_KEY`
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`
 - `AZURE_OPENAI_API_VERSION`
-- `AZURE_OPENAI_API_KEY`
 - `LOCAL_POSTGRES_DB`
 - `LOCAL_POSTGRES_USER`
 - `LOCAL_POSTGRES_PASSWORD`
@@ -406,14 +397,16 @@ Server-local `jurisdigta.env` must include at least:
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
 - `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
-- `LOCAL_LLM_PROVIDER=ollama`
-- `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434`
-- `LOCAL_LLM_MODEL=qwen3.6:27b` or a smaller validated model if server RAM/VRAM is insufficient
-- `LOCAL_LLM_HEALTH_URL=http://127.0.0.1:11434/api/tags`
-- `LOCAL_LLM_OPENAI_BASE_URL=http://127.0.0.1:11434/v1`
 - `INSTALL_OLLAMA=1` so the self-managed deploy installs Ollama and pulls `qwen3.6:27b`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` or another bounded runtime in minutes
 - email/Turnstile settings when those production features are enabled
+
+After the API database is initialized, configure chat routes in the database/admin API:
+
+- `local_ollama_default`: provider `local_ollama`, base URL `http://127.0.0.1:11434/v1`, model `qwen3.6:27b`, marked as free-plan default.
+- `azure_foundry_gpt_4o_mini`: provider `azure_foundry`, EU data-zone capable, exact model/deployment `gpt-4o-mini`.
+- Add the Azure Foundry endpoint to `ai_model_providers.base_url`.
+- Add the Azure Foundry API key or token through `/v1/admin/ai-models/providers/{provider_id}/credentials` so it is stored encrypted in `ai_model_credentials`.
 
 Optional server-local monitoring setting in `/srv/jurisdigta/app/Deployment/monitoring/.env`:
 
@@ -465,8 +458,9 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `AZURE_CONTAINERAPPS_ENVIRONMENT`
 - `AZURE_CONTAINER_APP_NAME`
 - `AZURE_FRONTEND_CONTAINER_APP_NAME`
-- `AZURE_OPENAI_ENDPOINT`
-- `AZURE_OPENAI_DEPLOYMENT`
+- `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`
+- `JURISDIGTA_ADMIN_API_KEY`
+- `AZURE_OPENAI_ENDPOINT` for embeddings when cloud embeddings are enabled
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`
 - `SYSTEM_EMBEDDING_MODEL_OPTION=local`
 - `SYSTEM_EMBEDDING_MODEL=all-MiniLM-L6-v2`
@@ -480,10 +474,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1` for self-managed prod
 - `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION=*/15 * * * *` for self-managed prod
 - `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT=20` for self-managed prod
-- `LOCAL_LLM_PROVIDER=ollama` for self-managed prod local-model routing
-- `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434` for self-managed prod local-model routing
-- `LOCAL_LLM_MODEL=qwen3.6:27b` or a smaller validated local model for weaker hardware
-- `LOCAL_LLM_OPENAI_BASE_URL=http://127.0.0.1:11434/v1`
+- DB route/provider/profile rows for the self-managed prod local Ollama free route and Azure Foundry paid route
 - `AZURE_LAWS_COLLECTOR_CONTAINER_APP_NAME`
 - `AZURE_LAWS_COLLECTOR_MAX_PROBES`
 - `AZURE_LAWS_STORAGE_CONTAINER_NAME=laws-collection-sk`

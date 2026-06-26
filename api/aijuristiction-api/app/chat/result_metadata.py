@@ -117,6 +117,7 @@ def build_session_result_metadata(
     messages: Sequence[Message],
     final_recommendation: str,
     base_metadata: dict[str, Any] | None = None,
+    routed_model_name: str | None = None,
 ) -> dict[str, Any]:
     metadata = dict(base_metadata or {})
     visible_messages = _visible_messages(messages)
@@ -149,7 +150,7 @@ def build_session_result_metadata(
         final_result=final_recommendation,
     )
 
-    knowledge_snapshot = get_law_knowledge_snapshot(session.country)
+    knowledge_snapshot = get_law_knowledge_snapshot(session.country, model_name=routed_model_name)
     law_citations = resolve_session_law_citations(
         country_code=session.country,
         messages=visible_messages,
@@ -247,10 +248,14 @@ def _derive_expected_points(
     return (fallback[:120],)
 
 
-def get_law_knowledge_snapshot(country_code: str | None) -> LawKnowledgeSnapshot:
+def get_law_knowledge_snapshot(
+    country_code: str | None,
+    *,
+    model_name: str | None = None,
+) -> LawKnowledgeSnapshot:
     normalized_country = (country_code or "").strip().upper()
     scope = "country" if normalized_country else "global"
-    model_cutoff = _read_or_create_model_knowledge_cutoff_snapshot()
+    model_cutoff = _read_or_create_model_knowledge_cutoff_snapshot(model_name=model_name)
 
     db_backend = os.getenv("LAWS_DB_BACKEND", "sqlite").strip().lower()
     db_local = os.getenv(
@@ -431,8 +436,11 @@ def _law_snapshot_without_db(
     )
 
 
-def _read_or_create_model_knowledge_cutoff_snapshot() -> tuple[str | None, str]:
-    model_name = _resolve_llm_model_name()
+def _read_or_create_model_knowledge_cutoff_snapshot(
+    *,
+    model_name: str | None = None,
+) -> tuple[str | None, str]:
+    model_name = (model_name or "").strip() or _resolve_llm_model_name()
     manual_cutoff = str(os.getenv("MODEL_KNOWLEDGE_CUTOFF_DATE") or "").strip()
     cache_path = _resolve_model_knowledge_cutoff_cache_path()
 
@@ -533,8 +541,6 @@ def _write_model_knowledge_cutoff_cache(
                     "llm_modelname": model_name,
                     "model_knowledge_cutoff_date": snapshot[0],
                     "source": snapshot[1],
-                    "provider": os.getenv("LLM_PROVIDER", "").strip().lower(),
-                    "deployment": os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip(),
                 },
                 indent=2,
                 sort_keys=True,
@@ -571,14 +577,10 @@ def _ensure_model_knowledge_permanent_memory_entry(
 
 
 def _resolve_llm_model_name() -> str:
-    provider = os.getenv("LLM_PROVIDER", "").strip().lower() or "unknown"
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip()
-    configured_openai_model = str(os.getenv("OPENAI_MODEL") or "").strip()
-    if provider in {"azurefoundry", "azureopenai"} and deployment:
-        return deployment
-    if configured_openai_model:
-        return configured_openai_model
-    return provider
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if provider == "mock":
+        return "mock"
+    return "unknown"
 
 
 def _resolve_model_knowledge_cutoff_cache_path() -> Path | None:

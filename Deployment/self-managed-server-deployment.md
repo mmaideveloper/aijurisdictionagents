@@ -174,7 +174,7 @@ gh auth refresh -s read:project,project
 
 Install Ollama as a separate local model service for free-plan traffic and paid fallback routing. Do not load large model files directly inside the API process for normal production traffic; the API should stay lightweight and call the local model service through the model router.
 
-The self-managed production deployment script runs this step by default with `INSTALL_OLLAMA=1`. It installs Ollama when missing, keeps it bound to `127.0.0.1:11434`, pulls the configured `LOCAL_LLM_MODEL`, and validates both `/api/tags` and `/v1/models`. The default initial production model is `qwen3.6:27b`.
+The self-managed production deployment script runs this step by default with `INSTALL_OLLAMA=1`. It installs Ollama when missing, keeps it bound to `127.0.0.1:11434`, pulls the default free-plan model `qwen3.6:27b`, and validates both `/api/tags` and `/v1/models`. The API model router stores the exact free-plan model in `ai_model_profiles`, so later local model changes should be made in the database/admin route setup after the model is pulled and validated.
 
 Install from a trusted server shell and review the installer before production use:
 
@@ -264,24 +264,21 @@ nano /srv/jurisdigta/secrets/jurisdigta.env
 
 Minimum deployment values to decide before production:
 
-- `LLM_PROVIDER=azurefoundry` unless deterministic offline testing was explicitly requested.
-- `LOCAL_LLM_PROVIDER=ollama` for task #365 local-model routing.
-- `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434`.
-- `LOCAL_LLM_OPENAI_BASE_URL=http://127.0.0.1:11434/v1`.
-- `LOCAL_LLM_MODEL=qwen3.6:27b` when server hardware supports it.
-- `LOCAL_LLM_FALLBACK_MODEL` set to a smaller validated model when needed.
-- `LOCAL_LLM_HEALTH_URL=http://127.0.0.1:11434/api/tags`.
-- `AZURE_OPENAI_ENDPOINT`
-- `AZURE_OPENAI_DEPLOYMENT`
+- `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` as a long random secret for encrypted database model credentials.
+- `JURISDIGTA_ADMIN_API_KEY` for protected `/v1/admin/ai-models` management endpoints.
+- Ollama installed on `127.0.0.1:11434` with `qwen3.6:27b` pulled for the seeded free/default route.
+- API database route `local_ollama_default` mapped to exact model `qwen3.6:27b`.
+- API database route `azure_foundry_gpt_4o_mini` mapped to exact Azure Foundry deployment/model `gpt-4o-mini`.
+- Azure Foundry provider endpoint stored in `ai_model_providers.base_url`.
+- Azure Foundry API key or token stored encrypted in `ai_model_credentials`.
 - `AZURE_OPENAI_EMBEDDINGS_MODEL`
 - `AZURE_OPENAI_API_VERSION`
-- `AZURE_OPENAI_API_KEY`
 - `DB_OPTION=postgres`
 - `LAWS_DB_BACKEND=postgres`
 - Strong PostgreSQL usernames and passwords.
 - Public origins and domain values for `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu` when those hosts are routed to this server.
 
-Do not switch local production-like starts from `azurefoundry` to `mock` just because Azure Foundry settings are missing. If credentials are incomplete, stop and report the exact missing `AZURE_OPENAI_*` values.
+Do not switch production-like starts to `mock` just because a database route is incomplete. If model routing is incomplete, stop and report the exact missing provider, profile, endpoint, or encrypted credential setup.
 
 ## 8. PostgreSQL Deployment Option
 
@@ -1100,7 +1097,7 @@ curl -fsS http://127.0.0.1:8080/health
 Result:
 
 ```json
-{"status":"ok","llm":{"status":"ok","provider":"azurefoundry"},"database":{"status":"ok","backend":"postgres"}}
+{"status":"ok","llm":{"status":"ok","provider":"model_routing"},"database":{"status":"ok","backend":"postgres"}}
 ```
 
 ### Laws Collector Daily Cron
@@ -1162,7 +1159,7 @@ rm -f /srv/jurisdigta/ops/run_laws_collector_daily.sh
 - The laws backup contains legal corpus data and embeddings; keep it under controlled storage and define retention/deletion policy.
 - The restore created a rollback backup before replacing `laws_sk`.
 - Logs and validation output record aggregate counts only, not legal document contents.
-- API was started with `LLM_PROVIDER=azurefoundry` from `.env`, matching the project default rule.
+- API was started with database-backed model routing; chat provider/model/deployment came from the API database routing tables, not `.env`.
 - The daily laws collector cron reuses server-local secrets and logs only operational collector status, not full database connection strings or legal-risk user outputs.
 
 ## Prometheus And Grafana Monitoring

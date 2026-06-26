@@ -1,5 +1,6 @@
 from .config import ApiDataConfig
 from .store import (
+    AIModelCredential,
     AIModelProfile,
     AIModelProvider,
     AIModelRouteSelection,
@@ -21,6 +22,7 @@ from .store import (
 )
 
 __all__ = [
+    "AIModelCredential",
     "AIModelProfile",
     "AIModelProvider",
     "AIModelRouteSelection",

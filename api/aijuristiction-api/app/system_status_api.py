@@ -96,22 +96,18 @@ def _configured_db_backend() -> str:
 
 
 def _configured_llm_provider() -> str:
-    raw_value = os.getenv("LLM_PROVIDER", "azurefoundry").strip().lower()
-    if raw_value in {"", "azure", "azurefoundry"}:
-        return "azurefoundry"
-    return raw_value
+    raw_value = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if raw_value == "mock":
+        return "mock"
+    return "model_routing"
 
 
 def _llm_health_payload() -> dict[str, str]:
     provider = _configured_llm_provider()
-    status = "ok" if provider in {"mock", "azurefoundry", "openai"} else "error"
-    payload = {
-        "status": status,
+    return {
+        "status": "ok",
         "provider": provider,
     }
-    if status == "error":
-        payload["message"] = f'Unsupported LLM_PROVIDER "{provider}"'
-    return payload
 
 
 def _laws_collector_status_payload() -> dict[str, Any]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -185,6 +186,7 @@ class AIModelProfile:
     effective_from: str | None
     effective_to: str | None
     eu_data_zone_capable: bool
+    is_default_for_free: bool
     enabled: bool
     created_at: str
     updated_at: str
@@ -208,6 +210,21 @@ class AITaskRoutePolicy:
     enabled: bool
     created_at: str
     updated_at: str
+
+
+@dataclass(frozen=True)
+class AIModelCredential:
+    credential_id: str
+    provider_id: str
+    credential_name: str
+    secret_type: str
+    protected_secret: str
+    secret_preview: str
+    secret_value: str | None
+    enabled: bool
+    created_at: str
+    updated_at: str
+    last_revealed_at: str | None
 
 
 @dataclass(frozen=True)
@@ -671,6 +688,20 @@ class ApiDatabaseStore:
             raise RuntimeError(f"AI model provider was not saved: {normalized_code}")
         return _row_to_ai_model_provider(row)
 
+    def list_ai_model_providers(self) -> list[AIModelProvider]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT provider_id, provider_code, provider_type, display_name, base_url,
+                       api_version, region, data_zone, is_external, is_local, health_check_url,
+                       enabled, created_at, updated_at
+                FROM ai_model_providers
+                ORDER BY provider_code
+                """,
+            ).fetchall()
+        return [_row_to_ai_model_provider(row) for row in rows]
+
     def upsert_ai_model_profile(
         self,
         *,
@@ -685,6 +716,7 @@ class ApiDatabaseStore:
         effective_from: str | None = None,
         effective_to: str | None = None,
         eu_data_zone_capable: bool = False,
+        is_default_for_free: bool = False,
         enabled: bool = True,
         model_profile_id: str | None = None,
     ) -> AIModelProfile:
@@ -699,8 +731,8 @@ class ApiDatabaseStore:
                     model_profile_id, provider_id, model_code, deployment_name,
                     context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                     output_price_per_1m, billing_currency, effective_from, effective_to,
-                    eu_data_zone_capable, enabled, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(model_profile_id) DO UPDATE SET
                     model_code = excluded.model_code,
                     deployment_name = excluded.deployment_name,
@@ -712,6 +744,7 @@ class ApiDatabaseStore:
                     effective_from = excluded.effective_from,
                     effective_to = excluded.effective_to,
                     eu_data_zone_capable = excluded.eu_data_zone_capable,
+                    is_default_for_free = excluded.is_default_for_free,
                     enabled = excluded.enabled,
                     updated_at = excluded.updated_at
                 """,
@@ -728,11 +761,23 @@ class ApiDatabaseStore:
                     effective_from,
                     effective_to,
                     _bool_int(eu_data_zone_capable),
+                    _bool_int(is_default_for_free),
                     _bool_int(enabled),
                     now,
                     now,
                 ),
             )
+            if is_default_for_free:
+                self._execute(
+                    conn,
+                    """
+                    UPDATE ai_model_profiles
+                    SET is_default_for_free = 0, updated_at = ?
+                    WHERE provider_id = ?
+                      AND model_profile_id <> ?
+                    """,
+                    (now, provider_id, resolved_id),
+                )
             conn.commit()
             row = self._fetchone(
                 conn,
@@ -740,7 +785,7 @@ class ApiDatabaseStore:
                 SELECT model_profile_id, provider_id, model_code, deployment_name,
                        context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                        output_price_per_1m, billing_currency, effective_from, effective_to,
-                       eu_data_zone_capable, enabled, created_at, updated_at
+                       eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
                 FROM ai_model_profiles
                 WHERE model_profile_id = ?
                 """,
@@ -749,6 +794,28 @@ class ApiDatabaseStore:
         if row is None:
             raise RuntimeError(f"AI model profile was not saved: {resolved_id}")
         return _row_to_ai_model_profile(row)
+
+    def list_ai_model_profiles(self, *, provider_id: str | None = None) -> list[AIModelProfile]:
+        params: tuple[Any, ...] = ()
+        where = ""
+        if provider_id is not None:
+            where = "WHERE provider_id = ?"
+            params = (provider_id.strip(),)
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                f"""
+                SELECT model_profile_id, provider_id, model_code, deployment_name,
+                       context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
+                       output_price_per_1m, billing_currency, effective_from, effective_to,
+                       eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
+                FROM ai_model_profiles
+                {where}
+                ORDER BY provider_id, is_default_for_free DESC, model_code
+                """,
+                params,
+            ).fetchall()
+        return [_row_to_ai_model_profile(row) for row in rows]
 
     def upsert_ai_task_route_policy(
         self,
@@ -835,6 +902,185 @@ class ApiDatabaseStore:
         if row is None:
             raise RuntimeError(f"AI task route policy was not saved: {resolved_id}")
         return _row_to_ai_task_route_policy(row)
+
+    def upsert_ai_model_credential(
+        self,
+        *,
+        provider_id: str,
+        secret_value: str,
+        credential_name: str = "default",
+        secret_type: str = "api_key",
+        enabled: bool = True,
+        credential_id: str | None = None,
+    ) -> AIModelCredential:
+        normalized_provider = provider_id.strip()
+        normalized_name = _normalize_route_key(credential_name, default="default")
+        normalized_type = _normalize_route_key(secret_type, default="api_key")
+        if not normalized_provider:
+            raise ValueError("provider_id is required")
+        if not secret_value.strip():
+            raise ValueError("secret_value is required")
+        resolved_id = credential_id or f"{normalized_provider}:{normalized_type}:{normalized_name}"
+        now = _now_iso()
+        protected_secret = _protect_model_secret(secret_value.strip())
+        secret_preview = _secret_preview(secret_value)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO ai_model_credentials(
+                    credential_id, provider_id, credential_name, secret_type,
+                    protected_secret, secret_preview, enabled, created_at, updated_at,
+                    last_revealed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                ON CONFLICT(credential_id) DO UPDATE SET
+                    provider_id = excluded.provider_id,
+                    credential_name = excluded.credential_name,
+                    secret_type = excluded.secret_type,
+                    protected_secret = excluded.protected_secret,
+                    secret_preview = excluded.secret_preview,
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    resolved_id,
+                    normalized_provider,
+                    normalized_name,
+                    normalized_type,
+                    protected_secret,
+                    secret_preview,
+                    _bool_int(enabled),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT credential_id, provider_id, credential_name, secret_type,
+                       protected_secret, secret_preview, enabled, created_at,
+                       updated_at, last_revealed_at
+                FROM ai_model_credentials
+                WHERE credential_id = ?
+                """,
+                (resolved_id,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model credential was not saved: {resolved_id}")
+        return _row_to_ai_model_credential(row, reveal_secret=False)
+
+    def list_ai_model_credentials(
+        self,
+        *,
+        provider_id: str | None = None,
+        reveal: bool = False,
+    ) -> list[AIModelCredential]:
+        params: tuple[Any, ...] = ()
+        where = ""
+        if provider_id is not None:
+            where = "WHERE provider_id = ?"
+            params = (provider_id.strip(),)
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                f"""
+                SELECT credential_id, provider_id, credential_name, secret_type,
+                       protected_secret, secret_preview, enabled, created_at,
+                       updated_at, last_revealed_at
+                FROM ai_model_credentials
+                {where}
+                ORDER BY provider_id, credential_name, secret_type
+                """,
+                params,
+            ).fetchall()
+            if reveal and rows:
+                now = _now_iso()
+                credential_ids = [str(row[0]) for row in rows]
+                for credential_id in credential_ids:
+                    self._execute(
+                        conn,
+                        """
+                        UPDATE ai_model_credentials
+                        SET last_revealed_at = ?
+                        WHERE credential_id = ?
+                        """,
+                        (now, credential_id),
+                    )
+                conn.commit()
+                rows = self._execute(
+                    conn,
+                    f"""
+                    SELECT credential_id, provider_id, credential_name, secret_type,
+                           protected_secret, secret_preview, enabled, created_at,
+                           updated_at, last_revealed_at
+                    FROM ai_model_credentials
+                    {where}
+                    ORDER BY provider_id, credential_name, secret_type
+                    """,
+                    params,
+                ).fetchall()
+        return [_row_to_ai_model_credential(row, reveal_secret=reveal) for row in rows]
+
+    def set_ai_model_credential_enabled(
+        self,
+        *,
+        credential_id: str,
+        enabled: bool,
+    ) -> AIModelCredential:
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE ai_model_credentials
+                SET enabled = ?, updated_at = ?
+                WHERE credential_id = ?
+                """,
+                (_bool_int(enabled), now, credential_id.strip()),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT credential_id, provider_id, credential_name, secret_type,
+                       protected_secret, secret_preview, enabled, created_at,
+                       updated_at, last_revealed_at
+                FROM ai_model_credentials
+                WHERE credential_id = ?
+                """,
+                (credential_id.strip(),),
+            )
+        if row is None:
+            raise KeyError(f"AI model credential {credential_id} not found")
+        return _row_to_ai_model_credential(row, reveal_secret=False)
+
+    def get_ai_model_provider_secret(
+        self,
+        *,
+        provider_id: str,
+        secret_type: str = "api_key",
+    ) -> str | None:
+        row: tuple[Any, ...] | None
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT credential_id, provider_id, credential_name, secret_type,
+                       protected_secret, secret_preview, enabled, created_at,
+                       updated_at, last_revealed_at
+                FROM ai_model_credentials
+                WHERE provider_id = ?
+                  AND secret_type = ?
+                  AND enabled = 1
+                ORDER BY credential_name = 'default' DESC, updated_at DESC
+                LIMIT 1
+                """,
+                (provider_id.strip(), _normalize_route_key(secret_type, default="api_key")),
+            )
+        if row is None:
+            return None
+        return _row_to_ai_model_credential(row, reveal_secret=True).secret_value
 
     def resolve_ai_model_route(
         self,
@@ -1732,6 +1978,21 @@ class ApiDatabaseStore:
                 (user_id,),
             ).fetchall()
         return [_row_to_user_subscription(row) for row in rows]
+
+    def get_effective_user_subscription(self, *, user_id: str) -> UserSubscription | None:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT subscription_id, user_id, plan_code, status, starts_at, ends_at, case_ids_json, created_at, updated_at
+                FROM user_subscriptions
+                WHERE user_id = ? AND status = 'paid'
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+        return _row_to_user_subscription(row) if row is not None else None
 
     def request_subscription_change(self, *, user_id: str, plan_code: str) -> UserSubscription:
         now = _now_iso()
@@ -2896,7 +3157,7 @@ class ApiDatabaseStore:
                    m.model_profile_id, m.provider_id, m.model_code, m.deployment_name,
                    m.context_window_tokens, m.input_price_per_1m, m.cached_input_price_per_1m,
                    m.output_price_per_1m, m.billing_currency, m.effective_from, m.effective_to,
-                   m.eu_data_zone_capable, m.enabled, m.created_at, m.updated_at
+                    m.eu_data_zone_capable, m.is_default_for_free, m.enabled, m.created_at, m.updated_at
             FROM ai_model_profiles m
             JOIN ai_model_providers p ON p.provider_id = m.provider_id
             WHERE m.model_profile_id = ?
@@ -2945,10 +3206,26 @@ class ApiDatabaseStore:
                 effective_from TEXT,
                 effective_to TEXT,
                 eu_data_zone_capable INTEGER NOT NULL DEFAULT 0,
+                is_default_for_free INTEGER NOT NULL DEFAULT 0,
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 UNIQUE(provider_id, model_code),
+                FOREIGN KEY(provider_id) REFERENCES ai_model_providers(provider_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_model_credentials (
+                credential_id TEXT PRIMARY KEY,
+                provider_id TEXT NOT NULL,
+                credential_name TEXT NOT NULL DEFAULT 'default',
+                secret_type TEXT NOT NULL DEFAULT 'api_key',
+                protected_secret TEXT NOT NULL,
+                secret_preview TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_revealed_at TEXT,
+                UNIQUE(provider_id, credential_name, secret_type),
                 FOREIGN KEY(provider_id) REFERENCES ai_model_providers(provider_id) ON DELETE CASCADE
             );
 
@@ -3038,7 +3315,34 @@ class ApiDatabaseStore:
 
             """,
         )
+        self._ensure_ai_model_profile_columns(conn)
         self._ensure_ai_model_usage_audit_columns(conn)
+
+    def _ensure_ai_model_profile_columns(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            profile_columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'ai_model_profiles'
+                    """,
+                ).fetchall()
+            }
+        else:
+            profile_columns = {
+                row[1]
+                for row in self._execute(conn, "PRAGMA table_info(ai_model_profiles)").fetchall()
+            }
+        if "is_default_for_free" not in profile_columns:
+            self._execute(
+                conn,
+                "ALTER TABLE ai_model_profiles ADD COLUMN is_default_for_free INTEGER NOT NULL DEFAULT 0",
+            )
 
     def _ensure_ai_model_usage_audit_columns(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -3355,9 +3659,10 @@ class ApiDatabaseStore:
 
     def _seed_ai_model_routing(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
         now = _now_iso()
-        local_base_url = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434").strip()
-        local_model = os.getenv("LOCAL_LLM_MODEL", "qwen3.6:27b").strip() or "qwen3.6:27b"
+        local_base_url = "http://127.0.0.1:11434/v1"
+        local_model = "qwen3.6:27b"
         local_profile_id = "local_ollama_default"
+        azure_profile_id = "azure_foundry_gpt_4o_mini"
         self._execute(
             conn,
             """
@@ -3387,7 +3692,40 @@ class ApiDatabaseStore:
                 "local",
                 0,
                 1,
-                os.getenv("LOCAL_LLM_HEALTH_URL", f"{local_base_url.rstrip('/')}/api/tags").strip(),
+                "http://127.0.0.1:11434/api/tags",
+                1,
+                now,
+                now,
+            ),
+        )
+        self._execute(
+            conn,
+            """
+            INSERT INTO ai_model_providers(
+                provider_id, provider_code, provider_type, display_name, base_url,
+                api_version, region, data_zone, is_external, is_local, health_check_url,
+                enabled, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(provider_code) DO UPDATE SET
+                provider_type = excluded.provider_type,
+                display_name = excluded.display_name,
+                is_external = excluded.is_external,
+                is_local = excluded.is_local,
+                enabled = excluded.enabled,
+                updated_at = excluded.updated_at
+            """,
+            (
+                "azure_foundry",
+                "azure_foundry",
+                "azurefoundry",
+                "Azure AI Foundry",
+                "",
+                "2024-10-21",
+                "",
+                "eu",
+                1,
+                0,
+                "",
                 1,
                 now,
                 now,
@@ -3400,11 +3738,12 @@ class ApiDatabaseStore:
                 model_profile_id, provider_id, model_code, deployment_name,
                 context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                 output_price_per_1m, billing_currency, effective_from, effective_to,
-                eu_data_zone_capable, enabled, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(model_profile_id) DO UPDATE SET
                 model_code = excluded.model_code,
                 deployment_name = excluded.deployment_name,
+                is_default_for_free = excluded.is_default_for_free,
                 updated_at = excluded.updated_at
             """,
             (
@@ -3421,12 +3760,48 @@ class ApiDatabaseStore:
                 None,
                 1,
                 1,
+                1,
                 now,
                 now,
             ),
         )
-        for plan_code in ("", "free", "case", "basic", "premium"):
+        self._execute(
+            conn,
+            """
+            INSERT INTO ai_model_profiles(
+                model_profile_id, provider_id, model_code, deployment_name,
+                context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
+                output_price_per_1m, billing_currency, effective_from, effective_to,
+                eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(model_profile_id) DO UPDATE SET
+                model_code = excluded.model_code,
+                deployment_name = excluded.deployment_name,
+                eu_data_zone_capable = excluded.eu_data_zone_capable,
+                updated_at = excluded.updated_at
+            """,
+            (
+                azure_profile_id,
+                "azure_foundry",
+                "gpt-4o-mini",
+                "gpt-4o-mini",
+                128000,
+                0.15,
+                0.075,
+                0.60,
+                "USD",
+                None,
+                None,
+                1,
+                0,
+                1,
+                now,
+                now,
+            ),
+        )
+        for plan_code in ("", "free", "case", "basic", "premium", "unlimited"):
             allow_external = 0 if plan_code in ("", "free") else 1
+            external_profile_id = azure_profile_id if plan_code in ("case", "basic", "premium", "unlimited") else None
             self._execute(
                 conn,
                 """
@@ -3451,10 +3826,10 @@ class ApiDatabaseStore:
                     "default",
                     plan_code,
                     None,
-                    None,
+                    external_profile_id,
                     local_profile_id,
                     allow_external,
-                    1,
+                    0 if external_profile_id else 1,
                     1,
                     1,
                     1,
@@ -3548,9 +3923,29 @@ def _row_to_ai_model_profile(row: tuple[object, ...]) -> AIModelProfile:
         effective_from=str(row[9]) if row[9] is not None else None,
         effective_to=str(row[10]) if row[10] is not None else None,
         eu_data_zone_capable=_row_bool(row[11]),
-        enabled=_row_bool(row[12]),
-        created_at=str(row[13]),
-        updated_at=str(row[14]),
+        is_default_for_free=_row_bool(row[12]),
+        enabled=_row_bool(row[13]),
+        created_at=str(row[14]),
+        updated_at=str(row[15]),
+    )
+
+
+def _row_to_ai_model_credential(
+    row: tuple[object, ...], *, reveal_secret: bool
+) -> AIModelCredential:
+    protected_secret = str(row[4])
+    return AIModelCredential(
+        credential_id=str(row[0]),
+        provider_id=str(row[1]),
+        credential_name=str(row[2]),
+        secret_type=str(row[3]),
+        protected_secret=protected_secret,
+        secret_preview=str(row[5]),
+        secret_value=_reveal_model_secret(protected_secret) if reveal_secret else None,
+        enabled=_row_bool(row[6]),
+        created_at=str(row[7]),
+        updated_at=str(row[8]),
+        last_revealed_at=str(row[9]) if row[9] is not None else None,
     )
 
 
@@ -3712,6 +4107,66 @@ def _row_bool(value: object) -> bool:
 def _normalize_route_key(value: str, *, default: str) -> str:
     normalized = value.strip().lower().replace(" ", "_")
     return normalized or default
+
+
+def _protect_model_secret(secret: str) -> str:
+    key = _model_credential_encryption_key()
+    nonce = secrets.token_bytes(16)
+    plaintext = secret.encode("utf-8")
+    ciphertext = _xor_bytes(plaintext, _model_keystream(key=key, nonce=nonce, length=len(plaintext)))
+    tag = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
+    return "v1:" + base64.urlsafe_b64encode(nonce + tag + ciphertext).decode("ascii")
+
+
+def _reveal_model_secret(protected_secret: str) -> str | None:
+    if not protected_secret.startswith("v1:"):
+        return None
+    try:
+        payload = base64.urlsafe_b64decode(protected_secret[3:].encode("ascii"))
+    except Exception:
+        return None
+    if len(payload) < 49:
+        return None
+    nonce = payload[:16]
+    tag = payload[16:48]
+    ciphertext = payload[48:]
+    key = _model_credential_encryption_key()
+    expected_tag = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
+    if not hmac.compare_digest(tag, expected_tag):
+        return None
+    plaintext = _xor_bytes(ciphertext, _model_keystream(key=key, nonce=nonce, length=len(ciphertext)))
+    return plaintext.decode("utf-8")
+
+
+def _model_credential_encryption_key() -> bytes:
+    raw = (
+        os.getenv("AI_MODEL_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+        or os.getenv("TOTP_SECRET_ENCRYPTION_KEY", "").strip()
+        or os.getenv("MCP_API_JWT_SECRET", "").strip()
+        or os.getenv("JWT_SECRET", "").strip()
+        or "local-jurisdigta-model-credential-development-key"
+    )
+    return hashlib.sha256(raw.encode("utf-8")).digest()
+
+
+def _model_keystream(*, key: bytes, nonce: bytes, length: int) -> bytes:
+    output = bytearray()
+    block = 0
+    while len(output) < length:
+        output.extend(hmac.new(key, nonce + block.to_bytes(4, "big"), hashlib.sha256).digest())
+        block += 1
+    return bytes(output[:length])
+
+
+def _xor_bytes(left: bytes, right: bytes) -> bytes:
+    return bytes(a ^ b for a, b in zip(left, right))
+
+
+def _secret_preview(secret: str) -> str:
+    normalized = secret.strip()
+    if len(normalized) <= 8:
+        return "*" * len(normalized)
+    return f"{normalized[:3]}...{normalized[-4:]}"
 
 
 def _now_iso() -> str:

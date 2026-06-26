@@ -23,6 +23,7 @@ from app.document_templates.api import router as document_templates_router
 from app.flow_packs.api import router as flow_packs_router
 from app.laws_api import router as laws_router
 from app.logging_config import configure_logging
+from app.model_routing_api import router as model_routing_router
 from app.monitoring_daily_stats_api import router as monitoring_daily_stats_router
 from app.observability_api import router as observability_router
 from app.telemetry import configure_telemetry, instrument_fastapi
@@ -47,8 +48,7 @@ _REPO_ENV_PATH = _REPO_ROOT / ".env"
 dotenv.load_dotenv(_REPO_ENV_PATH, override=False)
 
 API_VERSION = get_api_version()
-DEFAULT_API_LLM_PROVIDER = "azurefoundry"
-os.environ.setdefault("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER)
+DEFAULT_API_LLM_PROVIDER = "model_routing"
 DOCUMENT_PROCESSOR_MODE = (
     os.getenv(
         "DOCUMENT_PROCESSOR_OPTION",
@@ -102,21 +102,18 @@ def _configured_db_backend() -> str:
 
 
 def _configured_llm_provider() -> str:
-    raw_value = os.getenv("LLM_PROVIDER", DEFAULT_API_LLM_PROVIDER).strip().lower()
-    if raw_value in {"", "azure", "azurefoundry"}:
-        return "azurefoundry"
-    return raw_value
+    raw_value = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if raw_value == "mock":
+        return "mock"
+    return DEFAULT_API_LLM_PROVIDER
 
 
 def _llm_health_payload() -> dict[str, str]:
     provider = _configured_llm_provider()
-    status = "ok" if provider in {"mock", "azurefoundry", "openai"} else "error"
     payload = {
-        "status": status,
+        "status": "ok",
         "provider": provider,
     }
-    if status == "error":
-        payload["message"] = f'Unsupported LLM_PROVIDER "{provider}"'
     return payload
 
 
@@ -258,6 +255,7 @@ app.include_router(voice_intent_router)
 app.include_router(observability_router)
 app.include_router(monitoring_daily_stats_router)
 app.include_router(system_status_router)
+app.include_router(model_routing_router)
 instrument_fastapi(app)
 
 
