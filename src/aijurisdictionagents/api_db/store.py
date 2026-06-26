@@ -24,6 +24,9 @@ except ImportError:  # pragma: no cover - optional dependency
 from .config import ApiDataConfig
 
 DEFAULT_UNLIMITED_ACCESS_EMAILS = ("mmaideveloper@gmail.com",)
+DEFAULT_ADMIN_EMAILS = ("mmaideveloper@gmail.com",)
+USER_ROLE_ADMIN = "admin"
+USER_ROLE_USER = "user"
 UNLIMITED_ACCESS_LIMIT = 2_147_483_647
 
 
@@ -47,6 +50,19 @@ class User:
     data_processing_consent_version: str | None
     mcp_api_key_hash: str | None
     mcp_api_key_expires_at: str | None
+    created_at: str | None
+    role: str = USER_ROLE_USER
+    is_enabled: bool = True
+
+
+@dataclass(frozen=True)
+class AdminUser:
+    user_id: str
+    phone_number: str | None
+    email: str
+    full_name: str
+    role: str
+    is_enabled: bool
     created_at: str | None
 
 
@@ -398,6 +414,8 @@ class ApiDatabaseStore:
                     data_processing_consent_version TEXT,
                     mcp_api_key_hash TEXT,
                     mcp_api_key_expires_at TEXT,
+                    role TEXT NOT NULL DEFAULT 'user',
+                    is_enabled INTEGER NOT NULL DEFAULT 1,
                     password_hash TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
@@ -1259,7 +1277,7 @@ class ApiDatabaseStore:
             ).fetchall()
         return [_row_to_ai_model_group_membership(row) for row in rows]
 
-    def list_users_for_admin(self, *, limit: int = 100, query: str = "") -> list[User]:
+    def list_users_for_admin(self, *, limit: int = 100, query: str = "") -> list[AdminUser]:
         bounded_limit = min(max(limit, 1), 500)
         normalized_query = query.strip().lower()
         params: tuple[Any, ...]
@@ -1274,11 +1292,7 @@ class ApiDatabaseStore:
             rows = self._execute(
                 conn,
                 f"""
-                SELECT user_id, phone_number, email, first_name, last_name, full_name,
-                       address, city, country, zip_code, tax_number, identity_card_number,
-                       date_of_birth, social_security_number,
-                       data_processing_consent_at, data_processing_consent_version,
-                       mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                SELECT user_id, phone_number, email, full_name, role, is_enabled, created_at
                 FROM users
                 {filter_clause}
                 ORDER BY created_at DESC, email
@@ -1286,7 +1300,38 @@ class ApiDatabaseStore:
                 """,
                 params,
             ).fetchall()
-        return [_row_to_user(row) for row in rows]
+        return [_row_to_admin_user(row) for row in rows]
+
+    def update_admin_user(
+        self,
+        *,
+        user_id: str,
+        role: str,
+        is_enabled: bool,
+    ) -> AdminUser:
+        normalized_role = _normalize_user_role(role)
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE users
+                SET role = ?, is_enabled = ?
+                WHERE user_id = ?
+                """,
+                (normalized_role, _bool_int(is_enabled), user_id),
+            )
+            row = self._fetchone(
+                conn,
+                """
+                SELECT user_id, phone_number, email, full_name, role, is_enabled, created_at
+                FROM users
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+        if row is None:
+            raise KeyError(f"User {user_id} not found")
+        return _row_to_admin_user(row)
 
     def record_ai_model_admin_audit_event(
         self,
@@ -1681,6 +1726,7 @@ class ApiDatabaseStore:
         normalized_identity_card_number = _normalize_optional_text(identity_card_number)
         normalized_date_of_birth = _normalize_optional_text(date_of_birth)
         normalized_social_security_number = _normalize_optional_text(social_security_number)
+        role = _default_role_for_email(normalized_email)
         resolved_full_name = _resolve_full_name(
             full_name=full_name,
             first_name=normalized_first,
@@ -1696,9 +1742,10 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, password_hash, created_at
+                    data_processing_consent_at, data_processing_consent_version,
+                    mcp_api_key_hash, mcp_api_key_expires_at, role, is_enabled, password_hash, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -1719,6 +1766,8 @@ class ApiDatabaseStore:
                     data_processing_consent_version,
                     None,
                     None,
+                    role,
+                    1,
                     password_hash,
                     now,
                 ),
@@ -1753,6 +1802,8 @@ class ApiDatabaseStore:
             mcp_api_key_hash=None,
             mcp_api_key_expires_at=None,
             created_at=now,
+            role=role,
+            is_enabled=True,
         )
 
     def save_registration_code(
@@ -2347,7 +2398,8 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at, password_hash
+                    data_processing_consent_at, data_processing_consent_version,
+                    mcp_api_key_hash, mcp_api_key_expires_at, role, is_enabled, created_at, password_hash
                 FROM users
                 WHERE email = ?
                 """,
@@ -2355,9 +2407,12 @@ class ApiDatabaseStore:
             )
         if row is None:
             return None
-        if not _verify_password(password, row[19]):
+        if not _verify_password(password, row[21]):
             return None
-        return _row_to_user(row)
+        user = _row_to_user(row)
+        if not user.is_enabled:
+            return None
+        return user
 
     def find_user_by_phone(self, *, phone_number: str) -> User | None:
         normalized_phone = _normalize_phone(phone_number)
@@ -2371,7 +2426,8 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                    data_processing_consent_at, data_processing_consent_version,
+                    mcp_api_key_hash, mcp_api_key_expires_at, role, is_enabled, created_at
                 FROM users
                 WHERE phone_number = ?
                 """,
@@ -2390,7 +2446,8 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                    data_processing_consent_at, data_processing_consent_version,
+                    mcp_api_key_hash, mcp_api_key_expires_at, role, is_enabled, created_at
                 FROM users
                 WHERE email = ?
                 """,
@@ -2409,7 +2466,8 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                    data_processing_consent_at, data_processing_consent_version,
+                    mcp_api_key_hash, mcp_api_key_expires_at, role, is_enabled, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -2428,7 +2486,8 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                    data_processing_consent_at, data_processing_consent_version,
+                    mcp_api_key_hash, mcp_api_key_expires_at, role, is_enabled, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -2475,7 +2534,8 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                    data_processing_consent_at, data_processing_consent_version,
+                    mcp_api_key_hash, mcp_api_key_expires_at, role, is_enabled, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -2567,6 +2627,8 @@ class ApiDatabaseStore:
             mcp_api_key_hash=current_user.mcp_api_key_hash,
             mcp_api_key_expires_at=current_user.mcp_api_key_expires_at,
             created_at=current_user.created_at,
+            role=current_user.role,
+            is_enabled=current_user.is_enabled,
         )
 
     def update_user_email(self, *, user_id: str, email: str) -> User:
@@ -2579,7 +2641,8 @@ class ApiDatabaseStore:
                     user_id, phone_number, email, first_name, last_name, full_name,
                     address, city, country, zip_code, tax_number, identity_card_number,
                     date_of_birth, social_security_number,
-                    data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                    data_processing_consent_at, data_processing_consent_version,
+                    mcp_api_key_hash, mcp_api_key_expires_at, role, is_enabled, created_at
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -2661,7 +2724,8 @@ class ApiDatabaseStore:
                 SELECT user_id, phone_number, email, first_name, last_name, full_name,
                        address, city, country, zip_code, tax_number, identity_card_number,
                        date_of_birth, social_security_number,
-                       data_processing_consent_at, data_processing_consent_version, mcp_api_key_hash, mcp_api_key_expires_at, created_at
+                       data_processing_consent_at, data_processing_consent_version,
+                       mcp_api_key_hash, mcp_api_key_expires_at, role, is_enabled, created_at
                 FROM users
                 WHERE mcp_api_key_hash IS NOT NULL
                 """,
@@ -2670,7 +2734,9 @@ class ApiDatabaseStore:
             if row[16] and _verify_password(api_key, str(row[16])):
                 expires_at = str(row[17]) if row[17] is not None else None
                 if expires_at and expires_at > _now_iso():
-                    return _row_to_user(row)
+                    user = _row_to_user(row)
+                    if user.is_enabled:
+                        return user
         return None
 
     def create_company(self, *, legal_name: str, profile_json: str = "{}") -> Company:
@@ -3734,6 +3800,18 @@ class ApiDatabaseStore:
             self._execute(conn, "ALTER TABLE users ADD COLUMN mcp_api_key_hash TEXT")
         if "mcp_api_key_expires_at" not in columns:
             self._execute(conn, "ALTER TABLE users ADD COLUMN mcp_api_key_expires_at TEXT")
+        if "role" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+        if "is_enabled" not in columns:
+            self._execute(conn, "ALTER TABLE users ADD COLUMN is_enabled INTEGER NOT NULL DEFAULT 1")
+        self._execute(conn, "UPDATE users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''")
+        self._execute(conn, "UPDATE users SET is_enabled = 1 WHERE is_enabled IS NULL")
+        for admin_email in _configured_admin_emails():
+            self._execute(
+                conn,
+                "UPDATE users SET role = 'admin', is_enabled = 1 WHERE lower(email) = ?",
+                (admin_email,),
+            )
         self._execute(
             conn,
             """
@@ -4444,6 +4522,24 @@ def _normalize_route_key(value: str, *, default: str) -> str:
     return normalized or default
 
 
+def _normalize_user_role(value: str) -> str:
+    normalized = value.strip().lower()
+    return USER_ROLE_ADMIN if normalized == USER_ROLE_ADMIN else USER_ROLE_USER
+
+
+def _configured_admin_emails() -> set[str]:
+    raw = os.getenv("JURISDIGTA_ADMIN_EMAILS", "").strip()
+    if not raw or raw.lower() == "unknown-variable":
+        raw = os.getenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "").strip()
+    values = {item.strip().lower() for item in raw.replace(";", ",").split(",") if item.strip()}
+    values.update(DEFAULT_ADMIN_EMAILS)
+    return values
+
+
+def _default_role_for_email(email: str) -> str:
+    return USER_ROLE_ADMIN if email.strip().lower() in _configured_admin_emails() else USER_ROLE_USER
+
+
 def _protect_model_secret(secret: str) -> str:
     key = _model_credential_encryption_key()
     nonce = secrets.token_bytes(16)
@@ -4608,6 +4704,9 @@ def _row_to_user(row: tuple[object, ...]) -> User:
     values = list(row)
     if len(values) <= 8:
         values = [*values[:6], None, None, None, None, None, None, None, None, *values[6:]]
+    role = _normalize_user_role(str(values[18])) if len(values) > 20 and values[18] is not None else USER_ROLE_USER
+    is_enabled = _row_bool(values[19]) if len(values) > 20 and values[19] is not None else True
+    created_at_index = 20 if len(values) > 20 else 18
     return User(
         user_id=str(values[0]),
         phone_number=str(values[1]) if values[1] is not None else None,
@@ -4627,7 +4726,21 @@ def _row_to_user(row: tuple[object, ...]) -> User:
         data_processing_consent_version=str(values[15]) if len(values) > 15 and values[15] is not None else None,
         mcp_api_key_hash=str(values[16]) if len(values) > 16 and values[16] is not None else None,
         mcp_api_key_expires_at=str(values[17]) if len(values) > 17 and values[17] is not None else None,
-        created_at=str(values[18]) if len(values) > 18 and values[18] is not None else None,
+        created_at=str(values[created_at_index]) if len(values) > created_at_index and values[created_at_index] is not None else None,
+        role=role,
+        is_enabled=is_enabled,
+    )
+
+
+def _row_to_admin_user(row: tuple[object, ...]) -> AdminUser:
+    return AdminUser(
+        user_id=str(row[0]),
+        phone_number=str(row[1]) if row[1] is not None else None,
+        email=str(row[2]),
+        full_name=str(row[3]),
+        role=_normalize_user_role(str(row[4])),
+        is_enabled=_row_bool(row[5]),
+        created_at=str(row[6]) if row[6] is not None else None,
     )
 
 

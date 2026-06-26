@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aijurisdictionagents"
-version = "1.0.260394"
+version = "1.0.260395"
 description = "Multi-agent legal discussion scaffold."
 readme = "README.md"
 requires-python = ">=3.10"

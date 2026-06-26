@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.cases_api import router as cases_router
 from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.chat.api import router as chat_router
+from app.admin_users_api import router as admin_users_router
 from app.ai_model_admin_api import router as ai_model_admin_router
 from app.contact_api import router as contact_router
 from app.document_templates.api import router as document_templates_router
@@ -246,6 +247,7 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "x-request-id", "x-correlation-id"],
 )
 app.include_router(chat_router)
+app.include_router(admin_users_router)
 app.include_router(ai_model_admin_router)
 app.include_router(contact_router)
 app.include_router(document_templates_router)

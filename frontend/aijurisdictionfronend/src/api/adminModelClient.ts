@@ -88,8 +88,11 @@ export interface AIModelGroupMembership {
 
 export interface AdminUserSummary {
   user_id: string;
+  phone_number: string | null;
   email: string;
   full_name: string;
+  role: string;
+  is_enabled: boolean;
   created_at: string | null;
 }
 
@@ -155,6 +158,12 @@ export interface CredentialUpsertInput {
   secret_type: string;
   secret_value: string;
   enabled: boolean;
+  reason: string;
+}
+
+export interface UserAdminUpdateInput {
+  role: string;
+  is_enabled: boolean;
   reason: string;
 }
 
@@ -256,6 +265,16 @@ export const upsertAIModelCredential = (
       enabled: input.enabled,
       reason: input.reason
     })
+  });
+
+export const updateAdminUser = (
+  adminUserId: string,
+  userId: string,
+  input: UserAdminUpdateInput
+): Promise<AdminUserSummary> =>
+  adminRequest<AdminUserSummary>(`/v1/admin/users/${encodeURIComponent(userId)}`, adminUserId, {
+    method: "PATCH",
+    body: JSON.stringify(input)
   });
 
 export const upsertAIModelGroup = (adminUserId: string, input: GroupUpsertInput): Promise<AIModelGroup> =>

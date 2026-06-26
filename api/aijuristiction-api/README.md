@@ -108,8 +108,10 @@ AI model admin management and routing API:
 - `GET /v1/admin/ai-models/credentials?reveal=false`
 - `PUT /v1/admin/ai-models/providers/{provider_id}/credentials`
 - `PATCH /v1/admin/ai-models/credentials/{credential_id}`
+- `GET /v1/admin/users`
+- `PATCH /v1/admin/users/{user_id}`
 
-Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header and the `JURISDIGTA_ADMIN_EMAILS` allowlist. Local loopback development may send `x-jurisdigta-admin-user-id`. The credential endpoints also require API authentication and reserve `reveal=true` for authorized admin maintenance.
+Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header with either a database `role=admin` user or the `JURISDIGTA_ADMIN_EMAILS` fallback allowlist. Local loopback development may send `x-jurisdigta-admin-user-id`. The credential endpoints also require API authentication and reserve `reveal=true` for authorized admin maintenance.
 - Admin responses never return provider secrets or legal case content. External provider changes are audited with actor, entity, old/new summaries, reason, and correlation id.
 
 Document processing mode:

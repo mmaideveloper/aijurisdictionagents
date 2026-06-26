@@ -111,7 +111,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Azure OpenAI embedding deployment name used for document chunk embeddings, recommended `text-embedding-3-large` |
 | `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version, keep aligned with `.env.example` unless you intentionally upgrade |
 | `JURISDIGTA_UNLIMITED_ACCESS_EMAILS` | Privileged comma- or semicolon-separated email allowlist for controlled test/operator accounts with unlimited case/document access; default `mmaideveloper@gmail.com` |
-| `JURISDIGTA_ADMIN_EMAILS` | Admin-only model management allowlist. Cloudflare Access must provide `cf-access-authenticated-user-email`; keep this restricted to approved operator accounts. |
+| `JURISDIGTA_ADMIN_EMAILS` | Global admin fallback allowlist for `/app/admin` and admin APIs. Users with database `role=admin` are also authorized. Cloudflare Access must provide `cf-access-authenticated-user-email`; keep this restricted to approved operator accounts. |
 | `AZURE_POSTGRES_SERVER_NAME` | Azure PostgreSQL Flexible Server name |
 | `AZURE_POSTGRES_DATABASE_NAME` | API database name |
 | `AZURE_POSTGRES_ADMIN_USERNAME` | PostgreSQL admin login |

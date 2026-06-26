@@ -16,6 +16,7 @@ from aijurisdictionagents.api_db import (
     AIModelProfile,
     AIModelProvider,
     AITaskRoutePolicy,
+    AdminUser,
     ApiDatabaseStore,
     User,
 )
@@ -31,8 +32,11 @@ class AdminContext(BaseModel):
 
 class AdminUserSummaryResponse(BaseModel):
     user_id: str
+    phone_number: str | None = None
     email: str
     full_name: str
+    role: str = "user"
+    is_enabled: bool = True
     created_at: str | None = None
 
 
@@ -250,16 +254,20 @@ def require_ai_model_admin(
     admin_emails = _configured_admin_emails()
     candidate_email = (cf_access_email or "").strip().lower()
     candidate_user_id = ""
+    candidate_is_admin_role = False
     if candidate_email:
         user = store.find_user_by_email(email=candidate_email)
-        candidate_user_id = user.user_id if user is not None else ""
+        if user is not None:
+            candidate_user_id = user.user_id
+            candidate_is_admin_role = user.role == "admin" and user.is_enabled
     elif local_admin_user_id and _is_local_request(request):
         user = store.find_user_by_id(user_id=local_admin_user_id.strip())
         if user is not None:
             candidate_email = user.email.strip().lower()
             candidate_user_id = user.user_id
+            candidate_is_admin_role = user.role == "admin" and user.is_enabled
 
-    if not candidate_email or candidate_email not in admin_emails:
+    if not candidate_email or (candidate_email not in admin_emails and not candidate_is_admin_role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required")
     return AdminContext(user_id=candidate_user_id, email=candidate_email)
 
@@ -706,10 +714,13 @@ def _audit_response(item: AIModelAdminAuditEvent) -> AIModelAdminAuditEventRespo
     return AIModelAdminAuditEventResponse(**asdict(item))
 
 
-def _user_summary_response(item: User) -> AdminUserSummaryResponse:
+def _user_summary_response(item: AdminUser | User) -> AdminUserSummaryResponse:
     return AdminUserSummaryResponse(
         user_id=item.user_id,
+        phone_number=item.phone_number,
         email=item.email,
         full_name=item.full_name,
+        role=item.role,
+        is_enabled=item.is_enabled,
         created_at=item.created_at,
     )
