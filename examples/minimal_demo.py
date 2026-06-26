@@ -36,6 +36,10 @@ print(
     f"{sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}"
 )
 print(
+    "ai_model_admin => /app/admin/ai-models manages model providers, prices, "
+    "groups, route policies, and audit events through server-authorized admin APIs."
+)
+print(
     "service_healthchecks => HTTP services expose privacy-minimized /health; "
     "worker services report supervisor state, freshness, latest run result, "
     "and sanitized errors through protected operational status."
