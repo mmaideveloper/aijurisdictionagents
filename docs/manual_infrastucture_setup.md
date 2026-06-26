@@ -174,6 +174,10 @@ Purpose: prepare the Ubuntu server `jurisdigta-server` at `192.168.1.50` for SSH
 - `Test-NetConnection` from Windows returns `TcpTestSucceeded : True`.
 - `ssh jurisdigta-server` accepts the host key and logs in as `jurisdigta-admin`.
 - Non-interactive validation returns `jurisdigta-server` and `jurisdigta-admin`.
+- Production deploys that install or configure Ollama require `jurisdigta-admin`
+  to have non-interactive sudo for system package installation and systemd
+  service management, including writing
+  `/etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf`.
 
 ### Rollback Notes
 

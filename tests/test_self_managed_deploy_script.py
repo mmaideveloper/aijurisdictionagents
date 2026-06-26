@@ -41,6 +41,10 @@ def test_deploy_installs_ollama_and_pulls_default_model() -> None:
     assert "install_ollama_service" in script
     assert "OLLAMA_HOST_BIND must stay 127.0.0.1:11434" in script
     assert 'curl -fsSL https://ollama.com/install.sh -o "$installer"' in script
+    assert "sudo install -d -m 755 /etc/systemd/system/ollama.service.d" in script
+    assert "sudo tee /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf" in script
+    assert "sudo systemctl daemon-reload" in script
+    assert "sudo systemctl enable --now ollama" in script
     assert 'Environment="OLLAMA_HOST=$OLLAMA_HOST_BIND"' in script
     assert 'ollama pull "$LOCAL_LLM_MODEL"' in script
     assert 'ollama list | grep -F "$LOCAL_LLM_MODEL"' in script
