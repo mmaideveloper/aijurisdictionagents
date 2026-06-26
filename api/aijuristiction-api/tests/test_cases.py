@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
 from app.main import app
-from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.api_db import AIModelUsageAuditEntry, ApiDatabaseStore
 
 
 def _headers() -> dict[str, str]:
@@ -503,6 +503,74 @@ def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:
     payload = response.json()
     assert payload["messages"][0]["content"] == "Summary fallback content"
     assert payload["messages"][0]["agent_name"] == "LawyerSlovakia"
+
+
+def test_case_ai_model_audit_lists_question_model_usage() -> None:
+    import app.cases_api as cases_api
+
+    client = TestClient(app)
+
+    class _FakeStore:
+        def get_case(self, *, case_id: str):
+            return SimpleNamespace(case_id=case_id, user_id="user-1", status="active")
+
+        def list_ai_model_usage_audit(self, *, case_id: str, limit: int = 100, offset: int = 0):
+            assert case_id == "case-1"
+            assert limit == 3
+            assert offset == 0
+            return [
+                AIModelUsageAuditEntry(
+                    usage_id="usage-1",
+                    case_id=case_id,
+                    user_id="user-1",
+                    subscription_id="sub-1",
+                    plan_code="case",
+                    task_type="chat_reply",
+                    model_group_id="",
+                    provider="azurefoundry",
+                    model="gpt-4.1",
+                    route_type="external",
+                    input_tokens=120,
+                    cached_input_tokens=0,
+                    output_tokens=80,
+                    total_tokens=200,
+                    estimated_cost_provider_currency=0.0,
+                    estimated_cost_eur=0.01,
+                    provider_currency="EUR",
+                    exchange_rate_used=1.0,
+                    request_started_at="2026-06-26T10:00:00Z",
+                    request_completed_at="2026-06-26T10:00:02Z",
+                    latency_ms=2000,
+                    status="ok",
+                    fallback_reason="",
+                    confidentiality_warning_ack_id="",
+                    session_id="session-1",
+                    question_id="question-1",
+                    question_preview="What model answered this question?",
+                    question_sha256="a" * 64,
+                    answer_id="answer-1",
+                    audit_metadata={"source": "chat.direct_reply"},
+                    created_at="2026-06-26T10:00:02Z",
+                )
+            ]
+
+    app.dependency_overrides[cases_api.get_store] = lambda: _FakeStore()
+    try:
+        response = client.get(
+            "/v1/cases/case-1/ai-model-audit?user_id=user-1&offset=0&limit=2",
+            headers=_headers(),
+        )
+    finally:
+        app.dependency_overrides.pop(cases_api.get_store, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["case_id"] == "case-1"
+    assert payload["has_more"] is False
+    assert payload["entries"][0]["question_id"] == "question-1"
+    assert payload["entries"][0]["question_preview"] == "What model answered this question?"
+    assert payload["entries"][0]["model"] == "gpt-4.1"
+    assert payload["entries"][0]["route_type"] == "external"
 
 
 def test_download_case_document_returns_404_when_payload_missing() -> None:

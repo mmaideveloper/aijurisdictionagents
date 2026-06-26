@@ -122,6 +122,39 @@ def test_usage_ledger_summarizes_tokens_and_cost_by_case_model(tmp_path: Path) -
     assert summary.estimated_cost_eur == 0.012
 
 
+def test_usage_ledger_lists_question_model_audit_entries(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    usage_id = store.record_ai_model_usage(
+        provider="azure_foundry",
+        model="gpt-4.1",
+        route_type="external",
+        input_tokens=100,
+        output_tokens=50,
+        case_id="case-1",
+        user_id="user-1",
+        task_type="chat_reply",
+        session_id="session-1",
+        question_id="question-1",
+        question_text="What law applies to this lease termination?",
+        answer_id="answer-1",
+        audit_metadata={"source": "test", "model_used": True},
+    )
+
+    entries = store.list_ai_model_usage_audit(case_id="case-1")
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.usage_id == usage_id
+    assert entry.session_id == "session-1"
+    assert entry.question_id == "question-1"
+    assert entry.answer_id == "answer-1"
+    assert entry.question_preview == "What law applies to this lease termination?"
+    assert len(entry.question_sha256) == 64
+    assert entry.provider == "azure_foundry"
+    assert entry.model == "gpt-4.1"
+    assert entry.audit_metadata["source"] == "test"
+
+
 def test_status_exporter_renders_ai_model_usage_metrics() -> None:
     exporter = _load_status_exporter()
 

@@ -242,6 +242,41 @@ class AIModelUsageSummary:
     request_count: int
 
 
+@dataclass(frozen=True)
+class AIModelUsageAuditEntry:
+    usage_id: str
+    case_id: str
+    user_id: str
+    subscription_id: str
+    plan_code: str
+    task_type: str
+    model_group_id: str
+    provider: str
+    model: str
+    route_type: str
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    estimated_cost_provider_currency: float
+    estimated_cost_eur: float
+    provider_currency: str
+    exchange_rate_used: float
+    request_started_at: str
+    request_completed_at: str
+    latency_ms: int
+    status: str
+    fallback_reason: str
+    confidentiality_warning_ack_id: str
+    session_id: str
+    question_id: str
+    question_preview: str
+    question_sha256: str
+    answer_id: str
+    audit_metadata: dict[str, Any]
+    created_at: str
+
+
 class ApiDatabaseStore:
     """Local-first API metadata store using SQLite + external blob storage references.
 
@@ -952,11 +987,27 @@ class ApiDatabaseStore:
         status: str = "ok",
         fallback_reason: str = "",
         confidentiality_warning_ack_id: str = "",
+        session_id: str = "",
+        question_id: str = "",
+        question_text: str = "",
+        question_preview: str = "",
+        question_sha256: str = "",
+        answer_id: str = "",
+        audit_metadata: dict[str, Any] | None = None,
         usage_id: str | None = None,
     ) -> str:
         now = _now_iso()
         resolved_usage_id = usage_id or str(uuid.uuid4())
         total_tokens = max(input_tokens, 0) + max(output_tokens, 0)
+        resolved_question_preview = _ai_audit_question_preview(
+            question_preview=question_preview,
+            question_text=question_text,
+        )
+        resolved_question_sha256 = question_sha256.strip().lower()
+        if not resolved_question_sha256 and question_text.strip():
+            resolved_question_sha256 = hashlib.sha256(
+                question_text.strip().encode("utf-8")
+            ).hexdigest()
         with self._connect() as conn:
             self._execute(
                 conn,
@@ -967,8 +1018,10 @@ class ApiDatabaseStore:
                     cached_input_tokens, output_tokens, total_tokens,
                     estimated_cost_provider_currency, estimated_cost_eur, provider_currency,
                     exchange_rate_used, request_started_at, request_completed_at,
-                    latency_ms, status, fallback_reason, confidentiality_warning_ack_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    latency_ms, status, fallback_reason, confidentiality_warning_ack_id,
+                    session_id, question_id, question_preview, question_sha256, answer_id,
+                    audit_metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     resolved_usage_id,
@@ -995,6 +1048,12 @@ class ApiDatabaseStore:
                     status.strip().lower() or "ok",
                     fallback_reason.strip(),
                     confidentiality_warning_ack_id.strip(),
+                    session_id.strip(),
+                    question_id.strip(),
+                    resolved_question_preview,
+                    resolved_question_sha256,
+                    answer_id.strip(),
+                    _to_json(audit_metadata or {}),
                     now,
                 ),
             )
@@ -1030,6 +1089,37 @@ class ApiDatabaseStore:
                 tuple(params),
             ).fetchall()
         return [_row_to_ai_model_usage_summary(row) for row in rows]
+
+    def list_ai_model_usage_audit(
+        self,
+        *,
+        case_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[AIModelUsageAuditEntry]:
+        bounded_limit = min(max(limit, 1), 500)
+        bounded_offset = max(offset, 0)
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT usage_id, case_id, user_id, subscription_id, plan_code, task_type,
+                       model_group_id, provider, model, route_type, input_tokens,
+                       cached_input_tokens, output_tokens, total_tokens,
+                       estimated_cost_provider_currency, estimated_cost_eur,
+                       provider_currency, exchange_rate_used, request_started_at,
+                       request_completed_at, latency_ms, status, fallback_reason,
+                       confidentiality_warning_ack_id, session_id, question_id,
+                       question_preview, question_sha256, answer_id,
+                       audit_metadata_json, created_at
+                FROM ai_model_usage_ledger
+                WHERE case_id = ?
+                ORDER BY request_completed_at DESC, created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (case_id, bounded_limit, bounded_offset),
+            ).fetchall()
+        return [_row_to_ai_model_usage_audit_entry(row) for row in rows]
 
     def create_user(
         self,
@@ -2928,6 +3018,12 @@ class ApiDatabaseStore:
                 status TEXT NOT NULL DEFAULT 'ok',
                 fallback_reason TEXT NOT NULL DEFAULT '',
                 confidentiality_warning_ack_id TEXT NOT NULL DEFAULT '',
+                session_id TEXT NOT NULL DEFAULT '',
+                question_id TEXT NOT NULL DEFAULT '',
+                question_preview TEXT NOT NULL DEFAULT '',
+                question_sha256 TEXT NOT NULL DEFAULT '',
+                answer_id TEXT NOT NULL DEFAULT '',
+                audit_metadata_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL
             );
 
@@ -2939,6 +3035,50 @@ class ApiDatabaseStore:
 
             CREATE INDEX IF NOT EXISTS idx_ai_model_usage_task_model_time
             ON ai_model_usage_ledger(task_type, provider, model, request_completed_at);
+
+            """,
+        )
+        self._ensure_ai_model_usage_audit_columns(conn)
+
+    def _ensure_ai_model_usage_audit_columns(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'ai_model_usage_ledger'
+                    """,
+                ).fetchall()
+            }
+        else:
+            columns = {
+                row[1]
+                for row in self._execute(conn, "PRAGMA table_info(ai_model_usage_ledger)").fetchall()
+            }
+        missing_columns = {
+            "session_id": "TEXT NOT NULL DEFAULT ''",
+            "question_id": "TEXT NOT NULL DEFAULT ''",
+            "question_preview": "TEXT NOT NULL DEFAULT ''",
+            "question_sha256": "TEXT NOT NULL DEFAULT ''",
+            "answer_id": "TEXT NOT NULL DEFAULT ''",
+            "audit_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+        }
+        for column_name, column_definition in missing_columns.items():
+            if column_name not in columns:
+                self._execute(
+                    conn,
+                    f"ALTER TABLE ai_model_usage_ledger ADD COLUMN {column_name} {column_definition}",
+                )
+        self._execute(
+            conn,
+            """
+            CREATE INDEX IF NOT EXISTS idx_ai_model_usage_case_question_time
+            ON ai_model_usage_ledger(case_id, question_id, request_completed_at)
             """,
         )
 
@@ -3454,6 +3594,65 @@ def _row_to_ai_model_usage_summary(row: tuple[object, ...]) -> AIModelUsageSumma
         estimated_cost_eur=float(row[14] or 0),
         request_count=int(row[15] or 0),
     )
+
+
+def _row_to_ai_model_usage_audit_entry(row: tuple[object, ...]) -> AIModelUsageAuditEntry:
+    return AIModelUsageAuditEntry(
+        usage_id=str(row[0]),
+        case_id=str(row[1]),
+        user_id=str(row[2]),
+        subscription_id=str(row[3]),
+        plan_code=str(row[4]),
+        task_type=str(row[5]),
+        model_group_id=str(row[6]),
+        provider=str(row[7]),
+        model=str(row[8]),
+        route_type=str(row[9]),
+        input_tokens=int(row[10] or 0),
+        cached_input_tokens=int(row[11] or 0),
+        output_tokens=int(row[12] or 0),
+        total_tokens=int(row[13] or 0),
+        estimated_cost_provider_currency=float(row[14] or 0),
+        estimated_cost_eur=float(row[15] or 0),
+        provider_currency=str(row[16]),
+        exchange_rate_used=float(row[17] or 0),
+        request_started_at=str(row[18]),
+        request_completed_at=str(row[19]),
+        latency_ms=int(row[20] or 0),
+        status=str(row[21]),
+        fallback_reason=str(row[22]),
+        confidentiality_warning_ack_id=str(row[23]),
+        session_id=str(row[24]),
+        question_id=str(row[25]),
+        question_preview=str(row[26]),
+        question_sha256=str(row[27]),
+        answer_id=str(row[28]),
+        audit_metadata=_json_loads_dict(str(row[29] or "{}")),
+        created_at=str(row[30]),
+    )
+
+
+def _ai_audit_question_preview(
+    *,
+    question_preview: str,
+    question_text: str,
+    max_chars: int = 1000,
+) -> str:
+    source = question_preview if question_preview.strip() else question_text
+    normalized = " ".join(source.split()).strip()
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 3].rstrip() + "..."
+
+
+def _json_loads_dict(value: str) -> dict[str, Any]:
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(loaded, dict):
+        return loaded
+    return {}
 
 
 def _route_selection(

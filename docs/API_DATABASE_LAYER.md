@@ -175,7 +175,14 @@ The API database now includes a policy-driven model routing foundation:
 - `ai_model_profiles`: provider model/deployment metadata plus context window and price-per-1M-token metadata.
 - `ai_model_groups` and `ai_model_group_users`: optional assignment of users to model groups for staged rollout or premium routing.
 - `ai_task_route_policies`: task type plus plan policy with preferred local/external profile, external acknowledgement, EU data-zone requirement, and local fallback flags.
-- `ai_model_usage_ledger`: per-request token and estimated cost ledger by user, subscription, case, task type, provider, model, route, and time.
+- `ai_model_usage_ledger`: per-request token and estimated cost ledger by user, subscription, case, task type, provider, model, route, and time. Case audit fields also store `session_id`, `question_id`, bounded `question_preview`, `question_sha256`, `answer_id`, and minimal audit metadata so JurisDigta can show which model answered which question without duplicating full legal prompts outside the case history.
+
+Authorized case users can inspect this trail through:
+
+```bash
+curl -H "x-api-key: $API_KEY" \
+  "$API_BASE_URL/v1/cases/$CASE_ID/ai-model-audit?user_id=$USER_ID&limit=50"
+```
 
 SQLite bootstrap is handled by `ApiDatabaseStore.initialize()`. PostgreSQL/Azure upgrades are handled by:
 
