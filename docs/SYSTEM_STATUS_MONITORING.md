@@ -137,6 +137,8 @@ Recommended self-managed dashboard stack for `jurisdigta-server`:
 - `scripts/server/write_system_status.py` also records privacy-minimized aggregate request metrics from API/MCP Docker logs and aggregate PostgreSQL user/case counts. It does not persist request IDs, user IDs, case IDs, prompts, documents, or response bodies in Prometheus labels.
 - Raw troubleshooting logs are available through Grafana Explore using the Loki data source. Loki retention defaults to `LOKI_RETENTION_DAYS=7`.
 
+The protected AI Model Admin page can also list server-local Ollama inventory and start registry pull/remove jobs. Operators should use Grafana/Ollama metrics plus the Admin audit table to validate that a pull or remove succeeded. Physical removal is blocked while a model is the seeded/default local model or is referenced by active route policy, so a planned model replacement should first update routing, verify the new model, and then remove the old unused model.
+
 Deployment assets are in:
 
 ```text

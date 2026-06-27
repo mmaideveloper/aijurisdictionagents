@@ -1,20 +1,24 @@
 import React from "react";
-import { FaKey, FaPlus, FaRoute, FaServer, FaSyncAlt, FaUserPlus, FaUsers } from "react-icons/fa";
+import { FaDownload, FaKey, FaPlus, FaRoute, FaServer, FaSyncAlt, FaTrash, FaUserPlus, FaUsers } from "react-icons/fa";
 import {
   AIModelAdminDashboard,
+  OllamaModelInventory,
   fetchAIModelAdminDashboard,
+  fetchOllamaModels,
   upsertAIModelProvider,
   upsertAIModelProfile,
   upsertAIModelGroup,
   addAIModelGroupMember,
   upsertAIModelRoutePolicy,
   upsertAIModelCredential,
+  importOllamaModel,
+  removeOllamaModel,
   updateAdminUser
 } from "../api/adminModelClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
-type AdminSection = "users" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "audit";
+type AdminSection = "users" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollama" | "audit";
 
 const emptyProvider = {
   provider_code: "",
@@ -83,6 +87,7 @@ const AIModelAdmin: React.FC = () => {
   const { user } = useAuth();
   const [activeSection, setActiveSection] = React.useState<AdminSection>("users");
   const [dashboard, setDashboard] = React.useState<AIModelAdminDashboard | null>(null);
+  const [ollamaInventory, setOllamaInventory] = React.useState<OllamaModelInventory | null>(null);
   const [providerForm, setProviderForm] = React.useState(emptyProvider);
   const [profileForm, setProfileForm] = React.useState(emptyProfile);
   const [credentialForm, setCredentialForm] = React.useState(emptyCredential);
@@ -90,6 +95,9 @@ const AIModelAdmin: React.FC = () => {
   const [policyForm, setPolicyForm] = React.useState(emptyPolicy);
   const [selectedGroupId, setSelectedGroupId] = React.useState("");
   const [selectedUserId, setSelectedUserId] = React.useState("");
+  const [ollamaModel, setOllamaModel] = React.useState("");
+  const [ollamaReason, setOllamaReason] = React.useState("");
+  const [ollamaRemoveReason, setOllamaRemoveReason] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [error, setError] = React.useState("");
 
@@ -120,6 +128,19 @@ const AIModelAdmin: React.FC = () => {
     void reload();
   }, [reload]);
 
+  const reloadOllama = React.useCallback(async () => {
+    if (!adminUserId) return;
+    try {
+      setOllamaInventory(await fetchOllamaModels(adminUserId));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("adminOllamaLoadFailed"));
+    }
+  }, [adminUserId, t]);
+
+  React.useEffect(() => {
+    void reloadOllama();
+  }, [reloadOllama]);
+
   const runAction = async (action: () => Promise<unknown>, successMessage: string) => {
     setError("");
     setStatus("");
@@ -142,6 +163,7 @@ const AIModelAdmin: React.FC = () => {
     { key: "credentials", label: t("adminCredentialsTitle"), icon: <FaKey aria-hidden="true" /> },
     { key: "groups", label: t("adminGroupsTitle"), icon: <FaUserPlus aria-hidden="true" /> },
     { key: "policies", label: t("adminPoliciesTitle"), icon: <FaRoute aria-hidden="true" /> },
+    { key: "ollama", label: t("adminOllamaTitle"), icon: <FaDownload aria-hidden="true" /> },
     { key: "audit", label: t("adminAuditTitle"), icon: <FaKey aria-hidden="true" /> }
   ];
 
@@ -346,6 +368,64 @@ const AIModelAdmin: React.FC = () => {
             </form>
           ) : null}
 
+          {activeSection === "ollama" ? (
+            <section className="admin-grid">
+              <form className="admin-panel" onSubmit={(event) => {
+                event.preventDefault();
+                void runAction(async () => {
+                  await importOllamaModel(adminUserId, ollamaModel, ollamaReason);
+                  setOllamaModel("");
+                  setOllamaReason("");
+                  await reloadOllama();
+                }, t("adminOllamaImportStarted"));
+              }}>
+                <h2>{t("adminOllamaImportTitle")}</h2>
+                <label>{t("adminOllamaModelTag")}<input value={ollamaModel} onChange={(event) => setOllamaModel(event.target.value)} placeholder="qwen3.6:27b" /></label>
+                <label>{t("adminReason")}<input value={ollamaReason} onChange={(event) => setOllamaReason(event.target.value)} /></label>
+                <button className="primary-button" type="submit" disabled={!ollamaModel.trim() || !ollamaReason.trim()}><FaDownload aria-hidden="true" />{t("adminOllamaImport")}</button>
+              </form>
+
+              <section className="admin-table-section admin-panel--wide">
+                <div className="admin-section-heading">
+                  <h2>{t("adminOllamaTitle")}</h2>
+                  <button className="secondary-button" type="button" onClick={() => void reloadOllama()}>{t("adminRefresh")}</button>
+                </div>
+                <p className="admin-muted">{ollamaInventory?.base_url ?? "http://127.0.0.1:11434"}</p>
+                <label>{t("adminOllamaRemoveReason")}<input value={ollamaRemoveReason} onChange={(event) => setOllamaRemoveReason(event.target.value)} /></label>
+                <div className="admin-table-scroll">
+                  <table>
+                    <thead><tr><th>{t("adminModelCode")}</th><th>{t("adminStatus")}</th><th>{t("adminProfilesTitle")}</th><th>{t("adminAction")}</th></tr></thead>
+                    <tbody>{ollamaInventory?.models.map((item) => (
+                      <tr key={item.name}>
+                        <td>{item.name}<br /><small>{formatModelSize(item.size)}</small></td>
+                        <td>
+                          {item.is_default ? t("adminOllamaDefault") : item.is_running ? t("adminOllamaRunning") : t("adminOllamaUnused")}
+                          {item.removal_blockers.length ? <ul className="admin-compact-list">{item.removal_blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul> : null}
+                        </td>
+                        <td>{item.configured_profile_ids.length ? item.configured_profile_ids.join(", ") : t("adminNotConfigured")}</td>
+                        <td>
+                          <button
+                            className="button ghost"
+                            type="button"
+                            disabled={!item.removable || !ollamaRemoveReason.trim()}
+                            title={item.removal_blockers.join(" ")}
+                            onClick={() => void runAction(async () => {
+                              await removeOllamaModel(adminUserId, item.name, ollamaRemoveReason);
+                              setOllamaRemoveReason("");
+                              await reloadOllama();
+                            }, t("adminOllamaRemoveStarted"))}
+                          >
+                            <FaTrash aria-hidden="true" />{t("adminOllamaRemove")}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </section>
+            </section>
+          ) : null}
+
           {activeSection === "audit" ? (
             <section className="admin-table-section">
               <h2>{t("adminAuditTitle")}</h2>
@@ -358,6 +438,14 @@ const AIModelAdmin: React.FC = () => {
       </div>
     </main>
   );
+};
+
+const formatModelSize = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "";
+  }
+  const gib = bytes / (1024 * 1024 * 1024);
+  return `${gib.toFixed(gib >= 10 ? 0 : 1)} GiB`;
 };
 
 export default AIModelAdmin;

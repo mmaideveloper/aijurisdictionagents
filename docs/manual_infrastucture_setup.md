@@ -358,6 +358,8 @@ The self-managed production deployment script performs the Ollama install, local
 - Required model-credential encryption secret: `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`.
 - Chat provider/model/deployment routing is stored in API database tables, not `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, or `AZURE_OPENAI_DEPLOYMENT`.
 - Seeded free/default local route: provider `local_ollama`, OpenAI-compatible base URL `http://127.0.0.1:11434/v1`, exact model `qwen3.6:27b`, profile `local_ollama_default`.
+- Production admins can manage local Ollama registry models from the protected AI Model Admin page. The Admin tool lists models through the server-local Ollama API, starts registry pulls, and can physically remove unused models. Ollama must stay bound to `127.0.0.1:11434`; do not expose it through Cloudflare Tunnel, nginx, router NAT, or a public firewall rule.
+- Admin removal is intentionally blocked when the model is the seeded/default local model, marked `is_default_for_free`, referenced by an enabled route policy, selected by `LOCAL_LLM_MODEL`, or currently loaded while configured for active routing. Change route policies/defaults first, verify the new model works, then remove the old unused model.
 - Seeded paid route for `case`, `basic`, `premium`, and `unlimited`: provider `azure_foundry`, exact model/deployment `gpt-4o-mini`, profile `azure_foundry_gpt_4o_mini`.
 - Required Azure Foundry paid-route setup after database initialization: set `ai_model_providers.base_url` and add the API key or token through `/v1/admin/ai-models/providers/{provider_id}/credentials` so the secret is encrypted in `ai_model_credentials`.
 - Required embedding values when cloud embeddings are enabled: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and one of `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`.
@@ -410,6 +412,7 @@ The self-managed production deployment script performs the Ollama install, local
 - `docker --version`, `docker compose version`, `node --version`, `npm --version`, `python3 --version`, `psql --version`, and `gh --version` succeed.
 - `systemctl is-active --quiet ollama` succeeds and `curl -fsS http://127.0.0.1:11434/api/tags` lists the configured local model.
 - `curl -fsS http://127.0.0.1:11434/v1/models` succeeds for OpenAI-compatible local model clients.
+- AI Model Admin can list local Ollama inventory and reports the configured/default model as protected from removal.
 - `bash /srv/jurisdigta/app/Deployment/server/setup_jurisdigta_server.sh` is idempotent and completes without package or permission errors.
 - `docker run --rm hello-world` succeeds after reconnecting with Docker group membership.
 - Repository checkout under `/srv/jurisdigta/app` is on the intended branch.
