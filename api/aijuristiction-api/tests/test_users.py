@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import base64
 import hashlib
+import json
 import sqlite3
 from pathlib import Path
 
@@ -797,6 +799,14 @@ def test_case_subscription_checkout_and_payment_confirmation(monkeypatch, tmp_pa
     assert checkout["payment_status"] == "pending"
     assert checkout["checkout_url"].startswith("https://www.sandbox.paypal.com")
 
+    subscriptions_before_payment = client.get(f"/v1/users/{user_id}/subscriptions", headers=AUTH_HEADERS)
+    assert subscriptions_before_payment.status_code == 200
+    pending_subscription = subscriptions_before_payment.json()[0]
+    assert pending_subscription["subscription_id"] == checkout["subscription_id"]
+    assert pending_subscription["status"] == "pending"
+    assert pending_subscription["starts_at"] is None
+    assert pending_subscription["ends_at"] is None
+
     confirm_response = client.post(
         f"/v1/users/subscriptions/{checkout['subscription_id']}/confirm-payment",
         headers=AUTH_HEADERS,
@@ -816,6 +826,25 @@ def test_case_subscription_checkout_and_payment_confirmation(monkeypatch, tmp_pa
         "Welcome to AI Jurisdiction",
         "Payment confirmed",
     ]
+
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        metadata_json = conn.execute(
+            "SELECT metadata_json FROM email_outbox WHERE subject = ?",
+            ("Payment confirmed",),
+        ).fetchone()[0]
+    metadata = json.loads(metadata_json)
+    assert metadata["event"] == "subscription_payment"
+    assert metadata["invoice_id"].startswith("inv_")
+    assert metadata["invoice_number"].startswith("JD-")
+    invoice_attachments = [
+        item for item in metadata["attachments"] if item.get("disposition") == "attachment"
+    ]
+    assert [item["mime_type"] for item in invoice_attachments] == ["application/pdf", "application/xml"]
+    assert base64.b64decode(invoice_attachments[0]["content_base64"]).startswith(b"%PDF")
+    invoice_xml = base64.b64decode(invoice_attachments[1]["content_base64"]).decode("utf-8")
+    assert "<Invoice" in invoice_xml
+    assert "<ID>" in invoice_xml
+    assert "<PayableAmount currencyID=\"EUR\">10.00</PayableAmount>" in invoice_xml
 
 
 def test_disabled_subscription_checkout_is_rejected(monkeypatch, tmp_path: Path) -> None:
