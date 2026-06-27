@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import AssistantWorkspace, { parseAssistantMessagePresentation } from "../pages/AssistantWorkspace";
-import { createChatSession, streamSession } from "../api/chatClient";
+import { createChatSession, fetchEffectiveModelRoute, streamSession } from "../api/chatClient";
 
 const labels: Record<string, string> = {
   assistantThreadsTitle: "Conversations",
@@ -118,6 +118,7 @@ vi.mock("../api/chatClient", async () => {
   return {
     ...actual,
     createChatSession: vi.fn(),
+    fetchEffectiveModelRoute: vi.fn(),
     streamSession: vi.fn()
   };
 });
@@ -169,6 +170,20 @@ vi.mock("@assistant-ui/react", () => ({
 }));
 
 describe("AssistantWorkspace", () => {
+  beforeEach(() => {
+    vi.mocked(fetchEffectiveModelRoute).mockResolvedValue({
+      plan_code: "free",
+      route_type: "free_local",
+      provider: "local_ollama",
+      provider_display_name: "Local Ollama",
+      model: "qwen3.6:27b",
+      model_profile_id: "local_ollama_default",
+      is_local: true,
+      is_external: false,
+      label: "Local Ollama - qwen3.6:27b"
+    });
+  });
+
   afterEach(() => {
     capturedAdapter = null;
     capturedRuntimeOptions = null;
@@ -176,20 +191,42 @@ describe("AssistantWorkspace", () => {
     caseActions.setCaseCommunicationMode.mockReset();
     caseActions.loadCaseData.mockReset();
     vi.mocked(createChatSession).mockReset();
+    vi.mocked(fetchEffectiveModelRoute).mockReset();
     vi.mocked(streamSession).mockReset();
     cleanup();
   });
 
-  it("renders assistant workspace with configuration controls", () => {
+  it("renders assistant workspace with the effective signed-in user model route", async () => {
+    vi.mocked(fetchEffectiveModelRoute).mockResolvedValue({
+      plan_code: "free",
+      route_type: "free_local",
+      provider: "local_ollama",
+      provider_display_name: "Local Ollama",
+      model: "qwen3.6:27b",
+      model_profile_id: "local_ollama_default",
+      is_local: true,
+      is_external: false,
+      label: "Local Ollama - qwen3.6:27b"
+    });
+
     render(<AssistantWorkspace />);
 
     expect(screen.getByRole("heading", { name: "JurisDigta Assistant" })).toBeDefined();
-    expect(screen.getByLabelText("AI model used for this chat").textContent).toContain("Azure Foundry model");
+    expect(await screen.findByText("Local Ollama - qwen3.6:27b")).toBeDefined();
+    expect(vi.mocked(fetchEffectiveModelRoute)).toHaveBeenCalledWith("user-1");
     expect(screen.getByRole("heading", { name: "Configurations" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Chat" })).toBeDefined();
     expect(screen.getByText("AI lawyer")).toBeDefined();
     expect(screen.getByText("Opposing party")).toBeDefined();
     expect(screen.queryByText("Production access uses JurisDigta account login")).toBeNull();
+  });
+
+  it("falls back to the configured model label when route disclosure is unavailable", () => {
+    vi.mocked(fetchEffectiveModelRoute).mockRejectedValue(new Error("offline"));
+
+    render(<AssistantWorkspace />);
+
+    expect(screen.getByLabelText("AI model used for this chat").textContent).toContain("Azure Foundry model");
   });
 
   it("does not show the static MCP news panel in the assistant workspace", () => {

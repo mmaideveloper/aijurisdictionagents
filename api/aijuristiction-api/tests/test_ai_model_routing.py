@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -10,6 +10,9 @@ from fastapi.testclient import TestClient
 from app.main import app
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.llm.routing import get_routed_llm_client
+
+
+client = TestClient(app)
 
 
 def _store(tmp_path: Path) -> ApiDatabaseStore:
@@ -87,7 +90,7 @@ def test_expired_paid_subscription_routes_as_free_local_model(
         subscription_id=subscription.subscription_id,
         status="paid",
     )
-    past_end = (datetime.now(UTC) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+    past_end = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
     with store._connect() as conn:
         store._execute(
             conn,
@@ -112,6 +115,36 @@ def test_expired_paid_subscription_routes_as_free_local_model(
     assert routed.provider == "local_ollama"
     assert routed.route_type == "free_local"
     assert routed.model == "qwen3.6:27b"
+
+
+def test_effective_model_route_endpoint_reports_free_user_local_model(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "api.sqlite3"
+    blob_root = tmp_path / "blob"
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(db_path))
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("STORE_LOCAL", str(blob_root))
+    store = ApiDatabaseStore(db_path=db_path, blob_root=blob_root)
+    store.initialize()
+    user = store.create_user(email="route-label@example.com", password="secret", full_name="Route Label")
+
+    response = client.get(
+        f"/v1/model-routing/effective?user_id={user.user_id}&task_type=chat_reply",
+        headers={"x-api-key": "aijuris"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["plan_code"] == "free"
+    assert payload["route_type"] == "free_local"
+    assert payload["provider"] == "local_ollama"
+    assert payload["model"] == "qwen3.6:27b"
+    assert payload["is_local"] is True
+    assert payload["is_external"] is False
+    assert payload["label"] == "Local Ollama - qwen3.6:27b"
 
 
 def test_model_credentials_are_encrypted_and_revealed_only_when_requested(
