@@ -126,6 +126,7 @@ const CaseConsumer: React.FC = () => {
       <div data-testid="latest-case">{cases[0]?.title ?? ""}</div>
       <div data-testid="latest-document">{documents[0]?.originalFilename ?? ""}</div>
       <div data-testid="active-case">{activeCase?.title ?? ""}</div>
+      <div data-testid="latest-role">{cases[0]?.selectedRole ?? ""}</div>
       <div data-testid="has-selected-case">{String(hasSelectedCase)}</div>
     </div>
   );
@@ -325,6 +326,23 @@ describe("CaseProvider", () => {
     expect(screen.getByTestId("latest-document").textContent).toBe("");
     expect(screen.getByTestId("active-case").textContent).toBe("");
     expect(screen.getByTestId("has-selected-case").textContent).toBe("false");
+  });
+
+  it("normalizes stored unavailable legal-risk roles back to AI Lawyer", () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([{ ...storedCase, selectedRole: "AI Judge" }])
+    );
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <CaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    expect(screen.getByTestId("latest-role").textContent).toBe("AI Lawyer");
   });
 
   it("re-localizes stored fallback case content when the language changes", async () => {

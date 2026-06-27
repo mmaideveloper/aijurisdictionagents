@@ -2051,10 +2051,26 @@
   border-color: rgba(31, 27, 22, 0.12);
 }
 
+.role-option.is-disabled {
+  opacity: 0.64;
+  cursor: not-allowed;
+}
+
+.role-option.is-disabled:hover {
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .role-option.is-active {
   border-color: var(--accent);
   background: rgba(159, 70, 34, 0.08);
   box-shadow: 0 12px 24px rgba(31, 27, 22, 0.12);
+}
+
+.role-option__status {
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .role-selector[disabled] .role-option {

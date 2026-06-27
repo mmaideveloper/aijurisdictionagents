@@ -23,6 +23,7 @@ import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
 import type { CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
+import { isCaseRoleAvailable } from "../state/caseRoles";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
 
@@ -628,17 +629,20 @@ const AssistantConfigurations: React.FC = () => {
       {
         role: "AI Lawyer" as CaseRole,
         label: t("workspaceLawyerTitle"),
-        intent: t("roleIntentLawyer")
+        intent: t("roleIntentLawyer"),
+        disabled: false
       },
       {
         role: "AI Judge" as CaseRole,
         label: t("workspaceJudgeTitle"),
-        intent: t("roleIntentJudge")
+        intent: t("roleIntentJudge"),
+        disabled: true
       },
       {
         role: "Opposing Counsel" as CaseRole,
         label: t("workspaceOpposingTitle"),
-        intent: t("roleIntentOpposing")
+        intent: t("roleIntentOpposing"),
+        disabled: true
       }
     ],
     [t]
@@ -682,25 +686,30 @@ const AssistantConfigurations: React.FC = () => {
           <p className="hint">{t("roleSelectorHint")}</p>
           <div className="role-options" role="radiogroup">
             {roleOptions.map((option) => {
-              const isActive = activeCase?.selectedRole === option.role;
+              const isDisabled = option.disabled || !isCaseRoleAvailable(option.role);
+              const isActive = !isDisabled && activeCase?.selectedRole === option.role;
               return (
                 <label
                   key={option.role}
-                  className={`role-option${isActive ? " is-active" : ""}`}
+                  className={`role-option${isActive ? " is-active" : ""}${isDisabled ? " is-disabled" : ""}`}
+                  aria-disabled={isDisabled}
+                  title={isDisabled ? t("roleUnavailable") : undefined}
                 >
                   <input
                     type="radio"
                     name={`assistant-case-role-${activeCase?.id ?? "current"}`}
                     value={option.role}
                     checked={isActive}
+                    disabled={isDisabled}
                     onChange={() => {
-                      if (activeCase) {
+                      if (activeCase && !isDisabled) {
                         setCaseRole(activeCase.id, option.role);
                       }
                     }}
                   />
                   <span className="role-option__label">{option.label}</span>
                   <span className="role-option__intent">{option.intent}</span>
+                  {isDisabled ? <span className="role-option__status">{t("roleUnavailable")}</span> : null}
                 </label>
               );
             })}
