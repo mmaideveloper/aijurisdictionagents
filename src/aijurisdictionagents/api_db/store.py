@@ -3169,6 +3169,7 @@ class ApiDatabaseStore:
         return int(row[0]) if row else 0
 
     def get_effective_user_subscription(self, *, user_id: str) -> UserSubscription | None:
+        now = _now_iso()
         with self._connect() as conn:
             row = self._fetchone(
                 conn,
@@ -3176,11 +3177,14 @@ class ApiDatabaseStore:
                 SELECT subscription_id, user_id, plan_code, status, starts_at, ends_at,
                        case_ids_json, created_at, updated_at
                 FROM user_subscriptions
-                WHERE user_id = ? AND status = 'paid'
+                WHERE user_id = ?
+                  AND status = 'paid'
+                  AND (starts_at IS NULL OR starts_at = '' OR starts_at <= ?)
+                  AND (ends_at IS NULL OR ends_at = '' OR ends_at > ?)
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                (user_id,),
+                (user_id, now, now),
             )
         return _row_to_user_subscription(row) if row is not None else None
 
@@ -3195,6 +3199,7 @@ class ApiDatabaseStore:
                 UNLIMITED_ACCESS_LIMIT,
                 None,
             )
+        now = _now_iso()
         with self._connect() as conn:
             row = self._fetchone(
                 conn,
@@ -3203,11 +3208,14 @@ class ApiDatabaseStore:
                        sp.max_cases, sp.max_documents_per_case, sp.case_ttl_days
                 FROM user_subscriptions us
                 JOIN subscription_plans sp ON sp.plan_code = us.plan_code
-                WHERE us.user_id = ? AND us.status = 'paid'
+                WHERE us.user_id = ?
+                  AND us.status = 'paid'
+                  AND (us.starts_at IS NULL OR us.starts_at = '' OR us.starts_at <= ?)
+                  AND (us.ends_at IS NULL OR us.ends_at = '' OR us.ends_at > ?)
                 ORDER BY us.created_at DESC
                 LIMIT 1
                 """,
-                (user_id,),
+                (user_id, now, now),
             )
         if row is None:
             return SubscriptionPlan('free', 'Free', 'none', 0, 1, 2, 1)

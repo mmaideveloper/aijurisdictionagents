@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -72,6 +73,45 @@ def test_case_plan_routes_to_seeded_azure_foundry_gpt_4o_mini_model(
     assert routed.route_type == "external"
     assert routed.plan_code == "case"
     assert routed.subscription_id == subscription.subscription_id
+
+
+def test_expired_paid_subscription_routes_as_free_local_model(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    store = _store(tmp_path)
+    user = store.create_user(email="expired@example.com", password="secret", full_name="Expired User")
+    subscription = store.request_subscription_change(user_id=user.user_id, plan_code="case")
+    paid_subscription = store.update_subscription_status(
+        subscription_id=subscription.subscription_id,
+        status="paid",
+    )
+    past_end = (datetime.now(UTC) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+    with store._connect() as conn:
+        store._execute(
+            conn,
+            "UPDATE user_subscriptions SET ends_at = ? WHERE subscription_id = ?",
+            (past_end, paid_subscription.subscription_id),
+        )
+        conn.commit()
+
+    plan = store.get_effective_subscription_plan(user_id=user.user_id)
+    effective_subscription = store.get_effective_user_subscription(user_id=user.user_id)
+    routed = get_routed_llm_client(
+        store=store,
+        user_id=user.user_id,
+        task_type="chat_reply",
+    )
+
+    assert effective_subscription is not None
+    assert effective_subscription.plan_code == "free"
+    assert plan.plan_code == "free"
+    assert routed.plan_code == "free"
+    assert routed.subscription_id == effective_subscription.subscription_id
+    assert routed.provider == "local_ollama"
+    assert routed.route_type == "free_local"
+    assert routed.model == "qwen3.6:27b"
 
 
 def test_model_credentials_are_encrypted_and_revealed_only_when_requested(
