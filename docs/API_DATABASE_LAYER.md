@@ -153,6 +153,10 @@ The API database now seeds four subscription plans and tracks user subscription 
 
 Status model: `pending`, `paying`, `paid`, `canceled`, `expired`.
 For monthly plans, `starts_at` and `ends_at` are set when status switches to `paid`.
+Runtime entitlement checks treat a paid subscription as active only when its
+`starts_at` has begun and `ends_at` is empty or in the future. Expired paid
+subscriptions fall back to the Free plan, which also keeps chat model routing on
+the local Ollama route instead of an external provider.
 
 `JURISDIGTA_UNLIMITED_ACCESS_EMAILS` defines a comma- or semicolon-separated
 case-insensitive allowlist for controlled test/operator accounts. Allowlisted users
