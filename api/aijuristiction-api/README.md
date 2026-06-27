@@ -923,6 +923,7 @@ Current E2E specs:
 - `tests/chat.spec.ts`
 - `tests/chat-simulator.spec.ts`
 - `tests/mobile-auth-subscription.spec.ts` (covers mobile login + subscription request flow against user endpoints)
+- `tests/payment-process.spec.ts` (simulates synthetic user checkout, sandbox payment confirmation, and payment guard rails)
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
 Scheduled E2E status:
@@ -963,6 +964,23 @@ Run the mobile authentication + subscription lifecycle check used by the Flutter
 cd api/aijuristiction-api/e2e-playwright
 API_KEY=aijuris npx playwright test tests/mobile-auth-subscription.spec.ts
 ```
+
+Run the synthetic user payment-process simulation:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+API_KEY=aijuris npm run test:payment
+```
+
+On Windows PowerShell:
+
+```powershell
+cd api/aijuristiction-api/e2e-playwright
+$env:API_KEY="aijuris"
+npm run test:payment
+```
+
+The payment E2E uses only generated test identities and the API's sandbox checkout contract. It does not send real payment-provider traffic or reuse production personal data.
 
 Run the chat simulator streaming test with fixture input and uploaded txt document:
 

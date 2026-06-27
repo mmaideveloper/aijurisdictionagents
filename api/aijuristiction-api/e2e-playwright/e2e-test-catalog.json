@@ -54,6 +54,24 @@
     "scheduled": true
   },
   {
+    "id": "payment-process-checkout-confirmation",
+    "file": "tests/payment-process.spec.ts",
+    "title": "payment process: user checks out Case plan and confirms sandbox payment",
+    "name": "Case plan payment process",
+    "description": "Simulates a synthetic user selecting the Case plan, receiving a sandbox checkout URL, confirming payment, and observing the paid subscription.",
+    "area": "Payments",
+    "scheduled": true
+  },
+  {
+    "id": "payment-process-guards",
+    "file": "tests/payment-process.spec.ts",
+    "title": "payment process guards: disabled plans and unknown payments do not activate subscriptions",
+    "name": "Payment process guard rails",
+    "description": "Verifies disabled paid plans remain unavailable and unknown payment IDs cannot activate a paying subscription.",
+    "area": "Payments",
+    "scheduled": true
+  },
+  {
     "id": "case-pdf-selected-slovak",
     "file": "tests/case-generated-document-pdf.spec.ts",
     "title": "case generated PDF renders selected Slovak document without assistant or English blocks",

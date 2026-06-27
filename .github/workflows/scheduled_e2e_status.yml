@@ -63,6 +63,7 @@ jobs:
             tests/chat.spec.ts \
             tests/chat-simulator.spec.ts \
             tests/mobile-auth-subscription.spec.ts \
+            tests/payment-process.spec.ts \
             tests/case-generated-document-pdf.spec.ts \
             --reporter=json > scheduled-e2e-results.json
           test_exit=$?
