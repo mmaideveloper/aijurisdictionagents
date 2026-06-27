@@ -9,6 +9,7 @@ from app.services.email_templates import (
     build_subscription_status_email,
     build_welcome_email,
 )
+from app.services.subscription_invoices import SubscriptionInvoice, build_subscription_invoice_attachments
 
 from aijurisdictionagents.api_db import User, UserSubscription
 
@@ -39,7 +40,13 @@ def queue_subscription_change_email(*, scheduler: EmailScheduler, user: User, it
     )
 
 
-def queue_subscription_status_email(*, scheduler: EmailScheduler, user: User, item: UserSubscription) -> None:
+def queue_subscription_status_email(
+    *,
+    scheduler: EmailScheduler,
+    user: User,
+    item: UserSubscription,
+    invoice: SubscriptionInvoice | None = None,
+) -> None:
     email = build_subscription_status_email(
         full_name=user.full_name,
         plan_code=item.plan_code,
@@ -55,6 +62,12 @@ def queue_subscription_status_email(*, scheduler: EmailScheduler, user: User, it
         event = "subscription_status"
         context = "subscription_status"
     metadata = email.metadata(event=event, subscription_id=item.subscription_id)
+    if invoice is not None:
+        metadata["invoice_id"] = invoice.invoice_id
+        metadata["invoice_number"] = invoice.invoice_number
+        metadata["payment_id"] = invoice.payment_id
+        metadata["payment_provider"] = invoice.payment_provider
+        metadata["attachments"] = list(metadata["attachments"]) + build_subscription_invoice_attachments(invoice)
     if item.status not in {"paid", "failed"}:
         metadata["status"] = item.status
     _queue_email_safely(

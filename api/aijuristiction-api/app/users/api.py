@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.mcp_tokens import create_mcp_api_token
 from app.security import require_api_key
 from app.services.email_scheduler import EmailScheduler
+from app.services.subscription_invoices import build_subscription_invoice
 from app.users.notifications import (
     queue_registration_email,
     queue_subscription_change_email,
@@ -801,7 +802,6 @@ def checkout_subscription_change(
 
     try:
         subscription = store.request_subscription_change(user_id=user_id, plan_code=plan_code)
-        subscription = store.update_subscription_status(subscription_id=subscription.subscription_id, status="paying")
     except Exception as exc:
         if not _is_integrity_error(exc):
             raise
@@ -855,7 +855,17 @@ def confirm_subscription_payment(
 
     payment["payment_status"] = "paid"
     item = store.update_subscription_status(subscription_id=subscription_id, status="paid")
-    queue_subscription_status_email(scheduler=scheduler, user=user, item=item)
+    plan = next((plan for plan in store.list_subscription_plans() if plan.plan_code == item.plan_code), None)
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan code")
+    invoice = build_subscription_invoice(
+        user=user,
+        subscription=item,
+        plan=plan,
+        payment_provider=str(payment["payment_provider"]),
+        payment_id=payload.payment_id,
+    )
+    queue_subscription_status_email(scheduler=scheduler, user=user, item=item, invoice=invoice)
     return _to_subscription_response(item)
 
 

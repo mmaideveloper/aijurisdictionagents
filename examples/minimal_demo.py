@@ -20,6 +20,10 @@ print(
     "OTP/code emails remain plain text."
 )
 print(
+    "subscription_invoice_checkout => checkout keeps subscriptions pending until payment confirmation; "
+    "confirmation queues the invoice email with PDF and UBL XML attachments."
+)
+print(
     "mcp_auth_ux => browser MCP login/sign-up pages localize Slovak/English via Accept-Language; "
     "invalid OTP submissions re-render HTML warnings instead of JSON errors."
 )
