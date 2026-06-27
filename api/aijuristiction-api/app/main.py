@@ -22,6 +22,7 @@ from app.admin_users_api import router as admin_users_router
 from app.ai_model_admin_api import router as ai_model_admin_router
 from app.contact_api import router as contact_router
 from app.document_templates.api import router as document_templates_router
+from app.effective_model_routing_api import router as effective_model_routing_router
 from app.flow_packs.api import router as flow_packs_router
 from app.laws_api import router as laws_router
 from app.logging_config import configure_logging
@@ -251,6 +252,7 @@ app.include_router(admin_users_router)
 app.include_router(ai_model_admin_router)
 app.include_router(contact_router)
 app.include_router(document_templates_router)
+app.include_router(effective_model_routing_router)
 app.include_router(flow_packs_router)
 app.include_router(laws_router)
 app.include_router(users_router)

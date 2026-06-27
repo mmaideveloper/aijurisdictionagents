@@ -157,6 +157,10 @@ Runtime entitlement checks treat a paid subscription as active only when its
 `starts_at` has begun and `ends_at` is empty or in the future. Expired paid
 subscriptions fall back to the Free plan, which also keeps chat model routing on
 the local Ollama route instead of an external provider.
+The public `/v1/model-routing/effective` endpoint exposes only effective route
+metadata (`plan_code`, `route_type`, provider, model, and label) so clients can
+display the same model route the backend will use without exposing prompts,
+secrets, or case content.
 
 `JURISDIGTA_UNLIMITED_ACCESS_EMAILS` defines a comma- or semicolon-separated
 case-insensitive allowlist for controlled test/operator accounts. Allowlisted users

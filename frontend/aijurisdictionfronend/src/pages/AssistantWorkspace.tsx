@@ -12,7 +12,13 @@ import {
 } from "@assistant-ui/react";
 import { BsArrowUpCircle } from "react-icons/bs";
 import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
-import { ApiRequestError, chatApiRuntimeConfig, createChatSession, streamSession } from "../api/chatClient";
+import {
+  ApiRequestError,
+  chatApiRuntimeConfig,
+  createChatSession,
+  fetchEffectiveModelRoute,
+  streamSession
+} from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
@@ -707,9 +713,29 @@ const AssistantConfigurations: React.FC = () => {
 
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
+  const { user } = useAuth();
   const { activeCase } = useCases();
   const threadKey = React.useMemo(() => caseThreadKey(activeCase), [activeCase]);
-  const modelLabel = React.useMemo(() => chatApiRuntimeConfig().chatModelLabel, []);
+  const fallbackModelLabel = React.useMemo(() => chatApiRuntimeConfig().chatModelLabel, []);
+  const [modelLabel, setModelLabel] = React.useState(fallbackModelLabel);
+
+  React.useEffect(() => {
+    let isCurrent = true;
+    void fetchEffectiveModelRoute(user?.userId)
+      .then((route) => {
+        if (isCurrent && route.label.trim()) {
+          setModelLabel(route.label.trim());
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setModelLabel(fallbackModelLabel);
+        }
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [fallbackModelLabel, user?.userId]);
 
   return (
     <div className="page assistant-workspace-page">

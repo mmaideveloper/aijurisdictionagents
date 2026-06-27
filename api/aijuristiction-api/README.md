@@ -77,6 +77,7 @@ Required setup for chat model routing:
 - Free/default users use the seeded `local_ollama_default` route: provider `local_ollama`, base URL `http://127.0.0.1:11434/v1`, exact model `qwen3.6:27b`.
 - Paid `case`, `basic`, `premium`, and `unlimited` users use the seeded Azure Foundry route `azure_foundry_gpt_4o_mini`: exact model/deployment `gpt-4o-mini`.
 - A paid subscription is considered active for routing only while `starts_at` has begun and `ends_at` is empty or in the future. Expired paid rows fall back to the Free/local Ollama route.
+- The assistant UI should read `/v1/model-routing/effective` for the signed-in user before displaying model disclosure text. This endpoint returns only privacy-minimized route metadata, so Free users see the same local Ollama model that the backend will actually use.
 - Azure Foundry chat endpoint belongs in `ai_model_providers.base_url`.
 - Azure Foundry API key or token belongs in encrypted `ai_model_credentials`, managed through `/v1/admin/ai-models`.
 - Set `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` and `JURISDIGTA_ADMIN_EMAILS` in deployed environments.

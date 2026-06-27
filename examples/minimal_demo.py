@@ -102,6 +102,10 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         f"{expired_plan.plan_code}/"
         f"{expired_route.provider.provider_code}/{expired_route.model_profile.model_code}"
     )
+    print(
+        "model_disclosure_label => "
+        f"{expired_route.provider.display_name} - {expired_route.model_profile.model_code}"
+    )
 print(
     "ai_model_admin => /app/admin/ai-models manages model providers, prices, "
     "groups, route policies, and audit events through server-authorized admin APIs."
