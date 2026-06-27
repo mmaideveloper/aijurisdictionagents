@@ -8,7 +8,10 @@ This document describes the proposed frontend design located in `frontend_design
 - `/auth` Sign-in / create account templates
 - `/app` Authenticated dashboard landing
 - `/app/case` Case creation and document intake
-- `/app/workspace` Lawyer preparation (AI judge + opposing counsel)
+- `/app/workspace` Lawyer preparation. The web role selector currently keeps
+  `AI Lawyer` active and shows `AI Judge` plus `Opposing Counsel` as disabled
+  options until those legal-risk perspectives have separate product and
+  compliance approval.
 - `/app/advice` Multi-agent printable advice summary
 - `/app/communications` Chat, voice, video modes. Browser voice capture uses
   browser-native speech recognition when available, keeps a reviewable

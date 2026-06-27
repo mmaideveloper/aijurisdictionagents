@@ -14,10 +14,12 @@ import { getMockCaseTemplate, isSeededCaseTemplateId } from "../content/mockCase
 import { translate, type Language, type TranslationKey, type TranslationValues } from "../data/translations";
 import { consoleLogger } from "../logging/consoleLogger";
 import { useLanguage } from "../components/LanguageProvider";
+import { normalizeCaseRole, type CaseRole } from "./caseRoles";
+
+export type { CaseRole } from "./caseRoles";
 
 export type CaseStatus = "In progress" | "On hold" | "Scheduled" | "Completed";
 export type CaseMode = "Draft" | "Review" | "Live" | "Archive";
-export type CaseRole = "AI Lawyer" | "AI Judge" | "Opposing Counsel";
 export type CaseCommunicationMode = "Chat" | "Voice" | "Video";
 
 export type SendCaseMessageInput = {
@@ -536,10 +538,7 @@ const normalizeStoredCase = (value: unknown): CaseRecord | null => {
     candidate.status === "Completed"
       ? candidate.status
       : "In progress";
-  const selectedRole =
-    candidate.selectedRole === "AI Judge" || candidate.selectedRole === "Opposing Counsel"
-      ? candidate.selectedRole
-      : "AI Lawyer";
+  const selectedRole = normalizeCaseRole(candidate.selectedRole);
   const selectedMode =
     candidate.selectedMode === "Review" ||
     candidate.selectedMode === "Live" ||
@@ -974,8 +973,10 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [loadCaseData, storedCases]);
 
   const updateCase = React.useCallback((caseId: string, update: Partial<CaseRecord>) => {
+    const normalizedUpdate =
+      update.selectedRole === undefined ? update : { ...update, selectedRole: normalizeCaseRole(update.selectedRole) };
     setStoredCases((prev) =>
-      prev.map((caseItem) => (caseItem.id === caseId ? { ...caseItem, ...update } : caseItem))
+      prev.map((caseItem) => (caseItem.id === caseId ? { ...caseItem, ...normalizedUpdate } : caseItem))
     );
   }, []);
 
@@ -1062,7 +1063,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const setCaseRole = React.useCallback(
     (caseId: string, role: CaseRole) => {
-      updateCase(caseId, { selectedRole: role });
+      updateCase(caseId, { selectedRole: normalizeCaseRole(role) });
     },
     [updateCase]
   );

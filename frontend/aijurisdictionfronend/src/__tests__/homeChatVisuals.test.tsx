@@ -21,7 +21,8 @@ const mockCaseState = vi.hoisted(() => ({
       message: "Please review the jurisdiction scope.",
       createdAt: "2026-04-16T10:02:00.000Z"
     }
-  ]
+  ],
+  setCaseRole: vi.fn()
 }));
 
 vi.mock("../auth/webAuth", () => ({
@@ -67,7 +68,7 @@ vi.mock("../state/CaseProvider", () => ({
     setContinueRequested: vi.fn(),
     addInteraction: vi.fn(),
     sendCaseMessage: vi.fn(),
-    setCaseRole: vi.fn(),
+    setCaseRole: mockCaseState.setCaseRole,
     setCaseCommunicationMode: vi.fn()
   })
 }));
@@ -88,6 +89,7 @@ describe("Home chat visuals", () => {
         createdAt: "2026-04-16T10:02:00.000Z"
       }
     ];
+    mockCaseState.setCaseRole.mockReset();
     Element.prototype.scrollIntoView = vi.fn();
   });
 
@@ -128,5 +130,24 @@ describe("Home chat visuals", () => {
       block: "end",
       behavior: "smooth"
     });
+  });
+
+  it("shows judge and opposing-party role buttons as disabled while keeping lawyer selectable", () => {
+    render(
+      <LanguageProvider>
+        <MemoryRouter initialEntries={["/"]}>
+          <Home />
+        </MemoryRouter>
+      </LanguageProvider>
+    );
+
+    const lawyerRoles = screen.getAllByRole("radio", { name: /AI právnik/i }) as HTMLInputElement[];
+    const judgeRoles = screen.getAllByRole("radio", { name: /AI sudca/i }) as HTMLInputElement[];
+    const opposingRoles = screen.getAllByRole("radio", { name: /Protistrana/i }) as HTMLInputElement[];
+
+    expect(lawyerRoles.every((role) => role.checked && !role.disabled)).toBe(true);
+    expect(judgeRoles.every((role) => role.disabled)).toBe(true);
+    expect(opposingRoles.every((role) => role.disabled)).toBe(true);
+    expect(screen.getAllByText("Pripravujeme")).toHaveLength(judgeRoles.length + opposingRoles.length);
   });
 });

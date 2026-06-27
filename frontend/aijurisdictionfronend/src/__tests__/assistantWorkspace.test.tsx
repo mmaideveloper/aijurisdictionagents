@@ -59,7 +59,8 @@ const labels: Record<string, string> = {
   workspaceJudgeTitle: "AI judge",
   roleIntentJudge: "Assess fairness",
   workspaceOpposingTitle: "Opposing party",
-  roleIntentOpposing: "Challenge my argument"
+  roleIntentOpposing: "Challenge my argument",
+  roleUnavailable: "Coming later"
 };
 
 vi.mock("../components/LanguageProvider", () => ({
@@ -227,6 +228,20 @@ describe("AssistantWorkspace", () => {
     render(<AssistantWorkspace />);
 
     expect(screen.getByLabelText("AI model used for this chat").textContent).toContain("Azure Foundry model");
+  });
+
+  it("keeps unsupported legal-risk roles disabled in the configuration panel", () => {
+    render(<AssistantWorkspace />);
+
+    const lawyerRole = screen.getByRole("radio", { name: /AI lawyer/i }) as HTMLInputElement;
+    const judgeRole = screen.getByRole("radio", { name: /AI judge/i }) as HTMLInputElement;
+    const opposingRole = screen.getByRole("radio", { name: /Opposing party/i }) as HTMLInputElement;
+
+    expect(lawyerRole.checked).toBe(true);
+    expect(lawyerRole.disabled).toBe(false);
+    expect(judgeRole.disabled).toBe(true);
+    expect(opposingRole.disabled).toBe(true);
+    expect(screen.getAllByText("Coming later")).toHaveLength(2);
   });
 
   it("does not show the static MCP news panel in the assistant workspace", () => {
