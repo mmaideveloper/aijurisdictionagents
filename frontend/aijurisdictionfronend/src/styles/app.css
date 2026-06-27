@@ -365,6 +365,21 @@
   justify-content: space-between;
 }
 
+.admin-muted {
+  color: var(--ink-muted);
+  font-size: 0.84rem;
+  margin: 0;
+}
+
+.admin-compact-list {
+  color: var(--ink-muted);
+  display: grid;
+  font-size: 0.78rem;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
 .admin-panel label {
   color: var(--ink-muted);
   display: grid;

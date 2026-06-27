@@ -124,6 +124,36 @@ export interface AIModelAdminDashboard {
   grafana_url: string;
 }
 
+export interface OllamaModelInventoryItem {
+  name: string;
+  model: string;
+  modified_at: string;
+  size: number;
+  digest: string;
+  details: Record<string, unknown>;
+  configured_profile_ids: string[];
+  active_policy_ids: string[];
+  is_default: boolean;
+  is_running: boolean;
+  removable: boolean;
+  removal_blockers: string[];
+}
+
+export interface OllamaModelInventory {
+  base_url: string;
+  models: OllamaModelInventoryItem[];
+}
+
+export interface OllamaModelJob {
+  job_id: string;
+  action: string;
+  model: string;
+  status: string;
+  message: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProviderUpsertInput {
   provider_code: string;
   provider_type: string;
@@ -210,8 +240,13 @@ const adminRequest = async <T>(path: string, adminUserId: string, init?: Request
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try {
-      const payload = (await response.json()) as { detail?: string };
-      detail = payload.detail || detail;
+      const payload = (await response.json()) as { detail?: unknown };
+      if (typeof payload.detail === "string") {
+        detail = payload.detail;
+      } else if (payload.detail && typeof payload.detail === "object" && "blockers" in payload.detail) {
+        const blockers = (payload.detail as { blockers?: unknown }).blockers;
+        detail = Array.isArray(blockers) ? blockers.join(" ") : JSON.stringify(payload.detail);
+      }
     } catch {
       detail = response.statusText || detail;
     }
@@ -300,4 +335,19 @@ export const upsertAIModelRoutePolicy = (
   adminRequest<AIModelRoutePolicy>("/v1/admin/ai-models/policies", adminUserId, {
     method: "POST",
     body: JSON.stringify(input)
+  });
+
+export const fetchOllamaModels = (adminUserId: string): Promise<OllamaModelInventory> =>
+  adminRequest<OllamaModelInventory>("/v1/admin/ai-models/ollama/models", adminUserId, { method: "GET" });
+
+export const importOllamaModel = (adminUserId: string, model: string, reason: string): Promise<OllamaModelJob> =>
+  adminRequest<OllamaModelJob>("/v1/admin/ai-models/ollama/import", adminUserId, {
+    method: "POST",
+    body: JSON.stringify({ model, reason })
+  });
+
+export const removeOllamaModel = (adminUserId: string, model: string, reason: string): Promise<OllamaModelJob> =>
+  adminRequest<OllamaModelJob>(`/v1/admin/ai-models/ollama/models/${encodeURIComponent(model)}`, adminUserId, {
+    method: "DELETE",
+    body: JSON.stringify({ reason })
   });
