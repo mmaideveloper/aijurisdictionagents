@@ -925,6 +925,14 @@ Current E2E specs:
 - `tests/mobile-auth-subscription.spec.ts` (covers mobile login + subscription request flow against user endpoints)
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
+Scheduled E2E status:
+- `.github/workflows/scheduled_e2e_status.yml` runs every Monday and Friday at 06:00 UTC and can also be started manually from GitHub Actions.
+- The workflow writes a run summary table with each known E2E test name, description, covered area, latest status, duration, and prerequisite notes.
+- The source of truth for user-readable test names and descriptions is `e2e-playwright/e2e-test-catalog.json`.
+- The generated artifacts are `scheduled-e2e-status.md`, `scheduled-e2e-results.json`, and Playwright `test-results`.
+- Scheduled runs use local SQLite paths under the GitHub runner temp directory, `LLM_PROVIDER=mock`, and log-only email transport. This keeps the run deterministic and avoids processing production user data or sending messages.
+- Browser frontend specs that require `FRONTEND_BASE_URL` are listed in the catalog, but they are marked `not scheduled` by the default API-focused scheduled run until a frontend environment is explicitly provided.
+
 Run only the chat simulation test:
 
 ```bash

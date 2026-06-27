@@ -1,0 +1,154 @@
+[
+  {
+    "id": "api-health",
+    "file": "tests/health.spec.ts",
+    "title": "health endpoint is healthy",
+    "name": "API health endpoint",
+    "description": "Checks that the API /health endpoint is reachable and returns the expected healthy contract.",
+    "area": "API availability",
+    "scheduled": true
+  },
+  {
+    "id": "api-version",
+    "file": "tests/version.spec.ts",
+    "title": "version endpoint returns service name semantic version and country law metadata",
+    "name": "API version and laws metadata",
+    "description": "Checks /version for the API service name, semantic version, and Slovak law metadata used by clients and monitoring.",
+    "area": "API metadata",
+    "scheduled": true
+  },
+  {
+    "id": "chat-roundtrip",
+    "file": "tests/chat.spec.ts",
+    "title": "chat roundtrip: create session, create message, list messages",
+    "name": "Chat session roundtrip",
+    "description": "Creates a chat session, stores a user message, and verifies the message can be listed back through the API.",
+    "area": "Chat API",
+    "scheduled": true
+  },
+  {
+    "id": "chat-auth-guard",
+    "file": "tests/chat.spec.ts",
+    "title": "chat auth guard: missing API key returns 401",
+    "name": "Chat API auth guard",
+    "description": "Verifies that chat session creation without an API key is rejected with 401 when negative auth coverage is enabled.",
+    "area": "API authentication",
+    "scheduled": true
+  },
+  {
+    "id": "chat-simulator-stream",
+    "file": "tests/chat-simulator.spec.ts",
+    "title": "chat simulator stream: load first question, upload txt doc, AI user simulation over selected minutes, persist Q/A",
+    "name": "Chat simulator streaming flow",
+    "description": "Runs the simulator-style streaming discussion with a text document fixture and records generated question/answer pairs.",
+    "area": "Chat simulator API",
+    "scheduled": true
+  },
+  {
+    "id": "mobile-auth-subscription",
+    "file": "tests/mobile-auth-subscription.spec.ts",
+    "title": "mobile auth + subscription flow: sign-up, sign-in and request subscription change",
+    "name": "Mobile auth and subscription request",
+    "description": "Covers the mobile sign-up, phone sign-in, email/password sign-in, plan listing, and subscription request endpoints.",
+    "area": "Mobile API",
+    "scheduled": true
+  },
+  {
+    "id": "case-pdf-selected-slovak",
+    "file": "tests/case-generated-document-pdf.spec.ts",
+    "title": "case generated PDF renders selected Slovak document without assistant or English blocks",
+    "name": "Generated Slovak case PDF isolation",
+    "description": "Verifies that generated Slovak PDFs render selected legal-document content without assistant chatter, Markdown markers, or English text blocks.",
+    "area": "Case documents PDF",
+    "scheduled": true
+  },
+  {
+    "id": "case-pdf-language-separation",
+    "file": "tests/case-generated-document-pdf.spec.ts",
+    "title": "case generated Slovak and English PDFs stay clean and language-separated",
+    "name": "Generated bilingual PDF separation",
+    "description": "Verifies that separate Slovak and English generated documents stay language-separated and free of assistant/process text.",
+    "area": "Case documents PDF",
+    "scheduled": true
+  },
+  {
+    "id": "frontend-auth-case-document",
+    "file": "tests/frontend-auth-case-document.spec.ts",
+    "title": "registration and login can create, reopen, and preview a generated potvrdenie PDF",
+    "name": "Frontend registration to generated PDF preview",
+    "description": "Exercises the browser flow for registration, login, case creation, assistant document generation, reopening the case, and previewing a generated potvrdenie PDF.",
+    "area": "Frontend case workspace",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-case-chat-layout-1638",
+    "file": "tests/frontend-case-chat-layout.spec.ts",
+    "title": "new case opens non-overlapping assistant workspace at 1638x942",
+    "name": "Assistant workspace layout 1638x942",
+    "description": "Checks that creating a new case opens the assistant workspace with non-overlapping sidebar, main chat, and tool panel columns at 1638x942.",
+    "area": "Frontend layout",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-case-chat-layout-1280",
+    "file": "tests/frontend-case-chat-layout.spec.ts",
+    "title": "new case opens non-overlapping assistant workspace at 1280x720",
+    "name": "Assistant workspace layout 1280x720",
+    "description": "Checks that creating a new case opens the assistant workspace with non-overlapping sidebar, main chat, and tool panel columns at 1280x720.",
+    "area": "Frontend layout",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-case-create-layout-1777",
+    "file": "tests/frontend-case-create-layout.spec.ts",
+    "title": "created case opens assistant without column overlap at 1777x794",
+    "name": "Case creation layout 1777x794",
+    "description": "Checks the case creation to assistant transition at 1777x794 for horizontal overflow and column overlap.",
+    "area": "Frontend layout",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-case-create-layout-1638",
+    "file": "tests/frontend-case-create-layout.spec.ts",
+    "title": "created case opens assistant without column overlap at 1638x942",
+    "name": "Case creation layout 1638x942",
+    "description": "Checks the case creation to assistant transition at 1638x942 for horizontal overflow and column overlap.",
+    "area": "Frontend layout",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-case-create-layout-1366",
+    "file": "tests/frontend-case-create-layout.spec.ts",
+    "title": "created case opens assistant without column overlap at 1366x768",
+    "name": "Case creation layout 1366x768",
+    "description": "Checks the case creation to assistant transition at 1366x768 for horizontal overflow and column overlap.",
+    "area": "Frontend layout",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-case-create-layout-1280",
+    "file": "tests/frontend-case-create-layout.spec.ts",
+    "title": "created case opens assistant without column overlap at 1280x720",
+    "name": "Case creation layout 1280x720",
+    "description": "Checks the case creation to assistant transition at 1280x720 for horizontal overflow and column overlap.",
+    "area": "Frontend layout",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-document-preview-formatting",
+    "file": "tests/frontend-document-preview-formatting.spec.ts",
+    "title": "assistant legal draft renders as formatted JurisDigta document preview",
+    "name": "Assistant legal draft document preview",
+    "description": "Verifies that an assistant legal draft renders as a formatted JurisDigta document preview without internal labels or Markdown markers.",
+    "area": "Frontend document preview",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  }
+]

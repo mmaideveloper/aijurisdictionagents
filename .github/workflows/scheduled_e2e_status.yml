@@ -1,0 +1,88 @@
+name: Scheduled E2E Status
+
+on:
+  schedule:
+    - cron: "0 6 * * 1,5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e_status:
+    name: E2E status report
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      API_KEY: aijuris
+      RUN_NEGATIVE_AUTH_TESTS: "1"
+      LLM_PROVIDER: mock
+      DB_OPTION: local
+      EMAIL_TRANSPORT: log
+      EMAIL_SCHEDULER_ENABLED: "false"
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ""
+      PW_START_API: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: api/aijuristiction-api/e2e-playwright/package-lock.json
+
+      - name: Install API dependencies
+        working-directory: api/aijuristiction-api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ../..
+          pip install -e .[dev]
+
+      - name: Install Playwright dependencies
+        working-directory: api/aijuristiction-api/e2e-playwright
+        run: npm ci
+
+      - name: Run scheduled E2E tests and build status report
+        id: e2e
+        working-directory: api/aijuristiction-api/e2e-playwright
+        env:
+          API_PYTHON: python
+          DB_LOCAL: ${{ runner.temp }}/jurisdigta-scheduled-e2e.sqlite3
+          EMAIL_DB_LOCAL: ${{ runner.temp }}/jurisdigta-scheduled-e2e-email.sqlite3
+          STORE_LOCAL: ${{ runner.temp }}/jurisdigta-scheduled-e2e-storage
+        shell: bash
+        run: |
+          set +e
+          npx playwright test \
+            tests/health.spec.ts \
+            tests/version.spec.ts \
+            tests/chat.spec.ts \
+            tests/chat-simulator.spec.ts \
+            tests/mobile-auth-subscription.spec.ts \
+            tests/case-generated-document-pdf.spec.ts \
+            --reporter=json > scheduled-e2e-results.json
+          test_exit=$?
+          set -e
+
+          node scripts/summarize-e2e-status.mjs \
+            e2e-test-catalog.json \
+            scheduled-e2e-results.json \
+            scheduled-e2e-status.md
+
+          cat scheduled-e2e-status.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$test_exit"
+
+      - name: Upload E2E status artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduled-e2e-status
+          path: |
+            api/aijuristiction-api/e2e-playwright/scheduled-e2e-status.md
+            api/aijuristiction-api/e2e-playwright/scheduled-e2e-results.json
+            api/aijuristiction-api/e2e-playwright/test-results/**
+          if-no-files-found: ignore
