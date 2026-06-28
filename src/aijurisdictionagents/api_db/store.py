@@ -311,6 +311,21 @@ class AIModelUsageSummary:
 
 
 @dataclass(frozen=True)
+class AIModelTopCaseUsage:
+    case_id: str
+    plan_code: str
+    provider: str
+    model: str
+    route_type: str
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    estimated_cost_eur: float
+    request_count: int
+
+
+@dataclass(frozen=True)
 class AIModelUsageAuditEntry:
     usage_id: str
     case_id: str
@@ -1646,19 +1661,61 @@ class ApiDatabaseStore:
             rows = self._execute(
                 conn,
                 f"""
-                SELECT case_id, user_id, subscription_id, plan_code, task_type, provider,
+                SELECT '' AS case_id, '' AS user_id, '' AS subscription_id,
+                       plan_code, task_type, provider,
                        model, route_type, status, fallback_reason,
                        SUM(input_tokens), SUM(cached_input_tokens), SUM(output_tokens),
                        SUM(total_tokens), SUM(estimated_cost_eur), COUNT(*)
                 FROM ai_model_usage_ledger
                 WHERE request_completed_at >= ?{case_filter}
-                GROUP BY case_id, user_id, subscription_id, plan_code, task_type, provider,
-                         model, route_type, status, fallback_reason
+                GROUP BY plan_code, task_type, provider, model, route_type, status,
+                         fallback_reason
                 ORDER BY SUM(estimated_cost_eur) DESC, SUM(total_tokens) DESC
                 """,
                 tuple(params),
             ).fetchall()
         return [_row_to_ai_model_usage_summary(row) for row in rows]
+
+    def summarize_top_ai_model_cases(
+        self,
+        *,
+        minutes: int = 60,
+        limit: int = 10,
+    ) -> list[AIModelTopCaseUsage]:
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(minutes=max(minutes, 1))
+        ).isoformat().replace("+00:00", "Z")
+        bounded_limit = min(max(limit, 1), 50)
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT case_id, plan_code, 'all' AS provider, 'all' AS model,
+                       CASE
+                           WHEN route_type IN ('local', 'local_only') OR provider LIKE '%ollama%'
+                           THEN 'local'
+                           WHEN route_type IN ('external', 'external_ack_required')
+                           THEN 'paid'
+                           ELSE COALESCE(NULLIF(route_type, ''), 'unknown')
+                       END AS route_type,
+                       SUM(input_tokens), SUM(cached_input_tokens), SUM(output_tokens),
+                       SUM(total_tokens), SUM(estimated_cost_eur), COUNT(*)
+                FROM ai_model_usage_ledger
+                WHERE request_completed_at >= ? AND case_id <> ''
+                GROUP BY case_id, plan_code,
+                         CASE
+                             WHEN route_type IN ('local', 'local_only') OR provider LIKE '%ollama%'
+                             THEN 'local'
+                             WHEN route_type IN ('external', 'external_ack_required')
+                             THEN 'paid'
+                             ELSE COALESCE(NULLIF(route_type, ''), 'unknown')
+                         END
+                ORDER BY SUM(total_tokens) DESC, SUM(estimated_cost_eur) DESC
+                LIMIT ?
+                """,
+                (cutoff, bounded_limit),
+            ).fetchall()
+        return [_row_to_ai_model_top_case_usage(row) for row in rows]
 
     def list_ai_model_usage_audit(
         self,
@@ -4410,6 +4467,22 @@ def _row_to_ai_model_usage_summary(row: tuple[object, ...]) -> AIModelUsageSumma
         total_tokens=int(row[13] or 0),
         estimated_cost_eur=float(row[14] or 0),
         request_count=int(row[15] or 0),
+    )
+
+
+def _row_to_ai_model_top_case_usage(row: tuple[object, ...]) -> AIModelTopCaseUsage:
+    return AIModelTopCaseUsage(
+        case_id=str(row[0]),
+        plan_code=str(row[1]),
+        provider=str(row[2]),
+        model=str(row[3]),
+        route_type=str(row[4]),
+        input_tokens=int(row[5] or 0),
+        cached_input_tokens=int(row[6] or 0),
+        output_tokens=int(row[7] or 0),
+        total_tokens=int(row[8] or 0),
+        estimated_cost_eur=float(row[9] or 0),
+        request_count=int(row[10] or 0),
     )
 
 

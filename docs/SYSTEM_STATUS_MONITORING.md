@@ -263,20 +263,32 @@ Useful Grafana panels:
 - `jurisdigta_ollama_running_model_vram_bytes`
 - `jurisdigta_ai_model_requests_window`
 - `jurisdigta_ai_model_input_tokens_window`
+- `jurisdigta_ai_model_cached_input_tokens_window`
 - `jurisdigta_ai_model_output_tokens_window`
+- `jurisdigta_ai_model_total_tokens_window`
 - `jurisdigta_ai_model_estimated_cost_eur_window`
+- `jurisdigta_ai_model_top_case_total_tokens_window`
+- `jurisdigta_ai_model_top_case_estimated_cost_eur_window`
 
 The provisioned `JurisDigta Application Performance` dashboard includes
-aggregate AI model panels for usage status, current-window EUR cost, requests by
-route, tokens by provider/model/route, and top cost by plan/task/provider/model
-route. Keep these dashboard queries aggregate-only. Case IDs, user IDs, prompts,
-answers, generated documents, filenames, emails, phone numbers, addresses, or
-legal-case facts must not be added to the shared application dashboard labels or
-legends. If an incident requires case/user drill-down, create a separate
-admin-only dashboard protected by Cloudflare Access and Grafana permissions.
+aggregate AI model panels for usage status, EUR cost, requests by route, and
+tokens by provider/model/route for 1h, 24h, 7d, and 30d windows. The provisioned
+`JurisDigta Ollama And AI Models` dashboard also includes local/Ollama tokens,
+paid-model tokens, and a masked top-10 case consumption table. Keep shared
+dashboard queries aggregate-only. Raw case IDs, user IDs, subscription IDs,
+prompts, answers, generated documents, filenames, emails, phone numbers,
+addresses, or legal-case facts must not be added to Prometheus labels or
+legends. Case-level Grafana triage must use the masked `case_ref` label only.
 - `jurisdigta_ai_model_input_tokens_window`
 - `jurisdigta_ai_model_output_tokens_window`
 - `jurisdigta_ai_model_estimated_cost_eur_window`
+
+Prometheus loads `Deployment/monitoring/prometheus-rules/jurisdigta-ai-models.yml`
+for Ollama red-state and paid-model usage alerts. The initial thresholds are:
+Ollama exporter/API down for 2 minutes, configured Ollama model missing for 5
+minutes, paid-model tokens above 200,000 in the 1h API-ledger window for 10
+minutes, and paid-model estimated cost above 10 EUR in the 1h API-ledger window
+for 10 minutes.
 
 Email notification setup:
 

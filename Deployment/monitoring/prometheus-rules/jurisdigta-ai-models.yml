@@ -1,0 +1,42 @@
+groups:
+  - name: jurisdigta-ai-models
+    rules:
+      - alert: JurisDigtaOllamaExporterDown
+        expr: up{job="jurisdigta-ollama"} == 0 or max(jurisdigta_ollama_up) == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: ollama
+        annotations:
+          summary: "JurisDigta Ollama metrics are red"
+          description: "Prometheus cannot scrape Ollama metrics or the Ollama exporter reports the Ollama API as down."
+
+      - alert: JurisDigtaOllamaConfiguredModelMissing
+        expr: max(jurisdigta_ollama_configured_model_present) == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: ollama
+        annotations:
+          summary: "Configured Ollama model is missing"
+          description: "LOCAL_LLM_MODEL is not present in the Ollama model inventory exported to Prometheus."
+
+      - alert: JurisDigtaPaidModelTokenSpike
+        expr: sum(jurisdigta_ai_model_total_tokens_window{route_class="paid",window_minutes="60"}) > 200000
+        for: 10m
+        labels:
+          severity: warning
+          component: ai-model-usage
+        annotations:
+          summary: "Paid-model token usage spike"
+          description: "Paid-model token usage in the 1h API-ledger window exceeded 200,000 tokens."
+
+      - alert: JurisDigtaPaidModelCostSpike
+        expr: sum(jurisdigta_ai_model_estimated_cost_eur_window{route_class="paid",window_minutes="60"}) > 10
+        for: 10m
+        labels:
+          severity: warning
+          component: ai-model-usage
+        annotations:
+          summary: "Paid-model estimated cost spike"
+          description: "Paid-model estimated cost in the 1h API-ledger window exceeded 10 EUR."
