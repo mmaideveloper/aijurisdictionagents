@@ -1,0 +1,16 @@
+{
+  "CaseTitle": "E2E zastarana najomna zmluva",
+  "CaseDescription": "
+    Analyzuj vsetky nahrane dokumenty v tomto pripade. Over zastaranu najomnu zmluvu
+    podla aktualnych slovenskych zakonov z JurisDigta laws/RAG databazy. Najprv zobraz
+    udaje, ktore si nasiel v starej zmluve, potom navrhni zmeny s odovodnenim v zakone
+    a priprav opraveny navrh najomnej zmluvy. Nepytaj sa na prenajimatela, najomcu,
+    byt, najomne, zabezpeku ani dobu najmu, ak su tieto udaje citatelne v dokumente.
+  ",
+  "Documents": [
+    {
+      "filePath": "./outdated-najomna-zmluva-2026.txt",
+      "fileName": "Zastarana najomna zmluva 2026"
+    }
+  ]
+}

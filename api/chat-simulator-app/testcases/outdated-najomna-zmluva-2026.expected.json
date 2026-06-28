@@ -1,0 +1,68 @@
+{
+  "fixture": "outdated-najomna-zmluva-2026.txt",
+  "documentType": "synthetic_slovak_rental_agreement",
+  "expectedExtractedFields": {
+    "landlord": "Marek Testovany",
+    "landlordAddress": "Kvetna 12, 040 01 Kosice",
+    "tenant": "Eva Najomna",
+    "tenantAddress": "Hlavna 8, 058 01 Poprad",
+    "propertyAddress": "Dunajska 45, 811 08 Bratislava",
+    "apartment": "byt c. 12",
+    "cellar": "pivnicna kobka c. 12B",
+    "leaseStart": "1. jula 2026",
+    "leaseEnd": "30. juna 2027",
+    "rent": "850 EUR",
+    "servicesAdvance": "180 EUR",
+    "deposit": "1 700 EUR",
+    "paymentDueDay": "5. dna",
+    "iban": "SK12 1100 0000 0026 2947 1123",
+    "signaturePlace": "Bratislava",
+    "signatureDate": "15. juna 2026"
+  },
+  "knownOutdatedThemes": [
+    {
+      "id": "deposit-return",
+      "keywords": ["zabezpeka", "vratenie", "zapoctenie"],
+      "expectedLawHints": ["40/1964", "Obciansky zakonnik", "98/2014"]
+    },
+    {
+      "id": "handover-protocol",
+      "keywords": ["odovzdavaci protokol", "stav meracov", "odovzdanie bytu"],
+      "expectedLawHints": ["40/1964", "Obciansky zakonnik", "98/2014"]
+    },
+    {
+      "id": "termination-notice",
+      "keywords": ["vypoved", "vypovedna lehota", "dorucenie"],
+      "expectedLawHints": ["40/1964", "Obciansky zakonnik", "98/2014"]
+    },
+    {
+      "id": "repairs-and-defects",
+      "keywords": ["opravy", "vady", "skody"],
+      "expectedLawHints": ["40/1964", "Obciansky zakonnik"]
+    },
+    {
+      "id": "delivery-proof",
+      "keywords": ["dorucovanie", "pisomnosti", "potvrdenie prijatia"],
+      "expectedLawHints": ["40/1964", "Obciansky zakonnik"]
+    }
+  ],
+  "forbiddenMissingDataQuestions": [
+    "kto je prenajimatel",
+    "meno prenajimatela",
+    "kto je najomca",
+    "meno najomcu",
+    "aka je adresa bytu",
+    "adresa nehnutelnosti",
+    "aka je vyska najomneho",
+    "kolko je najomne",
+    "aka je vyska zabezpeky",
+    "od kedy trva najom",
+    "do kedy trva najom"
+  ],
+  "lawGroundingHints": [
+    "40/1964",
+    "Obciansky zakonnik",
+    "98/2014",
+    "kratkodoby najom"
+  ]
+}
