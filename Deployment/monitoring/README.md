@@ -18,12 +18,13 @@ GET /v1/system/status?minutes=60
 - Last processed law, next law to check, latest laws collector run timestamps, and latest run duration.
 - Email sent counts, email queue counts, and aggregate email send duration from the outbox.
 - Document processor queue counts, processed document counts, latest run duration, and aggregate processing duration.
-- AI model token and cost telemetry after task #365 lands: input tokens, cached input tokens, output tokens, total tokens, estimated EUR cost, fallback count, and latency by case, provider, model, task type, plan, user, group, and hour/day/month window.
+- AI model token and cost telemetry: input tokens, cached input tokens, output tokens, total tokens, estimated EUR cost, request count, and fallback count by provider, model, task type, plan, route type, route class, and 1h/24h/7d/30d window.
 - Host CPU, memory, disk, filesystem, and kernel metrics through Node Exporter.
 - Docker container CPU, memory, filesystem, and restart behavior through cAdvisor.
 - Prometheus health and scrape status.
 - Docker stdout/stderr logs and server job log files through Grafana Alloy and Loki.
-- Provisioned AI model usage panels in `JurisDigta Application Performance` for aggregate status, cost, requests by route, input/output tokens by model, and top cost by plan/task/provider/model route.
+- Provisioned AI model usage panels in `JurisDigta Application Performance` for aggregate status, cost, requests by route, input/output/total tokens by model, and top cost by plan/task/provider/model route.
+- Provisioned masked top-10 case token panels in `JurisDigta Ollama And AI Models` for Grafana-only operational triage.
 
 ## Security Baseline
 
@@ -45,11 +46,15 @@ http://127.0.0.1:3000
 - If Grafana must be reachable through `admin.jurisdigta.eu`, publish it through Cloudflare Tunnel and protect it with Cloudflare Access plus Grafana login.
 - Keep dashboard panels operational only. Do not display user chat text, generated legal documents, API keys, database connection strings, or legal-risk user outputs.
 - Email and document processor panels must stay aggregate-only: queue counts, sent/processed counts, and timing gauges. Do not add recipients, filenames, case titles, extracted document text, verification codes, embeddings, or raw connection strings as labels.
-- AI model panels must stay metadata-only. Allowed labels include internal IDs and categories such as case ID, user ID, subscription ID, plan code, provider, model, task type, route type, and fallback reason. Do not add prompts, answers, document text, filenames, party names, citations, emails, phone numbers, addresses, or other legal-case facts as metric labels.
+- Shared AI model panels must stay aggregate-only. Allowed labels include categories such as plan code, provider, model, task type, route type, route class, status, fallback reason, and window. Do not add raw case IDs, user IDs, subscription IDs, prompts, answers, document text, filenames, party names, citations, emails, phone numbers, addresses, or other legal-case facts as metric labels. The top-case Grafana panel uses masked `case_ref` values only.
 
 ## AI Model Token And Cost Monitoring
 
-Task #365 model routing must emit or export Prometheus-compatible metrics for input and output token usage per case and per model. The source of truth should be the API usage ledger; Prometheus/Grafana should read aggregate counters/gauges derived from that ledger rather than raw prompts or documents.
+Model routing must emit or export Prometheus-compatible metrics for input and
+output token usage per model/route, plus a masked top-case operational view. The
+source of truth is the API usage ledger; Prometheus/Grafana reads aggregate
+counters/gauges derived from that ledger rather than raw prompts, documents, or
+raw user/case identifiers.
 
 Required ledger fields for every model call:
 
@@ -77,17 +82,17 @@ Required ledger fields for every model call:
 - `fallback_reason`
 - `confidentiality_warning_ack_id`
 
-Recommended metric names:
+Current metric names:
 
-- `jurisdigta_ai_model_input_tokens_total`
-- `jurisdigta_ai_model_cached_input_tokens_total`
-- `jurisdigta_ai_model_output_tokens_total`
-- `jurisdigta_ai_model_tokens_total`
-- `jurisdigta_ai_model_cost_eur_total`
-- `jurisdigta_ai_model_requests_total`
-- `jurisdigta_ai_model_budget_remaining_eur`
-- `jurisdigta_ai_model_fallbacks_total`
-- `jurisdigta_ai_model_latency_seconds`
+- `jurisdigta_ai_model_requests_window`
+- `jurisdigta_ai_model_input_tokens_window`
+- `jurisdigta_ai_model_cached_input_tokens_window`
+- `jurisdigta_ai_model_output_tokens_window`
+- `jurisdigta_ai_model_total_tokens_window`
+- `jurisdigta_ai_model_estimated_cost_eur_window`
+- `jurisdigta_ai_model_top_case_requests_window`
+- `jurisdigta_ai_model_top_case_total_tokens_window`
+- `jurisdigta_ai_model_top_case_estimated_cost_eur_window`
 
 Recommended labels:
 
@@ -95,26 +100,26 @@ Recommended labels:
 - `model`
 - `task_type`
 - `route_type`
+- `route_class`
 - `plan_code`
-- `model_group_id`
-- `case_id`
-- `user_id`
-- `subscription_id`
+- `case_ref` only on masked top-case metrics
 - `status`
 - `fallback_reason`
+- `window_minutes`
 
 Provisioned Grafana panels:
 
 - AI model usage status
 - AI model cost in the current status window
-- AI model requests by task, provider, model, route type, and status
-- input and output tokens by model
+- AI model requests by task, provider, model, route type, route class, and status
+- local/Ollama and paid-model total tokens by provider/model/route
+- masked top 10 cases by token volume and estimated cost
+- input, cached input, output, and total tokens by model
 - top AI model cost by plan, task, provider, model, and route type
 
-Optional drill-down panels for a protected admin-only dashboard:
-
-- input tokens by model for a selected case
-- output tokens by model for a selected case
+Case-level drill-down remains limited to masked top-case Grafana rows. Raw
+case/user/subscription identifiers stay in the API usage ledger and case audit
+APIs, not in shared Prometheus labels.
 - total tokens by model and task type
 - estimated EUR cost by model for the selected case
 - model cost per user over hour/day/month windows
@@ -498,7 +503,7 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 
 - `JurisDigta Server Performance`: CPU, RAM, disk, load, network, disk I/O, and container memory.
 - `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
-- `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, input/output tokens, requests, estimated cost, and top cases by token volume.
+- `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, local/Ollama tokens, paid-model tokens, requests, estimated cost, and masked top cases by token volume.
 - `JurisDigta Laws Collector`: execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
 - `JurisDigta System Logs`: Loki log stream with source, severity, stream, and regex search filters for Docker container logs and server job log files.
@@ -564,11 +569,13 @@ Useful starter queries:
 - `jurisdigta_document_processing_duration_seconds_avg{window="24h"}`
 - `jurisdigta_document_processing_duration_seconds_max{window="24h"}`
 - `jurisdigta_document_processor_last_run_duration_seconds`
-- `jurisdigta_ai_model_input_tokens_total{model="...",case_id="..."}`
-- `jurisdigta_ai_model_output_tokens_total{model="...",case_id="..."}`
-- `jurisdigta_ai_model_cost_eur_total{model="...",case_id="..."}`
-- `jurisdigta_ai_model_budget_remaining_eur{case_id="..."}`
-- `jurisdigta_ai_model_fallbacks_total{model="...",fallback_reason="..."}`
+- `jurisdigta_ai_model_input_tokens_window{provider="...",model="...",route_class="...",window_minutes="..."}`
+- `jurisdigta_ai_model_cached_input_tokens_window{provider="...",model="...",route_class="...",window_minutes="..."}`
+- `jurisdigta_ai_model_output_tokens_window{provider="...",model="...",route_class="...",window_minutes="..."}`
+- `jurisdigta_ai_model_total_tokens_window{provider="...",model="...",route_class="...",window_minutes="..."}`
+- `jurisdigta_ai_model_estimated_cost_eur_window{provider="...",model="...",route_class="...",window_minutes="..."}`
+- `jurisdigta_ai_model_top_case_total_tokens_window{case_ref="case-....",route_class="...",window_minutes="..."}`
+- `jurisdigta_ai_model_top_case_estimated_cost_eur_window{case_ref="case-....",route_class="...",window_minutes="..."}`
 - `up{job="node-exporter"}`
 - `up{job="cadvisor"}`
 
@@ -578,7 +585,10 @@ Suggested alert rules:
 - API blackbox probe failure for more than 2 minutes.
 - Any `jurisdigta_errors_window` above `0` for 10 minutes.
 - Paid case model budget remaining below 10%.
-- Model output-token spend spike above normal threshold for any provider/model.
+- Ollama exporter/API down for more than 2 minutes.
+- Configured Ollama model missing for more than 5 minutes.
+- Paid-model token usage above 200,000 tokens in the 1h API-ledger window for more than 10 minutes.
+- Paid-model estimated cost above 10 EUR in the 1h API-ledger window for more than 10 minutes.
 - Disk used above 80%.
 - Memory used above 85%.
 - Laws collector last run older than 36 hours.

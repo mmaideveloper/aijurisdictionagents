@@ -25,6 +25,7 @@ router = APIRouter(
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _APPLICATIONS: tuple[ApplicationName, ...] = ("api", "laws_collector", "document_processor")
+_AI_USAGE_WINDOWS_MINUTES = (60, 24 * 60, 7 * 24 * 60, 30 * 24 * 60)
 
 
 @router.get("/status")
@@ -218,28 +219,42 @@ def _ai_model_usage_payload(*, minutes: int) -> dict[str, Any]:
         from aijurisdictionagents.api_db import ApiDatabaseStore
 
         store = ApiDatabaseStore.from_env()
-        summaries = store.summarize_ai_model_usage(minutes=minutes)
+        windows = _ai_usage_windows(minutes)
+        summaries = [
+            (window, item)
+            for window in windows
+            for item in store.summarize_ai_model_usage(minutes=window)
+        ]
+        top_cases = [
+            (window, item)
+            for window in windows
+            for item in store.summarize_top_ai_model_cases(minutes=window, limit=10)
+        ]
     except Exception as exc:
         return {
             "status": "error",
             "window_minutes": minutes,
             "message": str(exc),
             "summaries": [],
+            "top_cases": [],
         }
 
     return {
         "status": "ok",
         "window_minutes": minutes,
+        "available_windows_minutes": windows,
         "summaries": [
             {
-                "case_id": item.case_id,
-                "user_id": item.user_id,
-                "subscription_id": item.subscription_id,
+                "window_minutes": window,
                 "plan_code": item.plan_code,
                 "task_type": item.task_type,
                 "provider": item.provider,
                 "model": item.model,
                 "route_type": item.route_type,
+                "route_class": _ai_usage_route_class(
+                    provider=item.provider,
+                    route_type=item.route_type,
+                ),
                 "status": item.status,
                 "fallback_reason": item.fallback_reason,
                 "input_tokens": item.input_tokens,
@@ -249,9 +264,57 @@ def _ai_model_usage_payload(*, minutes: int) -> dict[str, Any]:
                 "estimated_cost_eur": item.estimated_cost_eur,
                 "request_count": item.request_count,
             }
-            for item in summaries
+            for window, item in summaries
+        ],
+        "top_cases": [
+            {
+                "window_minutes": window,
+                "case_ref": _masked_case_ref(item.case_id),
+                "plan_code": item.plan_code,
+                "provider": item.provider,
+                "model": item.model,
+                "route_type": item.route_type,
+                "route_class": _ai_usage_route_class(
+                    provider=item.provider,
+                    route_type=item.route_type,
+                ),
+                "input_tokens": item.input_tokens,
+                "cached_input_tokens": item.cached_input_tokens,
+                "output_tokens": item.output_tokens,
+                "total_tokens": item.total_tokens,
+                "estimated_cost_eur": item.estimated_cost_eur,
+                "request_count": item.request_count,
+            }
+            for window, item in top_cases
         ],
     }
+
+
+def _ai_usage_windows(requested_minutes: int) -> list[int]:
+    windows = list(_AI_USAGE_WINDOWS_MINUTES)
+    if requested_minutes not in windows:
+        windows.insert(0, requested_minutes)
+    return windows
+
+
+def _ai_usage_route_class(*, provider: str, route_type: str) -> str:
+    normalized_provider = provider.strip().lower()
+    normalized_route = route_type.strip().lower()
+    if normalized_route in {"local", "local_only"} or "ollama" in normalized_provider:
+        return "local"
+    if normalized_route in {"external", "external_ack_required"}:
+        return "paid"
+    return normalized_route or "unknown"
+
+
+def _masked_case_ref(case_id: str) -> str:
+    normalized = case_id.strip()
+    if not normalized:
+        return "case-unknown"
+    compact = normalized.replace("-", "")
+    if len(compact) >= 8:
+        return f"case-{compact[:4]}...{compact[-4:]}"
+    return f"case-...{compact[-4:]}"
 
 
 def _laws_collector_runtime_from_server_file() -> dict[str, Any] | None:

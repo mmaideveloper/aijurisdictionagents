@@ -416,6 +416,10 @@ Optional server-local monitoring setting in `/srv/jurisdigta/app/Deployment/moni
 | `GRAFANA_DEFAULT_HOME_DASHBOARD_PATH` | `/var/lib/grafana/dashboards/jurisdigta-application-performance.json` | Grafana dashboard JSON shown as the default home dashboard after login |
 | `OLLAMA_METRICS_PORT` | `9109` | Host-local Ollama Prometheus exporter port scraped by Prometheus through `host.docker.internal` |
 
+The monitoring stack also loads `Deployment/monitoring/prometheus-rules/jurisdigta-ai-models.yml`
+for Ollama red-state and high paid-model token/cost alerts. No extra GitHub
+Environment secret is required for those default thresholds.
+
 Minimal workflow validation after setup:
 
 1. Run `Self-Managed Prod Deploy` with `repo_ref=main`.

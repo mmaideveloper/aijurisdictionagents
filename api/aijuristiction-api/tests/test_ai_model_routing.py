@@ -319,7 +319,9 @@ def test_paid_external_route_requires_acknowledgement(tmp_path: Path) -> None:
     assert allowed.model_profile.model_code == "gpt-4.1"
 
 
-def test_usage_ledger_summarizes_tokens_and_cost_by_case_model(tmp_path: Path) -> None:
+def test_usage_ledger_summarizes_tokens_and_cost_by_model_without_identifiers(
+    tmp_path: Path,
+) -> None:
     store = _store(tmp_path)
     store.record_ai_model_usage(
         provider="azure_foundry",
@@ -354,11 +356,44 @@ def test_usage_ledger_summarizes_tokens_and_cost_by_case_model(tmp_path: Path) -
     assert len(summaries) == 1
     summary = summaries[0]
     assert summary.request_count == 2
+    assert summary.case_id == ""
+    assert summary.user_id == ""
+    assert summary.subscription_id == ""
     assert summary.input_tokens == 1200
     assert summary.cached_input_tokens == 250
     assert summary.output_tokens == 600
     assert summary.total_tokens == 1800
     assert summary.estimated_cost_eur == 0.012
+
+
+def test_usage_ledger_lists_top_cases_by_tokens(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.record_ai_model_usage(
+        provider="local_ollama",
+        model="qwen3.6:27b",
+        route_type="local",
+        input_tokens=500,
+        output_tokens=250,
+        case_id="case-local",
+        plan_code="free",
+    )
+    store.record_ai_model_usage(
+        provider="azure_foundry",
+        model="gpt-4.1",
+        route_type="external",
+        input_tokens=3000,
+        output_tokens=1000,
+        estimated_cost_eur=0.05,
+        case_id="case-paid",
+        plan_code="case",
+    )
+
+    top_cases = store.summarize_top_ai_model_cases(minutes=60, limit=1)
+
+    assert len(top_cases) == 1
+    assert top_cases[0].case_id == "case-paid"
+    assert top_cases[0].total_tokens == 4000
+    assert top_cases[0].estimated_cost_eur == 0.05
 
 
 def test_usage_ledger_lists_question_model_audit_entries(tmp_path: Path) -> None:
@@ -410,13 +445,32 @@ def test_status_exporter_renders_ai_model_usage_metrics() -> None:
                         "case_id": "case-1",
                         "user_id": "user-1",
                         "subscription_id": "sub-1",
+                        "window_minutes": 60,
                         "plan_code": "case",
                         "task_type": "document_generation",
                         "provider": "azure_foundry",
                         "model": "gpt-4.1",
                         "route_type": "external",
+                        "route_class": "paid",
                         "status": "ok",
                         "fallback_reason": "",
+                        "request_count": 2,
+                        "input_tokens": 1200,
+                        "cached_input_tokens": 250,
+                        "output_tokens": 600,
+                        "total_tokens": 2050,
+                        "estimated_cost_eur": 0.012,
+                    },
+                ],
+                "top_cases": [
+                    {
+                        "case_ref": "case-...se-1",
+                        "window_minutes": 60,
+                        "plan_code": "case",
+                        "provider": "azure_foundry",
+                        "model": "gpt-4.1",
+                        "route_type": "external",
+                        "route_class": "paid",
                         "request_count": 2,
                         "input_tokens": 1200,
                         "cached_input_tokens": 250,
@@ -430,7 +484,11 @@ def test_status_exporter_renders_ai_model_usage_metrics() -> None:
     )
 
     assert "jurisdigta_ai_model_output_tokens_window" in rendered
-    assert 'case_id="case-1"' in rendered
+    assert 'case_id="case-1"' not in rendered
+    assert 'user_id="user-1"' not in rendered
+    assert 'subscription_id="sub-1"' not in rendered
+    assert 'case_ref="case-...se-1"' in rendered
+    assert "jurisdigta_ai_model_top_case_total_tokens_window" in rendered
     assert 'model="gpt-4.1"' in rendered
     assert " 600.0" in rendered
     assert "jurisdigta_ai_model_estimated_cost_eur_window" in rendered

@@ -2243,7 +2243,46 @@
     "application"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "1h",
+          "value": "60"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Usage window",
+        "multi": false,
+        "name": "usage_window",
+        "options": [
+          {
+            "selected": true,
+            "text": "1h",
+            "value": "60"
+          },
+          {
+            "selected": false,
+            "text": "24h",
+            "value": "1440"
+          },
+          {
+            "selected": false,
+            "text": "7d",
+            "value": "10080"
+          },
+          {
+            "selected": false,
+            "text": "30d",
+            "value": "43200"
+          }
+        ],
+        "query": "60,1440,10080,43200",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",

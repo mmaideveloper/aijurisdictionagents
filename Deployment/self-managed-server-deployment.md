@@ -1180,9 +1180,10 @@ Components:
 - cAdvisor: Docker container CPU, memory, filesystem, and restart metrics.
 - Blackbox Exporter: API availability probes.
 - Monitoring containers join `MONITORING_APP_DOCKER_NETWORK`, defaulting to `aijuristiction-api_default`, so API and MCP are probed by container name while their host ports stay bound to `127.0.0.1`.
-- `scripts/server/export_system_status_metrics.py`: converts `GET /v1/system/status?minutes=60` into Prometheus text metrics.
+- `scripts/server/export_system_status_metrics.py`: converts `GET /v1/system/status?minutes=60` into Prometheus text metrics, including API-ledger token/cost windows for 1h, 24h, 7d, and 30d.
 - `scripts/server/export_ollama_metrics.py`: exports localhost-only Ollama health, model inventory, loaded model, and VRAM gauges.
 - `scripts/server/write_system_status.py`: records aggregate API/MCP request counts, average/max request latency, total users, new users, total cases, and new cases without exposing personal data or legal case content in Prometheus labels.
+- `Deployment/monitoring/prometheus-rules/jurisdigta-ai-models.yml`: evaluates Ollama red-state alerts and paid-model token/cost spike alerts.
 
 Start the JurisDigta status exporter:
 
@@ -1217,6 +1218,9 @@ docker compose ps
 cd /srv/jurisdigta/app && PROMETHEUS_BASE_URL=http://127.0.0.1:9091 python3 examples/monitoring_scrape_demo.py
 curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_users_total'
 curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_http_requests_total_window'
+curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_ai_model_total_tokens_window'
+curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_ai_model_top_case_total_tokens_window'
+curl -fsS 'http://127.0.0.1:9091/api/v1/rules'
 ```
 
 Access Grafana by SSH tunnel first:

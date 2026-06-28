@@ -427,43 +427,92 @@ def _append_business_metrics(lines: list[str], business: dict[str, Any]) -> None
 
 def _append_ai_model_usage_metrics(lines: list[str], ai_model_usage: dict[str, Any]) -> None:
     summaries = ai_model_usage.get("summaries")
-    if not isinstance(summaries, list):
-        return
-    window_minutes = int(_number(ai_model_usage.get("window_minutes"), 60))
     _append_help(lines, "jurisdigta_ai_model_requests_window", "AI model request count in the status query window.", "gauge")
     _append_help(lines, "jurisdigta_ai_model_input_tokens_window", "AI input tokens in the status query window.", "gauge")
     _append_help(lines, "jurisdigta_ai_model_cached_input_tokens_window", "AI cached input tokens in the status query window.", "gauge")
     _append_help(lines, "jurisdigta_ai_model_output_tokens_window", "AI output tokens in the status query window.", "gauge")
     _append_help(lines, "jurisdigta_ai_model_total_tokens_window", "AI total tokens in the status query window.", "gauge")
     _append_help(lines, "jurisdigta_ai_model_estimated_cost_eur_window", "Estimated AI model cost in EUR in the status query window.", "gauge")
-    for summary in summaries:
-        if not isinstance(summary, dict):
-            continue
-        labels = (
-            f'provider="{_label(str(summary.get("provider") or ""))}",'
-            f'model="{_label(str(summary.get("model") or ""))}",'
-            f'task_type="{_label(str(summary.get("task_type") or ""))}",'
-            f'route_type="{_label(str(summary.get("route_type") or ""))}",'
-            f'plan_code="{_label(str(summary.get("plan_code") or ""))}",'
-            f'case_id="{_label(str(summary.get("case_id") or ""))}",'
-            f'user_id="{_label(str(summary.get("user_id") or ""))}",'
-            f'subscription_id="{_label(str(summary.get("subscription_id") or ""))}",'
-            f'status="{_label(str(summary.get("status") or ""))}",'
-            f'fallback_reason="{_label(str(summary.get("fallback_reason") or ""))}",'
-            f'window_minutes="{window_minutes}"'
-        )
-        lines.append(f"jurisdigta_ai_model_requests_window{{{labels}}} {_number(summary.get('request_count'), 0)}")
-        lines.append(f"jurisdigta_ai_model_input_tokens_window{{{labels}}} {_number(summary.get('input_tokens'), 0)}")
-        lines.append(
-            "jurisdigta_ai_model_cached_input_tokens_window"
-            f"{{{labels}}} {_number(summary.get('cached_input_tokens'), 0)}"
-        )
-        lines.append(f"jurisdigta_ai_model_output_tokens_window{{{labels}}} {_number(summary.get('output_tokens'), 0)}")
-        lines.append(f"jurisdigta_ai_model_total_tokens_window{{{labels}}} {_number(summary.get('total_tokens'), 0)}")
-        lines.append(
-            "jurisdigta_ai_model_estimated_cost_eur_window"
-            f"{{{labels}}} {_number(summary.get('estimated_cost_eur'), 0)}"
-        )
+    if isinstance(summaries, list):
+        for summary in summaries:
+            if not isinstance(summary, dict):
+                continue
+            labels = _ai_model_usage_labels(
+                summary,
+                default_window_minutes=int(_number(ai_model_usage.get("window_minutes"), 60)),
+            )
+            lines.append(f"jurisdigta_ai_model_requests_window{{{labels}}} {_number(summary.get('request_count'), 0)}")
+            lines.append(f"jurisdigta_ai_model_input_tokens_window{{{labels}}} {_number(summary.get('input_tokens'), 0)}")
+            lines.append(
+                "jurisdigta_ai_model_cached_input_tokens_window"
+                f"{{{labels}}} {_number(summary.get('cached_input_tokens'), 0)}"
+            )
+            lines.append(f"jurisdigta_ai_model_output_tokens_window{{{labels}}} {_number(summary.get('output_tokens'), 0)}")
+            lines.append(f"jurisdigta_ai_model_total_tokens_window{{{labels}}} {_number(summary.get('total_tokens'), 0)}")
+            lines.append(
+                "jurisdigta_ai_model_estimated_cost_eur_window"
+                f"{{{labels}}} {_number(summary.get('estimated_cost_eur'), 0)}"
+            )
+
+    top_cases = ai_model_usage.get("top_cases")
+    _append_help(lines, "jurisdigta_ai_model_top_case_requests_window", "Top case AI request count in the status query window.", "gauge")
+    _append_help(lines, "jurisdigta_ai_model_top_case_total_tokens_window", "Top case AI total tokens in the status query window.", "gauge")
+    _append_help(lines, "jurisdigta_ai_model_top_case_input_tokens_window", "Top case AI input tokens in the status query window.", "gauge")
+    _append_help(lines, "jurisdigta_ai_model_top_case_output_tokens_window", "Top case AI output tokens in the status query window.", "gauge")
+    _append_help(lines, "jurisdigta_ai_model_top_case_estimated_cost_eur_window", "Top case estimated AI model cost in EUR in the status query window.", "gauge")
+    if isinstance(top_cases, list):
+        for item in top_cases:
+            if not isinstance(item, dict):
+                continue
+            labels = _ai_model_usage_labels(
+                item,
+                default_window_minutes=int(_number(ai_model_usage.get("window_minutes"), 60)),
+                case_ref=str(item.get("case_ref") or "case-unknown"),
+            )
+            lines.append(
+                "jurisdigta_ai_model_top_case_requests_window"
+                f"{{{labels}}} {_number(item.get('request_count'), 0)}"
+            )
+            lines.append(
+                "jurisdigta_ai_model_top_case_total_tokens_window"
+                f"{{{labels}}} {_number(item.get('total_tokens'), 0)}"
+            )
+            lines.append(
+                "jurisdigta_ai_model_top_case_input_tokens_window"
+                f"{{{labels}}} {_number(item.get('input_tokens'), 0)}"
+            )
+            lines.append(
+                "jurisdigta_ai_model_top_case_output_tokens_window"
+                f"{{{labels}}} {_number(item.get('output_tokens'), 0)}"
+            )
+            lines.append(
+                "jurisdigta_ai_model_top_case_estimated_cost_eur_window"
+                f"{{{labels}}} {_number(item.get('estimated_cost_eur'), 0)}"
+            )
+
+
+def _ai_model_usage_labels(
+    item: dict[str, Any],
+    *,
+    default_window_minutes: int,
+    case_ref: str | None = None,
+) -> str:
+    labels = [
+        f'provider="{_label(str(item.get("provider") or ""))}"',
+        f'model="{_label(str(item.get("model") or ""))}"',
+        f'route_type="{_label(str(item.get("route_type") or ""))}"',
+        f'route_class="{_label(str(item.get("route_class") or ""))}"',
+        f'plan_code="{_label(str(item.get("plan_code") or ""))}"',
+        f'status="{_label(str(item.get("status") or "ok"))}"',
+        f'fallback_reason="{_label(str(item.get("fallback_reason") or ""))}"',
+        f'window_minutes="{int(_number(item.get("window_minutes"), default_window_minutes))}"',
+    ]
+    task_type = item.get("task_type")
+    if task_type is not None:
+        labels.insert(2, f'task_type="{_label(str(task_type or ""))}"')
+    if case_ref is not None:
+        labels.insert(0, f'case_ref="{_label(case_ref)}"')
+    return ",".join(labels)
 
 
 def _render_exporter_error(exc: Exception) -> str:
