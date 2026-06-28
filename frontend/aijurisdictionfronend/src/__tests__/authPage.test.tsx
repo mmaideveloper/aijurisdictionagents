@@ -35,6 +35,7 @@ const labels: Record<string, string> = {
   authPhone: "Phone",
   authSigningIn: "Signing in",
   authSignIn: "Sign in",
+  authSignUp: "Sign up",
   authApiLoginHint: "Use your API account.",
   authInvalidCredentials: "Invalid email or password.",
   authSignInFailed: "Sign-in failed.",
@@ -48,6 +49,10 @@ const labels: Record<string, string> = {
   authRegisterOtpSent: "Registration OTP sent.",
   authRegisterOtpFailed: "Could not send registration OTP.",
   authRegisterOtpRequired: "Registration OTP required.",
+  authContinueToVerification: "Continue to email verification",
+  authRegistrationVerificationBody: "Enter email OTP.",
+  authEditRegistrationDetails: "Edit registration details",
+  authBackToSignIn: "Back to sign in",
   authSignedIn: "Signed in.",
   authRegistered: "Account created.",
   authSignedInAs: "Signed in as",
@@ -121,6 +126,21 @@ describe("Auth page", () => {
     expect(mockSignIn).toHaveBeenCalledWith("local.dev@jurisdigta.test", "LocalTest123!", "");
   });
 
+  it("keeps registration fields hidden until the user chooses sign up", async () => {
+    const user = userEvent.setup();
+    renderAuthPage();
+
+    expect(screen.getByRole("button", { name: "Sign up" })).toBeDefined();
+    expect(screen.queryByLabelText("Phone")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Continue to email verification" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Sign up" }));
+
+    expect(screen.getByLabelText("Phone")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Continue to email verification" })).toBeDefined();
+    expect(screen.queryByLabelText("OTP code")).toBeNull();
+  });
+
   it("asks for OTP when login requires a daily email code", async () => {
     const user = userEvent.setup();
     mockSignIn.mockResolvedValueOnce("otp_required").mockResolvedValueOnce("signed_in");
@@ -176,10 +196,11 @@ describe("Auth page", () => {
     const user = userEvent.setup();
     renderAuthPage();
 
+    await user.click(screen.getByRole("button", { name: "Sign up" }));
     await user.type(screen.getByLabelText("Email"), "new@example.com");
     await user.type(screen.getByLabelText("Password"), "Secret123!");
     await user.type(screen.getByLabelText("Phone"), "+421900123456");
-    await user.click(screen.getByRole("button", { name: "Send registration OTP" }));
+    await user.click(screen.getByRole("button", { name: "Continue to email verification" }));
     await user.type(screen.getByLabelText("OTP code"), "123456");
     await user.click(screen.getByRole("button", { name: "Register" }));
 
@@ -199,9 +220,11 @@ describe("Auth page", () => {
     const user = userEvent.setup();
     renderAuthPage();
 
+    await user.click(screen.getByRole("button", { name: "Sign up" }));
     await user.type(screen.getByLabelText("Email"), "new@example.com");
     await user.type(screen.getByLabelText("Password"), "Secret123!");
     await user.type(screen.getByLabelText("Phone"), "+421900123456");
+    await user.click(screen.getByRole("button", { name: "Continue to email verification" }));
     await user.click(screen.getByRole("button", { name: "Register" }));
 
     expect(screen.getByRole("alert").textContent).toBe("Registration OTP required.");
@@ -212,9 +235,23 @@ describe("Auth page", () => {
     const user = userEvent.setup();
     renderAuthPage();
 
-    await user.click(screen.getByRole("button", { name: "Register" }));
+    await user.click(screen.getByRole("button", { name: "Sign up" }));
+    await user.click(screen.getByRole("button", { name: "Continue to email verification" }));
 
     expect(screen.getByRole("alert").textContent).toBe("Enter email, password, and phone.");
     expect(mockSignUp).not.toHaveBeenCalled();
+  });
+
+  it("returns from registration mode to sign-in mode", async () => {
+    const user = userEvent.setup();
+    renderAuthPage();
+
+    await user.click(screen.getByRole("button", { name: "Sign up" }));
+    expect(screen.getByLabelText("Phone")).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDefined();
+    expect(screen.queryByLabelText("Phone")).toBeNull();
   });
 });
