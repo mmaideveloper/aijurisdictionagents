@@ -31,6 +31,7 @@ jobs:
       JURISDIGTA_DEPLOY_ROOT: ${{ vars.JURISDIGTA_DEPLOY_ROOT || '/srv/jurisdigta' }}
       JURISDIGTA_ENV_FILE: ${{ vars.JURISDIGTA_ENV_FILE || '/srv/jurisdigta/secrets/jurisdigta.env' }}
       JURISDIGTA_WEB_API_BASE_URL: ${{ vars.JURISDIGTA_WEB_API_BASE_URL || 'https://api.jurisdigta.eu' }}
+      JURISDIGTA_MCP_PUBLIC_BASE_URL: ${{ vars.JURISDIGTA_MCP_PUBLIC_BASE_URL || 'https://mcp.jurisdigta.eu' }}
       JURISDIGTA_API_PORT: ${{ vars.JURISDIGTA_API_PORT || '8080' }}
       JURISDIGTA_MCP_PORT: ${{ vars.JURISDIGTA_MCP_PORT || '8070' }}
       JURISDIGTA_WEB_PORT: ${{ vars.JURISDIGTA_WEB_PORT || '8090' }}
@@ -117,6 +118,21 @@ jobs:
             "${JURISDIGTA_SSH_USER}@${JURISDIGTA_SSH_HOST}" \
             "chmod 700 /tmp/deploy_jurisdigta_prod.sh && DEPLOY_ROOT='$JURISDIGTA_DEPLOY_ROOT' ENV_FILE='$JURISDIGTA_ENV_FILE' REPO_REF='${{ inputs.repo_ref }}' WEB_API_BASE_URL='$JURISDIGTA_WEB_API_BASE_URL' API_PORT='$JURISDIGTA_API_PORT' MCP_PORT='$JURISDIGTA_MCP_PORT' WEB_PORT='$JURISDIGTA_WEB_PORT' DOCUMENT_ENGINE_ENABLED='$JURISDIGTA_DOCUMENT_ENGINE_ENABLED' DOCUMENT_ENGINE_API_PORT='$JURISDIGTA_DOCUMENT_ENGINE_API_PORT' DOCUMENT_ENGINE_DATABASE_NAME='$JURISDIGTA_DOCUMENT_ENGINE_DATABASE_NAME' RUN_SCHEMA_MIGRATIONS='$run_schema_migrations' START_MONITORING='$start_monitoring' INSTALL_DOCUMENT_PROCESSOR_CRON='$JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON' DOCUMENT_PROCESSOR_CRON_EXPRESSION='$JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION' DOCUMENT_PROCESSOR_LIMIT='$JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT' EMAIL_SCHEDULER_INTERVAL_SECONDS='$JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS' /tmp/deploy_jurisdigta_prod.sh"
 
+      - name: Verify public MCP Claude connector compatibility
+        run: |
+          python_bin=""
+          if command -v python3 >/dev/null 2>&1; then
+            python_bin="python3"
+          elif command -v python >/dev/null 2>&1; then
+            python_bin="python"
+          else
+            echo "Python is required for MCP Claude smoke checks"
+            exit 1
+          fi
+
+          "$python_bin" scripts/prod_mcp_claude_smoke.py \
+            --base-url "$JURISDIGTA_MCP_PUBLIC_BASE_URL"
+
       - name: Summarize deployment
         run: |
           {
@@ -129,6 +145,7 @@ jobs:
             echo "| Ref | ${{ inputs.repo_ref }} |"
             echo "| API | http://127.0.0.1:${JURISDIGTA_API_PORT}/health on server |"
             echo "| MCP | http://127.0.0.1:${JURISDIGTA_MCP_PORT}/health on server |"
+            echo "| Public MCP Claude smoke | ${JURISDIGTA_MCP_PUBLIC_BASE_URL}/MCP |"
             echo "| Web | http://127.0.0.1:${JURISDIGTA_WEB_PORT}/health on server |"
             echo "| Document engine | ${JURISDIGTA_DOCUMENT_ENGINE_ENABLED} |"
             echo "| Document engine API | http://127.0.0.1:${JURISDIGTA_DOCUMENT_ENGINE_API_PORT}/health on server |"
