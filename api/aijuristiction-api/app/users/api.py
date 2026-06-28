@@ -241,6 +241,7 @@ class VerifyMfaRequest(BaseModel):
     mfa_token: str = Field(min_length=1)
     method: str = Field(min_length=1)
     verification_code: str = Field(min_length=1, max_length=64)
+    device_id: str | None = None
 
 
 class SendMfaEmailCodeRequest(BaseModel):
@@ -431,12 +432,12 @@ def sign_in_with_device_token(
     return _to_device_auth_user_profile_response(user=user, token=refreshed_token)
 
 
-@router.post("/sign-in", response_model=UserProfileResponse | MfaRequiredResponse)
+@router.post("/sign-in", response_model=DeviceAuthUserProfileResponse | MfaRequiredResponse)
 def sign_in(
     payload: SignInRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
-) -> UserProfileResponse | MfaRequiredResponse:
+) -> DeviceAuthUserProfileResponse | MfaRequiredResponse:
     user = store.authenticate_user(email=payload.email, password=payload.password)
     if user is None:
         raise HTTPException(
@@ -444,10 +445,10 @@ def sign_in(
             detail="Invalid email or password",
         )
     if _requires_mfa(store=store, user=user):
-        token = secrets.token_urlsafe(32)
-        store.create_mfa_login_challenge(user_id=user.user_id, token=token)
+        mfa_token = secrets.token_urlsafe(32)
+        store.create_mfa_login_challenge(user_id=user.user_id, token=mfa_token)
         return MfaRequiredResponse(
-            mfa_token=token,
+            mfa_token=mfa_token,
             user_id=user.user_id,
             email=user.email,
             methods=_available_mfa_methods(store=store, user=user),
@@ -474,7 +475,10 @@ def sign_in(
                 purpose=otp_purpose,
                 expires_in_hours=_web_sign_in_otp_reuse_window_hours(),
             )
-    return _to_user_profile_response(user, store=store)
+    token: str | None = None
+    if device_id:
+        token = store.issue_device_auth_token(user_id=user.user_id, device_id=device_id)
+    return _to_device_auth_user_profile_response(user=user, token=token, store=store)
 
 
 @router.post("/sign-in/mfa/send-email-code", status_code=status.HTTP_202_ACCEPTED)
@@ -502,11 +506,11 @@ def send_mfa_email_code(
     return {"status": "code_sent"}
 
 
-@router.post("/sign-in/mfa/verify", response_model=UserProfileResponse)
+@router.post("/sign-in/mfa/verify", response_model=DeviceAuthUserProfileResponse)
 def verify_mfa(
     payload: VerifyMfaRequest,
     store: ApiDatabaseStore = Depends(get_user_store),
-) -> UserProfileResponse:
+) -> DeviceAuthUserProfileResponse:
     user_id = store.consume_mfa_login_challenge(token=payload.mfa_token)
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired MFA challenge")
@@ -528,7 +532,10 @@ def verify_mfa(
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported MFA method")
     _save_mfa_verification(store=store, user=user)
-    return _to_user_profile_response(user, store=store)
+    token: str | None = None
+    if payload.device_id:
+        token = store.issue_device_auth_token(user_id=user.user_id, device_id=payload.device_id)
+    return _to_device_auth_user_profile_response(user=user, token=token, store=store)
 
 
 @router.patch("/{user_id}", response_model=UserProfileResponse)
@@ -898,27 +905,14 @@ def _to_user_profile_response(user: User, store: ApiDatabaseStore | None = None)
     )
 
 
-def _to_device_auth_user_profile_response(*, user: User, token: str) -> DeviceAuthUserProfileResponse:
-    return DeviceAuthUserProfileResponse(
-        user_id=user.user_id,
-        phone_number=user.phone_number,
-        email=user.email,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        full_name=user.full_name,
-        address=user.address,
-        city=user.city,
-        country=user.country,
-        zip_code=user.zip_code,
-        tax_number=user.tax_number,
-        identity_card_number=user.identity_card_number,
-        date_of_birth=user.date_of_birth,
-        social_security_number=user.social_security_number,
-        data_processing_consent_at=user.data_processing_consent_at,
-        data_processing_consent_version=user.data_processing_consent_version,
-        created_at=user.created_at,
-        device_auth_token=token,
-    )
+def _to_device_auth_user_profile_response(
+    *,
+    user: User,
+    token: str | None,
+    store: ApiDatabaseStore | None = None,
+) -> DeviceAuthUserProfileResponse:
+    profile = _to_user_profile_response(user, store=store)
+    return DeviceAuthUserProfileResponse(**profile.model_dump(), device_auth_token=token)
 
 
 def _ensure_subscription_plan_enabled(plan_code: str) -> None:

@@ -416,6 +416,11 @@
   overflow-x: auto;
 }
 
+.admin-records-table {
+  display: grid;
+  gap: 8px;
+}
+
 .admin-table-section table {
   border-collapse: collapse;
   min-width: 760px;
@@ -451,6 +456,26 @@
   cursor: pointer;
   min-height: 36px;
   padding: 0 12px;
+}
+
+.admin-models .secondary-button:disabled,
+.admin-models .button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-pagination {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.admin-pagination span {
+  color: var(--ink-muted);
+  font-size: 0.84rem;
+  margin-right: auto;
 }
 
 .profile-inline-copy {

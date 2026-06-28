@@ -21,20 +21,39 @@ class AdminUserResponse(BaseModel):
     created_at: str | None = None
 
 
+class AdminUsersPageResponse(BaseModel):
+    items: list[AdminUserResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 class UpdateAdminUserRequest(BaseModel):
     role: str = Field(pattern="^(admin|user|Admin|User)$")
     is_enabled: bool
     reason: str = ""
 
 
-@router.get("", response_model=list[AdminUserResponse])
+@router.get("", response_model=AdminUsersPageResponse)
 def list_admin_users(
     query: str = "",
+    limit: int = 25,
+    offset: int = 0,
     admin: AdminContext = Depends(require_ai_model_admin),
     store: ApiDatabaseStore = Depends(get_admin_store),
-) -> list[AdminUserResponse]:
+) -> AdminUsersPageResponse:
     _ = admin
-    return [_admin_user_response(item) for item in store.list_users_for_admin(limit=200, query=query)]
+    bounded_limit = min(max(limit, 1), 100)
+    bounded_offset = max(offset, 0)
+    return AdminUsersPageResponse(
+        items=[
+            _admin_user_response(item)
+            for item in store.list_users_for_admin(limit=bounded_limit, offset=bounded_offset, query=query)
+        ],
+        total=store.count_users_for_admin(query=query),
+        limit=bounded_limit,
+        offset=bounded_offset,
+    )
 
 
 @router.patch("/{user_id}", response_model=AdminUserResponse)

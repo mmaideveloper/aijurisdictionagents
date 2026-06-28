@@ -8,6 +8,7 @@ import AIModelAdmin from "../pages/AIModelAdmin";
 
 const apiMocks = vi.hoisted(() => ({
   fetchAIModelAdminDashboard: vi.fn(),
+  fetchAdminUsers: vi.fn(),
   fetchOllamaModels: vi.fn(),
   importOllamaModel: vi.fn(),
   removeOllamaModel: vi.fn(),
@@ -28,12 +29,19 @@ vi.mock("../auth/webAuth", () => ({
       userId: "admin-1",
       email: "admin@example.com",
       name: "Admin User",
-      role: "admin"
+      role: "admin",
+      deviceId: "web-device-1",
+      deviceAuthToken: "device-token-1"
     }
   })
 }));
 
-const translateKey = (key: string) => key;
+const translateKey = (key: string, values?: Record<string, string | number>) => {
+  if (key === "adminPaginationSummary" && values) {
+    return `${values.start}-${values.end} of ${values.total}`;
+  }
+  return key;
+};
 
 vi.mock("../components/LanguageProvider", () => ({
   useLanguage: () => ({
@@ -42,13 +50,98 @@ vi.mock("../components/LanguageProvider", () => ({
 }));
 
 const dashboard = {
-  providers: [],
-  profiles: [],
+  providers: [
+    {
+      provider_id: "local_ollama",
+      provider_code: "local_ollama",
+      provider_type: "ollama",
+      display_name: "Local Ollama",
+      base_url: "http://127.0.0.1:11434/v1",
+      api_version: "",
+      region: "",
+      data_zone: "local",
+      is_external: false,
+      is_local: true,
+      health_check_url: "http://127.0.0.1:11434/api/tags",
+      enabled: true,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-06-27T10:00:00Z"
+    },
+    {
+      provider_id: "azure_foundry",
+      provider_code: "azure_foundry",
+      provider_type: "azurefoundry",
+      display_name: "Azure AI Foundry",
+      base_url: "",
+      api_version: "2024-10-21",
+      region: "",
+      data_zone: "eu",
+      is_external: true,
+      is_local: false,
+      health_check_url: "",
+      enabled: true,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-06-27T10:00:00Z"
+    }
+  ],
+  profiles: [
+    {
+      model_profile_id: "local_ollama_default",
+      provider_id: "local_ollama",
+      model_code: "qwen3:1.7b",
+      deployment_name: "qwen3:1.7b",
+      context_window_tokens: 0,
+      input_price_per_1m: 0,
+      cached_input_price_per_1m: 0,
+      output_price_per_1m: 0,
+      billing_currency: "EUR",
+      effective_from: null,
+      effective_to: null,
+      eu_data_zone_capable: true,
+      is_default_for_free: true,
+      enabled: true,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-06-27T10:00:00Z"
+    },
+    {
+      model_profile_id: "azure_foundry_gpt_4o_mini",
+      provider_id: "azure_foundry",
+      model_code: "gpt-4o-mini",
+      deployment_name: "gpt-4o-mini",
+      context_window_tokens: 128000,
+      input_price_per_1m: 0.15,
+      cached_input_price_per_1m: 0.075,
+      output_price_per_1m: 0.6,
+      billing_currency: "USD",
+      effective_from: null,
+      effective_to: null,
+      eu_data_zone_capable: true,
+      is_default_for_free: false,
+      enabled: true,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-06-27T10:00:00Z"
+    }
+  ],
   credentials: [],
   policies: [],
   groups: [],
   memberships: [],
-  users: [],
+  users: [
+    {
+      user_id: "admin-1",
+      phone_number: null,
+      email: "admin@example.com",
+      full_name: "Admin User",
+      role: "admin",
+      is_enabled: true,
+      created_at: "2026-06-27T10:00:00Z"
+    }
+  ],
+  users_page: {
+    total: 1,
+    limit: 25,
+    offset: 0
+  },
   audit_events: [],
   route_priority: [],
   compliance_notes: [],
@@ -92,6 +185,7 @@ const inventory = {
 describe("AIModelAdmin Ollama management", () => {
   beforeEach(() => {
     apiMocks.fetchAIModelAdminDashboard.mockResolvedValue(dashboard);
+    apiMocks.fetchAdminUsers.mockResolvedValue({ items: dashboard.users, total: 1, limit: 25, offset: 0 });
     apiMocks.fetchOllamaModels.mockResolvedValue(inventory);
     apiMocks.importOllamaModel.mockResolvedValue({ job_id: "job-1", action: "pull", model: "gemma3:4b", status: "queued" });
     apiMocks.removeOllamaModel.mockResolvedValue({ job_id: "job-2", action: "remove", model: "llama3.2:3b", status: "queued" });
@@ -116,6 +210,25 @@ describe("AIModelAdmin Ollama management", () => {
     expect(removeButtons.at(0)?.hasAttribute("disabled")).toBe(true);
   });
 
+  it("shows seeded providers, profiles, users, and routing guidance", async () => {
+    const user = userEvent.setup();
+    render(<AIModelAdmin />);
+
+    expect(await screen.findByText("Admin User (admin@example.com)")).toBeDefined();
+    expect(screen.getByText("1-1 of 1")).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: /adminProvidersTitle/ }));
+    expect(await screen.findByText("Local Ollama")).toBeDefined();
+    expect(screen.getByText("Azure AI Foundry")).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: /adminProfilesTitle/ }));
+    expect(await screen.findByText("local_ollama_default")).toBeDefined();
+    expect(screen.getByText("azure_foundry_gpt_4o_mini")).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: /adminPoliciesTitle/ }));
+    expect(await screen.findByText("adminPolicyHelp")).toBeDefined();
+  });
+
   it("starts import and safe remove jobs", async () => {
     const user = userEvent.setup();
     render(<AIModelAdmin />);
@@ -126,7 +239,11 @@ describe("AIModelAdmin Ollama management", () => {
     await user.click(screen.getByRole("button", { name: /adminOllamaImport/ }));
 
     await waitFor(() => {
-      expect(apiMocks.importOllamaModel).toHaveBeenCalledWith("admin-1", "gemma3:4b", "Add fallback model");
+      expect(apiMocks.importOllamaModel).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
+        "gemma3:4b",
+        "Add fallback model"
+      );
     });
 
     await user.type(screen.getByLabelText("adminOllamaRemoveReason"), "Remove unused model");
@@ -136,7 +253,11 @@ describe("AIModelAdmin Ollama management", () => {
     await user.click(unusedRemoveButton as HTMLElement);
 
     await waitFor(() => {
-      expect(apiMocks.removeOllamaModel).toHaveBeenCalledWith("admin-1", "llama3.2:3b", "Remove unused model");
+      expect(apiMocks.removeOllamaModel).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
+        "llama3.2:3b",
+        "Remove unused model"
+      );
     });
   });
 });

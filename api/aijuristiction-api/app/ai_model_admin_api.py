@@ -50,6 +50,12 @@ class AdminUserSummaryResponse(BaseModel):
     created_at: str | None = None
 
 
+class AdminUsersPageSummaryResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+
+
 class AIModelProviderResponse(BaseModel):
     provider_id: str
     provider_code: str
@@ -238,6 +244,7 @@ class AIModelAdminDashboardResponse(BaseModel):
     groups: list[AIModelGroupResponse]
     memberships: list[AIModelGroupMembershipResponse]
     users: list[AdminUserSummaryResponse]
+    users_page: AdminUsersPageSummaryResponse
     audit_events: list[AIModelAdminAuditEventResponse]
     route_priority: list[str]
     compliance_notes: list[str]
@@ -304,6 +311,8 @@ def require_ai_model_admin(
     cf_access_email: str | None = Header(default=None, alias="cf-access-authenticated-user-email"),
     admin_api_key: str | None = Header(default=None, alias="x-admin-api-key"),
     local_admin_user_id: str | None = Header(default=None, alias="x-jurisdigta-admin-user-id"),
+    device_id: str | None = Header(default=None, alias="x-jurisdigta-device-id"),
+    device_token: str | None = Header(default=None, alias="x-jurisdigta-device-token"),
 ) -> AdminContext:
     if _legacy_admin_key_valid(admin_api_key):
         return AdminContext(user_id="", email="legacy-admin-key")
@@ -323,6 +332,16 @@ def require_ai_model_admin(
             candidate_email = user.email.strip().lower()
             candidate_user_id = user.user_id
             candidate_is_admin_role = user.role == "admin" and user.is_enabled
+    elif local_admin_user_id and device_id and device_token:
+        user = store.authenticate_user_device_auth_token(
+            user_id=local_admin_user_id.strip(),
+            device_id=device_id,
+            token=device_token,
+        )
+        if user is not None:
+            candidate_email = user.email.strip().lower()
+            candidate_user_id = user.user_id
+            candidate_is_admin_role = user.role == "admin" and user.is_enabled
 
     if not candidate_email or (candidate_email not in admin_emails and not candidate_is_admin_role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required")
@@ -334,6 +353,7 @@ def get_ai_model_admin_dashboard(
     admin: AdminContext = Depends(require_ai_model_admin),
     store: ApiDatabaseStore = Depends(get_admin_store),
 ) -> AIModelAdminDashboardResponse:
+    users_limit = 25
     return AIModelAdminDashboardResponse(
         admin=admin,
         providers=[_provider_response(item) for item in store.list_ai_model_providers()],
@@ -342,7 +362,12 @@ def get_ai_model_admin_dashboard(
         policies=[_policy_response(item) for item in store.list_ai_task_route_policies()],
         groups=[_group_response(item) for item in store.list_ai_model_groups()],
         memberships=[_membership_response(item) for item in store.list_ai_model_group_users()],
-        users=[_user_summary_response(item) for item in store.list_users_for_admin(limit=200)],
+        users=[_user_summary_response(item) for item in store.list_users_for_admin(limit=users_limit)],
+        users_page=AdminUsersPageSummaryResponse(
+            total=store.count_users_for_admin(),
+            limit=users_limit,
+            offset=0,
+        ),
         audit_events=[_audit_response(item) for item in store.list_ai_model_admin_audit_events(limit=25)],
         route_priority=[
             "user local override",

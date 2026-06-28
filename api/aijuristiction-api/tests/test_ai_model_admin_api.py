@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.ai_model_admin_api import get_admin_store, get_ollama_admin_service
+import app.ai_model_admin_api as ai_model_admin_api
 from app.main import app
 from app.ollama_admin_service import OllamaInstalledModel
 from aijurisdictionagents.api_db import ApiDatabaseStore
@@ -92,6 +93,50 @@ def test_admin_dashboard_allows_global_admin_role(tmp_path: Path, monkeypatch) -
 
     assert response.status_code == 200
     assert response.json()["admin"]["email"] == "role-admin@example.com"
+    assert response.json()["users_page"]["total"] == 1
+
+
+def test_admin_dashboard_allows_device_token_for_production_web_session(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(ai_model_admin_api, "_is_local_request", lambda request: False)
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "")
+    store = _store(tmp_path)
+    admin = store.create_user(email="role-admin@example.com", password="secret", full_name="Role Admin")
+    store.update_admin_user(user_id=admin.user_id, role="admin", is_enabled=True)
+    token = store.issue_device_auth_token(user_id=admin.user_id, device_id="web-device-1")
+    app.dependency_overrides[get_admin_store] = lambda: store
+    try:
+        response = TestClient(app).get(
+            "/v1/admin/ai-models",
+            headers={
+                **AUTH_HEADERS,
+                "x-jurisdigta-admin-user-id": admin.user_id,
+                "x-jurisdigta-device-id": "web-device-1",
+                "x-jurisdigta-device-token": token,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["admin"]["email"] == "role-admin@example.com"
+
+
+def test_admin_dashboard_rejects_production_user_id_without_device_token(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(ai_model_admin_api, "_is_local_request", lambda request: False)
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "")
+    store = _store(tmp_path)
+    admin = store.create_user(email="role-admin@example.com", password="secret", full_name="Role Admin")
+    store.update_admin_user(user_id=admin.user_id, role="admin", is_enabled=True)
+    app.dependency_overrides[get_admin_store] = lambda: store
+    try:
+        response = TestClient(app).get(
+            "/v1/admin/ai-models",
+            headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
 
 
 def test_admin_can_update_user_role_and_enabled_status(tmp_path: Path, monkeypatch) -> None:

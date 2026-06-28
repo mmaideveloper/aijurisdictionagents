@@ -1292,17 +1292,24 @@ class ApiDatabaseStore:
             ).fetchall()
         return [_row_to_ai_model_group_membership(row) for row in rows]
 
-    def list_users_for_admin(self, *, limit: int = 100, query: str = "") -> list[AdminUser]:
+    def list_users_for_admin(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        query: str = "",
+    ) -> list[AdminUser]:
         bounded_limit = min(max(limit, 1), 500)
+        bounded_offset = max(offset, 0)
         normalized_query = query.strip().lower()
         params: tuple[Any, ...]
         filter_clause = ""
         if normalized_query:
             filter_clause = "WHERE lower(email) LIKE ? OR lower(full_name) LIKE ?"
             like_query = f"%{normalized_query}%"
-            params = (like_query, like_query, bounded_limit)
+            params = (like_query, like_query, bounded_limit, bounded_offset)
         else:
-            params = (bounded_limit,)
+            params = (bounded_limit, bounded_offset)
         with self._connect() as conn:
             rows = self._execute(
                 conn,
@@ -1311,11 +1318,27 @@ class ApiDatabaseStore:
                 FROM users
                 {filter_clause}
                 ORDER BY created_at DESC, email
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
                 params,
             ).fetchall()
         return [_row_to_admin_user(row) for row in rows]
+
+    def count_users_for_admin(self, *, query: str = "") -> int:
+        normalized_query = query.strip().lower()
+        params: tuple[Any, ...] = ()
+        filter_clause = ""
+        if normalized_query:
+            filter_clause = "WHERE lower(email) LIKE ? OR lower(full_name) LIKE ?"
+            like_query = f"%{normalized_query}%"
+            params = (like_query, like_query)
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                f"SELECT COUNT(*) FROM users {filter_clause}",
+                params,
+            )
+        return int(row[0]) if row is not None else 0
 
     def update_admin_user(
         self,
@@ -2336,6 +2359,57 @@ class ApiDatabaseStore:
                 WHERE user_id = ? AND device_id = ?
                 """,
                 (datetime.now(timezone.utc).isoformat(), user.user_id, normalized_device),
+            )
+            conn.commit()
+        return user
+
+    def authenticate_user_device_auth_token(
+        self,
+        *,
+        user_id: str,
+        device_id: str,
+        token: str,
+    ) -> User | None:
+        normalized_user_id = user_id.strip()
+        normalized_device = device_id.strip()
+        normalized_token = token.strip()
+        if not normalized_user_id or not normalized_device or not normalized_token:
+            return None
+        user = self.find_user_by_id(user_id=normalized_user_id)
+        if user is None:
+            return None
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT token_hash, expires_at
+                FROM device_auth_tokens
+                WHERE user_id = ? AND device_id = ?
+                """,
+                (normalized_user_id, normalized_device),
+            )
+            if row is None:
+                return None
+            token_hash = str(row[0])
+            expires_at = str(row[1])
+            if not _is_future_iso_datetime(expires_at):
+                self._execute(
+                    conn,
+                    "DELETE FROM device_auth_tokens WHERE user_id = ? AND device_id = ?",
+                    (normalized_user_id, normalized_device),
+                )
+                conn.commit()
+                return None
+            if not hmac.compare_digest(token_hash, _hash_one_time_code(normalized_token)):
+                return None
+            self._execute(
+                conn,
+                """
+                UPDATE device_auth_tokens
+                SET last_used_at = ?
+                WHERE user_id = ? AND device_id = ?
+                """,
+                (datetime.now(timezone.utc).isoformat(), normalized_user_id, normalized_device),
             )
             conn.commit()
         return user

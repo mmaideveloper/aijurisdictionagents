@@ -190,6 +190,7 @@ The API database now includes a policy-driven model routing foundation:
 
 Admin management is exposed through `GET/POST /v1/admin/ai-models...`, `GET/PATCH /v1/admin/users...`, and the React route `/app/admin`.
 Production admin access is server-authorized from `cf-access-authenticated-user-email` with either database `role=admin` or `JURISDIGTA_ADMIN_EMAILS`; local development may send `x-jurisdigta-admin-user-id` from loopback only.
+For the production web app, email/password or MFA sign-in returns a device-bound token when the browser supplies `device_id`; `/app/admin` sends `x-jurisdigta-admin-user-id`, `x-jurisdigta-device-id`, and `x-jurisdigta-device-token`, and the API verifies the hashed device token before accepting the admin role. Do not trust the browser-stored role by itself for admin API authorization.
 Keep external-provider API keys in backend secrets and store only provider references, base URLs, deployment names, data-zone flags, prices, and health URLs in these tables.
 
 Chat model provider, model, deployment, and credentials are resolved from these database tables, not from `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, or `AZURE_OPENAI_DEPLOYMENT` environment settings. The only supported `LLM_PROVIDER` chat override is explicit `mock` for deterministic offline tests.
@@ -198,6 +199,8 @@ Seeded defaults:
 
 - Free/default users route to `local_ollama_default`, provider `local_ollama`, model `qwen3:1.7b`. Local developer runs default to `http://127.0.0.1:11434/v1`; self-managed Docker production seeds the private Docker gateway URL so API containers can reach the host-local Ollama service.
 - `case`, `basic`, `premium`, and `unlimited` plan routes prefer `azure_foundry_gpt_4o_mini`, provider `azure_foundry`, model/deployment `gpt-4o-mini`, EU data-zone capable. Operators must set the Azure provider endpoint and encrypted credential before paid traffic can use this route.
+
+The admin page lists users with paging, current providers, current profiles, route policies, user groups, local Ollama inventory, and admin audit events. `Smerovacie politiky` choose a model by task type, plan, optional user group, local/external preference, external acknowledgement, EU data-zone requirement, fallback behavior, and priority.
 
 Authorized case users can inspect this trail through:
 

@@ -2,7 +2,9 @@ import React from "react";
 import { FaDownload, FaKey, FaPlus, FaRoute, FaServer, FaSyncAlt, FaTrash, FaUserPlus, FaUsers } from "react-icons/fa";
 import {
   AIModelAdminDashboard,
+  AdminUsersPage,
   OllamaModelInventory,
+  fetchAdminUsers,
   fetchAIModelAdminDashboard,
   fetchOllamaModels,
   upsertAIModelProvider,
@@ -87,6 +89,7 @@ const AIModelAdmin: React.FC = () => {
   const { user } = useAuth();
   const [activeSection, setActiveSection] = React.useState<AdminSection>("users");
   const [dashboard, setDashboard] = React.useState<AIModelAdminDashboard | null>(null);
+  const [usersPage, setUsersPage] = React.useState<AdminUsersPage | null>(null);
   const [ollamaInventory, setOllamaInventory] = React.useState<OllamaModelInventory | null>(null);
   const [providerForm, setProviderForm] = React.useState(emptyProvider);
   const [profileForm, setProfileForm] = React.useState(emptyProfile);
@@ -102,13 +105,35 @@ const AIModelAdmin: React.FC = () => {
   const [error, setError] = React.useState("");
 
   const adminUserId = user?.userId ?? "";
+  const adminAuth = React.useMemo(
+    () => ({
+      userId: adminUserId,
+      deviceId: user?.deviceId,
+      deviceAuthToken: user?.deviceAuthToken
+    }),
+    [adminUserId, user?.deviceAuthToken, user?.deviceId]
+  );
+  const visibleUsers = usersPage?.items ?? dashboard?.users ?? [];
+  const usersTotal = usersPage?.total ?? dashboard?.users_page.total ?? visibleUsers.length;
+  const usersLimit = usersPage?.limit ?? dashboard?.users_page.limit ?? 25;
+  const usersOffset = usersPage?.offset ?? dashboard?.users_page.offset ?? 0;
+  const providerById = React.useMemo(
+    () => new Map((dashboard?.providers ?? []).map((provider) => [provider.provider_id, provider])),
+    [dashboard?.providers]
+  );
 
   const reload = React.useCallback(async () => {
     if (!adminUserId) return;
     setError("");
     try {
-      const nextDashboard = await fetchAIModelAdminDashboard(adminUserId);
+      const nextDashboard = await fetchAIModelAdminDashboard(adminAuth);
       setDashboard(nextDashboard);
+      setUsersPage({
+        items: nextDashboard.users,
+        total: nextDashboard.users_page.total,
+        limit: nextDashboard.users_page.limit,
+        offset: nextDashboard.users_page.offset
+      });
       const firstProvider = nextDashboard.providers[0];
       const localProfile = nextDashboard.profiles.find((profile) => profile.model_profile_id === "local_ollama_default");
       setProfileForm((current) => ({ ...current, provider_id: current.provider_id || firstProvider?.provider_id || "" }));
@@ -122,7 +147,17 @@ const AIModelAdmin: React.FC = () => {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : t("adminLoadFailed"));
     }
-  }, [adminUserId, t]);
+  }, [adminAuth, adminUserId, t]);
+
+  const loadUsersPage = React.useCallback(async (offset: number) => {
+    if (!adminUserId) return;
+    setError("");
+    try {
+      setUsersPage(await fetchAdminUsers(adminAuth, usersLimit, Math.max(offset, 0)));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("adminLoadFailed"));
+    }
+  }, [adminAuth, adminUserId, t, usersLimit]);
 
   React.useEffect(() => {
     void reload();
@@ -131,11 +166,11 @@ const AIModelAdmin: React.FC = () => {
   const reloadOllama = React.useCallback(async () => {
     if (!adminUserId) return;
     try {
-      setOllamaInventory(await fetchOllamaModels(adminUserId));
+      setOllamaInventory(await fetchOllamaModels(adminAuth));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : t("adminOllamaLoadFailed"));
     }
-  }, [adminUserId, t]);
+  }, [adminAuth, adminUserId, t]);
 
   React.useEffect(() => {
     void reloadOllama();
@@ -148,6 +183,7 @@ const AIModelAdmin: React.FC = () => {
       await action();
       setStatus(successMessage);
       await reload();
+      await loadUsersPage(usersOffset);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : t("adminSaveFailed"));
     }
@@ -218,7 +254,7 @@ const AIModelAdmin: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {dashboard?.users.map((item) => (
+                    {visibleUsers.map((item) => (
                       <tr key={item.user_id}>
                         <td>{item.full_name} ({item.email})</td>
                         <td>{item.role}</td>
@@ -228,7 +264,7 @@ const AIModelAdmin: React.FC = () => {
                             className="button ghost"
                             type="button"
                             onClick={() => void runAction(
-                              () => updateAdminUser(adminUserId, item.user_id, {
+                              () => updateAdminUser(adminAuth, item.user_id, {
                                 role: item.role === "admin" ? "user" : "admin",
                                 is_enabled: item.is_enabled,
                                 reason: "Updated from admin user management."
@@ -242,7 +278,7 @@ const AIModelAdmin: React.FC = () => {
                             className="button ghost"
                             type="button"
                             onClick={() => void runAction(
-                              () => updateAdminUser(adminUserId, item.user_id, {
+                              () => updateAdminUser(adminAuth, item.user_id, {
                                 role: item.role === "admin" ? "admin" : "user",
                                 is_enabled: !item.is_enabled,
                                 reason: "Updated from admin user management."
@@ -257,6 +293,16 @@ const AIModelAdmin: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+                {!visibleUsers.length ? <p className="admin-muted">{t("adminEmptyUsers")}</p> : null}
+              </div>
+              <div className="admin-pagination">
+                <span>{t("adminPaginationSummary", {
+                  start: usersTotal ? usersOffset + 1 : 0,
+                  end: Math.min(usersOffset + usersLimit, usersTotal),
+                  total: usersTotal
+                })}</span>
+                <button className="secondary-button" type="button" disabled={usersOffset <= 0} onClick={() => void loadUsersPage(usersOffset - usersLimit)}>{t("adminPrevious")}</button>
+                <button className="secondary-button" type="button" disabled={usersOffset + usersLimit >= usersTotal} onClick={() => void loadUsersPage(usersOffset + usersLimit)}>{t("adminNext")}</button>
               </div>
             </section>
           ) : null}
@@ -264,9 +310,19 @@ const AIModelAdmin: React.FC = () => {
           {activeSection === "providers" ? (
             <form className="admin-panel" onSubmit={(event) => {
               event.preventDefault();
-              void runAction(() => upsertAIModelProvider(adminUserId, providerForm), t("adminSaved"));
+              void runAction(() => upsertAIModelProvider(adminAuth, providerForm), t("adminSaved"));
             }}>
               <h2>{t("adminProvidersTitle")}</h2>
+              <AdminRecordsTable
+                emptyLabel={t("adminEmptyProviders")}
+                headers={[t("adminProviderCode"), t("adminProviderType"), t("adminBaseUrl"), t("adminStatus")]}
+                rows={(dashboard?.providers ?? []).map((provider) => [
+                  provider.display_name,
+                  provider.provider_type,
+                  provider.base_url || provider.health_check_url || t("adminNotConfigured"),
+                  provider.enabled ? t("adminEnabled") : t("adminDisabled")
+                ])}
+              />
               <label>{t("adminProviderCode")}<input value={providerForm.provider_code} onChange={(event) => setProviderForm({ ...providerForm, provider_code: event.target.value })} /></label>
               <label>{t("adminProviderType")}<select value={providerForm.provider_type} onChange={(event) => setProviderForm({ ...providerForm, provider_type: event.target.value })}><option value="local">local</option><option value="azurefoundry">azurefoundry</option><option value="openai">openai</option><option value="openai_compatible">openai_compatible</option></select></label>
               <label>{t("adminDisplayName")}<input value={providerForm.display_name} onChange={(event) => setProviderForm({ ...providerForm, display_name: event.target.value })} /></label>
@@ -284,9 +340,20 @@ const AIModelAdmin: React.FC = () => {
           {activeSection === "profiles" ? (
             <form className="admin-panel" onSubmit={(event) => {
               event.preventDefault();
-              void runAction(() => upsertAIModelProfile(adminUserId, profileForm), t("adminSaved"));
+              void runAction(() => upsertAIModelProfile(adminAuth, profileForm), t("adminSaved"));
             }}>
               <h2>{t("adminProfilesTitle")}</h2>
+              <AdminRecordsTable
+                emptyLabel={t("adminEmptyProfiles")}
+                headers={[t("adminModelCode"), t("adminProvider"), t("adminDeployment"), t("adminPrices"), t("adminStatus")]}
+                rows={(dashboard?.profiles ?? []).map((profile) => [
+                  profile.model_profile_id,
+                  providerById.get(profile.provider_id)?.display_name ?? profile.provider_id,
+                  profile.deployment_name || profile.model_code,
+                  `${profile.input_price_per_1m}/${profile.cached_input_price_per_1m}/${profile.output_price_per_1m} ${profile.billing_currency}`,
+                  profile.enabled ? t("adminEnabled") : t("adminDisabled")
+                ])}
+              />
               <label>{t("adminProvider")}<select value={profileForm.provider_id} onChange={(event) => setProfileForm({ ...profileForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{dashboard?.providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
               <label>{t("adminModelCode")}<input value={profileForm.model_code} onChange={(event) => setProfileForm({ ...profileForm, model_code: event.target.value })} /></label>
               <label>{t("adminDeployment")}<input value={profileForm.deployment_name} onChange={(event) => setProfileForm({ ...profileForm, deployment_name: event.target.value })} /></label>
@@ -306,7 +373,7 @@ const AIModelAdmin: React.FC = () => {
           {activeSection === "credentials" ? (
             <form className="admin-panel" onSubmit={(event) => {
               event.preventDefault();
-              void runAction(() => upsertAIModelCredential(adminUserId, credentialForm), t("adminSaved"));
+              void runAction(() => upsertAIModelCredential(adminAuth, credentialForm), t("adminSaved"));
             }}>
               <h2>{t("adminCredentialsTitle")}</h2>
               <label>{t("adminProvider")}<select value={credentialForm.provider_id} onChange={(event) => setCredentialForm({ ...credentialForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{dashboard?.providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
@@ -323,9 +390,19 @@ const AIModelAdmin: React.FC = () => {
             <section className="admin-grid">
               <form className="admin-panel" onSubmit={(event) => {
                 event.preventDefault();
-                void runAction(() => upsertAIModelGroup(adminUserId, groupForm), t("adminSaved"));
+                void runAction(() => upsertAIModelGroup(adminAuth, groupForm), t("adminSaved"));
               }}>
                 <h2>{t("adminGroupsTitle")}</h2>
+                <AdminRecordsTable
+                  emptyLabel={t("adminEmptyGroups")}
+                  headers={[t("adminGroupCode"), t("adminDisplayName"), t("adminPriority"), t("adminStatus")]}
+                  rows={(dashboard?.groups ?? []).map((group) => [
+                    group.group_code,
+                    group.display_name,
+                    String(group.priority),
+                    group.enabled ? t("adminEnabled") : t("adminDisabled")
+                  ])}
+                />
                 <label>{t("adminGroupCode")}<input value={groupForm.group_code} onChange={(event) => setGroupForm({ ...groupForm, group_code: event.target.value })} /></label>
                 <label>{t("adminDisplayName")}<input value={groupForm.display_name} onChange={(event) => setGroupForm({ ...groupForm, display_name: event.target.value })} /></label>
                 <label>{t("adminPriority")}<input type="number" value={groupForm.priority} onChange={(event) => setGroupForm({ ...groupForm, priority: Number(event.target.value) })} /></label>
@@ -333,9 +410,18 @@ const AIModelAdmin: React.FC = () => {
               </form>
               <form className="admin-panel" onSubmit={(event) => {
                 event.preventDefault();
-                void runAction(() => addAIModelGroupMember(adminUserId, selectedGroupId, selectedUserId), t("adminSaved"));
+                void runAction(() => addAIModelGroupMember(adminAuth, selectedGroupId, selectedUserId), t("adminSaved"));
               }}>
                 <h2>{t("adminMembersTitle")}</h2>
+                <AdminRecordsTable
+                  emptyLabel={t("adminEmptyMembers")}
+                  headers={[t("adminGroup"), t("adminUser"), t("adminCreated")]}
+                  rows={(dashboard?.memberships ?? []).map((membership) => [
+                    dashboard?.groups.find((group) => group.model_group_id === membership.model_group_id)?.display_name ?? membership.model_group_id,
+                    `${membership.full_name} (${membership.email})`,
+                    membership.created_at
+                  ])}
+                />
                 <label>{t("adminGroup")}<select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}>{dashboard?.groups.map((group) => <option key={group.model_group_id} value={group.model_group_id}>{group.display_name}</option>)}</select></label>
                 <label>{t("adminUser")}<select value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)}>{dashboard?.users.map((item) => <option key={item.user_id} value={item.user_id}>{item.full_name} ({item.email})</option>)}</select></label>
                 <button className="primary-button" type="submit"><FaUserPlus aria-hidden="true" />{t("adminAssignUser")}</button>
@@ -346,9 +432,23 @@ const AIModelAdmin: React.FC = () => {
           {activeSection === "policies" ? (
             <form className="admin-panel" onSubmit={(event) => {
               event.preventDefault();
-              void runAction(() => upsertAIModelRoutePolicy(adminUserId, policyForm), t("adminSaved"));
+              void runAction(() => upsertAIModelRoutePolicy(adminAuth, policyForm), t("adminSaved"));
             }}>
               <h2>{t("adminPoliciesTitle")}</h2>
+              <p className="admin-muted">{t("adminPolicyHelp")}</p>
+              <AdminRecordsTable
+                emptyLabel={t("adminEmptyPolicies")}
+                headers={[t("adminPolicyId"), t("adminTaskType"), t("adminPlanCode"), t("adminGroup"), t("adminExternalModel"), t("adminLocalModel"), t("adminPriority")]}
+                rows={(dashboard?.policies ?? []).map((policy) => [
+                  policy.policy_id,
+                  policy.task_type,
+                  policy.plan_code || t("adminDefaultPolicy"),
+                  dashboard?.groups.find((group) => group.model_group_id === policy.model_group_id)?.display_name ?? t("adminDefaultPolicy"),
+                  policy.preferred_external_model_profile_id ?? t("adminNotConfigured"),
+                  policy.preferred_local_model_profile_id ?? t("adminNotConfigured"),
+                  String(policy.priority)
+                ])}
+              />
               <div className="admin-price-grid">
                 <label>{t("adminTaskType")}<input value={policyForm.task_type} onChange={(event) => setPolicyForm({ ...policyForm, task_type: event.target.value })} /></label>
                 <label>{t("adminPlanCode")}<input value={policyForm.plan_code} onChange={(event) => setPolicyForm({ ...policyForm, plan_code: event.target.value })} /></label>
@@ -373,7 +473,7 @@ const AIModelAdmin: React.FC = () => {
               <form className="admin-panel" onSubmit={(event) => {
                 event.preventDefault();
                 void runAction(async () => {
-                  await importOllamaModel(adminUserId, ollamaModel, ollamaReason);
+                  await importOllamaModel(adminAuth, ollamaModel, ollamaReason);
                   setOllamaModel("");
                   setOllamaReason("");
                   await reloadOllama();
@@ -410,7 +510,7 @@ const AIModelAdmin: React.FC = () => {
                             disabled={!item.removable || !ollamaRemoveReason.trim()}
                             title={item.removal_blockers.join(" ")}
                             onClick={() => void runAction(async () => {
-                              await removeOllamaModel(adminUserId, item.name, ollamaRemoveReason);
+                              await removeOllamaModel(adminAuth, item.name, ollamaRemoveReason);
                               setOllamaRemoveReason("");
                               await reloadOllama();
                             }, t("adminOllamaRemoveStarted"))}
@@ -439,6 +539,28 @@ const AIModelAdmin: React.FC = () => {
     </main>
   );
 };
+
+const AdminRecordsTable: React.FC<{
+  headers: string[];
+  rows: Array<Array<React.ReactNode>>;
+  emptyLabel: string;
+}> = ({ headers, rows, emptyLabel }) => (
+  <div className="admin-table-scroll admin-records-table">
+    <table>
+      <thead>
+        <tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr>
+      </thead>
+      <tbody>
+        {rows.map((row, rowIndex) => (
+          <tr key={row.map((cell) => String(cell)).join("|") || rowIndex}>
+            {row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    {!rows.length ? <p className="admin-muted">{emptyLabel}</p> : null}
+  </div>
+);
 
 const formatModelSize = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) {

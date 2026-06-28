@@ -87,6 +87,21 @@ def test_sign_up_sign_in_and_update_profile(monkeypatch, tmp_path: Path) -> None
     assert email_sign_in_response.json()["user_id"] == signed_up["user_id"]
     assert email_sign_in_response.json()["created_at"] == signed_up["created_at"]
 
+    monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "1")
+    email_device_sign_in_response = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "founder@example.com",
+            "password": "secret-pass",
+            "device_id": "web-device-1",
+            "verification_code": "123456",
+        },
+    )
+    assert email_device_sign_in_response.status_code == 200
+    assert email_device_sign_in_response.json()["user_id"] == signed_up["user_id"]
+    assert email_device_sign_in_response.json()["device_auth_token"]
+
     update_response = client.patch(
         f"/v1/users/{signed_up['user_id']}",
         headers=AUTH_HEADERS,
