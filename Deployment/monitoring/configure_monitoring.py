@@ -26,6 +26,8 @@ DEFAULT_GRAFANA_ROOT_URL = "https://admin.jurisdigta.eu/grafana/"
 DEFAULT_ALERT_EMAIL_TO = "info@jurisdigta.eu"
 DEFAULT_APP_DOCKER_NETWORK = "aijuristiction-api_default"
 DEFAULT_HOME_DASHBOARD_PATH = "/var/lib/grafana/dashboards/jurisdigta-application-performance.json"
+DEFAULT_LOCAL_LLM_MODEL = "qwen3:1.7b"
+DEFAULT_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434"
 
 
 def main() -> int:
@@ -142,6 +144,15 @@ def _build_monitoring_env(
         _first(project_values, existing_values, "GRAFANA_ADMIN_PASSWORD")
         or secrets.token_urlsafe(32)
     )
+    app_network = (
+        _first(project_values, existing_values, "MONITORING_APP_DOCKER_NETWORK")
+        or DEFAULT_APP_DOCKER_NETWORK
+    )
+    local_llm_base_url = _monitoring_local_llm_base_url(
+        project_values=project_values,
+        existing_values=existing_values,
+        app_network=app_network,
+    )
 
     return {
         "PROMETHEUS_HOST_PORT": (
@@ -176,8 +187,11 @@ def _build_monitoring_env(
             or DEFAULT_DOCKER_LOG_MAX_FILE
         ),
         "MONITORING_APP_DOCKER_NETWORK": (
-            _first(project_values, existing_values, "MONITORING_APP_DOCKER_NETWORK")
-            or DEFAULT_APP_DOCKER_NETWORK
+            app_network
+        ),
+        "LOCAL_LLM_BASE_URL": local_llm_base_url,
+        "LOCAL_LLM_MODEL": (
+            _first(project_values, existing_values, "LOCAL_LLM_MODEL") or DEFAULT_LOCAL_LLM_MODEL
         ),
         "JURISDIGTA_API_KEY": _first(project_values, existing_values, "JURISDIGTA_API_KEY", "API_KEY"),
         "GRAFANA_SERVER_DOMAIN": (
@@ -218,6 +232,60 @@ def _build_monitoring_env(
             or DEFAULT_ALERT_EMAIL_TO
         ),
     }
+
+
+def _monitoring_local_llm_base_url(
+    *,
+    project_values: dict[str, str],
+    existing_values: dict[str, str],
+    app_network: str,
+) -> str:
+    explicit_bind = _first(project_values, existing_values, "OLLAMA_HOST_BIND")
+    if explicit_bind:
+        return _ollama_bind_to_base_url(explicit_bind)
+
+    configured = _first(project_values, existing_values, "LOCAL_LLM_BASE_URL")
+    if configured and not _is_loopback_url(configured):
+        return configured.rstrip("/")
+
+    gateway = _docker_network_gateway(app_network)
+    if gateway:
+        return f"http://{gateway}:11434"
+
+    return (configured or DEFAULT_LOCAL_LLM_BASE_URL).rstrip("/")
+
+
+def _ollama_bind_to_base_url(bind: str) -> str:
+    normalized = bind.strip()
+    if not normalized:
+        return DEFAULT_LOCAL_LLM_BASE_URL
+    if normalized.startswith(("http://", "https://")):
+        return normalized.rstrip("/")
+    return f"http://{normalized.rstrip('/')}"
+
+
+def _is_loopback_url(value: str) -> bool:
+    normalized = value.strip().lower()
+    return (
+        normalized.startswith("http://127.0.0.1:")
+        or normalized.startswith("http://localhost:")
+        or normalized.startswith("https://127.0.0.1:")
+        or normalized.startswith("https://localhost:")
+    )
+
+
+def _docker_network_gateway(network: str) -> str:
+    try:
+        result = subprocess.run(
+            ["docker", "network", "inspect", network, "--format", "{{(index .IPAM.Config 0).Gateway}}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+    gateway = result.stdout.strip()
+    return "" if not gateway or gateway == "<no value>" else gateway
 
 
 def _first(

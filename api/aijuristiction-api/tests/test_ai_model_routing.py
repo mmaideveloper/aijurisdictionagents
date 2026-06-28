@@ -161,6 +161,31 @@ def test_effective_model_route_endpoint_reports_free_user_local_model(
     assert payload["label"] == "Local Ollama - qwen3:1.7b"
 
 
+def test_effective_model_route_endpoint_reports_default_free_route_without_user(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "api.sqlite3"
+    blob_root = tmp_path / "blob"
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(db_path))
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("STORE_LOCAL", str(blob_root))
+
+    response = client.get(
+        "/v1/model-routing/effective?task_type=chat_reply",
+        headers={"x-api-key": "aijuris"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["plan_code"] == "free"
+    assert payload["route_type"] == "free_local"
+    assert payload["provider"] == "local_ollama"
+    assert payload["model"] == "qwen3:1.7b"
+    assert payload["is_local"] is True
+
+
 def test_model_credentials_are_encrypted_and_revealed_only_when_requested(
     monkeypatch: Any,
     tmp_path: Path,

@@ -1692,7 +1692,7 @@ class ApiDatabaseStore:
                 """
                 SELECT case_id, plan_code, 'all' AS provider, 'all' AS model,
                        CASE
-                           WHEN route_type IN ('local', 'local_only') OR provider LIKE '%ollama%'
+                           WHEN route_type IN ('local', 'local_only') OR provider LIKE '%%ollama%%'
                            THEN 'local'
                            WHEN route_type IN ('external', 'external_ack_required')
                            THEN 'paid'
@@ -1704,7 +1704,7 @@ class ApiDatabaseStore:
                 WHERE request_completed_at >= ? AND case_id <> ''
                 GROUP BY case_id, plan_code,
                          CASE
-                             WHEN route_type IN ('local', 'local_only') OR provider LIKE '%ollama%'
+                             WHEN route_type IN ('local', 'local_only') OR provider LIKE '%%ollama%%'
                              THEN 'local'
                              WHEN route_type IN ('external', 'external_ack_required')
                              THEN 'paid'
@@ -2351,6 +2351,22 @@ class ApiDatabaseStore:
                 """,
             ).fetchall()
         return [_row_to_subscription_plan(row) for row in rows]
+
+    def get_subscription_plan(self, *, plan_code: str) -> SubscriptionPlan:
+        normalized_plan = plan_code.strip().lower()
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT plan_code, display_name, subscription_type, price_eur, max_cases, max_documents_per_case, case_ttl_days
+                FROM subscription_plans
+                WHERE plan_code = ?
+                """,
+                (normalized_plan,),
+            )
+        if row is None:
+            raise KeyError(f"Subscription plan {normalized_plan or plan_code} not found")
+        return _row_to_subscription_plan(row)
 
     def list_user_subscriptions(self, *, user_id: str) -> list[UserSubscription]:
         with self._connect() as conn:
