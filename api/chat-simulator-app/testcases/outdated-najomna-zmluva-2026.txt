@@ -1,0 +1,60 @@
+NAJOMNA ZMLUVA O PRENAJME BYTU
+synteticky testovaci dokument pre JurisDigta E2E
+
+Prenajimatel:
+Marek Testovany
+Trvale bydlisko: Kvetna 12, 040 01 Kosice
+Datum narodenia: 10. marec 1980
+Cislo OP: TT123456
+
+Najomca:
+Eva Najomna
+Trvale bydlisko: Hlavna 8, 058 01 Poprad
+Datum narodenia: 5. maj 1992
+Cislo OP: EN654321
+
+Predmet najmu:
+Prenajimatel prenechava najomcovi do uzivania byt c. 12 na 3. poschodi bytoveho domu
+na adrese Dunajska 45, 811 08 Bratislava, Slovenska republika. Byt ma dve izby,
+kuchynu, kupelnu, WC a pivnicnu kobku c. 12B.
+
+Doba najmu:
+Najom sa dojednava od 1. jula 2026 do 30. juna 2027.
+
+Najomne a platby:
+Najomne je 850 EUR mesacne a je splatne vzdy do 5. dna prislusneho mesiaca
+na ucet prenajimatela IBAN: SK12 1100 0000 0026 2947 1123.
+Zalohy za sluzby spojene s uzivanim bytu su 180 EUR mesacne.
+
+Penazna zabezpeka:
+Najomca sklada pri podpise zmluvy penaznu zabezpeku vo vyske 1 700 EUR.
+Prenajimatel moze zabezpeku zapocitat na akekolvek svoje naroky podla vlastneho uvazenia
+a zvysok vrati najomcovi niekedy po skonceni najmu.
+
+Odovzdanie bytu:
+Byt sa povazuje za odovzdany podpisom tejto zmluvy. Zmluvne strany nemusia spisat
+samostatny odovzdavaci protokol ani stav meracov.
+
+Opravy a skody:
+Najomca hradi vsetky opravy v byte bez ohladu na pricinu a vysku nakladov.
+Prenajimatel nie je povinny riesit vady, ktore vzniknu pocas trvania najmu.
+
+Vypoved:
+Prenajimatel moze najom kedykolvek vypovedat bez uvedenia dovodu s vypovednou
+lehotou sedem dni. Vypoved je ucinna aj ustnym oznamom alebo SMS spravou.
+
+Dorucovanie:
+Pisemnosti sa povazuju za dorucene odoslanim na posledne zname telefonne cislo alebo
+e-mailovu adresu bez potreby potvrdenia prijatia.
+
+Osobitne ustanovenie:
+Zmluva sa riadi pravnymi predpismi platnymi ku dnu 1. januara 2000.
+Strany vyhlasuju, ze nepotrebuju ziadne dalsie poucenie o pravach a povinnostiach.
+
+V Bratislave dna 15. juna 2026
+
+Prenajimatel: Marek Testovany
+Podpis: ______________________
+
+Najomca: Eva Najomna
+Podpis: ______________________

@@ -1,0 +1,78 @@
+OPRAVENY REFERENCNY NAVRH NAJOMNEJ ZMLUVY
+synteticky testovaci dokument pre JurisDigta E2E
+
+Tento referencny navrh sluzi iba ako benchmark pre test. Live E2E ma overit,
+ze system pripravi vlastny aktualizovany navrh z aktualnych zakonov v laws/RAG
+korpuse a zachova udaje zo stareho dokumentu.
+
+Prenajimatel:
+Marek Testovany
+Trvale bydlisko: Kvetna 12, 040 01 Kosice
+Datum narodenia: 10. marec 1980
+Cislo OP: TT123456
+
+Najomca:
+Eva Najomna
+Trvale bydlisko: Hlavna 8, 058 01 Poprad
+Datum narodenia: 5. maj 1992
+Cislo OP: EN654321
+
+Predmet najmu:
+Prenajimatel prenechava najomcovi do uzivania byt c. 12 na 3. poschodi
+bytoveho domu na adrese Dunajska 45, 811 08 Bratislava, Slovenska republika,
+vratane pivnicnej kobky c. 12B. Stav bytu, vybavenia, klucov a meracov bude
+zachyteny v odovzdavacom protokole podpisanom oboma stranami.
+
+Doba najmu:
+Najom sa dojednava od 1. jula 2026 do 30. juna 2027.
+
+Najomne a platby:
+Najomne je 850 EUR mesacne a je splatne vzdy do 5. dna prislusneho mesiaca
+na ucet prenajimatela IBAN: SK12 1100 0000 0026 2947 1123.
+Zalohy za sluzby spojene s uzivanim bytu su 180 EUR mesacne. Vyuctovanie sluzieb
+sa vykona podla skutocnych nakladov a pravidiel dohodnutych v tejto zmluve a
+podla povinne uplatnitelnych pravnych predpisov.
+
+Penazna zabezpeka:
+Najomca sklada pri podpise zmluvy penaznu zabezpeku vo vyske 1 700 EUR. Zabezpeka
+sluzi na zabezpecenie splatnych narokov prenajimatela z tejto zmluvy, najma
+nezaplateneho najomneho, sluzieb a preukazanej skody sposobenej najomcom.
+Prenajimatel moze zo zabezpeky zapocitat iba riadne vycislene a odovodnene
+naroky a zvysok vrati najomcovi po skonceni najmu v primeranej lehote po
+odovzdani bytu a vysporiadani narokov.
+
+Odovzdanie a vratenie bytu:
+O odovzdani a vrateni bytu zmluvne strany spisu protokol. Protokol uvedie stav
+bytu, zariadenia, klucov, pivnicnej kobky, meracov a zjavnych vad. Protokol moze
+obsahovat fotodokumentaciu.
+
+Opravy, vady a skody:
+Najomca hradi beznu drobnu udrzbu a skody, ktore sposobi on alebo osoby, ktorym
+umozni vstup do bytu. Prenajimatel zodpoveda za vady a opravy, ktore podla
+pravnych predpisov alebo povahy veci nepatria najomcovi. Najomca je povinny
+bez zbytocneho odkladu oznamit vady a hroziacu skodu.
+
+Vypoved a skoncenie najmu:
+Najom mozno skoncit pisomnou dohodou, uplynutim dohodnutej doby alebo pisomnou
+vypovedou v sulade s povinne uplatnitelnymi ustanoveniami slovenskeho prava.
+Vypoved musi byt pisomna, dorucena druhej strane preukazatelnym sposobom a musi
+obsahovat dovod, ak ho vyzaduje prislusny pravny predpis alebo zvoleny rezim najmu.
+
+Dorucovanie:
+Pisemnosti sa dorucuju osobne proti podpisu, postou na adresy uvedene v tejto
+zmluve alebo elektronicky iba sposobom, pri ktorom je mozne preukazat dorucenie
+alebo potvrdenie prijatia. Telefonicka sprava alebo SMS sama osebe nenahradza
+pisomnu vypoved, ak pravny predpis alebo tato zmluva vyzaduje pisomnu formu.
+
+Rozhodne pravo a kontrola:
+Zmluva sa riadi pravom Slovenskej republiky ucinne aplikovatelnym na najomny
+vztah. Tento dokument je synteticky navrh na kontrolu; pred realnym pouzitim ho
+ma skontrolovat kvalifikovana osoba.
+
+V Bratislave dna 15. juna 2026
+
+Prenajimatel: Marek Testovany
+Podpis: ______________________
+
+Najomca: Eva Najomna
+Podpis: ______________________
