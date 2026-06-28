@@ -90,6 +90,16 @@
     "scheduled": true
   },
   {
+    "id": "free-plan-ollama-splnomocnenie-pdf",
+    "file": "tests/free-plan-ollama-document-pdf.spec.ts",
+    "title": "free plan Ollama flow prepares clean Slovak and English splnomocnenie PDFs",
+    "name": "Free-plan Ollama splnomocnenie PDFs",
+    "description": "Creates a free-plan case, verifies the local Ollama route, runs a Slovak/English vehicle authorization document conversation, requests generated PDF exports, and checks that exported PDFs contain only legal-document content without assistant chatter or duplicate-question regressions.",
+    "area": "Free-plan local model documents",
+    "scheduled": false,
+    "prerequisite": "Requires a live API with local_ollama/qwen3:1.7b reachable and a Python runtime with pypdf for PDF text extraction."
+  },
+  {
     "id": "frontend-auth-case-document",
     "file": "tests/frontend-auth-case-document.spec.ts",
     "title": "registration and login can create, reopen, and preview a generated potvrdenie PDF",

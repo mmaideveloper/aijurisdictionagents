@@ -34,6 +34,7 @@ const labels: Record<string, string> = {
   assistantMetadataReviewValue: "Required before final use",
   assistantModelDisclosureAria: "AI model used for this chat",
   assistantModelDisclosureLabel: "Model",
+  assistantModelDisclosurePending: "Checking model route...",
   assistantComposerLabel: "Assistant message",
   assistantComposerPlaceholder: "Ask for legal research or document preparation...",
   assistantSend: "Send message",
@@ -41,6 +42,7 @@ const labels: Record<string, string> = {
   assistantUserRole: "You",
   assistantInitialMessage: "JurisDigta Assistant is ready with JurisDigta API and MCP locked on.",
   assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
+  assistantAuthLoadingResponse: "I am checking your account before starting the legal assistant. Please try again in a moment.",
   assistantApiErrorResponse: "The assistant could not reach the JurisDigta API. Status: {status}. Detail: {detail}",
   workspaceConfigurations: "Configurations",
   workspaceSystemLabel: "System",
@@ -70,10 +72,14 @@ vi.mock("../components/LanguageProvider", () => ({
   })
 }));
 
+const authState = vi.hoisted(() => ({
+  isAuthenticated: true,
+  isAuthLoading: false,
+  user: { userId: "user-1" } as { userId: string } | null
+}));
+
 vi.mock("../auth/webAuth", () => ({
-  useAuth: () => ({
-    user: { userId: "user-1" }
-  })
+  useAuth: () => authState
 }));
 
 const caseActions = vi.hoisted(() => ({
@@ -172,6 +178,9 @@ vi.mock("@assistant-ui/react", () => ({
 
 describe("AssistantWorkspace", () => {
   beforeEach(() => {
+    authState.isAuthenticated = true;
+    authState.isAuthLoading = false;
+    authState.user = { userId: "user-1" };
     vi.mocked(fetchEffectiveModelRoute).mockResolvedValue({
       plan_code: "free",
       route_type: "free_local",
@@ -222,7 +231,60 @@ describe("AssistantWorkspace", () => {
     expect(screen.queryByText("Production access uses JurisDigta account login")).toBeNull();
   });
 
+  it("waits for the signed-in user id before showing the effective model route", async () => {
+    authState.isAuthenticated = true;
+    authState.isAuthLoading = true;
+    authState.user = null;
+    const { rerender } = render(<AssistantWorkspace />);
+
+    expect(screen.getByLabelText("AI model used for this chat").textContent).toContain("Checking model route...");
+    expect(vi.mocked(fetchEffectiveModelRoute)).not.toHaveBeenCalled();
+
+    authState.isAuthLoading = false;
+    authState.user = { userId: "user-1" };
+    rerender(<AssistantWorkspace />);
+
+    expect(await screen.findByText("Local Ollama - qwen3:1.7b")).toBeDefined();
+    expect(vi.mocked(fetchEffectiveModelRoute)).toHaveBeenCalledWith("user-1");
+    expect(vi.mocked(fetchEffectiveModelRoute)).not.toHaveBeenCalledWith(undefined);
+  });
+
+  it("does not create a chat session until a signed-in user id is available", async () => {
+    authState.isAuthenticated = true;
+    authState.isAuthLoading = true;
+    authState.user = null;
+
+    render(<AssistantWorkspace />);
+
+    const result = capturedAdapter?.run({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Priprav splnomocnenie." }]
+        }
+      ],
+      abortSignal: new AbortController().signal
+    });
+
+    let lastResult: CapturedRunResult | undefined;
+    if (result && Symbol.asyncIterator in result) {
+      for await (const update of result) {
+        lastResult = update;
+      }
+    } else {
+      lastResult = await result;
+    }
+
+    expect(createChatSession).not.toHaveBeenCalled();
+    expect(streamSession).not.toHaveBeenCalled();
+    expect(lastResult?.content?.[0]?.text).toBe(
+      "I am checking your account before starting the legal assistant. Please try again in a moment."
+    );
+  });
+
   it("falls back to the configured model label when route disclosure is unavailable", () => {
+    authState.isAuthenticated = false;
+    authState.user = null;
     vi.mocked(fetchEffectiveModelRoute).mockRejectedValue(new Error("offline"));
 
     render(<AssistantWorkspace />);
