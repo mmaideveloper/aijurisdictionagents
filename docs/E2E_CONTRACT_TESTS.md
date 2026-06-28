@@ -29,6 +29,7 @@ This repository now includes deterministic end-to-end simulations for two docume
    - Creates a synthetic free-plan user and case.
    - Verifies the effective route is `free_local` through `local_ollama` with `qwen3:1.7b`.
    - Runs a Slovak request for `Splnomocnenie` for operation of a company vehicle for `ESolutions SK s.r.o.` and asks for Slovak and English generated PDFs.
+   - The Slovak vehicle-authorization direct-reply path handles the exact request before local model fallback so the assistant reply cannot be empty when the user already supplied the drafting facts.
    - Fails when the assistant conversation is unprofessional, repeats the same question, or exported PDFs contain assistant/system commentary instead of only legal-document content.
 
 ## Files
