@@ -66,6 +66,9 @@ Console logging:
 The web app signs users in through the same API user table used by the mobile app and MCP account flows.
 
 - Login submits `email` and `password` to `POST /v1/users/sign-in`.
+- New users start from the `Sign up` action on `/auth`. Registration fields stay hidden until the user chooses that action.
+- Registration first collects only the required account details: phone number, email, and password.
+- Email OTP verification remains a second step after those details are entered. The frontend calls `POST /v1/users/sign-up/send-code`, then completes the account with `POST /v1/users/sign-up/complete`.
 - The request uses `VITE_API_BASE_URL` and `VITE_API_KEY`, matching the existing frontend API client configuration.
 - The returned user profile is cached in browser `sessionStorage` for the current browser session.
 - Passwords are never stored by the frontend.
