@@ -1635,7 +1635,7 @@ def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_pat
     entries = audit_response.json()["entries"]
     assert len(entries) == 1
     assert entries[0]["provider"] == "local_ollama"
-    assert entries[0]["model"] == "qwen3:4b"
+    assert entries[0]["model"] == "qwen3:1.7b"
     assert entries[0]["route_type"] == "free_local"
     assert entries[0]["task_type"] == "chat_reply"
 

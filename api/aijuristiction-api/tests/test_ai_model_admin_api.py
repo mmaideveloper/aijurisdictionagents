@@ -33,8 +33,8 @@ class FakeOllamaAdminService:
             raise httpx.ConnectError("offline")
         return [
             OllamaInstalledModel(
-                name="qwen3:4b",
-                model="qwen3:4b",
+                name="qwen3:1.7b",
+                model="qwen3:1.7b",
                 modified_at="2026-06-27T10:00:00Z",
                 size=17_000_000_000,
                 digest="sha256:default",
@@ -261,7 +261,7 @@ def test_admin_can_list_ollama_inventory_with_removal_guards(tmp_path: Path, mon
 
     assert response.status_code == 200
     models = response.json()["models"]
-    default_model = next(item for item in models if item["name"] == "qwen3:4b")
+    default_model = next(item for item in models if item["name"] == "qwen3:1.7b")
     unused_model = next(item for item in models if item["name"] == "llama3.2:3b")
     assert default_model["removable"] is False
     assert any("default" in item.lower() for item in default_model["removal_blockers"])
@@ -322,7 +322,7 @@ def test_admin_cannot_remove_default_ollama_model(tmp_path: Path, monkeypatch) -
     try:
         response = TestClient(app).request(
             "DELETE",
-            "/v1/admin/ai-models/ollama/models/qwen3:4b",
+            "/v1/admin/ai-models/ollama/models/qwen3:1.7b",
             headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id},
             json={"reason": "Try remove active default."},
         )

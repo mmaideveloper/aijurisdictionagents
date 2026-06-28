@@ -337,7 +337,7 @@ def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
             {
                 "models": [
                     {
-                        "name": "qwen3:4b",
+                        "name": "qwen3:1.7b",
                         "size": 1234,
                         "modified_at": "2026-06-25T12:00:00Z",
                         "details": {
@@ -354,7 +354,7 @@ def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
             {
                 "models": [
                     {
-                        "name": "qwen3:4b",
+                        "name": "qwen3:1.7b",
                         "size": 1234,
                         "size_vram": 987,
                         "processor": "gpu",
@@ -366,7 +366,7 @@ def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
         ),
     }
 
-    monkeypatch.setenv("LOCAL_LLM_MODEL", "qwen3:4b")
+    monkeypatch.setenv("LOCAL_LLM_MODEL", "qwen3:1.7b")
     monkeypatch.setattr(
         "scripts.server.export_ollama_metrics._fetch_json",
         lambda url, *, timeout: responses[url],
@@ -375,11 +375,11 @@ def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
     metrics = _render_ollama_metrics(base_url="http://127.0.0.1:11434", timeout=5)
 
     assert 'jurisdigta_ollama_up{error=""} 1' in metrics
-    assert 'jurisdigta_ollama_configured_model_present{model="qwen3:4b"} 1' in metrics
+    assert 'jurisdigta_ollama_configured_model_present{model="qwen3:1.7b"} 1' in metrics
     assert "jurisdigta_ollama_models_total 1" in metrics
     assert "jurisdigta_ollama_running_models_total 1" in metrics
-    assert 'jurisdigta_ollama_model_loaded{model="qwen3:4b"' in metrics
-    assert 'jurisdigta_ollama_running_model_vram_bytes{model="qwen3:4b",processor="gpu"} 987.0' in metrics
+    assert 'jurisdigta_ollama_model_loaded{model="qwen3:1.7b"' in metrics
+    assert 'jurisdigta_ollama_running_model_vram_bytes{model="qwen3:1.7b",processor="gpu"} 987.0' in metrics
 
 
 def test_exporter_merges_laws_runtime_from_local_status_file(monkeypatch, tmp_path) -> None:

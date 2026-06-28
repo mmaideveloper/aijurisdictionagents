@@ -177,11 +177,11 @@ describe("AssistantWorkspace", () => {
       route_type: "free_local",
       provider: "local_ollama",
       provider_display_name: "Local Ollama",
-      model: "qwen3:4b",
+      model: "qwen3:1.7b",
       model_profile_id: "local_ollama_default",
       is_local: true,
       is_external: false,
-      label: "Local Ollama - qwen3:4b"
+      label: "Local Ollama - qwen3:1.7b"
     });
   });
 
@@ -203,17 +203,17 @@ describe("AssistantWorkspace", () => {
       route_type: "free_local",
       provider: "local_ollama",
       provider_display_name: "Local Ollama",
-      model: "qwen3:4b",
+      model: "qwen3:1.7b",
       model_profile_id: "local_ollama_default",
       is_local: true,
       is_external: false,
-      label: "Local Ollama - qwen3:4b"
+      label: "Local Ollama - qwen3:1.7b"
     });
 
     render(<AssistantWorkspace />);
 
     expect(screen.getByRole("heading", { name: "JurisDigta Assistant" })).toBeDefined();
-    expect(await screen.findByText("Local Ollama - qwen3:4b")).toBeDefined();
+    expect(await screen.findByText("Local Ollama - qwen3:1.7b")).toBeDefined();
     expect(vi.mocked(fetchEffectiveModelRoute)).toHaveBeenCalledWith("user-1");
     expect(screen.getByRole("heading", { name: "Configurations" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Chat" })).toBeDefined();

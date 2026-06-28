@@ -109,7 +109,7 @@ python -m aijurisdictionagents --country SK --log-level INFO --discussion-type a
 
 Production chat/API model setup is owned by the API database model-routing tables:
 
-- Free/default traffic is seeded to `local_ollama_default` with exact model `qwen3:4b`.
+- Free/default traffic is seeded to `local_ollama_default` with exact model `qwen3:1.7b`.
 - Paid case traffic is seeded to Azure Foundry `azure_foundry_gpt_4o_mini` with exact model/deployment `gpt-4o-mini`.
 - Provider endpoints, profiles, and encrypted credentials are managed through the API database/admin model-routing endpoints, not provider/model `.env` variables.
 

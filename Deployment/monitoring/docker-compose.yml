@@ -41,7 +41,7 @@ services:
       - .env
     environment:
       LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://127.0.0.1:11434}
-      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-qwen3:4b}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-qwen3:1.7b}
     command:
       - python
       - /app/export_ollama_metrics.py

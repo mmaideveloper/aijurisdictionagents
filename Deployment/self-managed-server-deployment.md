@@ -174,7 +174,7 @@ gh auth refresh -s read:project,project
 
 Install Ollama as a separate local model service for free-plan traffic and paid fallback routing. Do not load large model files directly inside the API process for normal production traffic; the API should stay lightweight and call the local model service through the model router.
 
-The self-managed production deployment script runs this step by default with `INSTALL_OLLAMA=1`. It installs Ollama when missing, keeps it bound to a private host interface, pulls the default free-plan model `qwen3:4b`, and validates both `/api/tags` and `/v1/models`. For Docker production, the script binds Ollama to the API Docker network gateway and stores that private URL in the `local_ollama` provider row, because `127.0.0.1` inside the API container is not the host. The API model router stores the exact free-plan model in `ai_model_profiles`, so later local model changes should be made in the database/admin route setup after the model is pulled and validated.
+The self-managed production deployment script runs this step by default with `INSTALL_OLLAMA=1`. It installs Ollama when missing, keeps it bound to a private host interface, pulls the default free-plan model `qwen3:1.7b`, and validates both `/api/tags` and `/v1/models`. For Docker production, the script binds Ollama to the API Docker network gateway and stores that private URL in the `local_ollama` provider row, because `127.0.0.1` inside the API container is not the host. The API model router stores the exact free-plan model in `ai_model_profiles`, so later local model changes should be made in the database/admin route setup after the model is pulled and validated.
 
 Install from a trusted server shell and review the installer before production use:
 
@@ -200,12 +200,12 @@ sudo systemctl restart ollama
 Pull the configured local model:
 
 ```bash
-ollama pull qwen3:4b
+ollama pull qwen3:1.7b
 ollama list
 ollama ps
 ```
 
-If `qwen3:4b` does not fit the server hardware, pull and configure a smaller validated fallback model rather than changing free-plan routing to a paid cloud provider.
+If `qwen3:1.7b` does not fit the server hardware, pull and configure a smaller validated fallback model rather than changing free-plan routing to a paid cloud provider.
 
 Validate the service:
 
@@ -266,8 +266,8 @@ Minimum deployment values to decide before production:
 
 - `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` as a long random secret for encrypted database model credentials.
 - `JURISDIGTA_ADMIN_API_KEY` for protected `/v1/admin/ai-models` management endpoints.
-- Ollama installed on localhost or the private Docker gateway with `qwen3:4b` pulled for the seeded free/default route.
-- API database route `local_ollama_default` mapped to exact model `qwen3:4b`.
+- Ollama installed on localhost or the private Docker gateway with `qwen3:1.7b` pulled for the seeded free/default route.
+- API database route `local_ollama_default` mapped to exact model `qwen3:1.7b`.
 - API database route `azure_foundry_gpt_4o_mini` mapped to exact Azure Foundry deployment/model `gpt-4o-mini`.
 - Azure Foundry provider endpoint stored in `ai_model_providers.base_url`.
 - Azure Foundry API key or token stored encrypted in `ai_model_credentials`.

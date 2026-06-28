@@ -152,7 +152,7 @@ def validate_ollama_registry_model_name(value: str) -> str:
         or any(char.isspace() for char in model)
         or not _MODEL_NAME_RE.fullmatch(model)
     ):
-        raise ValueError("Model must be an Ollama registry tag such as qwen3:4b")
+        raise ValueError("Model must be an Ollama registry tag such as qwen3:1.7b")
     namespace = model.split("/", 1)[0]
     if "/" in model and "." in namespace:
         raise ValueError("Model must come from the Ollama registry, not an external host")

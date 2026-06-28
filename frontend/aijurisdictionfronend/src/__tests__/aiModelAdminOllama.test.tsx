@@ -59,8 +59,8 @@ const inventory = {
   base_url: "http://127.0.0.1:11434",
   models: [
     {
-      name: "qwen3:4b",
-      model: "qwen3:4b",
+      name: "qwen3:1.7b",
+      model: "qwen3:1.7b",
       modified_at: "2026-06-27T10:00:00Z",
       size: 17_000_000_000,
       digest: "sha256:default",
@@ -108,7 +108,7 @@ describe("AIModelAdmin Ollama management", () => {
 
     await user.click(await screen.findByRole("button", { name: /adminOllamaTitle/ }));
 
-    expect(await screen.findByText("qwen3:4b")).toBeDefined();
+    expect(await screen.findByText("qwen3:1.7b")).toBeDefined();
     expect(screen.getByText("llama3.2:3b")).toBeDefined();
     expect(screen.getByText("local_ollama_default")).toBeDefined();
 
