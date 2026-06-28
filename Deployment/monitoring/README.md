@@ -227,7 +227,9 @@ curl -fsS http://127.0.0.1:9108/metrics | head
 
 ## Ollama Metrics Exporter
 
-Self-managed production also starts `ollama-exporter` when the monitoring stack is enabled. It runs with host networking so it can read the localhost-only Ollama API at `LOCAL_LLM_BASE_URL`, which defaults to:
+Self-managed production also starts `ollama-exporter` when the monitoring stack is enabled. It runs with host networking and reads Ollama through `LOCAL_LLM_BASE_URL` in `Deployment/monitoring/.env`. `configure_monitoring.py` derives that value from `OLLAMA_HOST_BIND`, an already non-loopback `LOCAL_LLM_BASE_URL`, or the `MONITORING_APP_DOCKER_NETWORK` gateway. This keeps the exporter aligned with Docker production, where Ollama is bound to the private API Docker gateway instead of `127.0.0.1`.
+
+When Docker gateway detection is unavailable, the fallback remains:
 
 ```text
 http://127.0.0.1:11434
@@ -237,6 +239,15 @@ Prometheus scrapes it at:
 
 ```text
 http://host.docker.internal:9109/metrics
+```
+
+Validate the exporter target on the server:
+
+```bash
+grep '^LOCAL_LLM_BASE_URL=' /srv/jurisdigta/app/Deployment/monitoring/.env
+curl -fsS "$(grep '^LOCAL_LLM_BASE_URL=' /srv/jurisdigta/app/Deployment/monitoring/.env | cut -d= -f2-)/api/tags" >/dev/null
+curl -fsS http://127.0.0.1:9109/metrics | grep jurisdigta_ollama_up
+curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_ollama_up'
 ```
 
 Keep host port `9109` blocked from public ingress the same way as Prometheus, Grafana, and the status exporter. It is only for the private Prometheus scrape path.

@@ -184,13 +184,15 @@ less /tmp/install-ollama.sh
 sh /tmp/install-ollama.sh
 ```
 
-Bind Ollama to localhost only:
+Bind Ollama to a private host interface only. The deployment script computes the
+API Docker network gateway and writes it as `OLLAMA_HOST`; manual setups can use
+`127.0.0.1:11434` only when every local caller runs on the host network:
 
 ```bash
 sudo mkdir -p /etc/systemd/system/ollama.service.d
 cat <<'EOF' | sudo tee /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf >/dev/null
 [Service]
-Environment="OLLAMA_HOST=127.0.0.1:11434"
+Environment="OLLAMA_HOST=<private-host-or-docker-gateway-ip>:11434"
 EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now ollama
@@ -211,8 +213,8 @@ Validate the service:
 
 ```bash
 systemctl is-active --quiet ollama
-curl -fsS http://127.0.0.1:11434/api/tags
-curl -fsS http://127.0.0.1:11434/v1/models
+curl -fsS http://<private-host-or-docker-gateway-ip>:11434/api/tags
+curl -fsS http://<private-host-or-docker-gateway-ip>:11434/v1/models
 ```
 
 Security rule: do not expose port `11434` through Cloudflare Tunnel, nginx, router NAT, or public firewall rules. Only the API/model-router should call Ollama on localhost or the private Docker server network.

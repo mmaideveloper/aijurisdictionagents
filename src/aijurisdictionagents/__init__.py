@@ -1,3 +1,3 @@
 """AI jurisdiction agents package."""
 
-__version__ = "1.0.260400"
+__version__ = "1.0.260401"

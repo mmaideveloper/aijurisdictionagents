@@ -85,6 +85,7 @@ def test_monitoring_stack_loads_ai_model_alert_rules() -> None:
 def test_monitoring_env_defaults_include_log_retention() -> None:
     module = _load_configure_monitoring_module()
 
+    module._docker_network_gateway = lambda network: ""
     values = module._build_monitoring_env(
         project_values={},
         existing_values={},
@@ -96,6 +97,34 @@ def test_monitoring_env_defaults_include_log_retention() -> None:
     assert values["PROMETHEUS_RETENTION_DAYS"] == "30"
     assert values["DOCKER_LOG_MAX_SIZE"] == "50m"
     assert values["DOCKER_LOG_MAX_FILE"] == "5"
+    assert values["LOCAL_LLM_BASE_URL"] == "http://127.0.0.1:11434"
+    assert values["LOCAL_LLM_MODEL"] == "qwen3:1.7b"
+
+
+def test_monitoring_env_uses_docker_gateway_for_loopback_ollama_url() -> None:
+    module = _load_configure_monitoring_module()
+
+    module._docker_network_gateway = lambda network: "172.18.0.1"
+    values = module._build_monitoring_env(
+        project_values={"LOCAL_LLM_BASE_URL": "http://127.0.0.1:11434"},
+        existing_values={},
+        prometheus_host_port=None,
+    )
+
+    assert values["LOCAL_LLM_BASE_URL"] == "http://172.18.0.1:11434"
+
+
+def test_monitoring_env_prefers_explicit_ollama_host_bind() -> None:
+    module = _load_configure_monitoring_module()
+
+    module._docker_network_gateway = lambda network: "172.18.0.1"
+    values = module._build_monitoring_env(
+        project_values={"OLLAMA_HOST_BIND": "10.0.0.5:11434"},
+        existing_values={"LOCAL_LLM_BASE_URL": "http://127.0.0.1:11434"},
+        prometheus_host_port=None,
+    )
+
+    assert values["LOCAL_LLM_BASE_URL"] == "http://10.0.0.5:11434"
 
 
 def test_prod_api_container_receives_prometheus_url() -> None:
