@@ -5,6 +5,7 @@
   "scripts": {
     "test": "playwright test",
     "test:free-plan-api": "playwright test tests/free-plan-api-connectivity.spec.ts",
+    "test:free-plan-document": "playwright test tests/free-plan-ollama-document-pdf.spec.ts",
     "test:payment": "playwright test tests/payment-process.spec.ts"
   },
   "devDependencies": {

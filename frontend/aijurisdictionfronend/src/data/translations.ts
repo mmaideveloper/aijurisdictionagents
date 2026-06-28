@@ -197,6 +197,7 @@ export const translations = {
     assistantApiAuthAccess: "Production access uses JurisDigta account login",
     assistantModelDisclosureAria: "AI model used for this chat",
     assistantModelDisclosureLabel: "Model",
+    assistantModelDisclosurePending: "Checking model route...",
     assistantComposerLabel: "Assistant message",
     assistantComposerPlaceholder: "Ask for legal research or document preparation...",
     assistantSend: "Send message",
@@ -205,6 +206,8 @@ export const translations = {
     assistantInitialMessage:
       "JurisDigta Assistant is ready with JurisDigta API and MCP locked on. Drafts are AI-assisted and require human legal review before use.",
     assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
+    assistantAuthLoadingResponse:
+      "I am checking your account before starting the legal assistant. Please try again in a moment.",
     assistantApiErrorResponse:
       "The assistant could not reach the JurisDigta API. Status: {status}. Detail: {detail}",
     caseTitle: "Create a case",
@@ -747,6 +750,7 @@ export const translations = {
     assistantApiAuthAccess: "Produkčný prístup používa prihlásenie účtom JurisDigta",
     assistantModelDisclosureAria: "AI model použitý pre tento chat",
     assistantModelDisclosureLabel: "Model",
+    assistantModelDisclosurePending: "Overujem trasu modelu...",
     assistantComposerLabel: "Správa asistentovi",
     assistantComposerPlaceholder: "Požiadajte o právny výskum alebo prípravu dokumentu...",
     assistantSend: "Odoslať správu",
@@ -755,6 +759,8 @@ export const translations = {
     assistantInitialMessage:
       "JurisDigta Asistent je pripravený s povinne zapnutým JurisDigta API a MCP. Návrhy sú asistované AI a pred použitím vyžadujú ľudskú právnu kontrolu.",
     assistantEmptyMessageResponse: "Zadajte otázku alebo pokyn na prípravu dokumentu.",
+    assistantAuthLoadingResponse:
+      "Overujem vaše konto pred spustením právneho asistenta. Skúste to, prosím, o chvíľu znova.",
     assistantApiErrorResponse:
       "Asistent sa nevie spojiť s JurisDigta API. Stav: {status}. Detail: {detail}",
     caseTitle: "Vytvoriť prípad",
@@ -1297,6 +1303,7 @@ export const translations = {
     assistantApiAuthAccess: "Produktionszugang nutzt JurisDigta-Kontoanmeldung",
     assistantModelDisclosureAria: "Für diesen Chat verwendetes KI-Modell",
     assistantModelDisclosureLabel: "Modell",
+    assistantModelDisclosurePending: "Modellroute wird geprüft...",
     assistantComposerLabel: "Nachricht an den Assistenten",
     assistantComposerPlaceholder: "Fragen Sie nach Rechtsrecherche oder Dokumentvorbereitung...",
     assistantSend: "Nachricht senden",
@@ -1305,6 +1312,8 @@ export const translations = {
     assistantInitialMessage:
       "JurisDigta Assistent ist mit verpflichtendem JurisDigta API und MCP bereit. Entwürfe sind KI-unterstützt und benötigen vor der Nutzung menschliche rechtliche Prüfung.",
     assistantEmptyMessageResponse: "Bitte geben Sie eine Frage oder eine Anweisung zur Dokumenterstellung ein.",
+    assistantAuthLoadingResponse:
+      "Ich pruefe Ihr Konto, bevor der Rechtsassistent startet. Bitte versuchen Sie es gleich erneut.",
     assistantApiErrorResponse:
       "Der Assistent konnte die JurisDigta API nicht erreichen. Status: {status}. Detail: {detail}",
     caseTitle: "Fall erstellen",

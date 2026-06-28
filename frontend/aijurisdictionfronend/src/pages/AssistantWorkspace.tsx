@@ -420,7 +420,7 @@ const AssistantTextPart: React.FC = () => {
 
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
-  const { user } = useAuth();
+  const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { activeCase, loadCaseData } = useCases();
   const activeCaseId = activeCase?.id;
   const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string } | null>(
@@ -463,6 +463,14 @@ const AssistantThread: React.FC = () => {
 
         try {
           const userId = user?.userId;
+          if (isAuthenticated && (isAuthLoading || !userId)) {
+            yield {
+              content: [{ type: "text", text: t("assistantAuthLoadingResponse") }],
+              status: { type: "complete", reason: "stop" }
+            };
+            return;
+          }
+
           const existingSession = sessionRef.current;
           const session =
             existingSession?.language === language &&
@@ -544,7 +552,7 @@ const AssistantThread: React.FC = () => {
         }
       }
     }),
-    [activeCaseId, language, loadCaseData, t, user?.userId]
+    [activeCaseId, isAuthenticated, isAuthLoading, language, loadCaseData, t, user?.userId]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {
@@ -722,13 +730,21 @@ const AssistantConfigurations: React.FC = () => {
 
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
-  const { user } = useAuth();
+  const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { activeCase } = useCases();
   const threadKey = React.useMemo(() => caseThreadKey(activeCase), [activeCase]);
   const fallbackModelLabel = React.useMemo(() => chatApiRuntimeConfig().chatModelLabel, []);
-  const [modelLabel, setModelLabel] = React.useState(fallbackModelLabel);
+  const pendingModelLabel = t("assistantModelDisclosurePending");
+  const [modelLabel, setModelLabel] = React.useState(
+    isAuthenticated ? pendingModelLabel : fallbackModelLabel
+  );
 
   React.useEffect(() => {
+    if (isAuthenticated && !user?.userId) {
+      setModelLabel(pendingModelLabel);
+      return;
+    }
+
     let isCurrent = true;
     void fetchEffectiveModelRoute(user?.userId)
       .then((route) => {
@@ -744,7 +760,7 @@ const AssistantWorkspace: React.FC = () => {
     return () => {
       isCurrent = false;
     };
-  }, [fallbackModelLabel, user?.userId]);
+  }, [fallbackModelLabel, isAuthenticated, isAuthLoading, pendingModelLabel, user?.userId]);
 
   return (
     <div className="page assistant-workspace-page">

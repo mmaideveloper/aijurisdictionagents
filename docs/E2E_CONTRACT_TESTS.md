@@ -20,10 +20,16 @@ This repository now includes deterministic end-to-end simulations for two docume
    - Confirms the simulated payment and verifies that the subscription becomes `paid`.
    - Verifies guard rails: disabled plans stay unavailable, and unknown payment IDs do not activate subscriptions.
 
-3. `api/aijuristiction-api/e2e-playwright/tests/free-plan-api-connectivity.spec.ts`
+4. `api/aijuristiction-api/e2e-playwright/tests/free-plan-api-connectivity.spec.ts`
    - Creates a synthetic free-plan chat user.
    - Verifies the effective route is `free_local` through `local_ollama`.
    - Sends a legal chat prompt through `/v1/chat/sessions/{session_id}/reply` and fails if the API returns a network/model connection error.
+
+5. `api/aijuristiction-api/e2e-playwright/tests/free-plan-ollama-document-pdf.spec.ts`
+   - Creates a synthetic free-plan user and case.
+   - Verifies the effective route is `free_local` through `local_ollama` with `qwen3:1.7b`.
+   - Runs a Slovak request for `Splnomocnenie` for operation of a company vehicle for `ESolutions SK s.r.o.` and asks for Slovak and English generated PDFs.
+   - Fails when the assistant conversation is unprofessional, repeats the same question, or exported PDFs contain assistant/system commentary instead of only legal-document content.
 
 ## Files
 
@@ -43,6 +49,13 @@ Run the Playwright payment-process simulation:
 ```bash
 cd api/aijuristiction-api/e2e-playwright
 npm run test:payment
+```
+
+Run the live free-plan Ollama document/PDF simulation:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+npm run test:free-plan-document
 ```
 
 The payment-process E2E is GDPR/privacy-by-design safe for local and scheduled runs: it uses generated identities, local test storage, log-only email transport in CI, and the API sandbox checkout contract instead of a real payment-provider charge.
