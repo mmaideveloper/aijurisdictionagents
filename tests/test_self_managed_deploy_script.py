@@ -26,6 +26,7 @@ def test_api_and_mcp_containers_override_email_outbox_database() -> None:
 def test_deploy_installs_log_retention_and_configures_monitoring() -> None:
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
+    assert "export DOCKER_BUILDKIT=0" in script
     assert 'LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"' in script
     assert "install_log_retention_cron" in script
     assert "cleanup_logs.sh" in script
