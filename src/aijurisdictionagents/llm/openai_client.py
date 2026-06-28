@@ -20,6 +20,7 @@ class OpenAIConfig:
     temperature: float = 0.2
     base_url: str | None = None
     provider_label: str = "openai"
+    max_tokens: int | None = None
 
 
 class OpenAIClient:
@@ -62,11 +63,14 @@ class OpenAIClient:
             agent_name=agent_name,
             request_payload=messages,
         )
-        response = self._client.chat.completions.create(
-            model=self._config.model,
-            temperature=self._config.temperature,
-            messages=messages,
-        )
+        request_kwargs: dict[str, object] = {
+            "model": self._config.model,
+            "temperature": self._config.temperature,
+            "messages": messages,
+        }
+        if self._config.max_tokens is not None:
+            request_kwargs["max_tokens"] = self._config.max_tokens
+        response = self._client.chat.completions.create(**request_kwargs)
         content = response.choices[0].message.content if response.choices else ""
         normalized = (content or "").strip()
         log_llm_response(

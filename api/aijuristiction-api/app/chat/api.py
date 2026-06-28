@@ -1469,41 +1469,52 @@ def _run_direct_lawyer_turn(
 
     routed_llm = _resolve_session_llm_route(session=session, task_type="chat_reply")
     lawyer = create_lawyer_agent(routed_llm.client, session.country)
-    prompt_override = lawyer.system_prompt
-    if session.language and session.language.strip():
-        prompt_override = f"{lawyer.system_prompt}\nRespond in {session.language.strip()}."
-    prompt_override = (
-        f"{prompt_override}\n\n"
-        "SINGLE-QUESTION CLARIFICATION POLICY:\n"
-        "- If clarification is needed, ask exactly one highest-priority question in this turn.\n"
-        "- Do not ask multiple numbered questions in one reply.\n"
-        "- Do not include summary/risk/next-step sections while waiting for that single answer.\n"
-        "- Keep CASE_UPDATE_JSON.case.open_questions at maximum one item when awaiting user input."
-    )
-    prompt_override = f"{prompt_override}\n\n{_build_current_date_prompt_note()}"
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
-    if case_memory_note:
-        prompt_override = f"{prompt_override}\n\n{case_memory_note}"
     user_profile_note = _build_signed_in_user_profile_prompt_note(session)
-    if user_profile_note:
-        prompt_override = f"{prompt_override}\n\n{user_profile_note}"
-    if _user_requested_document_generation(content=content, previous_messages=prior_messages):
+    document_generation_requested = _user_requested_document_generation(content=content, previous_messages=prior_messages)
+    use_compact_local_prompt = _is_free_local_reply_route(routed_llm)
+    if use_compact_local_prompt:
+        prompt_override = _build_compact_free_local_lawyer_prompt(
+            session=session,
+            case_memory_note=case_memory_note,
+            user_profile_note=user_profile_note,
+            preparation_prompt_note=preparation.prompt_note,
+            document_generation_requested=document_generation_requested,
+        )
+    else:
+        prompt_override = lawyer.system_prompt
+        if session.language and session.language.strip():
+            prompt_override = f"{lawyer.system_prompt}\nRespond in {session.language.strip()}."
         prompt_override = (
             f"{prompt_override}\n\n"
-            "DOCUMENT GENERATION MODE:\n"
-            "- The user confirmed that they want the downloadable document prepared now.\n"
-            "- Do not ask for PDF confirmation again.\n"
-            "- Produce the finalized draft-oriented response for PDF export in this turn.\n"
-            "- Do not claim that PDF or ZIP files are already created, saved, attached, or uploaded.\n"
-            "- Say that the draft package is ready for download/export instead.\n"
-            "- Do not mention JSON, CASE_UPDATE_JSON, machine payload, or technical persistence details in the user-facing content.\n"
-            "- Do not include direct file paths, markdown download links, or relative links such as documents/... in the user-facing content.\n"
-            "- Include CASE_UPDATE_JSON after the user-facing content.\n"
-            "- Never output unresolved placeholders in square brackets (for example [Vase meno], [address], [ico]).\n"
-            "- If any required field is missing, ask for it explicitly instead of using placeholders."
+            "SINGLE-QUESTION CLARIFICATION POLICY:\n"
+            "- If clarification is needed, ask exactly one highest-priority question in this turn.\n"
+            "- Do not ask multiple numbered questions in one reply.\n"
+            "- Do not include summary/risk/next-step sections while waiting for that single answer.\n"
+            "- Keep CASE_UPDATE_JSON.case.open_questions at maximum one item when awaiting user input."
         )
-    if preparation.prompt_note:
-        prompt_override = f"{prompt_override}\n\n{preparation.prompt_note}"
+        prompt_override = f"{prompt_override}\n\n{_build_current_date_prompt_note()}"
+        if case_memory_note:
+            prompt_override = f"{prompt_override}\n\n{case_memory_note}"
+        if user_profile_note:
+            prompt_override = f"{prompt_override}\n\n{user_profile_note}"
+        if document_generation_requested:
+            prompt_override = (
+                f"{prompt_override}\n\n"
+                "DOCUMENT GENERATION MODE:\n"
+                "- The user confirmed that they want the downloadable document prepared now.\n"
+                "- Do not ask for PDF confirmation again.\n"
+                "- Produce the finalized draft-oriented response for PDF export in this turn.\n"
+                "- Do not claim that PDF or ZIP files are already created, saved, attached, or uploaded.\n"
+                "- Say that the draft package is ready for download/export instead.\n"
+                "- Do not mention JSON, CASE_UPDATE_JSON, machine payload, or technical persistence details in the user-facing content.\n"
+                "- Do not include direct file paths, markdown download links, or relative links such as documents/... in the user-facing content.\n"
+                "- Include CASE_UPDATE_JSON after the user-facing content.\n"
+                "- Never output unresolved placeholders in square brackets (for example [Vase meno], [address], [ico]).\n"
+                "- If any required field is missing, ask for it explicitly instead of using placeholders."
+            )
+        if preparation.prompt_note:
+            prompt_override = f"{prompt_override}\n\n{preparation.prompt_note}"
     case_documents: list[CoreDocument] = []
     processed_names: list[str] = []
     unprocessed_names: list[str] = []
@@ -1520,14 +1531,15 @@ def _run_direct_lawyer_turn(
                 'Use processed documents as case evidence and explicitly mention any unprocessed documents.'
             )
             prompt_override = f"{prompt_override}{context_note}"
-    task_plan_note = build_document_task_plan_note(
-        query=content,
-        has_processed_documents=bool(
-            case_documents or supplemental_documents or preparation.supplemental_documents
-        ),
-    )
-    if task_plan_note:
-        prompt_override = f"{prompt_override}{task_plan_note}"
+    if not use_compact_local_prompt:
+        task_plan_note = build_document_task_plan_note(
+            query=content,
+            has_processed_documents=bool(
+                case_documents or supplemental_documents or preparation.supplemental_documents
+            ),
+        )
+        if task_plan_note:
+            prompt_override = f"{prompt_override}{task_plan_note}"
 
     all_documents = list(preparation.supplemental_documents)
     all_documents.extend(supplemental_documents or [])
@@ -1538,23 +1550,24 @@ def _run_direct_lawyer_turn(
     )
     if uploaded_contract_note:
         prompt_override = f"{prompt_override}\n\n{uploaded_contract_note}"
-    legal_document_policy_note = _build_legal_document_preparation_policy_note(
-        content=content,
-        country=session.country,
-    )
-    if legal_document_policy_note:
-        prompt_override = f"{prompt_override}\n\n{legal_document_policy_note}"
-    mcp_law_context = build_mcp_law_context(
-        query=content,
-        country=session.country,
-        language=session.language,
-    )
-    if mcp_law_context is not None:
-        prompt_override = f"{prompt_override}\n\n{mcp_law_context.prompt_note}"
-        if mcp_law_context.document is not None:
-            all_documents.append(mcp_law_context.document)
-        if processing_event_callback is not None:
-            processing_event_callback(mcp_law_context.processing_event)
+    if not use_compact_local_prompt:
+        legal_document_policy_note = _build_legal_document_preparation_policy_note(
+            content=content,
+            country=session.country,
+        )
+        if legal_document_policy_note:
+            prompt_override = f"{prompt_override}\n\n{legal_document_policy_note}"
+        mcp_law_context = build_mcp_law_context(
+            query=content,
+            country=session.country,
+            language=session.language,
+        )
+        if mcp_law_context is not None:
+            prompt_override = f"{prompt_override}\n\n{mcp_law_context.prompt_note}"
+            if mcp_law_context.document is not None:
+                all_documents.append(mcp_law_context.document)
+            if processing_event_callback is not None:
+                processing_event_callback(mcp_law_context.processing_event)
     lawyer_message = lawyer.respond(
         conversation=conversation,
         documents=all_documents,
@@ -1621,6 +1634,72 @@ def _warn_if_flow_pack_missing(*, session_id: UUID, session: Session, request_te
             session.country,
             " ".join(request_text.split())[:180],
         )
+
+
+def _is_free_local_reply_route(route: RoutedLLMClient) -> bool:
+    return bool(route.route_type == "free_local" and route.provider == "local_ollama")
+
+
+def _build_compact_free_local_lawyer_prompt(
+    *,
+    session: Session,
+    case_memory_note: str,
+    user_profile_note: str,
+    preparation_prompt_note: str,
+    document_generation_requested: bool,
+) -> str:
+    language = session.language.strip() if session.language and session.language.strip() else "sk"
+    document_mode_note = (
+        "- The user confirmed document generation. Prepare draft-oriented text for export, but do not claim files "
+        "already exist and do not output unresolved placeholders."
+        if document_generation_requested
+        else "- If a downloadable legal document is requested, ask whether the user wants it prepared now before drafting."
+    )
+    optional_notes = "\n".join(
+        note
+        for note in (
+            _clamp_prompt_note("Case memory", case_memory_note, max_chars=700),
+            _clamp_prompt_note("Signed-in user profile", user_profile_note, max_chars=500),
+            _clamp_prompt_note("Country-specific note", preparation_prompt_note, max_chars=900),
+        )
+        if note
+    )
+    return textwrap.dedent(
+        f"""
+        You are JurisDigta Assistant, a Slovak legal intake assistant for free-plan local model routing.
+        Reply in {language}. Be concise and practical.
+
+        Compliance and safety:
+        - Apply GDPR data minimization: do not ask for IDs, birth numbers, addresses, or sensitive data unless needed.
+        - Treat the output as preliminary legal-risk support that requires human legal oversight before use.
+        - Do not invent facts, laws, registry results, signatures, authority, or uploaded document contents.
+        - Do not help with fraud, evasion, or illegal conduct.
+
+        Turn policy:
+        - If facts are missing, ask exactly one highest-priority question.
+        - Do not ask multiple numbered questions in one reply.
+        - If enough facts are present, give a short next-step answer and identify any remaining missing fact.
+        {document_mode_note}
+
+        Output contract:
+        - First write only the user-facing answer.
+        - Then include CASE_UPDATE_JSON with compact valid JSON:
+          {{"case":{{"status":"intake_open|waiting_user|ready_for_next_step","jurisdiction":{{"country":"{session.country}","language":"{language}"}},"facts_summary":"...","client_goal":"...","open_questions":["..."]}}}}
+        - Keep open_questions to at most one item.
+
+        {_build_current_date_prompt_note()}
+        {optional_notes}
+        """
+    ).strip()
+
+
+def _clamp_prompt_note(label: str, note: str, *, max_chars: int) -> str:
+    normalized = " ".join(note.split())
+    if not normalized:
+        return ""
+    if len(normalized) > max_chars:
+        normalized = f"{normalized[: max_chars - 3].rstrip()}..."
+    return f"{label}: {normalized}"
 
 
 class StartSessionStreamRequest(BaseModel):
