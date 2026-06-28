@@ -38,7 +38,7 @@ def test_deploy_installs_ollama_and_pulls_default_model() -> None:
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
     assert 'INSTALL_OLLAMA="${INSTALL_OLLAMA:-1}"' in script
-    assert 'LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3.6:27b}"' in script
+    assert 'LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3:4b}"' in script
     assert "install_ollama_service" in script
     assert "effective_ollama_host_bind" in script
     assert "app_docker_gateway" in script

@@ -196,7 +196,7 @@ Chat model provider, model, deployment, and credentials are resolved from these 
 
 Seeded defaults:
 
-- Free/default users route to `local_ollama_default`, provider `local_ollama`, model `qwen3.6:27b`. Local developer runs default to `http://127.0.0.1:11434/v1`; self-managed Docker production seeds the private Docker gateway URL so API containers can reach the host-local Ollama service.
+- Free/default users route to `local_ollama_default`, provider `local_ollama`, model `qwen3:4b`. Local developer runs default to `http://127.0.0.1:11434/v1`; self-managed Docker production seeds the private Docker gateway URL so API containers can reach the host-local Ollama service.
 - `case`, `basic`, `premium`, and `unlimited` plan routes prefer `azure_foundry_gpt_4o_mini`, provider `azure_foundry`, model/deployment `gpt-4o-mini`, EU data-zone capable. Operators must set the Azure provider endpoint and encrypted credential before paid traffic can use this route.
 
 Authorized case users can inspect this trail through:

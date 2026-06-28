@@ -364,7 +364,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT` | `20` | Max pending documents processed per scheduled run |
 | `JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS` | `5` | Email outbox poll interval in seconds for near-immediate self-managed delivery; minimum accepted value is `5` |
-| `INSTALL_OLLAMA` | `1` | Self-managed deploy installs/configures Ollama and pulls the seeded free-plan model `qwen3.6:27b`; set `0` only for controlled rollback or prevalidated manual install |
+| `INSTALL_OLLAMA` | `1` | Self-managed deploy installs/configures Ollama and pulls the seeded free-plan model `qwen3:4b`; set `0` only for controlled rollback or prevalidated manual install |
 | `OLLAMA_METRICS_PORT` | `9109` | Host-local Prometheus exporter port for Ollama runtime metrics |
 | `OLLAMA_METRICS_TIMEOUT` | `5` | Timeout in seconds for Ollama exporter API probes |
 
@@ -397,13 +397,13 @@ Server-local `jurisdigta.env` must include at least:
 - `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
-- `INSTALL_OLLAMA=1` so the self-managed deploy installs Ollama and pulls `qwen3.6:27b`
+- `INSTALL_OLLAMA=1` so the self-managed deploy installs Ollama and pulls `qwen3:4b`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` or another bounded runtime in minutes
 - email/Turnstile settings when those production features are enabled
 
 After the API database is initialized, configure chat routes in the database/admin API:
 
-- `local_ollama_default`: provider `local_ollama`, model `qwen3.6:27b`, marked as free-plan default. On self-managed prod the deploy script stores the private Docker gateway URL, for example `http://172.18.0.1:11434/v1`, so API containers can reach the host-local Ollama service without exposing it publicly.
+- `local_ollama_default`: provider `local_ollama`, model `qwen3:4b`, marked as free-plan default. On self-managed prod the deploy script stores the private Docker gateway URL, for example `http://172.18.0.1:11434/v1`, so API containers can reach the host-local Ollama service without exposing it publicly.
 - `azure_foundry_gpt_4o_mini`: provider `azure_foundry`, EU data-zone capable, exact model/deployment `gpt-4o-mini`.
 - Add the Azure Foundry endpoint to `ai_model_providers.base_url`.
 - Add the Azure Foundry API key or token through `/v1/admin/ai-models/providers/{provider_id}/credentials` so it is stored encrypted in `ai_model_credentials`.

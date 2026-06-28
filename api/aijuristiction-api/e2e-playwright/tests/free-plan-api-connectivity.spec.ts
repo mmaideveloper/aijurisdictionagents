@@ -46,7 +46,7 @@ test('free plan user can connect to JurisDigta API and receive a local-model cha
     plan_code: 'free',
     route_type: 'free_local',
     provider: 'local_ollama',
-    model: 'qwen3.6:27b',
+    model: 'qwen3:4b',
     is_local: true,
     is_external: false,
   });

@@ -74,7 +74,7 @@ API_LOG_LEVEL=DEBUG uvicorn app.main:app --reload --port 8080
 
 Required setup for chat model routing:
 
-- Free/default users use the seeded `local_ollama_default` route: provider `local_ollama`, exact model `qwen3.6:27b`. Local runs default to `http://127.0.0.1:11434/v1`; self-managed Docker production injects the private Docker gateway URL during schema initialization so the API container reaches the host-local Ollama service.
+- Free/default users use the seeded `local_ollama_default` route: provider `local_ollama`, exact model `qwen3:4b`. Local runs default to `http://127.0.0.1:11434/v1`; self-managed Docker production injects the private Docker gateway URL during schema initialization so the API container reaches the host-local Ollama service.
 - Paid `case`, `basic`, `premium`, and `unlimited` users use the seeded Azure Foundry route `azure_foundry_gpt_4o_mini`: exact model/deployment `gpt-4o-mini`.
 - A paid subscription is considered active for routing only while `starts_at` has begun and `ends_at` is empty or in the future. Expired paid rows fall back to the Free/local Ollama route.
 - Subscription checkout creates a `pending` subscription only. The subscription becomes active only after `/v1/users/subscriptions/{subscription_id}/confirm-payment` confirms payment, which queues a payment-confirmed email with a generated invoice attached as both PDF and UBL XML.

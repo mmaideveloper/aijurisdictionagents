@@ -36,7 +36,7 @@ def test_free_plan_routes_to_seeded_local_ollama_model(tmp_path: Path) -> None:
     assert route.provider.provider_code == "local_ollama"
     assert route.model_profile is not None
     assert route.model_profile.model_profile_id == "local_ollama_default"
-    assert route.model_profile.model_code == "qwen3.6:27b"
+    assert route.model_profile.model_code == "qwen3:4b"
     assert route.model_profile.is_default_for_free is True
 
 
@@ -128,7 +128,7 @@ def test_expired_paid_subscription_routes_as_free_local_model(
     assert routed.subscription_id == effective_subscription.subscription_id
     assert routed.provider == "local_ollama"
     assert routed.route_type == "free_local"
-    assert routed.model == "qwen3.6:27b"
+    assert routed.model == "qwen3:4b"
 
 
 def test_effective_model_route_endpoint_reports_free_user_local_model(
@@ -155,10 +155,10 @@ def test_effective_model_route_endpoint_reports_free_user_local_model(
     assert payload["plan_code"] == "free"
     assert payload["route_type"] == "free_local"
     assert payload["provider"] == "local_ollama"
-    assert payload["model"] == "qwen3.6:27b"
+    assert payload["model"] == "qwen3:4b"
     assert payload["is_local"] is True
     assert payload["is_external"] is False
-    assert payload["label"] == "Local Ollama - qwen3.6:27b"
+    assert payload["label"] == "Local Ollama - qwen3:4b"
 
 
 def test_model_credentials_are_encrypted_and_revealed_only_when_requested(
@@ -249,8 +249,8 @@ def test_admin_model_routing_api_upserts_provider_and_profile(
         headers=headers,
         json={
             "provider_id": "local_ollama_alt",
-            "model_code": "qwen3.6:27b",
-            "deployment_name": "qwen3.6:27b",
+            "model_code": "qwen3:4b",
+            "deployment_name": "qwen3:4b",
             "is_default_for_free": True,
             "enabled": True,
         },
@@ -263,7 +263,7 @@ def test_admin_model_routing_api_upserts_provider_and_profile(
     assert provider_response.status_code == 201
     assert provider_response.json()["base_url"] == "http://127.0.0.1:11434/v1"
     assert profile_response.status_code == 201
-    assert profile_response.json()["model_code"] == "qwen3.6:27b"
+    assert profile_response.json()["model_code"] == "qwen3:4b"
     assert profile_response.json()["is_default_for_free"] is True
     assert profiles_response.status_code == 200
     assert profiles_response.json()[0]["model_profile_id"] == "local_ollama_alt_qwen"
