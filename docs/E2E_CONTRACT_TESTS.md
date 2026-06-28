@@ -20,6 +20,11 @@ This repository now includes deterministic end-to-end simulations for two docume
    - Confirms the simulated payment and verifies that the subscription becomes `paid`.
    - Verifies guard rails: disabled plans stay unavailable, and unknown payment IDs do not activate subscriptions.
 
+3. `api/aijuristiction-api/e2e-playwright/tests/free-plan-api-connectivity.spec.ts`
+   - Creates a synthetic free-plan chat user.
+   - Verifies the effective route is `free_local` through `local_ollama`.
+   - Sends a legal chat prompt through `/v1/chat/sessions/{session_id}/reply` and fails if the API returns a network/model connection error.
+
 ## Files
 
 - Root mirror test: `root_contract_end_to_end_test.py`

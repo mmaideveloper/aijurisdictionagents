@@ -403,7 +403,7 @@ Server-local `jurisdigta.env` must include at least:
 
 After the API database is initialized, configure chat routes in the database/admin API:
 
-- `local_ollama_default`: provider `local_ollama`, base URL `http://127.0.0.1:11434/v1`, model `qwen3.6:27b`, marked as free-plan default.
+- `local_ollama_default`: provider `local_ollama`, model `qwen3.6:27b`, marked as free-plan default. On self-managed prod the deploy script stores the private Docker gateway URL, for example `http://172.18.0.1:11434/v1`, so API containers can reach the host-local Ollama service without exposing it publicly.
 - `azure_foundry_gpt_4o_mini`: provider `azure_foundry`, EU data-zone capable, exact model/deployment `gpt-4o-mini`.
 - Add the Azure Foundry endpoint to `ai_model_providers.base_url`.
 - Add the Azure Foundry API key or token through `/v1/admin/ai-models/providers/{provider_id}/credentials` so it is stored encrypted in `ai_model_credentials`.
@@ -427,8 +427,8 @@ docker image inspect jurisdigta-document-processor:local >/dev/null
 test -x /srv/jurisdigta/ops/run_document_processor.sh
 crontab -l | grep run_document_processor.sh
 systemctl is-active --quiet ollama
-curl -fsS http://127.0.0.1:11434/api/tags
-curl -fsS http://127.0.0.1:11434/v1/models
+curl -fsS http://127.0.0.1:11434/api/tags || curl -fsS "http://$(docker network inspect aijuristiction-api_default --format '{{(index .IPAM.Config 0).Gateway}}'):11434/api/tags"
+curl -fsS http://127.0.0.1:11434/v1/models || curl -fsS "http://$(docker network inspect aijuristiction-api_default --format '{{(index .IPAM.Config 0).Gateway}}'):11434/v1/models"
 ```
 
 4. From outside the server, validate the Cloudflare Tunnel routes:

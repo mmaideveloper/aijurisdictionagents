@@ -357,7 +357,7 @@ The self-managed production deployment script performs the Ollama install, local
 - Keep the dedicated SSH folder local to the workstation. Only public keys belong in `/home/jurisdigta-admin/.ssh/authorized_keys` on the server.
 - Required model-credential encryption secret: `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`.
 - Chat provider/model/deployment routing is stored in API database tables, not `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, or `AZURE_OPENAI_DEPLOYMENT`.
-- Seeded free/default local route: provider `local_ollama`, OpenAI-compatible base URL `http://127.0.0.1:11434/v1`, exact model `qwen3.6:27b`, profile `local_ollama_default`.
+- Seeded free/default local route: provider `local_ollama`, exact model `qwen3.6:27b`, profile `local_ollama_default`. In self-managed Docker production, the API stores the private Docker gateway URL such as `http://172.18.0.1:11434/v1` because `127.0.0.1` inside the API container is not the host Ollama service.
 - Production admins can manage local Ollama registry models from the protected AI Model Admin page. The Admin tool lists models through the server-local Ollama API, starts registry pulls, and can physically remove unused models. Ollama must stay bound to `127.0.0.1:11434`; do not expose it through Cloudflare Tunnel, nginx, router NAT, or a public firewall rule.
 - Admin removal is intentionally blocked when the model is the seeded/default local model, marked `is_default_for_free`, referenced by an enabled route policy, selected by `LOCAL_LLM_MODEL`, or currently loaded while configured for active routing. Change route policies/defaults first, verify the new model works, then remove the old unused model.
 - Seeded paid route for `case`, `basic`, `premium`, and `unlimited`: provider `azure_foundry`, exact model/deployment `gpt-4o-mini`, profile `azure_foundry_gpt_4o_mini`.
@@ -468,7 +468,7 @@ The self-managed production deployment script performs the Ollama install, local
 - Keep PostgreSQL and document runtime files outside `databases/` and under `/srv/jurisdigta/.../runs/storage`.
 - Preserve deployment and collector logs for traceability, while avoiding personal data and legal-risk content in logs.
 - Use database-backed model routing for production-like local starts; `LLM_PROVIDER=mock` is only for deterministic offline testing when explicitly requested.
-- Run Ollama as a separate localhost-only model service; do not expose `11434` publicly and do not send free-user case data to external model providers by default.
+- Run Ollama as a separate private host model service; do not expose `11434` through Cloudflare, nginx, router NAT, or a public firewall. The self-managed deploy script binds Ollama to the API Docker network gateway so only local containers on the server can reach it, and free-user case data is not sent to external model providers by default.
 - Local model routing keeps case content inside JurisDigta-controlled infrastructure, but normal server access controls, retention, deletion, and privacy-safe logging still apply.
 - Keep legal-risk outputs subject to human oversight before production traffic is enabled.
 - For Cloudflare Tunnel and Access, avoid logging personal data, legal documents, API keys, database credentials, or full user prompts in edge, dashboard, or application logs.

@@ -40,6 +40,20 @@ def test_free_plan_routes_to_seeded_local_ollama_model(tmp_path: Path) -> None:
     assert route.model_profile.is_default_for_free is True
 
 
+def test_seeded_local_ollama_provider_uses_configured_container_url(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("LOCAL_LLM_OPENAI_BASE_URL", "http://172.18.0.1:11434/v1")
+    monkeypatch.setenv("LOCAL_LLM_HEALTH_URL", "http://172.18.0.1:11434/api/tags")
+    store = _store(tmp_path)
+
+    provider = next(item for item in store.list_ai_model_providers() if item.provider_code == "local_ollama")
+
+    assert provider.base_url == "http://172.18.0.1:11434/v1"
+    assert provider.health_check_url == "http://172.18.0.1:11434/api/tags"
+
+
 def test_case_plan_routes_to_seeded_azure_foundry_gpt_4o_mini_model(
     monkeypatch: Any,
     tmp_path: Path,

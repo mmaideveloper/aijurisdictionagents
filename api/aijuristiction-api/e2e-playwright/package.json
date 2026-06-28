@@ -4,6 +4,7 @@
   "version": "0.1.1",
   "scripts": {
     "test": "playwright test",
+    "test:free-plan-api": "playwright test tests/free-plan-api-connectivity.spec.ts",
     "test:payment": "playwright test tests/payment-process.spec.ts"
   },
   "devDependencies": {

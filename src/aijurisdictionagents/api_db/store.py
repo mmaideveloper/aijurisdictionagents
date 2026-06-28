@@ -4042,7 +4042,8 @@ class ApiDatabaseStore:
 
     def _seed_ai_model_routing(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
         now = _now_iso()
-        local_base_url = "http://127.0.0.1:11434/v1"
+        local_base_url = os.getenv("LOCAL_LLM_OPENAI_BASE_URL", "").strip() or "http://127.0.0.1:11434/v1"
+        local_health_url = os.getenv("LOCAL_LLM_HEALTH_URL", "").strip() or "http://127.0.0.1:11434/api/tags"
         local_model = "qwen3.6:27b"
         local_profile_id = "local_ollama_default"
         azure_profile_id = "azure_foundry_gpt_4o_mini"
@@ -4075,7 +4076,7 @@ class ApiDatabaseStore:
                 "local",
                 0,
                 1,
-                "http://127.0.0.1:11434/api/tags",
+                local_health_url,
                 1,
                 now,
                 now,

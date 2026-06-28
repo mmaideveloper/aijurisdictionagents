@@ -39,15 +39,29 @@ def test_deploy_installs_ollama_and_pulls_default_model() -> None:
     assert 'INSTALL_OLLAMA="${INSTALL_OLLAMA:-1}"' in script
     assert 'LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3.6:27b}"' in script
     assert "install_ollama_service" in script
-    assert "OLLAMA_HOST_BIND must stay 127.0.0.1:11434" in script
+    assert "effective_ollama_host_bind" in script
+    assert "app_docker_gateway" in script
+    assert "OLLAMA_HOST_BIND must not expose Ollama on all interfaces" in script
     assert 'curl -fsSL https://ollama.com/install.sh -o "$installer"' in script
     assert "sudo install -d -m 755 /etc/systemd/system/ollama.service.d" in script
     assert "sudo tee /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf" in script
     assert "sudo systemctl daemon-reload" in script
     assert "sudo systemctl enable --now ollama" in script
-    assert 'Environment="OLLAMA_HOST=$OLLAMA_HOST_BIND"' in script
-    assert 'ollama pull "$LOCAL_LLM_MODEL"' in script
-    assert 'ollama list | grep -F "$LOCAL_LLM_MODEL"' in script
+    assert 'Environment="OLLAMA_HOST=$bind"' in script
+    assert 'OLLAMA_HOST="$bind" ollama pull "$LOCAL_LLM_MODEL"' in script
+    assert 'OLLAMA_HOST="$bind" ollama list | grep -F "$LOCAL_LLM_MODEL"' in script
+
+
+def test_api_containers_receive_private_ollama_gateway_url() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    api_block = _docker_run_block(script, "--name jurisdigta-api")
+    mcp_block = _docker_run_block(script, "--name jurisdigta-mcp")
+
+    assert 'local_llm_base_url="$(local_llm_container_base_url)"' in script
+    for block in (api_block, mcp_block):
+        assert '-e LOCAL_LLM_BASE_URL="$local_llm_base_url"' in block
+        assert '-e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1"' in block
+        assert '-e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags"' in block
 
 
 def test_document_engine_image_defaults_to_writable_sqlite_path() -> None:
