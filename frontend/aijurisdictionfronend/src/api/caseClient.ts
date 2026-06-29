@@ -1,4 +1,4 @@
-import { chatApiRuntimeConfig, ApiRequestError } from "./chatClient";
+import { chatApiRuntimeConfig, ApiRequestError, parseApiErrorResponse } from "./chatClient";
 import { consoleLogger } from "../logging/consoleLogger";
 
 export type ApiCase = {
@@ -78,15 +78,6 @@ export type SendCaseDocumentEmailResult = {
   correlation_id: string;
 };
 
-const parseErrorBody = async (response: Response): Promise<string> => {
-  try {
-    const payload = (await response.json()) as { detail?: string; message?: string };
-    return payload.detail || payload.message || `HTTP ${response.status}`;
-  } catch {
-    return `HTTP ${response.status}`;
-  }
-};
-
 const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
   const config = chatApiRuntimeConfig();
   const method = init.method || "GET";
@@ -106,9 +97,18 @@ const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
   }
 
   if (!response.ok) {
-    const detail = await parseErrorBody(response);
-    consoleLogger.warn("Case API request failed", { method, path, status: response.status, detail });
-    throw new ApiRequestError("http", detail, response.status);
+    const detail = await parseApiErrorResponse(response);
+    consoleLogger.warn("Case API request failed", {
+      method,
+      path,
+      status: response.status,
+      detail: detail.message,
+      code: detail.code
+    });
+    throw new ApiRequestError("http", detail.message, response.status, {
+      code: detail.code,
+      params: detail.params
+    });
   }
 
   return (await response.json()) as T;
@@ -254,14 +254,18 @@ export const fetchCaseDocumentBlob = async ({
   }
 
   if (!response.ok) {
-    const detail = await parseErrorBody(response);
+    const detail = await parseApiErrorResponse(response);
     consoleLogger.warn("Case document request failed", {
       status: response.status,
-      detail,
+      detail: detail.message,
+      code: detail.code,
       disposition,
       format
     });
-    throw new ApiRequestError("http", detail, response.status);
+    throw new ApiRequestError("http", detail.message, response.status, {
+      code: detail.code,
+      params: detail.params
+    });
   }
 
   const contentType = response.headers.get("Content-Type") || "application/octet-stream";

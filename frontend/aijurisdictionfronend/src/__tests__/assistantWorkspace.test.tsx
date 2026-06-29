@@ -4,7 +4,7 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import AssistantWorkspace, { parseAssistantMessagePresentation } from "../pages/AssistantWorkspace";
-import { createChatSession, streamSession } from "../api/chatClient";
+import { ApiRequestError, createChatSession, streamSession } from "../api/chatClient";
 
 const labels: Record<string, string> = {
   assistantThreadsTitle: "Conversations",
@@ -41,7 +41,9 @@ const labels: Record<string, string> = {
   assistantUserRole: "You",
   assistantInitialMessage: "JurisDigta Assistant is ready with JurisDigta API and MCP locked on.",
   assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
-  assistantApiErrorResponse: "The assistant could not reach the JurisDigta API. Status: {status}. Detail: {detail}",
+  assistantApiErrorResponse: "Asistent nemohol dokončiť požiadavku na JurisDigta API. Stav: {status}. Detail: {detail}",
+  assistantCaseWriteWindowExpiredDetail:
+    "Tento prípad je iba na čítanie, pretože plán {plan} umožňuje úpravy po dobu {days} dňa/dní od vytvorenia.",
   workspaceConfigurations: "Configurations",
   workspaceSystemLabel: "System",
   workspaceUserLabel: "You",
@@ -65,7 +67,13 @@ const labels: Record<string, string> = {
 vi.mock("../components/LanguageProvider", () => ({
   useLanguage: () => ({
     language: "sk",
-    t: (key: string) => labels[key] ?? key
+    t: (key: string, values?: Record<string, string | number>) => {
+      const template = labels[key] ?? key;
+      return Object.entries(values ?? {}).reduce(
+        (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+        template
+      );
+    }
   })
 }));
 
@@ -285,6 +293,54 @@ describe("AssistantWorkspace", () => {
     });
     expect(caseActions.loadCaseData).toHaveBeenCalledWith("case-1");
     expect(lastResult?.content?.[0]?.text).toBe("Real answer from API");
+  });
+
+  it("localizes expired free-plan write errors from the JurisDigta chat API", async () => {
+    vi.mocked(createChatSession).mockResolvedValue({
+      id: "session-1",
+      user_id: "user-1",
+      case_id: "case-1",
+      country: "SK",
+      language: "sk",
+      discussion_type: "advice",
+      state: "active",
+      created_at: "2026-06-20T00:00:00Z"
+    });
+    vi.mocked(streamSession).mockImplementation(async function* () {
+      throw new ApiRequestError(
+        "http",
+        "Case is read-only because the Free plan allows edits for 1 day(s) after creation.",
+        403,
+        {
+          code: "case_write_window_expired",
+          params: { plan: "Free", days: 1 }
+        }
+      );
+    });
+
+    render(<AssistantWorkspace />);
+
+    const result = capturedAdapter?.run({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Pokračuj v prípade" }]
+        }
+      ],
+      abortSignal: new AbortController().signal
+    });
+
+    let lastResult: CapturedRunResult | undefined;
+    if (result && Symbol.asyncIterator in result) {
+      for await (const update of result) {
+        lastResult = update;
+      }
+    } else {
+      lastResult = await result;
+    }
+
+    expect(lastResult?.content?.[0]?.text).toContain("Tento prípad je iba na čítanie");
+    expect(lastResult?.content?.[0]?.text).not.toContain("Case is read-only");
   });
 
   it("adds generated document links to the completed assistant response", async () => {

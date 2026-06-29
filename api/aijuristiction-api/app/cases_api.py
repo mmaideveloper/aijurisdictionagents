@@ -612,11 +612,11 @@ def _ensure_case_access(*, case_id: str, user_id: str, store: ApiDatabaseStore) 
 
 def _ensure_case_write_access(*, case_id: str, user_id: str, store: ApiDatabaseStore) -> None:
     try:
-        reason = store.get_case_write_block_reason(case_id=case_id, user_id=user_id)
+        block = store.get_case_write_block_detail(case_id=case_id, user_id=user_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    if reason is not None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+    if block is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=block.to_api_detail())
 
 
 def _read_case_communication_content(

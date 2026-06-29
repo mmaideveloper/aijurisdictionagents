@@ -201,7 +201,9 @@ export const translations = {
       "JurisDigta Assistant is ready with JurisDigta API and MCP locked on. Drafts are AI-assisted and require human legal review before use.",
     assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
     assistantApiErrorResponse:
-      "The assistant could not reach the JurisDigta API. Status: {status}. Detail: {detail}",
+      "The assistant could not complete the JurisDigta API request. Status: {status}. Detail: {detail}",
+    assistantCaseWriteWindowExpiredDetail:
+      "This case is read-only because the {plan} plan allows edits for {days} day(s) after creation. You can still read the case history, or create a new case to continue editing.",
     caseTitle: "Create a case",
     caseSubtitle: "Upload documents and open a chatbot with the AI lawyer agent.",
     caseUpload: "Upload evidence",
@@ -725,7 +727,9 @@ export const translations = {
       "JurisDigta Asistent je pripravený s povinne zapnutým JurisDigta API a MCP. Návrhy sú asistované AI a pred použitím vyžadujú ľudskú právnu kontrolu.",
     assistantEmptyMessageResponse: "Zadajte otázku alebo pokyn na prípravu dokumentu.",
     assistantApiErrorResponse:
-      "Asistent sa nevie spojiť s JurisDigta API. Stav: {status}. Detail: {detail}",
+      "Asistent nemohol dokončiť požiadavku na JurisDigta API. Stav: {status}. Detail: {detail}",
+    assistantCaseWriteWindowExpiredDetail:
+      "Tento prípad je iba na čítanie, pretože plán {plan} umožňuje úpravy po dobu {days} dňa/dní od vytvorenia. Históriu prípadu si stále môžete čítať alebo vytvoriť nový prípad a pokračovať v úpravách.",
     caseTitle: "Vytvoriť prípad",
     caseSubtitle: "Nahrajte dokumenty a otvorte chatbot s AI právnikom.",
     caseUpload: "Nahrať dôkazy",
@@ -1249,7 +1253,9 @@ export const translations = {
       "JurisDigta Assistent ist mit verpflichtendem JurisDigta API und MCP bereit. Entwürfe sind KI-unterstützt und benötigen vor der Nutzung menschliche rechtliche Prüfung.",
     assistantEmptyMessageResponse: "Bitte geben Sie eine Frage oder eine Anweisung zur Dokumenterstellung ein.",
     assistantApiErrorResponse:
-      "Der Assistent konnte die JurisDigta API nicht erreichen. Status: {status}. Detail: {detail}",
+      "Der Assistent konnte die JurisDigta-API-Anfrage nicht abschließen. Status: {status}. Detail: {detail}",
+    assistantCaseWriteWindowExpiredDetail:
+      "Dieser Fall ist schreibgeschützt, weil der Tarif {plan} Änderungen nur {days} Tag(e) nach der Erstellung erlaubt. Sie können den Fallverlauf weiter lesen oder einen neuen Fall erstellen, um weiterzuarbeiten.",
     caseTitle: "Fall erstellen",
     caseSubtitle: "Dokumente hochladen und KI-Anwalt-Chat starten.",
     caseUpload: "Beweise hochladen",

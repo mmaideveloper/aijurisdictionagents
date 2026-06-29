@@ -143,7 +143,10 @@ def test_free_case_becomes_readonly_after_one_day(monkeypatch, tmp_path) -> None
         json={"user_id": user_id, "title": "Should fail"},
     )
     assert rename.status_code == 403
-    assert "read-only" in rename.json()["detail"]
+    rename_detail = rename.json()["detail"]
+    assert rename_detail["code"] == "case_write_window_expired"
+    assert "read-only" in rename_detail["message"]
+    assert rename_detail["params"] == {"plan": "Free", "days": 1}
 
     upload = client.post(
         f"/v1/cases/{case_id}/documents?user_id={user_id}",
@@ -151,6 +154,7 @@ def test_free_case_becomes_readonly_after_one_day(monkeypatch, tmp_path) -> None
         files=[("files", ("evidence.txt", b"payload", "text/plain"))],
     )
     assert upload.status_code == 403
+    assert upload.json()["detail"]["code"] == "case_write_window_expired"
 
 
 def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> None:

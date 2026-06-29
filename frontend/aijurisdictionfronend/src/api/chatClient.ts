@@ -77,14 +77,31 @@ export type ChatStreamEvent =
 export class ApiRequestError extends Error {
   kind: "network" | "http";
   status?: number;
+  code?: string;
+  params?: ApiErrorParams;
 
-  constructor(kind: "network" | "http", message: string, status?: number) {
+  constructor(
+    kind: "network" | "http",
+    message: string,
+    status?: number,
+    metadata: { code?: string; params?: ApiErrorParams } = {}
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.kind = kind;
     this.status = status;
+    this.code = metadata.code;
+    this.params = metadata.params;
   }
 }
+
+export type ApiErrorParams = Record<string, string | number | boolean | null | undefined>;
+
+type ParsedApiError = {
+  message: string;
+  code?: string;
+  params?: ApiErrorParams;
+};
 
 type RuntimeApiConfig = {
   baseUrl: string;
@@ -125,16 +142,42 @@ const sanitizePublicModelLabel = (label: string): string => {
   return trimmed.slice(0, 80);
 };
 
-const parseErrorBody = async (response: Response): Promise<string> => {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const normalizeApiErrorPayload = (payload: unknown, status: number): ParsedApiError => {
+  if (!isRecord(payload)) {
+    return { message: typeof payload === "string" && payload.trim() ? payload : `HTTP ${status}` };
+  }
+
+  const detail = payload.detail;
+  if (isRecord(detail)) {
+    const message = typeof detail.message === "string" && detail.message.trim() ? detail.message : `HTTP ${status}`;
+    const code = typeof detail.code === "string" && detail.code.trim() ? detail.code : undefined;
+    const params = isRecord(detail.params) ? (detail.params as ApiErrorParams) : undefined;
+    return { message, code, params };
+  }
+
+  if (typeof detail === "string" && detail.trim()) {
+    return { message: detail };
+  }
+
+  if (typeof payload.message === "string" && payload.message.trim()) {
+    return { message: payload.message };
+  }
+
+  return { message: `HTTP ${status}` };
+};
+
+export const parseApiErrorResponse = async (response: Response): Promise<ParsedApiError> => {
   try {
-    const payload = (await response.json()) as { detail?: string; message?: string };
-    return payload.detail || payload.message || `HTTP ${response.status}`;
+    return normalizeApiErrorPayload(await response.json(), response.status);
   } catch {
     try {
       const textPayload = (await response.text()).trim();
-      return textPayload || `HTTP ${response.status}`;
+      return { message: textPayload || `HTTP ${response.status}` };
     } catch {
-      return `HTTP ${response.status}`;
+      return { message: `HTTP ${response.status}` };
     }
   }
 };
@@ -170,14 +213,18 @@ const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
   }
 
   if (!response.ok) {
-    const detail = await parseErrorBody(response);
+    const detail = await parseApiErrorResponse(response);
     consoleLogger.warn("API request failed", {
       method,
       path,
       status: response.status,
-      detail
+      detail: detail.message,
+      code: detail.code
     });
-    throw new ApiRequestError("http", detail, response.status);
+    throw new ApiRequestError("http", detail.message, response.status, {
+      code: detail.code,
+      params: detail.params
+    });
   }
 
   consoleLogger.info("API request succeeded", {
@@ -281,13 +328,17 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
   }
 
   if (!response.ok) {
-    const detail = await parseErrorBody(response);
+    const detail = await parseApiErrorResponse(response);
     consoleLogger.warn("API stream request failed", {
       path,
       status: response.status,
-      detail
+      detail: detail.message,
+      code: detail.code
     });
-    throw new ApiRequestError("http", detail, response.status);
+    throw new ApiRequestError("http", detail.message, response.status, {
+      code: detail.code,
+      params: detail.params
+    });
   }
 
   if (!response.body) {

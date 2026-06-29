@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
-from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 
 agent = AIAudioToolRecognizerAgent()
 print("speechtype default => message (review STT transcript before send)")
@@ -37,6 +37,11 @@ print(
 print(
     "unlimited_access_emails => "
     f"{sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}"
+)
+print(
+    "case_write_window_expired_error => "
+    f"API 403 responses use code {CASE_WRITE_WINDOW_EXPIRED_CODE} with plan/day params "
+    "so clients can localize the user-facing message."
 )
 with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_errors=True) as tmp:
     demo_root = Path(tmp)

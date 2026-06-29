@@ -148,6 +148,20 @@ const buildGeneratedDocumentsResponseBlock = ({
 const appendGeneratedDocumentsResponseBlock = (content: string, block: string): string =>
   block ? `${content.trim()}\n\n${block}`.trim() : content;
 
+const localizeApiErrorDetail = (
+  error: unknown,
+  t: ReturnType<typeof useLanguage>["t"]
+): string => {
+  if (error instanceof ApiRequestError && error.code === "case_write_window_expired") {
+    return t("assistantCaseWriteWindowExpiredDetail", {
+      plan: String(error.params?.plan ?? "Free"),
+      days: String(error.params?.days ?? "1")
+    });
+  }
+
+  return error instanceof Error ? error.message : "Unknown error";
+};
+
 const internalDocumentLinkPattern = /\[([^\]]+)]\((\/app\/documents\/view\?[^)\s]+)\)/g;
 const relativeDocumentLinkPattern = /\[([^\]]+)]\(\s*documents\/[^)\s]+\)/gi;
 
@@ -529,7 +543,7 @@ const AssistantThread: React.FC = () => {
           };
         } catch (error) {
           const status = error instanceof ApiRequestError && error.status ? String(error.status) : "network";
-          const detail = error instanceof Error ? error.message : "Unknown error";
+          const detail = localizeApiErrorDetail(error, t);
           yield {
             content: [{ type: "text", text: t("assistantApiErrorResponse", { status, detail }) }],
             status: { type: "complete", reason: "stop" }

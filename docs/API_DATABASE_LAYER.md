@@ -161,6 +161,12 @@ document-upload limits, and free-plan write TTL restrictions do not apply. The
 setting defaults to `mmaideveloper@gmail.com` and should stay limited to explicitly
 approved accounts for GDPR/EU AI Act traceability and human-oversight controls.
 
+When a write request targets a case after its plan edit window has expired, API
+403 responses use a structured `detail` object with code
+`case_write_window_expired`, a fallback English `message`, and `params.plan` /
+`params.days`. Frontends must translate the code locally instead of displaying
+the fallback backend text directly.
+
 Minimal runnable example:
 
 ```bash

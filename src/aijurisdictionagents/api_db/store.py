@@ -25,6 +25,25 @@ from .config import ApiDataConfig
 
 DEFAULT_UNLIMITED_ACCESS_EMAILS = ("mmaideveloper@gmail.com",)
 UNLIMITED_ACCESS_LIMIT = 2_147_483_647
+CASE_WRITE_WINDOW_EXPIRED_CODE = "case_write_window_expired"
+
+
+@dataclass(frozen=True)
+class CaseWriteBlockReason:
+    code: str
+    message: str
+    plan_display_name: str
+    ttl_days: int
+
+    def to_api_detail(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "message": self.message,
+            "params": {
+                "plan": self.plan_display_name,
+                "days": self.ttl_days,
+            },
+        }
 
 
 @dataclass(frozen=True)
@@ -2780,7 +2799,9 @@ class ApiDatabaseStore:
     def get_case_limit(self, *, user_id: str) -> int:
         return self.get_effective_subscription_plan(user_id=user_id).max_cases
 
-    def get_case_write_block_reason(self, *, case_id: str, user_id: str) -> str | None:
+    def get_case_write_block_detail(
+        self, *, case_id: str, user_id: str
+    ) -> CaseWriteBlockReason | None:
         case = self.get_case(case_id=case_id)
         if case.user_id != user_id or case.status == "deleted":
             raise KeyError(f"Case {case_id} not found")
@@ -2792,11 +2813,21 @@ class ApiDatabaseStore:
             created_at = created_at.replace(tzinfo=timezone.utc)
         expires_at = created_at + timedelta(days=plan.case_ttl_days)
         if datetime.now(timezone.utc) >= expires_at:
-            return (
+            message = (
                 f"Case is read-only because the {plan.display_name} plan allows edits "
                 f"for {plan.case_ttl_days} day(s) after creation."
             )
+            return CaseWriteBlockReason(
+                code=CASE_WRITE_WINDOW_EXPIRED_CODE,
+                message=message,
+                plan_display_name=plan.display_name,
+                ttl_days=plan.case_ttl_days,
+            )
         return None
+
+    def get_case_write_block_reason(self, *, case_id: str, user_id: str) -> str | None:
+        block = self.get_case_write_block_detail(case_id=case_id, user_id=user_id)
+        return block.message if block is not None else None
 
     def update_case_title(self, *, case_id: str, user_id: str, title: str) -> Case:
         now = _now_iso()

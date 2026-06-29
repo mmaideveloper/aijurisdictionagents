@@ -172,6 +172,19 @@ def _get_store() -> ApiDatabaseStore:
     return store
 
 
+def _case_write_block_detail(store: Any, *, case_id: str, user_id: str) -> dict[str, object] | None:
+    detail_getter = getattr(store, "get_case_write_block_detail", None)
+    if callable(detail_getter):
+        block = detail_getter(case_id=case_id, user_id=user_id)
+        if block is not None:
+            to_api_detail = getattr(block, "to_api_detail", None)
+            return to_api_detail() if callable(to_api_detail) else {"message": str(block)}
+        return None
+
+    reason = store.get_case_write_block_reason(case_id=case_id, user_id=user_id)
+    return {"message": reason} if reason is not None else None
+
+
 def _ensure_case_write_access_for_session(session: Session) -> None:
     case_id = (session.case_id or "").strip()
     if not case_id:
@@ -180,11 +193,11 @@ def _ensure_case_write_access_for_session(session: Session) -> None:
     try:
         case = store.get_case(case_id=case_id)
         user_id = str(session.user_id) if session.user_id else case.user_id
-        reason = store.get_case_write_block_reason(case_id=case_id, user_id=user_id)
+        detail = _case_write_block_detail(store, case_id=case_id, user_id=user_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if reason is not None:
-        raise HTTPException(status_code=403, detail=reason)
+    if detail is not None:
+        raise HTTPException(status_code=403, detail=detail)
 
 
 def _persist_case_message_if_needed(*, session: Session, role: str, content: str, agent_name: str | None = None) -> None:
