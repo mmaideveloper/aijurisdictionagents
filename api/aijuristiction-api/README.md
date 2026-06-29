@@ -113,9 +113,13 @@ AI model admin management and routing API:
 - `PATCH /v1/admin/ai-models/credentials/{credential_id}`
 - `GET /v1/admin/users`
 - `PATCH /v1/admin/users/{user_id}`
+- `GET /v1/admin/cases/users?email=<query>` searches users by email for operational case reset. The response is privacy-minimized user metadata only.
+- `GET /v1/admin/cases/users/{user_id}/cases?include_deleted=true` lists case id, title, status, created_at, and updated_at for the selected user. It does not return prompts, uploaded document text, generated legal documents, chat history, or provider secrets.
+- `DELETE /v1/admin/cases/{case_id}` with JSON `{ "user_id": "...", "reason": "..." }` soft-deletes one selected case for an authorized admin. This bypasses Free-plan edit-window restrictions for support/test reset operations only, records an audit event with actor, target user/case, old/new summaries, reason, and correlation id, and keeps case rows/documents/messages/files preserved for traceability.
 
 Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header with either a database `role=admin` user or the `JURISDIGTA_ADMIN_EMAILS` fallback allowlist. Local loopback development may send `x-jurisdigta-admin-user-id`. The credential endpoints also require API authentication and reserve `reveal=true` for authorized admin maintenance.
 - Admin responses never return provider secrets or legal case content. External provider changes are audited with actor, entity, old/new summaries, reason, and correlation id.
+- Public user `DELETE /v1/cases/{case_id}` intentionally still requires normal case write access. Expired Free-plan read-only cases can be reset by admins through the audited admin endpoint instead of direct database access.
 
 Document processing mode:
 

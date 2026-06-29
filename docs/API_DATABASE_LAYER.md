@@ -191,10 +191,10 @@ The API database now includes a policy-driven model routing foundation:
 - `ai_model_groups` and `ai_model_group_users`: optional assignment of users to model groups for staged rollout or premium routing.
 - `ai_task_route_policies`: task type plus plan policy with preferred local/external profile, external acknowledgement, EU data-zone requirement, and local fallback flags.
 - `ai_model_usage_ledger`: per-request token and estimated cost ledger by user, subscription, case, task type, provider, model, route, and time. Case audit fields also store `session_id`, `question_id`, bounded `question_preview`, `question_sha256`, `answer_id`, and minimal audit metadata so JurisDigta can show which model answered which question without duplicating full legal prompts outside the case history.
-- `ai_model_admin_audit_events`: admin-only model/provider/group/policy change trail with actor email, entity, old/new summaries, reason, correlation id, and timestamp. It stores metadata summaries only and must not contain legal case text or provider secrets.
+- `ai_model_admin_audit_events`: admin-only model/provider/group/policy and operational case-reset change trail with actor email, entity, old/new summaries, reason, correlation id, and timestamp. It stores metadata summaries only and must not contain legal case text or provider secrets.
 - `users.role` and `users.is_enabled`: global user/admin role and account status used by `/app/admin` and admin APIs.
 
-Admin management is exposed through `GET/POST /v1/admin/ai-models...`, `GET/PATCH /v1/admin/users...`, and the React route `/app/admin`.
+Admin management is exposed through `GET/POST /v1/admin/ai-models...`, `GET/PATCH /v1/admin/users...`, `GET/DELETE /v1/admin/cases...`, and the React route `/app/admin`.
 Production admin access is server-authorized from `cf-access-authenticated-user-email` with either database `role=admin` or `JURISDIGTA_ADMIN_EMAILS`; local development may send `x-jurisdigta-admin-user-id` from loopback only.
 For the production web app, email/password or MFA sign-in returns a device-bound token when the browser supplies `device_id`; `/app/admin` sends `x-jurisdigta-admin-user-id`, `x-jurisdigta-device-id`, and `x-jurisdigta-device-token`, and the API verifies the hashed device token before accepting the admin role. Do not trust the browser-stored role by itself for admin API authorization.
 Keep external-provider API keys in backend secrets and store only provider references, base URLs, deployment names, data-zone flags, prices, and health URLs in these tables.
@@ -206,7 +206,9 @@ Seeded defaults:
 - Free/default users route to `local_ollama_default`, provider `local_ollama`, model `qwen3:1.7b`. Local developer runs default to `http://127.0.0.1:11434/v1`; self-managed Docker production seeds the private Docker gateway URL so API containers can reach the host-local Ollama service.
 - `case`, `basic`, `premium`, and `unlimited` plan routes prefer `azure_foundry_gpt_4o_mini`, provider `azure_foundry`, model/deployment `gpt-4o-mini`, EU data-zone capable. Operators must set the Azure provider endpoint and encrypted credential before paid traffic can use this route.
 
-The admin page lists users with paging, current providers, current profiles, route policies, user groups, local Ollama inventory, and admin audit events. `Smerovacie politiky` choose a model by task type, plan, optional user group, local/external preference, external acknowledgement, EU data-zone requirement, fallback behavior, and priority.
+The admin page lists users with paging, current providers, current profiles, route policies, user groups, local Ollama inventory, operational case reset tools, and admin audit events. `Smerovacie politiky` choose a model by task type, plan, optional user group, local/external preference, external acknowledgement, EU data-zone requirement, fallback behavior, and priority.
+
+Admin case reset is intentionally narrow: `GET /v1/admin/cases/users?email=...` searches users by email, `GET /v1/admin/cases/users/{user_id}/cases?include_deleted=true` returns only case id/title/status/timestamps, and `DELETE /v1/admin/cases/{case_id}` soft-deletes one selected case with a mandatory reason. This endpoint is for support/test reset operations such as freeing an expired Free-plan test account to create a fresh case. It does not hard-delete rows, expose prompts, expose uploaded/generated documents, or replace data-subject deletion and retention workflows. Public user case deletion remains subject to the normal case write-window gate.
 
 Authorized case users can inspect this trail through:
 

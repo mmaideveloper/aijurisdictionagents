@@ -421,6 +421,9 @@ describe("AssistantWorkspace", () => {
       created_at: "2026-06-20T00:00:00Z"
     });
     vi.mocked(streamSession).mockImplementation(async function* () {
+      if (Date.now() < 0) {
+        yield undefined as never;
+      }
       throw new ApiRequestError(
         "http",
         "Case is read-only because the Free plan allows edits for 1 day(s) after creation.",

@@ -1,12 +1,18 @@
 import React from "react";
-import { FaDownload, FaKey, FaPlus, FaRoute, FaServer, FaSyncAlt, FaTrash, FaUserPlus, FaUsers } from "react-icons/fa";
+import { FaBriefcase, FaDownload, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserPlus, FaUsers } from "react-icons/fa";
 import {
   AIModelAdminDashboard,
+  AdminCaseList,
+  AdminCaseSummary,
+  AdminCaseUser,
   AdminUsersPage,
   OllamaModelInventory,
   fetchAdminUsers,
+  fetchAdminUserCases,
   fetchAIModelAdminDashboard,
   fetchOllamaModels,
+  searchAdminCaseUsers,
+  softDeleteAdminCase,
   upsertAIModelProvider,
   upsertAIModelProfile,
   upsertAIModelGroup,
@@ -20,7 +26,7 @@ import {
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
-type AdminSection = "users" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollama" | "audit";
+type AdminSection = "users" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollama" | "audit";
 
 const emptyProvider = {
   provider_code: "",
@@ -98,6 +104,11 @@ const AIModelAdmin: React.FC = () => {
   const [policyForm, setPolicyForm] = React.useState(emptyPolicy);
   const [selectedGroupId, setSelectedGroupId] = React.useState("");
   const [selectedUserId, setSelectedUserId] = React.useState("");
+  const [caseUserQuery, setCaseUserQuery] = React.useState("");
+  const [caseUserResults, setCaseUserResults] = React.useState<AdminCaseUser[]>([]);
+  const [selectedCaseUser, setSelectedCaseUser] = React.useState<AdminCaseUser | null>(null);
+  const [adminCaseList, setAdminCaseList] = React.useState<AdminCaseList | null>(null);
+  const [caseDeleteReason, setCaseDeleteReason] = React.useState(t("adminCasesDefaultReason"));
   const [ollamaModel, setOllamaModel] = React.useState("");
   const [ollamaReason, setOllamaReason] = React.useState("");
   const [ollamaRemoveReason, setOllamaRemoveReason] = React.useState("");
@@ -159,6 +170,34 @@ const AIModelAdmin: React.FC = () => {
     }
   }, [adminAuth, adminUserId, t, usersLimit]);
 
+  const loadAdminCasesForUser = React.useCallback(async (targetUser: AdminCaseUser) => {
+    if (!adminUserId) return;
+    setError("");
+    try {
+      const nextCaseList = await fetchAdminUserCases(adminAuth, targetUser.user_id, true);
+      setSelectedCaseUser(nextCaseList.user);
+      setAdminCaseList(nextCaseList);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("adminCasesLoadFailed"));
+    }
+  }, [adminAuth, adminUserId, t]);
+
+  const searchCaseUsers = React.useCallback(async () => {
+    if (!adminUserId || !caseUserQuery.trim()) return;
+    setError("");
+    setStatus("");
+    try {
+      const results = await searchAdminCaseUsers(adminAuth, caseUserQuery, 25);
+      setCaseUserResults(results.items);
+      const onlyResult = results.items[0];
+      if (results.items.length === 1 && onlyResult) {
+        await loadAdminCasesForUser(onlyResult);
+      }
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("adminCasesSearchFailed"));
+    }
+  }, [adminAuth, adminUserId, caseUserQuery, loadAdminCasesForUser, t]);
+
   React.useEffect(() => {
     void reload();
   }, [reload]);
@@ -189,11 +228,39 @@ const AIModelAdmin: React.FC = () => {
     }
   };
 
+  const deleteAdminCase = async (caseItem: AdminCaseSummary) => {
+    if (!selectedCaseUser || !caseDeleteReason.trim()) {
+      setError(t("adminCasesReasonRequired"));
+      return;
+    }
+    const confirmed = window.confirm(
+      t("adminCasesDeleteConfirm", {
+        title: caseItem.title,
+        id: caseItem.case_id,
+        email: selectedCaseUser.email
+      })
+    );
+    if (!confirmed) {
+      return;
+    }
+    setError("");
+    setStatus("");
+    try {
+      await softDeleteAdminCase(adminAuth, caseItem.case_id, selectedCaseUser.user_id, caseDeleteReason.trim());
+      setStatus(t("adminCasesDeleteSuccess"));
+      await loadAdminCasesForUser(selectedCaseUser);
+      await reload();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : t("adminCasesDeleteFailed"));
+    }
+  };
+
   const localProfiles = dashboard?.profiles.filter((profile) => profile.model_profile_id.includes("local") || profile.provider_id.includes("local")) ?? [];
   const externalProfiles = dashboard?.profiles.filter((profile) => !localProfiles.includes(profile)) ?? [];
 
   const sections: Array<{ key: AdminSection; label: string; icon: React.ReactNode }> = [
     { key: "users", label: t("adminUsersTitle"), icon: <FaUsers aria-hidden="true" /> },
+    { key: "cases", label: t("adminCasesTitle"), icon: <FaBriefcase aria-hidden="true" /> },
     { key: "providers", label: t("adminProvidersTitle"), icon: <FaServer aria-hidden="true" /> },
     { key: "profiles", label: t("adminProfilesTitle"), icon: <FaServer aria-hidden="true" /> },
     { key: "credentials", label: t("adminCredentialsTitle"), icon: <FaKey aria-hidden="true" /> },
@@ -304,6 +371,88 @@ const AIModelAdmin: React.FC = () => {
                 <button className="secondary-button" type="button" disabled={usersOffset <= 0} onClick={() => void loadUsersPage(usersOffset - usersLimit)}>{t("adminPrevious")}</button>
                 <button className="secondary-button" type="button" disabled={usersOffset + usersLimit >= usersTotal} onClick={() => void loadUsersPage(usersOffset + usersLimit)}>{t("adminNext")}</button>
               </div>
+            </section>
+          ) : null}
+
+          {activeSection === "cases" ? (
+            <section className="admin-grid">
+              <form className="admin-panel" onSubmit={(event) => {
+                event.preventDefault();
+                void searchCaseUsers();
+              }}>
+                <h2>{t("adminCasesTitle")}</h2>
+                <p className="admin-muted">{t("adminCasesHelp")}</p>
+                <label>
+                  {t("adminCasesEmailSearch")}
+                  <input
+                    value={caseUserQuery}
+                    onChange={(event) => setCaseUserQuery(event.target.value)}
+                    placeholder="mmatonok@gmail.com"
+                    type="email"
+                  />
+                </label>
+                <button className="primary-button" type="submit" disabled={!caseUserQuery.trim()}>
+                  <FaSearch aria-hidden="true" />{t("adminCasesSearch")}
+                </button>
+                <AdminRecordsTable
+                  emptyLabel={t("adminCasesNoUsers")}
+                  headers={[t("adminUser"), t("adminStatus"), t("adminAction")]}
+                  rows={caseUserResults.map((item) => [
+                    `${item.full_name} (${item.email})`,
+                    item.is_enabled ? t("adminEnabled") : t("adminDisabled"),
+                    <button className="button ghost" type="button" onClick={() => void loadAdminCasesForUser(item)}>
+                      {t("adminCasesViewCases")}
+                    </button>
+                  ])}
+                />
+              </form>
+
+              <section className="admin-table-section">
+                <h2>{selectedCaseUser ? selectedCaseUser.email : t("adminCasesUserCases")}</h2>
+                <p className="admin-muted">{t("adminCasesPrivacyNote")}</p>
+                <label className="admin-field">
+                  {t("adminReason")}
+                  <input
+                    value={caseDeleteReason}
+                    onChange={(event) => setCaseDeleteReason(event.target.value)}
+                  />
+                </label>
+                <div className="admin-table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{t("adminCasesCase")}</th>
+                        <th>{t("adminStatus")}</th>
+                        <th>{t("adminCreated")}</th>
+                        <th>{t("adminCasesUpdated")}</th>
+                        <th>{t("adminAction")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(adminCaseList?.cases ?? []).map((caseItem) => (
+                        <tr key={caseItem.case_id}>
+                          <td>{caseItem.title}<br /><small>{caseItem.case_id}</small></td>
+                          <td>{caseItem.status}</td>
+                          <td>{caseItem.created_at}</td>
+                          <td>{caseItem.updated_at}</td>
+                          <td>
+                            <button
+                              className="button ghost"
+                              type="button"
+                              disabled={caseItem.status === "deleted" || !caseDeleteReason.trim()}
+                              onClick={() => void deleteAdminCase(caseItem)}
+                            >
+                              <FaTrash aria-hidden="true" />{t("adminCasesSoftDelete")}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {selectedCaseUser && !adminCaseList?.cases.length ? <p className="admin-muted">{t("adminCasesNoCases")}</p> : null}
+                  {!selectedCaseUser ? <p className="admin-muted">{t("adminCasesSelectUser")}</p> : null}
+                </div>
+              </section>
             </section>
           ) : null}
 

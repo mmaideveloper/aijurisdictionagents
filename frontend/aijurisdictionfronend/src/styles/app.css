@@ -387,8 +387,16 @@
   gap: 5px;
 }
 
+.admin-field {
+  color: var(--ink-muted);
+  display: grid;
+  font-size: 0.84rem;
+  gap: 5px;
+}
+
 .admin-panel input,
-.admin-panel select {
+.admin-panel select,
+.admin-field input {
   min-height: 40px;
 }
 

@@ -103,6 +103,41 @@ export interface AdminUsersPage {
   offset: number;
 }
 
+export interface AdminCaseUser {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  is_enabled: boolean;
+  created_at: string | null;
+}
+
+export interface AdminCaseUserSearchPage {
+  items: AdminCaseUser[];
+  total: number;
+  limit: number;
+}
+
+export interface AdminCaseSummary {
+  case_id: string;
+  user_id: string;
+  target_user_email: string;
+  title: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminCaseList {
+  user: AdminCaseUser;
+  cases: AdminCaseSummary[];
+}
+
+export interface AdminCaseDeleteResult {
+  case: AdminCaseSummary;
+  deleted: boolean;
+}
+
 export interface AIModelAdminAuditEvent {
   audit_event_id: string;
   admin_user_id: string;
@@ -355,6 +390,42 @@ export const updateAdminUser = (
   adminRequest<AdminUserSummary>(`/v1/admin/users/${encodeURIComponent(userId)}`, adminUserId, {
     method: "PATCH",
     body: JSON.stringify(input)
+  });
+
+export const searchAdminCaseUsers = (
+  adminUserId: AdminAuthInput,
+  email: string,
+  limit = 25
+): Promise<AdminCaseUserSearchPage> => {
+  const params = new URLSearchParams({
+    email: email.trim(),
+    limit: String(limit)
+  });
+  return adminRequest<AdminCaseUserSearchPage>(`/v1/admin/cases/users?${params.toString()}`, adminUserId, {
+    method: "GET"
+  });
+};
+
+export const fetchAdminUserCases = (
+  adminUserId: AdminAuthInput,
+  userId: string,
+  includeDeleted = true
+): Promise<AdminCaseList> =>
+  adminRequest<AdminCaseList>(
+    `/v1/admin/cases/users/${encodeURIComponent(userId)}/cases?include_deleted=${includeDeleted ? "true" : "false"}`,
+    adminUserId,
+    { method: "GET" }
+  );
+
+export const softDeleteAdminCase = (
+  adminUserId: AdminAuthInput,
+  caseId: string,
+  userId: string,
+  reason: string
+): Promise<AdminCaseDeleteResult> =>
+  adminRequest<AdminCaseDeleteResult>(`/v1/admin/cases/${encodeURIComponent(caseId)}`, adminUserId, {
+    method: "DELETE",
+    body: JSON.stringify({ user_id: userId, reason })
   });
 
 export const upsertAIModelGroup = (adminUserId: AdminAuthInput, input: GroupUpsertInput): Promise<AIModelGroup> =>
