@@ -1,20 +1,26 @@
 import React from "react";
-import { FaBriefcase, FaCheck, FaDownload, FaEdit, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserPlus, FaUsers } from "react-icons/fa";
+import { FaBriefcase, FaCheck, FaDownload, FaEdit, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserCog, FaUserPlus, FaUsers } from "react-icons/fa";
 import {
   AIModelAdminDashboard,
   AIModelProfile,
   AIModelRoutePolicy,
+  AIModelUserOverrideDetail,
   AdminCaseList,
   AdminCaseSummary,
   AdminCaseUser,
+  AdminUserSummary,
   AdminUsersPage,
   OllamaModelInventory,
+  disableAIModelUserOverride,
   fetchAdminUsers,
   fetchAdminUserCases,
   fetchAIModelAdminDashboard,
+  fetchAIModelUserOverride,
   fetchOllamaModels,
   searchAdminCaseUsers,
+  searchAIModelAssignmentUsers,
   softDeleteAdminCase,
+  upsertAIModelUserOverride,
   upsertAIModelProvider,
   upsertAIModelProfile,
   upsertAIModelGroup,
@@ -28,7 +34,7 @@ import {
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
-type AdminSection = "users" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollama" | "audit";
+type AdminSection = "users" | "assignments" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollama" | "audit";
 
 const emptyProvider = {
   provider_code: "",
@@ -113,6 +119,11 @@ const AIModelAdmin: React.FC = () => {
   const [selectedCaseUser, setSelectedCaseUser] = React.useState<AdminCaseUser | null>(null);
   const [adminCaseList, setAdminCaseList] = React.useState<AdminCaseList | null>(null);
   const [caseDeleteReason, setCaseDeleteReason] = React.useState(t("adminCasesDefaultReason"));
+  const [assignmentQuery, setAssignmentQuery] = React.useState("");
+  const [assignmentUsers, setAssignmentUsers] = React.useState<AdminUserSummary[]>([]);
+  const [assignmentDetail, setAssignmentDetail] = React.useState<AIModelUserOverrideDetail | null>(null);
+  const [assignmentModelProfileId, setAssignmentModelProfileId] = React.useState("");
+  const [assignmentReason, setAssignmentReason] = React.useState("");
   const [ollamaModel, setOllamaModel] = React.useState("");
   const [ollamaReason, setOllamaReason] = React.useState("");
   const [ollamaRemoveReason, setOllamaRemoveReason] = React.useState("");
@@ -202,6 +213,35 @@ const AIModelAdmin: React.FC = () => {
     }
   }, [adminAuth, adminUserId, caseUserQuery, loadAdminCasesForUser, t]);
 
+  const loadAssignmentForUser = React.useCallback(async (targetUser: AdminUserSummary) => {
+    if (!adminUserId) return;
+    setError("");
+    try {
+      const detail = await fetchAIModelUserOverride(adminAuth, targetUser.user_id);
+      setAssignmentDetail(detail);
+      setAssignmentModelProfileId(detail.override?.model_profile_id ?? "");
+      setAssignmentReason("");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("adminAssignmentLoadFailed"));
+    }
+  }, [adminAuth, adminUserId, t]);
+
+  const searchAssignmentUsers = React.useCallback(async () => {
+    if (!adminUserId || !assignmentQuery.trim()) return;
+    setError("");
+    setStatus("");
+    try {
+      const results = await searchAIModelAssignmentUsers(adminAuth, assignmentQuery, 25);
+      setAssignmentUsers(results.items);
+      const onlyResult = results.items[0];
+      if (results.items.length === 1 && onlyResult) {
+        await loadAssignmentForUser(onlyResult);
+      }
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("adminAssignmentSearchFailed"));
+    }
+  }, [adminAuth, adminUserId, assignmentQuery, loadAssignmentForUser, t]);
+
   React.useEffect(() => {
     void reload();
   }, [reload]);
@@ -261,6 +301,7 @@ const AIModelAdmin: React.FC = () => {
 
   const localProfiles = dashboard?.profiles.filter((profile) => profile.model_profile_id.includes("local") || profile.provider_id.includes("local")) ?? [];
   const externalProfiles = dashboard?.profiles.filter((profile) => !localProfiles.includes(profile)) ?? [];
+  const enabledProfiles = dashboard?.profiles.filter((profile) => profile.enabled) ?? [];
   const profileToForm = (profile: AIModelProfile, overrides: Partial<typeof emptyProfile> = {}) => ({
     model_profile_id: profile.model_profile_id,
     provider_id: profile.provider_id,
@@ -321,6 +362,7 @@ const AIModelAdmin: React.FC = () => {
 
   const sections: Array<{ key: AdminSection; label: string; icon: React.ReactNode }> = [
     { key: "users", label: t("adminUsersTitle"), icon: <FaUsers aria-hidden="true" /> },
+    { key: "assignments", label: t("adminAssignmentTitle"), icon: <FaUserCog aria-hidden="true" /> },
     { key: "cases", label: t("adminCasesTitle"), icon: <FaBriefcase aria-hidden="true" /> },
     { key: "providers", label: t("adminProvidersTitle"), icon: <FaServer aria-hidden="true" /> },
     { key: "profiles", label: t("adminProfilesTitle"), icon: <FaServer aria-hidden="true" /> },
@@ -432,6 +474,117 @@ const AIModelAdmin: React.FC = () => {
                 <button className="secondary-button" type="button" disabled={usersOffset <= 0} onClick={() => void loadUsersPage(usersOffset - usersLimit)}>{t("adminPrevious")}</button>
                 <button className="secondary-button" type="button" disabled={usersOffset + usersLimit >= usersTotal} onClick={() => void loadUsersPage(usersOffset + usersLimit)}>{t("adminNext")}</button>
               </div>
+            </section>
+          ) : null}
+
+          {activeSection === "assignments" ? (
+            <section className="admin-grid">
+              <form className="admin-panel" onSubmit={(event) => {
+                event.preventDefault();
+                void searchAssignmentUsers();
+              }}>
+                <h2>{t("adminAssignmentTitle")}</h2>
+                <p className="admin-muted">{t("adminAssignmentHelp")}</p>
+                <label>
+                  {t("adminAssignmentEmailSearch")}
+                  <input
+                    value={assignmentQuery}
+                    onChange={(event) => setAssignmentQuery(event.target.value)}
+                    placeholder="user@example.com"
+                    type="email"
+                  />
+                </label>
+                <button className="primary-button" type="submit" disabled={!assignmentQuery.trim()}>
+                  <FaSearch aria-hidden="true" />{t("adminAssignmentSearch")}
+                </button>
+                <AdminRecordsTable
+                  emptyLabel={t("adminAssignmentNoUsers")}
+                  headers={[t("adminUser"), t("adminStatus"), t("adminAction")]}
+                  rows={assignmentUsers.map((item) => [
+                    `${item.full_name} (${item.email})`,
+                    item.is_enabled ? t("adminEnabled") : t("adminDisabled"),
+                    <button className="button ghost" type="button" onClick={() => void loadAssignmentForUser(item)}>
+                      {t("adminAssignmentSelectUser")}
+                    </button>
+                  ])}
+                />
+              </form>
+
+              <form className="admin-panel" onSubmit={(event) => {
+                event.preventDefault();
+                if (!assignmentDetail) return;
+                void runAction(
+                  async () => {
+                    const detail = await upsertAIModelUserOverride(adminAuth, assignmentDetail.user.user_id, {
+                      model_profile_id: assignmentModelProfileId,
+                      reason: assignmentReason
+                    });
+                    setAssignmentDetail(detail);
+                    setAssignmentModelProfileId(detail.override?.model_profile_id ?? "");
+                    setAssignmentReason("");
+                  },
+                  t("adminAssignmentSaved")
+                );
+              }}>
+                <h2>{assignmentDetail ? assignmentDetail.user.email : t("adminAssignmentSelectedUser")}</h2>
+                <p className="admin-muted">{t("adminAssignmentPrivacyNote")}</p>
+                <div className="admin-highlight">
+                  <strong>{t("adminAssignmentCurrentModel")}</strong>
+                  <span>{assignmentDetail?.override?.enabled ? assignmentDetail.override.model_profile_id : t("adminNotConfigured")}</span>
+                </div>
+                <div className="admin-highlight">
+                  <strong>{t("adminAssignmentEffectiveRoute")}</strong>
+                  <span>
+                    {assignmentDetail
+                      ? `${assignmentDetail.effective_route.route_type}: ${assignmentDetail.effective_route.provider_display_name ?? t("adminNotConfigured")} / ${assignmentDetail.effective_route.model_code ?? t("adminNotConfigured")}`
+                      : t("adminAssignmentSelectUserFirst")}
+                  </span>
+                </div>
+                <label>
+                  {t("adminAssignmentModel")}
+                  <select
+                    value={assignmentModelProfileId}
+                    onChange={(event) => setAssignmentModelProfileId(event.target.value)}
+                    disabled={!assignmentDetail}
+                  >
+                    <option value="">{t("adminSelect")}</option>
+                    {enabledProfiles.map((profile) => (
+                      <option key={profile.model_profile_id} value={profile.model_profile_id}>
+                        {providerById.get(profile.provider_id)?.display_name ?? profile.provider_id} / {profile.model_code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  {t("adminReason")}
+                  <input
+                    value={assignmentReason}
+                    onChange={(event) => setAssignmentReason(event.target.value)}
+                  />
+                </label>
+                <div className="admin-actions">
+                  <button className="primary-button" type="submit" disabled={!assignmentDetail || !assignmentModelProfileId || !assignmentReason.trim()}>
+                    <FaPlus aria-hidden="true" />{assignmentDetail?.override?.enabled ? t("adminAssignmentUpdate") : t("adminAssignmentSave")}
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={!assignmentDetail?.override?.enabled || !assignmentReason.trim()}
+                    onClick={() => void runAction(
+                      async () => {
+                        if (!assignmentDetail) return;
+                        const detail = await disableAIModelUserOverride(adminAuth, assignmentDetail.user.user_id, assignmentReason);
+                        setAssignmentDetail(detail);
+                        setAssignmentModelProfileId("");
+                        setAssignmentReason("");
+                      },
+                      t("adminAssignmentDeleted")
+                    )}
+                  >
+                    <FaTrash aria-hidden="true" />{t("adminAssignmentDelete")}
+                  </button>
+                </div>
+              </form>
             </section>
           ) : null}
 

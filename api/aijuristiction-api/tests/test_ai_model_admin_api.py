@@ -415,6 +415,87 @@ def test_external_policy_requires_external_model(tmp_path: Path, monkeypatch) ->
     assert "preferred_external_model_profile_id" in response.json()["detail"]
 
 
+def test_admin_can_search_assign_update_and_disable_user_model_override(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    target = store.create_user(email="target@example.com", password="secret", full_name="Target User")
+    provider = store.upsert_ai_model_provider(
+        provider_code="azure_foundry_override",
+        provider_type="azurefoundry",
+        display_name="Azure AI Foundry Override",
+        base_url="https://example.openai.azure.com",
+        region="swedencentral",
+        data_zone="eu",
+        is_external=True,
+    )
+    profile = store.upsert_ai_model_profile(
+        provider_id=provider.provider_id,
+        model_code="gpt-4o-paid",
+        deployment_name="jurisdigta-gpt-4o-paid",
+        eu_data_zone_capable=True,
+    )
+    second_profile = store.upsert_ai_model_profile(
+        provider_id=provider.provider_id,
+        model_code="gpt-4.1-paid",
+        deployment_name="jurisdigta-gpt-4-1-paid",
+        eu_data_zone_capable=True,
+    )
+    app.dependency_overrides[get_admin_store] = lambda: store
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id}
+    try:
+        search_response = client.get("/v1/admin/ai-models/users?email=target@example.com", headers=headers)
+        create_response = client.put(
+            f"/v1/admin/ai-models/users/{target.user_id}/model-override",
+            headers=headers,
+            json={
+                "model_profile_id": profile.model_profile_id,
+                "reason": "Assign paid external profile for testing.",
+            },
+        )
+        update_response = client.put(
+            f"/v1/admin/ai-models/users/{target.user_id}/model-override",
+            headers=headers,
+            json={
+                "model_profile_id": second_profile.model_profile_id,
+                "reason": "Switch to newer paid external profile.",
+            },
+        )
+        delete_response = client.request(
+            "DELETE",
+            f"/v1/admin/ai-models/users/{target.user_id}/model-override",
+            headers=headers,
+            json={"reason": "Return to normal routing."},
+        )
+        non_admin = store.create_user(email="user@example.com", password="secret", full_name="Normal User")
+        denied_response = client.get(
+            "/v1/admin/ai-models/users?email=target@example.com",
+            headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": non_admin.user_id},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert search_response.status_code == 200
+    assert search_response.json()["items"][0]["user_id"] == target.user_id
+    assert create_response.status_code == 200
+    assert create_response.json()["override"]["model_profile_id"] == profile.model_profile_id
+    assert create_response.json()["effective_route"]["route_type"] == "user_override_external"
+    assert update_response.status_code == 200
+    assert update_response.json()["override"]["model_profile_id"] == second_profile.model_profile_id
+    assert delete_response.status_code == 200
+    assert delete_response.json()["override"]["enabled"] is False
+    assert delete_response.json()["effective_route"]["route_type"] == "free_local"
+    assert denied_response.status_code == 403
+    audit_actions = [item.action for item in store.list_ai_model_admin_audit_events(limit=10)]
+    assert "user_override.create" in audit_actions
+    assert "user_override.update" in audit_actions
+    assert "user_override.disable" in audit_actions
+
+
 def test_admin_can_list_ollama_inventory_with_removal_guards(tmp_path: Path, monkeypatch) -> None:
     store = _store(tmp_path)
     admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
