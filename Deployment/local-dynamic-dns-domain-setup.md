@@ -279,6 +279,15 @@ If a hostname returns a Cloudflare tunnel error, check:
 4. The public hostname's local service URL and port.
 5. The setup.sk `CNAME` value and DNS propagation.
 
+If HTTPS fails before an HTTP status is returned, inspect the certificate issuer
+shown to the client. Antivirus or enterprise proxy TLS inspection can re-sign
+the Cloudflare certificate with a local issuer such as `Avast Web/Mail Shield
+Root`; strict clients may then fail with OpenSSL, Node.js, or Schannel
+certificate errors even though the tunnel route is healthy. Exclude JurisDigta
+hostnames from HTTPS scanning or configure the client runtime to use the
+operating-system trust store where appropriate. Do not treat `--ssl-no-revoke`,
+`-k`, or disabled certificate verification as a production MCP/Claude fix.
+
 ### 9. Add Cloudflare Access before exposing admin
 
 Before using `admin.jurisdigta.eu` for anything real:

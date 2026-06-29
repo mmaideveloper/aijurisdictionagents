@@ -216,6 +216,7 @@ Purpose: point `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, 
 7. Configure local nginx or service listeners for `web`, `api`, `mcp`, and `admin`.
 8. Validate HTTPS externally from outside the LAN after DNS propagation.
 9. Protect `agent.jurisdigta.eu` with JurisDigta account login against the API users table for the current release, and protect `admin.jurisdigta.eu` plus MCP endpoints with Cloudflare Access, authentication, rate limits, audit logging, and preferably VPN/IP allow-list before production use.
+10. If external HTTPS validation fails before an HTTP response, inspect the served certificate issuer. A local antivirus or enterprise proxy issuer such as `Avast Web/Mail Shield Root` means the failure is on the client TLS-inspection path, not on the Cloudflare Tunnel app route. Disable or exclude HTTPS scanning for JurisDigta MCP/API validation clients, or configure the client runtime to use the operating-system trust store where appropriate.
 
 ### Secrets And Access Values
 
@@ -231,6 +232,7 @@ Purpose: point `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, 
 - Router forwards for public TCP `80` and `443` remain disabled unless a separate documented exception exists.
 - `cloudflared --version`, `systemctl status cloudflared --no-pager`, and `journalctl -u cloudflared -n 100 --no-pager` succeed on the server.
 - External checks such as `curl -fsS https://api.jurisdigta.eu/health` succeed from outside the LAN.
+- Strict client checks such as `curl.exe -Iv https://mcp.jurisdigta.eu/health` and `python scripts/prod_mcp_claude_smoke.py --retries 1 --retry-delay 1` succeed without `--ssl-no-revoke`, `-k`, or disabled verification. If they fail and the peer issuer is an antivirus/proxy root rather than Cloudflare or a public CA, fix the local TLS-inspection configuration before testing Claude again.
 
 ### Rollback Notes
 

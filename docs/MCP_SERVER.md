@@ -165,6 +165,26 @@ system certificate store. If Claude logs `Claude Code requires a Pro or Max
 subscription`, the MCP server may be configured correctly but the active Claude
 account lacks the required Claude Desktop/Code entitlement.
 
+If Claude, `mcp-remote`, `curl`, or `scripts/prod_mcp_claude_smoke.py` reports
+a TLS/certificate failure before OAuth discovery is reached, inspect the
+certificate issuer first. Some antivirus and corporate proxy products re-sign
+HTTPS traffic with a local root certificate, for example `Avast Web/Mail Shield
+Root`. That client-side TLS interception can cause strict OpenSSL clients to
+fail with errors such as `certificate verify failed`,
+`UNABLE_TO_VERIFY_LEAF_SIGNATURE`, or Windows Schannel revocation errors even
+when the public Cloudflare tunnel and MCP app are healthy.
+
+For production connector validation, do not use `--ssl-no-revoke`, `-k`, or
+disabled certificate verification as the fix. Exclude `mcp.jurisdigta.eu` from
+HTTPS scanning, disable TLS interception for Claude/MCP traffic, or configure
+the client runtime to trust the operating-system store when that is acceptable
+for the local workstation. Then re-run:
+
+```powershell
+python scripts/prod_mcp_claude_smoke.py --retries 1 --retry-delay 1
+curl.exe -Iv https://mcp.jurisdigta.eu/health
+```
+
 Discovery endpoints:
 
 - `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`
