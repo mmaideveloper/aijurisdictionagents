@@ -120,6 +120,11 @@ print(
     "groups, route policies, and audit events through server-authorized admin APIs."
 )
 print(
+    "admin_case_reset => /app/admin can search users by email, list only case metadata, "
+    "and soft-delete one selected case through /v1/admin/cases with mandatory reason "
+    "and admin audit logging; public user delete stays write-window gated."
+)
+print(
     "ai_model_grafana_monitoring => JurisDigta Application Performance shows aggregate "
     "AI model status, request, token, and EUR cost panels without prompts, documents, "
     "emails, phone numbers, or legal-case facts in labels."

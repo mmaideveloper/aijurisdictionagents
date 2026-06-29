@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.ai_model_admin_api import get_admin_store, get_ollama_admin_service
+from app.cases_api import get_store as get_cases_store
 import app.ai_model_admin_api as ai_model_admin_api
 from app.main import app
 from app.ollama_admin_service import OllamaInstalledModel
@@ -165,6 +167,127 @@ def test_admin_can_update_user_role_and_enabled_status(tmp_path: Path, monkeypat
     assert response.json()["role"] == "admin"
     assert response.json()["is_enabled"] is False
     assert sign_in_response.status_code == 401
+
+
+def test_admin_can_search_list_and_soft_delete_expired_user_case(tmp_path: Path, monkeypatch) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    target = store.create_user(email="mmatonok@gmail.com", password="secret", full_name="Test User")
+    case = store.create_case(user_id=target.user_id, company_id=None, title="Expired free test case")
+    expired_at = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat().replace("+00:00", "Z")
+    with store._connect() as conn:
+        store._execute(
+            conn,
+            "UPDATE cases SET created_at = ?, updated_at = ? WHERE case_id = ?",
+            (expired_at, expired_at, case.case_id),
+        )
+        conn.commit()
+    app.dependency_overrides[get_admin_store] = lambda: store
+    app.dependency_overrides[get_cases_store] = lambda: store
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id}
+    try:
+        search_response = client.get("/v1/admin/cases/users?email=mmatonok", headers=headers)
+        list_response = client.get(
+            f"/v1/admin/cases/users/{target.user_id}/cases?include_deleted=true",
+            headers=headers,
+        )
+        public_delete_response = client.delete(
+            f"/v1/cases/{case.case_id}?user_id={target.user_id}",
+            headers=AUTH_HEADERS,
+        )
+        delete_response = client.request(
+            "DELETE",
+            f"/v1/admin/cases/{case.case_id}",
+            headers=headers,
+            json={"user_id": target.user_id, "reason": "Production Free-plan test reset."},
+        )
+        refreshed_response = client.get(
+            f"/v1/admin/cases/users/{target.user_id}/cases?include_deleted=true",
+            headers=headers,
+        )
+        active_count = store.count_active_cases(user_id=target.user_id)
+        audit_events = store.list_ai_model_admin_audit_events(limit=5)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert search_response.status_code == 200
+    assert search_response.json()["items"] == [
+        {
+            "user_id": target.user_id,
+            "email": "mmatonok@gmail.com",
+            "full_name": "Test User",
+            "role": "user",
+            "is_enabled": True,
+            "created_at": target.created_at,
+        }
+    ]
+    assert list_response.status_code == 200
+    listed_case = list_response.json()["cases"][0]
+    assert listed_case["case_id"] == case.case_id
+    assert listed_case["target_user_email"] == "mmatonok@gmail.com"
+    assert "documents" not in listed_case
+    assert public_delete_response.status_code == 403
+    assert public_delete_response.json()["detail"]["code"] == "case_write_window_expired"
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True
+    assert delete_response.json()["case"]["status"] == "deleted"
+    assert refreshed_response.json()["cases"][0]["status"] == "deleted"
+    assert active_count == 0
+    assert audit_events[0].action == "case.soft_delete"
+    assert audit_events[0].entity_type == "case"
+    assert audit_events[0].entity_id == case.case_id
+    assert audit_events[0].reason == "Production Free-plan test reset."
+    assert "mmatonok@gmail.com" in audit_events[0].old_value_summary
+    assert "deleted" in audit_events[0].new_value_summary
+
+
+def test_admin_case_management_rejects_non_admin(tmp_path: Path, monkeypatch) -> None:
+    store = _store(tmp_path)
+    user = store.create_user(email="user@example.com", password="secret", full_name="Normal User")
+    app.dependency_overrides[get_admin_store] = lambda: store
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    try:
+        response = TestClient(app).get(
+            "/v1/admin/cases/users?email=user@example.com",
+            headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": user.user_id},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+
+def test_admin_case_soft_delete_rejects_user_mismatch_and_missing_reason(tmp_path: Path, monkeypatch) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    first = store.create_user(email="first@example.com", password="secret", full_name="First User")
+    second = store.create_user(email="second@example.com", password="secret", full_name="Second User")
+    case = store.create_case(user_id=first.user_id, company_id=None, title="First case")
+    app.dependency_overrides[get_admin_store] = lambda: store
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id}
+    try:
+        missing_reason_response = client.request(
+            "DELETE",
+            f"/v1/admin/cases/{case.case_id}",
+            headers=headers,
+            json={"user_id": first.user_id, "reason": ""},
+        )
+        mismatch_response = client.request(
+            "DELETE",
+            f"/v1/admin/cases/{case.case_id}",
+            headers=headers,
+            json={"user_id": second.user_id, "reason": "Test reset."},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert missing_reason_response.status_code == 422
+    assert mismatch_response.status_code == 404
+    assert store.get_case(case_id=case.case_id).status == "open"
 
 
 def test_admin_can_manage_models_groups_and_audit_events(tmp_path: Path, monkeypatch) -> None:

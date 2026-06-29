@@ -86,6 +86,16 @@ class AdminUser:
 
 
 @dataclass(frozen=True)
+class AdminCaseUser:
+    user_id: str
+    email: str
+    full_name: str
+    role: str
+    is_enabled: bool
+    created_at: str | None
+
+
+@dataclass(frozen=True)
 class UserMfaSettings:
     user_id: str
     totp_enabled: bool
@@ -1358,6 +1368,27 @@ class ApiDatabaseStore:
                 params,
             )
         return int(row[0]) if row is not None else 0
+
+    def search_case_users_for_admin(self, *, email: str, limit: int = 25) -> list[AdminCaseUser]:
+        bounded_limit = min(max(limit, 1), 100)
+        normalized_email = email.strip().lower()
+        if not normalized_email:
+            return []
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT user_id, email, full_name, role, is_enabled, created_at
+                FROM users
+                WHERE lower(email) LIKE ?
+                ORDER BY
+                    CASE WHEN lower(email) = ? THEN 0 ELSE 1 END,
+                    email
+                LIMIT ?
+                """,
+                (f"%{normalized_email}%", normalized_email, bounded_limit),
+            ).fetchall()
+        return [_row_to_admin_case_user(row) for row in rows]
 
     def update_admin_user(
         self,
@@ -3071,6 +3102,15 @@ class ApiDatabaseStore:
             )
             if result.rowcount == 0:
                 raise KeyError(f"Case {case_id} not found")
+
+    def soft_delete_case_for_admin(self, *, case_id: str, user_id: str) -> Case:
+        before = self.get_case(case_id=case_id)
+        if before.user_id != user_id:
+            raise KeyError(f"Case {case_id} not found for user {user_id}")
+        if before.status == "deleted":
+            return before
+        self.soft_delete_case(case_id=case_id, user_id=user_id)
+        return self.get_case(case_id=case_id)
 
     def list_case_documents(self, *, case_id: str) -> list[CaseDocument]:
         with self._connect() as conn:
@@ -4944,6 +4984,17 @@ def _row_to_admin_user(row: tuple[object, ...]) -> AdminUser:
         role=_normalize_user_role(str(row[4])),
         is_enabled=_row_bool(row[5]),
         created_at=str(row[6]) if row[6] is not None else None,
+    )
+
+
+def _row_to_admin_case_user(row: tuple[object, ...]) -> AdminCaseUser:
+    return AdminCaseUser(
+        user_id=str(row[0]),
+        email=str(row[1]),
+        full_name=str(row[2]),
+        role=_normalize_user_role(str(row[3])),
+        is_enabled=_row_bool(row[4]),
+        created_at=str(row[5]) if row[5] is not None else None,
     )
 
 
