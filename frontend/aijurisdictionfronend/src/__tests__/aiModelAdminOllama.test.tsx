@@ -9,6 +9,10 @@ import AIModelAdmin from "../pages/AIModelAdmin";
 const apiMocks = vi.hoisted(() => ({
   fetchAIModelAdminDashboard: vi.fn(),
   fetchAdminUsers: vi.fn(),
+  searchAIModelAssignmentUsers: vi.fn(),
+  fetchAIModelUserOverride: vi.fn(),
+  upsertAIModelUserOverride: vi.fn(),
+  disableAIModelUserOverride: vi.fn(),
   fetchOllamaModels: vi.fn(),
   importOllamaModel: vi.fn(),
   removeOllamaModel: vi.fn(),
@@ -207,6 +211,59 @@ describe("AIModelAdmin Ollama management", () => {
   beforeEach(() => {
     apiMocks.fetchAIModelAdminDashboard.mockResolvedValue(dashboard);
     apiMocks.fetchAdminUsers.mockResolvedValue({ items: dashboard.users, total: 1, limit: 25, offset: 0 });
+    apiMocks.searchAIModelAssignmentUsers.mockResolvedValue({ items: dashboard.users, total: 1, limit: 25 });
+    apiMocks.fetchAIModelUserOverride.mockResolvedValue({
+      user: dashboard.users[0],
+      override: null,
+      effective_route: {
+        route_type: "free_local",
+        task_type: "default",
+        plan_code: "free",
+        provider_id: "local_ollama",
+        provider_code: "local_ollama",
+        provider_display_name: "Local Ollama",
+        model_profile_id: "local_ollama_default",
+        model_code: "qwen3:1.7b",
+        deployment_name: "qwen3:1.7b",
+        is_external: false,
+        is_local: true,
+        requires_external_ack: false,
+        reason: "Default route"
+      }
+    });
+    apiMocks.upsertAIModelUserOverride.mockResolvedValue({
+      user: dashboard.users[0],
+      override: {
+        override_id: "override-1",
+        user_id: "admin-1",
+        model_profile_id: "azure_foundry_gpt_4o_mini",
+        enabled: true,
+        created_by_admin_user_id: "admin-1",
+        updated_by_admin_user_id: "admin-1",
+        disabled_by_admin_user_id: "",
+        created_reason: "Assign external model",
+        updated_reason: "Assign external model",
+        disabled_reason: "",
+        created_at: "2026-06-29T10:00:00Z",
+        updated_at: "2026-06-29T10:00:00Z",
+        disabled_at: null
+      },
+      effective_route: {
+        route_type: "user_override_external",
+        task_type: "default",
+        plan_code: "free",
+        provider_id: "azure_foundry",
+        provider_code: "azure_foundry",
+        provider_display_name: "Azure AI Foundry",
+        model_profile_id: "azure_foundry_gpt_4o_mini",
+        model_code: "gpt-4o-mini",
+        deployment_name: "gpt-4o-mini",
+        is_external: true,
+        is_local: false,
+        requires_external_ack: false,
+        reason: "Admin override"
+      }
+    });
     apiMocks.fetchOllamaModels.mockResolvedValue(inventory);
     apiMocks.importOllamaModel.mockResolvedValue({ job_id: "job-1", action: "pull", model: "gemma3:4b", status: "queued" });
     apiMocks.removeOllamaModel.mockResolvedValue({ job_id: "job-2", action: "remove", model: "llama3.2:3b", status: "queued" });
@@ -382,6 +439,30 @@ describe("AIModelAdmin Ollama management", () => {
           enabled: false,
           reason: "Disable imported local model"
         })
+      );
+    });
+  });
+
+  it("searches a user and saves a direct model assignment", async () => {
+    const user = userEvent.setup();
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminAssignmentTitle/ }));
+    await user.type(screen.getByLabelText("adminAssignmentEmailSearch"), "admin@example.com");
+    await user.click(screen.getByRole("button", { name: /adminAssignmentSearch/ }));
+    await screen.findByText("Admin User (admin@example.com)");
+    await user.selectOptions(screen.getByLabelText("adminAssignmentModel"), "azure_foundry_gpt_4o_mini");
+    await user.type(screen.getByLabelText("adminReason"), "Assign external model");
+    await user.click(screen.getByRole("button", { name: /adminAssignmentSave/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.upsertAIModelUserOverride).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
+        "admin-1",
+        {
+          model_profile_id: "azure_foundry_gpt_4o_mini",
+          reason: "Assign external model"
+        }
       );
     });
   });

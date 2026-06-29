@@ -96,6 +96,50 @@ export interface AdminUserSummary {
   created_at: string | null;
 }
 
+export interface AIModelUserOverride {
+  override_id: string;
+  user_id: string;
+  model_profile_id: string;
+  enabled: boolean;
+  created_by_admin_user_id: string;
+  updated_by_admin_user_id: string;
+  disabled_by_admin_user_id: string;
+  created_reason: string;
+  updated_reason: string;
+  disabled_reason: string;
+  created_at: string;
+  updated_at: string;
+  disabled_at: string | null;
+}
+
+export interface AIModelEffectiveRoute {
+  route_type: string;
+  task_type: string;
+  plan_code: string;
+  provider_id: string | null;
+  provider_code: string | null;
+  provider_display_name: string | null;
+  model_profile_id: string | null;
+  model_code: string | null;
+  deployment_name: string | null;
+  is_external: boolean;
+  is_local: boolean;
+  requires_external_ack: boolean;
+  reason: string;
+}
+
+export interface AIModelUserOverrideDetail {
+  user: AdminUserSummary;
+  override: AIModelUserOverride | null;
+  effective_route: AIModelEffectiveRoute;
+}
+
+export interface AdminUserSearchPage {
+  items: AdminUserSummary[];
+  total: number;
+  limit: number;
+}
+
 export interface AdminUsersPage {
   items: AdminUserSummary[];
   total: number;
@@ -272,6 +316,11 @@ export interface PolicyUpsertInput {
   reason: string;
 }
 
+export interface UserOverrideInput {
+  model_profile_id: string;
+  reason: string;
+}
+
 export interface AdminAuthContext {
   userId: string;
   deviceId?: string;
@@ -351,6 +400,58 @@ export const fetchAIModelCredentials = (
   adminRequest<AIModelCredential[]>(`/v1/admin/ai-models/credentials?reveal=${reveal ? "true" : "false"}`, adminAuth, {
     method: "GET"
   });
+
+export const searchAIModelAssignmentUsers = (
+  adminAuth: AdminAuthInput,
+  email: string,
+  limit = 25
+): Promise<AdminUserSearchPage> => {
+  const params = new URLSearchParams({
+    email: email.trim(),
+    limit: String(limit)
+  });
+  return adminRequest<AdminUserSearchPage>(`/v1/admin/ai-models/users?${params.toString()}`, adminAuth, {
+    method: "GET"
+  });
+};
+
+export const fetchAIModelUserOverride = (
+  adminAuth: AdminAuthInput,
+  userId: string
+): Promise<AIModelUserOverrideDetail> =>
+  adminRequest<AIModelUserOverrideDetail>(
+    `/v1/admin/ai-models/users/${encodeURIComponent(userId)}/model-override`,
+    adminAuth,
+    { method: "GET" }
+  );
+
+export const upsertAIModelUserOverride = (
+  adminAuth: AdminAuthInput,
+  userId: string,
+  input: UserOverrideInput
+): Promise<AIModelUserOverrideDetail> =>
+  adminRequest<AIModelUserOverrideDetail>(
+    `/v1/admin/ai-models/users/${encodeURIComponent(userId)}/model-override`,
+    adminAuth,
+    {
+      method: "PUT",
+      body: JSON.stringify(input)
+    }
+  );
+
+export const disableAIModelUserOverride = (
+  adminAuth: AdminAuthInput,
+  userId: string,
+  reason: string
+): Promise<AIModelUserOverrideDetail> =>
+  adminRequest<AIModelUserOverrideDetail>(
+    `/v1/admin/ai-models/users/${encodeURIComponent(userId)}/model-override`,
+    adminAuth,
+    {
+      method: "DELETE",
+      body: JSON.stringify({ reason })
+    }
+  );
 
 export const upsertAIModelProvider = (
   adminUserId: AdminAuthInput,

@@ -293,6 +293,23 @@ class AIModelGroupMembership:
 
 
 @dataclass(frozen=True)
+class AIModelUserOverride:
+    override_id: str
+    user_id: str
+    model_profile_id: str
+    enabled: bool
+    created_by_admin_user_id: str
+    updated_by_admin_user_id: str
+    disabled_by_admin_user_id: str
+    created_reason: str
+    updated_reason: str
+    disabled_reason: str
+    created_at: str
+    updated_at: str
+    disabled_at: str | None
+
+
+@dataclass(frozen=True)
 class AIModelAdminAuditEvent:
     audit_event_id: str
     admin_user_id: str
@@ -1321,6 +1338,168 @@ class ApiDatabaseStore:
             ).fetchall()
         return [_row_to_ai_model_group_membership(row) for row in rows]
 
+    def get_ai_model_user_override(self, *, user_id: str) -> AIModelUserOverride | None:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT override_id, user_id, model_profile_id, enabled,
+                       created_by_admin_user_id, updated_by_admin_user_id,
+                       disabled_by_admin_user_id, created_reason, updated_reason,
+                       disabled_reason, created_at, updated_at, disabled_at
+                FROM ai_model_user_overrides
+                WHERE user_id = ?
+                """,
+                (user_id.strip(),),
+            )
+        return _row_to_ai_model_user_override(row) if row is not None else None
+
+    def upsert_ai_model_user_override(
+        self,
+        *,
+        user_id: str,
+        model_profile_id: str,
+        admin_user_id: str,
+        reason: str,
+    ) -> AIModelUserOverride:
+        normalized_user_id = user_id.strip()
+        normalized_model_profile_id = model_profile_id.strip()
+        normalized_admin_user_id = admin_user_id.strip()
+        normalized_reason = reason.strip()
+        if not normalized_user_id:
+            raise ValueError("user_id is required")
+        if not normalized_model_profile_id:
+            raise ValueError("model_profile_id is required")
+        if not normalized_reason:
+            raise ValueError("reason is required")
+        now = _now_iso()
+        with self._connect() as conn:
+            target = self._get_ai_model_route_target(conn, normalized_model_profile_id)
+            if target is None:
+                raise ValueError("model_profile_id must reference an enabled model profile")
+            existing = self._fetchone(
+                conn,
+                "SELECT override_id FROM ai_model_user_overrides WHERE user_id = ?",
+                (normalized_user_id,),
+            )
+            if existing is None:
+                override_id = str(uuid.uuid4())
+                self._execute(
+                    conn,
+                    """
+                    INSERT INTO ai_model_user_overrides(
+                        override_id, user_id, model_profile_id, enabled,
+                        created_by_admin_user_id, updated_by_admin_user_id,
+                        created_reason, updated_reason, created_at, updated_at
+                    ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        override_id,
+                        normalized_user_id,
+                        normalized_model_profile_id,
+                        normalized_admin_user_id,
+                        normalized_admin_user_id,
+                        normalized_reason,
+                        normalized_reason,
+                        now,
+                        now,
+                    ),
+                )
+            else:
+                override_id = str(existing[0])
+                self._execute(
+                    conn,
+                    """
+                    UPDATE ai_model_user_overrides
+                    SET model_profile_id = ?,
+                        enabled = 1,
+                        updated_by_admin_user_id = ?,
+                        disabled_by_admin_user_id = '',
+                        updated_reason = ?,
+                        disabled_reason = '',
+                        updated_at = ?,
+                        disabled_at = NULL
+                    WHERE override_id = ?
+                    """,
+                    (
+                        normalized_model_profile_id,
+                        normalized_admin_user_id,
+                        normalized_reason,
+                        now,
+                        override_id,
+                    ),
+                )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT override_id, user_id, model_profile_id, enabled,
+                       created_by_admin_user_id, updated_by_admin_user_id,
+                       disabled_by_admin_user_id, created_reason, updated_reason,
+                       disabled_reason, created_at, updated_at, disabled_at
+                FROM ai_model_user_overrides
+                WHERE override_id = ?
+                """,
+                (override_id,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model user override was not saved: {normalized_user_id}")
+        return _row_to_ai_model_user_override(row)
+
+    def disable_ai_model_user_override(
+        self,
+        *,
+        user_id: str,
+        admin_user_id: str,
+        reason: str,
+    ) -> AIModelUserOverride:
+        normalized_user_id = user_id.strip()
+        normalized_admin_user_id = admin_user_id.strip()
+        normalized_reason = reason.strip()
+        if not normalized_reason:
+            raise ValueError("reason is required")
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE ai_model_user_overrides
+                SET enabled = 0,
+                    updated_by_admin_user_id = ?,
+                    disabled_by_admin_user_id = ?,
+                    updated_reason = ?,
+                    disabled_reason = ?,
+                    updated_at = ?,
+                    disabled_at = ?
+                WHERE user_id = ?
+                """,
+                (
+                    normalized_admin_user_id,
+                    normalized_admin_user_id,
+                    normalized_reason,
+                    normalized_reason,
+                    now,
+                    now,
+                    normalized_user_id,
+                ),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT override_id, user_id, model_profile_id, enabled,
+                       created_by_admin_user_id, updated_by_admin_user_id,
+                       disabled_by_admin_user_id, created_reason, updated_reason,
+                       disabled_reason, created_at, updated_at, disabled_at
+                FROM ai_model_user_overrides
+                WHERE user_id = ?
+                """,
+                (normalized_user_id,),
+            )
+        if row is None:
+            raise KeyError(f"AI model user override for user {normalized_user_id} not found")
+        return _row_to_ai_model_user_override(row)
+
     def list_users_for_admin(
         self,
         *,
@@ -1506,6 +1685,24 @@ class ApiDatabaseStore:
         normalized_task = _normalize_route_key(task_type, default="default")
         normalized_plan = _normalize_route_key(plan_code, default="free")
         with self._connect() as conn:
+            user_override = self._get_enabled_ai_model_user_override_target(
+                conn,
+                user_id=user_id,
+            )
+            if user_override is not None:
+                override, target = user_override
+                provider, profile = target
+                route_type = "user_override_external" if provider.is_external else "user_override_local"
+                return AIModelRouteSelection(
+                    policy=None,
+                    provider=provider,
+                    model_profile=profile,
+                    route_type=route_type,
+                    task_type=normalized_task,
+                    plan_code=normalized_plan,
+                    requires_external_ack=False,
+                    reason=f"Admin per-user model override {override.override_id} selected this model.",
+                )
             policy = self._select_ai_task_route_policy(
                 conn,
                 user_id=user_id,
@@ -3742,6 +3939,35 @@ class ApiDatabaseStore:
             return None
         return _row_to_ai_model_provider(row[:14]), _row_to_ai_model_profile(row[14:])
 
+    def _get_enabled_ai_model_user_override_target(
+        self,
+        conn: sqlite3.Connection | PostgresConnection[Any],
+        *,
+        user_id: str,
+    ) -> tuple[AIModelUserOverride, tuple[AIModelProvider, AIModelProfile]] | None:
+        if not user_id.strip():
+            return None
+        row = self._fetchone(
+            conn,
+            """
+            SELECT override_id, user_id, model_profile_id, enabled,
+                   created_by_admin_user_id, updated_by_admin_user_id,
+                   disabled_by_admin_user_id, created_reason, updated_reason,
+                   disabled_reason, created_at, updated_at, disabled_at
+            FROM ai_model_user_overrides
+            WHERE user_id = ?
+              AND enabled = 1
+            """,
+            (user_id.strip(),),
+        )
+        if row is None:
+            return None
+        override = _row_to_ai_model_user_override(row)
+        target = self._get_ai_model_route_target(conn, override.model_profile_id)
+        if target is None:
+            return None
+        return override, target
+
     def _ensure_ai_model_routing_schema(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
     ) -> None:
@@ -3890,6 +4116,24 @@ class ApiDatabaseStore:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS ai_model_user_overrides (
+                override_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL UNIQUE,
+                model_profile_id TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_by_admin_user_id TEXT NOT NULL DEFAULT '',
+                updated_by_admin_user_id TEXT NOT NULL DEFAULT '',
+                disabled_by_admin_user_id TEXT NOT NULL DEFAULT '',
+                created_reason TEXT NOT NULL DEFAULT '',
+                updated_reason TEXT NOT NULL DEFAULT '',
+                disabled_reason TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                disabled_at TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                FOREIGN KEY(model_profile_id) REFERENCES ai_model_profiles(model_profile_id) ON DELETE RESTRICT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_ai_task_route_policies_lookup
             ON ai_task_route_policies(task_type, plan_code, enabled, priority);
 
@@ -3901,6 +4145,12 @@ class ApiDatabaseStore:
 
             CREATE INDEX IF NOT EXISTS idx_ai_model_admin_audit_entity_time
             ON ai_model_admin_audit_events(entity_type, entity_id, created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_ai_model_user_overrides_enabled_user
+            ON ai_model_user_overrides(user_id, enabled);
+
+            CREATE INDEX IF NOT EXISTS idx_ai_model_user_overrides_profile
+            ON ai_model_user_overrides(model_profile_id);
 
             """,
         )
@@ -4580,6 +4830,24 @@ def _row_to_ai_model_group_membership(row: tuple[object, ...]) -> AIModelGroupMe
         email=str(row[2]),
         full_name=str(row[3]),
         created_at=str(row[4]),
+    )
+
+
+def _row_to_ai_model_user_override(row: tuple[object, ...]) -> AIModelUserOverride:
+    return AIModelUserOverride(
+        override_id=str(row[0]),
+        user_id=str(row[1]),
+        model_profile_id=str(row[2]),
+        enabled=_row_bool(row[3]),
+        created_by_admin_user_id=str(row[4]),
+        updated_by_admin_user_id=str(row[5]),
+        disabled_by_admin_user_id=str(row[6]),
+        created_reason=str(row[7]),
+        updated_reason=str(row[8]),
+        disabled_reason=str(row[9]),
+        created_at=str(row[10]),
+        updated_at=str(row[11]),
+        disabled_at=str(row[12]) if row[12] is not None else None,
     )
 
 

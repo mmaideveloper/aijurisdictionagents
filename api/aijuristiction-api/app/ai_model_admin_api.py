@@ -24,6 +24,8 @@ from aijurisdictionagents.api_db import (
     AIModelProfile,
     AIModelProvider,
     AITaskRoutePolicy,
+    AIModelRouteSelection,
+    AIModelUserOverride,
     AdminUser,
     ApiDatabaseStore,
     User,
@@ -221,6 +223,59 @@ class AIModelGroupMembershipRequest(BaseModel):
     reason: str = ""
 
 
+class AIModelUserOverrideRequest(BaseModel):
+    model_profile_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class AIModelUserOverrideDeleteRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class AIModelUserOverrideResponse(BaseModel):
+    override_id: str
+    user_id: str
+    model_profile_id: str
+    enabled: bool
+    created_by_admin_user_id: str
+    updated_by_admin_user_id: str
+    disabled_by_admin_user_id: str
+    created_reason: str
+    updated_reason: str
+    disabled_reason: str
+    created_at: str
+    updated_at: str
+    disabled_at: str | None
+
+
+class AIModelEffectiveRouteResponse(BaseModel):
+    route_type: str
+    task_type: str
+    plan_code: str
+    provider_id: str | None
+    provider_code: str | None
+    provider_display_name: str | None
+    model_profile_id: str | None
+    model_code: str | None
+    deployment_name: str | None
+    is_external: bool
+    is_local: bool
+    requires_external_ack: bool
+    reason: str
+
+
+class AIModelUserOverrideDetailResponse(BaseModel):
+    user: AdminUserSummaryResponse
+    override: AIModelUserOverrideResponse | None
+    effective_route: AIModelEffectiveRouteResponse
+
+
+class AdminUserSearchResponse(BaseModel):
+    items: list[AdminUserSummaryResponse]
+    total: int
+    limit: int
+
+
 class AIModelAdminAuditEventResponse(BaseModel):
     audit_event_id: str
     admin_user_id: str
@@ -371,7 +426,7 @@ def get_ai_model_admin_dashboard(
         ),
         audit_events=[_audit_response(item) for item in store.list_ai_model_admin_audit_events(limit=25)],
         route_priority=[
-            "user local override",
+            "enabled per-user model override",
             "highest-priority active group policy",
             "default paid model policy",
             "local fallback",
@@ -383,6 +438,104 @@ def get_ai_model_admin_dashboard(
         ],
         grafana_url=os.getenv("GRAFANA_ROOT_URL", "https://admin.jurisdigta.eu/grafana/").strip(),
     )
+
+
+@router.get("/users", response_model=AdminUserSearchResponse)
+def search_ai_model_assignment_users(
+    email: str,
+    limit: int = 25,
+    _: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AdminUserSearchResponse:
+    bounded_limit = min(max(limit, 1), 100)
+    if not email.strip():
+        return AdminUserSearchResponse(items=[], total=0, limit=bounded_limit)
+    users = store.list_users_for_admin(limit=bounded_limit, query=email)
+    email_query = email.strip().lower()
+    matches = [item for item in users if email_query in item.email.lower()]
+    return AdminUserSearchResponse(
+        items=[_user_summary_response(item) for item in matches],
+        total=len(matches),
+        limit=bounded_limit,
+    )
+
+
+@router.get("/users/{user_id}/model-override", response_model=AIModelUserOverrideDetailResponse)
+def get_ai_model_user_override(
+    user_id: str,
+    task_type: str = "default",
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AIModelUserOverrideDetailResponse:
+    _ = admin
+    user = _require_admin_target_user(store=store, user_id=user_id)
+    return _user_override_detail_response(store=store, user=user, task_type=task_type)
+
+
+@router.put("/users/{user_id}/model-override", response_model=AIModelUserOverrideDetailResponse)
+def upsert_ai_model_user_override(
+    user_id: str,
+    payload: AIModelUserOverrideRequest,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AIModelUserOverrideDetailResponse:
+    user = _require_admin_target_user(store=store, user_id=user_id)
+    existing = store.get_ai_model_user_override(user_id=user.user_id)
+    try:
+        override = store.upsert_ai_model_user_override(
+            user_id=user.user_id,
+            model_profile_id=payload.model_profile_id,
+            admin_user_id=admin.user_id,
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    action = "user_override.create" if existing is None else "user_override.update"
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action=action,
+        entity_type="ai_model_user_override",
+        entity_id=user.user_id,
+        old=_override_audit_summary(existing),
+        new=_override_audit_summary(override),
+        reason=payload.reason,
+    )
+    return _user_override_detail_response(store=store, user=user, task_type="default")
+
+
+@router.delete("/users/{user_id}/model-override", response_model=AIModelUserOverrideDetailResponse)
+def disable_ai_model_user_override(
+    user_id: str,
+    payload: AIModelUserOverrideDeleteRequest,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AIModelUserOverrideDetailResponse:
+    user = _require_admin_target_user(store=store, user_id=user_id)
+    existing = store.get_ai_model_user_override(user_id=user.user_id)
+    try:
+        override = store.disable_ai_model_user_override(
+            user_id=user.user_id,
+            admin_user_id=admin.user_id,
+            reason=payload.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User model override not found") from exc
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="user_override.disable",
+        entity_type="ai_model_user_override",
+        entity_id=user.user_id,
+        old=_override_audit_summary(existing),
+        new=_override_audit_summary(override),
+        reason=payload.reason,
+    )
+    return _user_override_detail_response(store=store, user=user, task_type="default")
 
 
 @router.post("/providers", response_model=AIModelProviderResponse)
@@ -867,6 +1020,76 @@ def _record_audit(
         reason=reason,
         correlation_id=str(getattr(request.state, "correlation_id", "")),
     )
+
+
+def _require_admin_target_user(*, store: ApiDatabaseStore, user_id: str) -> User:
+    user = store.find_user_by_id(user_id=user_id.strip())
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return user
+
+
+def _user_override_detail_response(
+    *,
+    store: ApiDatabaseStore,
+    user: User,
+    task_type: str,
+) -> AIModelUserOverrideDetailResponse:
+    plan = store.get_effective_subscription_plan(user_id=user.user_id)
+    route = store.resolve_ai_model_route(
+        user_id=user.user_id,
+        plan_code=plan.plan_code,
+        task_type=task_type,
+        external_acknowledged=True,
+    )
+    return AIModelUserOverrideDetailResponse(
+        user=_user_summary_response(user),
+        override=_override_response(store.get_ai_model_user_override(user_id=user.user_id)),
+        effective_route=_route_response(route),
+    )
+
+
+def _route_response(route: AIModelRouteSelection) -> AIModelEffectiveRouteResponse:
+    provider = route.provider
+    profile = route.model_profile
+    return AIModelEffectiveRouteResponse(
+        route_type=route.route_type,
+        task_type=route.task_type,
+        plan_code=route.plan_code,
+        provider_id=provider.provider_id if provider is not None else None,
+        provider_code=provider.provider_code if provider is not None else None,
+        provider_display_name=provider.display_name if provider is not None else None,
+        model_profile_id=profile.model_profile_id if profile is not None else None,
+        model_code=profile.model_code if profile is not None else None,
+        deployment_name=profile.deployment_name if profile is not None else None,
+        is_external=provider.is_external if provider is not None else False,
+        is_local=provider.is_local if provider is not None else False,
+        requires_external_ack=route.requires_external_ack,
+        reason=route.reason,
+    )
+
+
+def _override_response(item: AIModelUserOverride | None) -> AIModelUserOverrideResponse | None:
+    if item is None:
+        return None
+    return AIModelUserOverrideResponse(**asdict(item))
+
+
+def _override_audit_summary(item: AIModelUserOverride | None) -> dict[str, Any]:
+    if item is None:
+        return {}
+    return {
+        "override_id": item.override_id,
+        "target_user_id": item.user_id,
+        "model_profile_id": item.model_profile_id,
+        "enabled": item.enabled,
+        "created_by_admin_user_id": item.created_by_admin_user_id,
+        "updated_by_admin_user_id": item.updated_by_admin_user_id,
+        "disabled_by_admin_user_id": item.disabled_by_admin_user_id,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at,
+        "disabled_at": item.disabled_at,
+    }
 
 
 def _ollama_inventory_item_response(

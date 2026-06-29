@@ -189,6 +189,7 @@ The API database now includes a policy-driven model routing foundation:
 - `ai_model_profiles`: provider model/deployment metadata plus context window, default-free-plan marker, and price-per-1M-token metadata.
 - `ai_model_credentials`: encrypted provider secrets such as API keys or Azure AD tokens. The runtime decrypts these only when a selected route needs them; admin endpoints redact secret values unless an authorized admin explicitly requests reveal.
 - `ai_model_groups` and `ai_model_group_users`: optional assignment of users to model groups for staged rollout or premium routing.
+- `ai_model_user_overrides`: one current per-user direct model override. Admins can assign any enabled local or external model profile to a user, update the assignment, or disable it with a mandatory reason. Disabled rows remain for operational traceability while `ai_model_admin_audit_events` preserves create/update/disable history.
 - `ai_task_route_policies`: task type plus plan policy with preferred local/external profile, external acknowledgement, EU data-zone requirement, and local fallback flags.
 - `ai_model_usage_ledger`: per-request token and estimated cost ledger by user, subscription, case, task type, provider, model, route, and time. Case audit fields also store `session_id`, `question_id`, bounded `question_preview`, `question_sha256`, `answer_id`, and minimal audit metadata so JurisDigta can show which model answered which question without duplicating full legal prompts outside the case history.
 - `ai_model_admin_audit_events`: admin-only model/provider/group/policy and operational case-reset change trail with actor email, entity, old/new summaries, reason, correlation id, and timestamp. It stores metadata summaries only and must not contain legal case text or provider secrets.
@@ -201,6 +202,12 @@ Keep external-provider API keys in backend secrets and store only provider refer
 
 Chat model provider, model, deployment, and credentials are resolved from these database tables, not from `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, or `AZURE_OPENAI_DEPLOYMENT` environment settings. The only supported `LLM_PROVIDER` chat override is explicit `mock` for deterministic offline tests.
 
+Routing precedence is:
+
+1. Enabled per-user override from `ai_model_user_overrides`, which applies to every task type for that user.
+2. Existing group/plan/task route policy from `ai_task_route_policies`.
+3. Seeded defaults created by `ApiDatabaseStore.initialize()`.
+
 Seeded defaults:
 
 - Free/default users route to `local_ollama_default`, provider `local_ollama`, model `qwen3:1.7b`. Local developer runs default to `http://127.0.0.1:11434/v1`; self-managed Docker production seeds the private Docker gateway URL so API containers can reach the host-local Ollama service.
@@ -208,6 +215,7 @@ Seeded defaults:
 - `case`, `basic`, `premium`, and `unlimited` plan routes prefer `azure_foundry_gpt_4o_mini`, provider `azure_foundry`, model/deployment `gpt-4o-mini`, EU data-zone capable. Operators must set the Azure provider endpoint and encrypted credential before paid traffic can use this route.
 
 The admin page lists users with paging, current providers, current profiles, route policies, user groups, local Ollama inventory, operational case reset tools, and admin audit events. `Modely a ceny` lets admins edit, enable, disable, and select the default free local profile without editing environment files. `Smerovacie politiky` lets admins edit and enable/disable policies by task type, plan, optional user group, local/external preference, external acknowledgement, EU data-zone requirement, fallback behavior, and priority. `Lokálne Ollama modely` shows installed Ollama models and configured-only local profiles, so an empty Ollama runtime still reveals the configured free/default model that needs to be imported. Disable a configured Ollama model profile before deleting the physical runtime model; enabled default profiles, enabled policies, and loaded configured models block deletion.
+The admin page lists users with paging, current providers, current profiles, direct user model assignments, route policies, user groups, local Ollama inventory, operational case reset tools, and admin audit events. `User model assignment` searches users by email, selects an enabled existing model profile, shows the current assigned model and effective route, and requires an admin reason for save/update/disable. API payloads include model/profile identifiers and route metadata only; they do not expose provider secrets, prompts, documents, or legal case content. `Smerovacie politiky` choose a model by task type, plan, optional user group, local/external preference, external acknowledgement, EU data-zone requirement, fallback behavior, and priority when no per-user override is enabled.
 
 Admin case reset is intentionally narrow: `GET /v1/admin/cases/users?email=...` searches users by email, `GET /v1/admin/cases/users/{user_id}/cases?include_deleted=true` returns only case id/title/status/timestamps, and `DELETE /v1/admin/cases/{case_id}` soft-deletes one selected case with a mandatory reason. This endpoint is for support/test reset operations such as freeing an expired Free-plan test account to create a fresh case. It does not hard-delete rows, expose prompts, expose uploaded/generated documents, or replace data-subject deletion and retention workflows. Public user case deletion remains subject to the normal case write-window gate.
 
