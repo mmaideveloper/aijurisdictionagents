@@ -124,6 +124,7 @@ def check_claude_registration(base_url: str) -> str:
             "token_endpoint_auth_method": "none",
             "scope": "mcp:laws offline_access",
         },
+        expected_status={200, 201},
     )
     client_id = str(payload.get("client_id") or "")
     if not client_id.startswith("jurisdigta-"):
@@ -232,9 +233,10 @@ def request_json(
     url: str,
     payload: dict[str, Any] | None = None,
     *,
+    expected_status: int | set[int] = 200,
     extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    return request(method, url, payload, extra_headers=extra_headers).json()
+    return request(method, url, payload, expected_status=expected_status, extra_headers=extra_headers).json()
 
 
 def request(
@@ -242,7 +244,7 @@ def request(
     url: str,
     payload: dict[str, Any] | None = None,
     *,
-    expected_status: int = 200,
+    expected_status: int | set[int] = 200,
     extra_headers: dict[str, str] | None = None,
 ) -> HttpResponse:
     body = None
@@ -268,9 +270,11 @@ def request(
     except URLError as exc:
         raise AssertionError(f"HTTP request failed for {method} {url}: {exc}") from exc
 
-    if status != expected_status:
+    expected_statuses = expected_status if isinstance(expected_status, set) else {expected_status}
+    if status not in expected_statuses:
         preview = data.decode("utf-8", errors="replace")[:500]
-        raise AssertionError(f"Expected {expected_status} for {method} {url}, got {status}: {preview}")
+        expected_label = " or ".join(str(item) for item in sorted(expected_statuses))
+        raise AssertionError(f"Expected {expected_label} for {method} {url}, got {status}: {preview}")
     return HttpResponse(status=status, headers=response_headers, body=data)
 
 

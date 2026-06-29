@@ -55,8 +55,10 @@ curl http://127.0.0.1:8070/
 The OAuth flow uses authorization code with PKCE S256, plus refresh tokens for
 remote clients that request `offline_access`. Remote clients can either use
 dynamic client registration at `/oauth/register` or provide a preconfigured
-public OAuth Client ID. ChatGPT and Claude should pass the protected resource
-value `https://mcp.jurisdigta.eu/MCP` on the authorization, token, and refresh
+public OAuth Client ID. New dynamic registrations may return either `200 OK` or
+`201 Created` with the issued public client metadata. ChatGPT and Claude should
+pass the protected resource value `https://mcp.jurisdigta.eu/MCP` on the
+authorization, token, and refresh
 requests. Protected-resource metadata includes a human-readable
 `resource_name`, and authorization-server metadata advertises the protected MCP
 resource plus `authorization_response_iss_parameter_supported=true`. The
