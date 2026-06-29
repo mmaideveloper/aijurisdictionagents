@@ -1530,7 +1530,17 @@ def _looks_like_vehicle_authorization_final_request(content: str) -> bool:
     if not any(token in normalized for token in ("vozidlo", "vozidla", "auto", "auta", "motorov")):
         return False
     final_markers = ("priprav", "vygeneruj", "vytvor", "document", "dokument")
-    language_markers = ("slovencine", "slovencina", "slovak", "anglictine", "anglicky", "english")
+    language_markers = (
+        "slovencine",
+        "slovencina",
+        "slovenskom",
+        "slovensky",
+        "slovak",
+        "anglictine",
+        "anglickom",
+        "anglicky",
+        "english",
+    )
     return any(marker in normalized for marker in final_markers) and any(
         marker in normalized for marker in language_markers
     )
@@ -1603,6 +1613,14 @@ def _extract_vehicle_authorized_person(content: str) -> str:
     if explicit_address_match is not None:
         return " ".join(explicit_address_match.group(1).strip().split())
 
+    bytom_match = re.search(
+        r"\bpre\s+([^,.;]+?)\s*,\s*bytom\b",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if bytom_match is not None:
+        return " ".join(bytom_match.group(1).strip().split())
+
     match = re.search(
         r"\bpre\s+(?:dceru|dc[ée]ru|syna|manzelku|manzela|osobu)\s+([^,.;]+?)(?=\s+na\s+|\s+od\s+|[,.;]|$)",
         content,
@@ -1621,7 +1639,7 @@ def _extract_vehicle_authorized_person(content: str) -> str:
 
 def _extract_vehicle_authorized_person_address(content: str) -> str:
     match = re.search(
-        r"\badresa\s+([^.;]+?)(?=\s+(?:priprav|vygeneruj|vytvor)\b|[.;]|$)",
+        r"\b(?:adresa|bytom)\s+([^.;]+?)(?=\s+(?:od\s+\d{1,2}\.\d{1,2}\.\d{4}|priprav|vygeneruj|vytvor)\b|[.;]|$)",
         content,
         flags=re.IGNORECASE,
     )

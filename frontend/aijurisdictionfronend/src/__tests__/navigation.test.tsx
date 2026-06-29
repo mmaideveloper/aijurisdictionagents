@@ -8,14 +8,15 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { Navigation } from "../components/Navigation";
 
 const mockSignOut = vi.fn();
-const authState = vi.hoisted(() => ({ isAuthenticated: true }));
+const authState = vi.hoisted(() => ({ isAuthenticated: true, role: "user" }));
 
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
     isAuthenticated: authState.isAuthenticated,
     user: {
       name: "Admin",
-      email: "user@example.com"
+      email: "user@example.com",
+      role: authState.role
     },
     signOut: mockSignOut
   })
@@ -34,6 +35,7 @@ const labels: Record<string, string> = {
   navProfileMenu: "Profile menu",
   navMyProfile: "My Profile",
   navMyCases: "My Cases",
+  navAdmin: "Admin",
   navLogOut: "Log Out"
 };
 
@@ -75,6 +77,7 @@ describe("Navigation profile actions", () => {
   beforeEach(() => {
     mockSignOut.mockReset();
     authState.isAuthenticated = true;
+    authState.role = "user";
   });
 
   it("shows profile actions without opening a dropdown", () => {
@@ -85,6 +88,14 @@ describe("Navigation profile actions", () => {
     expect(screen.getByRole("button", { name: "My Profile" })).toBeDefined();
     expect(screen.getByRole("button", { name: "My Cases" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Log Out" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Admin" })).toBeNull();
+  });
+
+  it("shows admin action for global admin users", () => {
+    authState.role = "admin";
+    renderNavigation();
+
+    expect(screen.getByRole("button", { name: "Admin" })).toBeDefined();
   });
 
   it("navigates to /profile when My Profile is clicked", async () => {

@@ -12,11 +12,18 @@ import {
 } from "@assistant-ui/react";
 import { BsArrowUpCircle } from "react-icons/bs";
 import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
-import { ApiRequestError, chatApiRuntimeConfig, createChatSession, streamSession } from "../api/chatClient";
+import {
+  ApiRequestError,
+  chatApiRuntimeConfig,
+  createChatSession,
+  fetchEffectiveModelRoute,
+  streamSession
+} from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
 import type { CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
+import { isCaseRoleAvailable } from "../state/caseRoles";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
 
@@ -427,7 +434,7 @@ const AssistantTextPart: React.FC = () => {
 
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
-  const { user } = useAuth();
+  const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { activeCase, loadCaseData } = useCases();
   const activeCaseId = activeCase?.id;
   const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string } | null>(
@@ -470,6 +477,14 @@ const AssistantThread: React.FC = () => {
 
         try {
           const userId = user?.userId;
+          if (isAuthenticated && (isAuthLoading || !userId)) {
+            yield {
+              content: [{ type: "text", text: t("assistantAuthLoadingResponse") }],
+              status: { type: "complete", reason: "stop" }
+            };
+            return;
+          }
+
           const existingSession = sessionRef.current;
           const session =
             existingSession?.language === language &&
@@ -551,7 +566,7 @@ const AssistantThread: React.FC = () => {
         }
       }
     }),
-    [activeCaseId, language, loadCaseData, t, user?.userId]
+    [activeCaseId, isAuthenticated, isAuthLoading, language, loadCaseData, t, user?.userId]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {
@@ -636,17 +651,20 @@ const AssistantConfigurations: React.FC = () => {
       {
         role: "AI Lawyer" as CaseRole,
         label: t("workspaceLawyerTitle"),
-        intent: t("roleIntentLawyer")
+        intent: t("roleIntentLawyer"),
+        disabled: false
       },
       {
         role: "AI Judge" as CaseRole,
         label: t("workspaceJudgeTitle"),
-        intent: t("roleIntentJudge")
+        intent: t("roleIntentJudge"),
+        disabled: true
       },
       {
         role: "Opposing Counsel" as CaseRole,
         label: t("workspaceOpposingTitle"),
-        intent: t("roleIntentOpposing")
+        intent: t("roleIntentOpposing"),
+        disabled: true
       }
     ],
     [t]
@@ -690,25 +708,30 @@ const AssistantConfigurations: React.FC = () => {
           <p className="hint">{t("roleSelectorHint")}</p>
           <div className="role-options" role="radiogroup">
             {roleOptions.map((option) => {
-              const isActive = activeCase?.selectedRole === option.role;
+              const isDisabled = option.disabled || !isCaseRoleAvailable(option.role);
+              const isActive = !isDisabled && activeCase?.selectedRole === option.role;
               return (
                 <label
                   key={option.role}
-                  className={`role-option${isActive ? " is-active" : ""}`}
+                  className={`role-option${isActive ? " is-active" : ""}${isDisabled ? " is-disabled" : ""}`}
+                  aria-disabled={isDisabled}
+                  title={isDisabled ? t("roleUnavailable") : undefined}
                 >
                   <input
                     type="radio"
                     name={`assistant-case-role-${activeCase?.id ?? "current"}`}
                     value={option.role}
                     checked={isActive}
+                    disabled={isDisabled}
                     onChange={() => {
-                      if (activeCase) {
+                      if (activeCase && !isDisabled) {
                         setCaseRole(activeCase.id, option.role);
                       }
                     }}
                   />
                   <span className="role-option__label">{option.label}</span>
                   <span className="role-option__intent">{option.intent}</span>
+                  {isDisabled ? <span className="role-option__status">{t("roleUnavailable")}</span> : null}
                 </label>
               );
             })}
@@ -721,9 +744,37 @@ const AssistantConfigurations: React.FC = () => {
 
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
+  const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { activeCase } = useCases();
   const threadKey = React.useMemo(() => caseThreadKey(activeCase), [activeCase]);
-  const modelLabel = React.useMemo(() => chatApiRuntimeConfig().chatModelLabel, []);
+  const fallbackModelLabel = React.useMemo(() => chatApiRuntimeConfig().chatModelLabel, []);
+  const pendingModelLabel = t("assistantModelDisclosurePending");
+  const [modelLabel, setModelLabel] = React.useState(
+    isAuthenticated ? pendingModelLabel : fallbackModelLabel
+  );
+
+  React.useEffect(() => {
+    if (isAuthenticated && !user?.userId) {
+      setModelLabel(pendingModelLabel);
+      return;
+    }
+
+    let isCurrent = true;
+    void fetchEffectiveModelRoute(user?.userId)
+      .then((route) => {
+        if (isCurrent && route.label.trim()) {
+          setModelLabel(route.label.trim());
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setModelLabel(fallbackModelLabel);
+        }
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [fallbackModelLabel, isAuthenticated, isAuthLoading, pendingModelLabel, user?.userId]);
 
   return (
     <div className="page assistant-workspace-page">

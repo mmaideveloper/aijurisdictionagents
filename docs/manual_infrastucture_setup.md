@@ -281,8 +281,8 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 4. The bootstrap script installs base packages: `git`, `curl`, `unzip`, `jq`, `rsync`, `ufw`, `nginx`, `certbot`, Python venv/pip tooling, PostgreSQL client tools, Docker, Docker Compose v2, Node.js, npm, and OpenSSH.
 5. Reconnect SSH after the script adds `jurisdigta-admin` to the `docker` group.
 6. Install Cloudflare Tunnel with `INSTALL_CLOUDFLARED=1 bash Deployment/server/setup_jurisdigta_server.sh` when this server will expose public subdomains through Cloudflare.
-7. Install Ollama as a separate local model service on `jurisdigta-server`; keep it bound to `127.0.0.1:11434` and never expose it directly through Cloudflare Tunnel or public firewall rules.
-8. Pull the configured local model, for example `ollama pull qwen3.6:27b`, and pull a smaller fallback model when server RAM/VRAM cannot safely run the preferred model.
+7. Install Ollama as a separate local model service on `jurisdigta-server`; keep it bound to localhost or the private Docker gateway and never expose it directly through Cloudflare Tunnel or public firewall rules.
+8. Pull the configured local model, for example `ollama pull qwen3:1.7b`, and pull a smaller fallback model when server RAM/VRAM cannot safely run the preferred model.
 9. Validate Ollama through localhost endpoints before wiring it into the model-router configuration.
 10. Create `/srv/jurisdigta` deployment, runtime storage, log, and secrets directories.
 11. Clone `https://github.com/mmaideveloper/aijurisdictionagents.git` to `/srv/jurisdigta/app`.
@@ -329,12 +329,12 @@ sudo systemctl restart ollama
 Pull the configured model and inspect the installed inventory:
 
 ```bash
-ollama pull qwen3.6:27b
+ollama pull qwen3:1.7b
 ollama list
 ollama ps
 ```
 
-If `qwen3.6:27b` does not fit the available CPU/RAM/VRAM on `jurisdigta-server`, choose and document a smaller validated fallback model, pull it with Ollama, and update the free/default `ai_model_profiles` row instead of allowing production startup to fail silently.
+If `qwen3:1.7b` does not fit the available CPU/RAM/VRAM on `jurisdigta-server`, choose and document a smaller validated fallback model, pull it with Ollama, and update the free/default `ai_model_profiles` row instead of allowing production startup to fail silently.
 
 Validate the local service:
 
@@ -344,9 +344,9 @@ curl -fsS http://127.0.0.1:11434/api/tags
 curl -fsS http://127.0.0.1:11434/v1/models
 ```
 
-Keep Ollama outside the API container and outside the FastAPI process. JurisDigta API should call Ollama over localhost through the model router; Ollama owns model download, storage, loading, unloading, and runtime memory pressure.
+Keep Ollama outside the API container and outside the FastAPI process. JurisDigta API should call Ollama over localhost or the private Docker gateway through the model router; Ollama owns model download, storage, loading, unloading, and runtime memory pressure.
 
-The self-managed production deployment script performs the Ollama install, localhost bind, `qwen3.6:27b` pull, and health validation by default when `INSTALL_OLLAMA=1`. Set `INSTALL_OLLAMA=0` only for a controlled rollback or a server where Ollama has already been installed and validated manually.
+The self-managed production deployment script performs the Ollama install, private bind, `qwen3:1.7b` pull, and health validation by default when `INSTALL_OLLAMA=1`. Set `INSTALL_OLLAMA=0` only for a controlled rollback or a server where Ollama has already been installed and validated manually.
 
 ### Secrets And Environment Values
 
@@ -357,14 +357,16 @@ The self-managed production deployment script performs the Ollama install, local
 - Keep the dedicated SSH folder local to the workstation. Only public keys belong in `/home/jurisdigta-admin/.ssh/authorized_keys` on the server.
 - Required model-credential encryption secret: `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`.
 - Chat provider/model/deployment routing is stored in API database tables, not `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, or `AZURE_OPENAI_DEPLOYMENT`.
-- Seeded free/default local route: provider `local_ollama`, OpenAI-compatible base URL `http://127.0.0.1:11434/v1`, exact model `qwen3.6:27b`, profile `local_ollama_default`.
+- Seeded free/default local route: provider `local_ollama`, exact model `qwen3:1.7b`, profile `local_ollama_default`. In self-managed Docker production, the API stores the private Docker gateway URL such as `http://172.18.0.1:11434/v1` because `127.0.0.1` inside the API container is not the host Ollama service.
+- Production admins can manage local Ollama registry models from the protected AI Model Admin page. The Admin tool lists models through the server-local Ollama API, starts registry pulls, and can physically remove unused models. Ollama must stay bound to localhost or the private Docker gateway; do not expose it through Cloudflare Tunnel, nginx, router NAT, or a public firewall rule.
+- Admin removal is intentionally blocked when the model is the seeded/default local model, marked `is_default_for_free`, referenced by an enabled route policy, selected by `LOCAL_LLM_MODEL`, or currently loaded while configured for active routing. Change route policies/defaults first, verify the new model works, then remove the old unused model.
 - Seeded paid route for `case`, `basic`, `premium`, and `unlimited`: provider `azure_foundry`, exact model/deployment `gpt-4o-mini`, profile `azure_foundry_gpt_4o_mini`.
 - Required Azure Foundry paid-route setup after database initialization: set `ai_model_providers.base_url` and add the API key or token through `/v1/admin/ai-models/providers/{provider_id}/credentials` so the secret is encrypted in `ai_model_credentials`.
 - Required embedding values when cloud embeddings are enabled: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_EMBEDDINGS_MODEL`, `AZURE_OPENAI_API_VERSION`, and one of `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN`.
 - PostgreSQL usernames, passwords, and connection strings must remain server-local or in a secret manager.
 - Required MCP OAuth values in `/srv/jurisdigta/secrets/jurisdigta.env`: `MCP_API_JWT_SECRET`, `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`, and `MCP_OTP_REUSE_WINDOW_HOURS=24`.
 - Required privileged test-account value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`. Keep this allowlist restricted to approved test/operator accounts, validate it before deploy, and roll back by removing the email from the server-local env file and redeploying/restarting the API.
-- Required admin model-management value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com` or another approved operator list. Required owner: JurisDigta infrastructure operator with Cloudflare Access admin rights. Cloudflare Access must protect the admin hostname and forward `cf-access-authenticated-user-email`; validate with an allowlisted account opening `/app/admin/ai-models` and a non-admin account receiving `403`. Roll back by removing the email from `JURISDIGTA_ADMIN_EMAILS`, redeploying/restarting the API, and confirming the admin API rejects the account.
+- Required admin value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com` or another approved operator list. Required owner: JurisDigta infrastructure operator with Cloudflare Access admin rights. Cloudflare Access must protect the admin hostname and forward `cf-access-authenticated-user-email`; validate with an admin role or allowlisted account opening `/app/admin`, seeing Users/model/credential controls, and a non-admin account receiving `403` from admin APIs. Roll back by removing the email from `JURISDIGTA_ADMIN_EMAILS` or changing the user role back to `user`, redeploying/restarting the API, and confirming the admin API rejects the account.
 - The self-managed deploy script injects `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` into the API container so internal assistant law lookups call the dedicated MCP service over the Docker network.
 - Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
 - Self-managed laws collector default: `LAWS_COLLECTOR_RUN_MODE=continuous`, container `jurisdigta-laws-collector`, `LAWS_WORKER_POLL_SECONDS=3600`, and Docker restart policy `unless-stopped`.
@@ -410,6 +412,7 @@ The self-managed production deployment script performs the Ollama install, local
 - `docker --version`, `docker compose version`, `node --version`, `npm --version`, `python3 --version`, `psql --version`, and `gh --version` succeed.
 - `systemctl is-active --quiet ollama` succeeds and `curl -fsS http://127.0.0.1:11434/api/tags` lists the configured local model.
 - `curl -fsS http://127.0.0.1:11434/v1/models` succeeds for OpenAI-compatible local model clients.
+- AI Model Admin can list local Ollama inventory and reports the configured/default model as protected from removal.
 - `bash /srv/jurisdigta/app/Deployment/server/setup_jurisdigta_server.sh` is idempotent and completes without package or permission errors.
 - `docker run --rm hello-world` succeeds after reconnecting with Docker group membership.
 - Repository checkout under `/srv/jurisdigta/app` is on the intended branch.
@@ -465,7 +468,7 @@ The self-managed production deployment script performs the Ollama install, local
 - Keep PostgreSQL and document runtime files outside `databases/` and under `/srv/jurisdigta/.../runs/storage`.
 - Preserve deployment and collector logs for traceability, while avoiding personal data and legal-risk content in logs.
 - Use database-backed model routing for production-like local starts; `LLM_PROVIDER=mock` is only for deterministic offline testing when explicitly requested.
-- Run Ollama as a separate localhost-only model service; do not expose `11434` publicly and do not send free-user case data to external model providers by default.
+- Run Ollama as a separate private host model service; do not expose `11434` through Cloudflare, nginx, router NAT, or a public firewall. The self-managed deploy script binds Ollama to the API Docker network gateway so only local containers on the server can reach it, and free-user case data is not sent to external model providers by default.
 - Local model routing keeps case content inside JurisDigta-controlled infrastructure, but normal server access controls, retention, deletion, and privacy-safe logging still apply.
 - Keep legal-risk outputs subject to human oversight before production traffic is enabled.
 - For Cloudflare Tunnel and Access, avoid logging personal data, legal documents, API keys, database credentials, or full user prompts in edge, dashboard, or application logs.

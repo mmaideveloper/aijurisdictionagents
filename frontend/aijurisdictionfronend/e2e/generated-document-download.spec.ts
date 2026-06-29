@@ -70,7 +70,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("generated documents are downloadable and listed for the selected case", async ({ page }) => {
-  await page.goto("/app/assistant");
+  await page.goto("/app/assistant", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("button", { name: /test generated document/i })).toBeVisible();
   await page.getByRole("button", { name: /test generated document/i }).click();

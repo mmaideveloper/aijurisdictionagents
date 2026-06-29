@@ -426,17 +426,27 @@
       },
       "targets": [
         {
-          "expr": "sum by (provider, model, route_type) (jurisdigta_ai_model_input_tokens_window)",
-          "legendFormat": "input {{provider}} {{model}} {{route_type}}",
+          "expr": "sum by (provider, model, route_class, route_type) (jurisdigta_ai_model_input_tokens_window{window_minutes=\"$usage_window\"})",
+          "legendFormat": "input {{route_class}} {{provider}} {{model}} {{route_type}}",
           "refId": "A"
         },
         {
-          "expr": "sum by (provider, model, route_type) (jurisdigta_ai_model_output_tokens_window)",
-          "legendFormat": "output {{provider}} {{model}} {{route_type}}",
+          "expr": "sum by (provider, model, route_class, route_type) (jurisdigta_ai_model_cached_input_tokens_window{window_minutes=\"$usage_window\"})",
+          "legendFormat": "cached {{route_class}} {{provider}} {{model}} {{route_type}}",
           "refId": "B"
+        },
+        {
+          "expr": "sum by (provider, model, route_class, route_type) (jurisdigta_ai_model_output_tokens_window{window_minutes=\"$usage_window\"})",
+          "legendFormat": "output {{route_class}} {{provider}} {{model}} {{route_type}}",
+          "refId": "C"
+        },
+        {
+          "expr": "sum by (provider, model, route_class, route_type) (jurisdigta_ai_model_total_tokens_window{window_minutes=\"$usage_window\"})",
+          "legendFormat": "total {{route_class}} {{provider}} {{model}} {{route_type}}",
+          "refId": "D"
         }
       ],
-      "title": "Input And Output Tokens By Model",
+      "title": "AI Tokens By Model And Route",
       "type": "timeseries"
     },
     {
@@ -476,12 +486,12 @@
       },
       "targets": [
         {
-          "expr": "sum by (provider, model, route_type) (jurisdigta_ai_model_estimated_cost_eur_window)",
+          "expr": "sum by (provider, model, route_type) (jurisdigta_ai_model_estimated_cost_eur_window{route_class=\"paid\",window_minutes=\"$usage_window\"})",
           "legendFormat": "{{provider}} {{model}} {{route_type}}",
           "refId": "A"
         }
       ],
-      "title": "Estimated Model Cost",
+      "title": "Paid Model Estimated Cost",
       "type": "timeseries"
     },
     {
@@ -521,8 +531,8 @@
       },
       "targets": [
         {
-          "expr": "sum by (task_type, provider, model) (jurisdigta_ai_model_requests_window)",
-          "legendFormat": "{{task_type}} {{provider}} {{model}}",
+          "expr": "sum by (task_type, provider, model, route_class) (jurisdigta_ai_model_requests_window{window_minutes=\"$usage_window\"})",
+          "legendFormat": "{{task_type}} {{route_class}} {{provider}} {{model}}",
           "refId": "A"
         }
       ],
@@ -563,15 +573,112 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (case_id, provider, model, task_type) (jurisdigta_ai_model_total_tokens_window))",
+          "expr": "topk(10, sum by (case_ref, route_class, plan_code) (jurisdigta_ai_model_top_case_total_tokens_window{window_minutes=\"$usage_window\"}))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
           "refId": "A"
+        },
+        {
+          "expr": "topk(10, sum by (case_ref, route_class, plan_code) (jurisdigta_ai_model_top_case_estimated_cost_eur_window{window_minutes=\"$usage_window\"}))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "refId": "B"
         }
       ],
-      "title": "Top Cases By Tokens",
+      "title": "Top 10 Cases By Tokens (Masked)",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "jurisdigta-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "type": "timeseries",
+      "id": 11,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 29
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider, model, route_type) (jurisdigta_ai_model_total_tokens_window{route_class=\"local\",window_minutes=\"$usage_window\"})",
+          "legendFormat": "{{provider}} {{model}} {{route_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Local/Ollama Total Tokens"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "jurisdigta-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "type": "timeseries",
+      "id": 12,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 29
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider, model, route_type) (jurisdigta_ai_model_total_tokens_window{route_class=\"paid\",window_minutes=\"$usage_window\"})",
+          "legendFormat": "{{provider}} {{model}} {{route_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Paid Model Total Tokens"
     }
   ],
   "refresh": "30s",
@@ -582,7 +689,46 @@
     "ai-models"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "1h",
+          "value": "60"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Usage window",
+        "multi": false,
+        "name": "usage_window",
+        "options": [
+          {
+            "selected": true,
+            "text": "1h",
+            "value": "60"
+          },
+          {
+            "selected": false,
+            "text": "24h",
+            "value": "1440"
+          },
+          {
+            "selected": false,
+            "text": "7d",
+            "value": "10080"
+          },
+          {
+            "selected": false,
+            "text": "30d",
+            "value": "43200"
+          }
+        ],
+        "query": "60,1440,10080,43200",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",

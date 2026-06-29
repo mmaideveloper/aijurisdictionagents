@@ -100,6 +100,7 @@ def get_routed_llm_client(
                     model=model,
                     base_url=_openai_compatible_base_url(provider.base_url),
                     provider_label=provider.provider_code,
+                    max_tokens=256,
                 )
             ),
             route=route,

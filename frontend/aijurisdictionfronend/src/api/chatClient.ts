@@ -29,6 +29,18 @@ export type ChatMessage = {
   created_at: string;
 };
 
+export type EffectiveModelRoute = {
+  plan_code: string;
+  route_type: string;
+  provider: string;
+  provider_display_name: string;
+  model: string;
+  model_profile_id: string;
+  is_local: boolean;
+  is_external: boolean;
+  label: string;
+};
+
 export type CreateChatSessionInput = {
   userId?: string;
   caseId?: string;
@@ -264,6 +276,20 @@ export const replyToSession = async (input: ReplyToSessionInput): Promise<ChatMe
     body: JSON.stringify({
       content: input.content
     })
+  });
+};
+
+export const fetchEffectiveModelRoute = async (userId?: string): Promise<EffectiveModelRoute> => {
+  const config = resolveApiConfig();
+  const params = new URLSearchParams({ task_type: "chat_reply" });
+  if (userId?.trim()) {
+    params.set("user_id", userId.trim());
+  }
+  return requestJson<EffectiveModelRoute>(`/v1/model-routing/effective?${params.toString()}`, {
+    method: "GET",
+    headers: {
+      "x-api-key": config.apiKey
+    }
   });
 };
 

@@ -44,8 +44,25 @@ def main() -> int:
         if isinstance(result.get("metric"), dict)
         and result["metric"].get("instance") in active_probe_instances
     ]
+    missing_queries = [
+        expression
+        for expression in (
+            "jurisdigta_ollama_up",
+            "jurisdigta_ai_model_total_tokens_window",
+            "jurisdigta_ai_model_top_case_total_tokens_window",
+        )
+        if not _query(expression)
+    ]
+    missing_alerts = _missing_alert_rules(
+        {
+            "JurisDigtaOllamaExporterDown",
+            "JurisDigtaOllamaConfiguredModelMissing",
+            "JurisDigtaPaidModelTokenSpike",
+            "JurisDigtaPaidModelCostSpike",
+        }
+    )
 
-    if failed_scrapes or failed_probes:
+    if failed_scrapes or failed_probes or missing_queries or missing_alerts:
         print("Monitoring validation failed.")
         if failed_scrapes:
             print("Failed scrape targets:")
@@ -55,9 +72,20 @@ def main() -> int:
             print("Failed HTTP probes:")
             for result in failed_probes:
                 print(json.dumps(result.get("metric", {}), sort_keys=True))
+        if missing_queries:
+            print("Missing expected Prometheus metrics:")
+            for expression in missing_queries:
+                print(expression)
+        if missing_alerts:
+            print("Missing expected Prometheus alert rules:")
+            for alert_name in sorted(missing_alerts):
+                print(alert_name)
         return 1
 
-    print("Monitoring validation passed: all Prometheus scrapes and JurisDigta HTTP probes are healthy.")
+    print(
+        "Monitoring validation passed: Prometheus scrapes, JurisDigta HTTP probes, "
+        "AI token metrics, and AI model alert rules are healthy."
+    )
     return 0
 
 
@@ -81,6 +109,27 @@ def _failed_results(results: list[dict[str, object]]) -> list[dict[str, object]]
         if isinstance(value, list) and len(value) >= 2 and value[1] != "1":
             failed.append(result)
     return failed
+
+
+def _missing_alert_rules(expected: set[str]) -> set[str]:
+    url = f"{PROMETHEUS_BASE_URL}/api/v1/rules"
+    with urlopen(url, timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if payload.get("status") != "success":
+        raise RuntimeError(f"Prometheus rules lookup failed: {payload}")
+    groups = payload.get("data", {}).get("groups", [])
+    found: set[str] = set()
+    if isinstance(groups, list):
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            rules = group.get("rules", [])
+            if not isinstance(rules, list):
+                continue
+            for rule in rules:
+                if isinstance(rule, dict) and isinstance(rule.get("name"), str):
+                    found.add(rule["name"])
+    return expected - found
 
 
 if __name__ == "__main__":

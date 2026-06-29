@@ -38,6 +38,19 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return children;
 };
 
+const AdminRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const { isAuthenticated, user } = useAuth();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
+  if (user?.role?.toLowerCase() !== "admin") {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
 const RootRoute: React.FC = () => {
   if (isAgentHost()) {
     return (
@@ -147,12 +160,16 @@ const App: React.FC = () => {
           }
         />
         <Route
-          path="/app/admin/ai-models"
+          path="/app/admin"
           element={
-            <ProtectedRoute>
+            <AdminRoute>
               <AIModelAdmin />
-            </ProtectedRoute>
+            </AdminRoute>
           }
+        />
+        <Route
+          path="/app/admin/ai-models"
+          element={<Navigate to="/app/admin" replace />}
         />
         <Route
           path="/app/documents/view"

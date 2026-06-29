@@ -111,7 +111,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `AZURE_OPENAI_EMBEDDINGS_MODEL` | Azure OpenAI embedding deployment name used for document chunk embeddings, recommended `text-embedding-3-large` |
 | `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version, keep aligned with `.env.example` unless you intentionally upgrade |
 | `JURISDIGTA_UNLIMITED_ACCESS_EMAILS` | Privileged comma- or semicolon-separated email allowlist for controlled test/operator accounts with unlimited case/document access; default `mmaideveloper@gmail.com` |
-| `JURISDIGTA_ADMIN_EMAILS` | Admin-only model management allowlist. Cloudflare Access must provide `cf-access-authenticated-user-email`; keep this restricted to approved operator accounts. |
+| `JURISDIGTA_ADMIN_EMAILS` | Global admin fallback allowlist for `/app/admin` and admin APIs. Users with database `role=admin` are also authorized. Cloudflare Access must provide `cf-access-authenticated-user-email`; keep this restricted to approved operator accounts. |
 | `AZURE_POSTGRES_SERVER_NAME` | Azure PostgreSQL Flexible Server name |
 | `AZURE_POSTGRES_DATABASE_NAME` | API database name |
 | `AZURE_POSTGRES_ADMIN_USERNAME` | PostgreSQL admin login |
@@ -364,7 +364,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT` | `20` | Max pending documents processed per scheduled run |
 | `JURISDIGTA_EMAIL_SCHEDULER_INTERVAL_SECONDS` | `5` | Email outbox poll interval in seconds for near-immediate self-managed delivery; minimum accepted value is `5` |
-| `INSTALL_OLLAMA` | `1` | Self-managed deploy installs/configures Ollama and pulls the seeded free-plan model `qwen3.6:27b`; set `0` only for controlled rollback or prevalidated manual install |
+| `INSTALL_OLLAMA` | `1` | Self-managed deploy installs/configures Ollama and pulls the seeded free-plan model `qwen3:1.7b`; set `0` only for controlled rollback or prevalidated manual install |
 | `OLLAMA_METRICS_PORT` | `9109` | Host-local Prometheus exporter port for Ollama runtime metrics |
 | `OLLAMA_METRICS_TIMEOUT` | `5` | Timeout in seconds for Ollama exporter API probes |
 
@@ -397,13 +397,13 @@ Server-local `jurisdigta.env` must include at least:
 - `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
-- `INSTALL_OLLAMA=1` so the self-managed deploy installs Ollama and pulls `qwen3.6:27b`
+- `INSTALL_OLLAMA=1` so the self-managed deploy installs Ollama and pulls `qwen3:1.7b`
 - `DOCUMENT_PROCESSOR_MAX_RUNNING_TIME=15` or another bounded runtime in minutes
 - email/Turnstile settings when those production features are enabled
 
 After the API database is initialized, configure chat routes in the database/admin API:
 
-- `local_ollama_default`: provider `local_ollama`, base URL `http://127.0.0.1:11434/v1`, model `qwen3.6:27b`, marked as free-plan default.
+- `local_ollama_default`: provider `local_ollama`, model `qwen3:1.7b`, marked as free-plan default. On self-managed prod the deploy script stores the private Docker gateway URL, for example `http://172.18.0.1:11434/v1`, so API containers can reach the host-local Ollama service without exposing it publicly.
 - `azure_foundry_gpt_4o_mini`: provider `azure_foundry`, EU data-zone capable, exact model/deployment `gpt-4o-mini`.
 - Add the Azure Foundry endpoint to `ai_model_providers.base_url`.
 - Add the Azure Foundry API key or token through `/v1/admin/ai-models/providers/{provider_id}/credentials` so it is stored encrypted in `ai_model_credentials`.
@@ -416,6 +416,10 @@ Optional server-local monitoring setting in `/srv/jurisdigta/app/Deployment/moni
 | `GRAFANA_DEFAULT_HOME_DASHBOARD_PATH` | `/var/lib/grafana/dashboards/jurisdigta-application-performance.json` | Grafana dashboard JSON shown as the default home dashboard after login |
 | `OLLAMA_METRICS_PORT` | `9109` | Host-local Ollama Prometheus exporter port scraped by Prometheus through `host.docker.internal` |
 
+The monitoring stack also loads `Deployment/monitoring/prometheus-rules/jurisdigta-ai-models.yml`
+for Ollama red-state and high paid-model token/cost alerts. No extra GitHub
+Environment secret is required for those default thresholds.
+
 Minimal workflow validation after setup:
 
 1. Run `Self-Managed Prod Deploy` with `repo_ref=main`.
@@ -427,8 +431,8 @@ docker image inspect jurisdigta-document-processor:local >/dev/null
 test -x /srv/jurisdigta/ops/run_document_processor.sh
 crontab -l | grep run_document_processor.sh
 systemctl is-active --quiet ollama
-curl -fsS http://127.0.0.1:11434/api/tags
-curl -fsS http://127.0.0.1:11434/v1/models
+curl -fsS http://127.0.0.1:11434/api/tags || curl -fsS "http://$(docker network inspect aijuristiction-api_default --format '{{(index .IPAM.Config 0).Gateway}}'):11434/api/tags"
+curl -fsS http://127.0.0.1:11434/v1/models || curl -fsS "http://$(docker network inspect aijuristiction-api_default --format '{{(index .IPAM.Config 0).Gateway}}'):11434/v1/models"
 ```
 
 4. From outside the server, validate the Cloudflare Tunnel routes:

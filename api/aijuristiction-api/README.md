@@ -74,8 +74,11 @@ API_LOG_LEVEL=DEBUG uvicorn app.main:app --reload --port 8080
 
 Required setup for chat model routing:
 
-- Free/default users use the seeded `local_ollama_default` route: provider `local_ollama`, base URL `http://127.0.0.1:11434/v1`, exact model `qwen3.6:27b`.
+- Free/default users use the seeded `local_ollama_default` route: provider `local_ollama`, exact model `qwen3:1.7b`. Local runs default to `http://127.0.0.1:11434/v1`; self-managed Docker production injects the private Docker gateway URL during schema initialization so the API container reaches the host-local Ollama service. Direct free-plan local replies use a compact compliance prompt and capped output to stay inside public edge timeouts on CPU-only Ollama.
 - Paid `case`, `basic`, `premium`, and `unlimited` users use the seeded Azure Foundry route `azure_foundry_gpt_4o_mini`: exact model/deployment `gpt-4o-mini`.
+- A paid subscription is considered active for routing only while `starts_at` has begun and `ends_at` is empty or in the future. Expired paid rows fall back to the Free/local Ollama route.
+- Subscription checkout creates a `pending` subscription only. The subscription becomes active only after `/v1/users/subscriptions/{subscription_id}/confirm-payment` confirms payment, which queues a payment-confirmed email with a generated invoice attached as both PDF and UBL XML.
+- The assistant UI should read `/v1/model-routing/effective` for the signed-in user before displaying model disclosure text. This endpoint returns only privacy-minimized route metadata, so Free users see the same local Ollama model that the backend will actually use.
 - Azure Foundry chat endpoint belongs in `ai_model_providers.base_url`.
 - Azure Foundry API key or token belongs in encrypted `ai_model_credentials`, managed through `/v1/admin/ai-models`.
 - Set `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` and `JURISDIGTA_ADMIN_EMAILS` in deployed environments.
@@ -108,8 +111,10 @@ AI model admin management and routing API:
 - `GET /v1/admin/ai-models/credentials?reveal=false`
 - `PUT /v1/admin/ai-models/providers/{provider_id}/credentials`
 - `PATCH /v1/admin/ai-models/credentials/{credential_id}`
+- `GET /v1/admin/users`
+- `PATCH /v1/admin/users/{user_id}`
 
-Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header and the `JURISDIGTA_ADMIN_EMAILS` allowlist. Local loopback development may send `x-jurisdigta-admin-user-id`. The credential endpoints also require API authentication and reserve `reveal=true` for authorized admin maintenance.
+Production authorization uses the Cloudflare Access `cf-access-authenticated-user-email` header with either a database `role=admin` user or the `JURISDIGTA_ADMIN_EMAILS` fallback allowlist. Local loopback development may send `x-jurisdigta-admin-user-id`. The credential endpoints also require API authentication and reserve `reveal=true` for authorized admin maintenance.
 - Admin responses never return provider secrets or legal case content. External provider changes are audited with actor, entity, old/new summaries, reason, and correlation id.
 
 Document processing mode:
@@ -919,7 +924,16 @@ Current E2E specs:
 - `tests/chat.spec.ts`
 - `tests/chat-simulator.spec.ts`
 - `tests/mobile-auth-subscription.spec.ts` (covers mobile login + subscription request flow against user endpoints)
+- `tests/payment-process.spec.ts` (simulates synthetic user checkout, sandbox payment confirmation, and payment guard rails)
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
+
+Scheduled E2E status:
+- `.github/workflows/scheduled_e2e_status.yml` runs every Monday and Friday at 06:00 UTC and can also be started manually from GitHub Actions.
+- The workflow writes a run summary table with each known E2E test name, description, covered area, latest status, duration, and prerequisite notes.
+- The source of truth for user-readable test names and descriptions is `e2e-playwright/e2e-test-catalog.json`.
+- The generated artifacts are `scheduled-e2e-status.md`, `scheduled-e2e-results.json`, and Playwright `test-results`.
+- Scheduled runs use local SQLite paths under the GitHub runner temp directory, `LLM_PROVIDER=mock`, and log-only email transport. This keeps the run deterministic and avoids processing production user data or sending messages.
+- Browser frontend specs that require `FRONTEND_BASE_URL` are listed in the catalog, but they are marked `not scheduled` by the default API-focused scheduled run until a frontend environment is explicitly provided.
 
 Run only the chat simulation test:
 
@@ -951,6 +965,23 @@ Run the mobile authentication + subscription lifecycle check used by the Flutter
 cd api/aijuristiction-api/e2e-playwright
 API_KEY=aijuris npx playwright test tests/mobile-auth-subscription.spec.ts
 ```
+
+Run the synthetic user payment-process simulation:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+API_KEY=aijuris npm run test:payment
+```
+
+On Windows PowerShell:
+
+```powershell
+cd api/aijuristiction-api/e2e-playwright
+$env:API_KEY="aijuris"
+npm run test:payment
+```
+
+The payment E2E uses only generated test identities and the API's sandbox checkout contract. It does not send real payment-provider traffic or reuse production personal data.
 
 Run the chat simulator streaming test with fixture input and uploaded txt document:
 

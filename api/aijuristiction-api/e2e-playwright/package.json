@@ -3,7 +3,11 @@
   "private": true,
   "version": "0.1.1",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "test:free-plan-api": "playwright test tests/free-plan-api-connectivity.spec.ts",
+    "test:free-plan-document": "playwright test tests/free-plan-ollama-document-pdf.spec.ts",
+    "test:outdated-rental": "playwright test tests/outdated-rental-agreement.spec.ts",
+    "test:payment": "playwright test tests/payment-process.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2"

@@ -61,13 +61,31 @@ def test_monitoring_dashboards_include_ollama_ai_models_dashboard() -> None:
     assert dashboard["uid"] == "jurisdigta-ollama-models"
     assert "Ollama API" in panel_titles
     assert "Loaded Model VRAM" in panel_titles
-    assert "Input And Output Tokens By Model" in panel_titles
-    assert "Top Cases By Tokens" in panel_titles
+    assert "AI Tokens By Model And Route" in panel_titles
+    assert "Local/Ollama Total Tokens" in panel_titles
+    assert "Paid Model Total Tokens" in panel_titles
+    assert "Top 10 Cases By Tokens (Masked)" in panel_titles
+    assert any(item["name"] == "usage_window" for item in dashboard["templating"]["list"])
+
+
+def test_monitoring_stack_loads_ai_model_alert_rules() -> None:
+    compose = (MONITORING_DIR / "docker-compose.yml").read_text(encoding="utf-8")
+    prometheus_config = (MONITORING_DIR / "prometheus.yml").read_text(encoding="utf-8")
+    alert_rules = (
+        MONITORING_DIR / "prometheus-rules" / "jurisdigta-ai-models.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "./prometheus-rules:/etc/prometheus/rules:ro" in compose
+    assert "rule_files:" in prometheus_config
+    assert "JurisDigtaOllamaExporterDown" in alert_rules
+    assert "JurisDigtaPaidModelTokenSpike" in alert_rules
+    assert "JurisDigtaPaidModelCostSpike" in alert_rules
 
 
 def test_monitoring_env_defaults_include_log_retention() -> None:
     module = _load_configure_monitoring_module()
 
+    module._docker_network_gateway = lambda network: ""
     values = module._build_monitoring_env(
         project_values={},
         existing_values={},
@@ -79,6 +97,34 @@ def test_monitoring_env_defaults_include_log_retention() -> None:
     assert values["PROMETHEUS_RETENTION_DAYS"] == "30"
     assert values["DOCKER_LOG_MAX_SIZE"] == "50m"
     assert values["DOCKER_LOG_MAX_FILE"] == "5"
+    assert values["LOCAL_LLM_BASE_URL"] == "http://127.0.0.1:11434"
+    assert values["LOCAL_LLM_MODEL"] == "qwen3:1.7b"
+
+
+def test_monitoring_env_uses_docker_gateway_for_loopback_ollama_url() -> None:
+    module = _load_configure_monitoring_module()
+
+    module._docker_network_gateway = lambda network: "172.18.0.1"
+    values = module._build_monitoring_env(
+        project_values={"LOCAL_LLM_BASE_URL": "http://127.0.0.1:11434"},
+        existing_values={},
+        prometheus_host_port=None,
+    )
+
+    assert values["LOCAL_LLM_BASE_URL"] == "http://172.18.0.1:11434"
+
+
+def test_monitoring_env_prefers_explicit_ollama_host_bind() -> None:
+    module = _load_configure_monitoring_module()
+
+    module._docker_network_gateway = lambda network: "172.18.0.1"
+    values = module._build_monitoring_env(
+        project_values={"OLLAMA_HOST_BIND": "10.0.0.5:11434"},
+        existing_values={"LOCAL_LLM_BASE_URL": "http://127.0.0.1:11434"},
+        prometheus_host_port=None,
+    )
+
+    assert values["LOCAL_LLM_BASE_URL"] == "http://10.0.0.5:11434"
 
 
 def test_prod_api_container_receives_prometheus_url() -> None:
@@ -320,7 +366,7 @@ def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
             {
                 "models": [
                     {
-                        "name": "qwen3.6:27b",
+                        "name": "qwen3:1.7b",
                         "size": 1234,
                         "modified_at": "2026-06-25T12:00:00Z",
                         "details": {
@@ -337,7 +383,7 @@ def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
             {
                 "models": [
                     {
-                        "name": "qwen3.6:27b",
+                        "name": "qwen3:1.7b",
                         "size": 1234,
                         "size_vram": 987,
                         "processor": "gpu",
@@ -349,7 +395,7 @@ def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
         ),
     }
 
-    monkeypatch.setenv("LOCAL_LLM_MODEL", "qwen3.6:27b")
+    monkeypatch.setenv("LOCAL_LLM_MODEL", "qwen3:1.7b")
     monkeypatch.setattr(
         "scripts.server.export_ollama_metrics._fetch_json",
         lambda url, *, timeout: responses[url],
@@ -358,11 +404,11 @@ def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
     metrics = _render_ollama_metrics(base_url="http://127.0.0.1:11434", timeout=5)
 
     assert 'jurisdigta_ollama_up{error=""} 1' in metrics
-    assert 'jurisdigta_ollama_configured_model_present{model="qwen3.6:27b"} 1' in metrics
+    assert 'jurisdigta_ollama_configured_model_present{model="qwen3:1.7b"} 1' in metrics
     assert "jurisdigta_ollama_models_total 1" in metrics
     assert "jurisdigta_ollama_running_models_total 1" in metrics
-    assert 'jurisdigta_ollama_model_loaded{model="qwen3.6:27b"' in metrics
-    assert 'jurisdigta_ollama_running_model_vram_bytes{model="qwen3.6:27b",processor="gpu"} 987.0' in metrics
+    assert 'jurisdigta_ollama_model_loaded{model="qwen3:1.7b"' in metrics
+    assert 'jurisdigta_ollama_running_model_vram_bytes{model="qwen3:1.7b",processor="gpu"} 987.0' in metrics
 
 
 def test_exporter_merges_laws_runtime_from_local_status_file(monkeypatch, tmp_path) -> None:

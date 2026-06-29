@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+from datetime import UTC, datetime, timedelta
 
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
@@ -17,6 +18,10 @@ for text in [
 print(
     "email_templates => non-OTP outbound emails use branded HTML with plain-text fallback; "
     "OTP/code emails remain plain text."
+)
+print(
+    "subscription_invoice_checkout => checkout keeps subscriptions pending until payment confirmation; "
+    "confirmation queues the invoice email with PDF and UBL XML attachments."
 )
 print(
     "mcp_auth_ux => browser MCP login/sign-up pages localize Slovak/English via Accept-Language; "
@@ -71,6 +76,28 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         plan_code="case",
         task_type="chat_reply",
     )
+    expired_subscription = demo_store.request_subscription_change(
+        user_id=demo_user.user_id,
+        plan_code="case",
+    )
+    paid_subscription = demo_store.update_subscription_status(
+        subscription_id=expired_subscription.subscription_id,
+        status="paid",
+    )
+    past_end = (datetime.now(UTC) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+    with demo_store._connect() as conn:
+        demo_store._execute(
+            conn,
+            "UPDATE user_subscriptions SET ends_at = ? WHERE subscription_id = ?",
+            (past_end, paid_subscription.subscription_id),
+        )
+        conn.commit()
+    expired_plan = demo_store.get_effective_subscription_plan(user_id=demo_user.user_id)
+    expired_route = demo_store.resolve_ai_model_route(
+        user_id=demo_user.user_id,
+        plan_code=expired_plan.plan_code,
+        task_type="chat_reply",
+    )
     print(
         "model_routing_free => "
         f"{free_route.provider.provider_code}/{free_route.model_profile.model_code}"
@@ -78,6 +105,15 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
     print(
         "model_routing_case => "
         f"{case_route.provider.provider_code}/{case_route.model_profile.model_code}"
+    )
+    print(
+        "model_routing_expired_paid => "
+        f"{expired_plan.plan_code}/"
+        f"{expired_route.provider.provider_code}/{expired_route.model_profile.model_code}"
+    )
+    print(
+        "model_disclosure_label => "
+        f"{expired_route.provider.display_name} - {expired_route.model_profile.model_code}"
     )
 print(
     "ai_model_admin => /app/admin/ai-models manages model providers, prices, "

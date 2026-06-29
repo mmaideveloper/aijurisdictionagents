@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import AssistantWorkspace, { parseAssistantMessagePresentation } from "../pages/AssistantWorkspace";
-import { ApiRequestError, createChatSession, streamSession } from "../api/chatClient";
+import { ApiRequestError, createChatSession, fetchEffectiveModelRoute, streamSession } from "../api/chatClient";
 
 const labels: Record<string, string> = {
   assistantThreadsTitle: "Conversations",
@@ -34,6 +34,7 @@ const labels: Record<string, string> = {
   assistantMetadataReviewValue: "Required before final use",
   assistantModelDisclosureAria: "AI model used for this chat",
   assistantModelDisclosureLabel: "Model",
+  assistantModelDisclosurePending: "Checking model route...",
   assistantComposerLabel: "Assistant message",
   assistantComposerPlaceholder: "Ask for legal research or document preparation...",
   assistantSend: "Send message",
@@ -44,6 +45,7 @@ const labels: Record<string, string> = {
   assistantApiErrorResponse: "Asistent nemohol dokončiť požiadavku na JurisDigta API. Stav: {status}. Detail: {detail}",
   assistantCaseWriteWindowExpiredDetail:
     "Tento prípad je iba na čítanie, pretože plán {plan} umožňuje úpravy po dobu {days} dňa/dní od vytvorenia.",
+  assistantAuthLoadingResponse: "I am checking your account before starting the legal assistant. Please try again in a moment.",
   workspaceConfigurations: "Configurations",
   workspaceSystemLabel: "System",
   workspaceUserLabel: "You",
@@ -61,7 +63,8 @@ const labels: Record<string, string> = {
   workspaceJudgeTitle: "AI judge",
   roleIntentJudge: "Assess fairness",
   workspaceOpposingTitle: "Opposing party",
-  roleIntentOpposing: "Challenge my argument"
+  roleIntentOpposing: "Challenge my argument",
+  roleUnavailable: "Coming later"
 };
 
 vi.mock("../components/LanguageProvider", () => ({
@@ -77,10 +80,14 @@ vi.mock("../components/LanguageProvider", () => ({
   })
 }));
 
+const authState = vi.hoisted(() => ({
+  isAuthenticated: true,
+  isAuthLoading: false,
+  user: { userId: "user-1" } as { userId: string } | null
+}));
+
 vi.mock("../auth/webAuth", () => ({
-  useAuth: () => ({
-    user: { userId: "user-1" }
-  })
+  useAuth: () => authState
 }));
 
 const caseActions = vi.hoisted(() => ({
@@ -126,6 +133,7 @@ vi.mock("../api/chatClient", async () => {
   return {
     ...actual,
     createChatSession: vi.fn(),
+    fetchEffectiveModelRoute: vi.fn(),
     streamSession: vi.fn()
   };
 });
@@ -177,6 +185,23 @@ vi.mock("@assistant-ui/react", () => ({
 }));
 
 describe("AssistantWorkspace", () => {
+  beforeEach(() => {
+    authState.isAuthenticated = true;
+    authState.isAuthLoading = false;
+    authState.user = { userId: "user-1" };
+    vi.mocked(fetchEffectiveModelRoute).mockResolvedValue({
+      plan_code: "free",
+      route_type: "free_local",
+      provider: "local_ollama",
+      provider_display_name: "Local Ollama",
+      model: "qwen3:1.7b",
+      model_profile_id: "local_ollama_default",
+      is_local: true,
+      is_external: false,
+      label: "Local Ollama - qwen3:1.7b"
+    });
+  });
+
   afterEach(() => {
     capturedAdapter = null;
     capturedRuntimeOptions = null;
@@ -184,20 +209,109 @@ describe("AssistantWorkspace", () => {
     caseActions.setCaseCommunicationMode.mockReset();
     caseActions.loadCaseData.mockReset();
     vi.mocked(createChatSession).mockReset();
+    vi.mocked(fetchEffectiveModelRoute).mockReset();
     vi.mocked(streamSession).mockReset();
     cleanup();
   });
 
-  it("renders assistant workspace with configuration controls", () => {
+  it("renders assistant workspace with the effective signed-in user model route", async () => {
+    vi.mocked(fetchEffectiveModelRoute).mockResolvedValue({
+      plan_code: "free",
+      route_type: "free_local",
+      provider: "local_ollama",
+      provider_display_name: "Local Ollama",
+      model: "qwen3:1.7b",
+      model_profile_id: "local_ollama_default",
+      is_local: true,
+      is_external: false,
+      label: "Local Ollama - qwen3:1.7b"
+    });
+
     render(<AssistantWorkspace />);
 
     expect(screen.getByRole("heading", { name: "JurisDigta Assistant" })).toBeDefined();
-    expect(screen.getByLabelText("AI model used for this chat").textContent).toContain("Azure Foundry model");
+    expect(await screen.findByText("Local Ollama - qwen3:1.7b")).toBeDefined();
+    expect(vi.mocked(fetchEffectiveModelRoute)).toHaveBeenCalledWith("user-1");
     expect(screen.getByRole("heading", { name: "Configurations" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Chat" })).toBeDefined();
     expect(screen.getByText("AI lawyer")).toBeDefined();
     expect(screen.getByText("Opposing party")).toBeDefined();
     expect(screen.queryByText("Production access uses JurisDigta account login")).toBeNull();
+  });
+
+  it("waits for the signed-in user id before showing the effective model route", async () => {
+    authState.isAuthenticated = true;
+    authState.isAuthLoading = true;
+    authState.user = null;
+    const { rerender } = render(<AssistantWorkspace />);
+
+    expect(screen.getByLabelText("AI model used for this chat").textContent).toContain("Checking model route...");
+    expect(vi.mocked(fetchEffectiveModelRoute)).not.toHaveBeenCalled();
+
+    authState.isAuthLoading = false;
+    authState.user = { userId: "user-1" };
+    rerender(<AssistantWorkspace />);
+
+    expect(await screen.findByText("Local Ollama - qwen3:1.7b")).toBeDefined();
+    expect(vi.mocked(fetchEffectiveModelRoute)).toHaveBeenCalledWith("user-1");
+    expect(vi.mocked(fetchEffectiveModelRoute)).not.toHaveBeenCalledWith(undefined);
+  });
+
+  it("does not create a chat session until a signed-in user id is available", async () => {
+    authState.isAuthenticated = true;
+    authState.isAuthLoading = true;
+    authState.user = null;
+
+    render(<AssistantWorkspace />);
+
+    const result = capturedAdapter?.run({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Priprav splnomocnenie." }]
+        }
+      ],
+      abortSignal: new AbortController().signal
+    });
+
+    let lastResult: CapturedRunResult | undefined;
+    if (result && Symbol.asyncIterator in result) {
+      for await (const update of result) {
+        lastResult = update;
+      }
+    } else {
+      lastResult = await result;
+    }
+
+    expect(createChatSession).not.toHaveBeenCalled();
+    expect(streamSession).not.toHaveBeenCalled();
+    expect(lastResult?.content?.[0]?.text).toBe(
+      "I am checking your account before starting the legal assistant. Please try again in a moment."
+    );
+  });
+
+  it("falls back to the configured model label when route disclosure is unavailable", () => {
+    authState.isAuthenticated = false;
+    authState.user = null;
+    vi.mocked(fetchEffectiveModelRoute).mockRejectedValue(new Error("offline"));
+
+    render(<AssistantWorkspace />);
+
+    expect(screen.getByLabelText("AI model used for this chat").textContent).toContain("Azure Foundry model");
+  });
+
+  it("keeps unsupported legal-risk roles disabled in the configuration panel", () => {
+    render(<AssistantWorkspace />);
+
+    const lawyerRole = screen.getByRole("radio", { name: /AI lawyer/i }) as HTMLInputElement;
+    const judgeRole = screen.getByRole("radio", { name: /AI judge/i }) as HTMLInputElement;
+    const opposingRole = screen.getByRole("radio", { name: /Opposing party/i }) as HTMLInputElement;
+
+    expect(lawyerRole.checked).toBe(true);
+    expect(lawyerRole.disabled).toBe(false);
+    expect(judgeRole.disabled).toBe(true);
+    expect(opposingRole.disabled).toBe(true);
+    expect(screen.getAllByText("Coming later")).toHaveLength(2);
   });
 
   it("does not show the static MCP news panel in the assistant workspace", () => {

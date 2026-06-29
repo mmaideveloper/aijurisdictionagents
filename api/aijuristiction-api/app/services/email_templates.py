@@ -75,8 +75,15 @@ def build_subscription_status_email(*, full_name: str, plan_code: str, status: s
     normalized_status = _display_value(status)
     if status == "paid":
         subject = "Payment confirmed"
-        paragraphs = ["Payment for your subscription was confirmed and your plan is active."]
-        body = f"Hello {name},\n\npayment for your '{plan}' subscription was confirmed and your plan is active.\n"
+        paragraphs = [
+            "Payment for your subscription was confirmed and your plan is active.",
+            "Your invoice is attached as a PDF and UBL XML file.",
+        ]
+        body = (
+            f"Hello {name},\n\n"
+            f"payment for your '{plan}' subscription was confirmed and your plan is active.\n"
+            "Your invoice is attached as a PDF and UBL XML file.\n"
+        )
     elif status == "failed":
         subject = "Payment failed"
         paragraphs = ["Payment for your subscription failed. Please retry your payment method."]

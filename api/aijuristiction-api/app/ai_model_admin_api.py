@@ -4,9 +4,17 @@ from dataclasses import asdict
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from app.ollama_admin_service import (
+    OllamaAdminService,
+    OllamaInstalledModel,
+    OllamaModelJob,
+    OllamaModelJobRegistry,
+    validate_ollama_registry_model_name,
+)
 from app.security import require_api_key
 from aijurisdictionagents.api_db import (
     AIModelAdminAuditEvent,
@@ -16,12 +24,15 @@ from aijurisdictionagents.api_db import (
     AIModelProfile,
     AIModelProvider,
     AITaskRoutePolicy,
+    AdminUser,
     ApiDatabaseStore,
     User,
 )
 
 router = APIRouter(prefix="/v1/admin/ai-models", tags=["ai-model-admin"])
 _DEFAULT_ADMIN_EMAIL = "mmaideveloper@gmail.com"
+_LOCAL_DEFAULT_PROFILE_ID = "local_ollama_default"
+_ollama_job_registry = OllamaModelJobRegistry()
 
 
 class AdminContext(BaseModel):
@@ -31,9 +42,18 @@ class AdminContext(BaseModel):
 
 class AdminUserSummaryResponse(BaseModel):
     user_id: str
+    phone_number: str | None = None
     email: str
     full_name: str
+    role: str = "user"
+    is_enabled: bool = True
     created_at: str | None = None
+
+
+class AdminUsersPageSummaryResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
 
 
 class AIModelProviderResponse(BaseModel):
@@ -224,16 +244,64 @@ class AIModelAdminDashboardResponse(BaseModel):
     groups: list[AIModelGroupResponse]
     memberships: list[AIModelGroupMembershipResponse]
     users: list[AdminUserSummaryResponse]
+    users_page: AdminUsersPageSummaryResponse
     audit_events: list[AIModelAdminAuditEventResponse]
     route_priority: list[str]
     compliance_notes: list[str]
     grafana_url: str
 
 
+class OllamaModelInventoryItemResponse(BaseModel):
+    name: str
+    model: str
+    modified_at: str
+    size: int
+    digest: str
+    details: dict[str, Any]
+    configured_profile_ids: list[str]
+    active_policy_ids: list[str]
+    is_default: bool
+    is_running: bool
+    removable: bool
+    removal_blockers: list[str]
+
+
+class OllamaModelInventoryResponse(BaseModel):
+    base_url: str
+    models: list[OllamaModelInventoryItemResponse]
+
+
+class OllamaModelImportRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=160)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class OllamaModelRemoveRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class OllamaModelJobResponse(BaseModel):
+    job_id: str
+    action: str
+    model: str
+    status: str
+    message: str
+    created_at: str
+    updated_at: str
+
+
 def get_admin_store() -> ApiDatabaseStore:
     store = ApiDatabaseStore.from_env()
     store.initialize()
     return store
+
+
+def get_ollama_admin_service() -> OllamaAdminService:
+    return OllamaAdminService()
+
+
+def get_ollama_job_registry() -> OllamaModelJobRegistry:
+    return _ollama_job_registry
 
 
 def require_ai_model_admin(
@@ -243,6 +311,8 @@ def require_ai_model_admin(
     cf_access_email: str | None = Header(default=None, alias="cf-access-authenticated-user-email"),
     admin_api_key: str | None = Header(default=None, alias="x-admin-api-key"),
     local_admin_user_id: str | None = Header(default=None, alias="x-jurisdigta-admin-user-id"),
+    device_id: str | None = Header(default=None, alias="x-jurisdigta-device-id"),
+    device_token: str | None = Header(default=None, alias="x-jurisdigta-device-token"),
 ) -> AdminContext:
     if _legacy_admin_key_valid(admin_api_key):
         return AdminContext(user_id="", email="legacy-admin-key")
@@ -250,16 +320,30 @@ def require_ai_model_admin(
     admin_emails = _configured_admin_emails()
     candidate_email = (cf_access_email or "").strip().lower()
     candidate_user_id = ""
+    candidate_is_admin_role = False
     if candidate_email:
         user = store.find_user_by_email(email=candidate_email)
-        candidate_user_id = user.user_id if user is not None else ""
+        if user is not None:
+            candidate_user_id = user.user_id
+            candidate_is_admin_role = user.role == "admin" and user.is_enabled
     elif local_admin_user_id and _is_local_request(request):
         user = store.find_user_by_id(user_id=local_admin_user_id.strip())
         if user is not None:
             candidate_email = user.email.strip().lower()
             candidate_user_id = user.user_id
+            candidate_is_admin_role = user.role == "admin" and user.is_enabled
+    elif local_admin_user_id and device_id and device_token:
+        user = store.authenticate_user_device_auth_token(
+            user_id=local_admin_user_id.strip(),
+            device_id=device_id,
+            token=device_token,
+        )
+        if user is not None:
+            candidate_email = user.email.strip().lower()
+            candidate_user_id = user.user_id
+            candidate_is_admin_role = user.role == "admin" and user.is_enabled
 
-    if not candidate_email or candidate_email not in admin_emails:
+    if not candidate_email or (candidate_email not in admin_emails and not candidate_is_admin_role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required")
     return AdminContext(user_id=candidate_user_id, email=candidate_email)
 
@@ -269,6 +353,7 @@ def get_ai_model_admin_dashboard(
     admin: AdminContext = Depends(require_ai_model_admin),
     store: ApiDatabaseStore = Depends(get_admin_store),
 ) -> AIModelAdminDashboardResponse:
+    users_limit = 25
     return AIModelAdminDashboardResponse(
         admin=admin,
         providers=[_provider_response(item) for item in store.list_ai_model_providers()],
@@ -277,7 +362,12 @@ def get_ai_model_admin_dashboard(
         policies=[_policy_response(item) for item in store.list_ai_task_route_policies()],
         groups=[_group_response(item) for item in store.list_ai_model_groups()],
         memberships=[_membership_response(item) for item in store.list_ai_model_group_users()],
-        users=[_user_summary_response(item) for item in store.list_users_for_admin(limit=200)],
+        users=[_user_summary_response(item) for item in store.list_users_for_admin(limit=users_limit)],
+        users_page=AdminUsersPageSummaryResponse(
+            total=store.count_users_for_admin(),
+            limit=users_limit,
+            offset=0,
+        ),
         audit_events=[_audit_response(item) for item in store.list_ai_model_admin_audit_events(limit=25)],
         route_priority=[
             "user local override",
@@ -383,6 +473,116 @@ def list_ai_model_credentials(
     store: ApiDatabaseStore = Depends(get_admin_store),
 ) -> list[AIModelCredentialResponse]:
     return [_credential_response(item) for item in store.list_ai_model_credentials(reveal=reveal)]
+
+
+@router.get("/ollama/models", response_model=OllamaModelInventoryResponse)
+def list_ollama_models(
+    _: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+    ollama: OllamaAdminService = Depends(get_ollama_admin_service),
+) -> OllamaModelInventoryResponse:
+    try:
+        models = ollama.list_models()
+        running_model_names = ollama.list_running_model_names()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Ollama service is unavailable") from exc
+    return OllamaModelInventoryResponse(
+        base_url=ollama.base_url,
+        models=[
+            _ollama_inventory_item_response(
+                model=item,
+                running_model_names=running_model_names,
+                store=store,
+            )
+            for item in models
+        ],
+    )
+
+
+@router.post("/ollama/import", response_model=OllamaModelJobResponse)
+def import_ollama_model(
+    payload: OllamaModelImportRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+    ollama: OllamaAdminService = Depends(get_ollama_admin_service),
+    jobs: OllamaModelJobRegistry = Depends(get_ollama_job_registry),
+) -> OllamaModelJobResponse:
+    try:
+        model = validate_ollama_registry_model_name(payload.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    job = jobs.start(action="pull", model=model)
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="ollama_pull_started",
+        entity_type="ollama_model",
+        entity_id=model,
+        old=None,
+        new={"job_id": job.job_id, "status": job.status},
+        reason=payload.reason,
+    )
+    background_tasks.add_task(jobs.run, job_id=job.job_id, operation="pull", model=model, service=ollama)
+    return _ollama_job_response(job)
+
+
+@router.delete("/ollama/models/{model_name:path}", response_model=OllamaModelJobResponse)
+def remove_ollama_model(
+    model_name: str,
+    payload: OllamaModelRemoveRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+    ollama: OllamaAdminService = Depends(get_ollama_admin_service),
+    jobs: OllamaModelJobRegistry = Depends(get_ollama_job_registry),
+) -> OllamaModelJobResponse:
+    try:
+        model = validate_ollama_registry_model_name(model_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    try:
+        running_model_names = ollama.list_running_model_names()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Ollama service is unavailable") from exc
+    blockers = _ollama_model_removal_blockers(
+        model_name=model,
+        profiles=store.list_ai_model_profiles(),
+        providers=store.list_ai_model_providers(),
+        policies=store.list_ai_task_route_policies(),
+        running_model_names=running_model_names,
+    )
+    if blockers:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"message": "Ollama model is in active use", "blockers": blockers})
+    job = jobs.start(action="remove", model=model)
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="ollama_remove_started",
+        entity_type="ollama_model",
+        entity_id=model,
+        old={"model": model},
+        new={"job_id": job.job_id, "status": job.status},
+        reason=payload.reason,
+    )
+    background_tasks.add_task(jobs.run, job_id=job.job_id, operation="remove", model=model, service=ollama)
+    return _ollama_job_response(job)
+
+
+@router.get("/ollama/jobs/{job_id}", response_model=OllamaModelJobResponse)
+def get_ollama_model_job(
+    job_id: str,
+    _: AdminContext = Depends(require_ai_model_admin),
+    jobs: OllamaModelJobRegistry = Depends(get_ollama_job_registry),
+) -> OllamaModelJobResponse:
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ollama model job not found")
+    return _ollama_job_response(job)
 
 
 @router.post("/providers/{provider_id}/credentials", response_model=AIModelCredentialResponse)
@@ -648,6 +848,110 @@ def _record_audit(
     )
 
 
+def _ollama_inventory_item_response(
+    *,
+    model: OllamaInstalledModel,
+    running_model_names: set[str],
+    store: ApiDatabaseStore,
+) -> OllamaModelInventoryItemResponse:
+    profiles = store.list_ai_model_profiles()
+    providers = store.list_ai_model_providers()
+    policies = store.list_ai_task_route_policies()
+    blockers = _ollama_model_removal_blockers(
+        model_name=model.name,
+        profiles=profiles,
+        providers=providers,
+        policies=policies,
+        running_model_names=running_model_names,
+    )
+    configured_profile_ids = [
+        item.model_profile_id
+        for item in profiles
+        if _is_local_ollama_profile(item, providers) and _profile_matches_ollama_model(item, model.name)
+    ]
+    active_policy_ids = [
+        item.policy_id
+        for item in policies
+        if item.enabled and item.preferred_local_model_profile_id in configured_profile_ids
+    ]
+    return OllamaModelInventoryItemResponse(
+        name=model.name,
+        model=model.model,
+        modified_at=model.modified_at,
+        size=model.size,
+        digest=model.digest,
+        details=model.details,
+        configured_profile_ids=configured_profile_ids,
+        active_policy_ids=active_policy_ids,
+        is_default=any("default" in blocker.lower() for blocker in blockers),
+        is_running=model.name in running_model_names,
+        removable=not blockers,
+        removal_blockers=blockers,
+    )
+
+
+def _ollama_model_removal_blockers(
+    *,
+    model_name: str,
+    profiles: list[AIModelProfile],
+    providers: list[AIModelProvider],
+    policies: list[AITaskRoutePolicy],
+    running_model_names: set[str],
+) -> list[str]:
+    blockers: list[str] = []
+    matching_profiles = [
+        item
+        for item in profiles
+        if _is_local_ollama_profile(item, providers) and _profile_matches_ollama_model(item, model_name)
+    ]
+    matching_profile_ids = {item.model_profile_id for item in matching_profiles}
+    for profile in matching_profiles:
+        if profile.is_default_for_free:
+            blockers.append(f"Profile {profile.model_profile_id} is marked as the free/default local model.")
+        if profile.model_profile_id == _LOCAL_DEFAULT_PROFILE_ID:
+            blockers.append(f"Profile {profile.model_profile_id} is the seeded system local default.")
+
+    for policy in policies:
+        if policy.enabled and policy.preferred_local_model_profile_id in matching_profile_ids:
+            blockers.append(
+                f"Enabled route policy {policy.policy_id} uses profile {policy.preferred_local_model_profile_id}."
+            )
+
+    env_default = os.getenv("LOCAL_LLM_MODEL", "").strip()
+    if env_default and env_default.lower() != "unknown-variable" and env_default == model_name:
+        blockers.append("LOCAL_LLM_MODEL currently selects this model.")
+
+    if model_name in running_model_names and matching_profile_ids:
+        blockers.append("Ollama reports this configured model as currently loaded.")
+
+    return sorted(set(blockers))
+
+
+def _is_local_ollama_profile(profile: AIModelProfile, providers: list[AIModelProvider]) -> bool:
+    provider = {item.provider_id: item for item in providers}.get(profile.provider_id)
+    if provider is None:
+        return False
+    provider_type = provider.provider_type.strip().lower()
+    return provider.is_local or provider_type in {"ollama", "local_ollama"}
+
+
+def _profile_matches_ollama_model(profile: AIModelProfile, model_name: str) -> bool:
+    names = {profile.model_code.strip(), profile.deployment_name.strip()}
+    return model_name in names
+
+
+def _ollama_job_response(job: OllamaModelJob) -> OllamaModelJobResponse:
+    return OllamaModelJobResponse(
+        job_id=job.job_id,
+        action=job.action,
+        model=job.model,
+        status=job.status,
+        message=job.message,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
+
+
 def _summary(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
@@ -706,10 +1010,13 @@ def _audit_response(item: AIModelAdminAuditEvent) -> AIModelAdminAuditEventRespo
     return AIModelAdminAuditEventResponse(**asdict(item))
 
 
-def _user_summary_response(item: User) -> AdminUserSummaryResponse:
+def _user_summary_response(item: AdminUser | User) -> AdminUserSummaryResponse:
     return AdminUserSummaryResponse(
         user_id=item.user_id,
+        phone_number=item.phone_number,
         email=item.email,
         full_name=item.full_name,
+        role=item.role,
+        is_enabled=item.is_enabled,
         created_at=item.created_at,
     )

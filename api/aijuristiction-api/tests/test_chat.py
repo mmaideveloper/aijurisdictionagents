@@ -1521,6 +1521,125 @@ def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(mon
     assert "Client full name: Marek Matonok" in captured_prompts[-1]
 
 
+def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_path) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    import app.users.api as users_api
+    from aijurisdictionagents.llm.routing import RoutedLLMClient
+
+    class _NoopEmailScheduler:
+        def enqueue(self, *, recipient: str, subject: str, body: str, metadata: dict[str, object]) -> str:
+            return "email-ignored"
+
+    class _FakeLocalLLM:
+        def complete(self, agent_name, system_prompt, conversation, documents):
+            return "Free local model answer from test."
+
+    class _NoopDocumentProcessor:
+        def __init__(self, store):
+            self.store = store
+
+        def process_documents(self, documents):
+            return None
+
+    def _routed_free_client(*, store, user_id, task_type="default", external_acknowledged=False):
+        plan = store.get_effective_subscription_plan(user_id=user_id)
+        subscription = store.get_effective_user_subscription(user_id=user_id)
+        route = store.resolve_ai_model_route(
+            user_id=user_id,
+            plan_code=plan.plan_code,
+            task_type=task_type,
+            external_acknowledged=external_acknowledged,
+        )
+        assert route.provider is not None
+        assert route.model_profile is not None
+        return RoutedLLMClient(
+            client=_FakeLocalLLM(),
+            route=route,
+            plan=plan,
+            subscription=subscription,
+            provider=route.provider.provider_code,
+            model=route.model_profile.deployment_name or route.model_profile.model_code,
+            route_type=route.route_type,
+            fallback_reason="",
+        )
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "blob"))
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(chat_api, "get_routed_llm_client", _routed_free_client)
+    monkeypatch.setattr(chat_api, "DocumentProcessor", _NoopDocumentProcessor)
+    app.dependency_overrides[users_api.get_email_scheduler] = lambda: _NoopEmailScheduler()
+    try:
+        sign_up_response = client.post(
+            "/v1/users/sign-up",
+            headers=AUTH_HEADERS,
+            json={
+                "phone_number": "+421900777888",
+                "email": "free-local-e2e@example.com",
+                "password": "secret",
+                "first_name": "Free",
+                "last_name": "Local",
+            },
+        )
+        assert sign_up_response.status_code == 201
+        user_id = sign_up_response.json()["user_id"]
+        subscriptions_response = client.get(
+            f"/v1/users/{user_id}/subscriptions",
+            headers=AUTH_HEADERS,
+        )
+        assert subscriptions_response.status_code == 200
+        assert subscriptions_response.json()[0]["plan_code"] == "free"
+
+        case_response = client.post(
+            "/v1/cases",
+            headers=AUTH_HEADERS,
+            json={"user_id": user_id, "title": "Free local routing e2e"},
+        )
+        assert case_response.status_code == 201
+        case_id = case_response.json()["case_id"]
+
+        session_response = client.post(
+            "/v1/chat/sessions",
+            headers=AUTH_HEADERS,
+            json={
+                "user_id": user_id,
+                "case_id": case_id,
+                "country": "US",
+                "discussion_type": "advice",
+                "language": "EN",
+            },
+        )
+        assert session_response.status_code == 200
+        session_id = session_response.json()["id"]
+
+        reply_response = client.post(
+            f"/v1/chat/sessions/{session_id}/reply",
+            headers=AUTH_HEADERS,
+            json={"content": "Please review my tenant dispute and suggest next steps."},
+        )
+        assert reply_response.status_code == 200
+        assert reply_response.json()["content"] == "Free local model answer from test."
+
+        audit_response = client.get(
+            f"/v1/cases/{case_id}/ai-model-audit?user_id={user_id}&limit=5",
+            headers=AUTH_HEADERS,
+        )
+        assert audit_response.status_code == 200
+    finally:
+        app.dependency_overrides.pop(users_api.get_email_scheduler, None)
+
+    entries = audit_response.json()["entries"]
+    assert len(entries) == 1
+    assert entries[0]["provider"] == "local_ollama"
+    assert entries[0]["model"] == "qwen3:1.7b"
+    assert entries[0]["route_type"] == "free_local"
+    assert entries[0]["task_type"] == "chat_reply"
+
+
 def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
@@ -2955,6 +3074,60 @@ def test_prepare_slovakia_vehicle_authorization_captures_user_facts_and_company_
         and "sidlo: Partizanska 665, 059 18 Spisske Bystre" in str(event.get("message"))
         for event in events
     )
+    slovakia_service._ORSR_CACHE.clear()
+
+
+def test_prepare_slovakia_vehicle_authorization_issue_428_uses_direct_document_reply(monkeypatch) -> None:
+    from app.chat.country_services import slovakia as slovakia_service
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    class _FakeRegistry:
+        def run(self, name: str, **kwargs):
+            assert name == "obchodny_register_company_check"
+            assert kwargs["company_name_or_registration"] == "ESolutions SK s.r.o."
+            return SimpleNamespace(
+                ok=True,
+                records=(
+                    {
+                        "name": "ESolutions SK s.r.o.",
+                        "registration_number": "46491261",
+                        "seat": "Partizanska 665, 059 18 Spisske Bystre",
+                        "status": "Aktivna",
+                    },
+                ),
+            )
+
+    slovakia_service._ORSR_CACHE.clear()
+    monkeypatch.setattr(slovakia_service, "build_default_tool_registry", lambda: _FakeRegistry())
+    session = Session(country="SK", language="sk")
+    current_content = (
+        "Priprav mi splnomocnenie na prevadzku motoroveho vozidla firmy ESolutions SK s.r.o. "
+        "pre Janka Hraska, bytom testova 10, Poprad, slovensko od 1.7.2026 na neurcito. "
+        "Priprav document v slovenskom a anglickom jazyku."
+    )
+    messages = [Message(session_id=session.id, role=MessageRole.USER, content=current_content)]
+    events: list[dict[str, object]] = []
+
+    preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=messages,
+        current_content=current_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+        processing_event_callback=events.append,
+    )
+
+    assert preparation.direct_reply is not None
+    assert "Janka Hraska, adresa: testova 10, Poprad, slovensko" in preparation.direct_reply
+    assert "ESolutions SK s.r.o., ICO 46491261, Partizanska 665" in preparation.direct_reply
+    assert "1.7.2026" in preparation.direct_reply
+    assert "Splnomocnenie (slovenska verzia)" in preparation.direct_reply
+    assert "Power of Attorney (English version)" in preparation.direct_reply
+    assert any(event.get("stage") == "document_ready" for event in events)
     slovakia_service._ORSR_CACHE.clear()
 
 

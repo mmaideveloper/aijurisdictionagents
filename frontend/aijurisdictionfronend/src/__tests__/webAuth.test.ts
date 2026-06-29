@@ -22,7 +22,9 @@ describe("web auth profile mapping", () => {
         data_processing_consent_at: "2026-06-21T09:12:28+00:00",
         data_processing_consent_version: "web-sign-up-v1",
         mcp_api_key_expires_at: "2026-06-22T09:12:28+00:00",
-        created_at: "2026-06-21T09:12:28+00:00"
+        created_at: "2026-06-21T09:12:28+00:00",
+        role: "admin",
+        is_enabled: true
       })
     ).toEqual({
       userId: "user-1",
@@ -43,7 +45,8 @@ describe("web auth profile mapping", () => {
       dataProcessingConsentVersion: "web-sign-up-v1",
       mcpApiKeyExpiresAt: "2026-06-22T09:12:28+00:00",
       accountCreatedAt: "2026-06-21T09:12:28+00:00",
-      role: "JurisDigta user"
+      role: "admin",
+      isEnabled: true
     });
   });
 

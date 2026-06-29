@@ -88,9 +88,19 @@ export interface AIModelGroupMembership {
 
 export interface AdminUserSummary {
   user_id: string;
+  phone_number: string | null;
   email: string;
   full_name: string;
+  role: string;
+  is_enabled: boolean;
   created_at: string | null;
+}
+
+export interface AdminUsersPage {
+  items: AdminUserSummary[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface AIModelAdminAuditEvent {
@@ -115,10 +125,45 @@ export interface AIModelAdminDashboard {
   groups: AIModelGroup[];
   memberships: AIModelGroupMembership[];
   users: AdminUserSummary[];
+  users_page: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
   audit_events: AIModelAdminAuditEvent[];
   route_priority: string[];
   compliance_notes: string[];
   grafana_url: string;
+}
+
+export interface OllamaModelInventoryItem {
+  name: string;
+  model: string;
+  modified_at: string;
+  size: number;
+  digest: string;
+  details: Record<string, unknown>;
+  configured_profile_ids: string[];
+  active_policy_ids: string[];
+  is_default: boolean;
+  is_running: boolean;
+  removable: boolean;
+  removal_blockers: string[];
+}
+
+export interface OllamaModelInventory {
+  base_url: string;
+  models: OllamaModelInventoryItem[];
+}
+
+export interface OllamaModelJob {
+  job_id: string;
+  action: string;
+  model: string;
+  status: string;
+  message: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ProviderUpsertInput {
@@ -158,6 +203,12 @@ export interface CredentialUpsertInput {
   reason: string;
 }
 
+export interface UserAdminUpdateInput {
+  role: string;
+  is_enabled: boolean;
+  reason: string;
+}
+
 export interface GroupUpsertInput {
   group_code: string;
   display_name: string;
@@ -183,26 +234,48 @@ export interface PolicyUpsertInput {
   reason: string;
 }
 
-const adminHeaders = (adminUserId: string): HeadersInit => {
+export interface AdminAuthContext {
+  userId: string;
+  deviceId?: string;
+  deviceAuthToken?: string;
+}
+
+type AdminAuthInput = AdminAuthContext | string;
+
+const normalizeAdminAuth = (adminAuth: AdminAuthInput): AdminAuthContext =>
+  typeof adminAuth === "string" ? { userId: adminAuth } : adminAuth;
+
+const adminHeaders = (adminAuthInput: AdminAuthInput): HeadersInit => {
   const config = chatApiRuntimeConfig();
-  return {
+  const adminAuth = normalizeAdminAuth(adminAuthInput);
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "x-api-key": config.apiKey,
-    "x-jurisdigta-admin-user-id": adminUserId
+    "x-jurisdigta-admin-user-id": adminAuth.userId
   };
+  if (adminAuth.deviceId && adminAuth.deviceAuthToken) {
+    headers["x-jurisdigta-device-id"] = adminAuth.deviceId;
+    headers["x-jurisdigta-device-token"] = adminAuth.deviceAuthToken;
+  }
+  return headers;
 };
 
-const adminRequest = async <T>(path: string, adminUserId: string, init?: RequestInit): Promise<T> => {
+const adminRequest = async <T>(path: string, adminAuth: AdminAuthInput, init?: RequestInit): Promise<T> => {
   const config = chatApiRuntimeConfig();
   const response = await fetch(`${config.baseUrl}${path}`, {
     ...init,
-    headers: adminHeaders(adminUserId)
+    headers: adminHeaders(adminAuth)
   });
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try {
-      const payload = (await response.json()) as { detail?: string };
-      detail = payload.detail || detail;
+      const payload = (await response.json()) as { detail?: unknown };
+      if (typeof payload.detail === "string") {
+        detail = payload.detail;
+      } else if (payload.detail && typeof payload.detail === "object" && "blockers" in payload.detail) {
+        const blockers = (payload.detail as { blockers?: unknown }).blockers;
+        detail = Array.isArray(blockers) ? blockers.join(" ") : JSON.stringify(payload.detail);
+      }
     } catch {
       detail = response.statusText || detail;
     }
@@ -214,19 +287,35 @@ const adminRequest = async <T>(path: string, adminUserId: string, init?: Request
   return (await response.json()) as T;
 };
 
-export const fetchAIModelAdminDashboard = (adminUserId: string): Promise<AIModelAdminDashboard> =>
-  adminRequest<AIModelAdminDashboard>("/v1/admin/ai-models", adminUserId, { method: "GET" });
+export const fetchAIModelAdminDashboard = (adminAuth: AdminAuthContext): Promise<AIModelAdminDashboard> =>
+  adminRequest<AIModelAdminDashboard>("/v1/admin/ai-models", adminAuth, { method: "GET" });
+
+export const fetchAdminUsers = (
+  adminAuth: AdminAuthContext,
+  limit: number,
+  offset: number,
+  query = ""
+): Promise<AdminUsersPage> => {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset)
+  });
+  if (query.trim()) {
+    params.set("query", query.trim());
+  }
+  return adminRequest<AdminUsersPage>(`/v1/admin/users?${params.toString()}`, adminAuth, { method: "GET" });
+};
 
 export const fetchAIModelCredentials = (
-  adminUserId: string,
+  adminAuth: AdminAuthInput,
   reveal: boolean
 ): Promise<AIModelCredential[]> =>
-  adminRequest<AIModelCredential[]>(`/v1/admin/ai-models/credentials?reveal=${reveal ? "true" : "false"}`, adminUserId, {
+  adminRequest<AIModelCredential[]>(`/v1/admin/ai-models/credentials?reveal=${reveal ? "true" : "false"}`, adminAuth, {
     method: "GET"
   });
 
 export const upsertAIModelProvider = (
-  adminUserId: string,
+  adminUserId: AdminAuthInput,
   input: ProviderUpsertInput
 ): Promise<AIModelProvider> =>
   adminRequest<AIModelProvider>("/v1/admin/ai-models/providers", adminUserId, {
@@ -235,7 +324,7 @@ export const upsertAIModelProvider = (
   });
 
 export const upsertAIModelProfile = (
-  adminUserId: string,
+  adminUserId: AdminAuthInput,
   input: ProfileUpsertInput
 ): Promise<AIModelProfile> =>
   adminRequest<AIModelProfile>("/v1/admin/ai-models/profiles", adminUserId, {
@@ -244,7 +333,7 @@ export const upsertAIModelProfile = (
   });
 
 export const upsertAIModelCredential = (
-  adminUserId: string,
+  adminUserId: AdminAuthInput,
   input: CredentialUpsertInput
 ): Promise<AIModelCredential> =>
   adminRequest<AIModelCredential>(`/v1/admin/ai-models/providers/${input.provider_id}/credentials`, adminUserId, {
@@ -258,14 +347,24 @@ export const upsertAIModelCredential = (
     })
   });
 
-export const upsertAIModelGroup = (adminUserId: string, input: GroupUpsertInput): Promise<AIModelGroup> =>
+export const updateAdminUser = (
+  adminUserId: AdminAuthInput,
+  userId: string,
+  input: UserAdminUpdateInput
+): Promise<AdminUserSummary> =>
+  adminRequest<AdminUserSummary>(`/v1/admin/users/${encodeURIComponent(userId)}`, adminUserId, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+
+export const upsertAIModelGroup = (adminUserId: AdminAuthInput, input: GroupUpsertInput): Promise<AIModelGroup> =>
   adminRequest<AIModelGroup>("/v1/admin/ai-models/groups", adminUserId, {
     method: "POST",
     body: JSON.stringify(input)
   });
 
 export const addAIModelGroupMember = (
-  adminUserId: string,
+  adminUserId: AdminAuthInput,
   modelGroupId: string,
   userId: string
 ): Promise<AIModelGroupMembership> =>
@@ -275,10 +374,25 @@ export const addAIModelGroupMember = (
   });
 
 export const upsertAIModelRoutePolicy = (
-  adminUserId: string,
+  adminUserId: AdminAuthInput,
   input: PolicyUpsertInput
 ): Promise<AIModelRoutePolicy> =>
   adminRequest<AIModelRoutePolicy>("/v1/admin/ai-models/policies", adminUserId, {
     method: "POST",
     body: JSON.stringify(input)
+  });
+
+export const fetchOllamaModels = (adminUserId: AdminAuthInput): Promise<OllamaModelInventory> =>
+  adminRequest<OllamaModelInventory>("/v1/admin/ai-models/ollama/models", adminUserId, { method: "GET" });
+
+export const importOllamaModel = (adminUserId: AdminAuthInput, model: string, reason: string): Promise<OllamaModelJob> =>
+  adminRequest<OllamaModelJob>("/v1/admin/ai-models/ollama/import", adminUserId, {
+    method: "POST",
+    body: JSON.stringify({ model, reason })
+  });
+
+export const removeOllamaModel = (adminUserId: AdminAuthInput, model: string, reason: string): Promise<OllamaModelJob> =>
+  adminRequest<OllamaModelJob>(`/v1/admin/ai-models/ollama/models/${encodeURIComponent(model)}`, adminUserId, {
+    method: "DELETE",
+    body: JSON.stringify({ reason })
   });

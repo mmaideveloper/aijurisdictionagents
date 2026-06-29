@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,9 @@ from fastapi.testclient import TestClient
 from app.main import app
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.llm.routing import get_routed_llm_client
+
+
+client = TestClient(app)
 
 
 def _store(tmp_path: Path) -> ApiDatabaseStore:
@@ -32,8 +36,22 @@ def test_free_plan_routes_to_seeded_local_ollama_model(tmp_path: Path) -> None:
     assert route.provider.provider_code == "local_ollama"
     assert route.model_profile is not None
     assert route.model_profile.model_profile_id == "local_ollama_default"
-    assert route.model_profile.model_code == "qwen3.6:27b"
+    assert route.model_profile.model_code == "qwen3:1.7b"
     assert route.model_profile.is_default_for_free is True
+
+
+def test_seeded_local_ollama_provider_uses_configured_container_url(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("LOCAL_LLM_OPENAI_BASE_URL", "http://172.18.0.1:11434/v1")
+    monkeypatch.setenv("LOCAL_LLM_HEALTH_URL", "http://172.18.0.1:11434/api/tags")
+    store = _store(tmp_path)
+
+    provider = next(item for item in store.list_ai_model_providers() if item.provider_code == "local_ollama")
+
+    assert provider.base_url == "http://172.18.0.1:11434/v1"
+    assert provider.health_check_url == "http://172.18.0.1:11434/api/tags"
 
 
 def test_case_plan_routes_to_seeded_azure_foundry_gpt_4o_mini_model(
@@ -72,6 +90,100 @@ def test_case_plan_routes_to_seeded_azure_foundry_gpt_4o_mini_model(
     assert routed.route_type == "external"
     assert routed.plan_code == "case"
     assert routed.subscription_id == subscription.subscription_id
+
+
+def test_expired_paid_subscription_routes_as_free_local_model(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    store = _store(tmp_path)
+    user = store.create_user(email="expired@example.com", password="secret", full_name="Expired User")
+    subscription = store.request_subscription_change(user_id=user.user_id, plan_code="case")
+    paid_subscription = store.update_subscription_status(
+        subscription_id=subscription.subscription_id,
+        status="paid",
+    )
+    past_end = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+    with store._connect() as conn:
+        store._execute(
+            conn,
+            "UPDATE user_subscriptions SET ends_at = ? WHERE subscription_id = ?",
+            (past_end, paid_subscription.subscription_id),
+        )
+        conn.commit()
+
+    plan = store.get_effective_subscription_plan(user_id=user.user_id)
+    effective_subscription = store.get_effective_user_subscription(user_id=user.user_id)
+    routed = get_routed_llm_client(
+        store=store,
+        user_id=user.user_id,
+        task_type="chat_reply",
+    )
+
+    assert effective_subscription is not None
+    assert effective_subscription.plan_code == "free"
+    assert plan.plan_code == "free"
+    assert routed.plan_code == "free"
+    assert routed.subscription_id == effective_subscription.subscription_id
+    assert routed.provider == "local_ollama"
+    assert routed.route_type == "free_local"
+    assert routed.model == "qwen3:1.7b"
+
+
+def test_effective_model_route_endpoint_reports_free_user_local_model(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "api.sqlite3"
+    blob_root = tmp_path / "blob"
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(db_path))
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("STORE_LOCAL", str(blob_root))
+    store = ApiDatabaseStore(db_path=db_path, blob_root=blob_root)
+    store.initialize()
+    user = store.create_user(email="route-label@example.com", password="secret", full_name="Route Label")
+
+    response = client.get(
+        f"/v1/model-routing/effective?user_id={user.user_id}&task_type=chat_reply",
+        headers={"x-api-key": "aijuris"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["plan_code"] == "free"
+    assert payload["route_type"] == "free_local"
+    assert payload["provider"] == "local_ollama"
+    assert payload["model"] == "qwen3:1.7b"
+    assert payload["is_local"] is True
+    assert payload["is_external"] is False
+    assert payload["label"] == "Local Ollama - qwen3:1.7b"
+
+
+def test_effective_model_route_endpoint_reports_default_free_route_without_user(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "api.sqlite3"
+    blob_root = tmp_path / "blob"
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(db_path))
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("STORE_LOCAL", str(blob_root))
+
+    response = client.get(
+        "/v1/model-routing/effective?task_type=chat_reply",
+        headers={"x-api-key": "aijuris"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["plan_code"] == "free"
+    assert payload["route_type"] == "free_local"
+    assert payload["provider"] == "local_ollama"
+    assert payload["model"] == "qwen3:1.7b"
+    assert payload["is_local"] is True
 
 
 def test_model_credentials_are_encrypted_and_revealed_only_when_requested(
@@ -162,8 +274,8 @@ def test_admin_model_routing_api_upserts_provider_and_profile(
         headers=headers,
         json={
             "provider_id": "local_ollama_alt",
-            "model_code": "qwen3.6:27b",
-            "deployment_name": "qwen3.6:27b",
+            "model_code": "qwen3:1.7b",
+            "deployment_name": "qwen3:1.7b",
             "is_default_for_free": True,
             "enabled": True,
         },
@@ -176,7 +288,7 @@ def test_admin_model_routing_api_upserts_provider_and_profile(
     assert provider_response.status_code == 201
     assert provider_response.json()["base_url"] == "http://127.0.0.1:11434/v1"
     assert profile_response.status_code == 201
-    assert profile_response.json()["model_code"] == "qwen3.6:27b"
+    assert profile_response.json()["model_code"] == "qwen3:1.7b"
     assert profile_response.json()["is_default_for_free"] is True
     assert profiles_response.status_code == 200
     assert profiles_response.json()[0]["model_profile_id"] == "local_ollama_alt_qwen"
@@ -232,7 +344,9 @@ def test_paid_external_route_requires_acknowledgement(tmp_path: Path) -> None:
     assert allowed.model_profile.model_code == "gpt-4.1"
 
 
-def test_usage_ledger_summarizes_tokens_and_cost_by_case_model(tmp_path: Path) -> None:
+def test_usage_ledger_summarizes_tokens_and_cost_by_model_without_identifiers(
+    tmp_path: Path,
+) -> None:
     store = _store(tmp_path)
     store.record_ai_model_usage(
         provider="azure_foundry",
@@ -267,11 +381,44 @@ def test_usage_ledger_summarizes_tokens_and_cost_by_case_model(tmp_path: Path) -
     assert len(summaries) == 1
     summary = summaries[0]
     assert summary.request_count == 2
+    assert summary.case_id == ""
+    assert summary.user_id == ""
+    assert summary.subscription_id == ""
     assert summary.input_tokens == 1200
     assert summary.cached_input_tokens == 250
     assert summary.output_tokens == 600
     assert summary.total_tokens == 1800
     assert summary.estimated_cost_eur == 0.012
+
+
+def test_usage_ledger_lists_top_cases_by_tokens(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.record_ai_model_usage(
+        provider="local_ollama",
+        model="qwen3.6:27b",
+        route_type="local",
+        input_tokens=500,
+        output_tokens=250,
+        case_id="case-local",
+        plan_code="free",
+    )
+    store.record_ai_model_usage(
+        provider="azure_foundry",
+        model="gpt-4.1",
+        route_type="external",
+        input_tokens=3000,
+        output_tokens=1000,
+        estimated_cost_eur=0.05,
+        case_id="case-paid",
+        plan_code="case",
+    )
+
+    top_cases = store.summarize_top_ai_model_cases(minutes=60, limit=1)
+
+    assert len(top_cases) == 1
+    assert top_cases[0].case_id == "case-paid"
+    assert top_cases[0].total_tokens == 4000
+    assert top_cases[0].estimated_cost_eur == 0.05
 
 
 def test_usage_ledger_lists_question_model_audit_entries(tmp_path: Path) -> None:
@@ -323,13 +470,32 @@ def test_status_exporter_renders_ai_model_usage_metrics() -> None:
                         "case_id": "case-1",
                         "user_id": "user-1",
                         "subscription_id": "sub-1",
+                        "window_minutes": 60,
                         "plan_code": "case",
                         "task_type": "document_generation",
                         "provider": "azure_foundry",
                         "model": "gpt-4.1",
                         "route_type": "external",
+                        "route_class": "paid",
                         "status": "ok",
                         "fallback_reason": "",
+                        "request_count": 2,
+                        "input_tokens": 1200,
+                        "cached_input_tokens": 250,
+                        "output_tokens": 600,
+                        "total_tokens": 2050,
+                        "estimated_cost_eur": 0.012,
+                    },
+                ],
+                "top_cases": [
+                    {
+                        "case_ref": "case-...se-1",
+                        "window_minutes": 60,
+                        "plan_code": "case",
+                        "provider": "azure_foundry",
+                        "model": "gpt-4.1",
+                        "route_type": "external",
+                        "route_class": "paid",
                         "request_count": 2,
                         "input_tokens": 1200,
                         "cached_input_tokens": 250,
@@ -343,7 +509,11 @@ def test_status_exporter_renders_ai_model_usage_metrics() -> None:
     )
 
     assert "jurisdigta_ai_model_output_tokens_window" in rendered
-    assert 'case_id="case-1"' in rendered
+    assert 'case_id="case-1"' not in rendered
+    assert 'user_id="user-1"' not in rendered
+    assert 'subscription_id="sub-1"' not in rendered
+    assert 'case_ref="case-...se-1"' in rendered
+    assert "jurisdigta_ai_model_top_case_total_tokens_window" in rendered
     assert 'model="gpt-4.1"' in rendered
     assert " 600.0" in rendered
     assert "jurisdigta_ai_model_estimated_cost_eur_window" in rendered

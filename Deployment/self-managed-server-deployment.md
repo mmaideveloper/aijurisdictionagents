@@ -174,7 +174,7 @@ gh auth refresh -s read:project,project
 
 Install Ollama as a separate local model service for free-plan traffic and paid fallback routing. Do not load large model files directly inside the API process for normal production traffic; the API should stay lightweight and call the local model service through the model router.
 
-The self-managed production deployment script runs this step by default with `INSTALL_OLLAMA=1`. It installs Ollama when missing, keeps it bound to `127.0.0.1:11434`, pulls the default free-plan model `qwen3.6:27b`, and validates both `/api/tags` and `/v1/models`. The API model router stores the exact free-plan model in `ai_model_profiles`, so later local model changes should be made in the database/admin route setup after the model is pulled and validated.
+The self-managed production deployment script runs this step by default with `INSTALL_OLLAMA=1`. It installs Ollama when missing, keeps it bound to a private host interface, pulls the default free-plan model `qwen3:1.7b`, and validates both `/api/tags` and `/v1/models`. For Docker production, the script binds Ollama to the API Docker network gateway and stores that private URL in the `local_ollama` provider row, because `127.0.0.1` inside the API container is not the host. The API model router stores the exact free-plan model in `ai_model_profiles`, so later local model changes should be made in the database/admin route setup after the model is pulled and validated.
 
 Install from a trusted server shell and review the installer before production use:
 
@@ -184,13 +184,15 @@ less /tmp/install-ollama.sh
 sh /tmp/install-ollama.sh
 ```
 
-Bind Ollama to localhost only:
+Bind Ollama to a private host interface only. The deployment script computes the
+API Docker network gateway and writes it as `OLLAMA_HOST`; manual setups can use
+`127.0.0.1:11434` only when every local caller runs on the host network:
 
 ```bash
 sudo mkdir -p /etc/systemd/system/ollama.service.d
 cat <<'EOF' | sudo tee /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf >/dev/null
 [Service]
-Environment="OLLAMA_HOST=127.0.0.1:11434"
+Environment="OLLAMA_HOST=<private-host-or-docker-gateway-ip>:11434"
 EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now ollama
@@ -200,22 +202,22 @@ sudo systemctl restart ollama
 Pull the configured local model:
 
 ```bash
-ollama pull qwen3.6:27b
+ollama pull qwen3:1.7b
 ollama list
 ollama ps
 ```
 
-If `qwen3.6:27b` does not fit the server hardware, pull and configure a smaller validated fallback model rather than changing free-plan routing to a paid cloud provider.
+If `qwen3:1.7b` does not fit the server hardware, pull and configure a smaller validated fallback model rather than changing free-plan routing to a paid cloud provider.
 
 Validate the service:
 
 ```bash
 systemctl is-active --quiet ollama
-curl -fsS http://127.0.0.1:11434/api/tags
-curl -fsS http://127.0.0.1:11434/v1/models
+curl -fsS http://<private-host-or-docker-gateway-ip>:11434/api/tags
+curl -fsS http://<private-host-or-docker-gateway-ip>:11434/v1/models
 ```
 
-Security rule: do not expose port `11434` through Cloudflare Tunnel, nginx, router NAT, or public firewall rules. Only the API/model-router should call Ollama on localhost or a private server network.
+Security rule: do not expose port `11434` through Cloudflare Tunnel, nginx, router NAT, or public firewall rules. Only the API/model-router should call Ollama on localhost or the private Docker server network.
 
 ## 5. Prepare Deployment Directories
 
@@ -266,8 +268,8 @@ Minimum deployment values to decide before production:
 
 - `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` as a long random secret for encrypted database model credentials.
 - `JURISDIGTA_ADMIN_API_KEY` for protected `/v1/admin/ai-models` management endpoints.
-- Ollama installed on `127.0.0.1:11434` with `qwen3.6:27b` pulled for the seeded free/default route.
-- API database route `local_ollama_default` mapped to exact model `qwen3.6:27b`.
+- Ollama installed on localhost or the private Docker gateway with `qwen3:1.7b` pulled for the seeded free/default route.
+- API database route `local_ollama_default` mapped to exact model `qwen3:1.7b`.
 - API database route `azure_foundry_gpt_4o_mini` mapped to exact Azure Foundry deployment/model `gpt-4o-mini`.
 - Azure Foundry provider endpoint stored in `ai_model_providers.base_url`.
 - Azure Foundry API key or token stored encrypted in `ai_model_credentials`.
@@ -1180,9 +1182,10 @@ Components:
 - cAdvisor: Docker container CPU, memory, filesystem, and restart metrics.
 - Blackbox Exporter: API availability probes.
 - Monitoring containers join `MONITORING_APP_DOCKER_NETWORK`, defaulting to `aijuristiction-api_default`, so API and MCP are probed by container name while their host ports stay bound to `127.0.0.1`.
-- `scripts/server/export_system_status_metrics.py`: converts `GET /v1/system/status?minutes=60` into Prometheus text metrics.
+- `scripts/server/export_system_status_metrics.py`: converts `GET /v1/system/status?minutes=60` into Prometheus text metrics, including API-ledger token/cost windows for 1h, 24h, 7d, and 30d.
 - `scripts/server/export_ollama_metrics.py`: exports localhost-only Ollama health, model inventory, loaded model, and VRAM gauges.
 - `scripts/server/write_system_status.py`: records aggregate API/MCP request counts, average/max request latency, total users, new users, total cases, and new cases without exposing personal data or legal case content in Prometheus labels.
+- `Deployment/monitoring/prometheus-rules/jurisdigta-ai-models.yml`: evaluates Ollama red-state alerts and paid-model token/cost spike alerts.
 
 Start the JurisDigta status exporter:
 
@@ -1217,6 +1220,9 @@ docker compose ps
 cd /srv/jurisdigta/app && PROMETHEUS_BASE_URL=http://127.0.0.1:9091 python3 examples/monitoring_scrape_demo.py
 curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_users_total'
 curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_http_requests_total_window'
+curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_ai_model_total_tokens_window'
+curl -fsS 'http://127.0.0.1:9091/api/v1/query?query=jurisdigta_ai_model_top_case_total_tokens_window'
+curl -fsS 'http://127.0.0.1:9091/api/v1/rules'
 ```
 
 Access Grafana by SSH tunnel first:

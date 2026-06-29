@@ -27,11 +27,12 @@ DOCKER_LOG_MAX_FILE="${DOCKER_LOG_MAX_FILE:-5}"
 START_MONITORING="${START_MONITORING:-0}"
 INSTALL_OLLAMA="${INSTALL_OLLAMA:-1}"
 LOCAL_LLM_PROVIDER="${LOCAL_LLM_PROVIDER:-ollama}"
-LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3.6:27b}"
+LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3:1.7b}"
 LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-http://127.0.0.1:11434}"
 LOCAL_LLM_OPENAI_BASE_URL="${LOCAL_LLM_OPENAI_BASE_URL:-http://127.0.0.1:11434/v1}"
 LOCAL_LLM_HEALTH_URL="${LOCAL_LLM_HEALTH_URL:-http://127.0.0.1:11434/api/tags}"
-OLLAMA_HOST_BIND="${OLLAMA_HOST_BIND:-127.0.0.1:11434}"
+OLLAMA_HOST_BIND="${OLLAMA_HOST_BIND:-}"
+export DOCKER_BUILDKIT=0
 
 log() {
   printf '[jurisdigta-deploy] %s\n' "$*"
@@ -182,6 +183,33 @@ require_laws_collector_run_mode() {
   fi
 }
 
+app_docker_gateway() {
+  docker network inspect aijuristiction-api_default \
+    --format '{{(index .IPAM.Config 0).Gateway}}'
+}
+
+local_llm_container_base_url() {
+  local gateway
+  gateway="$(app_docker_gateway)"
+  if [ -z "$gateway" ] || [ "$gateway" = "<no value>" ]; then
+    fail "Cannot resolve Docker gateway for aijuristiction-api_default"
+  fi
+  printf 'http://%s:11434' "$gateway"
+}
+
+effective_ollama_host_bind() {
+  if [ -n "$OLLAMA_HOST_BIND" ]; then
+    printf '%s' "$OLLAMA_HOST_BIND"
+    return
+  fi
+  local gateway
+  gateway="$(app_docker_gateway)"
+  if [ -z "$gateway" ] || [ "$gateway" = "<no value>" ]; then
+    fail "Cannot resolve Docker gateway for Ollama bind"
+  fi
+  printf '%s:11434' "$gateway"
+}
+
 require_local_model_settings() {
   if [ "$LOCAL_LLM_PROVIDER" != "ollama" ]; then
     fail "Self-managed prod local model routing currently requires LOCAL_LLM_PROVIDER=ollama. Current value: $LOCAL_LLM_PROVIDER"
@@ -189,8 +217,10 @@ require_local_model_settings() {
   if [ -z "$LOCAL_LLM_MODEL" ]; then
     fail "LOCAL_LLM_MODEL must be set for Ollama deployment"
   fi
-  if [ "$OLLAMA_HOST_BIND" != "127.0.0.1:11434" ]; then
-    fail "OLLAMA_HOST_BIND must stay 127.0.0.1:11434 for prod security. Current value: $OLLAMA_HOST_BIND"
+  local bind
+  bind="$(effective_ollama_host_bind)"
+  if printf '%s' "$bind" | grep -Eq '^(\*|0\.0\.0\.0):11434$'; then
+    fail "OLLAMA_HOST_BIND must not expose Ollama on all interfaces. Current value: $bind"
   fi
 }
 
@@ -217,6 +247,10 @@ install_ollama_service() {
   fi
   require_local_model_settings
   require_command systemctl
+  local bind
+  local host_base_url
+  bind="$(effective_ollama_host_bind)"
+  host_base_url="http://$bind"
 
   if ! command -v ollama >/dev/null 2>&1; then
     log "installing Ollama"
@@ -227,22 +261,22 @@ install_ollama_service() {
     log "Ollama already installed"
   fi
 
-  log "configuring Ollama localhost bind at $OLLAMA_HOST_BIND"
+  log "configuring Ollama private bind at $bind"
   sudo install -d -m 755 /etc/systemd/system/ollama.service.d
   cat <<EOF | sudo tee /etc/systemd/system/ollama.service.d/jurisdigta-localhost.conf >/dev/null
 [Service]
-Environment="OLLAMA_HOST=$OLLAMA_HOST_BIND"
+Environment="OLLAMA_HOST=$bind"
 EOF
   sudo systemctl daemon-reload
   sudo systemctl enable --now ollama
   sudo systemctl restart ollama
 
-  wait_for_http "Ollama" "$LOCAL_LLM_HEALTH_URL" 30 2
+  wait_for_http "Ollama" "$host_base_url/api/tags" 30 2
   log "pulling Ollama model $LOCAL_LLM_MODEL"
-  ollama pull "$LOCAL_LLM_MODEL"
-  ollama list | grep -F "$LOCAL_LLM_MODEL" >/dev/null || fail "Ollama model was not found after pull: $LOCAL_LLM_MODEL"
-  curl -fsS "$LOCAL_LLM_HEALTH_URL" >/dev/null
-  curl -fsS "$LOCAL_LLM_OPENAI_BASE_URL/models" >/dev/null
+  OLLAMA_HOST="$bind" ollama pull "$LOCAL_LLM_MODEL"
+  OLLAMA_HOST="$bind" ollama list | grep -F "$LOCAL_LLM_MODEL" >/dev/null || fail "Ollama model was not found after pull: $LOCAL_LLM_MODEL"
+  curl -fsS "$host_base_url/api/tags" >/dev/null
+  curl -fsS "$host_base_url/v1/models" >/dev/null
 }
 
 ensure_runtime_layout() {
@@ -300,10 +334,12 @@ start_api_and_mcp() {
   local laws_db_cloud
   local api_cors_allow_origins
   local prometheus_base_url
+  local local_llm_base_url
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
   api_cors_allow_origins="$(production_api_cors_origins)"
   prometheus_base_url="${API_PROMETHEUS_BASE_URL:-http://jurisdigta-prometheus:9090}"
+  local_llm_base_url="$(local_llm_container_base_url)"
   docker rm -f jurisdigta-api jurisdigta-mcp jurisdigta-email-scheduler >/dev/null 2>&1 || true
   docker run -d \
     --name jurisdigta-api \
@@ -323,6 +359,9 @@ start_api_and_mcp() {
     -e STORAGE_OPTION=local \
     -e STORE_LOCAL=/workspace/runs/storage/api/files \
     -e DOCUMENT_PROCESSOR_OPTION=azure \
+    -e LOCAL_LLM_BASE_URL="$local_llm_base_url" \
+    -e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1" \
+    -e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags" \
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
@@ -353,6 +392,9 @@ start_api_and_mcp() {
     -e EMAIL_DB_LOCAL=/workspace/runs/storage/api/sqlite/email.sqlite3 \
     -e STORAGE_OPTION=local \
     -e STORE_LOCAL=/workspace/runs/storage/api/files \
+    -e LOCAL_LLM_BASE_URL="$local_llm_base_url" \
+    -e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1" \
+    -e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags" \
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
@@ -414,8 +456,10 @@ run_schema_migrations() {
   log "applying API and laws database schema migrations in the API image"
   local api_db_cloud
   local laws_db_cloud
+  local local_llm_base_url
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
+  local_llm_base_url="$(local_llm_container_base_url)"
 
   docker run --rm \
     --network aijuristiction-api_default \
@@ -426,6 +470,9 @@ run_schema_migrations() {
     -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
     -e STORAGE_OPTION=local \
     -e STORE_LOCAL=/workspace/runs/storage/api/files \
+    -e LOCAL_LLM_BASE_URL="$local_llm_base_url" \
+    -e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1" \
+    -e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
     aijuristiction-api:local \
@@ -440,6 +487,9 @@ run_schema_migrations() {
     -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
     -e STORAGE_OPTION=local \
     -e STORE_LOCAL=/workspace/runs/storage/api/files \
+    -e LOCAL_LLM_BASE_URL="$local_llm_base_url" \
+    -e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1" \
+    -e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
     aijuristiction-api:local \
@@ -813,9 +863,11 @@ wait_for_http() {
 validate_health() {
   log "validating local health endpoints"
   if [ "$INSTALL_OLLAMA" = "1" ]; then
-    wait_for_http "Ollama" "$LOCAL_LLM_HEALTH_URL"
-    curl -fsS "$LOCAL_LLM_OPENAI_BASE_URL/models" >/dev/null
-    ollama list | grep -F "$LOCAL_LLM_MODEL" >/dev/null
+    local local_llm_base_url
+    local_llm_base_url="$(local_llm_container_base_url)"
+    wait_for_http "Ollama" "$local_llm_base_url/api/tags"
+    curl -fsS "$local_llm_base_url/v1/models" >/dev/null
+    OLLAMA_HOST="$(effective_ollama_host_bind)" ollama list | grep -F "$LOCAL_LLM_MODEL" >/dev/null
   fi
   wait_for_http "API" "http://127.0.0.1:${API_PORT}/health"
   wait_for_http "MCP" "http://127.0.0.1:${MCP_PORT}/health"
@@ -877,8 +929,8 @@ require_boolean_flag "INSTALL_OLLAMA" "$INSTALL_OLLAMA"
 require_laws_collector_run_mode "$LAWS_COLLECTOR_RUN_MODE"
 require_tcp_port "DOCUMENT_ENGINE_API_PORT" "$DOCUMENT_ENGINE_API_PORT"
 require_postgres_identifier "DOCUMENT_ENGINE_DATABASE_NAME" "$DOCUMENT_ENGINE_DATABASE_NAME"
-install_ollama_service
 start_postgres_and_build_image
+install_ollama_service
 create_laws_database
 create_document_engine_database
 run_schema_migrations

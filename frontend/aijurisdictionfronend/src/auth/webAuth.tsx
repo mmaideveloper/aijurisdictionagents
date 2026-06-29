@@ -6,6 +6,8 @@ const AUTH_DEVICE_KEY = "jurisdigta.web.auth.device.v1";
 
 export interface AuthUser {
   userId: string;
+  deviceId?: string;
+  deviceAuthToken?: string;
   phoneNumber?: string;
   firstName?: string;
   lastName?: string;
@@ -23,6 +25,7 @@ export interface AuthUser {
   dataProcessingConsentVersion?: string;
   mcpApiKeyExpiresAt?: string;
   role?: string;
+  isEnabled?: boolean;
   accountCreatedAt?: string;
   mfaTotpEnabled?: boolean;
   mfaTotpPending?: boolean;
@@ -51,6 +54,9 @@ interface ApiUserProfile {
   mfa_totp_enabled?: boolean;
   mfa_totp_pending?: boolean;
   mfa_totp_enabled_at?: string | null;
+  role?: string | null;
+  is_enabled?: boolean | null;
+  device_auth_token?: string | null;
 }
 
 export interface MfaChallenge {
@@ -109,7 +115,7 @@ export interface ProfileUpdateInput {
 
 const AuthContext = React.createContext<AuthContextValue | undefined>(undefined);
 
-export function apiProfileToAuthUser(profile: ApiUserProfile): AuthUser {
+export function apiProfileToAuthUser(profile: ApiUserProfile, deviceId?: string): AuthUser {
   const firstName = profile.first_name?.trim() || undefined;
   const lastName = profile.last_name?.trim() || undefined;
   const fullName = profile.full_name?.trim();
@@ -117,6 +123,8 @@ export function apiProfileToAuthUser(profile: ApiUserProfile): AuthUser {
 
   const authUser: AuthUser = {
     userId: profile.user_id,
+    deviceId,
+    deviceAuthToken: profile.device_auth_token?.trim() || undefined,
     phoneNumber: profile.phone_number?.trim() || undefined,
     email: profile.email,
     firstName,
@@ -134,7 +142,8 @@ export function apiProfileToAuthUser(profile: ApiUserProfile): AuthUser {
     dataProcessingConsentVersion: profile.data_processing_consent_version?.trim() || undefined,
     mcpApiKeyExpiresAt: profile.mcp_api_key_expires_at?.trim() || undefined,
     accountCreatedAt: profile.created_at?.trim() || undefined,
-    role: "JurisDigta user"
+    role: profile.role?.trim().toLowerCase() || "user",
+    isEnabled: profile.is_enabled ?? true
   };
   if ("mfa_totp_enabled" in profile) {
     authUser.mfaTotpEnabled = Boolean(profile.mfa_totp_enabled);
@@ -199,7 +208,7 @@ async function signInWithApi(email: string, password: string, verificationCode?:
       }
     };
   }
-  return { status: "signed_in", user: apiProfileToAuthUser(payload) };
+  return { status: "signed_in", user: apiProfileToAuthUser(payload, getOrCreateDeviceId()) };
 }
 
 async function sendSignUpCodeWithApi(email: string): Promise<void> {
@@ -432,7 +441,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({
         mfa_token: mfaToken,
         method,
-        verification_code: verificationCode
+        verification_code: verificationCode,
+        device_id: getOrCreateDeviceId()
       })
     });
     if (response.status === 400 || response.status === 401) {
@@ -441,7 +451,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!response.ok) {
       throw new Error(await parseAuthError(response));
     }
-    const user = apiProfileToAuthUser((await response.json()) as ApiUserProfile);
+    const user = apiProfileToAuthUser((await response.json()) as ApiUserProfile, getOrCreateDeviceId());
     writeStoredUser(user);
     setState({ isAuthenticated: true, user, isAuthLoading: false });
     return true;
