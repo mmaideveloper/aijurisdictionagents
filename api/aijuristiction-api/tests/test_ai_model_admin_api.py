@@ -24,8 +24,9 @@ def _store(tmp_path: Path) -> ApiDatabaseStore:
 class FakeOllamaAdminService:
     base_url = "http://127.0.0.1:11434"
 
-    def __init__(self, *, unavailable: bool = False) -> None:
+    def __init__(self, *, unavailable: bool = False, models: list[OllamaInstalledModel] | None = None) -> None:
         self.unavailable = unavailable
+        self.models = models
         self.pulled: list[str] = []
         self.removed: list[str] = []
 
@@ -34,6 +35,8 @@ class FakeOllamaAdminService:
             import httpx
 
             raise httpx.ConnectError("offline")
+        if self.models is not None:
+            return self.models
         return [
             OllamaInstalledModel(
                 name="qwen3:1.7b",
@@ -432,9 +435,37 @@ def test_admin_can_list_ollama_inventory_with_removal_guards(tmp_path: Path, mon
     default_model = next(item for item in models if item["name"] == "qwen3:1.7b")
     unused_model = next(item for item in models if item["name"] == "llama3.2:3b")
     assert default_model["removable"] is False
+    assert default_model["installed"] is True
     assert any("default" in item.lower() for item in default_model["removal_blockers"])
     assert default_model["configured_profile_ids"] == ["local_ollama_default"]
     assert unused_model["removable"] is True
+
+
+def test_admin_ollama_inventory_includes_configured_profile_when_runtime_has_no_models(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    fake_ollama = FakeOllamaAdminService(models=[])
+    app.dependency_overrides[get_admin_store] = lambda: store
+    app.dependency_overrides[get_ollama_admin_service] = lambda: fake_ollama
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    try:
+        response = TestClient(app).get(
+            "/v1/admin/ai-models/ollama/models",
+            headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    models = response.json()["models"]
+    configured_model = next(item for item in models if item["name"] == "qwen3:1.7b")
+    assert configured_model["installed"] is False
+    assert configured_model["removable"] is False
+    assert configured_model["configured_profile_ids"] == ["local_ollama_default"]
+    assert any("not installed" in item.lower() for item in configured_model["removal_blockers"])
 
 
 def test_admin_can_start_ollama_import_job(tmp_path: Path, monkeypatch) -> None:
@@ -500,6 +531,41 @@ def test_admin_cannot_remove_default_ollama_model(tmp_path: Path, monkeypatch) -
     assert response.status_code == 409
     assert "blockers" in response.json()["detail"]
     assert fake_ollama.removed == []
+
+
+def test_admin_can_remove_ollama_model_after_linked_profiles_are_disabled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    store.upsert_ai_model_profile(
+        model_profile_id="local_ollama_default",
+        provider_id="local_ollama",
+        model_code="qwen3:1.7b",
+        deployment_name="qwen3:1.7b",
+        billing_currency="EUR",
+        eu_data_zone_capable=True,
+        is_default_for_free=True,
+        enabled=False,
+    )
+    fake_ollama = FakeOllamaAdminService()
+    app.dependency_overrides[get_admin_store] = lambda: store
+    app.dependency_overrides[get_ollama_admin_service] = lambda: fake_ollama
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    try:
+        response = TestClient(app).request(
+            "DELETE",
+            "/v1/admin/ai-models/ollama/models/qwen3:1.7b",
+            headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id},
+            json={"reason": "Remove disabled local runtime model."},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["action"] == "remove"
+    assert fake_ollama.removed == ["qwen3:1.7b"]
 
 
 def test_ollama_import_rejects_invalid_model_name(tmp_path: Path, monkeypatch) -> None:

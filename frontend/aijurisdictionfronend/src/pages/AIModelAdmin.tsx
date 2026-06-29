@@ -1,7 +1,9 @@
 import React from "react";
-import { FaBriefcase, FaDownload, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserPlus, FaUsers } from "react-icons/fa";
+import { FaBriefcase, FaCheck, FaDownload, FaEdit, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserPlus, FaUsers } from "react-icons/fa";
 import {
   AIModelAdminDashboard,
+  AIModelProfile,
+  AIModelRoutePolicy,
   AdminCaseList,
   AdminCaseSummary,
   AdminCaseUser,
@@ -43,6 +45,7 @@ const emptyProvider = {
 };
 
 const emptyProfile = {
+  model_profile_id: null as string | null,
   provider_id: "",
   model_code: "",
   deployment_name: "",
@@ -74,6 +77,7 @@ const emptyGroup = {
 };
 
 const emptyPolicy = {
+  policy_id: null as string | null,
   task_type: "default",
   plan_code: "case",
   model_group_id: null as string | null,
@@ -257,6 +261,63 @@ const AIModelAdmin: React.FC = () => {
 
   const localProfiles = dashboard?.profiles.filter((profile) => profile.model_profile_id.includes("local") || profile.provider_id.includes("local")) ?? [];
   const externalProfiles = dashboard?.profiles.filter((profile) => !localProfiles.includes(profile)) ?? [];
+  const profileToForm = (profile: AIModelProfile, overrides: Partial<typeof emptyProfile> = {}) => ({
+    model_profile_id: profile.model_profile_id,
+    provider_id: profile.provider_id,
+    model_code: profile.model_code,
+    deployment_name: profile.deployment_name,
+    input_price_per_1m: profile.input_price_per_1m,
+    cached_input_price_per_1m: profile.cached_input_price_per_1m,
+    output_price_per_1m: profile.output_price_per_1m,
+    billing_currency: profile.billing_currency,
+    eu_data_zone_capable: profile.eu_data_zone_capable,
+    is_default_for_free: profile.is_default_for_free,
+    enabled: profile.enabled,
+    reason: "",
+    ...overrides
+  });
+  const saveProfileChange = (
+    profile: AIModelProfile,
+    overrides: Partial<typeof emptyProfile>,
+    successMessage: string
+  ) => runAction(() => upsertAIModelProfile(adminAuth, profileToForm(profile, overrides)), successMessage);
+  const policyToForm = (policy: AIModelRoutePolicy, overrides: Partial<typeof emptyPolicy> = {}) => ({
+    policy_id: policy.policy_id,
+    task_type: policy.task_type,
+    plan_code: policy.plan_code,
+    model_group_id: policy.model_group_id,
+    preferred_external_model_profile_id: policy.preferred_external_model_profile_id,
+    preferred_local_model_profile_id: policy.preferred_local_model_profile_id,
+    allow_external: policy.allow_external,
+    require_external_ack: policy.require_external_ack,
+    require_eu_data_zone: policy.require_eu_data_zone,
+    fallback_local_on_error: policy.fallback_local_on_error,
+    fallback_local_on_budget: policy.fallback_local_on_budget,
+    max_cost_eur: policy.max_cost_eur,
+    priority: policy.priority,
+    enabled: policy.enabled,
+    reason: "",
+    ...overrides
+  });
+  const savePolicyChange = (
+    policy: AIModelRoutePolicy,
+    overrides: Partial<typeof emptyPolicy>,
+    successMessage: string
+  ) => runAction(() => upsertAIModelRoutePolicy(adminAuth, policyToForm(policy, overrides)), successMessage);
+  const disableOllamaConfiguredProfiles = async (profileIds: string[]) => {
+    const profiles = dashboard?.profiles.filter((profile) => profileIds.includes(profile.model_profile_id)) ?? [];
+    await Promise.all(
+      profiles.map((profile) =>
+        upsertAIModelProfile(
+          adminAuth,
+          profileToForm(profile, {
+            enabled: false,
+            reason: ollamaRemoveReason || "Disable local Ollama model profile from admin UI."
+          })
+        )
+      )
+    );
+  };
 
   const sections: Array<{ key: AdminSection; label: string; icon: React.ReactNode }> = [
     { key: "users", label: t("adminUsersTitle"), icon: <FaUsers aria-hidden="true" /> },
@@ -494,13 +555,48 @@ const AIModelAdmin: React.FC = () => {
               <h2>{t("adminProfilesTitle")}</h2>
               <AdminRecordsTable
                 emptyLabel={t("adminEmptyProfiles")}
-                headers={[t("adminModelCode"), t("adminProvider"), t("adminDeployment"), t("adminPrices"), t("adminStatus")]}
+                headers={[t("adminModelCode"), t("adminProvider"), t("adminDeployment"), t("adminPrices"), t("adminStatus"), t("adminAction")]}
                 rows={(dashboard?.profiles ?? []).map((profile) => [
                   profile.model_profile_id,
                   providerById.get(profile.provider_id)?.display_name ?? profile.provider_id,
                   profile.deployment_name || profile.model_code,
                   `${profile.input_price_per_1m}/${profile.cached_input_price_per_1m}/${profile.output_price_per_1m} ${profile.billing_currency}`,
-                  profile.enabled ? t("adminEnabled") : t("adminDisabled")
+                  `${profile.enabled ? t("adminEnabled") : t("adminDisabled")}${profile.is_default_for_free ? `, ${t("adminDefaultFreeModel")}` : ""}`,
+                  <div className="admin-inline-actions">
+                    <button className="button ghost" type="button" onClick={() => setProfileForm(profileToForm(profile))}>
+                      <FaEdit aria-hidden="true" />{t("adminEdit")}
+                    </button>
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={() => void saveProfileChange(
+                        profile,
+                        {
+                          enabled: !profile.enabled,
+                          reason: profile.enabled ? "Disable model profile from admin UI." : "Enable model profile from admin UI."
+                        },
+                        profile.enabled ? t("adminProfileDisabled") : t("adminProfileEnabled")
+                      )}
+                    >
+                      <FaCheck aria-hidden="true" />{profile.enabled ? t("adminDisableModel") : t("adminEnableModel")}
+                    </button>
+                    <button
+                      className="button ghost"
+                      type="button"
+                      disabled={profile.is_default_for_free || !(providerById.get(profile.provider_id)?.is_local ?? false)}
+                      onClick={() => void saveProfileChange(
+                        profile,
+                        {
+                          enabled: true,
+                          is_default_for_free: true,
+                          reason: "Set as the default local model for free accounts."
+                        },
+                        t("adminDefaultLocalModelSet")
+                      )}
+                    >
+                      <FaCheck aria-hidden="true" />{t("adminSetFreeDefault")}
+                    </button>
+                  </div>
                 ])}
               />
               <label>{t("adminProvider")}<select value={profileForm.provider_id} onChange={(event) => setProfileForm({ ...profileForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{dashboard?.providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
@@ -587,7 +683,7 @@ const AIModelAdmin: React.FC = () => {
               <p className="admin-muted">{t("adminPolicyHelp")}</p>
               <AdminRecordsTable
                 emptyLabel={t("adminEmptyPolicies")}
-                headers={[t("adminPolicyId"), t("adminTaskType"), t("adminPlanCode"), t("adminGroup"), t("adminExternalModel"), t("adminLocalModel"), t("adminPriority")]}
+                headers={[t("adminPolicyId"), t("adminTaskType"), t("adminPlanCode"), t("adminGroup"), t("adminExternalModel"), t("adminLocalModel"), t("adminPriority"), t("adminStatus"), t("adminAction")]}
                 rows={(dashboard?.policies ?? []).map((policy) => [
                   policy.policy_id,
                   policy.task_type,
@@ -595,7 +691,27 @@ const AIModelAdmin: React.FC = () => {
                   dashboard?.groups.find((group) => group.model_group_id === policy.model_group_id)?.display_name ?? t("adminDefaultPolicy"),
                   policy.preferred_external_model_profile_id ?? t("adminNotConfigured"),
                   policy.preferred_local_model_profile_id ?? t("adminNotConfigured"),
-                  String(policy.priority)
+                  String(policy.priority),
+                  policy.enabled ? t("adminEnabled") : t("adminDisabled"),
+                  <div className="admin-inline-actions">
+                    <button className="button ghost" type="button" onClick={() => setPolicyForm(policyToForm(policy))}>
+                      <FaEdit aria-hidden="true" />{t("adminEdit")}
+                    </button>
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={() => void savePolicyChange(
+                        policy,
+                        {
+                          enabled: !policy.enabled,
+                          reason: policy.enabled ? "Disable route policy from admin UI." : "Enable route policy from admin UI."
+                        },
+                        policy.enabled ? t("adminPolicyDisabled") : t("adminPolicyEnabled")
+                      )}
+                    >
+                      <FaCheck aria-hidden="true" />{policy.enabled ? t("adminDisablePolicy") : t("adminEnablePolicy")}
+                    </button>
+                  </div>
                 ])}
               />
               <div className="admin-price-grid">
@@ -640,7 +756,7 @@ const AIModelAdmin: React.FC = () => {
                   <button className="secondary-button" type="button" onClick={() => void reloadOllama()}>{t("adminRefresh")}</button>
                 </div>
                 <p className="admin-muted">{ollamaInventory?.base_url ?? "http://127.0.0.1:11434"}</p>
-                <label>{t("adminOllamaRemoveReason")}<input value={ollamaRemoveReason} onChange={(event) => setOllamaRemoveReason(event.target.value)} /></label>
+                <label>{t("adminOllamaActionReason")}<input value={ollamaRemoveReason} onChange={(event) => setOllamaRemoveReason(event.target.value)} /></label>
                 <div className="admin-table-scroll">
                   <table>
                     <thead><tr><th>{t("adminModelCode")}</th><th>{t("adminStatus")}</th><th>{t("adminProfilesTitle")}</th><th>{t("adminAction")}</th></tr></thead>
@@ -648,24 +764,38 @@ const AIModelAdmin: React.FC = () => {
                       <tr key={item.name}>
                         <td>{item.name}<br /><small>{formatModelSize(item.size)}</small></td>
                         <td>
-                          {item.is_default ? t("adminOllamaDefault") : item.is_running ? t("adminOllamaRunning") : t("adminOllamaUnused")}
+                          {!item.installed ? t("adminOllamaNotInstalled") : item.is_default ? t("adminOllamaDefault") : item.is_running ? t("adminOllamaRunning") : t("adminOllamaUnused")}
                           {item.removal_blockers.length ? <ul className="admin-compact-list">{item.removal_blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul> : null}
                         </td>
                         <td>{item.configured_profile_ids.length ? item.configured_profile_ids.join(", ") : t("adminNotConfigured")}</td>
                         <td>
-                          <button
-                            className="button ghost"
-                            type="button"
-                            disabled={!item.removable || !ollamaRemoveReason.trim()}
-                            title={item.removal_blockers.join(" ")}
-                            onClick={() => void runAction(async () => {
-                              await removeOllamaModel(adminAuth, item.name, ollamaRemoveReason);
-                              setOllamaRemoveReason("");
-                              await reloadOllama();
-                            }, t("adminOllamaRemoveStarted"))}
-                          >
-                            <FaTrash aria-hidden="true" />{t("adminOllamaRemove")}
-                          </button>
+                          <div className="admin-inline-actions">
+                            <button
+                              className="button ghost"
+                              type="button"
+                              disabled={!item.configured_profile_ids.length || !ollamaRemoveReason.trim()}
+                              onClick={() => void runAction(async () => {
+                                await disableOllamaConfiguredProfiles(item.configured_profile_ids);
+                                setOllamaRemoveReason("");
+                                await reloadOllama();
+                              }, t("adminOllamaProfilesDisabled"))}
+                            >
+                              <FaCheck aria-hidden="true" />{t("adminOllamaDisable")}
+                            </button>
+                            <button
+                              className="button ghost"
+                              type="button"
+                              disabled={!item.removable || !ollamaRemoveReason.trim()}
+                              title={item.removal_blockers.join(" ")}
+                              onClick={() => void runAction(async () => {
+                                await removeOllamaModel(adminAuth, item.name, ollamaRemoveReason);
+                                setOllamaRemoveReason("");
+                                await reloadOllama();
+                              }, t("adminOllamaRemoveStarted"))}
+                            >
+                              <FaTrash aria-hidden="true" />{t("adminOllamaRemove")}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}</tbody>

@@ -123,7 +123,26 @@ const dashboard = {
     }
   ],
   credentials: [],
-  policies: [],
+  policies: [
+    {
+      policy_id: "default:free:default",
+      task_type: "default",
+      plan_code: "free",
+      model_group_id: null,
+      preferred_external_model_profile_id: null,
+      preferred_local_model_profile_id: "local_ollama_default",
+      allow_external: false,
+      require_external_ack: true,
+      require_eu_data_zone: true,
+      fallback_local_on_error: true,
+      fallback_local_on_budget: true,
+      max_cost_eur: 0,
+      priority: 0,
+      enabled: true,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-06-27T10:00:00Z"
+    }
+  ],
   groups: [],
   memberships: [],
   users: [
@@ -158,6 +177,7 @@ const inventory = {
       size: 17_000_000_000,
       digest: "sha256:default",
       details: {},
+      installed: true,
       configured_profile_ids: ["local_ollama_default"],
       active_policy_ids: ["default:free:default"],
       is_default: true,
@@ -172,6 +192,7 @@ const inventory = {
       size: 2_000_000_000,
       digest: "sha256:unused",
       details: {},
+      installed: true,
       configured_profile_ids: [],
       active_policy_ids: [],
       is_default: false,
@@ -229,6 +250,89 @@ describe("AIModelAdmin Ollama management", () => {
     expect(await screen.findByText("adminPolicyHelp")).toBeDefined();
   });
 
+  it("lets admins update and disable routing policies", async () => {
+    const user = userEvent.setup();
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminPoliciesTitle/ }));
+    await user.click(await screen.findByRole("button", { name: /adminDisablePolicy/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.upsertAIModelRoutePolicy).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        expect.objectContaining({
+          policy_id: "default:free:default",
+          enabled: false,
+          reason: "Disable route policy from admin UI."
+        })
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: /adminEdit/ }));
+    expect((screen.getByLabelText("adminPlanCode") as HTMLInputElement).value).toBe("free");
+  });
+
+  it("lets admins disable model profiles and set a local free default", async () => {
+    const user = userEvent.setup();
+    const profileDashboard = {
+      ...dashboard,
+      profiles: [
+        ...dashboard.profiles,
+        {
+          model_profile_id: "local_ollama_llama32",
+          provider_id: "local_ollama",
+          model_code: "llama3.2:3b",
+          deployment_name: "llama3.2:3b",
+          context_window_tokens: 0,
+          input_price_per_1m: 0,
+          cached_input_price_per_1m: 0,
+          output_price_per_1m: 0,
+          billing_currency: "EUR",
+          effective_from: null,
+          effective_to: null,
+          eu_data_zone_capable: true,
+          is_default_for_free: false,
+          enabled: true,
+          created_at: "2026-06-27T10:00:00Z",
+          updated_at: "2026-06-27T10:00:00Z"
+        }
+      ]
+    };
+    apiMocks.fetchAIModelAdminDashboard.mockResolvedValue(profileDashboard);
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminProfilesTitle/ }));
+    await user.click(screen.getAllByRole("button", { name: /adminDisableModel/ }).at(0) as HTMLElement);
+
+    await waitFor(() => {
+      expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        expect.objectContaining({
+          model_profile_id: "local_ollama_default",
+          enabled: false,
+          reason: "Disable model profile from admin UI."
+        })
+      );
+    });
+
+    const defaultButtons = screen.getAllByRole("button", { name: /adminSetFreeDefault/ });
+    const enabledDefaultButton = defaultButtons.find((button) => !button.hasAttribute("disabled"));
+    expect(enabledDefaultButton).toBeDefined();
+    await user.click(enabledDefaultButton as HTMLElement);
+
+    await waitFor(() => {
+      expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        expect.objectContaining({
+          model_profile_id: "local_ollama_llama32",
+          enabled: true,
+          is_default_for_free: true,
+          reason: "Set as the default local model for free accounts."
+        })
+      );
+    });
+  });
+
   it("starts import and safe remove jobs", async () => {
     const user = userEvent.setup();
     render(<AIModelAdmin />);
@@ -246,7 +350,7 @@ describe("AIModelAdmin Ollama management", () => {
       );
     });
 
-    await user.type(screen.getByLabelText("adminOllamaRemoveReason"), "Remove unused model");
+    await user.type(screen.getByLabelText("adminOllamaActionReason"), "Remove unused model");
     const removeButtons = screen.getAllByRole("button", { name: /adminOllamaRemove/ });
     const unusedRemoveButton = removeButtons.at(1);
     expect(unusedRemoveButton).toBeDefined();
@@ -257,6 +361,27 @@ describe("AIModelAdmin Ollama management", () => {
         expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
         "llama3.2:3b",
         "Remove unused model"
+      );
+    });
+  });
+
+  it("disables configured Ollama model profiles from the runtime inventory", async () => {
+    const user = userEvent.setup();
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminOllamaTitle/ }));
+    await user.type(screen.getByLabelText("adminOllamaActionReason"), "Disable imported local model");
+    const disableButtons = screen.getAllByRole("button", { name: /adminOllamaDisable/ });
+    await user.click(disableButtons.at(0) as HTMLElement);
+
+    await waitFor(() => {
+      expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
+        expect.objectContaining({
+          model_profile_id: "local_ollama_default",
+          enabled: false,
+          reason: "Disable imported local model"
+        })
       );
     });
   });

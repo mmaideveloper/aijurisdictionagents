@@ -258,6 +258,7 @@ class OllamaModelInventoryItemResponse(BaseModel):
     size: int
     digest: str
     details: dict[str, Any]
+    installed: bool
     configured_profile_ids: list[str]
     active_policy_ids: list[str]
     is_default: bool
@@ -486,15 +487,35 @@ def list_ollama_models(
         running_model_names = ollama.list_running_model_names()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Ollama service is unavailable") from exc
+    profiles = store.list_ai_model_profiles()
+    providers = store.list_ai_model_providers()
+    policies = store.list_ai_task_route_policies()
+    installed_model_names = {item.name for item in models}
     return OllamaModelInventoryResponse(
         base_url=ollama.base_url,
         models=[
             _ollama_inventory_item_response(
                 model=item,
                 running_model_names=running_model_names,
-                store=store,
+                profiles=profiles,
+                providers=providers,
+                policies=policies,
+                installed=True,
             )
             for item in models
+        ]
+        + [
+            _configured_ollama_inventory_item_response(
+                model_name=model_name,
+                profiles=profiles,
+                providers=providers,
+                policies=policies,
+            )
+            for model_name in _configured_ollama_profile_model_names(
+                profiles=profiles,
+                providers=providers,
+                exclude_model_names=installed_model_names,
+            )
         ],
     )
 
@@ -852,11 +873,11 @@ def _ollama_inventory_item_response(
     *,
     model: OllamaInstalledModel,
     running_model_names: set[str],
-    store: ApiDatabaseStore,
+    profiles: list[AIModelProfile],
+    providers: list[AIModelProvider],
+    policies: list[AITaskRoutePolicy],
+    installed: bool,
 ) -> OllamaModelInventoryItemResponse:
-    profiles = store.list_ai_model_profiles()
-    providers = store.list_ai_model_providers()
-    policies = store.list_ai_task_route_policies()
     blockers = _ollama_model_removal_blockers(
         model_name=model.name,
         profiles=profiles,
@@ -881,6 +902,7 @@ def _ollama_inventory_item_response(
         size=model.size,
         digest=model.digest,
         details=model.details,
+        installed=installed,
         configured_profile_ids=configured_profile_ids,
         active_policy_ids=active_policy_ids,
         is_default=any("default" in blocker.lower() for blocker in blockers),
@@ -888,6 +910,49 @@ def _ollama_inventory_item_response(
         removable=not blockers,
         removal_blockers=blockers,
     )
+
+
+def _configured_ollama_inventory_item_response(
+    *,
+    model_name: str,
+    profiles: list[AIModelProfile],
+    providers: list[AIModelProvider],
+    policies: list[AITaskRoutePolicy],
+) -> OllamaModelInventoryItemResponse:
+    response = _ollama_inventory_item_response(
+        model=OllamaInstalledModel(
+            name=model_name,
+            model=model_name,
+            modified_at="",
+            size=0,
+            digest="",
+            details={"configured_only": True},
+        ),
+        running_model_names=set(),
+        profiles=profiles,
+        providers=providers,
+        policies=policies,
+        installed=False,
+    )
+    blockers = set(response.removal_blockers)
+    blockers.add("Model is configured in JurisDigta but is not installed in Ollama.")
+    response.removal_blockers = sorted(blockers)
+    response.removable = False
+    return response
+
+
+def _configured_ollama_profile_model_names(
+    *,
+    profiles: list[AIModelProfile],
+    providers: list[AIModelProvider],
+    exclude_model_names: set[str],
+) -> list[str]:
+    names = {
+        (profile.deployment_name or profile.model_code).strip()
+        for profile in profiles
+        if _is_local_ollama_profile(profile, providers)
+    }
+    return sorted(name for name in names if name and name not in exclude_model_names)
 
 
 def _ollama_model_removal_blockers(
@@ -904,15 +969,16 @@ def _ollama_model_removal_blockers(
         for item in profiles
         if _is_local_ollama_profile(item, providers) and _profile_matches_ollama_model(item, model_name)
     ]
-    matching_profile_ids = {item.model_profile_id for item in matching_profiles}
-    for profile in matching_profiles:
+    enabled_matching_profiles = [item for item in matching_profiles if item.enabled]
+    enabled_matching_profile_ids = {item.model_profile_id for item in enabled_matching_profiles}
+    for profile in enabled_matching_profiles:
         if profile.is_default_for_free:
             blockers.append(f"Profile {profile.model_profile_id} is marked as the free/default local model.")
         if profile.model_profile_id == _LOCAL_DEFAULT_PROFILE_ID:
             blockers.append(f"Profile {profile.model_profile_id} is the seeded system local default.")
 
     for policy in policies:
-        if policy.enabled and policy.preferred_local_model_profile_id in matching_profile_ids:
+        if policy.enabled and policy.preferred_local_model_profile_id in enabled_matching_profile_ids:
             blockers.append(
                 f"Enabled route policy {policy.policy_id} uses profile {policy.preferred_local_model_profile_id}."
             )
@@ -921,7 +987,7 @@ def _ollama_model_removal_blockers(
     if env_default and env_default.lower() != "unknown-variable" and env_default == model_name:
         blockers.append("LOCAL_LLM_MODEL currently selects this model.")
 
-    if model_name in running_model_names and matching_profile_ids:
+    if model_name in running_model_names and enabled_matching_profile_ids:
         blockers.append("Ollama reports this configured model as currently loaded.")
 
     return sorted(set(blockers))

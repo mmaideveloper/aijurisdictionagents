@@ -429,6 +429,18 @@
   gap: 8px;
 }
 
+.admin-inline-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 260px;
+}
+
+.admin-inline-actions .button {
+  min-height: 32px;
+}
+
 .admin-table-section table {
   border-collapse: collapse;
   min-width: 760px;

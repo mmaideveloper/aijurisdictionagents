@@ -178,6 +178,7 @@ export interface OllamaModelInventoryItem {
   size: number;
   digest: string;
   details: Record<string, unknown>;
+  installed: boolean;
   configured_profile_ids: string[];
   active_policy_ids: string[];
   is_default: boolean;
@@ -216,6 +217,7 @@ export interface ProviderUpsertInput {
 }
 
 export interface ProfileUpsertInput {
+  model_profile_id?: string | null;
   provider_id: string;
   model_code: string;
   deployment_name: string;
@@ -253,6 +255,7 @@ export interface GroupUpsertInput {
 }
 
 export interface PolicyUpsertInput {
+  policy_id?: string | null;
   task_type: string;
   plan_code: string;
   model_group_id: string | null;

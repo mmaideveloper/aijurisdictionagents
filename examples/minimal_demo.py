@@ -1,6 +1,6 @@
 from pathlib import Path
 import tempfile
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
@@ -84,7 +84,7 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         subscription_id=expired_subscription.subscription_id,
         status="paid",
     )
-    past_end = (datetime.now(UTC) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+    past_end = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
     with demo_store._connect() as conn:
         demo_store._execute(
             conn,
@@ -115,9 +115,39 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         "model_disclosure_label => "
         f"{expired_route.provider.display_name} - {expired_route.model_profile.model_code}"
     )
+    demo_store.upsert_ai_model_profile(
+        model_profile_id="local_ollama_llama32",
+        provider_id="local_ollama",
+        model_code="llama3.2:3b",
+        deployment_name="llama3.2:3b",
+        billing_currency="EUR",
+        eu_data_zone_capable=True,
+        is_default_for_free=True,
+        enabled=True,
+    )
+    demo_store.upsert_ai_task_route_policy(
+        policy_id="default:free:default",
+        task_type="default",
+        plan_code="free",
+        preferred_local_model_profile_id="local_ollama_llama32",
+        allow_external=False,
+        enabled=True,
+    )
+    demo_store.initialize()
+    preserved_free_route = demo_store.resolve_ai_model_route(
+        user_id=demo_user.user_id,
+        plan_code="free",
+        task_type="chat_reply",
+    )
+    print(
+        "model_routing_admin_free_default => "
+        f"{preserved_free_route.provider.provider_code}/"
+        f"{preserved_free_route.model_profile.model_code}"
+    )
 print(
     "ai_model_admin => /app/admin/ai-models manages model providers, prices, "
-    "groups, route policies, and audit events through server-authorized admin APIs."
+    "groups, route policies, local free defaults, and audit events through "
+    "server-authorized admin APIs."
 )
 print(
     "admin_case_reset => /app/admin can search users by email, list only case metadata, "

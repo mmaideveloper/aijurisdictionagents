@@ -40,6 +40,47 @@ def test_free_plan_routes_to_seeded_local_ollama_model(tmp_path: Path) -> None:
     assert route.model_profile.is_default_for_free is True
 
 
+def test_seeded_local_ollama_profile_preserves_admin_default_changes(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.upsert_ai_model_profile(
+        model_profile_id="local_ollama_llama32",
+        provider_id="local_ollama",
+        model_code="llama3.2:3b",
+        deployment_name="llama3.2:3b",
+        billing_currency="EUR",
+        eu_data_zone_capable=True,
+        is_default_for_free=True,
+        enabled=True,
+    )
+    store.upsert_ai_model_profile(
+        model_profile_id="local_ollama_default",
+        provider_id="local_ollama",
+        model_code="qwen3:1.7b",
+        deployment_name="qwen3:1.7b",
+        billing_currency="EUR",
+        eu_data_zone_capable=True,
+        is_default_for_free=False,
+        enabled=False,
+    )
+    store.upsert_ai_task_route_policy(
+        policy_id="default:free:default",
+        task_type="default",
+        plan_code="free",
+        preferred_local_model_profile_id="local_ollama_llama32",
+        allow_external=False,
+        enabled=True,
+    )
+
+    store.initialize()
+
+    profiles = {item.model_profile_id: item for item in store.list_ai_model_profiles()}
+    policies = {item.policy_id: item for item in store.list_ai_task_route_policies()}
+    assert profiles["local_ollama_default"].enabled is False
+    assert profiles["local_ollama_default"].is_default_for_free is False
+    assert profiles["local_ollama_llama32"].is_default_for_free is True
+    assert policies["default:free:default"].preferred_local_model_profile_id == "local_ollama_llama32"
+
+
 def test_seeded_local_ollama_provider_uses_configured_container_url(
     monkeypatch: Any,
     tmp_path: Path,

@@ -4342,11 +4342,7 @@ class ApiDatabaseStore:
                 output_price_per_1m, billing_currency, effective_from, effective_to,
                 eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(model_profile_id) DO UPDATE SET
-                model_code = excluded.model_code,
-                deployment_name = excluded.deployment_name,
-                is_default_for_free = excluded.is_default_for_free,
-                updated_at = excluded.updated_at
+            ON CONFLICT(model_profile_id) DO NOTHING
             """,
             (
                 local_profile_id,
@@ -4414,14 +4410,7 @@ class ApiDatabaseStore:
                     fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
                     priority, enabled, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(policy_id) DO UPDATE SET
-                    preferred_local_model_profile_id = excluded.preferred_local_model_profile_id,
-                    allow_external = excluded.allow_external,
-                    require_external_ack = excluded.require_external_ack,
-                    require_eu_data_zone = excluded.require_eu_data_zone,
-                    fallback_local_on_error = excluded.fallback_local_on_error,
-                    fallback_local_on_budget = excluded.fallback_local_on_budget,
-                    updated_at = excluded.updated_at
+                ON CONFLICT(policy_id) DO NOTHING
                 """,
                 (
                     f"default:{plan_code}:default",

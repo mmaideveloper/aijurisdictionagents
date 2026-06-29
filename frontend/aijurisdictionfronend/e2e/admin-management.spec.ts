@@ -180,6 +180,7 @@ test("admin management shows users, providers, models, policies, Ollama inventor
             size: 1700000000,
             digest: "sha256:qwen",
             details: {},
+            installed: true,
             configured_profile_ids: ["local_ollama_default"],
             active_policy_ids: ["default:free:default"],
             is_default: true,
