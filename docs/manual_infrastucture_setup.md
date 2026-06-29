@@ -87,6 +87,30 @@ Purpose: migrate the existing local PostgreSQL laws collector database into Azur
 - Preserve collector state tables for traceability and human oversight of legal data ingestion.
 - Avoid logging personal data or legal-risk user outputs during migration and validation.
 
+## Court Decision Collector PostgreSQL Setup
+
+Purpose: create the dedicated PostgreSQL database for Slovak court decisions (`sudne rozhodnutia`) and enable vector-backed MCP/API search without mixing this data into laws collector tables.
+
+Required owner: infrastructure operator with PostgreSQL administrator access.
+
+### Manual Setup Steps
+
+1. Create a separate database such as `court_decisions_sk`.
+2. Enable `pgvector` with `CREATE EXTENSION IF NOT EXISTS vector;`.
+3. Apply `databases/court-decision-collector/initdb/001_schema.sql`.
+4. Store the connection string only in local/server secrets as `COURT_DECISIONS_DB_CLOUD`.
+5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`.
+6. Run a bounded fixture import first: `python -m services.court_decision_collector --fixture`.
+7. Validate console logs include `processing_decision source_guid=...` and no raw decision body or personal identifier is logged.
+8. Validate MCP `tools/list` advertises `searchCourtDecisions` and `getCourtDecision`.
+9. Roll back by disabling MCP court-decision tools through configuration or clearing `COURT_DECISIONS_DB_CLOUD`, then stop any collector worker before dropping the database.
+
+### Privacy And Compliance Notes
+
+- Treat raw court decisions, extracted text, vectors, logs, and backups as sensitive operational data.
+- User-facing MCP results must default to pseudonymized snippets/text.
+- Do not send raw court-decision personal data to external model providers without a separate compliance review.
+
 ## Firebase Cloud Messaging For Document-Ready Mobile Push
 
 Related task: https://github.com/mmaideveloper/aijurisdictionagents/issues/343

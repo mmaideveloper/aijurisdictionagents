@@ -51,6 +51,8 @@ def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law() 
     tools = {tool["name"]: tool for tool in tools_response.json()["result"]["tools"]}
     assert "Use this first for Slovak legal questions" in tools["searchLaws"]["description"]
     assert "Use after searchLaws to cite exact Slovak legal text" in tools["getLawText"]["description"]
+    assert "pseudonymized public snippets" in tools["searchCourtDecisions"]["description"]
+    assert "outputMode=public" in tools["getCourtDecision"]["description"]
 
 
 def test_mcp_accepts_mc_path_compatibility_alias_for_claude_connector_typo() -> None:
@@ -172,6 +174,14 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     )
     assert text_response.status_code == 200
     assert _tool_payload(text_response)["content_text"] == "Civil code full text."
+
+
+def test_mcp_court_decision_tools_require_auth() -> None:
+    unauthenticated_search = _mcp_call("searchCourtDecisions", {"query": "najomna zmluva"})
+    assert unauthenticated_search.status_code == 401
+
+    unauthenticated_detail = _mcp_call("getCourtDecision", {"decision_id": "decision-1"})
+    assert unauthenticated_detail.status_code == 401
 
 
 def test_mcp_search_prefers_base_law_over_newer_amendment(monkeypatch, tmp_path: Path) -> None:

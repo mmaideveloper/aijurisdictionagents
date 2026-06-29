@@ -248,6 +248,19 @@ These are used by the laws collector deployment workflow:
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, default `all-MiniLM-L6-v2`. In `local` mode the deploy prefetches that model into the worker image before `az acr build` |
 | `SYSTEM_EMBEDDING_DEVICE` | Local embedding device selector for `local` mode, default `auto`; use `cpu` to force CPU-only execution |
 
+Court-decision collector settings are required before enabling court-decision MCP/API search in an environment:
+
+| Variable | Notes |
+| --- | --- |
+| `COURT_DECISIONS_DB_BACKEND` | Must be `postgres` |
+| `COURT_DECISIONS_DB_CLOUD` | Dedicated PostgreSQL connection string for the court decisions database, for example `court_decisions_sk`; keep it separate from laws collector databases |
+| `COURT_DECISIONS_STORAGE_LOCAL` | Runtime artifact path, default `./runs/storage/court-decision-collector/files/sk` |
+| `COURT_DECISIONS_SOURCE_BASE_URL` | InfoSud API base URL, default `https://obcan.justice.sk/pilot/api/ress-isu-service/v1` |
+| `COURT_DECISIONS_WORKER_POLL_HOURS` | Future scheduled worker cadence, default `1` |
+| `COURT_DECISIONS_EMBEDDING_DIMENSIONS` | Stored vector dimensions, default `32` |
+| `COURT_DECISIONS_IMPORT_LIMIT` | Bounded import page size for smoke runs, default `25` |
+| `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP` | Keep `false` for external MCP users; set `true` only for a controlled internal runtime approved to retrieve raw court-decision text |
+
 The laws collector workflow reuses these shared Azure deployment variables:
 
 - `AZURE_CLIENT_ID`

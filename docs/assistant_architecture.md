@@ -7,13 +7,16 @@ The internal JurisDigta assistant should use JurisDigta MCP as its source-of-tru
 1. The frontend starts or resumes a `/v1/chat` session.
 2. The chat API records the user turn and gathers case history, uploaded documents, and processed document chunks.
 3. For Slovak legal turns, the chat API builds an internal MCP law context by calling `searchLaws` and `getLawText` over the configured MCP endpoint (`INTERNAL_MCP_BASE_URL` in production, with an in-process fallback for local tests).
-4. The lawyer model receives the user conversation, case documents, uploaded documents, and the internal MCP law context.
-5. The model must cite MCP law identifiers and relevant sections when the MCP context contains them, and must say when current-law lookup was unavailable or inconclusive.
-6. Document drafting remains a separate validated workflow: ask for missing facts, require explicit user confirmation before final drafting, then export generated assets through the document export endpoints.
+4. When a Slovak legal turn needs case-law support, the chat API or MCP client may call `searchCourtDecisions` and `getCourtDecision`. Court-decision context must default to pseudonymized public text for UI and external model routes.
+5. The lawyer model receives the user conversation, case documents, uploaded documents, internal MCP law context, and optional court-decision context.
+6. The model must cite MCP law identifiers and relevant sections when the MCP context contains them, and must say when current-law lookup was unavailable or inconclusive. Court decisions must be cited as case-law support with court, date, ECLI or file number when available, not as binding statutory text.
+7. Document drafting remains a separate validated workflow: ask for missing facts, require explicit user confirmation before final drafting, then export generated assets through the document export endpoints.
 
 ## Quality Target
 
 Claude-like quality here means the assistant is not answering from model memory alone. It must ground Slovak legal answers in current JurisDigta MCP data, preserve case context, use uploaded documents when available, and produce downloadable documents only after the user confirms the drafting step.
+
+Court-decision retrieval is high-compliance-risk data processing because decisions can contain personal data. External providers and UI snippets receive pseudonymized decision text by default. Raw court-decision context is reserved for controlled internal/local model routes and must not be copied into logs, telemetry, screenshots, or external prompts.
 
 ## Local Models
 

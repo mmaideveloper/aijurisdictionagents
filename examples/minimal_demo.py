@@ -169,3 +169,8 @@ print(
     "worker services report supervisor state, freshness, latest run result, "
     "and sanitized errors through protected operational status."
 )
+print(
+    "court_decision_collector => imports Slovak court decisions into a separate "
+    "PostgreSQL store with vectors and pseudonymized MCP search output; run "
+    "`python examples/court_decision_collector_minimal_demo.py` for the focused fixture demo."
+)
