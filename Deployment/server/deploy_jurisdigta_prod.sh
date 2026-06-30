@@ -551,8 +551,8 @@ prepare_court_decision_runtime_paths() {
   runtime_uid="$(docker run --rm --entrypoint id aijuristiction-api:local -u)"
   runtime_gid="$(docker run --rm --entrypoint id aijuristiction-api:local -g)"
 
-  mkdir -p "$storage_dir/files/sk" "$(dirname "$log_file")"
-  touch "$log_file"
+  sudo mkdir -p "$storage_dir/files/sk" "$(dirname "$log_file")"
+  sudo touch "$log_file"
   sudo chown "$runtime_uid:$runtime_gid" "$log_file"
   sudo chmod 664 "$log_file"
   sudo chown -R "$runtime_uid:$runtime_gid" "$storage_dir"
