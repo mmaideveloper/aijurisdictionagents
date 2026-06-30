@@ -202,8 +202,8 @@ Client documentation:
 
 These tools do not require an MCP API key:
 
-- `getVersion`: returns API, system/core, mobile app, and web app versions.
-- `getStatistics`: returns processed laws count, last processed law, last processed day, and collector details.
+- `getVersion`: returns API, system/core, mobile app, web app versions, court-decision collector version, and court-decision collector status with latest imported decision metadata.
+- `getStatistics`: returns processed laws count, last processed law, last processed day, laws collector details, court-decision collector version, and court-decision statistics such as total decisions, published decisions, total versions, last imported decision/source GUID, last import time, court, court type, ECLI, file number, issue date, and collector cursor status.
 
 ## Protected Tools
 

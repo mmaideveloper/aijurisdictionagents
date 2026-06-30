@@ -1150,13 +1150,22 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
     return handler(arguments)
 
 
-def _tool_get_version(_arguments: dict[str, Any]) -> dict[str, str]:
+def _tool_get_version(_arguments: dict[str, Any]) -> dict[str, Any]:
+    court_decisions = _court_decision_statistics()
+    court_decision_collector_version = get_core_version()
     return {
         "api_version": get_api_version(),
         "mcp_server_version": get_mcp_server_version(),
         "system_version": get_core_version(),
         "mobile_app_version": get_mobile_app_version(),
         "web_app_version": get_web_app_version(),
+        "court_decision_collector_version": court_decision_collector_version,
+        "court_decision_collector": {
+            "version": court_decision_collector_version,
+            "status": court_decisions.get("collector_status"),
+            "last_imported_decision": court_decisions.get("last_imported_decision"),
+            "last_imported_at": court_decisions.get("last_imported_at"),
+        },
     }
 
 
@@ -1165,18 +1174,29 @@ def _tool_get_statistics(arguments: dict[str, Any]) -> dict[str, Any]:
     logger.info("mcp_tool_get_statistics_query country_code=%s", country_code)
     payload = _read_laws_statistics(config=_laws_db_config(), country_code=country_code)
     collector = payload.get("collector", {})
+    court_decisions = _court_decision_statistics()
     result = {
         "country_code": payload.get("country_code"),
         "processed_laws": payload.get("totals", {}).get("laws_imported", 0),
         "last_processed_law": collector.get("last_processed_law"),
         "last_processed_day": collector.get("last_processed_at"),
+        "court_decision_collector_version": get_core_version(),
+        "total_court_decisions": court_decisions.get("total_decisions", 0),
+        "last_imported_decision": court_decisions.get("last_imported_decision"),
+        "last_imported_decision_at": court_decisions.get("last_imported_at"),
+        "court_decisions": court_decisions,
         "details": payload,
     }
     logger.info(
-        "mcp_tool_get_statistics_result country_code=%s processed_laws=%s last_processed_law=%s",
+        (
+            "mcp_tool_get_statistics_result country_code=%s processed_laws=%s "
+            "last_processed_law=%s total_court_decisions=%s last_imported_decision=%s"
+        ),
         result["country_code"],
         result["processed_laws"],
         result["last_processed_law"],
+        result["total_court_decisions"],
+        result["last_imported_decision"],
     )
     return result
 
@@ -1556,16 +1576,65 @@ def _court_decision_store() -> Any:
     return store
 
 
+def _court_decision_statistics() -> dict[str, Any]:
+    try:
+        stats = _court_decision_store().statistics()
+    except Exception as exc:
+        logger.warning("mcp_court_decision_statistics_unavailable reason=%s", exc.__class__.__name__)
+        return {
+            "status": "unavailable",
+            "collector_status": "unavailable",
+            "total_decisions": 0,
+            "published_decisions": 0,
+            "total_versions": 0,
+            "last_imported_decision": None,
+            "last_imported_decision_id": None,
+            "last_imported_source_guid": None,
+            "last_imported_at": None,
+            "last_imported_court_name": None,
+            "last_imported_court_type": None,
+            "last_imported_issue_date": None,
+            "last_imported_ecli": None,
+            "last_imported_file_number": None,
+            "collector_last_processed_at": None,
+            "collector_last_source_guid": None,
+        }
+    return {
+        "status": "ok",
+        "collector_status": stats.collector_status,
+        "total_decisions": stats.total_decisions,
+        "published_decisions": stats.published_decisions,
+        "total_versions": stats.total_versions,
+        "last_imported_decision": stats.last_imported_source_guid or stats.last_imported_decision_id or None,
+        "last_imported_decision_id": stats.last_imported_decision_id or None,
+        "last_imported_source_guid": stats.last_imported_source_guid or None,
+        "last_imported_at": stats.last_imported_at or None,
+        "last_imported_court_name": stats.last_imported_court_name or None,
+        "last_imported_court_type": stats.last_imported_court_type or None,
+        "last_imported_issue_date": stats.last_imported_issue_date or None,
+        "last_imported_ecli": stats.last_imported_ecli or None,
+        "last_imported_file_number": stats.last_imported_file_number or None,
+        "collector_last_processed_at": stats.collector_last_processed_at or None,
+        "collector_last_source_guid": stats.collector_last_source_guid or None,
+    }
+
+
 def _mcp_tools() -> list[dict[str, Any]]:
     return [
         {
             "name": "getVersion",
-            "description": "Public version information for the mobile, system, API, and web apps.",
+            "description": (
+                "Public version information for the mobile, system, API, and web apps, "
+                "plus court-decision collector status and latest imported decision metadata."
+            ),
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
         {
             "name": "getStatistics",
-            "description": "Public laws collector processing statistics.",
+            "description": (
+                "Public laws collector and court-decision collector processing statistics, including totals and "
+                "latest imported source identifiers."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {"country_code": {"type": "string", "default": "SK"}},
@@ -2118,12 +2187,15 @@ def _tool_result_summary(*, tool_name: str, result: Any) -> str:
     if not isinstance(result, dict):
         return f"type={type(result).__name__}"
     if tool_name == "getVersion":
-        return "fields=api_version,system_version,mobile_app_version,web_app_version"
+        court_decisions = result.get("court_decision_collector")
+        court_status = court_decisions.get("status") if isinstance(court_decisions, dict) else "missing"
+        return f"fields=api_version,system_version,mobile_app_version,web_app_version court_status={court_status}"
     if tool_name == "getStatistics":
         return (
             f"country_code={result.get('country_code')} "
             f"processed_laws={result.get('processed_laws')} "
-            f"last_processed_law={result.get('last_processed_law')}"
+            f"last_processed_law={result.get('last_processed_law')} "
+            f"total_court_decisions={result.get('total_court_decisions')}"
         )
     if tool_name == "searchLaws":
         results = result.get("results")

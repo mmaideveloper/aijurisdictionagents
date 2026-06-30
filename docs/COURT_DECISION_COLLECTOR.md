@@ -82,6 +82,8 @@ $env:COURT_DECISIONS_IMPORT_LIMIT="5"
 
 The MCP server exposes:
 
+- `getVersion()` includes court-decision collector version, status, latest imported decision/source GUID, and latest import time.
+- `getStatistics(country_code)` includes court-decision collector version, total court decisions, published decisions, total versions, latest imported decision/source GUID, latest import time, court metadata, ECLI/file number, issue date, and collector cursor status.
 - `searchCourtDecisions(query, limit)` for pseudonymized metadata/snippet search.
 - `getCourtDecision(decision_id, outputMode)` where `outputMode=public` is the default and returns pseudonymized text.
 

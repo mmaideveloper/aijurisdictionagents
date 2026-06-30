@@ -27,6 +27,24 @@ class CourtDecisionCollectorStatus:
     status: str
 
 
+@dataclass(frozen=True)
+class CourtDecisionStatistics:
+    total_decisions: int
+    published_decisions: int
+    total_versions: int
+    last_imported_decision_id: str
+    last_imported_source_guid: str
+    last_imported_at: str
+    last_imported_court_name: str
+    last_imported_court_type: str
+    last_imported_issue_date: str
+    last_imported_ecli: str
+    last_imported_file_number: str
+    collector_last_processed_at: str
+    collector_last_source_guid: str
+    collector_status: str
+
+
 class PostgresCourtDecisionStore:
     def __init__(self, *, connection_uri: str, embedding_dimensions: int = 32) -> None:
         self.connection_uri = connection_uri
@@ -320,6 +338,45 @@ class PostgresCourtDecisionStore:
 
     def status(self) -> CourtDecisionCollectorStatus:
         return self.get_import_state(source_system="infosud", cursor_kind="latest")
+
+    def statistics(self) -> CourtDecisionStatistics:
+        status = self.status()
+        with self._connect() as conn:
+            totals = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_decisions,
+                    COALESCE(SUM(CASE WHEN current_status = 'published' THEN 1 ELSE 0 END), 0)
+                        AS published_decisions
+                FROM court_decision_documents
+                """
+            ).fetchone()
+            versions = conn.execute("SELECT COUNT(*) AS total_versions FROM court_decision_versions").fetchone()
+            latest = conn.execute(
+                """
+                SELECT decision_id, source_guid, court_name, court_type, issue_date, ecli,
+                       file_number, last_stored_at
+                FROM court_decision_documents
+                ORDER BY last_stored_at DESC, updated_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        return CourtDecisionStatistics(
+            total_decisions=int(totals["total_decisions"] if totals else 0),
+            published_decisions=int(totals["published_decisions"] if totals else 0),
+            total_versions=int(versions["total_versions"] if versions else 0),
+            last_imported_decision_id=str(latest["decision_id"] if latest else ""),
+            last_imported_source_guid=str(latest["source_guid"] if latest else ""),
+            last_imported_at=str(latest["last_stored_at"] if latest else ""),
+            last_imported_court_name=str(latest["court_name"] if latest else ""),
+            last_imported_court_type=str(latest["court_type"] if latest else ""),
+            last_imported_issue_date=str(latest["issue_date"] if latest else ""),
+            last_imported_ecli=str(latest["ecli"] if latest else ""),
+            last_imported_file_number=str(latest["file_number"] if latest else ""),
+            collector_last_processed_at=status.last_processed_at,
+            collector_last_source_guid=status.last_source_guid,
+            collector_status=status.status,
+        )
 
     def _record_event(
         self,
