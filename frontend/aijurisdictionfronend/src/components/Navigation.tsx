@@ -15,13 +15,17 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
   const { isAuthenticated, user, signOut } = useAuth();
 
   const handleMenuAction = React.useCallback(
-    (action: "profile" | "cases" | "logout") => {
+    (action: "profile" | "cases" | "providerCredentials" | "logout") => {
       if (action === "profile") {
         navigate("/profile");
         return;
       }
       if (action === "cases") {
         navigate("/");
+        return;
+      }
+      if (action === "providerCredentials") {
+        navigate("/admin/provider-credentials");
         return;
       }
       signOut();
@@ -34,6 +38,7 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
     () => [
       { key: "profile" as const, label: t("navMyProfile") },
       { key: "cases" as const, label: t("navMyCases") },
+      { key: "providerCredentials" as const, label: "Prihlasovacie údaje poskytovateľa" },
       { key: "logout" as const, label: t("navLogOut") }
     ],
     [t]

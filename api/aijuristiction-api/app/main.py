@@ -25,6 +25,7 @@ from app.laws_api import router as laws_router
 from app.logging_config import configure_logging
 from app.monitoring_daily_stats_api import router as monitoring_daily_stats_router
 from app.observability_api import router as observability_router
+from app.provider_credentials.api import router as provider_credentials_router
 from app.telemetry import configure_telemetry, instrument_fastapi
 from app.system_status_api import router as system_status_router
 from app.users.api import router as users_router
@@ -80,16 +81,19 @@ _DEFAULT_CORPORATE_WEB_ORIGINS: tuple[str, ...] = (
 
 
 def _cors_allow_origins() -> list[str]:
+    origins = [*list(_DEFAULT_CORPORATE_WEB_ORIGINS), "null"]
     value = os.getenv("CORS_ALLOW_ORIGINS")
     if value:
-        return [origin.strip() for origin in value.split(",") if origin.strip()]
+        for origin in value.split(","):
+            normalized = origin.strip()
+            if normalized and normalized not in origins:
+                origins.append(normalized)
+        return origins
     # Browser previews opened from file:// send Origin: null.
-    return [*list(_DEFAULT_CORPORATE_WEB_ORIGINS), "null"]
+    return origins
 
 
 def _cors_allow_origin_regex() -> str | None:
-    if os.getenv("CORS_ALLOW_ORIGINS"):
-        return None
     # Allow local web/mobile dev servers on localhost or loopback regardless of chosen port.
     return r"^https?://(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?$"
 
@@ -244,6 +248,7 @@ app.include_router(cases_router)
 app.include_router(voice_intent_router)
 app.include_router(observability_router)
 app.include_router(monitoring_daily_stats_router)
+app.include_router(provider_credentials_router)
 app.include_router(system_status_router)
 instrument_fastapi(app)
 

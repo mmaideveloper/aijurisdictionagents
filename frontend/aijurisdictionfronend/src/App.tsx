@@ -16,6 +16,7 @@ import Communication from "./pages/Communication";
 import LawValidation from "./pages/LawValidation";
 import LawRecommendation from "./pages/LawRecommendation";
 import Profile from "./pages/Profile";
+import AdminProviderCredentials from "./pages/AdminProviderCredentials";
 import DocumentViewer from "./pages/DocumentViewer";
 import Disclaimer from "./pages/Disclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
@@ -142,6 +143,14 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <Profile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/provider-credentials"
+          element={
+            <ProtectedRoute>
+              <AdminProviderCredentials />
             </ProtectedRoute>
           }
         />
