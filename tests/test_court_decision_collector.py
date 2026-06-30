@@ -118,3 +118,24 @@ def test_service_loop_stops_mid_run_then_resumes_until_current() -> None:
     assert final_state.status == "up_to_date"
     assert any("resume_state source_system=infosud cursor_kind=live_loop" in item for item in messages)
     assert any("collector_loop_stopped reason=no_new_decisions status=up_to_date" in item for item in messages)
+
+
+def test_worker_loop_waits_after_no_new_decisions() -> None:
+    messages = []
+    sleeps = []
+    store = FakeStore()
+    source = FixtureCourtDecisionSource(records=[])
+    service = CourtDecisionCollectorService(store=store, source=source, progress_logger=messages.append)
+
+    summary = service.run_worker_loop(
+        page_size=1,
+        poll_seconds=30,
+        max_idle_cycles=1,
+        sleep_fn=sleeps.append,
+    )
+
+    assert summary.processed == 0
+    assert sleeps == []
+    assert store.get_import_state(source_system="infosud", cursor_kind="live_loop").status == "up_to_date"
+    assert any("waiting_for_new_judicial_decisions status=up_to_date idle_cycles=1 wait_seconds=30" in item for item in messages)
+    assert any("collector_worker_stopped reason=max_idle_cycles idle_cycles=1 processed=0" in item for item in messages)

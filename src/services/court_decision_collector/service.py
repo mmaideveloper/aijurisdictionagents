@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
@@ -10,6 +11,7 @@ from .infosud_source import InfoSudDecisionRef
 from .postgres_store import PostgresCourtDecisionStore
 
 ProgressLogger = Callable[[str], None]
+SleepFunction = Callable[[float], None]
 
 
 class CourtDecisionSource(Protocol):
@@ -174,6 +176,56 @@ class CourtDecisionCollectorService:
                     return summary
             page += 1
 
+    def run_worker_loop(
+        self,
+        *,
+        page_size: int = 25,
+        poll_seconds: float = 3600,
+        cursor_kind: str = "live_loop",
+        max_idle_cycles: int = 0,
+        sleep_fn: SleepFunction = time.sleep,
+    ) -> CourtDecisionSyncSummary:
+        if self.source is None:
+            raise ValueError("InfoSud source client is required for worker loop")
+        if poll_seconds < 0:
+            raise ValueError("poll_seconds must be >= 0")
+        total = CourtDecisionSyncSummary()
+        idle_cycles = 0
+        self.progress_logger(
+            "collector_worker_started "
+            f"cursor_kind={cursor_kind} page_size={page_size} poll_seconds={poll_seconds:g}"
+        )
+        while True:
+            try:
+                cycle = self.run_until_current(page_size=page_size, cursor_kind=cursor_kind)
+                total = total.merge(cycle)
+                if cycle.processed == 0:
+                    idle_cycles += 1
+                else:
+                    idle_cycles = 0
+                status = self.store.get_import_state(
+                    source_system=self.source.source_system,
+                    cursor_kind=cursor_kind,
+                )
+                self.progress_logger(
+                    "waiting_for_new_judicial_decisions "
+                    f"status={status.status} idle_cycles={idle_cycles} "
+                    f"wait_seconds={poll_seconds:g} last_source_guid={status.last_source_guid}"
+                )
+                if max_idle_cycles and idle_cycles >= max_idle_cycles:
+                    self.progress_logger(
+                        "collector_worker_stopped "
+                        f"reason=max_idle_cycles idle_cycles={idle_cycles} processed={total.processed}"
+                    )
+                    return total
+                sleep_fn(poll_seconds)
+            except Exception as exc:
+                self.progress_logger(
+                    "collector_worker_error "
+                    f"status=error error_type={type(exc).__name__} message={_log_safe(str(exc))}"
+                )
+                sleep_fn(poll_seconds)
+
 
 def _decision_number(record: CourtDecisionRecord) -> str:
     return record.file_number or record.case_number or record.ecli or record.source_guid
@@ -189,3 +241,7 @@ def _decision_year(record: CourtDecisionRecord) -> str:
         if match:
             return match.group(0)
     return "unknown"
+
+
+def _log_safe(value: str) -> str:
+    return " ".join(value.split())

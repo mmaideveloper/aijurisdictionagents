@@ -40,9 +40,11 @@ The console prints progress lines such as:
 court_decision_collector processing_judicial_decision source_guid=fixture-sk-decision-1 number=12C/34/2024 year=2024 status=processing court=Okresny sud Bratislava I label=ECLI:SK:OSBA1:2024:1234567890.1
 ```
 
+The same progress lines are appended to `logs/court-decision-collector.log` by default.
+
 ## Service loop and restart test
 
-The production-style loop polls decision pages, saves a `live_loop` cursor after each processed decision, and stops with `status=up_to_date` when the source returns no more decisions.
+The production-style service polls decision pages, saves a `live_loop` cursor after each processed decision, and waits for the next poll when the source returns no more decisions. It does not exit on `status=up_to_date`.
 
 Run against the live source:
 
@@ -50,11 +52,13 @@ Run against the live source:
 .\conda\python.exe -m services.court_decision_collector --run-service --limit 25
 ```
 
+For local testing, `--poll-seconds` can shorten the wait interval. Production uses `COURT_DECISIONS_WORKER_POLL_HOURS`.
+
 Local restart-safe fixture test:
 
 ```powershell
-.\conda\python.exe -m services.court_decision_collector --run-service --fixture-source --limit 1 --stop-after-decisions 1
-.\conda\python.exe -m services.court_decision_collector --run-service --fixture-source --limit 1
+.\conda\python.exe -m services.court_decision_collector --run-once --fixture-source --limit 1 --stop-after-decisions 1
+.\conda\python.exe -m services.court_decision_collector --run-once --fixture-source --limit 1
 ```
 
 The first command stops after one judicial decision with `status=stopped_mid_run`. The second command resumes from the saved `live_loop` cursor, processes the remaining fixture decisions, and then stops with `status=up_to_date`.

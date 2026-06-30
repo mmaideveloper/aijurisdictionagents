@@ -18,15 +18,17 @@ class InfoSudDecisionRef:
 class InfoSudSourceClient:
     source_system = "infosud"
 
-    def __init__(self, *, base_url: str, timeout_seconds: float = 30.0) -> None:
+    def __init__(self, *, base_url: str, timeout_seconds: float = 30.0, tls_verify: bool = True) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.tls_verify = tls_verify
 
     def list_decisions(self, *, page: int = 0, size: int = 25) -> list[InfoSudDecisionRef]:
         response = httpx.get(
             f"{self.base_url}/rozhodnutie",
             params={"page": page, "size": size},
             timeout=self.timeout_seconds,
+            verify=self.tls_verify,
         )
         response.raise_for_status()
         payload = response.json()
@@ -40,7 +42,11 @@ class InfoSudSourceClient:
         return refs
 
     def get_decision(self, guid: str) -> CourtDecisionRecord:
-        response = httpx.get(f"{self.base_url}/rozhodnutie/{guid}", timeout=self.timeout_seconds)
+        response = httpx.get(
+            f"{self.base_url}/rozhodnutie/{guid}",
+            timeout=self.timeout_seconds,
+            verify=self.tls_verify,
+        )
         response.raise_for_status()
         return record_from_infosud_payload(response.json(), source_base_url=self.base_url, source_guid=guid)
 
@@ -86,7 +92,7 @@ def _extract_items(payload: Any) -> list[dict[str, Any]]:
         return [item for item in payload if isinstance(item, dict)]
     if not isinstance(payload, dict):
         return []
-    for key in ("content", "docs", "items", "rozhodnutia", "data"):
+    for key in ("content", "docs", "items", "rozhodnutia", "rozhodnutieList", "data"):
         value = payload.get(key)
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]

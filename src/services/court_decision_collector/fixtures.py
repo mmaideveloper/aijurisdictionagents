@@ -67,7 +67,7 @@ class FixtureCourtDecisionSource:
     source_system = "infosud"
 
     def __init__(self, records: list[CourtDecisionRecord] | None = None) -> None:
-        self.records = records or sample_court_decision_loop_records()
+        self.records = sample_court_decision_loop_records() if records is None else records
         self._by_guid = {record.source_guid: record for record in self.records}
 
     def list_decisions(self, *, page: int = 0, size: int = 25) -> list[InfoSudDecisionRef]:
