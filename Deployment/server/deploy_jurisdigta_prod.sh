@@ -542,10 +542,28 @@ build_laws_collector() {
   docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/Dockerfile .
 }
 
+prepare_court_decision_runtime_paths() {
+  local runtime_uid
+  local runtime_gid
+  local log_file="$DEPLOY_ROOT/runs/logs/court-decision-collector.log"
+  local storage_dir="$DEPLOY_ROOT/runs/storage/court-decision-collector"
+
+  runtime_uid="$(docker run --rm --entrypoint id aijuristiction-api:local -u)"
+  runtime_gid="$(docker run --rm --entrypoint id aijuristiction-api:local -g)"
+
+  mkdir -p "$storage_dir/files/sk" "$(dirname "$log_file")"
+  touch "$log_file"
+  sudo chown "$runtime_uid:$runtime_gid" "$log_file"
+  sudo chmod 664 "$log_file"
+  sudo chown -R "$runtime_uid:$runtime_gid" "$storage_dir"
+  sudo chmod -R u+rwX,g+rwX "$storage_dir"
+}
+
 start_court_decision_collector() {
   log "starting court decision collector container"
   local court_decisions_db_cloud
   court_decisions_db_cloud="$(postgres_url "postgres" "$COURT_DECISIONS_DATABASE_NAME")"
+  prepare_court_decision_runtime_paths
   docker rm -f jurisdigta-court-decision-collector >/dev/null 2>&1 || true
   docker run -d \
     --name jurisdigta-court-decision-collector \

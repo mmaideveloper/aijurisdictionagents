@@ -397,6 +397,7 @@ The self-managed production deployment script performs the Ollama install, priva
 - Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
 - Self-managed court-decision collector default: container `jurisdigta-court-decision-collector`, database `court_decisions_sk`, Docker restart policy `unless-stopped`, and log path `/srv/jurisdigta/runs/logs/court-decision-collector.log`.
 - The self-managed deploy script creates/applies the `court_decisions_sk` schema, injects `COURT_DECISIONS_DB_CLOUD` into API/MCP, and starts the court-decision collector with `python -m services.court_decision_collector --run-service`.
+- Before starting the collector, the self-managed deploy script creates `/srv/jurisdigta/runs/logs/court-decision-collector.log` and grants the API image runtime user ownership of that file and `/srv/jurisdigta/runs/storage/court-decision-collector/`. Keep the shared `/srv/jurisdigta/runs/logs/` directory owned by the deploy user so host cron jobs can continue writing their own logs.
 - Self-managed laws collector default: `LAWS_COLLECTOR_RUN_MODE=continuous`, container `jurisdigta-laws-collector`, `LAWS_WORKER_POLL_SECONDS=3600`, and Docker restart policy `unless-stopped`.
 - Legacy scheduled laws collector wrapper path: `/srv/jurisdigta/ops/run_laws_collector_daily.sh`.
 - Legacy scheduled laws collector log path: `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
