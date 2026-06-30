@@ -76,6 +76,12 @@ Production settings:
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
 - `MCP_API_JWT_SECRET=<long-random-secret>`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
+- `MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS=true` by default; keep it enabled for Claude web custom connectors so the authorization callback includes `iss`.
+
+Do not hide OAuth discovery from Claude web custom connector probes. Claude web
+uses `python-httpx` while validating custom connectors and must receive the
+protected-resource metadata, authorization-server metadata, and dynamic client
+registration response before it can start the browser authorization flow.
 
 ## Authentication
 

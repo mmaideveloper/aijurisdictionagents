@@ -304,8 +304,6 @@ def mcp_sign_up_page(request: Request) -> HTMLResponse:
 
 @oauth_router.get("/.well-known/oauth-protected-resource")
 def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
-    if _should_hide_oauth_metadata_for_claude_web(request):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
     base_url = _base_url(request)
     resource = _resource_url(request)
     return {
@@ -328,8 +326,6 @@ def oauth_mcp_protected_resource_metadata(request: Request) -> dict[str, Any]:
 @oauth_router.get("/.well-known/oauth-authorization-server/MCP")
 @oauth_router.get("/.well-known/oauth-authorization-server/mcp")
 def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
-    if _should_hide_oauth_metadata_for_claude_web(request):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
     base_url = _base_url(request)
     return {
         "issuer": base_url,
@@ -351,9 +347,6 @@ def oauth_dynamic_client_registration(
     request: Request,
     metadata: dict[str, Any] = Body(default_factory=dict),
 ) -> dict[str, Any]:
-    if _should_hide_oauth_metadata_for_claude_web(request):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
-
     redirect_uris = _registration_string_list(metadata.get("redirect_uris"))
     if not redirect_uris:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="redirect_uris is required")
@@ -2122,26 +2115,9 @@ def _should_challenge_oauth_probe(*, request: Request, payload: Any) -> bool:
     return bool(methods & {"initialize", "tools/list", "resources/list", "resources/templates/list", "prompts/list"})
 
 
-def _should_hide_oauth_metadata_for_claude_web(request: Request) -> bool:
-    enabled = os.getenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    if not enabled:
-        return False
-    user_agent = request.headers.get("user-agent", "").lower()
-    return "python-httpx" in user_agent
-
-
 def _oauth_authorization_response_iss_enabled() -> bool:
-    return os.getenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    raw_value = os.getenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", "true").strip().lower()
+    return raw_value not in {"0", "false", "no", "off"}
 
 
 def _first_payload_id(payload: Any) -> Any:
