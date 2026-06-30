@@ -893,13 +893,14 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         headers={"user-agent": "python-httpx/0.28.1"},
     )
     assert claude_web_authorization_metadata.status_code == 200
+    assert claude_web_authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
     monkeypatch.setenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY", "true")
-    hidden_claude_web_authorization_metadata = mcp_client.get(
+    claude_web_authorization_metadata_with_legacy_flag = mcp_client.get(
         "/.well-known/oauth-authorization-server",
         headers={"user-agent": "python-httpx/0.28.1"},
     )
-    assert hidden_claude_web_authorization_metadata.status_code == 404
-    hidden_claude_web_registration = mcp_client.post(
+    assert claude_web_authorization_metadata_with_legacy_flag.status_code == 200
+    claude_web_registration_with_legacy_flag = mcp_client.post(
         "/oauth/register",
         headers={"user-agent": "python-httpx/0.28.1"},
         json={
@@ -911,7 +912,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
             "scope": "mcp:laws offline_access",
         },
     )
-    assert hidden_claude_web_registration.status_code == 404
+    assert claude_web_registration_with_legacy_flag.status_code == 201
     monkeypatch.delenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY")
     authorization_metadata = mcp_client.get("/.well-known/oauth-authorization-server")
     assert authorization_metadata.status_code == 200
@@ -919,7 +920,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_metadata.json()["grant_types_supported"] == ["authorization_code", "refresh_token"]
     assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws", "offline_access"]
     assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
-    assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is False
+    assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
     assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/MCP"]
 
     registration_response = mcp_client.post(
@@ -1012,7 +1013,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert location.startswith("https://client.example/callback?")
     callback_query = parse_qs(urlparse(location).query)
     assert callback_query["state"] == ["abc"]
-    assert "iss" not in callback_query
+    assert callback_query["iss"] == ["https://mcp.jurisdigta.eu"]
     authorization_code = callback_query["code"][0]
 
     token_response = mcp_client.post(
@@ -1107,7 +1108,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
 def test_oauth_authorization_response_issuer_can_be_enabled(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
-    monkeypatch.setenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", "true")
+    monkeypatch.delenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", raising=False)
     sign_up_response = api_client.post(
         "/v1/users/sign-up",
         headers=AUTH_HEADERS,
