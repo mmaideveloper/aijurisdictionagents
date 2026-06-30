@@ -69,6 +69,16 @@ class CourtDecisionSyncSummary:
     last_source_guid: str = ""
     last_label: str = ""
 
+    def merge(self, other: "CourtDecisionSyncSummary") -> "CourtDecisionSyncSummary":
+        return CourtDecisionSyncSummary(
+            processed=self.processed + other.processed,
+            created=self.created + other.created,
+            updated=self.updated + other.updated,
+            unchanged=self.unchanged + other.unchanged,
+            last_source_guid=other.last_source_guid or self.last_source_guid,
+            last_label=other.last_label or self.last_label,
+        )
+
 
 @dataclass(frozen=True)
 class CourtDecisionSearchResult:

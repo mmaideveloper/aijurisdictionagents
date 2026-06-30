@@ -37,8 +37,27 @@ $env:COURT_DECISIONS_DB_CLOUD="postgresql://postgres:postgres@127.0.0.1:5432/cou
 The console prints progress lines such as:
 
 ```text
-court_decision_collector processing_decision source_guid=fixture-sk-decision-1 court=Okresny sud Bratislava I label=ECLI:SK:OSBA1:2024:1234567890.1
+court_decision_collector processing_judicial_decision source_guid=fixture-sk-decision-1 number=12C/34/2024 year=2024 status=processing court=Okresny sud Bratislava I label=ECLI:SK:OSBA1:2024:1234567890.1
 ```
+
+## Service loop and restart test
+
+The production-style loop polls decision pages, saves a `live_loop` cursor after each processed decision, and stops with `status=up_to_date` when the source returns no more decisions.
+
+Run against the live source:
+
+```powershell
+.\conda\python.exe -m services.court_decision_collector --run-service --limit 25
+```
+
+Local restart-safe fixture test:
+
+```powershell
+.\conda\python.exe -m services.court_decision_collector --run-service --fixture-source --limit 1 --stop-after-decisions 1
+.\conda\python.exe -m services.court_decision_collector --run-service --fixture-source --limit 1
+```
+
+The first command stops after one judicial decision with `status=stopped_mid_run`. The second command resumes from the saved `live_loop` cursor, processes the remaining fixture decisions, and then stops with `status=up_to_date`.
 
 ## Live source
 

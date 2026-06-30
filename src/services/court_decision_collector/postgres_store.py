@@ -295,14 +295,20 @@ class PostgresCourtDecisionStore:
             owned_conn.execute(query, params)
             owned_conn.commit()
 
-    def status(self) -> CourtDecisionCollectorStatus:
+    def get_import_state(
+        self,
+        *,
+        source_system: str,
+        cursor_kind: str,
+    ) -> CourtDecisionCollectorStatus:
         with self._connect() as conn:
             row = conn.execute(
                 """
                 SELECT last_processed_at, last_source_guid, status
                 FROM court_decision_import_state
-                WHERE source_system = 'infosud' AND cursor_kind = 'latest'
-                """
+                WHERE source_system = %(source_system)s AND cursor_kind = %(cursor_kind)s
+                """,
+                {"source_system": source_system, "cursor_kind": cursor_kind},
             ).fetchone()
         if row is None:
             return CourtDecisionCollectorStatus(last_processed_at="", last_source_guid="", status="not_started")
@@ -311,6 +317,9 @@ class PostgresCourtDecisionStore:
             last_source_guid=str(row["last_source_guid"] or ""),
             status=str(row["status"] or ""),
         )
+
+    def status(self) -> CourtDecisionCollectorStatus:
+        return self.get_import_state(source_system="infosud", cursor_kind="latest")
 
     def _record_event(
         self,
