@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 import base64
 import hashlib
@@ -60,7 +61,11 @@ _DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai"
 _MCP_OTP_VERIFICATION_PURPOSE = "mcp_access"
 _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
+_COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = 8_000
+_COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = 3
 logger = logging.getLogger("aijuristiction-api.mcp")
+_CURRENT_MCP_REQUEST_ID: ContextVar[str | None] = ContextVar("current_mcp_request_id", default=None)
+_CURRENT_MCP_CORRELATION_ID: ContextVar[str | None] = ContextVar("current_mcp_correlation_id", default=None)
 _MCP_SUPPORTED_LOCALES = {"en", "sk"}
 _MCP_TEXT: dict[str, dict[str, str]] = {
     "en": {
@@ -262,21 +267,27 @@ async def mcp_json_rpc(
             headers={"WWW-Authenticate": _www_authenticate_header(request)},
         )
     store = get_user_store() if payload_requires_auth else None
-    response = _handle_json_rpc(
-        payload=payload,
-        authorization=authorization,
-        x_mcp_api_key=x_mcp_api_key,
-        store=store,
-    )
-    duration_ms = int((time.perf_counter() - started_at) * 1000)
-    logger.info(
-        "mcp_json_rpc_completed request_id=%s correlation_id=%s status_code=%d duration_ms=%d",
-        request_id,
-        correlation_id,
-        response.status_code,
-        duration_ms,
-    )
-    return response
+    request_id_token = _CURRENT_MCP_REQUEST_ID.set(str(request_id) if request_id else None)
+    correlation_id_token = _CURRENT_MCP_CORRELATION_ID.set(str(correlation_id) if correlation_id else None)
+    try:
+        response = _handle_json_rpc(
+            payload=payload,
+            authorization=authorization,
+            x_mcp_api_key=x_mcp_api_key,
+            store=store,
+        )
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        logger.info(
+            "mcp_json_rpc_completed request_id=%s correlation_id=%s status_code=%d duration_ms=%d",
+            request_id,
+            correlation_id,
+            response.status_code,
+            duration_ms,
+        )
+        return response
+    finally:
+        _CURRENT_MCP_REQUEST_ID.reset(request_id_token)
+        _CURRENT_MCP_CORRELATION_ID.reset(correlation_id_token)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -1407,28 +1418,73 @@ def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
     if len(query) < 2:
         raise HTTPException(status_code=400, detail="query must contain at least 2 characters")
     limit = _bounded_int(arguments.get("limit"), default=10, minimum=1, maximum=50)
-    logger.info("mcp_tool_search_court_decisions_query query_length=%d limit=%d", len(query), limit)
-    store = _court_decision_store()
-    results = [
-        {
-            "decision_id": item.decision_id,
-            "version_id": item.version_id,
-            "source_guid": item.source_guid,
-            "court_name": item.court_name,
-            "court_type": item.court_type,
-            "file_number": item.file_number,
-            "case_number": item.case_number,
-            "ecli": item.ecli,
-            "issue_date": item.issue_date,
-            "source_url": item.source_url,
-            "snippet": item.snippet,
-            "score": item.score,
-            "output_mode": "public",
-        }
-        for item in store.search(query=query, limit=limit)
-    ]
-    logger.info("mcp_tool_search_court_decisions_result result_count=%d", len(results))
-    return {"query": query, "results": results, "output_mode": "public"}
+    started_at = time.perf_counter()
+    logger.info(
+        "mcp_tool_search_court_decisions_query query_length=%d limit=%d timeout_ms=%d",
+        len(query),
+        limit,
+        _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
+    )
+    try:
+        store = _court_decision_store(
+            initialize=False,
+            connect_timeout_seconds=_COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS,
+            statement_timeout_ms=_COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
+        )
+        results = [
+            {
+                "decision_id": item.decision_id,
+                "version_id": item.version_id,
+                "source_guid": item.source_guid,
+                "court_name": item.court_name,
+                "court_type": item.court_type,
+                "file_number": item.file_number,
+                "case_number": item.case_number,
+                "ecli": item.ecli,
+                "issue_date": item.issue_date,
+                "source_url": item.source_url,
+                "snippet": item.snippet,
+                "score": item.score,
+                "output_mode": "public",
+            }
+            for item in store.search(query=query, limit=limit)
+        ]
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        error_kind = _court_decision_search_error_kind(exc)
+        logger.warning(
+            (
+                "mcp_tool_search_court_decisions_degraded query_length=%d limit=%d "
+                "duration_ms=%d error_kind=%s exception=%s request_id=%s correlation_id=%s"
+            ),
+            len(query),
+            limit,
+            duration_ms,
+            error_kind,
+            exc.__class__.__name__,
+            _CURRENT_MCP_REQUEST_ID.get(),
+            _CURRENT_MCP_CORRELATION_ID.get(),
+        )
+        return _court_decision_search_degraded_result(
+            query=query,
+            limit=limit,
+            duration_ms=duration_ms,
+            error_kind=error_kind,
+        )
+    duration_ms = int((time.perf_counter() - started_at) * 1000)
+    logger.info(
+        "mcp_tool_search_court_decisions_result result_count=%d duration_ms=%d",
+        len(results),
+        duration_ms,
+    )
+    return {
+        "query": query,
+        "results": results,
+        "output_mode": "public",
+        "status": "ok",
+        "duration_ms": duration_ms,
+        "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
+    }
 
 
 def _tool_get_court_decision(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1565,14 +1621,25 @@ class _LawsQuerySession:
             logger.info("mcp_laws_db_session_closed")
 
 
-def _court_decision_store() -> Any:
+def _court_decision_store(
+    *,
+    initialize: bool = False,
+    connect_timeout_seconds: int | None = None,
+    statement_timeout_ms: int | None = None,
+) -> Any:
     from services.court_decision_collector.config import CourtDecisionCollectorConfig
     from services.court_decision_collector.postgres_store import PostgresCourtDecisionStore
 
     config = CourtDecisionCollectorConfig.from_env()
     config.validate()
-    store = PostgresCourtDecisionStore.from_config(config)
-    store.initialize()
+    store = PostgresCourtDecisionStore(
+        connection_uri=config.db_cloud,
+        embedding_dimensions=config.embedding_dimensions,
+        connect_timeout_seconds=connect_timeout_seconds,
+        statement_timeout_ms=statement_timeout_ms,
+    )
+    if initialize:
+        store.initialize()
     return store
 
 
@@ -1617,6 +1684,46 @@ def _court_decision_statistics() -> dict[str, Any]:
         "collector_last_processed_at": stats.collector_last_processed_at or None,
         "collector_last_source_guid": stats.collector_last_source_guid or None,
     }
+
+
+def _court_decision_search_degraded_result(
+    *,
+    query: str,
+    limit: int,
+    duration_ms: int,
+    error_kind: str,
+) -> dict[str, Any]:
+    message = (
+        "Court-decision search is temporarily unavailable or exceeded the server search budget. "
+        "Retry the same MCP call later or narrow the query."
+    )
+    return {
+        "query": query,
+        "results": [],
+        "output_mode": "public",
+        "status": "degraded",
+        "retryable": True,
+        "error": {
+            "code": "court_decision_search_timeout"
+            if error_kind == "timeout"
+            else "court_decision_search_unavailable",
+            "message": message,
+            "kind": error_kind,
+            "correlation_id": _CURRENT_MCP_CORRELATION_ID.get(),
+            "request_id": _CURRENT_MCP_REQUEST_ID.get(),
+        },
+        "limit": limit,
+        "duration_ms": duration_ms,
+        "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
+    }
+
+
+def _court_decision_search_error_kind(exc: Exception) -> str:
+    exception_name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    if isinstance(exc, TimeoutError) or "timeout" in exception_name or "timeout" in message:
+        return "timeout"
+    return "unavailable"
 
 
 def _mcp_tools() -> list[dict[str, Any]]:

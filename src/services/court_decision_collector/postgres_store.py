@@ -46,9 +46,18 @@ class CourtDecisionStatistics:
 
 
 class PostgresCourtDecisionStore:
-    def __init__(self, *, connection_uri: str, embedding_dimensions: int = 32) -> None:
+    def __init__(
+        self,
+        *,
+        connection_uri: str,
+        embedding_dimensions: int = 32,
+        connect_timeout_seconds: int | None = None,
+        statement_timeout_ms: int | None = None,
+    ) -> None:
         self.connection_uri = connection_uri
         self.embedding_dimensions = embedding_dimensions
+        self.connect_timeout_seconds = connect_timeout_seconds
+        self.statement_timeout_ms = statement_timeout_ms
 
     @classmethod
     def from_config(cls, config: CourtDecisionCollectorConfig) -> "PostgresCourtDecisionStore":
@@ -196,12 +205,32 @@ class PostgresCourtDecisionStore:
         query_vector = parse_embedding_vector(
             build_embedding_vector(query, dimensions=self.embedding_dimensions)
         )
+        candidate_limit = max(limit * 10, 100)
+        pattern = f"%{query.lower()}%"
         with self._connect() as conn:
             rows = conn.execute(
                 """
+                WITH search_query AS (
+                    SELECT websearch_to_tsquery('simple', %(query)s) AS tsq
+                )
                 SELECT d.decision_id, d.source_guid, d.court_name, d.court_type,
                        d.file_number, d.case_number, d.ecli, d.issue_date, d.source_url,
-                       v.version_id, v.pseudonymized_text, v.embedding_vector_json
+                       v.version_id, v.pseudonymized_text, v.embedding_vector_json,
+                       ts_rank_cd(
+                           to_tsvector(
+                               'simple',
+                               concat_ws(
+                                   ' ',
+                                   d.court_name,
+                                   d.court_type,
+                                   d.file_number,
+                                   d.case_number,
+                                   d.ecli,
+                                   v.pseudonymized_text
+                               )
+                           ),
+                           search_query.tsq
+                       ) AS lexical_rank
                 FROM court_decision_documents AS d
                 JOIN LATERAL (
                     SELECT version_id, pseudonymized_text, embedding_vector_json, stored_at
@@ -210,10 +239,32 @@ class PostgresCourtDecisionStore:
                     ORDER BY stored_at DESC
                     LIMIT 1
                 ) AS v ON true
+                CROSS JOIN search_query
                 WHERE d.current_status = 'published'
-                ORDER BY d.issue_date DESC NULLS LAST, d.updated_at DESC
-                LIMIT 500
-                """
+                  AND (
+                      to_tsvector(
+                          'simple',
+                          concat_ws(
+                              ' ',
+                              d.court_name,
+                              d.court_type,
+                              d.file_number,
+                              d.case_number,
+                              d.ecli,
+                              v.pseudonymized_text
+                          )
+                      ) @@ search_query.tsq
+                      OR LOWER(d.court_name) LIKE %(pattern)s
+                      OR LOWER(d.court_type) LIKE %(pattern)s
+                      OR LOWER(d.file_number) LIKE %(pattern)s
+                      OR LOWER(d.case_number) LIKE %(pattern)s
+                      OR LOWER(d.ecli) LIKE %(pattern)s
+                      OR LOWER(v.pseudonymized_text) LIKE %(pattern)s
+                  )
+                ORDER BY lexical_rank DESC, d.issue_date DESC NULLS LAST, d.updated_at DESC
+                LIMIT %(candidate_limit)s
+                """,
+                {"query": query, "pattern": pattern, "candidate_limit": candidate_limit},
             ).fetchall()
         scored: list[CourtDecisionSearchResult] = []
         for row in rows:
@@ -405,7 +456,12 @@ class PostgresCourtDecisionStore:
         )
 
     def _connect(self) -> psycopg.Connection[dict[str, object]]:
-        return psycopg.connect(self.connection_uri, row_factory=dict_row)
+        kwargs: dict[str, object] = {"row_factory": dict_row}
+        if self.connect_timeout_seconds is not None:
+            kwargs["connect_timeout"] = self.connect_timeout_seconds
+        if self.statement_timeout_ms is not None:
+            kwargs["options"] = f"-c statement_timeout={self.statement_timeout_ms}"
+        return psycopg.connect(self.connection_uri, **kwargs)
 
 
 def _document_params(record: CourtDecisionRecord, *, decision_id: str, now: str) -> dict[str, object]:
@@ -535,5 +591,11 @@ _SCHEMA_SQL = (
     """
     CREATE INDEX IF NOT EXISTS idx_court_decision_documents_issue_date
     ON court_decision_documents(issue_date)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_court_decision_search_text
+    ON court_decision_versions USING GIN (
+        to_tsvector('simple', pseudonymized_text)
+    )
     """,
 )

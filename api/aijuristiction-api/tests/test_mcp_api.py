@@ -17,6 +17,7 @@ from app.mcp_main import app as mcp_app
 from app.mcp_main import _redact_header_value
 from app.mcp_main import _redact_payload
 from app.users.totp import current_totp_code
+from services.court_decision_collector.domain import CourtDecisionSearchResult
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 api_client = TestClient(api_app)
@@ -215,6 +216,115 @@ def test_mcp_court_decision_tools_require_auth() -> None:
 
     unauthenticated_detail = _mcp_call("getCourtDecision", {"decision_id": "decision-1"})
     assert unauthenticated_detail.status_code == 401
+
+
+def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_logs(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class FakeCourtDecisionStore:
+        def search(self, *, query: str, limit: int) -> list[CourtDecisionSearchResult]:
+            assert query == "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu"
+            assert limit == 1
+            return [
+                CourtDecisionSearchResult(
+                    decision_id="decision-1",
+                    version_id="version-1",
+                    source_guid="infosud-1",
+                    court_name="Okresny sud Bratislava I",
+                    court_type="Okresny sud",
+                    file_number="12C/34/2026",
+                    case_number="12C/34/2026",
+                    ecli="ECLI:SK:OSBA1:2026:1234567890.1",
+                    issue_date="2026-06-29",
+                    source_url="https://example.test/decision/1",
+                    snippet="Pseudonymizovane rozhodnutie o rozdeleni pozemku podla podielu.",
+                    score=0.91,
+                )
+            ]
+
+    def fake_court_decision_store(**kwargs: object) -> FakeCourtDecisionStore:
+        assert kwargs["initialize"] is False
+        assert kwargs["connect_timeout_seconds"] == 3
+        assert kwargs["statement_timeout_ms"] == 8000
+        return FakeCourtDecisionStore()
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", fake_court_decision_store)
+    caplog.set_level(logging.INFO, logger="aijuristiction-api.mcp")
+    secret_query = "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu"
+
+    response = _mcp_call(
+        "searchCourtDecisions",
+        {"query": secret_query, "limit": 1},
+        headers={"authorization": f"Bearer {mcp_key}", "x-request-id": "court-search-request"},
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["status"] == "ok"
+    assert payload["output_mode"] == "public"
+    assert payload["timeout_ms"] == 8000
+    assert payload["results"][0]["decision_id"] == "decision-1"
+    assert payload["results"][0]["issue_date"] == "2026-06-29"
+    mcp_log_messages = [
+        record.getMessage() for record in caplog.records if record.name == "aijuristiction-api.mcp"
+    ]
+    assert any("mcp_tool_search_court_decisions_result result_count=1" in message for message in mcp_log_messages)
+    joined_logs = "\n".join(mcp_log_messages)
+    assert secret_query not in joined_logs
+    assert "Pseudonymizovane rozhodnutie" not in joined_logs
+    assert mcp_key not in joined_logs
+
+
+def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class TimeoutCourtDecisionStore:
+        def search(self, *, query: str, limit: int) -> list[CourtDecisionSearchResult]:
+            raise TimeoutError("statement timeout")
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: TimeoutCourtDecisionStore())
+    caplog.set_level(logging.INFO, logger="aijuristiction-api.mcp")
+
+    response = _mcp_call(
+        "searchCourtDecisions",
+        {
+            "query": "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu",
+            "limit": 5,
+        },
+        headers={
+            "authorization": f"Bearer {mcp_key}",
+            "x-request-id": "court-timeout-request",
+            "x-correlation-id": "court-timeout-correlation",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["status"] == "degraded"
+    assert payload["retryable"] is True
+    assert payload["results"] == []
+    assert payload["error"]["code"] == "court_decision_search_timeout"
+    assert payload["error"]["kind"] == "timeout"
+    assert payload["error"]["correlation_id"] == "court-timeout-correlation"
+    assert payload["error"]["request_id"] == "court-timeout-request"
+    assert payload["timeout_ms"] == 8000
+    assert payload["limit"] == 5
+    assert any(
+        "mcp_tool_search_court_decisions_degraded" in record.getMessage()
+        and "error_kind=timeout" in record.getMessage()
+        for record in caplog.records
+        if record.name == "aijuristiction-api.mcp"
+    )
 
 
 def test_mcp_search_prefers_base_law_over_newer_amendment(monkeypatch, tmp_path: Path) -> None:
