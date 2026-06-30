@@ -93,6 +93,10 @@ def main() -> int:
 
     if args.start:
         _run(["docker", "compose", "up", "-d"], cwd=monitoring_dir)
+        _run(
+            ["docker", "compose", "up", "-d", "--force-recreate", "status-exporter", "grafana"],
+            cwd=monitoring_dir,
+        )
         print("Monitoring stack started.")
         _set_grafana_home_dashboard(values)
 
