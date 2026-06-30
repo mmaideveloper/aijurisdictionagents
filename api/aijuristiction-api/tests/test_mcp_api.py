@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 
 from app.main import app as api_app
+from app import mcp_api
 from app.mcp_main import app as mcp_app
 from app.mcp_main import _redact_header_value
 from app.mcp_main import _redact_payload
@@ -138,12 +139,38 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
     mcp_key = _create_mcp_key(tmp_path)
+    court_stats = {
+        "status": "ok",
+        "collector_status": "running",
+        "total_decisions": 2,
+        "published_decisions": 2,
+        "total_versions": 3,
+        "last_imported_decision": "fixture-sk-decision-2",
+        "last_imported_decision_id": "decision-2",
+        "last_imported_source_guid": "fixture-sk-decision-2",
+        "last_imported_at": "2026-06-30T10:00:00+00:00",
+        "last_imported_court_name": "Okresny sud Zilina",
+        "last_imported_court_type": "Okresny sud",
+        "last_imported_issue_date": "2026-06-29",
+        "last_imported_ecli": "ECLI:SK:OSZA:2026:2",
+        "last_imported_file_number": "12C/34/2026",
+        "collector_last_processed_at": "2026-06-30T10:00:00+00:00",
+        "collector_last_source_guid": "fixture-sk-decision-2",
+    }
+    monkeypatch.setattr(mcp_api, "_court_decision_statistics", lambda: court_stats)
 
     version_response = _mcp_call("getVersion")
     assert version_response.status_code == 200
     version_payload = _tool_payload(version_response)
     assert version_payload["api_version"]
     assert version_payload["mcp_server_version"] == version_payload["api_version"]
+    assert version_payload["court_decision_collector_version"]
+    assert version_payload["court_decision_collector"] == {
+        "version": version_payload["court_decision_collector_version"],
+        "status": "running",
+        "last_imported_decision": "fixture-sk-decision-2",
+        "last_imported_at": "2026-06-30T10:00:00+00:00",
+    }
 
     statistics_response = _mcp_call("getStatistics")
     assert statistics_response.status_code == 200
@@ -151,6 +178,12 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     assert statistics["processed_laws"] == 1
     assert statistics["last_processed_law"] == "1/1993"
     assert statistics["last_processed_day"] == "2026-06-01T12:00:00Z"
+    assert statistics["court_decision_collector_version"] == version_payload["court_decision_collector_version"]
+    assert statistics["total_court_decisions"] == 2
+    assert statistics["last_imported_decision"] == "fixture-sk-decision-2"
+    assert statistics["last_imported_decision_at"] == "2026-06-30T10:00:00+00:00"
+    assert statistics["court_decisions"]["published_decisions"] == 2
+    assert statistics["court_decisions"]["last_imported_file_number"] == "12C/34/2026"
 
     unauthenticated_search = _mcp_call("searchLaws", {"query": "civil"})
     assert unauthenticated_search.status_code == 200
