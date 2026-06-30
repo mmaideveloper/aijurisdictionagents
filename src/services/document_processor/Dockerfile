@@ -15,7 +15,8 @@ COPY src /app/src
 # from turning routine deploys into multi-GB downloads. Keep the exact installed
 # build constrained while installing the app, otherwise transitive dependencies
 # can upgrade torch back to a CUDA-enabled PyPI build.
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.3"
+RUN pip install --no-cache-dir "numpy>=2.1,<2.4" && \
+    pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.3,<2.8"
 RUN python -c "import torch; print(f'torch=={torch.__version__}')" > /tmp/torch-constraint.txt && \
     pip install --no-cache-dir --constraint /tmp/torch-constraint.txt .
 

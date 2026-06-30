@@ -18,6 +18,8 @@ COPY mobile_app/pubspec.yaml ./mobile_app/pubspec.yaml
 COPY api/aijuristiction-api ./api/aijuristiction-api
 
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir "numpy>=2.1,<2.4" && \
+    pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.3,<2.8" && \
     pip install --no-cache-dir -e . && \
     pip install --no-cache-dir -e ./api/aijuristiction-api
 
