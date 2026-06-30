@@ -14,8 +14,8 @@ COPY src /app/src
 # constraining CPU torch prevents PyPI from resolving CUDA-enabled wheels.
 RUN pip install --no-cache-dir "numpy>=2.1,<2.4" && \
     pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.3,<2.8"
-RUN python -c "import torch; print(f'torch=={torch.__version__}')" > /tmp/torch-constraint.txt && \
-    pip install --no-cache-dir --constraint /tmp/torch-constraint.txt .
+RUN python -c "import numpy, torch; print(f'numpy=={numpy.__version__}'); print(f'torch=={torch.__version__}')" > /tmp/runtime-constraints.txt && \
+    pip install --no-cache-dir --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cpu --constraint /tmp/runtime-constraints.txt .
 
 ENV PYTHONUNBUFFERED=1
 ENV LAWS_WORKER_FIXTURE=baseline
