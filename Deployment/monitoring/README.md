@@ -18,6 +18,7 @@ GET /v1/system/status?minutes=60
 - Last processed law, next law to check, latest laws collector run timestamps, and latest run duration.
 - Email sent counts, email queue counts, and aggregate email send duration from the outbox.
 - Document processor queue counts, processed document counts, latest run duration, and aggregate processing duration.
+- Court-decision collector status, imported decision/version counts, embedding-vector coverage, worker activity counts, activity timestamps, and sanitized recent errors.
 - AI model token and cost telemetry: input tokens, cached input tokens, output tokens, total tokens, estimated EUR cost, request count, and fallback count by provider, model, task type, plan, route type, route class, and 1h/24h/7d/30d window.
 - Host CPU, memory, disk, filesystem, and kernel metrics through Node Exporter.
 - Docker container CPU, memory, filesystem, and restart behavior through cAdvisor.
@@ -46,6 +47,7 @@ http://127.0.0.1:3000
 - If Grafana must be reachable through `admin.jurisdigta.eu`, publish it through Cloudflare Tunnel and protect it with Cloudflare Access plus Grafana login.
 - Keep dashboard panels operational only. Do not display user chat text, generated legal documents, API keys, database connection strings, or legal-risk user outputs.
 - Email and document processor panels must stay aggregate-only: queue counts, sent/processed counts, and timing gauges. Do not add recipients, filenames, case titles, extracted document text, verification codes, embeddings, or raw connection strings as labels.
+- Court-decision panels must stay aggregate-only: status, counts, timestamps, and sanitized operational errors. Do not add raw decision text, party names, file content, source URLs, source GUIDs, ECLI values, file numbers, prompts, retrieved snippets, embeddings, or personal data as labels or table fields.
 - Shared AI model panels must stay aggregate-only. Allowed labels include categories such as plan code, provider, model, task type, route type, route class, status, fallback reason, and window. Do not add raw case IDs, user IDs, subscription IDs, prompts, answers, document text, filenames, party names, citations, emails, phone numbers, addresses, or other legal-case facts as metric labels. The top-case Grafana panel uses masked `case_ref` values only.
 
 ## AI Model Token And Cost Monitoring
@@ -516,6 +518,7 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 - `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
 - `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, local/Ollama tokens, paid-model tokens, requests, estimated cost, and masked top cases by token volume.
 - `JurisDigta Laws Collector`: execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
+- `JurisDigta Court Decision Service`: collector status, imported decisions, stored versions, versions with embeddings, processing/processed/idle activity, storage totals, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
 - `JurisDigta System Logs`: Loki log stream with source, severity, stream, and regex search filters for Docker container logs and server job log files.
 
@@ -558,6 +561,15 @@ Useful starter queries:
 - `jurisdigta_laws_runtime_entries_processed`
 - `jurisdigta_laws_runtime_processed`
 - `jurisdigta_laws_recent_error_info`
+- `jurisdigta_component_status{component="court_decision_collector"}`
+- `jurisdigta_court_decisions_total{status="all"}`
+- `jurisdigta_court_decisions_total{status="published"}`
+- `jurisdigta_court_decision_versions_total`
+- `jurisdigta_court_decision_versions_with_embeddings_total`
+- `jurisdigta_court_decision_collector_events_total{event="processed"}`
+- `jurisdigta_court_decision_collector_last_activity_timestamp_seconds`
+- `jurisdigta_court_decision_latest_imported_timestamp_seconds`
+- `jurisdigta_court_decision_recent_error_info`
 - `jurisdigta_system_disk_used_percent`
 - `jurisdigta_system_memory_used_percent`
 - `probe_success{service="jurisdigta-api"}`

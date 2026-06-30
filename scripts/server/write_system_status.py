@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -13,6 +14,9 @@ from typing import Any
 DEFAULT_OUTPUT = "/srv/jurisdigta/runs/status/system-status.json"
 DEFAULT_LAWS_LOG = "/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log"
 DEFAULT_DOCUMENT_PROCESSOR_LOG = "/srv/jurisdigta/runs/logs/document-processor-latest.log"
+DEFAULT_COURT_DECISION_COLLECTOR_LOG = (
+    "/srv/jurisdigta/runs/logs/court-decision-collector.log"
+)
 DEFAULT_APP_ROOT = "/srv/jurisdigta/app"
 ERROR_PATTERN = re.compile(r"\b(error|exception|traceback|critical|failed)\b", re.IGNORECASE)
 HTTP_REQUEST_PATTERN = re.compile(
@@ -42,6 +46,10 @@ def main() -> int:
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--laws-log", default=DEFAULT_LAWS_LOG)
     parser.add_argument("--document-processor-log", default=DEFAULT_DOCUMENT_PROCESSOR_LOG)
+    parser.add_argument(
+        "--court-decision-collector-log",
+        default=DEFAULT_COURT_DECISION_COLLECTOR_LOG,
+    )
     parser.add_argument("--app-root", default=DEFAULT_APP_ROOT)
     parser.add_argument("--api-container", default="jurisdigta-api")
     parser.add_argument("--mcp-container", default="jurisdigta-mcp")
@@ -49,6 +57,10 @@ def main() -> int:
     parser.add_argument("--laws-container", default="jurisdigta-laws-collector-daily")
     parser.add_argument("--email-container", default="jurisdigta-email-scheduler")
     parser.add_argument("--document-processor-container", default="jurisdigta-document-processor")
+    parser.add_argument(
+        "--court-decision-container",
+        default="jurisdigta-court-decision-collector",
+    )
     parser.add_argument("--docker-log-since", default="60m")
     args = parser.parse_args()
 
@@ -58,12 +70,14 @@ def main() -> int:
         app_root=Path(args.app_root),
         laws_log=Path(args.laws_log),
         document_processor_log=Path(args.document_processor_log),
+        court_decision_collector_log=Path(args.court_decision_collector_log),
         api_container=args.api_container,
         mcp_container=args.mcp_container,
         postgres_container=args.postgres_container,
         laws_container=args.laws_container,
         email_container=args.email_container,
         document_processor_container=args.document_processor_container,
+        court_decision_container=args.court_decision_container,
         docker_log_since=args.docker_log_since,
     )
     temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
@@ -77,12 +91,14 @@ def build_status_payload(
     app_root: Path,
     laws_log: Path,
     document_processor_log: Path,
+    court_decision_collector_log: Path,
     api_container: str,
     mcp_container: str,
     postgres_container: str,
     laws_container: str,
     email_container: str,
     document_processor_container: str,
+    court_decision_container: str,
     docker_log_since: str,
 ) -> dict[str, Any]:
     api_status = _container_status(api_container, log_since=docker_log_since, include_http_metrics=True)
@@ -91,6 +107,7 @@ def build_status_payload(
     laws_status = _container_status(laws_container, log_since=docker_log_since)
     email_status = _container_status(email_container, log_since=docker_log_since)
     document_processor_status = _container_status(document_processor_container, log_since=docker_log_since)
+    court_decision_status = _container_status(court_decision_container, log_since=docker_log_since)
     laws_runtime = _laws_log_status(laws_log)
     laws_status.update(laws_runtime)
     if laws_status.get("status") == "stopped" and laws_status.get("last_run_finished_at"):
@@ -102,6 +119,9 @@ def build_status_payload(
         and document_processor_status.get("last_run_finished_at")
     ):
         document_processor_status["status"] = "idle"
+    court_decision_status.update(
+        _court_decision_collector_status(court_decision_collector_log, postgres_container)
+    )
 
     apps = {
         "api": api_status,
@@ -110,6 +130,7 @@ def build_status_payload(
         "email_scheduler": email_status,
         "document_processor": document_processor_status,
         "laws_collector": laws_status,
+        "court_decision_collector": court_decision_status,
     }
     return {
         "generated_at": _utc_now(),
@@ -326,7 +347,50 @@ def _document_processor_db_status(postgres_container: str) -> dict[str, Any]:
     return _postgres_json(postgres_container, sql)
 
 
-def _postgres_json(postgres_container: str, sql: str) -> dict[str, Any]:
+def _court_decision_collector_status(path: Path, postgres_container: str) -> dict[str, Any]:
+    payload = _court_decision_db_status(postgres_container)
+    payload.update(_court_decision_log_status(path))
+    return payload
+
+
+def _court_decision_db_status(postgres_container: str) -> dict[str, Any]:
+    database = os.getenv("COURT_DECISIONS_DATABASE_NAME", "court_decisions_sk")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", database):
+        return {"database": database, "database_status": "invalid_name"}
+    sql = """
+    SELECT json_build_object(
+      'database', current_database(),
+      'database_status', 'ok',
+      'total_decisions', (SELECT COUNT(*) FROM court_decision_documents),
+      'published_decisions', (
+        SELECT COUNT(*) FROM court_decision_documents WHERE current_status = 'published'
+      ),
+      'total_versions', (SELECT COUNT(*) FROM court_decision_versions),
+      'versions_with_embeddings', (
+        SELECT COUNT(*) FROM court_decision_versions WHERE embedding_vector IS NOT NULL
+      ),
+      'latest_imported_at', (
+        SELECT MAX(last_stored_at) FROM court_decision_documents
+      ),
+      'latest_update_event_at', (
+        SELECT MAX(created_at) FROM court_decision_update_events
+      ),
+      'cursor_status', COALESCE((
+        SELECT status FROM court_decision_import_state
+        ORDER BY updated_at DESC
+        LIMIT 1
+      ), '')
+    );
+    """
+    return _postgres_json(postgres_container, sql, database=database)
+
+
+def _postgres_json(
+    postgres_container: str,
+    sql: str,
+    *,
+    database: str = "aijurisdiction",
+) -> dict[str, Any]:
     text = _command_text(
         [
             "docker",
@@ -336,7 +400,7 @@ def _postgres_json(postgres_container: str, sql: str) -> dict[str, Any]:
             "-U",
             "postgres",
             "-d",
-            "aijurisdiction",
+            database,
             "-t",
             "-A",
             "-c",
@@ -408,6 +472,30 @@ def _document_processor_log_status(path: Path) -> dict[str, Any]:
         "last_run_duration_seconds": duration,
         "last_run_processed": latest_run["processed"],
         "last_run_failed": latest_run["failed"],
+        "recent_errors": _recent_error_lines(text),
+        "error_count": _count_error_lines(text),
+    }
+
+
+def _court_decision_log_status(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {
+            "latest_log": str(path),
+            "processing_events": 0,
+            "processed_events": 0,
+            "idle_events": 0,
+            "last_activity_at": None,
+            "recent_errors": [],
+            "error_count": 0,
+        }
+    text = path.read_text(encoding="utf-8", errors="replace")
+    last_activity = _last_line_timestamp(text)
+    return {
+        "latest_log": str(path),
+        "processing_events": text.count("processing_judicial_decision "),
+        "processed_events": text.count("processed_judicial_decision "),
+        "idle_events": text.count("waiting_for_new_judicial_decisions "),
+        "last_activity_at": _format_dt(last_activity),
         "recent_errors": _recent_error_lines(text),
         "error_count": _count_error_lines(text),
     }
@@ -584,6 +672,15 @@ def _line_timestamp(line: str) -> datetime | None:
         return None
     timestamp, _, _rest = line[1:].partition("]")
     return _parse_datetime(timestamp)
+
+
+def _last_line_timestamp(text: str) -> datetime | None:
+    found: datetime | None = None
+    for line in text.splitlines():
+        parsed = _line_timestamp(line)
+        if parsed is not None:
+            found = parsed
+    return found
 
 
 def _sanitize_log_line(line: str) -> str:

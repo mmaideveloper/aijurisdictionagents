@@ -845,7 +845,7 @@ install_status_writer_cron() {
 
   log "installing system status writer cron"
   (crontab -l 2>/dev/null | grep -v 'write_system_status.py' || true; \
-    echo "* * * * * cd /srv/jurisdigta/app && python3 scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json --laws-container $laws_container_name --laws-log /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log --document-processor-log /srv/jurisdigta/runs/logs/document-processor-latest.log >/dev/null 2>&1") | crontab -
+    echo "* * * * * cd /srv/jurisdigta/app && python3 scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json --laws-container $laws_container_name --laws-log /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log --document-processor-log /srv/jurisdigta/runs/logs/document-processor-latest.log --court-decision-container jurisdigta-court-decision-collector --court-decision-collector-log /srv/jurisdigta/runs/logs/court-decision-collector.log >/dev/null 2>&1") | crontab -
 }
 
 install_log_retention_cron() {
@@ -961,7 +961,9 @@ validate_health() {
     --output "$DEPLOY_ROOT/runs/status/system-status.json" \
     --laws-container "$laws_container_name" \
     --laws-log "$DEPLOY_ROOT/runs/logs/laws-collector-daily-latest.log" \
-    --document-processor-log "$DEPLOY_ROOT/runs/logs/document-processor-latest.log" >/dev/null
+    --document-processor-log "$DEPLOY_ROOT/runs/logs/document-processor-latest.log" \
+    --court-decision-container jurisdigta-court-decision-collector \
+    --court-decision-collector-log "$DEPLOY_ROOT/runs/logs/court-decision-collector.log" >/dev/null
 }
 
 require_command git

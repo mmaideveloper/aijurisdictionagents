@@ -42,6 +42,27 @@ court_decision_collector processing_judicial_decision source_guid=fixture-sk-dec
 
 The same progress lines are appended to `logs/court-decision-collector.log` by default.
 
+## Grafana monitoring
+
+Self-managed production provisions a separate Grafana dashboard named
+`JurisDigta Court Decision Service`.
+
+The dashboard uses aggregate Prometheus metrics from
+`scripts/server/export_system_status_metrics.py`:
+
+- `jurisdigta_component_status{component="court_decision_collector"}`
+- `jurisdigta_court_decisions_total`
+- `jurisdigta_court_decision_versions_total`
+- `jurisdigta_court_decision_versions_with_embeddings_total`
+- `jurisdigta_court_decision_collector_events_total`
+- `jurisdigta_court_decision_collector_last_activity_timestamp_seconds`
+- `jurisdigta_court_decision_recent_error_info`
+
+These metrics must remain operational and aggregate-only. Do not expose raw
+decision text, source URLs, source GUIDs, ECLI values, file numbers, party
+names, retrieved snippets, embeddings, prompts, or other personal/legal-risk
+content in Grafana labels or tables.
+
 ## Service loop and restart test
 
 The production-style service polls decision pages, saves a `live_loop` cursor after each processed decision, and waits for the next poll when the source returns no more decisions. It does not exit on `status=up_to_date`.

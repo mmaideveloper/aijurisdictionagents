@@ -50,6 +50,8 @@ def main() -> int:
             "jurisdigta_ollama_up",
             "jurisdigta_ai_model_total_tokens_window",
             "jurisdigta_ai_model_top_case_total_tokens_window",
+            "jurisdigta_component_status{component=\"court_decision_collector\"}",
+            "jurisdigta_court_decisions_total",
         )
         if not _query(expression)
     ]
@@ -84,7 +86,7 @@ def main() -> int:
 
     print(
         "Monitoring validation passed: Prometheus scrapes, JurisDigta HTTP probes, "
-        "AI token metrics, and AI model alert rules are healthy."
+        "AI token metrics, court-decision metrics, and AI model alert rules are healthy."
     )
     return 0
 

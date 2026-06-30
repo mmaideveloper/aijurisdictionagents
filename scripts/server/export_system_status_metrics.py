@@ -97,21 +97,24 @@ def _fetch_status(status_url: str, api_key: str, timeout: float) -> dict[str, An
 
 def _merge_local_runtime(payload: dict[str, Any]) -> dict[str, Any]:
     laws = payload.get("laws_collector")
-    if not isinstance(laws, dict) or isinstance(laws.get("runtime"), dict):
-        return payload
+    local_apps = _local_apps_runtime()
+    if isinstance(laws, dict) and not isinstance(laws.get("runtime"), dict):
+        local_laws = local_apps.get("laws_collector")
+        if isinstance(local_laws, dict):
+            payload = json.loads(json.dumps(payload))
+            merged_laws = payload.setdefault("laws_collector", {})
+            if isinstance(merged_laws, dict):
+                merged_laws["runtime"] = local_laws
 
-    local_runtime = _local_laws_runtime()
-    if not local_runtime:
-        return payload
-
-    merged = json.loads(json.dumps(payload))
-    merged_laws = merged.setdefault("laws_collector", {})
-    if isinstance(merged_laws, dict):
-        merged_laws["runtime"] = local_runtime
-    return merged
+    if not isinstance(payload.get("court_decision_collector"), dict):
+        local_court_decision = local_apps.get("court_decision_collector")
+        if isinstance(local_court_decision, dict):
+            payload = json.loads(json.dumps(payload))
+            payload["court_decision_collector"] = local_court_decision
+    return payload
 
 
-def _local_laws_runtime() -> dict[str, Any]:
+def _local_apps_runtime() -> dict[str, Any]:
     value = os.getenv("SYSTEM_STATUS_FILE", "").strip()
     if not value:
         return {}
@@ -125,8 +128,7 @@ def _local_laws_runtime() -> dict[str, Any]:
     apps = payload.get("apps") if isinstance(payload, dict) else None
     if not isinstance(apps, dict):
         return {}
-    laws = apps.get("laws_collector")
-    return laws if isinstance(laws, dict) else {}
+    return apps
 
 
 def _render_metrics(payload: dict[str, Any]) -> str:
@@ -144,6 +146,10 @@ def _render_metrics(payload: dict[str, Any]) -> str:
         "llm": _nested(payload, "api", "llm", "status"),
         "system": _nested(payload, "system", "status"),
         "laws_collector": _nested(payload, "laws_collector", "status"),
+        "court_decision_collector": (
+            _nested(payload, "court_decision_collector", "status")
+            or _nested(payload, "system", "apps", "court_decision_collector", "status")
+        ),
         "email_scheduler": _nested(payload, "system", "apps", "email_scheduler", "status"),
         "document_processor": _nested(payload, "system", "apps", "document_processor", "status"),
         "errors": _nested(payload, "errors", "status"),
@@ -183,6 +189,18 @@ def _render_metrics(payload: dict[str, Any]) -> str:
         _append_http_metrics(lines, system)
         _append_email_metrics(lines, system)
         _append_document_processor_metrics(lines, system)
+        _append_court_decision_collector_metrics(lines, system)
+
+    court_decision_collector = payload.get("court_decision_collector")
+    has_system_court_decision = isinstance(
+        _nested(payload, "system", "apps", "court_decision_collector"),
+        dict,
+    )
+    if isinstance(court_decision_collector, dict) and not has_system_court_decision:
+        _append_court_decision_collector_metrics(
+            lines,
+            {"apps": {"court_decision_collector": court_decision_collector}},
+        )
 
     business = payload.get("business")
     if not isinstance(business, dict) and isinstance(system, dict):
@@ -406,6 +424,109 @@ def _append_document_processor_metrics(lines: list[str], system: dict[str, Any])
     if last_run_processed is not None:
         _append_help(lines, "jurisdigta_document_processor_last_run_processed", "Documents processed in the latest document processor run.", "gauge")
         lines.append(f"jurisdigta_document_processor_last_run_processed {_number(last_run_processed, 0)}")
+
+
+def _append_court_decision_collector_metrics(lines: list[str], system: dict[str, Any]) -> None:
+    apps = system.get("apps")
+    if not isinstance(apps, dict):
+        return
+    collector = apps.get("court_decision_collector")
+    if not isinstance(collector, dict):
+        return
+
+    _append_help(
+        lines,
+        "jurisdigta_court_decisions_total",
+        "Total imported court decisions by status class.",
+        "gauge",
+    )
+    lines.append(
+        f'jurisdigta_court_decisions_total{{status="all"}} '
+        f'{_number(collector.get("total_decisions"), 0)}'
+    )
+    lines.append(
+        f'jurisdigta_court_decisions_total{{status="published"}} '
+        f'{_number(collector.get("published_decisions"), 0)}'
+    )
+
+    _append_help(
+        lines,
+        "jurisdigta_court_decision_versions_total",
+        "Total imported court decision text versions.",
+        "gauge",
+    )
+    lines.append(
+        "jurisdigta_court_decision_versions_total "
+        f"{_number(collector.get('total_versions'), 0)}"
+    )
+
+    _append_help(
+        lines,
+        "jurisdigta_court_decision_versions_with_embeddings_total",
+        "Total court decision versions with stored embedding vectors.",
+        "gauge",
+    )
+    lines.append(
+        "jurisdigta_court_decision_versions_with_embeddings_total "
+        f"{_number(collector.get('versions_with_embeddings'), 0)}"
+    )
+
+    _append_help(
+        lines,
+        "jurisdigta_court_decision_collector_events_total",
+        "Court decision collector operational event counts parsed from sanitized logs.",
+        "gauge",
+    )
+    for event_name, field in (
+        ("processing", "processing_events"),
+        ("processed", "processed_events"),
+        ("idle", "idle_events"),
+    ):
+        lines.append(
+            "jurisdigta_court_decision_collector_events_total"
+            f'{{event="{event_name}"}} {_number(collector.get(field), 0)}'
+        )
+
+    for key, metric_name, help_text in (
+        (
+            "last_activity_at",
+            "jurisdigta_court_decision_collector_last_activity_timestamp_seconds",
+            "Unix timestamp for latest court decision collector log activity.",
+        ),
+        (
+            "latest_imported_at",
+            "jurisdigta_court_decision_latest_imported_timestamp_seconds",
+            "Unix timestamp for latest imported court decision.",
+        ),
+        (
+            "latest_update_event_at",
+            "jurisdigta_court_decision_latest_update_event_timestamp_seconds",
+            "Unix timestamp for latest court decision update event.",
+        ),
+    ):
+        timestamp = _timestamp(collector.get(key))
+        if timestamp is not None:
+            _append_help(lines, metric_name, help_text, "gauge")
+            lines.append(f"{metric_name} {timestamp}")
+
+    recent_errors = collector.get("recent_errors")
+    if isinstance(recent_errors, list):
+        _append_help(
+            lines,
+            "jurisdigta_court_decision_recent_error_info",
+            "Recent sanitized court decision collector error lines.",
+            "gauge",
+        )
+        for index, error in enumerate(recent_errors[-20:], start=1):
+            if not isinstance(error, dict):
+                continue
+            timestamp = str(error.get("timestamp") or "")
+            message = str(error.get("message") or "")
+            lines.append(
+                "jurisdigta_court_decision_recent_error_info"
+                f'{{index="{index}",timestamp="{_label(timestamp)}",'
+                f'message="{_label(message)}"}} 1'
+            )
 
 
 def _append_business_metrics(lines: list[str], business: dict[str, Any]) -> None:
