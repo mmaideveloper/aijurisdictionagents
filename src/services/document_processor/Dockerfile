@@ -10,6 +10,10 @@ COPY pyproject.toml README.md /app/
 COPY aimodels /app/aimodels
 COPY src /app/src
 
+# The document processor runs CPU-only in self-managed prod. Preinstalling
+# torch from the official CPU wheel index prevents PyPI's CUDA dependency set
+# from turning routine deploys into multi-GB downloads.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.3"
 RUN pip install --no-cache-dir .
 
 ENV PYTHONUNBUFFERED=1
