@@ -211,7 +211,7 @@ These tools require an MCP API key:
 
 - `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title.
 - `getLawText`: returns bounded latest imported text for a law document id. For large codes, pass `section_number` or `section_start`/`section_end` to retrieve only the relevant sections; use `offset` and `max_chars` when pagination is needed.
-- `searchCourtDecisions`: searches the dedicated court-decision vector store and returns pseudonymized public snippets with court/date/ECLI/file-number metadata.
+- `searchCourtDecisions`: searches the dedicated court-decision vector store and returns pseudonymized public snippets with court/date/ECLI/file-number metadata. MCP court-decision search is bounded by a server-side PostgreSQL connect timeout and statement timeout so slow database calls return a structured `status=degraded`, `retryable=true` payload with request/correlation identifiers instead of hanging until the MCP client times out. Logs record query length, limit, duration, error kind, request ID, and correlation ID, but not the raw query, credentials, tokens, snippets, or court-decision text.
 - `getCourtDecision`: returns one imported court decision. `outputMode=public` is the default and returns pseudonymized text. `outputMode=internal_raw` is blocked unless `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP=true` is enabled for a controlled internal runtime; it must not be used for normal external model prompts or UI display.
 
 ## Minimal JSON-RPC Example
