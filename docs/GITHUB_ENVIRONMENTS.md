@@ -248,6 +248,19 @@ These are used by the laws collector deployment workflow:
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, default `all-MiniLM-L6-v2`. In `local` mode the deploy prefetches that model into the worker image before `az acr build` |
 | `SYSTEM_EMBEDDING_DEVICE` | Local embedding device selector for `local` mode, default `auto`; use `cpu` to force CPU-only execution |
 
+Court-decision collector settings are required before enabling court-decision MCP/API search in an environment:
+
+| Variable | Notes |
+| --- | --- |
+| `COURT_DECISIONS_DB_BACKEND` | Must be `postgres` |
+| `COURT_DECISIONS_DB_CLOUD` | Dedicated PostgreSQL connection string for the court decisions database, for example `court_decisions_sk`; keep it separate from laws collector databases |
+| `COURT_DECISIONS_STORAGE_LOCAL` | Runtime artifact path, default `./runs/storage/court-decision-collector/files/sk` |
+| `COURT_DECISIONS_SOURCE_BASE_URL` | InfoSud API base URL, default `https://obcan.justice.sk/pilot/api/ress-isu-service/v1` |
+| `COURT_DECISIONS_WORKER_POLL_HOURS` | Future scheduled worker cadence, default `1` |
+| `COURT_DECISIONS_EMBEDDING_DIMENSIONS` | Stored vector dimensions, default `32` |
+| `COURT_DECISIONS_IMPORT_LIMIT` | Bounded import page size for smoke runs, default `25` |
+| `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP` | Keep `false` for external MCP users; set `true` only for a controlled internal runtime approved to retrieve raw court-decision text |
+
 The laws collector workflow reuses these shared Azure deployment variables:
 
 - `AZURE_CLIENT_ID`
@@ -359,6 +372,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_API_PORT` | `8080` | Server-local API bind port |
 | `JURISDIGTA_MCP_PORT` | `8070` | Server-local MCP bind port |
 | `JURISDIGTA_WEB_PORT` | `8090` | Server-local web bind port |
+| `JURISDIGTA_COURT_DECISIONS_DATABASE_NAME` | `court_decisions_sk` | Dedicated PostgreSQL database name for the court-decision vector store used by MCP court-decision search |
 | `JURISDIGTA_LAWS_COLLECTOR_RUN_MODE` | `continuous` | Self-managed laws collector runtime mode. `continuous` runs a restartable Docker container that sleeps between live polls; `scheduled` keeps the legacy daily cron wrapper |
 | `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON` | `1` | Install/update the self-managed document processor cron wrapper; set `0` only for manual worker runs |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |

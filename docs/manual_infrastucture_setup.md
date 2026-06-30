@@ -87,6 +87,30 @@ Purpose: migrate the existing local PostgreSQL laws collector database into Azur
 - Preserve collector state tables for traceability and human oversight of legal data ingestion.
 - Avoid logging personal data or legal-risk user outputs during migration and validation.
 
+## Court Decision Collector PostgreSQL Setup
+
+Purpose: create the dedicated PostgreSQL database for Slovak court decisions (`sudne rozhodnutia`) and enable vector-backed MCP/API search without mixing this data into laws collector tables.
+
+Required owner: infrastructure operator with PostgreSQL administrator access.
+
+### Manual Setup Steps
+
+1. Create a separate database such as `court_decisions_sk`.
+2. Enable `pgvector` with `CREATE EXTENSION IF NOT EXISTS vector;`.
+3. Apply `databases/court-decision-collector/initdb/001_schema.sql`.
+4. Store the connection string only in local/server secrets as `COURT_DECISIONS_DB_CLOUD`.
+5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`.
+6. Run a bounded fixture import first: `python -m services.court_decision_collector --fixture`.
+7. Validate console logs include `processing_decision source_guid=...` and no raw decision body or personal identifier is logged.
+8. Validate MCP `tools/list` advertises `searchCourtDecisions` and `getCourtDecision`.
+9. Roll back by disabling MCP court-decision tools through configuration or clearing `COURT_DECISIONS_DB_CLOUD`, then stop any collector worker before dropping the database.
+
+### Privacy And Compliance Notes
+
+- Treat raw court decisions, extracted text, vectors, logs, and backups as sensitive operational data.
+- User-facing MCP results must default to pseudonymized snippets/text.
+- Do not send raw court-decision personal data to external model providers without a separate compliance review.
+
 ## Firebase Cloud Messaging For Document-Ready Mobile Push
 
 Related task: https://github.com/mmaideveloper/aijurisdictionagents/issues/343
@@ -371,6 +395,8 @@ The self-managed production deployment script performs the Ollama install, priva
 - Required admin value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com` or another approved operator list. Required owner: JurisDigta infrastructure operator with Cloudflare Access admin rights. Cloudflare Access must protect the admin hostname and forward `cf-access-authenticated-user-email`; validate with an admin role or allowlisted account opening `/app/admin`, seeing Users/model/credential controls, and a non-admin account receiving `403` from admin APIs. Roll back by removing the email from `JURISDIGTA_ADMIN_EMAILS` or changing the user role back to `user`, redeploying/restarting the API, and confirming the admin API rejects the account.
 - The self-managed deploy script injects `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` into the API container so internal assistant law lookups call the dedicated MCP service over the Docker network.
 - Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
+- Self-managed court-decision collector default: container `jurisdigta-court-decision-collector`, database `court_decisions_sk`, Docker restart policy `unless-stopped`, and log path `/srv/jurisdigta/runs/logs/court-decision-collector.log`.
+- The self-managed deploy script creates/applies the `court_decisions_sk` schema, injects `COURT_DECISIONS_DB_CLOUD` into API/MCP, and starts the court-decision collector with `python -m services.court_decision_collector --run-service`.
 - Self-managed laws collector default: `LAWS_COLLECTOR_RUN_MODE=continuous`, container `jurisdigta-laws-collector`, `LAWS_WORKER_POLL_SECONDS=3600`, and Docker restart policy `unless-stopped`.
 - Legacy scheduled laws collector wrapper path: `/srv/jurisdigta/ops/run_laws_collector_daily.sh`.
 - Legacy scheduled laws collector log path: `/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log`.
@@ -405,7 +431,7 @@ The self-managed production deployment script performs the Ollama install, priva
 - Required Grafana secret for local stack: `GRAFANA_ADMIN_PASSWORD`, stored only in `/srv/jurisdigta/app/Deployment/monitoring/.env` or a server-local secret manager.
 - GitHub `prod` Environment variable `JURISDIGTA_SSH_HOST`.
 - GitHub `prod` Environment secret `JURISDIGTA_SSH_PRIVATE_KEY`, preferably a deploy-only key.
-- Optional GitHub `prod` Environment variables: `JURISDIGTA_SSH_PORT`, `JURISDIGTA_SSH_USER`, `JURISDIGTA_DEPLOY_ROOT`, `JURISDIGTA_ENV_FILE`, `JURISDIGTA_WEB_API_BASE_URL`, `JURISDIGTA_API_PORT`, `JURISDIGTA_MCP_PORT`, and `JURISDIGTA_WEB_PORT`.
+- Optional GitHub `prod` Environment variables: `JURISDIGTA_SSH_PORT`, `JURISDIGTA_SSH_USER`, `JURISDIGTA_DEPLOY_ROOT`, `JURISDIGTA_ENV_FILE`, `JURISDIGTA_WEB_API_BASE_URL`, `JURISDIGTA_API_PORT`, `JURISDIGTA_MCP_PORT`, `JURISDIGTA_WEB_PORT`, and `JURISDIGTA_COURT_DECISIONS_DATABASE_NAME`.
 - Repository self-hosted GitHub Actions runner labels: `self-hosted`, `Linux`, `X64`, `jurisdigta-prod`.
 
 ### Validation Steps
@@ -423,6 +449,9 @@ The self-managed production deployment script performs the Ollama install, priva
 - Admin model route check with both API keys returns the seeded `local_ollama_default` and `azure_foundry_gpt_4o_mini` profiles, and credential reads are redacted unless `reveal=true` is used by an authorized admin.
 - MCP health check returns HTTP 200 at `http://127.0.0.1:8070/health`.
 - MCP OAuth metadata at `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP` advertises `https://mcp.jurisdigta.eu/MCP` as the protected resource.
+- `docker ps --filter name=jurisdigta-court-decision-collector` shows the court-decision collector container running.
+- `tail -n 80 /srv/jurisdigta/runs/logs/court-decision-collector.log` shows `processing_judicial_decision` or `waiting_for_new_judicial_decisions` without raw decision text.
+- `docker exec aijurisdiction-postgres psql -U "${LOCAL_POSTGRES_USER:-postgres}" -d "${COURT_DECISIONS_DATABASE_NAME:-court_decisions_sk}" -c "SELECT count(*) AS versions, count(embedding_vector) AS versions_with_vector FROM court_decision_versions;"` confirms imported court-decision vectors.
 - Repository minimal runnable example succeeds: `python examples/minimal_demo.py`.
 - For default continuous mode, `docker ps --filter name=jurisdigta-laws-collector` shows the collector container running and `crontab -l` has no `run_laws_collector_daily.sh` entry.
 - For legacy scheduled mode, `crontab -l` contains the daily laws collector wrapper entry and `docker ps -a --filter name=jurisdigta-laws-collector-daily` shows no stuck active collector container after deployment validation.
@@ -449,6 +478,7 @@ The self-managed production deployment script performs the Ollama install, priva
 - Stop Docker Compose workloads before changing runtime configuration.
 - Remove the daily laws collector cron entry with `crontab -l | grep -v 'run_laws_collector_daily.sh' | crontab -`.
 - Stop the continuous collector container with `docker stop --time 120 jurisdigta-laws-collector`; use `docker rm -f jurisdigta-laws-collector` only if the container remains stuck.
+- Stop the court-decision collector with `docker stop --time 120 jurisdigta-court-decision-collector`; use `docker rm -f jurisdigta-court-decision-collector` only if the container remains stuck.
 - Remove the status writer cron entry with `crontab -l | grep -v 'write_system_status.py' | crontab -`.
 - Stop the optional status metrics exporter with `sudo systemctl disable --now jurisdigta-status-exporter.service`.
 - Stop Ollama with `sudo systemctl disable --now ollama` if local model serving must be rolled back; remove pulled models with `ollama rm <model-tag>` before uninstalling when disk space or licensing requires cleanup.

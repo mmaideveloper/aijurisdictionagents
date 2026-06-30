@@ -11,6 +11,7 @@ WEB_PORT="${WEB_PORT:-8090}"
 DOCUMENT_ENGINE_ENABLED="${DOCUMENT_ENGINE_ENABLED:-1}"
 DOCUMENT_ENGINE_API_PORT="${DOCUMENT_ENGINE_API_PORT:-8060}"
 DOCUMENT_ENGINE_DATABASE_NAME="${DOCUMENT_ENGINE_DATABASE_NAME:-document_engine}"
+COURT_DECISIONS_DATABASE_NAME="${COURT_DECISIONS_DATABASE_NAME:-court_decisions_sk}"
 WEB_API_BASE_URL="${WEB_API_BASE_URL:-https://api.jurisdigta.eu}"
 RUN_SCHEMA_MIGRATIONS="${RUN_SCHEMA_MIGRATIONS:-1}"
 INSTALL_LAWS_CRON="${INSTALL_LAWS_CRON:-1}"
@@ -290,6 +291,7 @@ ensure_runtime_layout() {
     "$DEPLOY_ROOT/runs/storage/api/files" \
     "$DEPLOY_ROOT/runs/storage/document-processor" \
     "$DEPLOY_ROOT/runs/storage/document-engine/generated-documents" \
+    "$DEPLOY_ROOT/runs/storage/court-decision-collector/files/sk" \
     "$DEPLOY_ROOT/runs/storage/laws-collector/postgres/data" \
     "$DEPLOY_ROOT/runs/storage/laws-collector/files" \
     "$DEPLOY_ROOT/runs/storage/laws-collector/sqlite"
@@ -332,11 +334,13 @@ start_api_and_mcp() {
   compose_env
   local api_db_cloud
   local laws_db_cloud
+  local court_decisions_db_cloud
   local api_cors_allow_origins
   local prometheus_base_url
   local local_llm_base_url
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
+  court_decisions_db_cloud="$(postgres_url "postgres" "$COURT_DECISIONS_DATABASE_NAME")"
   api_cors_allow_origins="$(production_api_cors_origins)"
   prometheus_base_url="${API_PROMETHEUS_BASE_URL:-http://jurisdigta-prometheus:9090}"
   local_llm_base_url="$(local_llm_container_base_url)"
@@ -365,6 +369,10 @@ start_api_and_mcp() {
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
+    -e COURT_DECISIONS_DB_BACKEND=postgres \
+    -e COURT_DECISIONS_DB_CLOUD="$court_decisions_db_cloud" \
+    -e COURT_DECISIONS_STORAGE_LOCAL=/workspace/runs/storage/court-decision-collector/files/sk \
+    -e COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP="${COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP:-false}" \
     -e INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070 \
     -e PROMETHEUS_BASE_URL="$prometheus_base_url" \
     -e SYSTEM_STATUS_FILE=/workspace/runs/status/system-status.json \
@@ -398,6 +406,10 @@ start_api_and_mcp() {
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
+    -e COURT_DECISIONS_DB_BACKEND=postgres \
+    -e COURT_DECISIONS_DB_CLOUD="$court_decisions_db_cloud" \
+    -e COURT_DECISIONS_STORAGE_LOCAL=/workspace/runs/storage/court-decision-collector/files/sk \
+    -e COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP="${COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP:-false}" \
     -e MCP_PUBLIC_BASE_URL="${MCP_PUBLIC_BASE_URL:-https://mcp.jurisdigta.eu}" \
     -e SYSTEM_STATUS_FILE=/workspace/runs/status/system-status.json \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
@@ -445,6 +457,16 @@ create_document_engine_database() {
   log "ensuring document engine PostgreSQL database exists"
   docker exec aijurisdiction-postgres psql -U "$pg_user" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -tc "SELECT 1 FROM pg_database WHERE datname = '$db'" | grep -q 1 || \
     docker exec aijurisdiction-postgres psql -U "$pg_user" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -c "CREATE DATABASE $db;"
+}
+
+create_court_decision_database() {
+  local db="$COURT_DECISIONS_DATABASE_NAME"
+  local pg_user="${LOCAL_POSTGRES_USER:-postgres}"
+  log "ensuring court decision PostgreSQL database exists"
+  docker exec aijurisdiction-postgres psql -U "$pg_user" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -tc "SELECT 1 FROM pg_database WHERE datname = '$db'" | grep -q 1 || \
+    docker exec aijurisdiction-postgres psql -U "$pg_user" -d "${LOCAL_POSTGRES_DB:-aijurisdiction}" -c "CREATE DATABASE $db;"
+  docker exec aijurisdiction-postgres psql -U "$pg_user" -d "$db" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+  docker exec -i aijurisdiction-postgres psql -U "$pg_user" -d "$db" < "$APP_DIR/databases/court-decision-collector/initdb/001_schema.sql"
 }
 
 run_schema_migrations() {
@@ -518,6 +540,33 @@ build_laws_collector() {
   log "building laws collector image"
   cd "$APP_DIR"
   docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/Dockerfile .
+}
+
+start_court_decision_collector() {
+  log "starting court decision collector container"
+  local court_decisions_db_cloud
+  court_decisions_db_cloud="$(postgres_url "postgres" "$COURT_DECISIONS_DATABASE_NAME")"
+  docker rm -f jurisdigta-court-decision-collector >/dev/null 2>&1 || true
+  docker run -d \
+    --name jurisdigta-court-decision-collector \
+    --restart unless-stopped \
+    --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
+    --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
+    --network aijuristiction-api_default \
+    --env-file "$ENV_FILE" \
+    -e COURT_DECISIONS_DB_BACKEND=postgres \
+    -e COURT_DECISIONS_DB_CLOUD="$court_decisions_db_cloud" \
+    -e COURT_DECISIONS_STORAGE_LOCAL=/workspace/runs/storage/court-decision-collector/files/sk \
+    -e COURT_DECISIONS_SOURCE_BASE_URL="${COURT_DECISIONS_SOURCE_BASE_URL:-https://obcan.justice.sk/pilot/api/ress-isu-service/v1}" \
+    -e COURT_DECISIONS_WORKER_POLL_HOURS="${COURT_DECISIONS_WORKER_POLL_HOURS:-1}" \
+    -e COURT_DECISIONS_EMBEDDING_DIMENSIONS="${COURT_DECISIONS_EMBEDDING_DIMENSIONS:-32}" \
+    -e COURT_DECISIONS_IMPORT_LIMIT="${COURT_DECISIONS_IMPORT_LIMIT:-25}" \
+    -v "$DEPLOY_ROOT/runs:/workspace/runs" \
+    aijuristiction-api:local \
+    python -m services.court_decision_collector \
+      --run-service \
+      --limit "${COURT_DECISIONS_IMPORT_LIMIT:-25}" \
+      --log-file /workspace/runs/logs/court-decision-collector.log >/dev/null
 }
 
 build_document_processor() {
@@ -878,6 +927,7 @@ validate_health() {
     docker inspect -f '{{.State.Running}}' jurisdigta-document-engine-worker | grep -qx true
   fi
   docker image inspect jurisdigta-document-processor:local >/dev/null
+  docker inspect -f '{{.State.Running}}' jurisdigta-court-decision-collector | grep -qx true
   if [ "$INSTALL_DOCUMENT_PROCESSOR_CRON" = "1" ]; then
     test -x "$DEPLOY_ROOT/ops/run_document_processor.sh"
   fi
@@ -914,6 +964,7 @@ require_boolean_flag "INSTALL_OLLAMA" "$INSTALL_OLLAMA"
 require_laws_collector_run_mode "$LAWS_COLLECTOR_RUN_MODE"
 require_tcp_port "DOCUMENT_ENGINE_API_PORT" "$DOCUMENT_ENGINE_API_PORT"
 require_postgres_identifier "DOCUMENT_ENGINE_DATABASE_NAME" "$DOCUMENT_ENGINE_DATABASE_NAME"
+require_postgres_identifier "COURT_DECISIONS_DATABASE_NAME" "$COURT_DECISIONS_DATABASE_NAME"
 ensure_runtime_layout
 update_checkout
 load_env
@@ -929,12 +980,15 @@ require_boolean_flag "INSTALL_OLLAMA" "$INSTALL_OLLAMA"
 require_laws_collector_run_mode "$LAWS_COLLECTOR_RUN_MODE"
 require_tcp_port "DOCUMENT_ENGINE_API_PORT" "$DOCUMENT_ENGINE_API_PORT"
 require_postgres_identifier "DOCUMENT_ENGINE_DATABASE_NAME" "$DOCUMENT_ENGINE_DATABASE_NAME"
+require_postgres_identifier "COURT_DECISIONS_DATABASE_NAME" "$COURT_DECISIONS_DATABASE_NAME"
 start_postgres_and_build_image
 install_ollama_service
 create_laws_database
 create_document_engine_database
+create_court_decision_database
 run_schema_migrations
 start_api_and_mcp
+start_court_decision_collector
 deploy_web
 build_document_processor
 install_document_processor_wrapper

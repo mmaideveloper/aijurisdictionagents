@@ -1140,6 +1140,8 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
         "getStatistics": _tool_get_statistics,
         "searchLaws": _tool_search_laws,
         "getLawText": _tool_get_law_text,
+        "searchCourtDecisions": _tool_search_court_decisions,
+        "getCourtDecision": _tool_get_court_decision,
     }
     handler = handlers.get(name)
     if handler is None:
@@ -1380,6 +1382,66 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
+    query = str(arguments.get("query", "")).strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=400, detail="query must contain at least 2 characters")
+    limit = _bounded_int(arguments.get("limit"), default=10, minimum=1, maximum=50)
+    logger.info("mcp_tool_search_court_decisions_query query_length=%d limit=%d", len(query), limit)
+    store = _court_decision_store()
+    results = [
+        {
+            "decision_id": item.decision_id,
+            "version_id": item.version_id,
+            "source_guid": item.source_guid,
+            "court_name": item.court_name,
+            "court_type": item.court_type,
+            "file_number": item.file_number,
+            "case_number": item.case_number,
+            "ecli": item.ecli,
+            "issue_date": item.issue_date,
+            "source_url": item.source_url,
+            "snippet": item.snippet,
+            "score": item.score,
+            "output_mode": "public",
+        }
+        for item in store.search(query=query, limit=limit)
+    ]
+    logger.info("mcp_tool_search_court_decisions_result result_count=%d", len(results))
+    return {"query": query, "results": results, "output_mode": "public"}
+
+
+def _tool_get_court_decision(arguments: dict[str, Any]) -> dict[str, Any]:
+    decision_id = str(arguments.get("decision_id", "")).strip()
+    if not decision_id:
+        raise HTTPException(status_code=400, detail="decision_id is required")
+    output_mode = str(arguments.get("outputMode", arguments.get("output_mode", "public"))).strip()
+    raw = output_mode == "internal_raw"
+    if raw and os.getenv("COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP", "").strip().lower() not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=403, detail="internal_raw court-decision output is not enabled")
+    max_chars = _bounded_int(arguments.get("max_chars"), default=12_000, minimum=1, maximum=50_000)
+    logger.info(
+        "mcp_tool_get_court_decision_query decision_id_hash=%s output_mode=%s max_chars=%d",
+        _stable_hash(decision_id),
+        "internal_raw" if raw else "public",
+        max_chars,
+    )
+    record = _court_decision_store().get_decision(decision_id=decision_id, raw=raw)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Court decision not found")
+    text = str(record["text"])
+    record["text"] = text[:max_chars]
+    record["content_truncated"] = len(text) > max_chars
+    logger.info(
+        "mcp_tool_get_court_decision_result decision_id_hash=%s output_mode=%s content_length=%d truncated=%s",
+        _stable_hash(decision_id),
+        record["output_mode"],
+        len(str(record["text"])),
+        record["content_truncated"],
+    )
+    return cast(dict[str, Any], record)
+
+
 def _requested_section_range(arguments: dict[str, Any]) -> tuple[int | None, int | None]:
     section_start = _optional_positive_int(arguments.get("section_start"))
     section_end = _optional_positive_int(arguments.get("section_end"))
@@ -1483,6 +1545,17 @@ class _LawsQuerySession:
             logger.info("mcp_laws_db_session_closed")
 
 
+def _court_decision_store() -> Any:
+    from services.court_decision_collector.config import CourtDecisionCollectorConfig
+    from services.court_decision_collector.postgres_store import PostgresCourtDecisionStore
+
+    config = CourtDecisionCollectorConfig.from_env()
+    config.validate()
+    store = PostgresCourtDecisionStore.from_config(config)
+    store.initialize()
+    return store
+
+
 def _mcp_tools() -> list[dict[str, Any]]:
     return [
         {
@@ -1546,6 +1619,51 @@ def _mcp_tools() -> list[dict[str, Any]]:
                         "minimum": 1,
                         "maximum": _MAX_LAW_TEXT_CHARS,
                         "default": _DEFAULT_LAW_TEXT_MAX_CHARS,
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "searchCourtDecisions",
+            "description": (
+                "Search imported Slovak court decisions (sudne rozhodnutia / case law) by semantic "
+                "and metadata relevance. Returns pseudonymized public snippets by default; use this "
+                "to cite court, date, ECLI, file number, and source URL while distinguishing case-law "
+                "support from binding statutory law."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "minLength": 2},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "getCourtDecision",
+            "description": (
+                "Return one imported Slovak court decision. The default outputMode=public returns "
+                "pseudonymized text. outputMode=internal_raw is restricted to controlled internal use "
+                "and must not be used for normal external model prompts or UI display."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["decision_id"],
+                "properties": {
+                    "decision_id": {"type": "string", "minLength": 1},
+                    "outputMode": {
+                        "type": "string",
+                        "enum": ["public", "internal_raw"],
+                        "default": "public",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50_000,
+                        "default": 12_000,
                     },
                 },
                 "additionalProperties": False,
@@ -2019,6 +2137,20 @@ def _tool_result_summary(*, tool_name: str, result: Any) -> str:
         return (
             f"document_id_hash={document_hash} "
             f"country_code={result.get('country_code')} "
+            f"content_length={content_length}"
+        )
+    if tool_name == "searchCourtDecisions":
+        results = result.get("results")
+        result_count = len(results) if isinstance(results, list) else 0
+        return f"result_count={result_count} output_mode={result.get('output_mode')}"
+    if tool_name == "getCourtDecision":
+        text = result.get("text")
+        content_length = len(text) if isinstance(text, str) else 0
+        decision_id = result.get("decision_id")
+        decision_hash = _stable_hash(decision_id) if isinstance(decision_id, str) else "missing"
+        return (
+            f"decision_id_hash={decision_hash} "
+            f"output_mode={result.get('output_mode')} "
             f"content_length={content_length}"
         )
     return f"keys={','.join(sorted(str(key) for key in result.keys()))}"

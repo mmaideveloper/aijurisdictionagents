@@ -1,6 +1,8 @@
 .conda/**
 conda/**
 runs/
+logs/*.log
+!logs/.gitkeep
 /archivelaws/
 /cases/
 .pytest_cache/**

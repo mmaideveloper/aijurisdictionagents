@@ -601,6 +601,14 @@ strings.
 
 For the current self-managed server maintenance path, the default production mode is a continuously running Docker container. `LAWS_COLLECTOR_RUN_MODE=continuous` starts `jurisdigta-laws-collector` with `--restart unless-stopped`, keeps `LAWS_WORKER_MAX_CYCLES=0`, sets `LAWS_COLLECTOR_MAX_RUNNING_TIME=0`, and sleeps for `LAWS_WORKER_POLL_SECONDS=3600` after the collector reaches the current Slov-Lex tail.
 
+The court-decision collector runs as a separate restartable worker container named `jurisdigta-court-decision-collector`. The production deploy creates the dedicated PostgreSQL database `${COURT_DECISIONS_DATABASE_NAME:-court_decisions_sk}`, applies `databases/court-decision-collector/initdb/001_schema.sql`, injects `COURT_DECISIONS_DB_CLOUD` into API/MCP, and starts:
+
+```bash
+python -m services.court_decision_collector --run-service --limit "${COURT_DECISIONS_IMPORT_LIMIT:-25}" --log-file /workspace/runs/logs/court-decision-collector.log
+```
+
+The worker keeps polling after it reaches the current source tail and writes privacy-safe progress lines to `/srv/jurisdigta/runs/logs/court-decision-collector.log`.
+
 The legacy scheduled mode is still available with `LAWS_COLLECTOR_RUN_MODE=scheduled`. In that mode, a daily user cron entry can run the already-built laws collector image against the existing PostgreSQL container. The server-local wrapper is:
 
 ```text
@@ -659,6 +667,9 @@ crontab -l
 test -x /srv/jurisdigta/ops/run_laws_collector_daily.sh
 LAWS_WORKER_MAX_PROBES=1 LAWS_COLLECTOR_MAX_RUNNING_TIME=5 /srv/jurisdigta/ops/run_laws_collector_daily.sh
 tail -n 80 /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log
+docker ps --filter name=jurisdigta-court-decision-collector
+tail -n 80 /srv/jurisdigta/runs/logs/court-decision-collector.log
+docker exec aijurisdiction-postgres psql -U "${LOCAL_POSTGRES_USER:-postgres}" -d "${COURT_DECISIONS_DATABASE_NAME:-court_decisions_sk}" -c "SELECT count(*) AS versions, count(embedding_vector) AS versions_with_vector FROM court_decision_versions;"
 python3 /srv/jurisdigta/app/scripts/server/write_system_status.py --output /srv/jurisdigta/runs/status/system-status.json
 curl -fsS -H "x-api-key: ${API_KEY:-aijuris}" "http://127.0.0.1:8080/v1/system/status?minutes=60"
 ```
