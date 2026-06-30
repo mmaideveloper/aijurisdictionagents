@@ -914,10 +914,11 @@ wait_for_http() {
   local url="$2"
   local attempts="${3:-30}"
   local sleep_seconds="${4:-2}"
+  local curl_args=(--connect-timeout 3 --max-time 10)
   local attempt
 
   for attempt in $(seq 1 "$attempts"); do
-    if curl -fsS "$url" >/dev/null; then
+    if curl -fsS "${curl_args[@]}" "$url" >/dev/null; then
       log "$name is healthy at $url"
       return 0
     fi
@@ -925,7 +926,7 @@ wait_for_http() {
     sleep "$sleep_seconds"
   done
 
-  curl -fsS "$url" >/dev/null
+  curl -fsS "${curl_args[@]}" "$url" >/dev/null
 }
 
 validate_health() {
