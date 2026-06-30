@@ -372,6 +372,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_API_PORT` | `8080` | Server-local API bind port |
 | `JURISDIGTA_MCP_PORT` | `8070` | Server-local MCP bind port |
 | `JURISDIGTA_WEB_PORT` | `8090` | Server-local web bind port |
+| `JURISDIGTA_COURT_DECISIONS_DATABASE_NAME` | `court_decisions_sk` | Dedicated PostgreSQL database name for the court-decision vector store used by MCP court-decision search |
 | `JURISDIGTA_LAWS_COLLECTOR_RUN_MODE` | `continuous` | Self-managed laws collector runtime mode. `continuous` runs a restartable Docker container that sleeps between live polls; `scheduled` keeps the legacy daily cron wrapper |
 | `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON` | `1` | Install/update the self-managed document processor cron wrapper; set `0` only for manual worker runs |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
