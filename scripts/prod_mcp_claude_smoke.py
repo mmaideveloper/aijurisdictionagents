@@ -96,7 +96,7 @@ def check_protected_resource(base_url: str) -> str:
     assert_equal(payload.get("authorization_servers"), [base_url], "authorization_servers")
     assert_equal(payload.get("scopes_supported"), ["mcp:laws"], "scopes_supported")
     resource = str(payload.get("resource") or "")
-    if resource.lower() != f"{base_url}/mcp".lower():
+    if resource != f"{base_url}/MCP":
         raise AssertionError(f"Unexpected protected resource URL: {resource!r}")
     return "OAuth protected resource metadata is advertised"
 

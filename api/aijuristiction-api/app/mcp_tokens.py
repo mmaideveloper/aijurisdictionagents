@@ -123,7 +123,7 @@ def _validate_mcp_token(token: str, *, audience: str) -> dict[str, Any] | None:
 
 def default_mcp_resource_url() -> str:
     base_url = os.getenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu").strip().rstrip("/")
-    return f"{base_url}/mcp"
+    return f"{base_url}/MCP"
 
 
 def _issuer_from_audience(audience: str) -> str:

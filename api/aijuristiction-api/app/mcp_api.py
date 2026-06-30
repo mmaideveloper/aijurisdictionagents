@@ -1902,8 +1902,8 @@ def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> Use
         audience=expected_audience,
         required_scope=MCP_TOKEN_SCOPE,
     )
-    if payload is None and expected_audience.lower().endswith("/mcp"):
-        legacy_audience = f"{expected_audience[:-4]}/MCP"
+    if payload is None and expected_audience.endswith("/MCP"):
+        legacy_audience = f"{expected_audience[:-4]}/mcp"
         payload = validate_mcp_api_token(
             api_key,
             audience=legacy_audience,
@@ -2058,7 +2058,7 @@ def _base_url(request: Request) -> str:
 
 
 def _resource_url(request: Request) -> str:
-    return f"{_base_url(request)}/mcp"
+    return f"{_base_url(request)}/MCP"
 
 
 def _base_url_from_resource(resource: str) -> str:
@@ -2156,7 +2156,7 @@ def _first_payload_id(payload: Any) -> Any:
 
 
 def _www_authenticate_header(request: Request) -> str:
-    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/mcp"
+    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/MCP"
     return f'Bearer resource_metadata="{metadata_url}", scope="{MCP_TOKEN_SCOPE}"'
 
 
