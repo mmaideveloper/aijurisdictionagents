@@ -12,9 +12,12 @@ COPY src /app/src
 
 # The document processor runs CPU-only in self-managed prod. Preinstalling
 # torch from the official CPU wheel index prevents PyPI's CUDA dependency set
-# from turning routine deploys into multi-GB downloads.
+# from turning routine deploys into multi-GB downloads. Keep the exact installed
+# build constrained while installing the app, otherwise transitive dependencies
+# can upgrade torch back to a CUDA-enabled PyPI build.
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.3"
-RUN pip install --no-cache-dir .
+RUN python -c "import torch; print(f'torch=={torch.__version__}')" > /tmp/torch-constraint.txt && \
+    pip install --no-cache-dir --constraint /tmp/torch-constraint.txt .
 
 ENV PYTHONUNBUFFERED=1
 
