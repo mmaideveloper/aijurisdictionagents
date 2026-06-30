@@ -18,7 +18,7 @@ COPY mobile_app/pubspec.yaml ./mobile_app/pubspec.yaml
 COPY api/aijuristiction-api ./api/aijuristiction-api
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir "numpy>=2.1,<2.4" && \
+    pip install --no-cache-dir --index-url https://pypi.org/simple "numpy>=2.1,<2.4" && \
     pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.3,<2.8" && \
     python -c "import numpy, torch; print(f'numpy=={numpy.__version__}'); print(f'torch=={torch.__version__}')" > /tmp/runtime-constraints.txt && \
     printf '%s\n' \
