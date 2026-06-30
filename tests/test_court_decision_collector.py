@@ -50,4 +50,19 @@ def test_service_logs_current_processing_decision() -> None:
 
     assert summary.processed == 1
     assert store.saved[0].source_guid == "fixture-sk-decision-1"
-    assert any("processing_decision source_guid=fixture-sk-decision-1" in item for item in messages)
+    assert any(
+        (
+            "processing_judicial_decision source_guid=fixture-sk-decision-1 "
+            "number=12C/34/2024 year=2024 status=processing"
+        )
+        in item
+        for item in messages
+    )
+    assert any(
+        (
+            "processed_judicial_decision source_guid=fixture-sk-decision-1 "
+            "number=12C/34/2024 year=2024 status=created"
+        )
+        in item
+        for item in messages
+    )

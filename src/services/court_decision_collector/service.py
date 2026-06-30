@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable, Iterable
 
 from .domain import CourtDecisionRecord, CourtDecisionSyncSummary
@@ -31,9 +32,12 @@ class CourtDecisionCollectorService:
         last_label = ""
         for record in records:
             label = record.ecli or record.file_number or record.case_number or record.source_guid
+            decision_number = _decision_number(record)
+            decision_year = _decision_year(record)
             self.progress_logger(
-                "processing_decision "
-                f"source_guid={record.source_guid} court={record.court_name} label={label}"
+                "processing_judicial_decision "
+                f"source_guid={record.source_guid} number={decision_number} year={decision_year} "
+                f"status=processing court={record.court_name} label={label}"
             )
             stored = self.store.upsert_decision(record)
             processed += 1
@@ -46,8 +50,9 @@ class CourtDecisionCollectorService:
             else:
                 unchanged += 1
             self.progress_logger(
-                "processed_decision "
-                f"source_guid={record.source_guid} state={stored.state} decision_id={stored.decision_id}"
+                "processed_judicial_decision "
+                f"source_guid={record.source_guid} number={decision_number} year={decision_year} "
+                f"status={stored.state} decision_id={stored.decision_id}"
             )
         return CourtDecisionSyncSummary(
             processed=processed,
@@ -67,3 +72,19 @@ class CourtDecisionCollectorService:
             self.progress_logger(f"fetching_decision source_guid={ref.guid} label={ref.label}")
             records.append(self.source.get_decision(ref.guid))
         return self.sync_records(records)
+
+
+def _decision_number(record: CourtDecisionRecord) -> str:
+    return record.file_number or record.case_number or record.ecli or record.source_guid
+
+
+def _decision_year(record: CourtDecisionRecord) -> str:
+    if record.issue_date:
+        match = re.search(r"\b(19|20)\d{2}\b", record.issue_date)
+        if match:
+            return match.group(0)
+    for value in (record.file_number, record.ecli, record.indexed_at, record.update_date):
+        match = re.search(r"\b(19|20)\d{2}\b", value)
+        if match:
+            return match.group(0)
+    return "unknown"
