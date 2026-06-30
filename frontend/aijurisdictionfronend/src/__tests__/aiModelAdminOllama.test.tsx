@@ -22,6 +22,7 @@ const apiMocks = vi.hoisted(() => ({
   addAIModelGroupMember: vi.fn(),
   upsertAIModelRoutePolicy: vi.fn(),
   upsertAIModelCredential: vi.fn(),
+  patchAIModelCredential: vi.fn(),
   updateAdminUser: vi.fn()
 }));
 
@@ -126,7 +127,20 @@ const dashboard = {
       updated_at: "2026-06-27T10:00:00Z"
     }
   ],
-  credentials: [],
+  credentials: [
+    {
+      credential_id: "azure_foundry:api_key:default",
+      provider_id: "azure_foundry",
+      credential_name: "default",
+      secret_type: "api_key",
+      secret_preview: "****cret",
+      secret_value: null,
+      enabled: true,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-06-27T10:00:00Z",
+      last_revealed_at: null
+    }
+  ],
   policies: [
     {
       policy_id: "default:free:default",
@@ -267,6 +281,8 @@ describe("AIModelAdmin Ollama management", () => {
     apiMocks.fetchOllamaModels.mockResolvedValue(inventory);
     apiMocks.importOllamaModel.mockResolvedValue({ job_id: "job-1", action: "pull", model: "gemma3:4b", status: "queued" });
     apiMocks.removeOllamaModel.mockResolvedValue({ job_id: "job-2", action: "remove", model: "llama3.2:3b", status: "queued" });
+    apiMocks.upsertAIModelProvider.mockResolvedValue(dashboard.providers[1]);
+    apiMocks.patchAIModelCredential.mockResolvedValue(dashboard.credentials[0]);
   });
 
   afterEach(() => {
@@ -305,6 +321,45 @@ describe("AIModelAdmin Ollama management", () => {
 
     await user.click(screen.getByRole("button", { name: /adminPoliciesTitle/ }));
     expect(await screen.findByText("adminPolicyHelp")).toBeDefined();
+  });
+
+  it("lets admins edit Azure provider URL and soft-disable provider credentials", async () => {
+    const user = userEvent.setup();
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminProvidersTitle/ }));
+    await user.click(screen.getAllByRole("button", { name: /adminEdit/ }).at(1)!);
+    const baseUrlInput = screen.getByLabelText("adminBaseUrl") as HTMLInputElement;
+    expect(baseUrlInput.value).toBe("");
+
+    await user.type(baseUrlInput, "https://example.openai.azure.com");
+    await user.type(screen.getByLabelText("adminReason"), "Configure Azure Foundry endpoint.");
+    await user.click(screen.getByRole("button", { name: /adminSaveProvider/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.upsertAIModelProvider).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        expect.objectContaining({
+          provider_code: "azure_foundry",
+          base_url: "https://example.openai.azure.com",
+          reason: "Configure Azure Foundry endpoint."
+        })
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: /adminCredentialsTitle/ }));
+    await user.click(await screen.findByRole("button", { name: /adminDisableCredential/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.patchAIModelCredential).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        "azure_foundry:api_key:default",
+        expect.objectContaining({
+          enabled: false,
+          reason: "Disable provider credential from admin UI."
+        })
+      );
+    });
   });
 
   it("lets admins update and disable routing policies", async () => {

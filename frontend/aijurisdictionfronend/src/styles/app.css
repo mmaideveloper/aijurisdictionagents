@@ -468,20 +468,25 @@
   min-height: 32px;
 }
 
+.admin-panel table,
 .admin-table-section table {
   border-collapse: collapse;
   min-width: 760px;
   width: 100%;
 }
 
+.admin-panel th,
+.admin-panel td,
 .admin-table-section th,
 .admin-table-section td {
   border-bottom: 1px solid var(--border);
   padding: 10px;
   text-align: left;
   vertical-align: top;
+  white-space: nowrap;
 }
 
+.admin-panel th,
 .admin-table-section th {
   color: var(--ink-muted);
   font-size: 0.78rem;

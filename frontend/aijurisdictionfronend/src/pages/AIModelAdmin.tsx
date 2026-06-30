@@ -9,6 +9,7 @@ import {
   AdminCaseSummary,
   AdminCaseUser,
   AdminUserSummary,
+  AIModelCredential,
   AdminUsersPage,
   OllamaModelInventory,
   disableAIModelUserOverride,
@@ -27,6 +28,7 @@ import {
   addAIModelGroupMember,
   upsertAIModelRoutePolicy,
   upsertAIModelCredential,
+  patchAIModelCredential,
   importOllamaModel,
   removeOllamaModel,
   updateAdminUser
@@ -302,6 +304,25 @@ const AIModelAdmin: React.FC = () => {
   const localProfiles = dashboard?.profiles.filter((profile) => profile.model_profile_id.includes("local") || profile.provider_id.includes("local")) ?? [];
   const externalProfiles = dashboard?.profiles.filter((profile) => !localProfiles.includes(profile)) ?? [];
   const enabledProfiles = dashboard?.profiles.filter((profile) => profile.enabled) ?? [];
+  const providerToForm = (provider: AIModelAdminDashboard["providers"][number], overrides: Partial<typeof emptyProvider> = {}) => ({
+    provider_code: provider.provider_code,
+    provider_type: provider.provider_type,
+    display_name: provider.display_name,
+    base_url: provider.base_url,
+    region: provider.region,
+    data_zone: provider.data_zone,
+    health_check_url: provider.health_check_url,
+    is_external: provider.is_external,
+    is_local: provider.is_local,
+    enabled: provider.enabled,
+    reason: "",
+    ...overrides
+  });
+  const saveProviderChange = (
+    provider: AIModelAdminDashboard["providers"][number],
+    overrides: Partial<typeof emptyProvider>,
+    successMessage: string
+  ) => runAction(() => upsertAIModelProvider(adminAuth, providerToForm(provider, overrides)), successMessage);
   const profileToForm = (profile: AIModelProfile, overrides: Partial<typeof emptyProfile> = {}) => ({
     model_profile_id: profile.model_profile_id,
     provider_id: profile.provider_id,
@@ -322,6 +343,25 @@ const AIModelAdmin: React.FC = () => {
     overrides: Partial<typeof emptyProfile>,
     successMessage: string
   ) => runAction(() => upsertAIModelProfile(adminAuth, profileToForm(profile, overrides)), successMessage);
+  const credentialToForm = (credential: AIModelCredential) => ({
+    provider_id: credential.provider_id,
+    credential_name: credential.credential_name,
+    secret_type: credential.secret_type,
+    secret_value: "",
+    enabled: credential.enabled,
+    reason: ""
+  });
+  const saveCredentialEnabled = (
+    credential: AIModelCredential,
+    enabled: boolean,
+    successMessage: string
+  ) => runAction(
+    () => patchAIModelCredential(adminAuth, credential.credential_id, {
+      enabled,
+      reason: enabled ? "Enable provider credential from admin UI." : "Disable provider credential from admin UI."
+    }),
+    successMessage
+  );
   const policyToForm = (policy: AIModelRoutePolicy, overrides: Partial<typeof emptyPolicy> = {}) => ({
     policy_id: policy.policy_id,
     task_type: policy.task_type,
@@ -678,12 +718,31 @@ const AIModelAdmin: React.FC = () => {
               <h2>{t("adminProvidersTitle")}</h2>
               <AdminRecordsTable
                 emptyLabel={t("adminEmptyProviders")}
-                headers={[t("adminProviderCode"), t("adminProviderType"), t("adminBaseUrl"), t("adminStatus")]}
+                headers={[t("adminProviderCode"), t("adminProviderType"), t("adminBaseUrl"), t("adminStatus"), t("adminAction")]}
                 rows={(dashboard?.providers ?? []).map((provider) => [
                   provider.display_name,
                   provider.provider_type,
                   provider.base_url || provider.health_check_url || t("adminNotConfigured"),
-                  provider.enabled ? t("adminEnabled") : t("adminDisabled")
+                  provider.enabled ? t("adminEnabled") : t("adminDisabled"),
+                  <div className="admin-inline-actions">
+                    <button className="button ghost" type="button" onClick={() => setProviderForm(providerToForm(provider))}>
+                      <FaEdit aria-hidden="true" />{t("adminEdit")}
+                    </button>
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={() => void saveProviderChange(
+                        provider,
+                        {
+                          enabled: !provider.enabled,
+                          reason: provider.enabled ? "Disable provider from admin UI." : "Enable provider from admin UI."
+                        },
+                        provider.enabled ? t("adminProviderDisabled") : t("adminProviderEnabled")
+                      )}
+                    >
+                      <FaCheck aria-hidden="true" />{provider.enabled ? t("adminDisableProvider") : t("adminEnableProvider")}
+                    </button>
+                  </div>
                 ])}
               />
               <label>{t("adminProviderCode")}<input value={providerForm.provider_code} onChange={(event) => setProviderForm({ ...providerForm, provider_code: event.target.value })} /></label>
@@ -691,11 +750,14 @@ const AIModelAdmin: React.FC = () => {
               <label>{t("adminDisplayName")}<input value={providerForm.display_name} onChange={(event) => setProviderForm({ ...providerForm, display_name: event.target.value })} /></label>
               <label>{t("adminBaseUrl")}<input value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} /></label>
               <label>{t("adminRegion")}<input value={providerForm.region} onChange={(event) => setProviderForm({ ...providerForm, region: event.target.value })} /></label>
+              <label>{t("adminDataZone")}<input value={providerForm.data_zone} onChange={(event) => setProviderForm({ ...providerForm, data_zone: event.target.value })} /></label>
+              <label>{t("adminHealthUrl")}<input value={providerForm.health_check_url} onChange={(event) => setProviderForm({ ...providerForm, health_check_url: event.target.value })} /></label>
               <div className="admin-toggle-row">
                 <label><input type="checkbox" checked={providerForm.is_external} onChange={(event) => setProviderForm({ ...providerForm, is_external: event.target.checked })} />{t("adminExternal")}</label>
                 <label><input type="checkbox" checked={providerForm.is_local} onChange={(event) => setProviderForm({ ...providerForm, is_local: event.target.checked })} />{t("adminLocal")}</label>
                 <label><input type="checkbox" checked={providerForm.enabled} onChange={(event) => setProviderForm({ ...providerForm, enabled: event.target.checked })} />{t("adminEnabled")}</label>
               </div>
+              <label>{t("adminReason")}<input value={providerForm.reason} onChange={(event) => setProviderForm({ ...providerForm, reason: event.target.value })} /></label>
               <button className="primary-button" type="submit"><FaPlus aria-hidden="true" />{t("adminSaveProvider")}</button>
             </form>
           ) : null}
@@ -774,13 +836,15 @@ const AIModelAdmin: React.FC = () => {
               void runAction(() => upsertAIModelCredential(adminAuth, credentialForm), t("adminSaved"));
             }}>
               <h2>{t("adminCredentialsTitle")}</h2>
+              <p className="admin-muted">{t("adminCredentialsHelp")}</p>
               <label>{t("adminProvider")}<select value={credentialForm.provider_id} onChange={(event) => setCredentialForm({ ...credentialForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{dashboard?.providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
               <label>{t("adminCredentialName")}<input value={credentialForm.credential_name} onChange={(event) => setCredentialForm({ ...credentialForm, credential_name: event.target.value })} /></label>
               <label>{t("adminCredentialType")}<input value={credentialForm.secret_type} onChange={(event) => setCredentialForm({ ...credentialForm, secret_type: event.target.value })} /></label>
               <label>{t("adminCredentialValue")}<input type="password" value={credentialForm.secret_value} onChange={(event) => setCredentialForm({ ...credentialForm, secret_value: event.target.value })} /></label>
               <div className="admin-toggle-row"><label><input type="checkbox" checked={credentialForm.enabled} onChange={(event) => setCredentialForm({ ...credentialForm, enabled: event.target.checked })} />{t("adminEnabled")}</label></div>
+              <label>{t("adminReason")}<input value={credentialForm.reason} onChange={(event) => setCredentialForm({ ...credentialForm, reason: event.target.value })} /></label>
               <button className="primary-button" type="submit"><FaKey aria-hidden="true" />{t("adminSaveCredential")}</button>
-              <div className="admin-table-scroll"><table><thead><tr><th>{t("adminProvider")}</th><th>{t("adminCredentialName")}</th><th>{t("adminCredentialType")}</th><th>{t("adminCredentialPreview")}</th><th>{t("adminStatus")}</th></tr></thead><tbody>{dashboard?.credentials.map((credential) => <tr key={credential.credential_id}><td>{credential.provider_id}</td><td>{credential.credential_name}</td><td>{credential.secret_type}</td><td>{credential.secret_preview}</td><td>{credential.enabled ? t("adminEnabled") : t("adminDisabled")}</td></tr>)}</tbody></table></div>
+              <div className="admin-table-scroll"><table><thead><tr><th>{t("adminProvider")}</th><th>{t("adminCredentialName")}</th><th>{t("adminCredentialType")}</th><th>{t("adminCredentialPreview")}</th><th>{t("adminStatus")}</th><th>{t("adminAction")}</th></tr></thead><tbody>{dashboard?.credentials.map((credential) => <tr key={credential.credential_id}><td>{credential.provider_id}</td><td>{credential.credential_name}</td><td>{credential.secret_type}</td><td>{credential.secret_preview}</td><td>{credential.enabled ? t("adminEnabled") : t("adminDisabled")}</td><td><div className="admin-inline-actions"><button className="button ghost" type="button" onClick={() => setCredentialForm(credentialToForm(credential))}><FaEdit aria-hidden="true" />{t("adminEdit")}</button><button className="button ghost" type="button" onClick={() => void saveCredentialEnabled(credential, !credential.enabled, credential.enabled ? t("adminCredentialDisabled") : t("adminCredentialEnabled"))}><FaCheck aria-hidden="true" />{credential.enabled ? t("adminDisableCredential") : t("adminEnableCredential")}</button></div></td></tr>)}</tbody></table></div>
             </form>
           ) : null}
 

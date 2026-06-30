@@ -284,6 +284,11 @@ export interface CredentialUpsertInput {
   reason: string;
 }
 
+export interface CredentialPatchInput {
+  enabled: boolean;
+  reason: string;
+}
+
 export interface UserAdminUpdateInput {
   role: string;
   is_enabled: boolean;
@@ -484,6 +489,16 @@ export const upsertAIModelCredential = (
       enabled: input.enabled,
       reason: input.reason
     })
+  });
+
+export const patchAIModelCredential = (
+  adminUserId: AdminAuthInput,
+  credentialId: string,
+  input: CredentialPatchInput
+): Promise<AIModelCredential> =>
+  adminRequest<AIModelCredential>(`/v1/admin/ai-models/credentials/${encodeURIComponent(credentialId)}`, adminUserId, {
+    method: "PATCH",
+    body: JSON.stringify(input)
   });
 
 export const updateAdminUser = (
