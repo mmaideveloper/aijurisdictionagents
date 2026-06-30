@@ -17,6 +17,7 @@ import LawValidation from "./pages/LawValidation";
 import LawRecommendation from "./pages/LawRecommendation";
 import Profile from "./pages/Profile";
 import AIModelAdmin from "./pages/AIModelAdmin";
+import AdminProviderCredentials from "./pages/AdminProviderCredentials";
 import DocumentViewer from "./pages/DocumentViewer";
 import Disclaimer from "./pages/Disclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
@@ -170,6 +171,18 @@ const App: React.FC = () => {
         <Route
           path="/app/admin/ai-models"
           element={<Navigate to="/app/admin" replace />}
+        />
+        <Route
+          path="/app/admin/provider-credentials"
+          element={
+            <AdminRoute>
+              <AdminProviderCredentials />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/provider-credentials"
+          element={<Navigate to="/app/admin/provider-credentials" replace />}
         />
         <Route
           path="/app/documents/view"

@@ -15,7 +15,7 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
   const { isAuthenticated, user, signOut } = useAuth();
 
   const handleMenuAction = React.useCallback(
-    (action: "profile" | "cases" | "admin" | "logout") => {
+    (action: "profile" | "cases" | "admin" | "providerCredentials" | "logout") => {
       if (action === "profile") {
         navigate("/profile");
         return;
@@ -28,6 +28,10 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
         navigate("/app/admin");
         return;
       }
+      if (action === "providerCredentials") {
+        navigate("/app/admin/provider-credentials");
+        return;
+      }
       signOut();
       navigate("/auth", { replace: true });
     },
@@ -36,12 +40,13 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
 
   const menuOptions = React.useMemo(
     () => {
-      const options: Array<{ key: "profile" | "cases" | "admin" | "logout"; label: string }> = [
+      const options: Array<{ key: "profile" | "cases" | "admin" | "providerCredentials" | "logout"; label: string }> = [
         { key: "profile", label: t("navMyProfile") },
         { key: "cases", label: t("navMyCases") }
       ];
       if (user?.role?.toLowerCase() === "admin") {
         options.push({ key: "admin", label: t("navAdmin") });
+        options.push({ key: "providerCredentials", label: "Prihlasovacie údaje poskytovateľa" });
       }
       options.push({ key: "logout", label: t("navLogOut") });
       return options;
