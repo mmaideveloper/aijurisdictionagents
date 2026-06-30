@@ -567,6 +567,7 @@ start_court_decision_collector() {
   docker rm -f jurisdigta-court-decision-collector >/dev/null 2>&1 || true
   docker run -d \
     --name jurisdigta-court-decision-collector \
+    --no-healthcheck \
     --restart unless-stopped \
     --log-opt "max-size=$DOCKER_LOG_MAX_SIZE" \
     --log-opt "max-file=$DOCKER_LOG_MAX_FILE" \
