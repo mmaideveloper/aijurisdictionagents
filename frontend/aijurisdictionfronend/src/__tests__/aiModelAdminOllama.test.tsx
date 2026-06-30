@@ -282,6 +282,19 @@ describe("AIModelAdmin Ollama management", () => {
     apiMocks.importOllamaModel.mockResolvedValue({ job_id: "job-1", action: "pull", model: "gemma3:4b", status: "queued" });
     apiMocks.removeOllamaModel.mockResolvedValue({ job_id: "job-2", action: "remove", model: "llama3.2:3b", status: "queued" });
     apiMocks.upsertAIModelProvider.mockResolvedValue(dashboard.providers[1]);
+    apiMocks.upsertAIModelProfile.mockImplementation((_, input) => {
+      const existingProfile =
+        dashboard.profiles.find((profile) => profile.model_profile_id === input.model_profile_id) ??
+        dashboard.profiles.find((profile) => profile.provider_id === input.provider_id) ??
+        dashboard.profiles[0]!;
+      return Promise.resolve({
+        ...existingProfile,
+        ...input,
+        model_profile_id: input.model_profile_id ?? `${input.provider_id}:${input.model_code}`,
+        created_at: existingProfile.created_at,
+        updated_at: "2026-06-30T10:00:00Z"
+      });
+    });
     apiMocks.patchAIModelCredential.mockResolvedValue(dashboard.credentials[0]);
   });
 
@@ -318,6 +331,8 @@ describe("AIModelAdmin Ollama management", () => {
     await user.click(screen.getByRole("button", { name: /adminProfilesTitle/ }));
     expect(await screen.findByText("local_ollama_default")).toBeDefined();
     expect(screen.getByText("azure_foundry_gpt_4o_mini")).toBeDefined();
+    expect(screen.getByText(/adminCurrentFreeModel/)).toBeDefined();
+    expect(screen.getByText(/qwen3:1.7b \(Local Ollama\)/)).toBeDefined();
 
     await user.click(screen.getByRole("button", { name: /adminPoliciesTitle/ }));
     expect(await screen.findByText("adminPolicyHelp")).toBeDefined();
@@ -427,10 +442,9 @@ describe("AIModelAdmin Ollama management", () => {
       );
     });
 
-    const defaultButtons = screen.getAllByRole("button", { name: /adminSetFreeDefault/ });
-    const enabledDefaultButton = defaultButtons.find((button) => !button.hasAttribute("disabled"));
-    expect(enabledDefaultButton).toBeDefined();
-    await user.click(enabledDefaultButton as HTMLElement);
+    expect(screen.getAllByRole("button", { name: /adminSetFreeDefault/ })).toHaveLength(1);
+    expect(screen.getByText(/qwen3:1.7b \(Local Ollama\)/)).toBeDefined();
+    await user.click(screen.getByRole("button", { name: /adminSetFreeDefault/ }));
 
     await waitFor(() => {
       expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
@@ -443,6 +457,10 @@ describe("AIModelAdmin Ollama management", () => {
         })
       );
     });
+    await waitFor(() => {
+      expect(screen.getByText(/llama3.2:3b \(Local Ollama\)/)).toBeDefined();
+    });
+    expect(screen.getAllByRole("button", { name: /adminSetFreeDefault/ })).toHaveLength(1);
   });
 
   it("starts import and safe remove jobs", async () => {

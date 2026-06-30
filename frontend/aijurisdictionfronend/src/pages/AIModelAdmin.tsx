@@ -304,6 +304,26 @@ const AIModelAdmin: React.FC = () => {
   const localProfiles = dashboard?.profiles.filter((profile) => profile.model_profile_id.includes("local") || profile.provider_id.includes("local")) ?? [];
   const externalProfiles = dashboard?.profiles.filter((profile) => !localProfiles.includes(profile)) ?? [];
   const enabledProfiles = dashboard?.profiles.filter((profile) => profile.enabled) ?? [];
+  const freeDefaultProfile = dashboard?.profiles.find((profile) => profile.is_default_for_free);
+  const freeDefaultProvider = freeDefaultProfile ? providerById.get(freeDefaultProfile.provider_id) : undefined;
+  const freeDefaultLabel = freeDefaultProfile
+    ? `${freeDefaultProfile.deployment_name || freeDefaultProfile.model_code} (${freeDefaultProvider?.display_name ?? freeDefaultProfile.provider_id})`
+    : t("adminNoFreeModel");
+  const applyProfileToDashboard = React.useCallback((savedProfile: AIModelProfile) => {
+    setDashboard((current) => {
+      if (!current) return current;
+      const profiles = current.profiles.map((profile) => {
+        if (profile.model_profile_id === savedProfile.model_profile_id) {
+          return savedProfile;
+        }
+        return savedProfile.is_default_for_free ? { ...profile, is_default_for_free: false } : profile;
+      });
+      if (!profiles.some((profile) => profile.model_profile_id === savedProfile.model_profile_id)) {
+        profiles.push(savedProfile);
+      }
+      return { ...current, profiles };
+    });
+  }, []);
   const providerToForm = (provider: AIModelAdminDashboard["providers"][number], overrides: Partial<typeof emptyProvider> = {}) => ({
     provider_code: provider.provider_code,
     provider_type: provider.provider_type,
@@ -342,7 +362,21 @@ const AIModelAdmin: React.FC = () => {
     profile: AIModelProfile,
     overrides: Partial<typeof emptyProfile>,
     successMessage: string
-  ) => runAction(() => upsertAIModelProfile(adminAuth, profileToForm(profile, overrides)), successMessage);
+  ) => {
+    setError("");
+    setStatus("");
+    void (async () => {
+      try {
+        const savedProfile = await upsertAIModelProfile(adminAuth, profileToForm(profile, overrides));
+        setStatus(successMessage);
+        await reload();
+        await loadUsersPage(usersOffset);
+        applyProfileToDashboard(savedProfile);
+      } catch (actionError) {
+        setError(actionError instanceof Error ? actionError.message : t("adminSaveFailed"));
+      }
+    })();
+  };
   const credentialToForm = (credential: AIModelCredential) => ({
     provider_id: credential.provider_id,
     credential_name: credential.credential_name,
@@ -798,7 +832,6 @@ const AIModelAdmin: React.FC = () => {
                     <button
                       className="button ghost"
                       type="button"
-                      disabled={profile.is_default_for_free || !(providerById.get(profile.provider_id)?.is_local ?? false)}
                       onClick={() => void saveProfileChange(
                         profile,
                         {
@@ -808,12 +841,14 @@ const AIModelAdmin: React.FC = () => {
                         },
                         t("adminDefaultLocalModelSet")
                       )}
+                      hidden={profile.is_default_for_free || !(providerById.get(profile.provider_id)?.is_local ?? false)}
                     >
                       <FaCheck aria-hidden="true" />{t("adminSetFreeDefault")}
                     </button>
                   </div>
                 ])}
               />
+              <p className="admin-muted">{t("adminCurrentFreeModel")}: <strong>{freeDefaultLabel}</strong></p>
               <label>{t("adminProvider")}<select value={profileForm.provider_id} onChange={(event) => setProfileForm({ ...profileForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{dashboard?.providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
               <label>{t("adminModelCode")}<input value={profileForm.model_code} onChange={(event) => setProfileForm({ ...profileForm, model_code: event.target.value })} /></label>
               <label>{t("adminDeployment")}<input value={profileForm.deployment_name} onChange={(event) => setProfileForm({ ...profileForm, deployment_name: event.target.value })} /></label>
