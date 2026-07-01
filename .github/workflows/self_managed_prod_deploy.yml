@@ -167,6 +167,21 @@ jobs:
           "$python_bin" scripts/prod_mcp_claude_smoke.py \
             --base-url "$JURISDIGTA_MCP_PUBLIC_BASE_URL"
 
+      - name: Verify public MCP Claude connector compatibility
+        run: |
+          python_bin=""
+          if command -v python3 >/dev/null 2>&1; then
+            python_bin="python3"
+          elif command -v python >/dev/null 2>&1; then
+            python_bin="python"
+          else
+            echo "Python is required for MCP Claude smoke checks"
+            exit 1
+          fi
+
+          "$python_bin" scripts/prod_mcp_claude_smoke.py \
+            --base-url "$JURISDIGTA_MCP_PUBLIC_BASE_URL"
+
       - name: Summarize deployment
         run: |
           {

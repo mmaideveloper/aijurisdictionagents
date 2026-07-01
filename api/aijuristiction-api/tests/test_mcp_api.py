@@ -1288,10 +1288,30 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
     assert authorization_metadata.json()["registration_endpoint"] == "https://mcp.jurisdigta.eu/oauth/register"
+    assert authorization_metadata.json()["client_id_metadata_document_supported"] is True
     assert mcp_path_authorization_metadata.status_code == 200
     assert mcp_path_authorization_metadata.json() == authorization_metadata.json()
     assert lower_mcp_authorization_metadata.status_code == 200
     assert lower_mcp_authorization_metadata.json() == authorization_metadata.json()
+
+
+def test_oauth_registration_accepts_loopback_redirect_for_local_clients(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+
+    registration_response = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Claude Desktop mcp-remote",
+            "redirect_uris": ["http://127.0.0.1:3334/callback", "http://localhost:3334/callback"],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+
+    assert registration_response.status_code == 201
+    assert registration_response.json()["token_endpoint_auth_method"] == "none"
 
 
 def test_oauth_registration_rejects_unregistered_redirect_host(monkeypatch, tmp_path: Path) -> None:
@@ -1308,6 +1328,68 @@ def test_oauth_registration_rejects_unregistered_redirect_host(monkeypatch, tmp_
 
     assert registration_response.status_code == 400
     assert registration_response.json()["detail"] == "Unregistered redirect_uri host"
+
+
+def test_oauth_authorize_accepts_client_id_metadata_document(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    client_id = "https://client.example/oauth/client-metadata.json"
+
+    monkeypatch.setattr(
+        "app.mcp_api._fetch_client_id_metadata_document",
+        lambda client_id: {
+            "client_id": client_id,
+            "client_name": "Example MCP Client",
+            "redirect_uris": ["http://127.0.0.1:3334/callback"],
+        },
+    )
+
+    response = mcp_client.get(
+        "/oauth/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": "http://127.0.0.1:3334/callback",
+            "code_challenge": "test-challenge",
+            "code_challenge_method": "S256",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+            "state": "abc",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Authorize MCP access" in response.text
+
+
+def test_oauth_authorize_rejects_unregistered_client_id_metadata_redirect(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    client_id = "https://client.example/oauth/client-metadata.json"
+
+    monkeypatch.setattr(
+        "app.mcp_api._fetch_client_id_metadata_document",
+        lambda client_id: {
+            "client_id": client_id,
+            "client_name": "Example MCP Client",
+            "redirect_uris": ["https://client.example/callback"],
+        },
+    )
+
+    response = mcp_client.get(
+        "/oauth/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": "http://127.0.0.1:3334/callback",
+            "code_challenge": "test-challenge",
+            "code_challenge_method": "S256",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "redirect_uri is not registered for client_id"
 
 
 def _configure_env(monkeypatch, tmp_path: Path) -> None:
