@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -15,10 +15,11 @@ COPY src /app/src
 # from turning routine deploys into multi-GB downloads. Keep the exact installed
 # build constrained while installing the app, otherwise transitive dependencies
 # can upgrade torch back to a CUDA-enabled PyPI build.
-RUN pip install --no-cache-dir "numpy>=2.1,<2.4" && \
+RUN pip install --no-cache-dir --index-url https://pypi.org/simple "numpy>=2.1,<2.4" && \
     pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.3,<2.8"
-RUN python -c "import torch; print(f'torch=={torch.__version__}')" > /tmp/torch-constraint.txt && \
-    pip install --no-cache-dir --constraint /tmp/torch-constraint.txt .
+RUN python -c "import numpy, torch; print(f'numpy=={numpy.__version__}'); print(f'torch=={torch.__version__}')" > /tmp/runtime-constraints.txt && \
+    printf '%s\n' 'onnxruntime==1.27.0' 'opencv-python==4.13.0.92' >> /tmp/runtime-constraints.txt && \
+    pip install --no-cache-dir --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cpu --constraint /tmp/runtime-constraints.txt .
 
 ENV PYTHONUNBUFFERED=1
 
