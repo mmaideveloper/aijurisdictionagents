@@ -13,8 +13,11 @@ import secrets
 import time
 from typing import Any, Callable, Sequence, cast
 from datetime import datetime, timedelta, timezone
+from ipaddress import ip_address
 from urllib.parse import urlparse
 from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 
 from fastapi import APIRouter, Body, Depends, Form, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -330,6 +333,7 @@ def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": [MCP_TOKEN_SCOPE, MCP_REFRESH_TOKEN_SCOPE],
+        "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": _oauth_authorization_response_iss_enabled(),
         "protected_resources": [_resource_url(request)],
     }
@@ -1880,6 +1884,7 @@ def _validate_oauth_authorize_request(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only response_type=code is supported")
     if not client_id.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="client_id is required")
+    _validate_client_id_metadata_document(client_id=client_id, redirect_uri=redirect_uri)
     _validate_oauth_redirect_uri(redirect_uri)
     if code_challenge_method != "S256":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PKCE S256 is supported")
@@ -1914,12 +1919,70 @@ def _registration_string_list(value: Any) -> list[str]:
 
 def _validate_oauth_redirect_uri(redirect_uri: str) -> None:
     parsed_redirect = urlparse(redirect_uri)
-    if parsed_redirect.scheme not in {"http", "https", "vscode", "vscode-insiders"}:
+    scheme = parsed_redirect.scheme.lower()
+    if scheme not in {"http", "https", "vscode", "vscode-insiders"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported redirect_uri")
-    if parsed_redirect.scheme in {"http", "https"}:
-        allowed_hosts = _allowed_oauth_redirect_hosts()
-        if parsed_redirect.hostname is None or parsed_redirect.hostname.lower() not in allowed_hosts:
+    if scheme == "http":
+        if not _is_loopback_host(parsed_redirect.hostname):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unregistered redirect_uri host")
+    if scheme == "https":
+        hostname = (parsed_redirect.hostname or "").lower()
+        allowed_hosts = _allowed_oauth_redirect_hosts()
+        if not hostname or hostname not in allowed_hosts:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unregistered redirect_uri host")
+
+
+def _is_loopback_host(hostname: str | None) -> bool:
+    if hostname is None:
+        return False
+    normalized = hostname.strip().lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_client_id_metadata_document(*, client_id: str, redirect_uri: str) -> None:
+    parsed_client_id = urlparse(client_id)
+    if not parsed_client_id.scheme and not parsed_client_id.netloc:
+        return
+    if parsed_client_id.scheme.lower() != "https" or not parsed_client_id.netloc or not parsed_client_id.path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid client_id metadata document URL")
+    if _is_loopback_host(parsed_client_id.hostname):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid client_id metadata document URL")
+    metadata = _fetch_client_id_metadata_document(client_id)
+    if str(metadata.get("client_id") or "").strip() != client_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="client_id metadata mismatch")
+    redirect_uris = _registration_string_list(metadata.get("redirect_uris"))
+    if redirect_uri not in redirect_uris:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="redirect_uri is not registered for client_id")
+
+
+def _fetch_client_id_metadata_document(client_id: str) -> dict[str, Any]:
+    request = UrlRequest(
+        client_id,
+        headers={"Accept": "application/json", "User-Agent": "JurisDigta-MCP-OAuth/1.0"},
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=2) as response:
+            body = response.read(65537)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to fetch client_id metadata document",
+        ) from exc
+    if len(body) > 65536:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="client_id metadata document is too large")
+    try:
+        metadata = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid client_id metadata document") from exc
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid client_id metadata document")
+    return metadata
 
 
 def _pkce_s256_challenge(code_verifier: str) -> str:

@@ -53,15 +53,16 @@ curl http://127.0.0.1:8070/
 - Token endpoint: `POST /oauth/token`
 
 The OAuth flow uses authorization code with PKCE S256, plus refresh tokens for
-remote clients that request `offline_access`. Remote clients can either use
-dynamic client registration at `/oauth/register` or provide a preconfigured
-public OAuth Client ID. ChatGPT and Claude should pass the protected resource
-value `https://mcp.jurisdigta.eu/MCP` on the authorization, token, and refresh
-requests. Protected-resource metadata includes a human-readable
-`resource_name`, and authorization-server metadata advertises the protected MCP
-resource plus `authorization_response_iss_parameter_supported=true`. The
-authorization callback returns `iss=https://mcp.jurisdigta.eu` with the
-authorization code so strict OAuth clients can bind the response to the issuer.
+remote clients that request `offline_access`. Remote clients can use OAuth
+Client ID Metadata Documents, dynamic client registration at `/oauth/register`,
+or a preconfigured public OAuth Client ID. ChatGPT and Claude should pass the
+protected resource value `https://mcp.jurisdigta.eu/MCP` on the authorization,
+token, and refresh requests. Protected-resource metadata includes a
+human-readable `resource_name`, and authorization-server metadata advertises the
+protected MCP resource, `client_id_metadata_document_supported=true`, and
+`authorization_response_iss_parameter_supported=true`. The authorization
+callback returns `iss=https://mcp.jurisdigta.eu` with the authorization code so
+strict OAuth clients can bind the response to the issuer.
 The browser authorization page validates the user password, sends an email OTP,
 and only creates a short-lived authorization code after OTP verification. The
 token endpoint exchanges that code for the same revocable JWT bearer token
@@ -72,6 +73,9 @@ Production settings:
 
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
+  for hosted HTTPS callbacks. Loopback `http://localhost/...` and
+  `http://127.0.0.1/...` redirects are accepted for local OAuth clients such as
+  Claude Desktop proxies.
 - `MCP_API_JWT_SECRET=<long-random-secret>`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
 
