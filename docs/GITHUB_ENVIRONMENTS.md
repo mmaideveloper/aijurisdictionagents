@@ -343,7 +343,7 @@ These are used by `.github/workflows/self_managed_prod_deploy.yml` to deploy API
 
 Before the SSH deployment job starts, the workflow runs a GitHub-hosted `e2e_gate` job with `npm ci`, Chromium installation, and `npm run test:e2e` from `frontend/aijurisdictionfronend`. The E2E tests use local Vite plus mocked API responses, so the `prod` environment does not need extra secrets for this gate. If any E2E test fails, the deploy job is skipped and production is not updated.
 
-The workflow must run on a repository self-hosted runner with labels `self-hosted`, `Linux`, `X64`, and `jurisdigta-prod`. Keep this runner on the trusted server or trusted private network that can reach `jurisdigta-server` over SSH. Do not run the production deployment from a GitHub-hosted runner when `JURISDIGTA_SSH_HOST` is a private LAN address such as `192.168.1.50`.
+The workflow must run on a repository self-hosted runner with labels `self-hosted`, `Linux`, `X64`, and `jurisdigta-prod`. Keep this runner on the trusted server or trusted private network that can reach `jurisdigta-server` over SSH. Do not run the production deployment from a GitHub-hosted runner when `JURISDIGTA_SSH_HOST` is a private LAN address such as `192.168.1.25`.
 
 The workflow does not store application runtime secrets in GitHub. Keep Azure OpenAI, PostgreSQL, SMTP, MCP JWT, and API secrets in the server-local file:
 
@@ -359,7 +359,7 @@ Required `prod` GitHub Environment variable:
 
 | Variable | Purpose |
 | --- | --- |
-| `JURISDIGTA_SSH_HOST` | SSH host or DNS name for `jurisdigta-server`; `192.168.1.50` is valid only when the self-hosted `jurisdigta-prod` runner can reach that private LAN address |
+| `JURISDIGTA_SSH_HOST` | SSH host or DNS name for `jurisdigta-server`; production currently uses `192.168.1.25`, which is valid only when the self-hosted `jurisdigta-prod` runner can reach that private LAN address |
 
 Optional `prod` GitHub Environment variables:
 

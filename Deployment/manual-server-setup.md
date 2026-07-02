@@ -7,7 +7,7 @@ For package installation, GitHub checkout, Docker/PostgreSQL preparation, API sm
 Current server target:
 
 - Host alias: `jurisdigta-server`
-- Hostname/IP: `192.168.1.50`
+- Hostname/IP: `192.168.1.25`
 - Server user: `jurisdigta-admin`
 - Client key path: `C:\Users\maton\.ssh\id_ed25519`
 - Public key USB filename: `jurisdigta-server-id_ed25519.pub`
@@ -49,7 +49,7 @@ jurisdigta-server
 Expected LAN address for this setup:
 
 ```text
-192.168.1.50
+192.168.1.25
 ```
 
 ## 2. Install Or Enable OpenSSH Server
@@ -88,7 +88,7 @@ LISTEN 0 4096 [::]:22
 From the Windows workstation, confirm TCP access:
 
 ```powershell
-Test-NetConnection -ComputerName 192.168.1.50 -Port 22
+Test-NetConnection -ComputerName 192.168.1.25 -Port 22
 ```
 
 Expected result:
@@ -199,7 +199,7 @@ Create or update `C:\Users\maton\.ssh\config` on the Windows workstation:
 
 ```sshconfig
 Host jurisdigta-server
-    HostName 192.168.1.50
+    HostName 192.168.1.25
     User jurisdigta-admin
     IdentityFile ~/.ssh/id_ed25519
     IdentitiesOnly yes
@@ -251,7 +251,7 @@ If `Test-NetConnection` fails but ping works:
 
 - Confirm `sudo systemctl status ssh --no-pager`.
 - Confirm `ss -tlnp | grep ':22'`.
-- Confirm no network or VLAN rule blocks traffic between the workstation and `192.168.1.50`.
+- Confirm no network or VLAN rule blocks traffic between the workstation and `192.168.1.25`.
 
 If SSH says `Host key verification failed`:
 
@@ -259,7 +259,7 @@ If SSH says `Host key verification failed`:
 - If the server was reinstalled, remove the old key with:
 
 ```powershell
-ssh-keygen -R 192.168.1.50
+ssh-keygen -R 192.168.1.25
 ssh-keygen -R jurisdigta-server
 ```
 

@@ -164,7 +164,7 @@ Use Firebase Cloud Messaging directly.
 
 Related runbook: `Deployment/manual-server-setup.md`
 
-Purpose: prepare the Ubuntu server `jurisdigta-server` at `192.168.1.50` for SSH access from Codex using public-key authentication.
+Purpose: prepare the Ubuntu server `jurisdigta-server` at `192.168.1.25` for SSH access from Codex using public-key authentication.
 
 ### Provider And Owner
 
@@ -177,7 +177,7 @@ Purpose: prepare the Ubuntu server `jurisdigta-server` at `192.168.1.50` for SSH
 1. Install Ubuntu Server and create the non-root administrator user `jurisdigta-admin`.
 2. Install and enable OpenSSH Server with `sudo apt install openssh-server` and `sudo systemctl enable --now ssh`.
 3. Validate port `22` locally with `ss -tlnp | grep ':22'`.
-4. Validate workstation connectivity with `Test-NetConnection -ComputerName 192.168.1.50 -Port 22`.
+4. Validate workstation connectivity with `Test-NetConnection -ComputerName 192.168.1.25 -Port 22`.
 5. Generate an Ed25519 SSH key on the Codex workstation.
 6. Copy only the public key to a USB drive.
 7. Mount the USB partition on Ubuntu, avoiding `/boot/efi`.
@@ -190,7 +190,7 @@ Purpose: prepare the Ubuntu server `jurisdigta-server` at `192.168.1.50` for SSH
 - Private key: `C:\Users\maton\.ssh\id_ed25519`; keep local and never commit or copy to the server.
 - Public key: `C:\Users\maton\.ssh\id_ed25519.pub`; safe to copy into `authorized_keys`.
 - Server user: `jurisdigta-admin`.
-- Server host/IP: `192.168.1.50`.
+- Server host/IP: `192.168.1.25`.
 
 ### Validation Steps
 
