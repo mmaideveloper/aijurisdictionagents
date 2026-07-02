@@ -407,7 +407,7 @@ Server-local `jurisdigta.env` must include at least:
 - `MCP_API_JWT_SECRET`
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
 - `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` is injected by the self-managed deploy script for the API container; it normally does not need to be stored in the GitHub Environment.
-- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai`
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai,localhost,127.0.0.1,::1`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
 - `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com`
@@ -507,7 +507,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `MCP_PORT=8070` for self-managed Docker Compose deployments
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu` for self-managed MCP OAuth metadata and token audience binding
 - `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` for API-to-MCP law-tool calls inside the Docker network; the self-managed deploy script injects this value automatically
-- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai` for hosted remote connector OAuth callbacks including `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback`; loopback `http://localhost/...` and `http://127.0.0.1/...` redirects are accepted directly for local Claude/desktop OAuth proxies
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai,localhost,127.0.0.1,::1` for hosted remote connector OAuth callbacks including `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback`; loopback `http://localhost/...`, `http://127.0.0.1/...`, and `http://[::1]/...` redirects are accepted directly for local Claude/desktop OAuth proxies
 - `MCP_OTP_REUSE_WINDOW_HOURS=24` for bounded repeat OTP suppression after successful MCP OTP verification
 - `CONTACT_CAPTCHA_REQUIRED=true`
 - `CONTACT_RATE_LIMIT_MAX_REQUESTS=5`

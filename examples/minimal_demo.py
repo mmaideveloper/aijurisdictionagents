@@ -32,6 +32,10 @@ print(
     "a Bearer MCP token or x-mcp-api-key, and Claude OAuth discovery remains visible to local proxies."
 )
 print(
+    "mcp_oauth_redirects => hosted callbacks use explicit allowed hosts; local MCP clients keep "
+    "http://localhost, http://127.0.0.1, and http://[::1] loopback redirect_uri support."
+)
+print(
     "mcp_wire_logging => MCP HTTP middleware logs redacted request/response envelopes; "
     "set MCP_WIRE_LOGGING_ENABLED=false to disable or MCP_WIRE_LOG_MAX_BYTES to adjust preview size."
 )

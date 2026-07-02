@@ -66,6 +66,9 @@ _DEFAULT_ALLOWED_REDIRECT_HOSTS = (
     "claude.ai",
     "vscode.dev",
     "www.perplexity.ai",
+    "localhost",
+    "127.0.0.1",
+    "::1",
 )
 _MCP_OTP_VERIFICATION_PURPOSE = "mcp_access"
 _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
