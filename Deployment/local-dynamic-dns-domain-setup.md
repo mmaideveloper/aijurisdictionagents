@@ -167,7 +167,7 @@ On the Ubuntu server, confirm the services work locally before exposing them thr
 curl -fsS http://127.0.0.1:8080/health
 # Replace these ports with the actual local web, MCP, and admin ports.
 curl -I http://127.0.0.1:<web-port>
-curl -I http://127.0.0.1:8070/.well-known/oauth-protected-resource/MCP
+curl -I http://127.0.0.1:8070/.well-known/oauth-protected-resource/mcp
 curl -I http://127.0.0.1:<admin-port>
 ```
 

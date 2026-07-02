@@ -35,7 +35,7 @@ def mcp_call(tool_name: str, arguments: dict[str, object] | None = None) -> dict
         "params": {"name": tool_name, "arguments": arguments or {}},
     }
     req = request.Request(
-        url=f"{BASE_URL}/MCP",
+        url=f"{BASE_URL}/mcp",
         data=json.dumps(payload).encode("utf-8"),
         method="POST",
         headers=headers,

@@ -91,18 +91,18 @@ def check_health(base_url: str) -> str:
 
 
 def check_protected_resource(base_url: str) -> str:
-    payload = request_json("GET", f"{base_url}/.well-known/oauth-protected-resource/MCP")
+    payload = request_json("GET", f"{base_url}/.well-known/oauth-protected-resource/mcp")
     assert_equal(payload.get("resource_name"), "JurisDigta MCP", "resource_name")
     assert_equal(payload.get("authorization_servers"), [base_url], "authorization_servers")
     assert_equal(payload.get("scopes_supported"), ["mcp:laws"], "scopes_supported")
     resource = str(payload.get("resource") or "")
-    if resource != f"{base_url}/MCP":
+    if resource != f"{base_url}/mcp":
         raise AssertionError(f"Unexpected protected resource URL: {resource!r}")
     return "OAuth protected resource metadata is advertised"
 
 
 def check_authorization_server(base_url: str) -> str:
-    for path in ("/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/MCP"):
+    for path in ("/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/mcp"):
         payload = request_json("GET", f"{base_url}{path}")
         assert_equal(payload.get("issuer"), base_url, f"{path}.issuer")
         assert_equal(payload.get("authorization_endpoint"), f"{base_url}/oauth/authorize", "authorization_endpoint")
@@ -114,7 +114,7 @@ def check_authorization_server(base_url: str) -> str:
         methods = set(payload.get("token_endpoint_auth_methods_supported") or [])
         if "none" not in methods:
             raise AssertionError(f"Authorization server must support public OAuth clients, got {sorted(methods)}")
-    return "OAuth authorization metadata is advertised for root and /MCP"
+    return "OAuth authorization metadata is advertised for root and /mcp"
 
 
 def check_claude_registration(base_url: str) -> str:
@@ -193,7 +193,7 @@ def check_public_tool_call(base_url: str) -> str:
 def check_auth_challenge(base_url: str) -> str:
     response = request(
         "POST",
-        f"{base_url}/MCP",
+        f"{base_url}/mcp",
         {
             "jsonrpc": "2.0",
             "id": 4,
@@ -213,7 +213,7 @@ def check_auth_challenge(base_url: str) -> str:
 
 
 def check_auth_pages(base_url: str) -> str:
-    for path, marker in (("/MCP/login", "form"), ("/MCP/sign-up", "form")):
+    for path, marker in (("/mcp/login", "form"), ("/mcp/sign-up", "form")):
         response = request("GET", f"{base_url}{path}")
         text = response.body.decode("utf-8", errors="replace").lower()
         if marker not in text:
@@ -224,7 +224,7 @@ def check_auth_pages(base_url: str) -> str:
 def mcp_rpc(base_url: str, request_id: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
     payload = request_json(
         "POST",
-        f"{base_url}/MCP",
+        f"{base_url}/mcp",
         {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params},
         extra_headers=mcp_headers(),
     )

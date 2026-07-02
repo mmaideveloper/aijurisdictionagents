@@ -104,13 +104,13 @@ def test_mcp_root_shows_assistant_setup_and_registration_steps() -> None:
     assert response.status_code == 200
     assert "JurisDigta MCP server" in response.text
     assert "Registration" in response.text
-    assert "/MCP/sign-up" in response.text
-    assert "/MCP/login" in response.text
+    assert "/mcp/sign-up" in response.text
+    assert "/mcp/login" in response.text
     assert "ChatGPT custom connector" in response.text
     assert "Claude" in response.text
     assert "VS Code" in response.text
     assert "Perplexity" in response.text
-    assert "/.well-known/oauth-protected-resource/MCP" in response.text
+    assert "/.well-known/oauth-protected-resource/mcp" in response.text
     assert "Authorization: Bearer" in response.text
 
 
@@ -121,7 +121,7 @@ def test_mcp_root_localizes_for_slovak_browser() -> None:
     assert "Registracia" in response.text
     assert "Nastavenie asistenta" in response.text
     assert "Metadata autorizacneho servera" in response.text
-    assert "/MCP/sign-up" in response.text
+    assert "/mcp/sign-up" in response.text
     assert "Authorization: Bearer" in response.text
 
 
@@ -134,5 +134,5 @@ def test_mcp_root_uses_forwarded_public_origin() -> None:
         },
     )
     assert response.status_code == 200
-    assert "https://mcp.jurisdigta.eu/MCP" in response.text
+    assert "https://mcp.jurisdigta.eu/mcp" in response.text
     assert "https://mcp.jurisdigta.eu/.well-known/oauth-authorization-server" in response.text
