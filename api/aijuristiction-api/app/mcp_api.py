@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 import base64
 import hashlib
@@ -13,8 +14,11 @@ import secrets
 import time
 from typing import Any, Callable, Sequence, cast
 from datetime import datetime, timedelta, timezone
+from ipaddress import ip_address
 from urllib.parse import urlparse
 from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 
 from fastapi import APIRouter, Body, Depends, Form, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -56,11 +60,21 @@ MCP_SERVER_INSTRUCTIONS = (
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
 _PUBLIC_TOOLS = {"getVersion", "getStatistics"}
-_DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai", "localhost", "127.0.0.1", "::1")
+_DEFAULT_ALLOWED_REDIRECT_HOSTS = (
+    "chatgpt.com",
+    "chat.openai.com",
+    "claude.ai",
+    "vscode.dev",
+    "www.perplexity.ai",
+)
 _MCP_OTP_VERIFICATION_PURPOSE = "mcp_access"
 _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
+_COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = 8_000
+_COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = 3
 logger = logging.getLogger("aijuristiction-api.mcp")
+_CURRENT_MCP_REQUEST_ID: ContextVar[str | None] = ContextVar("current_mcp_request_id", default=None)
+_CURRENT_MCP_CORRELATION_ID: ContextVar[str | None] = ContextVar("current_mcp_correlation_id", default=None)
 _MCP_SUPPORTED_LOCALES = {"en", "sk"}
 _MCP_TEXT: dict[str, dict[str, str]] = {
     "en": {
@@ -262,21 +276,27 @@ async def mcp_json_rpc(
             headers={"WWW-Authenticate": _www_authenticate_header(request)},
         )
     store = get_user_store() if payload_requires_auth else None
-    response = _handle_json_rpc(
-        payload=payload,
-        authorization=authorization,
-        x_mcp_api_key=x_mcp_api_key,
-        store=store,
-    )
-    duration_ms = int((time.perf_counter() - started_at) * 1000)
-    logger.info(
-        "mcp_json_rpc_completed request_id=%s correlation_id=%s status_code=%d duration_ms=%d",
-        request_id,
-        correlation_id,
-        response.status_code,
-        duration_ms,
-    )
-    return response
+    request_id_token = _CURRENT_MCP_REQUEST_ID.set(str(request_id) if request_id else None)
+    correlation_id_token = _CURRENT_MCP_CORRELATION_ID.set(str(correlation_id) if correlation_id else None)
+    try:
+        response = _handle_json_rpc(
+            payload=payload,
+            authorization=authorization,
+            x_mcp_api_key=x_mcp_api_key,
+            store=store,
+        )
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        logger.info(
+            "mcp_json_rpc_completed request_id=%s correlation_id=%s status_code=%d duration_ms=%d",
+            request_id,
+            correlation_id,
+            response.status_code,
+            duration_ms,
+        )
+        return response
+    finally:
+        _CURRENT_MCP_REQUEST_ID.reset(request_id_token)
+        _CURRENT_MCP_CORRELATION_ID.reset(correlation_id_token)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -326,6 +346,7 @@ def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": [MCP_TOKEN_SCOPE, MCP_REFRESH_TOKEN_SCOPE],
+        "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": _oauth_authorization_response_iss_enabled(),
         "protected_resources": [_resource_url(request)],
     }
@@ -1133,6 +1154,8 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
         "getStatistics": _tool_get_statistics,
         "searchLaws": _tool_search_laws,
         "getLawText": _tool_get_law_text,
+        "searchCourtDecisions": _tool_search_court_decisions,
+        "getCourtDecision": _tool_get_court_decision,
     }
     handler = handlers.get(name)
     if handler is None:
@@ -1141,13 +1164,22 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
     return handler(arguments)
 
 
-def _tool_get_version(_arguments: dict[str, Any]) -> dict[str, str]:
+def _tool_get_version(_arguments: dict[str, Any]) -> dict[str, Any]:
+    court_decisions = _court_decision_statistics()
+    court_decision_collector_version = get_core_version()
     return {
         "api_version": get_api_version(),
         "mcp_server_version": get_mcp_server_version(),
         "system_version": get_core_version(),
         "mobile_app_version": get_mobile_app_version(),
         "web_app_version": get_web_app_version(),
+        "court_decision_collector_version": court_decision_collector_version,
+        "court_decision_collector": {
+            "version": court_decision_collector_version,
+            "status": court_decisions.get("collector_status"),
+            "last_imported_decision": court_decisions.get("last_imported_decision"),
+            "last_imported_at": court_decisions.get("last_imported_at"),
+        },
     }
 
 
@@ -1156,18 +1188,29 @@ def _tool_get_statistics(arguments: dict[str, Any]) -> dict[str, Any]:
     logger.info("mcp_tool_get_statistics_query country_code=%s", country_code)
     payload = _read_laws_statistics(config=_laws_db_config(), country_code=country_code)
     collector = payload.get("collector", {})
+    court_decisions = _court_decision_statistics()
     result = {
         "country_code": payload.get("country_code"),
         "processed_laws": payload.get("totals", {}).get("laws_imported", 0),
         "last_processed_law": collector.get("last_processed_law"),
         "last_processed_day": collector.get("last_processed_at"),
+        "court_decision_collector_version": get_core_version(),
+        "total_court_decisions": court_decisions.get("total_decisions", 0),
+        "last_imported_decision": court_decisions.get("last_imported_decision"),
+        "last_imported_decision_at": court_decisions.get("last_imported_at"),
+        "court_decisions": court_decisions,
         "details": payload,
     }
     logger.info(
-        "mcp_tool_get_statistics_result country_code=%s processed_laws=%s last_processed_law=%s",
+        (
+            "mcp_tool_get_statistics_result country_code=%s processed_laws=%s "
+            "last_processed_law=%s total_court_decisions=%s last_imported_decision=%s"
+        ),
         result["country_code"],
         result["processed_laws"],
         result["last_processed_law"],
+        result["total_court_decisions"],
+        result["last_imported_decision"],
     )
     return result
 
@@ -1373,6 +1416,111 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
+    query = str(arguments.get("query", "")).strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=400, detail="query must contain at least 2 characters")
+    limit = _bounded_int(arguments.get("limit"), default=10, minimum=1, maximum=50)
+    started_at = time.perf_counter()
+    logger.info(
+        "mcp_tool_search_court_decisions_query query_length=%d limit=%d timeout_ms=%d",
+        len(query),
+        limit,
+        _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
+    )
+    try:
+        store = _court_decision_store(
+            initialize=False,
+            connect_timeout_seconds=_COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS,
+            statement_timeout_ms=_COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
+        )
+        results = [
+            {
+                "decision_id": item.decision_id,
+                "version_id": item.version_id,
+                "source_guid": item.source_guid,
+                "court_name": item.court_name,
+                "court_type": item.court_type,
+                "file_number": item.file_number,
+                "case_number": item.case_number,
+                "ecli": item.ecli,
+                "issue_date": item.issue_date,
+                "source_url": item.source_url,
+                "snippet": item.snippet,
+                "score": item.score,
+                "output_mode": "public",
+            }
+            for item in store.search(query=query, limit=limit)
+        ]
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        error_kind = _court_decision_search_error_kind(exc)
+        logger.warning(
+            (
+                "mcp_tool_search_court_decisions_degraded query_length=%d limit=%d "
+                "duration_ms=%d error_kind=%s exception=%s request_id=%s correlation_id=%s"
+            ),
+            len(query),
+            limit,
+            duration_ms,
+            error_kind,
+            exc.__class__.__name__,
+            _CURRENT_MCP_REQUEST_ID.get(),
+            _CURRENT_MCP_CORRELATION_ID.get(),
+        )
+        return _court_decision_search_degraded_result(
+            query=query,
+            limit=limit,
+            duration_ms=duration_ms,
+            error_kind=error_kind,
+        )
+    duration_ms = int((time.perf_counter() - started_at) * 1000)
+    logger.info(
+        "mcp_tool_search_court_decisions_result result_count=%d duration_ms=%d",
+        len(results),
+        duration_ms,
+    )
+    return {
+        "query": query,
+        "results": results,
+        "output_mode": "public",
+        "status": "ok",
+        "duration_ms": duration_ms,
+        "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
+    }
+
+
+def _tool_get_court_decision(arguments: dict[str, Any]) -> dict[str, Any]:
+    decision_id = str(arguments.get("decision_id", "")).strip()
+    if not decision_id:
+        raise HTTPException(status_code=400, detail="decision_id is required")
+    output_mode = str(arguments.get("outputMode", arguments.get("output_mode", "public"))).strip()
+    raw = output_mode == "internal_raw"
+    if raw and os.getenv("COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP", "").strip().lower() not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=403, detail="internal_raw court-decision output is not enabled")
+    max_chars = _bounded_int(arguments.get("max_chars"), default=12_000, minimum=1, maximum=50_000)
+    logger.info(
+        "mcp_tool_get_court_decision_query decision_id_hash=%s output_mode=%s max_chars=%d",
+        _stable_hash(decision_id),
+        "internal_raw" if raw else "public",
+        max_chars,
+    )
+    record = _court_decision_store().get_decision(decision_id=decision_id, raw=raw)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Court decision not found")
+    text = str(record["text"])
+    record["text"] = text[:max_chars]
+    record["content_truncated"] = len(text) > max_chars
+    logger.info(
+        "mcp_tool_get_court_decision_result decision_id_hash=%s output_mode=%s content_length=%d truncated=%s",
+        _stable_hash(decision_id),
+        record["output_mode"],
+        len(str(record["text"])),
+        record["content_truncated"],
+    )
+    return cast(dict[str, Any], record)
+
+
 def _requested_section_range(arguments: dict[str, Any]) -> tuple[int | None, int | None]:
     section_start = _optional_positive_int(arguments.get("section_start"))
     section_end = _optional_positive_int(arguments.get("section_end"))
@@ -1476,16 +1624,127 @@ class _LawsQuerySession:
             logger.info("mcp_laws_db_session_closed")
 
 
+def _court_decision_store(
+    *,
+    initialize: bool = False,
+    connect_timeout_seconds: int | None = None,
+    statement_timeout_ms: int | None = None,
+) -> Any:
+    from services.court_decision_collector.config import CourtDecisionCollectorConfig
+    from services.court_decision_collector.postgres_store import PostgresCourtDecisionStore
+
+    config = CourtDecisionCollectorConfig.from_env()
+    config.validate()
+    store = PostgresCourtDecisionStore(
+        connection_uri=config.db_cloud,
+        embedding_dimensions=config.embedding_dimensions,
+        connect_timeout_seconds=connect_timeout_seconds,
+        statement_timeout_ms=statement_timeout_ms,
+    )
+    if initialize:
+        store.initialize()
+    return store
+
+
+def _court_decision_statistics() -> dict[str, Any]:
+    try:
+        stats = _court_decision_store().statistics()
+    except Exception as exc:
+        logger.warning("mcp_court_decision_statistics_unavailable reason=%s", exc.__class__.__name__)
+        return {
+            "status": "unavailable",
+            "collector_status": "unavailable",
+            "total_decisions": 0,
+            "published_decisions": 0,
+            "total_versions": 0,
+            "last_imported_decision": None,
+            "last_imported_decision_id": None,
+            "last_imported_source_guid": None,
+            "last_imported_at": None,
+            "last_imported_court_name": None,
+            "last_imported_court_type": None,
+            "last_imported_issue_date": None,
+            "last_imported_ecli": None,
+            "last_imported_file_number": None,
+            "collector_last_processed_at": None,
+            "collector_last_source_guid": None,
+        }
+    return {
+        "status": "ok",
+        "collector_status": stats.collector_status,
+        "total_decisions": stats.total_decisions,
+        "published_decisions": stats.published_decisions,
+        "total_versions": stats.total_versions,
+        "last_imported_decision": stats.last_imported_source_guid or stats.last_imported_decision_id or None,
+        "last_imported_decision_id": stats.last_imported_decision_id or None,
+        "last_imported_source_guid": stats.last_imported_source_guid or None,
+        "last_imported_at": stats.last_imported_at or None,
+        "last_imported_court_name": stats.last_imported_court_name or None,
+        "last_imported_court_type": stats.last_imported_court_type or None,
+        "last_imported_issue_date": stats.last_imported_issue_date or None,
+        "last_imported_ecli": stats.last_imported_ecli or None,
+        "last_imported_file_number": stats.last_imported_file_number or None,
+        "collector_last_processed_at": stats.collector_last_processed_at or None,
+        "collector_last_source_guid": stats.collector_last_source_guid or None,
+    }
+
+
+def _court_decision_search_degraded_result(
+    *,
+    query: str,
+    limit: int,
+    duration_ms: int,
+    error_kind: str,
+) -> dict[str, Any]:
+    message = (
+        "Court-decision search is temporarily unavailable or exceeded the server search budget. "
+        "Retry the same MCP call later or narrow the query."
+    )
+    return {
+        "query": query,
+        "results": [],
+        "output_mode": "public",
+        "status": "degraded",
+        "retryable": True,
+        "error": {
+            "code": "court_decision_search_timeout"
+            if error_kind == "timeout"
+            else "court_decision_search_unavailable",
+            "message": message,
+            "kind": error_kind,
+            "correlation_id": _CURRENT_MCP_CORRELATION_ID.get(),
+            "request_id": _CURRENT_MCP_REQUEST_ID.get(),
+        },
+        "limit": limit,
+        "duration_ms": duration_ms,
+        "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
+    }
+
+
+def _court_decision_search_error_kind(exc: Exception) -> str:
+    exception_name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    if isinstance(exc, TimeoutError) or "timeout" in exception_name or "timeout" in message:
+        return "timeout"
+    return "unavailable"
+
+
 def _mcp_tools() -> list[dict[str, Any]]:
     return [
         {
             "name": "getVersion",
-            "description": "Public version information for the mobile, system, API, and web apps.",
+            "description": (
+                "Public version information for the mobile, system, API, and web apps, "
+                "plus court-decision collector status and latest imported decision metadata."
+            ),
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
         {
             "name": "getStatistics",
-            "description": "Public laws collector processing statistics.",
+            "description": (
+                "Public laws collector and court-decision collector processing statistics, including totals and "
+                "latest imported source identifiers."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {"country_code": {"type": "string", "default": "SK"}},
@@ -1539,6 +1798,51 @@ def _mcp_tools() -> list[dict[str, Any]]:
                         "minimum": 1,
                         "maximum": _MAX_LAW_TEXT_CHARS,
                         "default": _DEFAULT_LAW_TEXT_MAX_CHARS,
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "searchCourtDecisions",
+            "description": (
+                "Search imported Slovak court decisions (sudne rozhodnutia / case law) by semantic "
+                "and metadata relevance. Returns pseudonymized public snippets by default; use this "
+                "to cite court, date, ECLI, file number, and source URL while distinguishing case-law "
+                "support from binding statutory law."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "minLength": 2},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "getCourtDecision",
+            "description": (
+                "Return one imported Slovak court decision. The default outputMode=public returns "
+                "pseudonymized text. outputMode=internal_raw is restricted to controlled internal use "
+                "and must not be used for normal external model prompts or UI display."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["decision_id"],
+                "properties": {
+                    "decision_id": {"type": "string", "minLength": 1},
+                    "outputMode": {
+                        "type": "string",
+                        "enum": ["public", "internal_raw"],
+                        "default": "public",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50_000,
+                        "default": 12_000,
                     },
                 },
                 "additionalProperties": False,
@@ -1601,8 +1905,8 @@ def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> Use
         audience=expected_audience,
         required_scope=MCP_TOKEN_SCOPE,
     )
-    if payload is None and expected_audience.lower().endswith("/mcp"):
-        legacy_audience = f"{expected_audience[:-4]}/MCP"
+    if payload is None and expected_audience.endswith("/MCP"):
+        legacy_audience = f"{expected_audience[:-4]}/mcp"
         payload = validate_mcp_api_token(
             api_key,
             audience=legacy_audience,
@@ -1757,7 +2061,7 @@ def _base_url(request: Request) -> str:
 
 
 def _resource_url(request: Request) -> str:
-    return f"{_base_url(request)}/mcp"
+    return f"{_base_url(request)}/MCP"
 
 
 def _base_url_from_resource(resource: str) -> str:
@@ -1814,12 +2118,8 @@ def _payload_requires_auth(payload: Any) -> bool:
 
 
 def _oauth_authorization_response_iss_enabled() -> bool:
-    return os.getenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    raw_value = os.getenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", "true").strip().lower()
+    return raw_value not in {"0", "false", "no", "off"}
 
 
 def _first_payload_id(payload: Any) -> Any:
@@ -1834,7 +2134,7 @@ def _first_payload_id(payload: Any) -> Any:
 
 
 def _www_authenticate_header(request: Request) -> str:
-    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/mcp"
+    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/MCP"
     return f'Bearer resource_metadata="{metadata_url}", scope="{MCP_TOKEN_SCOPE}"'
 
 
@@ -1852,6 +2152,7 @@ def _validate_oauth_authorize_request(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only response_type=code is supported")
     if not client_id.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="client_id is required")
+    _validate_client_id_metadata_document(client_id=client_id, redirect_uri=redirect_uri)
     _validate_oauth_redirect_uri(redirect_uri)
     if code_challenge_method != "S256":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PKCE S256 is supported")
@@ -1886,12 +2187,70 @@ def _registration_string_list(value: Any) -> list[str]:
 
 def _validate_oauth_redirect_uri(redirect_uri: str) -> None:
     parsed_redirect = urlparse(redirect_uri)
-    if parsed_redirect.scheme not in {"http", "https", "vscode", "vscode-insiders"}:
+    scheme = parsed_redirect.scheme.lower()
+    if scheme not in {"http", "https", "vscode", "vscode-insiders"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported redirect_uri")
-    if parsed_redirect.scheme in {"http", "https"}:
-        allowed_hosts = _allowed_oauth_redirect_hosts()
-        if parsed_redirect.hostname is None or parsed_redirect.hostname.lower() not in allowed_hosts:
+    if scheme == "http":
+        if not _is_loopback_host(parsed_redirect.hostname):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unregistered redirect_uri host")
+    if scheme == "https":
+        hostname = (parsed_redirect.hostname or "").lower()
+        allowed_hosts = _allowed_oauth_redirect_hosts()
+        if not hostname or hostname not in allowed_hosts:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unregistered redirect_uri host")
+
+
+def _is_loopback_host(hostname: str | None) -> bool:
+    if hostname is None:
+        return False
+    normalized = hostname.strip().lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_client_id_metadata_document(*, client_id: str, redirect_uri: str) -> None:
+    parsed_client_id = urlparse(client_id)
+    if not parsed_client_id.scheme and not parsed_client_id.netloc:
+        return
+    if parsed_client_id.scheme.lower() != "https" or not parsed_client_id.netloc or not parsed_client_id.path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid client_id metadata document URL")
+    if _is_loopback_host(parsed_client_id.hostname):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid client_id metadata document URL")
+    metadata = _fetch_client_id_metadata_document(client_id)
+    if str(metadata.get("client_id") or "").strip() != client_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="client_id metadata mismatch")
+    redirect_uris = _registration_string_list(metadata.get("redirect_uris"))
+    if redirect_uri not in redirect_uris:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="redirect_uri is not registered for client_id")
+
+
+def _fetch_client_id_metadata_document(client_id: str) -> dict[str, Any]:
+    request = UrlRequest(
+        client_id,
+        headers={"Accept": "application/json", "User-Agent": "JurisDigta-MCP-OAuth/1.0"},
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=2) as response:
+            body = response.read(65537)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to fetch client_id metadata document",
+        ) from exc
+    if len(body) > 65536:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="client_id metadata document is too large")
+    try:
+        metadata = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid client_id metadata document") from exc
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid client_id metadata document")
+    return metadata
 
 
 def _pkce_s256_challenge(code_verifier: str) -> str:
@@ -1972,12 +2331,15 @@ def _tool_result_summary(*, tool_name: str, result: Any) -> str:
     if not isinstance(result, dict):
         return f"type={type(result).__name__}"
     if tool_name == "getVersion":
-        return "fields=api_version,system_version,mobile_app_version,web_app_version"
+        court_decisions = result.get("court_decision_collector")
+        court_status = court_decisions.get("status") if isinstance(court_decisions, dict) else "missing"
+        return f"fields=api_version,system_version,mobile_app_version,web_app_version court_status={court_status}"
     if tool_name == "getStatistics":
         return (
             f"country_code={result.get('country_code')} "
             f"processed_laws={result.get('processed_laws')} "
-            f"last_processed_law={result.get('last_processed_law')}"
+            f"last_processed_law={result.get('last_processed_law')} "
+            f"total_court_decisions={result.get('total_court_decisions')}"
         )
     if tool_name == "searchLaws":
         results = result.get("results")
@@ -1991,6 +2353,20 @@ def _tool_result_summary(*, tool_name: str, result: Any) -> str:
         return (
             f"document_id_hash={document_hash} "
             f"country_code={result.get('country_code')} "
+            f"content_length={content_length}"
+        )
+    if tool_name == "searchCourtDecisions":
+        results = result.get("results")
+        result_count = len(results) if isinstance(results, list) else 0
+        return f"result_count={result_count} output_mode={result.get('output_mode')}"
+    if tool_name == "getCourtDecision":
+        text = result.get("text")
+        content_length = len(text) if isinstance(text, str) else 0
+        decision_id = result.get("decision_id")
+        decision_hash = _stable_hash(decision_id) if isinstance(decision_id, str) else "missing"
+        return (
+            f"decision_id_hash={decision_hash} "
+            f"output_mode={result.get('output_mode')} "
             f"content_length={content_length}"
         )
     return f"keys={','.join(sorted(str(key) for key in result.keys()))}"

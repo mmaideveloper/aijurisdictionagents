@@ -157,6 +157,7 @@ Required GitHub Environment secret:
 | --- | --- |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI key used by the API and document processor for chat completions and embeddings |
 | `MCP_API_JWT_SECRET` | Long random secret used to sign MCP OAuth/JWT bearer tokens for ChatGPT, Claude, VS Code, and other remote MCP clients |
+| `MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS` | Optional issuer callback flag for strict OAuth clients; default `true`, keep enabled for Claude web custom connectors |
 | `AZURE_POSTGRES_ADMIN_PASSWORD` | PostgreSQL admin password |
 
 Optional and conditional GitHub Environment secrets:
@@ -247,6 +248,19 @@ These are used by the laws collector deployment workflow:
 | `SYSTEM_EMBEDDING_MODEL_OPTION` | Shared embedding mode for the job; default `local`, or set `cloud` for Azure OpenAI embeddings |
 | `SYSTEM_EMBEDDING_MODEL` | Shared local embedding model name, default `all-MiniLM-L6-v2`. In `local` mode the deploy prefetches that model into the worker image before `az acr build` |
 | `SYSTEM_EMBEDDING_DEVICE` | Local embedding device selector for `local` mode, default `auto`; use `cpu` to force CPU-only execution |
+
+Court-decision collector settings are required before enabling court-decision MCP/API search in an environment:
+
+| Variable | Notes |
+| --- | --- |
+| `COURT_DECISIONS_DB_BACKEND` | Must be `postgres` |
+| `COURT_DECISIONS_DB_CLOUD` | Dedicated PostgreSQL connection string for the court decisions database, for example `court_decisions_sk`; keep it separate from laws collector databases |
+| `COURT_DECISIONS_STORAGE_LOCAL` | Runtime artifact path, default `./runs/storage/court-decision-collector/files/sk` |
+| `COURT_DECISIONS_SOURCE_BASE_URL` | InfoSud API base URL, default `https://obcan.justice.sk/pilot/api/ress-isu-service/v1` |
+| `COURT_DECISIONS_WORKER_POLL_HOURS` | Future scheduled worker cadence, default `1` |
+| `COURT_DECISIONS_EMBEDDING_DIMENSIONS` | Stored vector dimensions, default `32` |
+| `COURT_DECISIONS_IMPORT_LIMIT` | Bounded import page size for smoke runs, default `25` |
+| `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP` | Keep `false` for external MCP users; set `true` only for a controlled internal runtime approved to retrieve raw court-decision text |
 
 The laws collector workflow reuses these shared Azure deployment variables:
 
@@ -359,6 +373,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_API_PORT` | `8080` | Server-local API bind port |
 | `JURISDIGTA_MCP_PORT` | `8070` | Server-local MCP bind port |
 | `JURISDIGTA_WEB_PORT` | `8090` | Server-local web bind port |
+| `JURISDIGTA_COURT_DECISIONS_DATABASE_NAME` | `court_decisions_sk` | Dedicated PostgreSQL database name for the court-decision vector store used by MCP court-decision search |
 | `JURISDIGTA_LAWS_COLLECTOR_RUN_MODE` | `continuous` | Self-managed laws collector runtime mode. `continuous` runs a restartable Docker container that sleeps between live polls; `scheduled` keeps the legacy daily cron wrapper |
 | `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON` | `1` | Install/update the self-managed document processor cron wrapper; set `0` only for manual worker runs |
 | `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION` | `*/15 * * * *` | Five-field server cron schedule for document processing |
@@ -392,7 +407,7 @@ Server-local `jurisdigta.env` must include at least:
 - `MCP_API_JWT_SECRET`
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
 - `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` is injected by the self-managed deploy script for the API container; it normally does not need to be stored in the GitHub Environment.
-- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,localhost,127.0.0.1,::1`
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
 - `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com`
@@ -492,7 +507,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `MCP_PORT=8070` for self-managed Docker Compose deployments
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu` for self-managed MCP OAuth metadata and token audience binding
 - `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` for API-to-MCP law-tool calls inside the Docker network; the self-managed deploy script injects this value automatically
-- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,localhost,127.0.0.1,::1` for remote connector OAuth callbacks and local Claude/desktop OAuth proxy loopback callbacks
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai` for hosted remote connector OAuth callbacks including `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback`; loopback `http://localhost/...` and `http://127.0.0.1/...` redirects are accepted directly for local Claude/desktop OAuth proxies
 - `MCP_OTP_REUSE_WINDOW_HOURS=24` for bounded repeat OTP suppression after successful MCP OTP verification
 - `CONTACT_CAPTCHA_REQUIRED=true`
 - `CONTACT_RATE_LIMIT_MAX_REQUESTS=5`

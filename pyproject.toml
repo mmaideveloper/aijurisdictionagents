@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aijurisdictionagents"
-version = "1.0.260403"
+version = "1.0.260409"
 description = "Multi-agent legal discussion scaffold."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,6 +36,7 @@ dev = [
 [project.scripts]
 legal-discussion = "aijurisdictionagents.cli:main"
 laws-collector = "services.laws_collector.cli:main"
+court-decision-collector = "services.court_decision_collector.cli:main"
 document-processor = "services.document_processor.__main__:main"
 local-model-builder = "services.local_model_builder.__main__:main"
 

@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
+import ssl
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -91,7 +96,7 @@ def check_protected_resource(base_url: str) -> str:
     assert_equal(payload.get("authorization_servers"), [base_url], "authorization_servers")
     assert_equal(payload.get("scopes_supported"), ["mcp:laws"], "scopes_supported")
     resource = str(payload.get("resource") or "")
-    if resource.lower() != f"{base_url}/mcp".lower():
+    if resource != f"{base_url}/MCP":
         raise AssertionError(f"Unexpected protected resource URL: {resource!r}")
     return "OAuth protected resource metadata is advertised"
 
@@ -124,6 +129,7 @@ def check_claude_registration(base_url: str) -> str:
             "token_endpoint_auth_method": "none",
             "scope": "mcp:laws offline_access",
         },
+        expected_status={200, 201},
     )
     client_id = str(payload.get("client_id") or "")
     if not client_id.startswith("jurisdigta-"):
@@ -232,9 +238,10 @@ def request_json(
     url: str,
     payload: dict[str, Any] | None = None,
     *,
+    expected_status: int | set[int] = 200,
     extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    return request(method, url, payload, extra_headers=extra_headers).json()
+    return request(method, url, payload, expected_status=expected_status, extra_headers=extra_headers).json()
 
 
 def request(
@@ -242,7 +249,7 @@ def request(
     url: str,
     payload: dict[str, Any] | None = None,
     *,
-    expected_status: int = 200,
+    expected_status: int | set[int] = 200,
     extra_headers: dict[str, str] | None = None,
 ) -> HttpResponse:
     body = None
@@ -266,11 +273,17 @@ def request(
         data = exc.read()
         response_headers = {key.lower(): value for key, value in exc.headers.items()}
     except URLError as exc:
-        raise AssertionError(f"HTTP request failed for {method} {url}: {exc}") from exc
+        detail = f"HTTP request failed for {method} {url}: {exc}"
+        tls_detail = tls_certificate_diagnostic(url, exc)
+        if tls_detail:
+            detail = f"{detail}\n{tls_detail}"
+        raise AssertionError(detail) from exc
 
-    if status != expected_status:
+    expected_statuses = expected_status if isinstance(expected_status, set) else {expected_status}
+    if status not in expected_statuses:
         preview = data.decode("utf-8", errors="replace")[:500]
-        raise AssertionError(f"Expected {expected_status} for {method} {url}, got {status}: {preview}")
+        expected_label = " or ".join(str(item) for item in sorted(expected_statuses))
+        raise AssertionError(f"Expected {expected_label} for {method} {url}, got {status}: {preview}")
     return HttpResponse(status=status, headers=response_headers, body=data)
 
 
@@ -279,6 +292,82 @@ def mcp_headers() -> dict[str, str]:
         "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
         "User-Agent": "python-httpx/0.28.1 Claude MCP smoke test",
     }
+
+
+def tls_certificate_diagnostic(url: str, error: URLError) -> str:
+    reason = getattr(error, "reason", error)
+    if not isinstance(reason, ssl.SSLError):
+        return ""
+
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return ""
+
+    port = parsed.port or 443
+    try:
+        cert = fetch_peer_certificate(parsed.hostname, port)
+    except OSError as exc:  # pragma: no cover - diagnostic path
+        return f"TLS certificate diagnostic unavailable for {parsed.hostname}:{port}: {exc}"
+
+    subject = name_to_text(cert.get("subject", ()))
+    issuer = name_to_text(cert.get("issuer", ()))
+    san = cert.get("subjectAltName", ())
+    san_text = (
+        ", ".join(f"{name}:{value}" for name, value in san)
+        if isinstance(san, tuple)
+        else str(san)
+    )
+    mitigation = (
+        "Strict TLS verification failed before the MCP/OAuth flow reached the server. "
+        "If the issuer is an antivirus, proxy, or enterprise TLS inspection root "
+        "(for example Avast Web/Mail Shield), fix that local/client trust path or "
+        "exclude mcp.jurisdigta.eu from HTTPS scanning. Do not use --ssl-no-revoke, "
+        "-k, or disabled verification as a production connector workaround."
+    )
+    return (
+        "TLS certificate diagnostic:\n"
+        f"- peer subject: {subject or 'unknown'}\n"
+        f"- peer issuer: {issuer or 'unknown'}\n"
+        f"- peer SAN: {san_text or 'unknown'}\n"
+        f"- guidance: {mitigation}"
+    )
+
+
+def fetch_peer_certificate(hostname: str, port: int) -> dict[str, Any]:
+    context = ssl._create_unverified_context()
+    with socket.create_connection((hostname, port), timeout=TIMEOUT_SECONDS) as raw_socket:
+        with context.wrap_socket(raw_socket, server_hostname=hostname) as tls_socket:
+            der_cert = tls_socket.getpeercert(binary_form=True)
+    if not der_cert:
+        return {}
+
+    pem_cert = ssl.DER_cert_to_PEM_cert(der_cert)
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".pem", delete=False, encoding="ascii"
+    ) as cert_file:
+        cert_path = Path(cert_file.name)
+        cert_file.write(pem_cert)
+    try:
+        return ssl._ssl._test_decode_cert(str(cert_path))  # type: ignore[attr-defined]
+    finally:
+        cert_path.unlink(missing_ok=True)
+
+
+def name_to_text(name: object) -> str:
+    if not isinstance(name, tuple):
+        return ""
+    parts: list[str] = []
+    for group in name:
+        if not isinstance(group, tuple):
+            continue
+        for attribute in group:
+            if (
+                isinstance(attribute, tuple)
+                and len(attribute) == 2
+                and isinstance(attribute[0], str)
+            ):
+                parts.append(f"{attribute[0]}={attribute[1]}")
+    return ", ".join(parts)
 
 
 def assert_equal(actual: Any, expected: Any, name: str) -> None:

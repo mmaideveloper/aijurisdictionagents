@@ -9,6 +9,10 @@ import AIModelAdmin from "../pages/AIModelAdmin";
 const apiMocks = vi.hoisted(() => ({
   fetchAIModelAdminDashboard: vi.fn(),
   fetchAdminUsers: vi.fn(),
+  searchAIModelAssignmentUsers: vi.fn(),
+  fetchAIModelUserOverride: vi.fn(),
+  upsertAIModelUserOverride: vi.fn(),
+  disableAIModelUserOverride: vi.fn(),
   fetchOllamaModels: vi.fn(),
   importOllamaModel: vi.fn(),
   removeOllamaModel: vi.fn(),
@@ -18,6 +22,7 @@ const apiMocks = vi.hoisted(() => ({
   addAIModelGroupMember: vi.fn(),
   upsertAIModelRoutePolicy: vi.fn(),
   upsertAIModelCredential: vi.fn(),
+  patchAIModelCredential: vi.fn(),
   updateAdminUser: vi.fn()
 }));
 
@@ -122,7 +127,20 @@ const dashboard = {
       updated_at: "2026-06-27T10:00:00Z"
     }
   ],
-  credentials: [],
+  credentials: [
+    {
+      credential_id: "azure_foundry:api_key:default",
+      provider_id: "azure_foundry",
+      credential_name: "default",
+      secret_type: "api_key",
+      secret_preview: "****cret",
+      secret_value: null,
+      enabled: true,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-06-27T10:00:00Z",
+      last_revealed_at: null
+    }
+  ],
   policies: [
     {
       policy_id: "default:free:default",
@@ -207,9 +225,77 @@ describe("AIModelAdmin Ollama management", () => {
   beforeEach(() => {
     apiMocks.fetchAIModelAdminDashboard.mockResolvedValue(dashboard);
     apiMocks.fetchAdminUsers.mockResolvedValue({ items: dashboard.users, total: 1, limit: 25, offset: 0 });
+    apiMocks.searchAIModelAssignmentUsers.mockResolvedValue({ items: dashboard.users, total: 1, limit: 25 });
+    apiMocks.fetchAIModelUserOverride.mockResolvedValue({
+      user: dashboard.users[0],
+      override: null,
+      effective_route: {
+        route_type: "free_local",
+        task_type: "default",
+        plan_code: "free",
+        provider_id: "local_ollama",
+        provider_code: "local_ollama",
+        provider_display_name: "Local Ollama",
+        model_profile_id: "local_ollama_default",
+        model_code: "qwen3:1.7b",
+        deployment_name: "qwen3:1.7b",
+        is_external: false,
+        is_local: true,
+        requires_external_ack: false,
+        reason: "Default route"
+      }
+    });
+    apiMocks.upsertAIModelUserOverride.mockResolvedValue({
+      user: dashboard.users[0],
+      override: {
+        override_id: "override-1",
+        user_id: "admin-1",
+        model_profile_id: "azure_foundry_gpt_4o_mini",
+        enabled: true,
+        created_by_admin_user_id: "admin-1",
+        updated_by_admin_user_id: "admin-1",
+        disabled_by_admin_user_id: "",
+        created_reason: "Assign external model",
+        updated_reason: "Assign external model",
+        disabled_reason: "",
+        created_at: "2026-06-29T10:00:00Z",
+        updated_at: "2026-06-29T10:00:00Z",
+        disabled_at: null
+      },
+      effective_route: {
+        route_type: "user_override_external",
+        task_type: "default",
+        plan_code: "free",
+        provider_id: "azure_foundry",
+        provider_code: "azure_foundry",
+        provider_display_name: "Azure AI Foundry",
+        model_profile_id: "azure_foundry_gpt_4o_mini",
+        model_code: "gpt-4o-mini",
+        deployment_name: "gpt-4o-mini",
+        is_external: true,
+        is_local: false,
+        requires_external_ack: false,
+        reason: "Admin override"
+      }
+    });
     apiMocks.fetchOllamaModels.mockResolvedValue(inventory);
     apiMocks.importOllamaModel.mockResolvedValue({ job_id: "job-1", action: "pull", model: "gemma3:4b", status: "queued" });
     apiMocks.removeOllamaModel.mockResolvedValue({ job_id: "job-2", action: "remove", model: "llama3.2:3b", status: "queued" });
+    apiMocks.upsertAIModelProvider.mockResolvedValue(dashboard.providers[1]);
+    apiMocks.upsertAIModelProfile.mockImplementation((_, input) => {
+      const existingProfile =
+        dashboard.profiles.find((profile) => profile.model_profile_id === input.model_profile_id) ??
+        dashboard.profiles.find((profile) => profile.provider_id === input.provider_id) ??
+        dashboard.profiles[0]!;
+      return Promise.resolve({
+        ...existingProfile,
+        ...input,
+        model_profile_id: input.model_profile_id ?? `${input.provider_id}:${input.model_code}`,
+        created_at: existingProfile.created_at,
+        updated_at: "2026-06-30T10:00:00Z"
+      });
+    });
+    apiMocks.patchAIModelCredential.mockResolvedValue(dashboard.credentials[0]);
   });
 
   afterEach(() => {
@@ -245,9 +331,50 @@ describe("AIModelAdmin Ollama management", () => {
     await user.click(screen.getByRole("button", { name: /adminProfilesTitle/ }));
     expect(await screen.findByText("local_ollama_default")).toBeDefined();
     expect(screen.getByText("azure_foundry_gpt_4o_mini")).toBeDefined();
+    expect(screen.getByText(/adminCurrentFreeModel/)).toBeDefined();
+    expect(screen.getByText(/qwen3:1.7b \(Local Ollama\)/)).toBeDefined();
 
     await user.click(screen.getByRole("button", { name: /adminPoliciesTitle/ }));
     expect(await screen.findByText("adminPolicyHelp")).toBeDefined();
+  });
+
+  it("lets admins edit Azure provider URL and soft-disable provider credentials", async () => {
+    const user = userEvent.setup();
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminProvidersTitle/ }));
+    await user.click(screen.getAllByRole("button", { name: /adminEdit/ }).at(1)!);
+    const baseUrlInput = screen.getByLabelText("adminBaseUrl") as HTMLInputElement;
+    expect(baseUrlInput.value).toBe("");
+
+    await user.type(baseUrlInput, "https://example.openai.azure.com");
+    await user.type(screen.getByLabelText("adminReason"), "Configure Azure Foundry endpoint.");
+    await user.click(screen.getByRole("button", { name: /adminSaveProvider/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.upsertAIModelProvider).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        expect.objectContaining({
+          provider_code: "azure_foundry",
+          base_url: "https://example.openai.azure.com",
+          reason: "Configure Azure Foundry endpoint."
+        })
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: /adminCredentialsTitle/ }));
+    await user.click(await screen.findByRole("button", { name: /adminDisableCredential/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.patchAIModelCredential).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        "azure_foundry:api_key:default",
+        expect.objectContaining({
+          enabled: false,
+          reason: "Disable provider credential from admin UI."
+        })
+      );
+    });
   });
 
   it("lets admins update and disable routing policies", async () => {
@@ -315,10 +442,9 @@ describe("AIModelAdmin Ollama management", () => {
       );
     });
 
-    const defaultButtons = screen.getAllByRole("button", { name: /adminSetFreeDefault/ });
-    const enabledDefaultButton = defaultButtons.find((button) => !button.hasAttribute("disabled"));
-    expect(enabledDefaultButton).toBeDefined();
-    await user.click(enabledDefaultButton as HTMLElement);
+    expect(screen.getAllByRole("button", { name: /adminSetFreeDefault/ })).toHaveLength(1);
+    expect(screen.getByText(/qwen3:1.7b \(Local Ollama\)/)).toBeDefined();
+    await user.click(screen.getByRole("button", { name: /adminSetFreeDefault/ }));
 
     await waitFor(() => {
       expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
@@ -331,6 +457,10 @@ describe("AIModelAdmin Ollama management", () => {
         })
       );
     });
+    await waitFor(() => {
+      expect(screen.getByText(/llama3.2:3b \(Local Ollama\)/)).toBeDefined();
+    });
+    expect(screen.getAllByRole("button", { name: /adminSetFreeDefault/ })).toHaveLength(1);
   });
 
   it("starts import and safe remove jobs", async () => {
@@ -382,6 +512,30 @@ describe("AIModelAdmin Ollama management", () => {
           enabled: false,
           reason: "Disable imported local model"
         })
+      );
+    });
+  });
+
+  it("searches a user and saves a direct model assignment", async () => {
+    const user = userEvent.setup();
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminAssignmentTitle/ }));
+    await user.type(screen.getByLabelText("adminAssignmentEmailSearch"), "admin@example.com");
+    await user.click(screen.getByRole("button", { name: /adminAssignmentSearch/ }));
+    await screen.findByText("Admin User (admin@example.com)");
+    await user.selectOptions(screen.getByLabelText("adminAssignmentModel"), "azure_foundry_gpt_4o_mini");
+    await user.type(screen.getByLabelText("adminReason"), "Assign external model");
+    await user.click(screen.getByRole("button", { name: /adminAssignmentSave/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.upsertAIModelUserOverride).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
+        "admin-1",
+        {
+          model_profile_id: "azure_foundry_gpt_4o_mini",
+          reason: "Assign external model"
+        }
       );
     });
   });

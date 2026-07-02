@@ -385,6 +385,58 @@ def test_paid_external_route_requires_acknowledgement(tmp_path: Path) -> None:
     assert allowed.model_profile.model_code == "gpt-4.1"
 
 
+def test_enabled_user_override_takes_precedence_over_free_plan_policy(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    user = store.create_user(email="override@example.com", password="secret", full_name="Override User")
+    provider = store.upsert_ai_model_provider(
+        provider_code="azure_foundry_override",
+        provider_type="azurefoundry",
+        display_name="Azure AI Foundry Override",
+        base_url="https://example.openai.azure.com",
+        region="swedencentral",
+        data_zone="eu",
+        is_external=True,
+    )
+    profile = store.upsert_ai_model_profile(
+        provider_id=provider.provider_id,
+        model_code="gpt-4o-paid",
+        deployment_name="jurisdigta-gpt-4o-paid",
+        eu_data_zone_capable=True,
+    )
+    override = store.upsert_ai_model_user_override(
+        user_id=user.user_id,
+        model_profile_id=profile.model_profile_id,
+        admin_user_id="admin-1",
+        reason="Paid external model approved for this user.",
+    )
+
+    route = store.resolve_ai_model_route(
+        user_id=user.user_id,
+        plan_code="free",
+        task_type="legal_analysis",
+    )
+    store.disable_ai_model_user_override(
+        user_id=user.user_id,
+        admin_user_id="admin-1",
+        reason="Return user to plan policy.",
+    )
+    restored_route = store.resolve_ai_model_route(
+        user_id=user.user_id,
+        plan_code="free",
+        task_type="legal_analysis",
+    )
+
+    assert override.enabled is True
+    assert route.route_type == "user_override_external"
+    assert route.provider is not None
+    assert route.provider.provider_code == "azure_foundry_override"
+    assert route.model_profile is not None
+    assert route.model_profile.model_profile_id == profile.model_profile_id
+    assert restored_route.route_type == "free_local"
+    assert restored_route.model_profile is not None
+    assert restored_route.model_profile.model_profile_id == "local_ollama_default"
+
+
 def test_usage_ledger_summarizes_tokens_and_cost_by_model_without_identifiers(
     tmp_path: Path,
 ) -> None:

@@ -12,10 +12,12 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 
 from app.main import app as api_app
+from app import mcp_api
 from app.mcp_main import app as mcp_app
 from app.mcp_main import _redact_header_value
 from app.mcp_main import _redact_payload
 from app.users.totp import current_totp_code
+from services.court_decision_collector.domain import CourtDecisionSearchResult
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 api_client = TestClient(api_app)
@@ -51,6 +53,8 @@ def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law() 
     tools = {tool["name"]: tool for tool in tools_response.json()["result"]["tools"]}
     assert "Use this first for Slovak legal questions" in tools["searchLaws"]["description"]
     assert "Use after searchLaws to cite exact Slovak legal text" in tools["getLawText"]["description"]
+    assert "pseudonymized public snippets" in tools["searchCourtDecisions"]["description"]
+    assert "outputMode=public" in tools["getCourtDecision"]["description"]
 
 
 def test_mcp_accepts_mc_path_compatibility_alias_for_claude_connector_typo() -> None:
@@ -136,12 +140,38 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
     mcp_key = _create_mcp_key(tmp_path)
+    court_stats = {
+        "status": "ok",
+        "collector_status": "running",
+        "total_decisions": 2,
+        "published_decisions": 2,
+        "total_versions": 3,
+        "last_imported_decision": "fixture-sk-decision-2",
+        "last_imported_decision_id": "decision-2",
+        "last_imported_source_guid": "fixture-sk-decision-2",
+        "last_imported_at": "2026-06-30T10:00:00+00:00",
+        "last_imported_court_name": "Okresny sud Zilina",
+        "last_imported_court_type": "Okresny sud",
+        "last_imported_issue_date": "2026-06-29",
+        "last_imported_ecli": "ECLI:SK:OSZA:2026:2",
+        "last_imported_file_number": "12C/34/2026",
+        "collector_last_processed_at": "2026-06-30T10:00:00+00:00",
+        "collector_last_source_guid": "fixture-sk-decision-2",
+    }
+    monkeypatch.setattr(mcp_api, "_court_decision_statistics", lambda: court_stats)
 
     version_response = _mcp_call("getVersion")
     assert version_response.status_code == 200
     version_payload = _tool_payload(version_response)
     assert version_payload["api_version"]
     assert version_payload["mcp_server_version"] == version_payload["api_version"]
+    assert version_payload["court_decision_collector_version"]
+    assert version_payload["court_decision_collector"] == {
+        "version": version_payload["court_decision_collector_version"],
+        "status": "running",
+        "last_imported_decision": "fixture-sk-decision-2",
+        "last_imported_at": "2026-06-30T10:00:00+00:00",
+    }
 
     statistics_response = _mcp_call("getStatistics")
     assert statistics_response.status_code == 200
@@ -149,6 +179,12 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     assert statistics["processed_laws"] == 1
     assert statistics["last_processed_law"] == "1/1993"
     assert statistics["last_processed_day"] == "2026-06-01T12:00:00Z"
+    assert statistics["court_decision_collector_version"] == version_payload["court_decision_collector_version"]
+    assert statistics["total_court_decisions"] == 2
+    assert statistics["last_imported_decision"] == "fixture-sk-decision-2"
+    assert statistics["last_imported_decision_at"] == "2026-06-30T10:00:00+00:00"
+    assert statistics["court_decisions"]["published_decisions"] == 2
+    assert statistics["court_decisions"]["last_imported_file_number"] == "12C/34/2026"
 
     unauthenticated_search = _mcp_call("searchLaws", {"query": "civil"})
     assert unauthenticated_search.status_code == 401
@@ -172,6 +208,123 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     )
     assert text_response.status_code == 200
     assert _tool_payload(text_response)["content_text"] == "Civil code full text."
+
+
+def test_mcp_court_decision_tools_require_auth() -> None:
+    unauthenticated_search = _mcp_call("searchCourtDecisions", {"query": "najomna zmluva"})
+    assert unauthenticated_search.status_code == 401
+
+    unauthenticated_detail = _mcp_call("getCourtDecision", {"decision_id": "decision-1"})
+    assert unauthenticated_detail.status_code == 401
+
+
+def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_logs(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class FakeCourtDecisionStore:
+        def search(self, *, query: str, limit: int) -> list[CourtDecisionSearchResult]:
+            assert query == "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu"
+            assert limit == 1
+            return [
+                CourtDecisionSearchResult(
+                    decision_id="decision-1",
+                    version_id="version-1",
+                    source_guid="infosud-1",
+                    court_name="Okresny sud Bratislava I",
+                    court_type="Okresny sud",
+                    file_number="12C/34/2026",
+                    case_number="12C/34/2026",
+                    ecli="ECLI:SK:OSBA1:2026:1234567890.1",
+                    issue_date="2026-06-29",
+                    source_url="https://example.test/decision/1",
+                    snippet="Pseudonymizovane rozhodnutie o rozdeleni pozemku podla podielu.",
+                    score=0.91,
+                )
+            ]
+
+    def fake_court_decision_store(**kwargs: object) -> FakeCourtDecisionStore:
+        assert kwargs["initialize"] is False
+        assert kwargs["connect_timeout_seconds"] == 3
+        assert kwargs["statement_timeout_ms"] == 8000
+        return FakeCourtDecisionStore()
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", fake_court_decision_store)
+    caplog.set_level(logging.INFO, logger="aijuristiction-api.mcp")
+    secret_query = "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu"
+
+    response = _mcp_call(
+        "searchCourtDecisions",
+        {"query": secret_query, "limit": 1},
+        headers={"authorization": f"Bearer {mcp_key}", "x-request-id": "court-search-request"},
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["status"] == "ok"
+    assert payload["output_mode"] == "public"
+    assert payload["timeout_ms"] == 8000
+    assert payload["results"][0]["decision_id"] == "decision-1"
+    assert payload["results"][0]["issue_date"] == "2026-06-29"
+    mcp_log_messages = [
+        record.getMessage() for record in caplog.records if record.name == "aijuristiction-api.mcp"
+    ]
+    assert any("mcp_tool_search_court_decisions_result result_count=1" in message for message in mcp_log_messages)
+    joined_logs = "\n".join(mcp_log_messages)
+    assert secret_query not in joined_logs
+    assert "Pseudonymizovane rozhodnutie" not in joined_logs
+    assert mcp_key not in joined_logs
+
+
+def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class TimeoutCourtDecisionStore:
+        def search(self, *, query: str, limit: int) -> list[CourtDecisionSearchResult]:
+            raise TimeoutError("statement timeout")
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: TimeoutCourtDecisionStore())
+    caplog.set_level(logging.INFO, logger="aijuristiction-api.mcp")
+
+    response = _mcp_call(
+        "searchCourtDecisions",
+        {
+            "query": "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu",
+            "limit": 5,
+        },
+        headers={
+            "authorization": f"Bearer {mcp_key}",
+            "x-request-id": "court-timeout-request",
+            "x-correlation-id": "court-timeout-correlation",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["status"] == "degraded"
+    assert payload["retryable"] is True
+    assert payload["results"] == []
+    assert payload["error"]["code"] == "court_decision_search_timeout"
+    assert payload["error"]["kind"] == "timeout"
+    assert payload["error"]["correlation_id"] == "court-timeout-correlation"
+    assert payload["error"]["request_id"] == "court-timeout-request"
+    assert payload["timeout_ms"] == 8000
+    assert payload["limit"] == 5
+    assert any(
+        "mcp_tool_search_court_decisions_degraded" in record.getMessage()
+        and "error_kind=timeout" in record.getMessage()
+        for record in caplog.records
+        if record.name == "aijuristiction-api.mcp"
+    )
 
 
 def test_mcp_search_prefers_base_law_over_newer_amendment(monkeypatch, tmp_path: Path) -> None:
@@ -448,7 +601,7 @@ def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> No
     token = create_key_response.json()["mcp_api_key"]
     claims = _jwt_claims(token)
     assert claims["sub"] == sign_up_response.json()["user_id"]
-    assert claims["aud"] == "https://mcp.jurisdigta.eu/mcp"
+    assert claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
     assert claims["iss"] == "https://mcp.jurisdigta.eu"
     assert claims["scope"] == "mcp:laws"
     assert claims["token_use"] == "access"
@@ -727,7 +880,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
 
     protected_metadata = mcp_client.get("/.well-known/oauth-protected-resource/MCP")
     assert protected_metadata.status_code == 200
-    assert protected_metadata.json()["resource"].endswith("/mcp")
+    assert protected_metadata.json()["resource"].endswith("/MCP")
     assert protected_metadata.json()["resource_name"] == "JurisDigta MCP"
     assert protected_metadata.json()["scopes_supported"] == ["mcp:laws"]
     claude_web_protected_metadata = mcp_client.get(
@@ -741,6 +894,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     )
     assert claude_web_authorization_metadata.status_code == 200
     assert claude_web_authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
+    assert claude_web_authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
     monkeypatch.setenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY", "true")
     claude_web_authorization_metadata_with_legacy_flag = mcp_client.get(
         "/.well-known/oauth-authorization-server",
@@ -767,8 +921,8 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_metadata.json()["grant_types_supported"] == ["authorization_code", "refresh_token"]
     assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws", "offline_access"]
     assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
-    assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is False
-    assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/mcp"]
+    assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
+    assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/MCP"]
 
     registration_response = mcp_client.post(
         "/oauth/register",
@@ -804,6 +958,28 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert claude_variant_payload["grant_types"] == ["authorization_code", "refresh_token"]
     assert claude_variant_payload["token_endpoint_auth_method"] == "none"
     assert claude_variant_payload["scope"] == "mcp:laws offline_access"
+
+    additional_hosted_registration = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Hosted OAuth clients",
+            "redirect_uris": [
+                "https://vscode.dev/redirect",
+                "https://claude.ai/api/mcp/auth_callback",
+                "https://www.perplexity.ai/rest/connections/oauth_callback",
+            ],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+    assert additional_hosted_registration.status_code == 201
+    assert additional_hosted_registration.json()["redirect_uris"] == [
+        "https://vscode.dev/redirect",
+        "https://claude.ai/api/mcp/auth_callback",
+        "https://www.perplexity.ai/rest/connections/oauth_callback",
+    ]
 
     loopback_registration = mcp_client.post(
         "/oauth/register",
@@ -877,7 +1053,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert location.startswith("https://client.example/callback?")
     callback_query = parse_qs(urlparse(location).query)
     assert callback_query["state"] == ["abc"]
-    assert "iss" not in callback_query
+    assert callback_query["iss"] == ["https://mcp.jurisdigta.eu"]
     authorization_code = callback_query["code"][0]
 
     token_response = mcp_client.post(
@@ -973,7 +1149,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
 def test_oauth_authorization_response_issuer_can_be_enabled(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
-    monkeypatch.setenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", "true")
+    monkeypatch.delenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", raising=False)
     sign_up_response = api_client.post(
         "/v1/users/sign-up",
         headers=AUTH_HEADERS,
@@ -1145,7 +1321,7 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     )
 
     assert protected_metadata.status_code == 200
-    assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/mcp"
+    assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
     assert protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
     assert lower_mcp_protected_metadata.status_code == 200
     assert lower_mcp_protected_metadata.json() == protected_metadata.json()
@@ -1153,10 +1329,30 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
     assert authorization_metadata.json()["registration_endpoint"] == "https://mcp.jurisdigta.eu/oauth/register"
+    assert authorization_metadata.json()["client_id_metadata_document_supported"] is True
     assert mcp_path_authorization_metadata.status_code == 200
     assert mcp_path_authorization_metadata.json() == authorization_metadata.json()
     assert lower_mcp_authorization_metadata.status_code == 200
     assert lower_mcp_authorization_metadata.json() == authorization_metadata.json()
+
+
+def test_oauth_registration_accepts_loopback_redirect_for_local_clients(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+
+    registration_response = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Claude Desktop mcp-remote",
+            "redirect_uris": ["http://127.0.0.1:3334/callback", "http://localhost:3334/callback"],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+
+    assert registration_response.status_code == 201
+    assert registration_response.json()["token_endpoint_auth_method"] == "none"
 
 
 def test_oauth_registration_rejects_unregistered_redirect_host(monkeypatch, tmp_path: Path) -> None:
@@ -1175,6 +1371,68 @@ def test_oauth_registration_rejects_unregistered_redirect_host(monkeypatch, tmp_
     assert registration_response.json()["detail"] == "Unregistered redirect_uri host"
 
 
+def test_oauth_authorize_accepts_client_id_metadata_document(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    client_id = "https://client.example/oauth/client-metadata.json"
+
+    monkeypatch.setattr(
+        "app.mcp_api._fetch_client_id_metadata_document",
+        lambda client_id: {
+            "client_id": client_id,
+            "client_name": "Example MCP Client",
+            "redirect_uris": ["http://127.0.0.1:3334/callback"],
+        },
+    )
+
+    response = mcp_client.get(
+        "/oauth/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": "http://127.0.0.1:3334/callback",
+            "code_challenge": "test-challenge",
+            "code_challenge_method": "S256",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+            "state": "abc",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Authorize MCP access" in response.text
+
+
+def test_oauth_authorize_rejects_unregistered_client_id_metadata_redirect(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    client_id = "https://client.example/oauth/client-metadata.json"
+
+    monkeypatch.setattr(
+        "app.mcp_api._fetch_client_id_metadata_document",
+        lambda client_id: {
+            "client_id": client_id,
+            "client_name": "Example MCP Client",
+            "redirect_uris": ["https://client.example/callback"],
+        },
+    )
+
+    response = mcp_client.get(
+        "/oauth/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": "http://127.0.0.1:3334/callback",
+            "code_challenge": "test-challenge",
+            "code_challenge_method": "S256",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "redirect_uri is not registered for client_id"
+
+
 def _configure_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("DB_OPTION", "local")
     monkeypatch.setenv("STORAGE_OPTION", "local")
@@ -1189,7 +1447,7 @@ def _configure_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu")
     monkeypatch.setenv(
         "MCP_OAUTH_ALLOWED_REDIRECT_HOSTS",
-        "client.example,chatgpt.com,claude.ai,localhost,127.0.0.1,::1",
+        "client.example,chatgpt.com,claude.ai,vscode.dev,www.perplexity.ai",
     )
 
 

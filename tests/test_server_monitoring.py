@@ -7,6 +7,7 @@ from pathlib import Path
 from scripts.server.export_ollama_metrics import _render_ollama_metrics
 from scripts.server.export_system_status_metrics import _merge_local_runtime, _render_metrics
 from scripts.server.write_system_status import (
+    _court_decision_log_status,
     _http_log_metrics,
     _latest_document_processor_run_summary,
     _latest_laws_run_summary,
@@ -66,6 +67,23 @@ def test_monitoring_dashboards_include_ollama_ai_models_dashboard() -> None:
     assert "Paid Model Total Tokens" in panel_titles
     assert "Top 10 Cases By Tokens (Masked)" in panel_titles
     assert any(item["name"] == "usage_window" for item in dashboard["templating"]["list"])
+
+
+def test_monitoring_dashboards_include_court_decision_service_dashboard() -> None:
+    dashboard_path = (
+        MONITORING_DIR
+        / "grafana"
+        / "dashboards"
+        / "jurisdigta-court-decision-service.json"
+    )
+    dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    panel_titles = {str(panel.get("title")) for panel in dashboard["panels"]}
+
+    assert dashboard["uid"] == "jurisdigta-court-decision-service"
+    assert "Collector Status" in panel_titles
+    assert "Imported Decisions" in panel_titles
+    assert "Versions With Embeddings" in panel_titles
+    assert "Recent Sanitized Error List" in panel_titles
 
 
 def test_monitoring_stack_loads_ai_model_alert_rules() -> None:
@@ -360,6 +378,100 @@ def test_exporter_renders_email_and_document_processor_metrics() -> None:
     assert "jurisdigta_document_processor_last_run_processed 6.0" in metrics
 
 
+def test_court_decision_log_status_is_aggregate_and_sanitized(tmp_path: Path) -> None:
+    log_file = tmp_path / "court-decision-collector.log"
+    log_file.write_text(
+        "\n".join(
+            [
+                (
+                    "[2026-06-20T01:00:00Z] court_decision_collector "
+                    "processing_judicial_decision source_guid=fixture-1 number=12C/34/2024"
+                ),
+                (
+                    "[2026-06-20T01:00:01Z] court_decision_collector "
+                    "processed_judicial_decision source_guid=fixture-1 status=created"
+                ),
+                (
+                    "[2026-06-20T01:05:00Z] court_decision_collector "
+                    "waiting_for_new_judicial_decisions status=up_to_date"
+                ),
+                (
+                    "[2026-06-20T01:06:00Z] court_decision_collector failed "
+                    "url=postgresql://user:secret@db/court_decisions_sk token=abc123"
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _court_decision_log_status(log_file)
+
+    assert payload["processing_events"] == 1
+    assert payload["processed_events"] == 1
+    assert payload["idle_events"] == 1
+    assert payload["last_activity_at"] == "2026-06-20T01:06:00Z"
+    assert payload["recent_errors"] == [
+        {
+            "timestamp": "2026-06-20T01:06:00Z",
+            "message": (
+                "[2026-06-20T01:06:00Z] court_decision_collector failed "
+                "url=postgresql://user:***@db/court_decisions_sk token=***"
+            ),
+        }
+    ]
+
+
+def test_exporter_renders_court_decision_metrics() -> None:
+    metrics = _render_metrics(
+        {
+            "status": "ok",
+            "system": {
+                "status": "ok",
+                "apps": {
+                    "court_decision_collector": {
+                        "status": "ok",
+                        "total_decisions": 12,
+                        "published_decisions": 10,
+                        "total_versions": 14,
+                        "versions_with_embeddings": 13,
+                        "processing_events": 8,
+                        "processed_events": 7,
+                        "idle_events": 2,
+                        "last_activity_at": "2026-06-20T01:06:00Z",
+                        "latest_imported_at": "2026-06-20T01:00:01Z",
+                        "latest_update_event_at": "2026-06-20T01:00:02Z",
+                        "recent_errors": [
+                            {
+                                "timestamp": "2026-06-20T01:06:00Z",
+                                "message": "failed import_key=live_loop",
+                            }
+                        ],
+                    },
+                },
+            },
+        }
+    )
+
+    assert (
+        'jurisdigta_component_status{component="court_decision_collector",status="ok"} 1.0'
+        in metrics
+    )
+    assert 'jurisdigta_court_decisions_total{status="all"} 12.0' in metrics
+    assert 'jurisdigta_court_decisions_total{status="published"} 10.0' in metrics
+    assert "jurisdigta_court_decision_versions_total 14.0" in metrics
+    assert "jurisdigta_court_decision_versions_with_embeddings_total 13.0" in metrics
+    assert (
+        'jurisdigta_court_decision_collector_events_total{event="processed"} 7.0'
+        in metrics
+    )
+    assert "jurisdigta_court_decision_collector_last_activity_timestamp_seconds" in metrics
+    assert (
+        'jurisdigta_court_decision_recent_error_info{index="1",'
+        'timestamp="2026-06-20T01:06:00Z",message="failed import_key=live_loop"} 1'
+        in metrics
+    )
+
+
 def test_ollama_exporter_renders_runtime_model_metrics(monkeypatch) -> None:
     responses = {
         "http://127.0.0.1:11434/api/tags": (
@@ -432,3 +544,29 @@ def test_exporter_merges_laws_runtime_from_local_status_file(monkeypatch, tmp_pa
 
     assert payload["laws_collector"]["runtime"]["last_run_duration_seconds"] == 18
     assert payload["laws_collector"]["runtime"]["last_run_imported_laws"] == 2
+
+
+def test_exporter_merges_court_decision_runtime_from_local_status_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    status_file = tmp_path / "system-status.json"
+    status_file.write_text(
+        json.dumps(
+            {
+                "apps": {
+                    "court_decision_collector": {
+                        "status": "ok",
+                        "total_decisions": 3,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SYSTEM_STATUS_FILE", str(status_file))
+
+    payload = _merge_local_runtime({"status": "ok"})
+
+    assert payload["court_decision_collector"]["status"] == "ok"
+    assert payload["court_decision_collector"]["total_decisions"] == 3

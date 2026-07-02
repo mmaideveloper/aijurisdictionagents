@@ -1,26 +1,34 @@
 import React from "react";
-import { FaBriefcase, FaCheck, FaDownload, FaEdit, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserPlus, FaUsers } from "react-icons/fa";
+import { FaBriefcase, FaCheck, FaDownload, FaEdit, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserCog, FaUserPlus, FaUsers } from "react-icons/fa";
 import {
   AIModelAdminDashboard,
   AIModelProfile,
   AIModelRoutePolicy,
+  AIModelUserOverrideDetail,
   AdminCaseList,
   AdminCaseSummary,
   AdminCaseUser,
+  AdminUserSummary,
+  AIModelCredential,
   AdminUsersPage,
   OllamaModelInventory,
+  disableAIModelUserOverride,
   fetchAdminUsers,
   fetchAdminUserCases,
   fetchAIModelAdminDashboard,
+  fetchAIModelUserOverride,
   fetchOllamaModels,
   searchAdminCaseUsers,
+  searchAIModelAssignmentUsers,
   softDeleteAdminCase,
+  upsertAIModelUserOverride,
   upsertAIModelProvider,
   upsertAIModelProfile,
   upsertAIModelGroup,
   addAIModelGroupMember,
   upsertAIModelRoutePolicy,
   upsertAIModelCredential,
+  patchAIModelCredential,
   importOllamaModel,
   removeOllamaModel,
   updateAdminUser
@@ -28,7 +36,7 @@ import {
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
-type AdminSection = "users" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollama" | "audit";
+type AdminSection = "users" | "assignments" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollama" | "audit";
 
 const emptyProvider = {
   provider_code: "",
@@ -113,6 +121,11 @@ const AIModelAdmin: React.FC = () => {
   const [selectedCaseUser, setSelectedCaseUser] = React.useState<AdminCaseUser | null>(null);
   const [adminCaseList, setAdminCaseList] = React.useState<AdminCaseList | null>(null);
   const [caseDeleteReason, setCaseDeleteReason] = React.useState(t("adminCasesDefaultReason"));
+  const [assignmentQuery, setAssignmentQuery] = React.useState("");
+  const [assignmentUsers, setAssignmentUsers] = React.useState<AdminUserSummary[]>([]);
+  const [assignmentDetail, setAssignmentDetail] = React.useState<AIModelUserOverrideDetail | null>(null);
+  const [assignmentModelProfileId, setAssignmentModelProfileId] = React.useState("");
+  const [assignmentReason, setAssignmentReason] = React.useState("");
   const [ollamaModel, setOllamaModel] = React.useState("");
   const [ollamaReason, setOllamaReason] = React.useState("");
   const [ollamaRemoveReason, setOllamaRemoveReason] = React.useState("");
@@ -202,6 +215,35 @@ const AIModelAdmin: React.FC = () => {
     }
   }, [adminAuth, adminUserId, caseUserQuery, loadAdminCasesForUser, t]);
 
+  const loadAssignmentForUser = React.useCallback(async (targetUser: AdminUserSummary) => {
+    if (!adminUserId) return;
+    setError("");
+    try {
+      const detail = await fetchAIModelUserOverride(adminAuth, targetUser.user_id);
+      setAssignmentDetail(detail);
+      setAssignmentModelProfileId(detail.override?.model_profile_id ?? "");
+      setAssignmentReason("");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("adminAssignmentLoadFailed"));
+    }
+  }, [adminAuth, adminUserId, t]);
+
+  const searchAssignmentUsers = React.useCallback(async () => {
+    if (!adminUserId || !assignmentQuery.trim()) return;
+    setError("");
+    setStatus("");
+    try {
+      const results = await searchAIModelAssignmentUsers(adminAuth, assignmentQuery, 25);
+      setAssignmentUsers(results.items);
+      const onlyResult = results.items[0];
+      if (results.items.length === 1 && onlyResult) {
+        await loadAssignmentForUser(onlyResult);
+      }
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("adminAssignmentSearchFailed"));
+    }
+  }, [adminAuth, adminUserId, assignmentQuery, loadAssignmentForUser, t]);
+
   React.useEffect(() => {
     void reload();
   }, [reload]);
@@ -261,6 +303,46 @@ const AIModelAdmin: React.FC = () => {
 
   const localProfiles = dashboard?.profiles.filter((profile) => profile.model_profile_id.includes("local") || profile.provider_id.includes("local")) ?? [];
   const externalProfiles = dashboard?.profiles.filter((profile) => !localProfiles.includes(profile)) ?? [];
+  const enabledProfiles = dashboard?.profiles.filter((profile) => profile.enabled) ?? [];
+  const freeDefaultProfile = dashboard?.profiles.find((profile) => profile.is_default_for_free);
+  const freeDefaultProvider = freeDefaultProfile ? providerById.get(freeDefaultProfile.provider_id) : undefined;
+  const freeDefaultLabel = freeDefaultProfile
+    ? `${freeDefaultProfile.deployment_name || freeDefaultProfile.model_code} (${freeDefaultProvider?.display_name ?? freeDefaultProfile.provider_id})`
+    : t("adminNoFreeModel");
+  const applyProfileToDashboard = React.useCallback((savedProfile: AIModelProfile) => {
+    setDashboard((current) => {
+      if (!current) return current;
+      const profiles = current.profiles.map((profile) => {
+        if (profile.model_profile_id === savedProfile.model_profile_id) {
+          return savedProfile;
+        }
+        return savedProfile.is_default_for_free ? { ...profile, is_default_for_free: false } : profile;
+      });
+      if (!profiles.some((profile) => profile.model_profile_id === savedProfile.model_profile_id)) {
+        profiles.push(savedProfile);
+      }
+      return { ...current, profiles };
+    });
+  }, []);
+  const providerToForm = (provider: AIModelAdminDashboard["providers"][number], overrides: Partial<typeof emptyProvider> = {}) => ({
+    provider_code: provider.provider_code,
+    provider_type: provider.provider_type,
+    display_name: provider.display_name,
+    base_url: provider.base_url,
+    region: provider.region,
+    data_zone: provider.data_zone,
+    health_check_url: provider.health_check_url,
+    is_external: provider.is_external,
+    is_local: provider.is_local,
+    enabled: provider.enabled,
+    reason: "",
+    ...overrides
+  });
+  const saveProviderChange = (
+    provider: AIModelAdminDashboard["providers"][number],
+    overrides: Partial<typeof emptyProvider>,
+    successMessage: string
+  ) => runAction(() => upsertAIModelProvider(adminAuth, providerToForm(provider, overrides)), successMessage);
   const profileToForm = (profile: AIModelProfile, overrides: Partial<typeof emptyProfile> = {}) => ({
     model_profile_id: profile.model_profile_id,
     provider_id: profile.provider_id,
@@ -280,7 +362,40 @@ const AIModelAdmin: React.FC = () => {
     profile: AIModelProfile,
     overrides: Partial<typeof emptyProfile>,
     successMessage: string
-  ) => runAction(() => upsertAIModelProfile(adminAuth, profileToForm(profile, overrides)), successMessage);
+  ) => {
+    setError("");
+    setStatus("");
+    void (async () => {
+      try {
+        const savedProfile = await upsertAIModelProfile(adminAuth, profileToForm(profile, overrides));
+        setStatus(successMessage);
+        await reload();
+        await loadUsersPage(usersOffset);
+        applyProfileToDashboard(savedProfile);
+      } catch (actionError) {
+        setError(actionError instanceof Error ? actionError.message : t("adminSaveFailed"));
+      }
+    })();
+  };
+  const credentialToForm = (credential: AIModelCredential) => ({
+    provider_id: credential.provider_id,
+    credential_name: credential.credential_name,
+    secret_type: credential.secret_type,
+    secret_value: "",
+    enabled: credential.enabled,
+    reason: ""
+  });
+  const saveCredentialEnabled = (
+    credential: AIModelCredential,
+    enabled: boolean,
+    successMessage: string
+  ) => runAction(
+    () => patchAIModelCredential(adminAuth, credential.credential_id, {
+      enabled,
+      reason: enabled ? "Enable provider credential from admin UI." : "Disable provider credential from admin UI."
+    }),
+    successMessage
+  );
   const policyToForm = (policy: AIModelRoutePolicy, overrides: Partial<typeof emptyPolicy> = {}) => ({
     policy_id: policy.policy_id,
     task_type: policy.task_type,
@@ -321,6 +436,7 @@ const AIModelAdmin: React.FC = () => {
 
   const sections: Array<{ key: AdminSection; label: string; icon: React.ReactNode }> = [
     { key: "users", label: t("adminUsersTitle"), icon: <FaUsers aria-hidden="true" /> },
+    { key: "assignments", label: t("adminAssignmentTitle"), icon: <FaUserCog aria-hidden="true" /> },
     { key: "cases", label: t("adminCasesTitle"), icon: <FaBriefcase aria-hidden="true" /> },
     { key: "providers", label: t("adminProvidersTitle"), icon: <FaServer aria-hidden="true" /> },
     { key: "profiles", label: t("adminProfilesTitle"), icon: <FaServer aria-hidden="true" /> },
@@ -435,6 +551,117 @@ const AIModelAdmin: React.FC = () => {
             </section>
           ) : null}
 
+          {activeSection === "assignments" ? (
+            <section className="admin-grid">
+              <form className="admin-panel" onSubmit={(event) => {
+                event.preventDefault();
+                void searchAssignmentUsers();
+              }}>
+                <h2>{t("adminAssignmentTitle")}</h2>
+                <p className="admin-muted">{t("adminAssignmentHelp")}</p>
+                <label>
+                  {t("adminAssignmentEmailSearch")}
+                  <input
+                    value={assignmentQuery}
+                    onChange={(event) => setAssignmentQuery(event.target.value)}
+                    placeholder="user@example.com"
+                    type="email"
+                  />
+                </label>
+                <button className="primary-button" type="submit" disabled={!assignmentQuery.trim()}>
+                  <FaSearch aria-hidden="true" />{t("adminAssignmentSearch")}
+                </button>
+                <AdminRecordsTable
+                  emptyLabel={t("adminAssignmentNoUsers")}
+                  headers={[t("adminUser"), t("adminStatus"), t("adminAction")]}
+                  rows={assignmentUsers.map((item) => [
+                    `${item.full_name} (${item.email})`,
+                    item.is_enabled ? t("adminEnabled") : t("adminDisabled"),
+                    <button className="button ghost" type="button" onClick={() => void loadAssignmentForUser(item)}>
+                      {t("adminAssignmentSelectUser")}
+                    </button>
+                  ])}
+                />
+              </form>
+
+              <form className="admin-panel" onSubmit={(event) => {
+                event.preventDefault();
+                if (!assignmentDetail) return;
+                void runAction(
+                  async () => {
+                    const detail = await upsertAIModelUserOverride(adminAuth, assignmentDetail.user.user_id, {
+                      model_profile_id: assignmentModelProfileId,
+                      reason: assignmentReason
+                    });
+                    setAssignmentDetail(detail);
+                    setAssignmentModelProfileId(detail.override?.model_profile_id ?? "");
+                    setAssignmentReason("");
+                  },
+                  t("adminAssignmentSaved")
+                );
+              }}>
+                <h2>{assignmentDetail ? assignmentDetail.user.email : t("adminAssignmentSelectedUser")}</h2>
+                <p className="admin-muted">{t("adminAssignmentPrivacyNote")}</p>
+                <div className="admin-highlight">
+                  <strong>{t("adminAssignmentCurrentModel")}</strong>
+                  <span>{assignmentDetail?.override?.enabled ? assignmentDetail.override.model_profile_id : t("adminNotConfigured")}</span>
+                </div>
+                <div className="admin-highlight">
+                  <strong>{t("adminAssignmentEffectiveRoute")}</strong>
+                  <span>
+                    {assignmentDetail
+                      ? `${assignmentDetail.effective_route.route_type}: ${assignmentDetail.effective_route.provider_display_name ?? t("adminNotConfigured")} / ${assignmentDetail.effective_route.model_code ?? t("adminNotConfigured")}`
+                      : t("adminAssignmentSelectUserFirst")}
+                  </span>
+                </div>
+                <label>
+                  {t("adminAssignmentModel")}
+                  <select
+                    value={assignmentModelProfileId}
+                    onChange={(event) => setAssignmentModelProfileId(event.target.value)}
+                    disabled={!assignmentDetail}
+                  >
+                    <option value="">{t("adminSelect")}</option>
+                    {enabledProfiles.map((profile) => (
+                      <option key={profile.model_profile_id} value={profile.model_profile_id}>
+                        {providerById.get(profile.provider_id)?.display_name ?? profile.provider_id} / {profile.model_code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  {t("adminReason")}
+                  <input
+                    value={assignmentReason}
+                    onChange={(event) => setAssignmentReason(event.target.value)}
+                  />
+                </label>
+                <div className="admin-actions">
+                  <button className="primary-button" type="submit" disabled={!assignmentDetail || !assignmentModelProfileId || !assignmentReason.trim()}>
+                    <FaPlus aria-hidden="true" />{assignmentDetail?.override?.enabled ? t("adminAssignmentUpdate") : t("adminAssignmentSave")}
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={!assignmentDetail?.override?.enabled || !assignmentReason.trim()}
+                    onClick={() => void runAction(
+                      async () => {
+                        if (!assignmentDetail) return;
+                        const detail = await disableAIModelUserOverride(adminAuth, assignmentDetail.user.user_id, assignmentReason);
+                        setAssignmentDetail(detail);
+                        setAssignmentModelProfileId("");
+                        setAssignmentReason("");
+                      },
+                      t("adminAssignmentDeleted")
+                    )}
+                  >
+                    <FaTrash aria-hidden="true" />{t("adminAssignmentDelete")}
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
+
           {activeSection === "cases" ? (
             <section className="admin-grid">
               <form className="admin-panel" onSubmit={(event) => {
@@ -525,12 +752,31 @@ const AIModelAdmin: React.FC = () => {
               <h2>{t("adminProvidersTitle")}</h2>
               <AdminRecordsTable
                 emptyLabel={t("adminEmptyProviders")}
-                headers={[t("adminProviderCode"), t("adminProviderType"), t("adminBaseUrl"), t("adminStatus")]}
+                headers={[t("adminProviderCode"), t("adminProviderType"), t("adminBaseUrl"), t("adminStatus"), t("adminAction")]}
                 rows={(dashboard?.providers ?? []).map((provider) => [
                   provider.display_name,
                   provider.provider_type,
                   provider.base_url || provider.health_check_url || t("adminNotConfigured"),
-                  provider.enabled ? t("adminEnabled") : t("adminDisabled")
+                  provider.enabled ? t("adminEnabled") : t("adminDisabled"),
+                  <div className="admin-inline-actions">
+                    <button className="button ghost" type="button" onClick={() => setProviderForm(providerToForm(provider))}>
+                      <FaEdit aria-hidden="true" />{t("adminEdit")}
+                    </button>
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={() => void saveProviderChange(
+                        provider,
+                        {
+                          enabled: !provider.enabled,
+                          reason: provider.enabled ? "Disable provider from admin UI." : "Enable provider from admin UI."
+                        },
+                        provider.enabled ? t("adminProviderDisabled") : t("adminProviderEnabled")
+                      )}
+                    >
+                      <FaCheck aria-hidden="true" />{provider.enabled ? t("adminDisableProvider") : t("adminEnableProvider")}
+                    </button>
+                  </div>
                 ])}
               />
               <label>{t("adminProviderCode")}<input value={providerForm.provider_code} onChange={(event) => setProviderForm({ ...providerForm, provider_code: event.target.value })} /></label>
@@ -538,11 +784,14 @@ const AIModelAdmin: React.FC = () => {
               <label>{t("adminDisplayName")}<input value={providerForm.display_name} onChange={(event) => setProviderForm({ ...providerForm, display_name: event.target.value })} /></label>
               <label>{t("adminBaseUrl")}<input value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} /></label>
               <label>{t("adminRegion")}<input value={providerForm.region} onChange={(event) => setProviderForm({ ...providerForm, region: event.target.value })} /></label>
+              <label>{t("adminDataZone")}<input value={providerForm.data_zone} onChange={(event) => setProviderForm({ ...providerForm, data_zone: event.target.value })} /></label>
+              <label>{t("adminHealthUrl")}<input value={providerForm.health_check_url} onChange={(event) => setProviderForm({ ...providerForm, health_check_url: event.target.value })} /></label>
               <div className="admin-toggle-row">
                 <label><input type="checkbox" checked={providerForm.is_external} onChange={(event) => setProviderForm({ ...providerForm, is_external: event.target.checked })} />{t("adminExternal")}</label>
                 <label><input type="checkbox" checked={providerForm.is_local} onChange={(event) => setProviderForm({ ...providerForm, is_local: event.target.checked })} />{t("adminLocal")}</label>
                 <label><input type="checkbox" checked={providerForm.enabled} onChange={(event) => setProviderForm({ ...providerForm, enabled: event.target.checked })} />{t("adminEnabled")}</label>
               </div>
+              <label>{t("adminReason")}<input value={providerForm.reason} onChange={(event) => setProviderForm({ ...providerForm, reason: event.target.value })} /></label>
               <button className="primary-button" type="submit"><FaPlus aria-hidden="true" />{t("adminSaveProvider")}</button>
             </form>
           ) : null}
@@ -583,7 +832,6 @@ const AIModelAdmin: React.FC = () => {
                     <button
                       className="button ghost"
                       type="button"
-                      disabled={profile.is_default_for_free || !(providerById.get(profile.provider_id)?.is_local ?? false)}
                       onClick={() => void saveProfileChange(
                         profile,
                         {
@@ -593,12 +841,14 @@ const AIModelAdmin: React.FC = () => {
                         },
                         t("adminDefaultLocalModelSet")
                       )}
+                      hidden={profile.is_default_for_free || !(providerById.get(profile.provider_id)?.is_local ?? false)}
                     >
                       <FaCheck aria-hidden="true" />{t("adminSetFreeDefault")}
                     </button>
                   </div>
                 ])}
               />
+              <p className="admin-muted">{t("adminCurrentFreeModel")}: <strong>{freeDefaultLabel}</strong></p>
               <label>{t("adminProvider")}<select value={profileForm.provider_id} onChange={(event) => setProfileForm({ ...profileForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{dashboard?.providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
               <label>{t("adminModelCode")}<input value={profileForm.model_code} onChange={(event) => setProfileForm({ ...profileForm, model_code: event.target.value })} /></label>
               <label>{t("adminDeployment")}<input value={profileForm.deployment_name} onChange={(event) => setProfileForm({ ...profileForm, deployment_name: event.target.value })} /></label>
@@ -621,13 +871,15 @@ const AIModelAdmin: React.FC = () => {
               void runAction(() => upsertAIModelCredential(adminAuth, credentialForm), t("adminSaved"));
             }}>
               <h2>{t("adminCredentialsTitle")}</h2>
+              <p className="admin-muted">{t("adminCredentialsHelp")}</p>
               <label>{t("adminProvider")}<select value={credentialForm.provider_id} onChange={(event) => setCredentialForm({ ...credentialForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{dashboard?.providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
               <label>{t("adminCredentialName")}<input value={credentialForm.credential_name} onChange={(event) => setCredentialForm({ ...credentialForm, credential_name: event.target.value })} /></label>
               <label>{t("adminCredentialType")}<input value={credentialForm.secret_type} onChange={(event) => setCredentialForm({ ...credentialForm, secret_type: event.target.value })} /></label>
               <label>{t("adminCredentialValue")}<input type="password" value={credentialForm.secret_value} onChange={(event) => setCredentialForm({ ...credentialForm, secret_value: event.target.value })} /></label>
               <div className="admin-toggle-row"><label><input type="checkbox" checked={credentialForm.enabled} onChange={(event) => setCredentialForm({ ...credentialForm, enabled: event.target.checked })} />{t("adminEnabled")}</label></div>
+              <label>{t("adminReason")}<input value={credentialForm.reason} onChange={(event) => setCredentialForm({ ...credentialForm, reason: event.target.value })} /></label>
               <button className="primary-button" type="submit"><FaKey aria-hidden="true" />{t("adminSaveCredential")}</button>
-              <div className="admin-table-scroll"><table><thead><tr><th>{t("adminProvider")}</th><th>{t("adminCredentialName")}</th><th>{t("adminCredentialType")}</th><th>{t("adminCredentialPreview")}</th><th>{t("adminStatus")}</th></tr></thead><tbody>{dashboard?.credentials.map((credential) => <tr key={credential.credential_id}><td>{credential.provider_id}</td><td>{credential.credential_name}</td><td>{credential.secret_type}</td><td>{credential.secret_preview}</td><td>{credential.enabled ? t("adminEnabled") : t("adminDisabled")}</td></tr>)}</tbody></table></div>
+              <div className="admin-table-scroll"><table><thead><tr><th>{t("adminProvider")}</th><th>{t("adminCredentialName")}</th><th>{t("adminCredentialType")}</th><th>{t("adminCredentialPreview")}</th><th>{t("adminStatus")}</th><th>{t("adminAction")}</th></tr></thead><tbody>{dashboard?.credentials.map((credential) => <tr key={credential.credential_id}><td>{credential.provider_id}</td><td>{credential.credential_name}</td><td>{credential.secret_type}</td><td>{credential.secret_preview}</td><td>{credential.enabled ? t("adminEnabled") : t("adminDisabled")}</td><td><div className="admin-inline-actions"><button className="button ghost" type="button" onClick={() => setCredentialForm(credentialToForm(credential))}><FaEdit aria-hidden="true" />{t("adminEdit")}</button><button className="button ghost" type="button" onClick={() => void saveCredentialEnabled(credential, !credential.enabled, credential.enabled ? t("adminCredentialDisabled") : t("adminCredentialEnabled"))}><FaCheck aria-hidden="true" />{credential.enabled ? t("adminDisableCredential") : t("adminEnableCredential")}</button></div></td></tr>)}</tbody></table></div>
             </form>
           ) : null}
 

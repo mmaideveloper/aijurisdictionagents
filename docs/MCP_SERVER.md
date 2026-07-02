@@ -53,17 +53,18 @@ curl http://127.0.0.1:8070/
 - Token endpoint: `POST /oauth/token`
 
 The OAuth flow uses authorization code with PKCE S256, plus refresh tokens for
-remote clients that request `offline_access`. Remote clients can either use
-dynamic client registration at `/oauth/register` or provide a preconfigured
-public OAuth Client ID. ChatGPT and Claude should use the protected resource
-value advertised by metadata, `https://mcp.jurisdigta.eu/mcp`, on the
-authorization, token, and refresh requests. The server also accepts equivalent
-`/MCP` casing for compatibility with saved connector records.
-Protected-resource metadata includes a human-readable
+remote clients that request `offline_access`. Remote clients can use OAuth
+Client ID Metadata Documents, dynamic client registration at `/oauth/register`,
+or a preconfigured public OAuth Client ID. New dynamic registrations may return
+either `200 OK` or `201 Created` with the issued public client metadata.
+ChatGPT and Claude should pass the protected resource value
+`https://mcp.jurisdigta.eu/MCP` on the authorization, token, and refresh
+requests. Protected-resource metadata includes a human-readable
 `resource_name`, and authorization-server metadata advertises the protected MCP
-resource plus `authorization_response_iss_parameter_supported=true`. The
-authorization callback returns `iss=https://mcp.jurisdigta.eu` with the
-authorization code so strict OAuth clients can bind the response to the issuer.
+resource, `client_id_metadata_document_supported=true`, and
+`authorization_response_iss_parameter_supported=true`. The authorization
+callback returns `iss=https://mcp.jurisdigta.eu` with the authorization code so
+strict OAuth clients can bind the response to the issuer.
 The browser authorization page validates the user password, sends an email OTP,
 and only creates a short-lived authorization code after OTP verification. The
 token endpoint exchanges that code for the same revocable JWT bearer token
@@ -73,9 +74,18 @@ responses include `Cache-Control: no-store` and `Pragma: no-cache`.
 Production settings:
 
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
-- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,localhost,127.0.0.1,::1`
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai`
+  for hosted HTTPS callbacks. Loopback `http://localhost/...` and
+  `http://127.0.0.1/...` redirects are accepted for local OAuth clients such as
+  Claude Desktop proxies.
 - `MCP_API_JWT_SECRET=<long-random-secret>`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
+- `MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS=true` by default; keep it enabled for Claude web custom connectors so the authorization callback includes `iss`.
+
+Do not hide OAuth discovery from Claude web custom connector probes. Claude web
+uses `python-httpx` while validating custom connectors and must receive the
+protected-resource metadata, authorization-server metadata, and dynamic client
+registration response before it can start the browser authorization flow.
 
 ## Authentication
 
@@ -115,9 +125,9 @@ Manual JWT generation remains useful for local VS Code setups that pass an `Auth
 Use `https://mcp.jurisdigta.eu/MCP` as the remote MCP server URL in clients that support custom HTTP MCP servers.
 
 - ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it. Users may self-register during the browser authorization flow, but ChatGPT only receives the OAuth access token and tool results, not a raw API key.
-- Claude: add a custom connector or remote MCP server and enter the MCP server URL. OAuth-capable Claude clients can discover authorization metadata from `https://mcp.jurisdigta.eu` and register dynamically. If Claude reports that automatic client registration is not supported, open Advanced settings, set OAuth Client ID to a stable public value such as `claude`, leave OAuth Client Secret empty, and retry after confirming `claude.ai` is allowed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. Claude Desktop, Claude Code, and local OAuth proxies also need loopback callbacks such as `localhost`, `127.0.0.1`, or `::1` in that allowlist.
+- Claude: add a custom connector or remote MCP server and enter the MCP server URL. OAuth-capable Claude clients can discover authorization metadata from `https://mcp.jurisdigta.eu` and register dynamically. If Claude reports that automatic client registration is not supported, open Advanced settings, set OAuth Client ID to a stable public value such as `claude`, leave OAuth Client Secret empty, and retry after confirming `claude.ai` is allowed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...` or `http://127.0.0.1/...`.
 - VS Code: add an HTTP MCP server in MCP settings. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/MCP/login`.
-- Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
+- Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. Hosted OAuth callbacks include `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback` when their hosts are listed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
 
 ### Claude Desktop via `mcp-remote`
 
@@ -165,6 +175,26 @@ system certificate store. If Claude logs `Claude Code requires a Pro or Max
 subscription`, the MCP server may be configured correctly but the active Claude
 account lacks the required Claude Desktop/Code entitlement.
 
+If Claude, `mcp-remote`, `curl`, or `scripts/prod_mcp_claude_smoke.py` reports
+a TLS/certificate failure before OAuth discovery is reached, inspect the
+certificate issuer first. Some antivirus and corporate proxy products re-sign
+HTTPS traffic with a local root certificate, for example `Avast Web/Mail Shield
+Root`. That client-side TLS interception can cause strict OpenSSL clients to
+fail with errors such as `certificate verify failed`,
+`UNABLE_TO_VERIFY_LEAF_SIGNATURE`, or Windows Schannel revocation errors even
+when the public Cloudflare tunnel and MCP app are healthy.
+
+For production connector validation, do not use `--ssl-no-revoke`, `-k`, or
+disabled certificate verification as the fix. Exclude `mcp.jurisdigta.eu` from
+HTTPS scanning, disable TLS interception for Claude/MCP traffic, or configure
+the client runtime to trust the operating-system store when that is acceptable
+for the local workstation. Then re-run:
+
+```powershell
+python scripts/prod_mcp_claude_smoke.py --retries 1 --retry-delay 1
+curl.exe -Iv https://mcp.jurisdigta.eu/health
+```
+
 Discovery endpoints:
 
 - `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`
@@ -182,8 +212,8 @@ Client documentation:
 
 These tools do not require an MCP API key:
 
-- `getVersion`: returns API, system/core, mobile app, and web app versions.
-- `getStatistics`: returns processed laws count, last processed law, last processed day, and collector details.
+- `getVersion`: returns API, system/core, mobile app, web app versions, court-decision collector version, and court-decision collector status with latest imported decision metadata.
+- `getStatistics`: returns processed laws count, last processed law, last processed day, laws collector details, court-decision collector version, and court-decision statistics such as total decisions, published decisions, total versions, last imported decision/source GUID, last import time, court, court type, ECLI, file number, issue date, and collector cursor status.
 
 ## Protected Tools
 
@@ -191,6 +221,8 @@ These tools require an MCP API key:
 
 - `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title.
 - `getLawText`: returns bounded latest imported text for a law document id. For large codes, pass `section_number` or `section_start`/`section_end` to retrieve only the relevant sections; use `offset` and `max_chars` when pagination is needed.
+- `searchCourtDecisions`: searches the dedicated court-decision vector store and returns pseudonymized public snippets with court/date/ECLI/file-number metadata. MCP court-decision search is bounded by a server-side PostgreSQL connect timeout and statement timeout so slow database calls return a structured `status=degraded`, `retryable=true` payload with request/correlation identifiers instead of hanging until the MCP client times out. Logs record query length, limit, duration, error kind, request ID, and correlation ID, but not the raw query, credentials, tokens, snippets, or court-decision text.
+- `getCourtDecision`: returns one imported court decision. `outputMode=public` is the default and returns pseudonymized text. `outputMode=internal_raw` is blocked unless `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP=true` is enabled for a controlled internal runtime; it must not be used for normal external model prompts or UI display.
 
 ## Minimal JSON-RPC Example
 

@@ -154,6 +154,11 @@ print(
     "server-authorized admin APIs."
 )
 print(
+    "ai_model_user_assignment => /app/admin User model assignment searches by email, "
+    "assigns any enabled local or external model profile as a per-user override, "
+    "and disables the override with mandatory admin reason and audit logging."
+)
+print(
     "admin_case_reset => /app/admin can search users by email, list only case metadata, "
     "and soft-delete one selected case through /v1/admin/cases with mandatory reason "
     "and admin audit logging; public user delete stays write-window gated."
@@ -167,4 +172,9 @@ print(
     "service_healthchecks => HTTP services expose privacy-minimized /health; "
     "worker services report supervisor state, freshness, latest run result, "
     "and sanitized errors through protected operational status."
+)
+print(
+    "court_decision_collector => imports Slovak court decisions into a separate "
+    "PostgreSQL store with vectors and pseudonymized MCP search output; run "
+    "`python examples/court_decision_collector_minimal_demo.py` for the focused fixture demo."
 )
