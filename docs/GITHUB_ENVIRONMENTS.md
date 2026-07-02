@@ -454,7 +454,7 @@ curl -fsS http://127.0.0.1:11434/v1/models || curl -fsS "http://$(docker network
 
 ```bash
 curl -fsS https://api.jurisdigta.eu/health
-curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP
+curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/mcp
 curl -fsS https://web.jurisdigta.eu/health
 curl -fsS https://agent.jurisdigta.eu/health
 curl -I https://agent.jurisdigta.eu/app/assistant

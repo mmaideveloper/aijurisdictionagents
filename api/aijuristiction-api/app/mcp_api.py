@@ -46,9 +46,9 @@ from app.versioning import (
 )
 from aijurisdictionagents.api_db import ApiDatabaseStore, User, generate_one_time_code
 
-router = APIRouter(prefix="/MCP", tags=["mcp"])
+router = APIRouter(prefix="/mcp", tags=["mcp"])
 compat_router = APIRouter(prefix="/MC", tags=["mcp"])
-lowercase_compat_router = APIRouter(prefix="/mcp", tags=["mcp"])
+legacy_uppercase_router = APIRouter(prefix="/MCP", tags=["mcp"])
 oauth_router = APIRouter(tags=["mcp-oauth"])
 MCP_PROTOCOL_VERSION = "2025-11-25"
 MCP_SERVER_INSTRUCTIONS = (
@@ -137,7 +137,7 @@ _MCP_TEXT: dict[str, dict[str, str]] = {
         "key_created_title": "MCP API key created",
         "key_created_subtitle": "Copy the key now. It is shown once and expires at the configured time.",
         "key_expires": "This key expires at {expires_at}.",
-        "key_note": "Use it as a Bearer token or as the x-mcp-api-key header when connecting your AI assistant to /MCP.",
+        "key_note": "Use it as a Bearer token or as the x-mcp-api-key header when connecting your AI assistant to /mcp.",
         "invalid_code": "The verification code is invalid or has expired. Check the code and try again.",
         "expired_code": "This sign-up request expired. Start sign-up again to receive a new code.",
     },
@@ -198,7 +198,7 @@ _MCP_TEXT: dict[str, dict[str, str]] = {
         "key_created_title": "MCP API kluc bol vytvoreny",
         "key_created_subtitle": "Skopirujte si kluc teraz. Zobrazi sa iba raz a expiruje v nastavenom case.",
         "key_expires": "Tento kluc expiruje {expires_at}.",
-        "key_note": "Pouzite ho ako Bearer token alebo hlavicku x-mcp-api-key pri pripajani AI asistenta k /MCP.",
+        "key_note": "Pouzite ho ako Bearer token alebo hlavicku x-mcp-api-key pri pripajani AI asistenta k /mcp.",
         "invalid_code": "Overovaci kod je neplatny alebo expiroval. Skontrolujte kod a skuste to znova.",
         "expired_code": "Tato registracna poziadavka expirovala. Spustite registraciu znova a dostanete novy kod.",
     },
@@ -227,12 +227,13 @@ def require_mcp_api_key(
 
 
 @router.get("", response_class=JSONResponse)
-@lowercase_compat_router.get("", response_class=JSONResponse)
+@legacy_uppercase_router.get("", response_class=JSONResponse)
 def mcp_status() -> JSONResponse:
     return JSONResponse(status_code=405, content={"detail": "Use POST /mcp for Streamable HTTP JSON-RPC."})
 
 
 @router.get("/status", response_class=JSONResponse)
+@legacy_uppercase_router.get("/status", response_class=JSONResponse)
 def mcp_authenticated_status(user_id: str = Depends(require_mcp_api_key)) -> dict[str, str]:
     logger.info("mcp_status_checked user_id=%s", user_id)
     return {
@@ -245,7 +246,7 @@ def mcp_authenticated_status(user_id: str = Depends(require_mcp_api_key)) -> dic
 
 @router.post("", response_class=JSONResponse)
 @compat_router.post("", response_class=JSONResponse)
-@lowercase_compat_router.post("", response_class=JSONResponse)
+@legacy_uppercase_router.post("", response_class=JSONResponse)
 async def mcp_json_rpc(
     request: Request,
     authorization: str | None = Header(default=None),
@@ -303,12 +304,14 @@ async def mcp_json_rpc(
 
 
 @router.get("/login", response_class=HTMLResponse)
+@legacy_uppercase_router.get("/login", response_class=HTMLResponse)
 def mcp_login_page(request: Request) -> HTMLResponse:
     locale = _mcp_locale(request)
     return HTMLResponse(_login_form_html(locale=locale))
 
 
 @router.get("/sign-up", response_class=HTMLResponse)
+@legacy_uppercase_router.get("/sign-up", response_class=HTMLResponse)
 def mcp_sign_up_page(request: Request) -> HTMLResponse:
     locale = _mcp_locale(request)
     return HTMLResponse(_sign_up_form_html(locale=locale))
@@ -324,7 +327,7 @@ def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
         "authorization_servers": [base_url],
         "bearer_methods_supported": ["header"],
         "scopes_supported": [MCP_TOKEN_SCOPE],
-        "resource_documentation": f"{base_url}/MCP/login",
+        "resource_documentation": f"{base_url}/mcp/login",
     }
 
 
@@ -771,6 +774,7 @@ def _redirect_with_oauth_authorization_code(
 
 
 @router.post("/login", response_class=HTMLResponse)
+@legacy_uppercase_router.post("/login", response_class=HTMLResponse)
 def mcp_login_submit(
     request: Request,
     email: str = Form(...),
@@ -805,6 +809,7 @@ def mcp_login_submit(
 
 
 @router.post("/login/mfa", response_class=HTMLResponse)
+@legacy_uppercase_router.post("/login/mfa", response_class=HTMLResponse)
 def mcp_login_mfa_method(
     request: Request,
     email: str = Form(...),
@@ -830,6 +835,7 @@ def mcp_login_mfa_method(
 
 
 @router.post("/login/verify", response_class=HTMLResponse)
+@legacy_uppercase_router.post("/login/verify", response_class=HTMLResponse)
 def mcp_login_verify(
     request: Request,
     email: str = Form(...),
@@ -866,6 +872,7 @@ def mcp_login_verify(
 
 
 @router.post("/sign-up", response_class=HTMLResponse)
+@legacy_uppercase_router.post("/sign-up", response_class=HTMLResponse)
 def mcp_sign_up_submit(
     request: Request,
     email: str = Form(...),
@@ -936,6 +943,7 @@ def mcp_sign_up_submit(
 
 
 @router.post("/sign-up/verify", response_class=HTMLResponse)
+@legacy_uppercase_router.post("/sign-up/verify", response_class=HTMLResponse)
 def mcp_sign_up_verify(
     request: Request,
     pending_id: str = Form(...),
@@ -1908,8 +1916,8 @@ def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> Use
         audience=expected_audience,
         required_scope=MCP_TOKEN_SCOPE,
     )
-    if payload is None and expected_audience.endswith("/MCP"):
-        legacy_audience = f"{expected_audience[:-4]}/mcp"
+    if payload is None and expected_audience.lower().endswith("/mcp"):
+        legacy_audience = f"{expected_audience[:-4]}/MCP"
         payload = validate_mcp_api_token(
             api_key,
             audience=legacy_audience,
@@ -2064,7 +2072,7 @@ def _base_url(request: Request) -> str:
 
 
 def _resource_url(request: Request) -> str:
-    return f"{_base_url(request)}/MCP"
+    return f"{_base_url(request)}/mcp"
 
 
 def _base_url_from_resource(resource: str) -> str:
@@ -2137,7 +2145,7 @@ def _first_payload_id(payload: Any) -> Any:
 
 
 def _www_authenticate_header(request: Request) -> str:
-    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/MCP"
+    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/mcp"
     return f'Bearer resource_metadata="{metadata_url}", scope="{MCP_TOKEN_SCOPE}"'
 
 
@@ -2680,7 +2688,7 @@ def _login_form_html(*, locale: str) -> str:
         title=_mcp_t(locale, "login_title"),
         subtitle=_mcp_t(locale, "login_subtitle"),
         body_html=f"""    <p class="form-note">{escape(_mcp_t(locale, "login_note"), quote=False)}</p>
-    <form method="post" action="/MCP/login">
+    <form method="post" action="/mcp/login">
       <div class="form-grid">
         <label class="field wide">{escape(_mcp_t(locale, "email"), quote=False)}
           <input name="email" type="email" autocomplete="username" required>
@@ -2697,7 +2705,7 @@ def _login_form_html(*, locale: str) -> str:
 """,
         footer_html=(
             f'    <p class="auth-footer">{escape(_mcp_t(locale, "need_account"), quote=False)} '
-            f'<a href="/MCP/sign-up">{escape(_mcp_t(locale, "sign_up_link"), quote=False)}</a></p>'
+            f'<a href="/mcp/sign-up">{escape(_mcp_t(locale, "sign_up_link"), quote=False)}</a></p>'
         ),
     )
 
@@ -2744,7 +2752,7 @@ def _oauth_login_form_html(
 """,
         footer_html=(
             f'    <p class="auth-footer">{escape(_mcp_t(locale, "need_account"), quote=False)} '
-            f'<a href="/MCP/sign-up">{escape(_mcp_t(locale, "sign_up_link"), quote=False)}</a></p>'
+            f'<a href="/mcp/sign-up">{escape(_mcp_t(locale, "sign_up_link"), quote=False)}</a></p>'
         ),
     )
 
@@ -2888,7 +2896,7 @@ def _otp_form_html(
         title=_mcp_t(locale, "verify_login_title"),
         subtitle=_mcp_t(locale, "verify_login_subtitle"),
         body_html=f"""{_warning_html(locale=locale, warning_key=warning_key)}    <p class="email-note">{escape(_mcp_t(locale, "otp_sent", email=escaped_email), quote=False)}</p>
-    <form method="post" action="/MCP/login/verify">
+    <form method="post" action="/mcp/login/verify">
       <input name="email" type="hidden" value="{escaped_email}">
       <input name="expires_in_days" type="hidden" value="{expires_in_days}">
       <label class="field wide">{escape(_mcp_t(locale, "otp_code"), quote=False)}
@@ -2906,7 +2914,7 @@ def _mfa_method_form_html(*, locale: str, email: str, expires_in_days: int) -> s
         locale=locale,
         title=_mcp_t(locale, "choose_mfa_title"),
         subtitle=_mcp_t(locale, "choose_mfa_subtitle"),
-        body_html=f"""    <form method="post" action="/MCP/login/mfa">
+        body_html=f"""    <form method="post" action="/mcp/login/mfa">
       <input name="email" type="hidden" value="{escaped_email}">
       <input name="expires_in_days" type="hidden" value="{expires_in_days}">
       <label class="field wide">{escape(_mcp_t(locale, "mfa_method"), quote=False)}
@@ -2934,7 +2942,7 @@ def _totp_form_html(
         title=_mcp_t(locale, "verify_login_title"),
         subtitle=_mcp_t(locale, "verify_login_subtitle"),
         body_html=f"""{_warning_html(locale=locale, warning_key=warning_key)}    <p class="form-note">{escape(_mcp_t(locale, "totp_note"), quote=False)}</p>
-    <form method="post" action="/MCP/login/verify">
+    <form method="post" action="/mcp/login/verify">
       <input name="email" type="hidden" value="{escaped_email}">
       <input name="mfa_method" type="hidden" value="totp">
       <input name="expires_in_days" type="hidden" value="{expires_in_days}">
@@ -2953,7 +2961,7 @@ def _sign_up_form_html(*, locale: str) -> str:
         title=_mcp_t(locale, "create_account_title"),
         subtitle=_mcp_t(locale, "create_account_subtitle"),
         body_html=f"""    <p class="form-note">{escape(_mcp_t(locale, "create_account_note"), quote=False)}</p>
-    <form method="post" action="/MCP/sign-up">
+    <form method="post" action="/mcp/sign-up">
       <div class="form-grid">
         <label class="field wide">{escape(_mcp_t(locale, "email"), quote=False)}
           <input name="email" type="email" autocomplete="username" required>
@@ -2995,7 +3003,7 @@ def _sign_up_form_html(*, locale: str) -> str:
 """,
         footer_html=(
             f'    <p class="auth-footer">{escape(_mcp_t(locale, "already_registered"), quote=False)} '
-            f'<a href="/MCP/login">{escape(_mcp_t(locale, "log_in_link"), quote=False)}</a></p>'
+            f'<a href="/mcp/login">{escape(_mcp_t(locale, "log_in_link"), quote=False)}</a></p>'
         ),
     )
 
@@ -3014,7 +3022,7 @@ def _sign_up_otp_form_html(
         title=_mcp_t(locale, "verify_signup_title"),
         subtitle=_mcp_t(locale, "verify_signup_subtitle"),
         body_html=f"""{_warning_html(locale=locale, warning_key=warning_key)}    <p class="email-note">{escape(_mcp_t(locale, "otp_sent", email=escaped_email), quote=False)}</p>
-    <form method="post" action="/MCP/sign-up/verify">
+    <form method="post" action="/mcp/sign-up/verify">
 {hidden_html}
       <label class="field wide">{escape(_mcp_t(locale, "otp_code"), quote=False)}
         <input name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
@@ -3039,7 +3047,7 @@ def _sign_up_complete_html(*, locale: str, email: str) -> str:
         title=_mcp_t(locale, "account_created_title"),
         subtitle=_mcp_t(locale, "account_created_subtitle"),
         body_html=f"""    <p class="email-note">{escape(_mcp_t(locale, "account_created", email=escaped_email), quote=False)}</p>
-    <p class="auth-footer"><a href="/MCP/login">{escape(_mcp_t(locale, "log_in_link"), quote=False)}</a></p>
+    <p class="auth-footer"><a href="/mcp/login">{escape(_mcp_t(locale, "log_in_link"), quote=False)}</a></p>
 """,
     )
 

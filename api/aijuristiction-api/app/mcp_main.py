@@ -20,7 +20,7 @@ from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.logging_config import configure_logging
 from app.mcp_api import oauth_router as mcp_oauth_router
 from app.mcp_api import compat_router as mcp_compat_router
-from app.mcp_api import lowercase_compat_router as mcp_lowercase_compat_router
+from app.mcp_api import legacy_uppercase_router as mcp_legacy_uppercase_router
 from app.mcp_api import router as mcp_router
 from app.telemetry import configure_telemetry, instrument_fastapi
 from app.versioning import (
@@ -315,11 +315,11 @@ def _mcp_page_text(locale: str, key: str, **values: str) -> str:
 
 
 def _mcp_instructions_html(*, base_url: str, locale: str = "en") -> str:
-    mcp_url = f"{base_url}/MCP"
-    protected_resource_url = f"{base_url}/.well-known/oauth-protected-resource/MCP"
+    mcp_url = f"{base_url}/mcp"
+    protected_resource_url = f"{base_url}/.well-known/oauth-protected-resource/mcp"
     authorization_server_url = f"{base_url}/.well-known/oauth-authorization-server"
-    login_url = f"{base_url}/MCP/login"
-    sign_up_url = f"{base_url}/MCP/sign-up"
+    login_url = f"{base_url}/mcp/login"
+    sign_up_url = f"{base_url}/mcp/sign-up"
     version_url = f"{base_url}/version"
     return f"""<!doctype html>
 <html lang="{locale}">
@@ -478,7 +478,7 @@ app.add_middleware(
 app.include_router(mcp_oauth_router)
 app.include_router(mcp_router)
 app.include_router(mcp_compat_router)
-app.include_router(mcp_lowercase_compat_router)
+app.include_router(mcp_legacy_uppercase_router)
 instrument_fastapi(app)
 
 

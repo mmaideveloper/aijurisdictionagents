@@ -182,7 +182,7 @@ def _call_remote_mcp_tool(*, remote_base_url: str, name: str, arguments: dict[st
     }
     with httpx.Client(timeout=10.0) as client:
         response = client.post(
-            f"{remote_base_url}/MCP",
+            f"{remote_base_url}/mcp",
             json=payload,
             headers={"Content-Type": "application/json"},
         )

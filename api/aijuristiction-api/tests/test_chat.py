@@ -1761,8 +1761,8 @@ def test_mcp_law_context_prefers_remote_mcp_endpoint(monkeypatch) -> None:
 
     assert context is not None
     assert [request["url"] for request in requests] == [
-        "http://jurisdigta-mcp:8070/MCP",
-        "http://jurisdigta-mcp:8070/MCP",
+        "http://jurisdigta-mcp:8070/mcp",
+        "http://jurisdigta-mcp:8070/mcp",
     ]
     assert "§ 588 text" in context.prompt_note
 

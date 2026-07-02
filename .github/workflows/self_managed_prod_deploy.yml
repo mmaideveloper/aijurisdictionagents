@@ -194,7 +194,7 @@ jobs:
             echo "| Ref | ${{ inputs.repo_ref }} |"
             echo "| API | http://127.0.0.1:${JURISDIGTA_API_PORT}/health on server |"
             echo "| MCP | http://127.0.0.1:${JURISDIGTA_MCP_PORT}/health on server |"
-            echo "| Public MCP Claude smoke | ${JURISDIGTA_MCP_PUBLIC_BASE_URL}/MCP |"
+            echo "| Public MCP Claude smoke | ${JURISDIGTA_MCP_PUBLIC_BASE_URL}/mcp |"
             echo "| Web | http://127.0.0.1:${JURISDIGTA_WEB_PORT}/health on server |"
             echo "| Document engine | ${JURISDIGTA_DOCUMENT_ENGINE_ENABLED} |"
             echo "| Document engine API | http://127.0.0.1:${JURISDIGTA_DOCUMENT_ENGINE_API_PORT}/health on server |"

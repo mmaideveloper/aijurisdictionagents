@@ -29,8 +29,9 @@ print(
 )
 print(
     "mcp_auth_contract => getVersion/getStatistics are public; searchLaws/getLawText require "
-    "a Bearer MCP token or x-mcp-api-key, and Claude OAuth discovery remains visible to local proxies."
+    "a Bearer MCP token or x-mcp-api-key, and Claude should use https://mcp.jurisdigta.eu/mcp."
 )
+print("mcp_endpoint_legacy => /MCP remains accepted as a compatibility alias for existing clients.")
 print(
     "mcp_oauth_redirects => hosted callbacks use explicit allowed hosts; local MCP clients keep "
     "http://localhost, http://127.0.0.1, and http://[::1] loopback redirect_uri support."

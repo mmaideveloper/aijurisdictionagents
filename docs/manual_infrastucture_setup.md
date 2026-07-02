@@ -423,7 +423,7 @@ The self-managed production deployment script performs the Ollama install, priva
 - Optional Grafana default dashboard setting: `GRAFANA_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/jurisdigta-application-performance.json`.
 - Cloudflare Tunnel service: `cloudflared.service` on `jurisdigta-server`.
 - Cloudflare Tunnel API hostname: `api.jurisdigta.eu` -> `http://127.0.0.1:8080`.
-- Cloudflare Tunnel MCP hostname: `mcp.jurisdigta.eu` -> `http://127.0.0.1:8070`, with MCP served by the dedicated MCP service at `/MCP`.
+- Cloudflare Tunnel MCP hostname: `mcp.jurisdigta.eu` -> `http://127.0.0.1:8070`, with MCP served by the dedicated MCP service at `/mcp`.
 - Cloudflare Tunnel admin hostname: `admin.jurisdigta.eu` -> `http://127.0.0.1:3000`, with Grafana served at `/grafana/`.
 - Cloudflare Tunnel web hostname: `web.jurisdigta.eu` -> `http://127.0.0.1:8090` only after the `jurisdigta-web` frontend container serves the intended web app.
 - Cloudflare Tunnel assistant hostname: `agent.jurisdigta.eu` -> `http://127.0.0.1:8090`, with JurisDigta account login required before legal users access `/app/assistant`.
@@ -449,7 +449,7 @@ The self-managed production deployment script performs the Ollama install, priva
 - API health check returns HTTP 200 at `http://127.0.0.1:8080/health`.
 - Admin model route check with both API keys returns the seeded `local_ollama_default` and `azure_foundry_gpt_4o_mini` profiles, and credential reads are redacted unless `reveal=true` is used by an authorized admin.
 - MCP health check returns HTTP 200 at `http://127.0.0.1:8070/health`.
-- MCP OAuth metadata at `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP` advertises `https://mcp.jurisdigta.eu/MCP` as the protected resource.
+- MCP OAuth metadata at `https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/mcp` advertises `https://mcp.jurisdigta.eu/mcp` as the protected resource.
 - `docker ps --filter name=jurisdigta-court-decision-collector` shows the court-decision collector container running.
 - `tail -n 80 /srv/jurisdigta/runs/logs/court-decision-collector.log` shows `processing_judicial_decision` or `waiting_for_new_judicial_decisions` without raw decision text.
 - `docker exec aijurisdiction-postgres psql -U "${LOCAL_POSTGRES_USER:-postgres}" -d "${COURT_DECISIONS_DATABASE_NAME:-court_decisions_sk}" -c "SELECT count(*) AS versions, count(embedding_vector) AS versions_with_vector FROM court_decision_versions;"` confirms imported court-decision vectors.
@@ -468,7 +468,7 @@ The self-managed production deployment script performs the Ollama install, priva
 - If Prometheus/Grafana monitoring is enabled, `cd /srv/jurisdigta/app && PROMETHEUS_BASE_URL=http://127.0.0.1:9091 python3 examples/monitoring_scrape_demo.py` reports all scrapes and HTTP probes healthy.
 - If Prometheus/Grafana monitoring is enabled, Prometheus queries for `jurisdigta_http_requests_total_window`, `jurisdigta_http_request_duration_seconds_avg`, `jurisdigta_users_total`, `jurisdigta_cases_total`, `jurisdigta_ollama_up`, and `jurisdigta_ai_model_output_tokens_window` return aggregate samples.
 - `systemctl status cloudflared --no-pager` shows the Cloudflare tunnel active when public hostnames are enabled.
-- If Cloudflare Tunnel public hostnames are enabled, `curl -fsS https://api.jurisdigta.eu/health`, `curl -fsS https://agent.jurisdigta.eu/health`, `curl -I https://agent.jurisdigta.eu/app/assistant`, `curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP`, and `curl -I https://admin.jurisdigta.eu/grafana/` succeed from outside the server.
+- If Cloudflare Tunnel public hostnames are enabled, `curl -fsS https://api.jurisdigta.eu/health`, `curl -fsS https://agent.jurisdigta.eu/health`, `curl -I https://agent.jurisdigta.eu/app/assistant`, `curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/mcp`, and `curl -I https://admin.jurisdigta.eu/grafana/` succeed from outside the server.
 - If the frontend web container is enabled, `curl -fsS http://127.0.0.1:8090/health` and `curl -I http://127.0.0.1:8090/privacy` succeed on the server.
 - GitHub Actions workflow `Self-Managed Prod Deploy` completes for `repo_ref=main` only after the frontend Playwright E2E gate passes.
 - Cloudflare Access protects `agent.jurisdigta.eu` and `admin.jurisdigta.eu` before public use.

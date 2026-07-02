@@ -467,7 +467,7 @@ Configure these Cloudflare Tunnel public hostnames:
 | Hostname | Tunnel service | Current server target | Notes |
 | --- | --- | --- | --- |
 | `api.jurisdigta.eu` | HTTP | `http://127.0.0.1:8080` | API container; validate with `/health`. |
-| `mcp.jurisdigta.eu` | HTTP | `http://127.0.0.1:8070` | Dedicated MCP service; metadata is under `/.well-known/oauth-protected-resource/MCP`. |
+| `mcp.jurisdigta.eu` | HTTP | `http://127.0.0.1:8070` | Dedicated MCP service; metadata is under `/.well-known/oauth-protected-resource/mcp`. |
 | `admin.jurisdigta.eu` | HTTP | `http://127.0.0.1:3000` | Grafana path is `/grafana/`; protect with Cloudflare Access. |
 | `web.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Frontend web container `jurisdigta-web`; validate with `/health`. |
 | `agent.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Authenticated assistant route `/app/assistant`; current production uses JurisDigta account login against the API users table. |
@@ -479,7 +479,7 @@ Minimal runnable validation examples:
 ```bash
 curl -fsS http://127.0.0.1:8080/health
 curl -fsS http://127.0.0.1:8070/health
-curl -I http://127.0.0.1:8070/.well-known/oauth-protected-resource/MCP
+curl -I http://127.0.0.1:8070/.well-known/oauth-protected-resource/mcp
 docker inspect -f '{{.State.Running}}' jurisdigta-email-scheduler
 docker image inspect jurisdigta-document-processor:local >/dev/null
 test -x /srv/jurisdigta/ops/run_document_processor.sh
@@ -495,7 +495,7 @@ curl -fsS https://api.jurisdigta.eu/health
 curl -fsS https://web.jurisdigta.eu/health
 curl -fsS https://agent.jurisdigta.eu/health
 curl -I https://agent.jurisdigta.eu/app/assistant
-curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP
+curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/mcp
 curl -I https://admin.jurisdigta.eu/grafana/
 ```
 
@@ -692,7 +692,7 @@ Then validate public Cloudflare Tunnel routing externally:
 
 ```bash
 curl -fsS https://api.jurisdigta.eu/health
-curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP
+curl -I https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/mcp
 curl -fsS https://web.jurisdigta.eu/health
 ```
 

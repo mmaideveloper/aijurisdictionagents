@@ -187,7 +187,7 @@ def test_swagger_docs_available() -> None:
 
 
 def test_public_api_does_not_mount_mcp() -> None:
-    response = client.get("/MCP")
+    response = client.get("/mcp")
     assert response.status_code == 404
 
 
