@@ -985,7 +985,11 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         "/oauth/register",
         json={
             "client_name": "Claude Desktop",
-            "redirect_uris": ["http://127.0.0.1:6274/callback", "http://localhost:6274/callback"],
+            "redirect_uris": [
+                "http://127.0.0.1:6274/callback",
+                "http://localhost:6274/callback",
+                "http://[::1]:6274/callback",
+            ],
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
             "token_endpoint_auth_method": "none",
@@ -996,6 +1000,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert loopback_registration.json()["redirect_uris"] == [
         "http://127.0.0.1:6274/callback",
         "http://localhost:6274/callback",
+        "http://[::1]:6274/callback",
     ]
 
     code_verifier = "test-code-verifier-1234567890"
@@ -1343,7 +1348,11 @@ def test_oauth_registration_accepts_loopback_redirect_for_local_clients(monkeypa
         "/oauth/register",
         json={
             "client_name": "Claude Desktop mcp-remote",
-            "redirect_uris": ["http://127.0.0.1:3334/callback", "http://localhost:3334/callback"],
+            "redirect_uris": [
+                "http://127.0.0.1:3334/callback",
+                "http://localhost:3334/callback",
+                "http://[::1]:3334/callback",
+            ],
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
             "token_endpoint_auth_method": "none",
@@ -1353,6 +1362,11 @@ def test_oauth_registration_accepts_loopback_redirect_for_local_clients(monkeypa
 
     assert registration_response.status_code == 201
     assert registration_response.json()["token_endpoint_auth_method"] == "none"
+    assert registration_response.json()["redirect_uris"] == [
+        "http://127.0.0.1:3334/callback",
+        "http://localhost:3334/callback",
+        "http://[::1]:3334/callback",
+    ]
 
 
 def test_oauth_registration_rejects_unregistered_redirect_host(monkeypatch, tmp_path: Path) -> None:
@@ -1447,7 +1461,7 @@ def _configure_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu")
     monkeypatch.setenv(
         "MCP_OAUTH_ALLOWED_REDIRECT_HOSTS",
-        "client.example,chatgpt.com,claude.ai,vscode.dev,www.perplexity.ai",
+        "client.example,chatgpt.com,claude.ai,vscode.dev,www.perplexity.ai,localhost,127.0.0.1,::1",
     )
 
 
