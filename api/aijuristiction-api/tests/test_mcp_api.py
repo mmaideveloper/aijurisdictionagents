@@ -187,9 +187,9 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     assert statistics["court_decisions"]["last_imported_file_number"] == "12C/34/2026"
 
     unauthenticated_search = _mcp_call("searchLaws", {"query": "civil"})
-    assert unauthenticated_search.status_code == 200
-    unauthenticated_results = _tool_payload(unauthenticated_search)["results"]
-    assert unauthenticated_results[0]["document_id"] == "doc-1"
+    assert unauthenticated_search.status_code == 401
+    assert "oauth-protected-resource" in unauthenticated_search.headers["www-authenticate"]
+    assert unauthenticated_search.json()["error"]["code"] == 401
 
     authenticated_search = _mcp_call(
         "searchLaws",
@@ -893,6 +893,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         headers={"user-agent": "python-httpx/0.28.1"},
     )
     assert claude_web_authorization_metadata.status_code == 200
+    assert claude_web_authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
     assert claude_web_authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
     monkeypatch.setenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY", "true")
     claude_web_authorization_metadata_with_legacy_flag = mcp_client.get(
@@ -957,6 +958,45 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert claude_variant_payload["grant_types"] == ["authorization_code", "refresh_token"]
     assert claude_variant_payload["token_endpoint_auth_method"] == "none"
     assert claude_variant_payload["scope"] == "mcp:laws offline_access"
+
+    additional_hosted_registration = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Hosted OAuth clients",
+            "redirect_uris": [
+                "https://vscode.dev/redirect",
+                "https://claude.ai/api/mcp/auth_callback",
+                "https://www.perplexity.ai/rest/connections/oauth_callback",
+            ],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+    assert additional_hosted_registration.status_code == 201
+    assert additional_hosted_registration.json()["redirect_uris"] == [
+        "https://vscode.dev/redirect",
+        "https://claude.ai/api/mcp/auth_callback",
+        "https://www.perplexity.ai/rest/connections/oauth_callback",
+    ]
+
+    loopback_registration = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Claude Desktop",
+            "redirect_uris": ["http://127.0.0.1:6274/callback", "http://localhost:6274/callback"],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+    assert loopback_registration.status_code == 201
+    assert loopback_registration.json()["redirect_uris"] == [
+        "http://127.0.0.1:6274/callback",
+        "http://localhost:6274/callback",
+    ]
 
     code_verifier = "test-code-verifier-1234567890"
     code_challenge = _pkce_challenge(code_verifier)
@@ -1062,8 +1102,9 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         "searchLaws",
         {"query": "civil"},
     )
-    assert unauthenticated_search.status_code == 200
-    assert _tool_payload(unauthenticated_search)["results"][0]["document_id"] == "doc-1"
+    assert unauthenticated_search.status_code == 401
+    assert "oauth-protected-resource" in unauthenticated_search.headers["www-authenticate"]
+    assert unauthenticated_search.json()["error"]["code"] == 401
 
     refresh_response = mcp_client.post(
         "/oauth/token",
@@ -1404,7 +1445,10 @@ def _configure_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "laws.sqlite3"))
     monkeypatch.setenv("MCP_API_JWT_SECRET", "test-mcp-secret")
     monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://mcp.jurisdigta.eu")
-    monkeypatch.setenv("MCP_OAUTH_ALLOWED_REDIRECT_HOSTS", "client.example,chatgpt.com,claude.ai")
+    monkeypatch.setenv(
+        "MCP_OAUTH_ALLOWED_REDIRECT_HOSTS",
+        "client.example,chatgpt.com,claude.ai,vscode.dev,www.perplexity.ai",
+    )
 
 
 def _create_mcp_key(tmp_path: Path) -> str:

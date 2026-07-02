@@ -10,10 +10,10 @@ For ChatGPT, Claude, and VS Code OAuth-capable clients, start from the OAuth met
 The API `/version`, MCP `/version`, and MCP `getVersion` tool expose `mcp_server_version`.
 For the current deployable package this value is aligned with the API package revision.
 `POST /MC` is also accepted as a compatibility alias for connector records that
-were accidentally saved with the truncated Claude URL `/MC`; OAuth metadata and
-token audiences remain canonical as `https://mcp.jurisdigta.eu/MCP`. `POST /mcp`
-is accepted as a lowercase compatibility alias for clients that normalize the
-path.
+were accidentally saved with the truncated Claude URL `/MC`; OAuth metadata
+advertises the canonical protected resource as `https://mcp.jurisdigta.eu/mcp`.
+`POST /mcp` is accepted as a lowercase compatibility alias for clients that
+normalize the path.
 
 `GET /` on the MCP service is a public human-facing setup page. In production,
 `https://mcp.jurisdigta.eu/` should show:
@@ -74,7 +74,7 @@ responses include `Cache-Control: no-store` and `Pragma: no-cache`.
 Production settings:
 
 - `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`
-- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai`
+- `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai`
   for hosted HTTPS callbacks. Loopback `http://localhost/...` and
   `http://127.0.0.1/...` redirects are accepted for local OAuth clients such as
   Claude Desktop proxies.
@@ -125,9 +125,9 @@ Manual JWT generation remains useful for local VS Code setups that pass an `Auth
 Use `https://mcp.jurisdigta.eu/MCP` as the remote MCP server URL in clients that support custom HTTP MCP servers.
 
 - ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it. Users may self-register during the browser authorization flow, but ChatGPT only receives the OAuth access token and tool results, not a raw API key.
-- Claude: add a custom connector or remote MCP server and enter the MCP server URL. OAuth-capable Claude clients can discover authorization metadata from `https://mcp.jurisdigta.eu` and register dynamically. If Claude reports that automatic client registration is not supported, open Advanced settings, set OAuth Client ID to a stable public value such as `claude`, leave OAuth Client Secret empty, and retry after confirming `claude.ai` is allowed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`.
+- Claude: add a custom connector or remote MCP server and enter the MCP server URL. OAuth-capable Claude clients can discover authorization metadata from `https://mcp.jurisdigta.eu` and register dynamically. If Claude reports that automatic client registration is not supported, open Advanced settings, set OAuth Client ID to a stable public value such as `claude`, leave OAuth Client Secret empty, and retry after confirming `claude.ai` is allowed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...` or `http://127.0.0.1/...`.
 - VS Code: add an HTTP MCP server in MCP settings. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/MCP/login`.
-- Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
+- Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. Hosted OAuth callbacks include `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback` when their hosts are listed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
 
 ### Claude Desktop via `mcp-remote`
 

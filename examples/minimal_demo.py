@@ -28,6 +28,10 @@ print(
     "invalid OTP submissions re-render HTML warnings instead of JSON errors."
 )
 print(
+    "mcp_auth_contract => getVersion/getStatistics are public; searchLaws/getLawText require "
+    "a Bearer MCP token or x-mcp-api-key, and Claude OAuth discovery remains visible to local proxies."
+)
+print(
     "mcp_wire_logging => MCP HTTP middleware logs redacted request/response envelopes; "
     "set MCP_WIRE_LOGGING_ENABLED=false to disable or MCP_WIRE_LOG_MAX_BYTES to adjust preview size."
 )

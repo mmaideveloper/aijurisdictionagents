@@ -59,8 +59,14 @@ MCP_SERVER_INSTRUCTIONS = (
     "Answer with the law name or number, relevant sections or paragraphs, and a plain-language explanation. "
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
-_PUBLIC_TOOLS = {"getVersion", "getStatistics", "searchLaws", "getLawText"}
-_DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai")
+_PUBLIC_TOOLS = {"getVersion", "getStatistics"}
+_DEFAULT_ALLOWED_REDIRECT_HOSTS = (
+    "chatgpt.com",
+    "chat.openai.com",
+    "claude.ai",
+    "vscode.dev",
+    "www.perplexity.ai",
+)
 _MCP_OTP_VERIFICATION_PURPOSE = "mcp_access"
 _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
@@ -2109,14 +2115,6 @@ def _payload_requires_auth(payload: Any) -> bool:
         if isinstance(tool_name, str) and tool_name not in _PUBLIC_TOOLS:
             return True
     return False
-
-
-def _should_challenge_oauth_probe(*, request: Request, payload: Any) -> bool:
-    user_agent = request.headers.get("user-agent", "").lower()
-    if "python-httpx" not in user_agent:
-        return False
-    methods = set(_payload_methods(payload))
-    return bool(methods & {"initialize", "tools/list", "resources/list", "resources/templates/list", "prompts/list"})
 
 
 def _oauth_authorization_response_iss_enabled() -> bool:
