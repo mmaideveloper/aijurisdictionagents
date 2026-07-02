@@ -55,8 +55,8 @@ MCP_SERVER_INSTRUCTIONS = (
     "Answer with the law name or number, relevant sections or paragraphs, and a plain-language explanation. "
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
-_PUBLIC_TOOLS = {"getVersion", "getStatistics", "searchLaws", "getLawText"}
-_DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai")
+_PUBLIC_TOOLS = {"getVersion", "getStatistics"}
+_DEFAULT_ALLOWED_REDIRECT_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai", "localhost", "127.0.0.1", "::1")
 _MCP_OTP_VERIFICATION_PURPOSE = "mcp_access"
 _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
@@ -293,8 +293,6 @@ def mcp_sign_up_page(request: Request) -> HTMLResponse:
 
 @oauth_router.get("/.well-known/oauth-protected-resource")
 def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
-    if _should_hide_oauth_metadata_for_claude_web(request):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
     base_url = _base_url(request)
     resource = _resource_url(request)
     return {
@@ -317,8 +315,6 @@ def oauth_mcp_protected_resource_metadata(request: Request) -> dict[str, Any]:
 @oauth_router.get("/.well-known/oauth-authorization-server/MCP")
 @oauth_router.get("/.well-known/oauth-authorization-server/mcp")
 def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
-    if _should_hide_oauth_metadata_for_claude_web(request):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
     base_url = _base_url(request)
     return {
         "issuer": base_url,
@@ -340,9 +336,6 @@ def oauth_dynamic_client_registration(
     request: Request,
     metadata: dict[str, Any] = Body(default_factory=dict),
 ) -> dict[str, Any]:
-    if _should_hide_oauth_metadata_for_claude_web(request):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth metadata is not advertised")
-
     redirect_uris = _registration_string_list(metadata.get("redirect_uris"))
     if not redirect_uris:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="redirect_uris is required")
@@ -1818,27 +1811,6 @@ def _payload_requires_auth(payload: Any) -> bool:
         if isinstance(tool_name, str) and tool_name not in _PUBLIC_TOOLS:
             return True
     return False
-
-
-def _should_challenge_oauth_probe(*, request: Request, payload: Any) -> bool:
-    user_agent = request.headers.get("user-agent", "").lower()
-    if "python-httpx" not in user_agent:
-        return False
-    methods = set(_payload_methods(payload))
-    return bool(methods & {"initialize", "tools/list", "resources/list", "resources/templates/list", "prompts/list"})
-
-
-def _should_hide_oauth_metadata_for_claude_web(request: Request) -> bool:
-    enabled = os.getenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    if not enabled:
-        return False
-    user_agent = request.headers.get("user-agent", "").lower()
-    return "python-httpx" in user_agent
 
 
 def _oauth_authorization_response_iss_enabled() -> bool:
