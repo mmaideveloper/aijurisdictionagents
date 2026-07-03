@@ -99,6 +99,35 @@ $env:COURT_DECISIONS_IMPORT_LIMIT="5"
 .\conda\python.exe -m services.court_decision_collector --live --page 0
 ```
 
+### Source timeout diagnostics
+
+Production defaults to a 90 second InfoSud request timeout with 3 attempts and a
+5 second retry backoff:
+
+```text
+COURT_DECISIONS_SOURCE_TIMEOUT_SECONDS=90
+COURT_DECISIONS_SOURCE_RETRY_ATTEMPTS=3
+COURT_DECISIONS_SOURCE_RETRY_BACKOFF_SECONDS=5
+```
+
+Retry logs include only safe request context such as `stage=list_decisions
+page=5362 size=25` or `stage=get_decision guid_hash=...`. They must not log raw
+decision text, source URLs, full source GUIDs, party names, prompts, snippets,
+or embeddings.
+
+Use this exact request test from `jurisdigta-server` when diagnosing upstream
+timeouts:
+
+```bash
+curl -k --connect-timeout 20 --max-time 90 \
+  -w '\nhttp=%{http_code} connect=%{time_connect}s tls=%{time_appconnect}s starttransfer=%{time_starttransfer}s total=%{time_total}s\n' \
+  'https://obcan.justice.sk/pilot/api/ress-isu-service/v1/rozhodnutie?page=5362&size=25' \
+  -o /tmp/infosud-page-5362.json
+```
+
+Run the detail endpoint only with an operationally necessary source GUID, and
+avoid pasting raw decision bodies into tickets or logs.
+
 ## MCP tools
 
 The MCP server exposes:

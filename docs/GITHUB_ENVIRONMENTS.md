@@ -257,6 +257,9 @@ Court-decision collector settings are required before enabling court-decision MC
 | `COURT_DECISIONS_DB_CLOUD` | Dedicated PostgreSQL connection string for the court decisions database, for example `court_decisions_sk`; keep it separate from laws collector databases |
 | `COURT_DECISIONS_STORAGE_LOCAL` | Runtime artifact path, default `./runs/storage/court-decision-collector/files/sk` |
 | `COURT_DECISIONS_SOURCE_BASE_URL` | InfoSud API base URL, default `https://obcan.justice.sk/pilot/api/ress-isu-service/v1` |
+| `COURT_DECISIONS_SOURCE_TIMEOUT_SECONDS` | InfoSud request timeout, default `90`; increase only with retry logging enabled so slow upstream calls remain traceable |
+| `COURT_DECISIONS_SOURCE_RETRY_ATTEMPTS` | InfoSud retry attempts for connect/read timeouts and connection errors, default `3` |
+| `COURT_DECISIONS_SOURCE_RETRY_BACKOFF_SECONDS` | Sleep between InfoSud retries, default `5` |
 | `COURT_DECISIONS_WORKER_POLL_HOURS` | Future scheduled worker cadence, default `1` |
 | `COURT_DECISIONS_EMBEDDING_DIMENSIONS` | Stored vector dimensions, default `32` |
 | `COURT_DECISIONS_IMPORT_LIMIT` | Bounded import page size for smoke runs, default `25` |

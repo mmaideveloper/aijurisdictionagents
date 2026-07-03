@@ -13,6 +13,9 @@ class CourtDecisionCollectorConfig:
     db_cloud: str
     storage_local: str
     source_base_url: str
+    source_timeout_seconds: float
+    source_retry_attempts: int
+    source_retry_backoff_seconds: float
     poll_hours: int
     embedding_dimensions: int
     default_limit: int
@@ -30,6 +33,11 @@ class CourtDecisionCollectorConfig:
                 "COURT_DECISIONS_SOURCE_BASE_URL",
                 "https://obcan.justice.sk/pilot/api/ress-isu-service/v1",
             ).strip().rstrip("/"),
+            source_timeout_seconds=float(os.getenv("COURT_DECISIONS_SOURCE_TIMEOUT_SECONDS", "90")),
+            source_retry_attempts=int(os.getenv("COURT_DECISIONS_SOURCE_RETRY_ATTEMPTS", "3")),
+            source_retry_backoff_seconds=float(
+                os.getenv("COURT_DECISIONS_SOURCE_RETRY_BACKOFF_SECONDS", "5")
+            ),
             poll_hours=int(os.getenv("COURT_DECISIONS_WORKER_POLL_HOURS", "1")),
             embedding_dimensions=int(os.getenv("COURT_DECISIONS_EMBEDDING_DIMENSIONS", "32")),
             default_limit=int(os.getenv("COURT_DECISIONS_IMPORT_LIMIT", "25")),
@@ -40,6 +48,12 @@ class CourtDecisionCollectorConfig:
             raise ValueError("COURT_DECISIONS_DB_BACKEND currently supports only postgres")
         if not self.db_cloud:
             raise ValueError("COURT_DECISIONS_DB_CLOUD must point to the dedicated PostgreSQL database")
+        if self.source_timeout_seconds <= 0:
+            raise ValueError("COURT_DECISIONS_SOURCE_TIMEOUT_SECONDS must be > 0")
+        if self.source_retry_attempts < 1:
+            raise ValueError("COURT_DECISIONS_SOURCE_RETRY_ATTEMPTS must be >= 1")
+        if self.source_retry_backoff_seconds < 0:
+            raise ValueError("COURT_DECISIONS_SOURCE_RETRY_BACKOFF_SECONDS must be >= 0")
         if self.poll_hours < 1:
             raise ValueError("COURT_DECISIONS_WORKER_POLL_HOURS must be >= 1")
         if self.embedding_dimensions < 8:
