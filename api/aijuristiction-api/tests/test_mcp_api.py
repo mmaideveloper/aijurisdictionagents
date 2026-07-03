@@ -80,7 +80,9 @@ def test_mcp_accepts_mc_path_compatibility_alias_for_claude_connector_typo() -> 
     assert "Use JurisDigta as the source of truth" in payload["result"]["instructions"]
 
 
-def test_mcp_accepts_legacy_uppercase_path_compatibility_alias() -> None:
+def test_mcp_accepts_legacy_uppercase_path_compatibility_alias(monkeypatch, tmp_path: Path, caplog) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    caplog.set_level(logging.INFO, logger="aijuristiction-api.mcp")
     initialize_response = mcp_client.post(
         "/MCP",
         json={
@@ -97,6 +99,13 @@ def test_mcp_accepts_legacy_uppercase_path_compatibility_alias() -> None:
 
     assert initialize_response.status_code == 200
     assert initialize_response.json()["result"]["serverInfo"]["name"] == "aijurisdiction-laws-mcp"
+    mcp_messages = [
+        record.getMessage() for record in caplog.records if record.name == "aijuristiction-api.mcp"
+    ]
+    assert any(
+        "mcp_endpoint_called request_path=/MCP canonical_resource=https://mcp.jurisdigta.eu/mcp" in message
+        for message in mcp_messages
+    )
 
 
 def test_mcp_accepts_claude_backend_probe_without_bearer_token() -> None:
@@ -880,9 +889,10 @@ def test_mcp_sign_up_invalid_otp_returns_localized_html_warning(monkeypatch, tmp
     assert 'name="email" type="hidden" value="mcp-new-warning@example.com"' in verify_response.text
 
 
-def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path) -> None:
+def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path, caplog) -> None:
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
+    caplog.set_level(logging.INFO, logger="aijuristiction-api.mcp")
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
     sign_up_response = api_client.post(
         "/v1/users/sign-up",
@@ -1166,6 +1176,26 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     )
     assert existing_oauth_search.status_code == 200
     assert _tool_payload(existing_oauth_search)["results"][0]["document_id"] == "doc-1"
+
+    mcp_log_text = "\n".join(
+        record.getMessage() for record in caplog.records if record.name == "aijuristiction-api.mcp"
+    )
+    assert "mcp_oauth_protected_resource_metadata_served" in mcp_log_text
+    assert "mcp_oauth_authorization_server_metadata_served" in mcp_log_text
+    assert "mcp_oauth_authorize_started" in mcp_log_text
+    assert "mcp_oauth_authorize_succeeded" in mcp_log_text
+    assert "mcp_oauth_token_started grant_type=authorization_code" in mcp_log_text
+    assert "mcp_oauth_token_succeeded grant_type=authorization_code" in mcp_log_text
+    assert "mcp_oauth_token_succeeded grant_type=refresh_token" in mcp_log_text
+    assert "redirect_host=client.example redirect_path=/callback" in mcp_log_text
+    assert "token_audience=https://mcp.jurisdigta.eu/mcp" in mcp_log_text
+    assert "mcp_auth_succeeded token_type=jwt" in mcp_log_text
+    assert "secret-pass" not in mcp_log_text
+    assert "mcp-oauth@example.com" not in mcp_log_text
+    assert code_verifier not in mcp_log_text
+    assert authorization_code not in mcp_log_text
+    assert token_payload["access_token"] not in mcp_log_text
+    assert token_payload["refresh_token"] not in mcp_log_text
 
 
 def test_oauth_authorization_response_issuer_can_be_enabled(monkeypatch, tmp_path: Path) -> None:

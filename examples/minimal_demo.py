@@ -41,6 +41,10 @@ print(
     "set MCP_WIRE_LOGGING_ENABLED=false to disable or MCP_WIRE_LOG_MAX_BYTES to adjust preview size."
 )
 print(
+    "mcp_oauth_diagnostic_logs => OAuth metadata, authorize, token, refresh, and endpoint entry "
+    "events log path/resource/audience context without passwords, OTPs, auth codes, PKCE verifiers, or tokens."
+)
+print(
     "case_document_pdf_export => linked generated PDFs export the selected legal-document block only; "
     "assistant chatter, alternate-language blocks, and raw markdown stay out of the PDF."
 )
