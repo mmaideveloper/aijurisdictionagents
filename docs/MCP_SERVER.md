@@ -9,6 +9,10 @@ It is intended for AI assistants that can connect to remote MCP servers over HTT
 For ChatGPT, Claude, and VS Code OAuth-capable clients, start from the OAuth metadata endpoints instead of manually copying a token.
 The API `/version`, MCP `/version`, and MCP `getVersion` tool expose `mcp_server_version`.
 For the current deployable package this value is aligned with the API package revision.
+During JSON-RPC `initialize`, the server echoes the requested MCP protocol
+version when it is one of the supported protocol versions (`2025-03-26`,
+`2025-06-18`, or `2025-11-25`). If the client omits the version or sends an
+unknown future value, the server falls back to the latest supported version.
 `POST /MCP` remains accepted as a Claude compatibility endpoint and for older
 client records, and `POST /MC` is also accepted for connector records that were
 accidentally saved with the truncated Claude URL `/MC`. OAuth metadata keeps
