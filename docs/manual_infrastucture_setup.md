@@ -273,6 +273,151 @@ Purpose: point `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, 
 - Require strong authentication and human oversight for legal-risk admin and MCP operations before production exposure.
 - Provide user transparency when legal workflows use AI assistance, and retain traceable but privacy-safe audit logs.
 
+## JurisDigta Server Eaton UPS Shutdown Protection
+
+Purpose: install and validate Network UPS Tools (NUT) on the self-managed Ubuntu
+server `jurisdigta-server` so the server receives UPS power-loss notifications
+and shuts down gracefully when the UPS reports low battery or forced shutdown.
+
+### Provider And Owner
+
+- Provider: local self-managed Ubuntu server with Eaton USB HID UPS.
+- Required owner: infrastructure operator with SSH, sudo, and physical access to
+  the server and UPS.
+- Target environment: production `jurisdigta-server` on the local/private
+  network.
+
+### Actual Server Setup
+
+Validated on 2026-07-03:
+
+- Server: `jurisdigta-server` at `192.168.1.25`.
+- Server user: `jurisdigta-admin`.
+- Motherboard: Gigabyte `Z77X-UD3H`, BIOS `F7`.
+- USB UPS vendor: `0463` (`MGE UPS Systems` / Eaton USB HID).
+- NUT device name: `eaton5p`.
+- UPS-reported model during validation: `Eaton 5E 900 G2`.
+- NUT driver: `usbhid-ups`.
+- NUT version: `2.8.4`.
+- UPS status during validation: online and charging.
+- UPS low-battery threshold reported by the device: `20%`.
+
+NUT is installed with:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nut nut-client nut-server
+```
+
+The server-local NUT configuration is:
+
+- `/etc/nut/nut.conf`: `MODE=standalone`
+- `/etc/nut/ups.conf`: `[eaton5p]`, `driver = usbhid-ups`,
+  `port = auto`, `vendorid = 0463`
+- `/etc/nut/upsd.conf`: listens only on `127.0.0.1:3493` and `[::1]:3493`
+- `/etc/nut/upsd.users`: local `upsmon` monitor user with a random password
+- `/etc/nut/upsmon.conf`: monitors `eaton5p@localhost` as primary and runs
+  `/sbin/shutdown -h +0` when NUT reaches the shutdown condition
+- `/etc/nut/upssched.conf`: sends UPS events to `/etc/nut/upssched-cmd`
+- `/etc/nut/upssched-cmd`: writes privacy-safe operational events to syslog
+  with tag `jurisdigta-ups`
+
+NUT services are enabled and active:
+
+```bash
+sudo systemctl enable --now nut-driver@eaton5p.service nut-server.service nut-monitor.service
+systemctl is-enabled nut-driver@eaton5p.service nut-server.service nut-monitor.service
+systemctl is-active nut-driver@eaton5p.service nut-server.service nut-monitor.service
+```
+
+The conservative shutdown policy is:
+
+- Notify immediately when mains power is lost (`ONBATT`).
+- Keep the server online during short outages.
+- Shut down gracefully when the UPS reports `LOWBATT` or forced shutdown.
+- Do not expose NUT over the network; local-only monitoring is sufficient for
+  this server.
+
+### Validation Steps
+
+Run the repository validation helper from a Windows workstation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File examples/check_jurisdigta_ups_nut.ps1
+```
+
+Manual equivalent:
+
+```bash
+systemctl is-active nut-driver@eaton5p.service nut-server.service nut-monitor.service
+systemctl is-enabled nut-driver@eaton5p.service nut-server.service nut-monitor.service
+ss -ltnp | grep ':3493'
+upsc eaton5p@localhost
+journalctl -t jurisdigta-ups -n 20 --no-pager
+```
+
+Expected results:
+
+- All three NUT services are `active` and `enabled`.
+- `ss` shows NUT listening only on `127.0.0.1:3493` and `[::1]:3493`.
+- `upsc eaton5p@localhost` returns Eaton UPS telemetry including
+  `ups.status`, `battery.charge`, `battery.runtime`, and `input.voltage`.
+- Simulated notification validation with `sudo /etc/nut/upssched-cmd onbatt`
+  creates a `jurisdigta-ups` syslog event.
+
+### Power Return And Auto-Start Check
+
+The UPS supports delayed output restart commands such as `shutdown.return`,
+`load.on.delay`, and writable `ups.delay.start`. This means the UPS can turn
+the protected outlet back on after utility power returns.
+
+The server itself also needs firmware support to boot when AC power returns
+after a full outage. On the Gigabyte `Z77X-UD3H`, verify in BIOS/UEFI that the
+AC power recovery setting is enabled, usually named `AC BACK`, `Restore on AC
+Power Loss`, `Power On After Power Fail`, or similar. This setting is not
+reliably exposed through Linux, so it cannot be proven from SSH alone.
+
+Controlled physical validation:
+
+1. Confirm JurisDigta services are healthy before testing.
+2. Confirm the server power cable is connected to a battery-backed UPS outlet,
+   not only surge protection.
+3. Confirm the BIOS/UEFI AC-back setting is `Power On` or `Memory/Last State`.
+4. Disconnect utility power from the UPS, not the server.
+5. Confirm `journalctl -t jurisdigta-ups -f` logs the `ONBATT` notification.
+6. Reconnect utility power before low battery for a non-shutdown smoke test.
+7. For a full shutdown/restart test, schedule a maintenance window, back up
+   critical data, let NUT reach low battery, and confirm the server shuts down
+   cleanly and starts again after UPS output returns.
+
+### Rollback Notes
+
+To disable the NUT setup without removing packages:
+
+```bash
+sudo systemctl disable --now nut-monitor.service nut-server.service nut-driver@eaton5p.service
+```
+
+To restore the previous NUT configuration, copy files back from the latest
+`/etc/nut/jurisdigta-backup-*` directory and restart the services.
+
+To fully remove NUT:
+
+```bash
+sudo apt-get remove -y nut nut-client nut-server
+```
+
+### Privacy And Compliance Notes
+
+- UPS telemetry and power events are operational infrastructure data, not legal
+  case content.
+- Logs must remain privacy-safe: do not include user names, case names,
+  document contents, access tokens, API keys, or secrets in UPS notifications.
+- Graceful shutdown protects database and document-processing integrity, which
+  supports GDPR availability and integrity expectations for personal data.
+- Human operators must review any full power-fail test because it can interrupt
+  legal-risk workflows and user-facing services.
+
 ## JurisDigta Self-Managed Server Deployment Preparation
 
 Related runbooks and scripts:
