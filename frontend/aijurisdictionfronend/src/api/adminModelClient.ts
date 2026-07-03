@@ -15,6 +15,9 @@ export interface AIModelProvider {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
+  deleted_by_admin_user_id: string;
+  deleted_reason: string;
 }
 
 export interface AIModelProfile {
@@ -251,6 +254,7 @@ export interface ProviderUpsertInput {
   provider_type: string;
   display_name: string;
   base_url: string;
+  api_version: string;
   region: string;
   data_zone: string;
   health_check_url: string;
@@ -286,6 +290,10 @@ export interface CredentialUpsertInput {
 
 export interface CredentialPatchInput {
   enabled: boolean;
+  reason: string;
+}
+
+export interface ProviderDeleteInput {
   reason: string;
 }
 
@@ -464,6 +472,16 @@ export const upsertAIModelProvider = (
 ): Promise<AIModelProvider> =>
   adminRequest<AIModelProvider>("/v1/admin/ai-models/providers", adminUserId, {
     method: "POST",
+    body: JSON.stringify(input)
+  });
+
+export const deleteAIModelProvider = (
+  adminUserId: AdminAuthInput,
+  providerId: string,
+  input: ProviderDeleteInput
+): Promise<AIModelProvider> =>
+  adminRequest<AIModelProvider>(`/v1/admin/ai-models/providers/${encodeURIComponent(providerId)}`, adminUserId, {
+    method: "DELETE",
     body: JSON.stringify(input)
   });
 

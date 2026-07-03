@@ -358,6 +358,18 @@
   margin: 0;
 }
 
+.admin-panel h3 {
+  font-size: 0.95rem;
+  margin: 4px 0 0;
+}
+
+.admin-form-stack {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+}
+
 .admin-section-heading {
   align-items: center;
   display: flex;
@@ -461,11 +473,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  min-width: 260px;
+  min-width: 160px;
 }
 
 .admin-inline-actions .button {
   min-height: 32px;
+  white-space: nowrap;
 }
 
 .admin-panel table,

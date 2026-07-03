@@ -397,6 +397,89 @@ def test_admin_can_manage_models_groups_and_audit_events(tmp_path: Path, monkeyp
     assert "case data outside" in payload["compliance_notes"][0]
 
 
+def test_admin_can_soft_delete_provider_with_audit_and_routing_fallback(tmp_path: Path, monkeypatch) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    target = store.create_user(email="target@example.com", password="secret", full_name="Target User")
+    provider = store.upsert_ai_model_provider(
+        provider_code="external_delete_test",
+        provider_type="openai_compatible",
+        display_name="External Delete Test",
+        base_url="https://llm.example.test/v1",
+        region="eu",
+        data_zone="eu",
+        is_external=True,
+        enabled=True,
+    )
+    profile = store.upsert_ai_model_profile(
+        provider_id=provider.provider_id,
+        model_code="external-model",
+        deployment_name="external-model",
+        eu_data_zone_capable=True,
+        enabled=True,
+    )
+    credential = store.upsert_ai_model_credential(
+        provider_id=provider.provider_id,
+        credential_name="default",
+        secret_type="api_key",
+        secret_value="secret-delete-test",
+        enabled=True,
+    )
+    store.upsert_ai_model_user_override(
+        user_id=target.user_id,
+        model_profile_id=profile.model_profile_id,
+        admin_user_id=admin.user_id,
+        reason="Assign external provider before delete.",
+    )
+    app.dependency_overrides[get_admin_store] = lambda: store
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id}
+    try:
+        delete_response = client.request(
+            "DELETE",
+            f"/v1/admin/ai-models/providers/{provider.provider_id}",
+            headers=headers,
+            json={"reason": "Provider contract ended."},
+        )
+        dashboard_response = client.get("/v1/admin/ai-models", headers=headers)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert delete_response.status_code == 200
+    deleted_provider = delete_response.json()
+    assert deleted_provider["provider_id"] == provider.provider_id
+    assert deleted_provider["enabled"] is False
+    assert deleted_provider["deleted_at"]
+    assert deleted_provider["deleted_reason"] == "Provider contract ended."
+
+    providers = store.list_ai_model_providers(include_deleted=True)
+    assert any(item.provider_id == provider.provider_id and item.deleted_at for item in providers)
+    assert all(item.provider_id != provider.provider_id for item in store.list_ai_model_providers())
+    disabled_profile = next(item for item in store.list_ai_model_profiles() if item.model_profile_id == profile.model_profile_id)
+    disabled_credential = next(
+        item for item in store.list_ai_model_credentials(provider_id=provider.provider_id)
+        if item.credential_id == credential.credential_id
+    )
+    assert disabled_profile.enabled is False
+    assert disabled_credential.enabled is False
+
+    route = store.resolve_ai_model_route(user_id=target.user_id, plan_code="free", task_type="default")
+    assert route.route_type == "free_local"
+    assert route.provider is not None
+    assert route.provider.provider_id == "local_ollama"
+
+    payload = dashboard_response.json()
+    dashboard_provider = next(item for item in payload["providers"] if item["provider_id"] == provider.provider_id)
+    assert dashboard_provider["deleted_at"]
+    assert dashboard_provider["deleted_reason"] == "Provider contract ended."
+    audit_events = store.list_ai_model_admin_audit_events(limit=5)
+    assert audit_events[0].action == "provider.soft_delete"
+    assert audit_events[0].entity_id == provider.provider_id
+    assert "secret-delete-test" not in audit_events[0].old_value_summary
+    assert "secret-delete-test" not in audit_events[0].new_value_summary
+
+
 def test_external_policy_requires_external_model(tmp_path: Path, monkeypatch) -> None:
     store = _store(tmp_path)
     admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
