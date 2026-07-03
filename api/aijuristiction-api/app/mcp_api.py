@@ -837,7 +837,7 @@ def oauth_token(
             "refresh_token": refresh_token_value,
             "token_type": "Bearer",
             "expires_in": expires_in,
-            "scope": f"{MCP_TOKEN_SCOPE} {MCP_REFRESH_TOKEN_SCOPE}",
+            "scope": MCP_TOKEN_SCOPE,
         }
     )
 
@@ -920,7 +920,7 @@ def _oauth_refresh_token_response(
             "refresh_token": refresh_token_value,
             "token_type": "Bearer",
             "expires_in": expires_in,
-            "scope": f"{MCP_TOKEN_SCOPE} {MCP_REFRESH_TOKEN_SCOPE}",
+            "scope": MCP_TOKEN_SCOPE,
         }
     )
 
