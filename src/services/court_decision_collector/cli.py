@@ -82,7 +82,11 @@ def main() -> None:
         if args.fixture_source
         else InfoSudSourceClient(
             base_url=config.source_base_url,
+            timeout_seconds=config.source_timeout_seconds,
+            retry_attempts=config.source_retry_attempts,
+            retry_backoff_seconds=config.source_retry_backoff_seconds,
             tls_verify=not args.source_insecure_local_tls,
+            progress_logger=progress_logger,
         )
     )
     service = CourtDecisionCollectorService(store=store, source=source, progress_logger=progress_logger)

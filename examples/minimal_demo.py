@@ -180,6 +180,7 @@ print(
 )
 print(
     "court_decision_collector => imports Slovak court decisions into a separate "
-    "PostgreSQL store with vectors and pseudonymized MCP search output; run "
+    "PostgreSQL store with vectors, retry-hardened InfoSud requests, and "
+    "pseudonymized MCP search output; run "
     "`python examples/court_decision_collector_minimal_demo.py` for the focused fixture demo."
 )

@@ -1,5 +1,10 @@
+from hashlib import sha256
+
+import httpx
+
+from services.court_decision_collector.config import CourtDecisionCollectorConfig
 from services.court_decision_collector.fixtures import FixtureCourtDecisionSource, sample_court_decision_records
-from services.court_decision_collector.infosud_source import record_from_infosud_payload
+from services.court_decision_collector.infosud_source import InfoSudSourceClient, record_from_infosud_payload
 from services.court_decision_collector.postgres_store import CourtDecisionCollectorStatus
 from services.court_decision_collector.pseudonymization import pseudonymize_court_decision_text
 from services.court_decision_collector.service import CourtDecisionCollectorService
@@ -34,6 +39,108 @@ class FakeStore:
             (source_system, cursor_kind),
             CourtDecisionCollectorStatus(last_processed_at="", last_source_guid="", status="not_started"),
         )
+
+
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self):
+        return self.payload
+
+
+def test_config_reads_infosud_timeout_retry_settings(monkeypatch) -> None:
+    monkeypatch.setenv("COURT_DECISIONS_DB_CLOUD", "postgresql://postgres:postgres@db/court_decisions_sk")
+    monkeypatch.setenv("COURT_DECISIONS_SOURCE_TIMEOUT_SECONDS", "120")
+    monkeypatch.setenv("COURT_DECISIONS_SOURCE_RETRY_ATTEMPTS", "4")
+    monkeypatch.setenv("COURT_DECISIONS_SOURCE_RETRY_BACKOFF_SECONDS", "1.5")
+
+    config = CourtDecisionCollectorConfig.from_env()
+
+    assert config.source_timeout_seconds == 120
+    assert config.source_retry_attempts == 4
+    assert config.source_retry_backoff_seconds == 1.5
+    config.validate()
+
+
+def test_infosud_list_decisions_retries_connect_timeout_with_safe_context(monkeypatch) -> None:
+    messages = []
+    sleeps = []
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        if len(calls) == 1:
+            raise httpx.ConnectTimeout("timed out")
+        return FakeResponse(
+            {
+                "rozhodnutieList": [
+                    {"guid": "decision-guid-1", "spisovaZnacka": "12C/34/2026"},
+                ],
+            }
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    client = InfoSudSourceClient(
+        base_url="https://obcan.justice.sk/pilot/api/ress-isu-service/v1",
+        timeout_seconds=90,
+        retry_attempts=2,
+        retry_backoff_seconds=0.25,
+        progress_logger=messages.append,
+        sleep_fn=sleeps.append,
+    )
+
+    refs = client.list_decisions(page=5362, size=25)
+
+    assert [ref.guid for ref in refs] == ["decision-guid-1"]
+    assert len(calls) == 2
+    assert calls[0][1]["params"] == {"page": 5362, "size": 25}
+    assert calls[0][1]["timeout"] == 90
+    assert sleeps == [0.25]
+    assert any(
+        (
+            "infosud_source_request_retry stage=list_decisions page=5362 size=25 "
+            "attempt=1 max_attempts=2 timeout_seconds=90 error_type=ConnectTimeout"
+        )
+        in message
+        for message in messages
+    )
+
+
+def test_infosud_detail_failure_logs_hashed_guid_without_raw_identifier(monkeypatch) -> None:
+    messages = []
+    guid = "raw-guid-value"
+    expected_hash = sha256(guid.encode("utf-8")).hexdigest()[:12]
+
+    def fake_get(url, **kwargs):
+        raise httpx.ReadTimeout("The read operation timed out")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    client = InfoSudSourceClient(
+        base_url="https://obcan.justice.sk/pilot/api/ress-isu-service/v1",
+        timeout_seconds=45,
+        retry_attempts=1,
+        retry_backoff_seconds=0,
+        progress_logger=messages.append,
+    )
+
+    try:
+        client.get_decision(guid)
+    except httpx.ReadTimeout:
+        pass
+
+    assert any(
+        (
+            "infosud_source_request_failed stage=get_decision "
+            f"guid_hash={expected_hash} attempt=1 max_attempts=1"
+        )
+        in message
+        for message in messages
+    )
+    assert not any(guid in message for message in messages)
 
 
 def test_pseudonymization_removes_common_person_names() -> None:

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+from typing import Any
 import uuid
 
 import psycopg
@@ -413,9 +414,9 @@ class PostgresCourtDecisionStore:
                 """
             ).fetchone()
         return CourtDecisionStatistics(
-            total_decisions=int(totals["total_decisions"] if totals else 0),
-            published_decisions=int(totals["published_decisions"] if totals else 0),
-            total_versions=int(versions["total_versions"] if versions else 0),
+            total_decisions=int(str(totals["total_decisions"] if totals else 0)),
+            published_decisions=int(str(totals["published_decisions"] if totals else 0)),
+            total_versions=int(str(versions["total_versions"] if versions else 0)),
             last_imported_decision_id=str(latest["decision_id"] if latest else ""),
             last_imported_source_guid=str(latest["source_guid"] if latest else ""),
             last_imported_at=str(latest["last_stored_at"] if latest else ""),
@@ -456,7 +457,7 @@ class PostgresCourtDecisionStore:
         )
 
     def _connect(self) -> psycopg.Connection[dict[str, object]]:
-        kwargs: dict[str, object] = {"row_factory": dict_row}
+        kwargs: dict[str, Any] = {"row_factory": dict_row}
         if self.connect_timeout_seconds is not None:
             kwargs["connect_timeout"] = self.connect_timeout_seconds
         if self.statement_timeout_ms is not None:
