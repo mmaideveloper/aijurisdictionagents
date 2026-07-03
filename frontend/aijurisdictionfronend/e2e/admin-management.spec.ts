@@ -228,8 +228,13 @@ test("admin management shows users, providers, models, policies, Ollama inventor
   await page.getByRole("button", { name: "User groups" }).click();
   await expect(page.getByRole("cell", { name: "Admins" }).first()).toBeVisible();
 
+  await page.getByRole("button", { name: "Import from Ollama registry" }).click();
+  await expect(page.getByRole("heading", { name: "Import from Ollama registry" })).toBeVisible();
+  await expect(page.getByLabel("Ollama model tag")).toBeVisible();
+
   await page.getByRole("button", { name: "Local Ollama models" }).click();
   await expect(page.getByRole("cell", { name: /qwen3:1\.7b/ }).first()).toBeVisible();
+  await expect(page.getByText("Default model cannot be disabled or removed.")).toBeVisible();
 
   await page.getByRole("button", { name: "Admin audit" }).click();
   await expect(page.getByText("ai_task_route_policy: default:free:default")).toBeVisible();

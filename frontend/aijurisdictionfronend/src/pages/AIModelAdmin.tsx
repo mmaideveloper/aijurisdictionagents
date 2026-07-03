@@ -37,7 +37,7 @@ import {
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
-type AdminSection = "users" | "assignments" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollama" | "audit";
+type AdminSection = "users" | "assignments" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "audit";
 type AdminFormMode = "table" | "create" | "edit";
 
 const emptyProvider = {
@@ -96,6 +96,15 @@ const emptyPolicy = {
   reason: ""
 };
 
+const emptyUserForm = {
+  user_id: "",
+  email: "",
+  full_name: "",
+  role: "user",
+  is_enabled: true,
+  reason: ""
+};
+
 const AIModelAdmin: React.FC = () => {
   const { t } = useLanguage();
   const { user } = useAuth();
@@ -103,6 +112,8 @@ const AIModelAdmin: React.FC = () => {
   const [dashboard, setDashboard] = React.useState<AIModelAdminDashboard | null>(null);
   const [usersPage, setUsersPage] = React.useState<AdminUsersPage | null>(null);
   const [ollamaInventory, setOllamaInventory] = React.useState<OllamaModelInventory | null>(null);
+  const [userForm, setUserForm] = React.useState(emptyUserForm);
+  const [userMode, setUserMode] = React.useState<AdminFormMode>("table");
   const [providerForm, setProviderForm] = React.useState(emptyProvider);
   const [providerMode, setProviderMode] = React.useState<AdminFormMode>("table");
   const [providerCredentialsMode, setProviderCredentialsMode] = React.useState<AdminFormMode>("table");
@@ -326,6 +337,9 @@ const AIModelAdmin: React.FC = () => {
   const enabledProfiles = activeProfiles.filter((profile) => profile.enabled);
   const freeDefaultProfile = activeProfiles.find((profile) => profile.is_default_for_free);
   const freeDefaultProvider = freeDefaultProfile ? providerById.get(freeDefaultProfile.provider_id) : undefined;
+  const localOllamaProvider = activeProviders.find(
+    (provider) => provider.provider_code === "local_ollama" || provider.provider_type === "ollama" || provider.is_local
+  );
   const freeDefaultLabel = freeDefaultProfile
     ? `${freeDefaultProfile.deployment_name || freeDefaultProfile.model_code} (${freeDefaultProvider?.display_name ?? freeDefaultProfile.provider_id})`
     : t("adminNoFreeModel");
@@ -364,6 +378,41 @@ const AIModelAdmin: React.FC = () => {
       return t("adminDeleted");
     }
     return provider.enabled ? t("adminEnabled") : t("adminDisabled");
+  };
+  const userToForm = (targetUser: AdminUserSummary, overrides: Partial<typeof emptyUserForm> = {}) => ({
+    user_id: targetUser.user_id,
+    email: targetUser.email,
+    full_name: targetUser.full_name,
+    role: targetUser.role,
+    is_enabled: targetUser.is_enabled,
+    reason: "",
+    ...overrides
+  });
+  const showUserEditForm = (targetUser: AdminUserSummary) => {
+    setUserForm(userToForm(targetUser));
+    setUserMode("edit");
+    setStatus("");
+    setError("");
+  };
+  const cancelUserForm = () => {
+    setUserForm(emptyUserForm);
+    setUserMode("table");
+    setStatus("");
+    setError("");
+  };
+  const saveUserForm = async () => {
+    const saved = await runAction(
+      () => updateAdminUser(adminAuth, userForm.user_id, {
+        role: userForm.role,
+        is_enabled: userForm.is_enabled,
+        reason: userForm.reason || "Updated from admin user management."
+      }),
+      t("adminUserSaved")
+    );
+    if (saved) {
+      setUserForm(emptyUserForm);
+      setUserMode("table");
+    }
   };
   const showProviderCreateForm = () => {
     setProviderForm(emptyProvider);
@@ -616,6 +665,34 @@ const AIModelAdmin: React.FC = () => {
       )
     );
   };
+  const setOllamaModelAsDefault = async (item: OllamaModelInventory["models"][number]) => {
+    const existingProfile =
+      activeProfiles.find((profile) => item.configured_profile_ids.includes(profile.model_profile_id)) ??
+      activeProfiles.find((profile) => profile.provider_id === localOllamaProvider?.provider_id && profile.model_code === item.name);
+    const providerId = existingProfile?.provider_id ?? localOllamaProvider?.provider_id ?? "";
+    if (!providerId) {
+      throw new Error(t("adminOllamaNoLocalProvider"));
+    }
+    await upsertAIModelProfile(
+      adminAuth,
+      existingProfile
+        ? profileToForm(existingProfile, {
+            enabled: true,
+            is_default_for_free: true,
+            reason: ollamaRemoveReason || "Set local Ollama model as default from admin UI."
+          })
+        : {
+            ...emptyProfile,
+            provider_id: providerId,
+            model_code: item.name,
+            deployment_name: item.name,
+            enabled: true,
+            is_default_for_free: true,
+            reason: ollamaRemoveReason || "Set local Ollama model as default from admin UI."
+          }
+    );
+    await reloadOllama();
+  };
 
   const sections: Array<{ key: AdminSection; label: string; icon: React.ReactNode }> = [
     { key: "users", label: t("adminUsersTitle"), icon: <FaUsers aria-hidden="true" /> },
@@ -626,6 +703,7 @@ const AIModelAdmin: React.FC = () => {
     { key: "credentials", label: t("adminCredentialsTitle"), icon: <FaKey aria-hidden="true" /> },
     { key: "groups", label: t("adminGroupsTitle"), icon: <FaUserPlus aria-hidden="true" /> },
     { key: "policies", label: t("adminPoliciesTitle"), icon: <FaRoute aria-hidden="true" /> },
+    { key: "ollamaImport", label: t("adminOllamaImportTitle"), icon: <FaDownload aria-hidden="true" /> },
     { key: "ollama", label: t("adminOllamaTitle"), icon: <FaDownload aria-hidden="true" /> },
     { key: "audit", label: t("adminAuditTitle"), icon: <FaKey aria-hidden="true" /> }
   ];
@@ -687,34 +765,39 @@ const AIModelAdmin: React.FC = () => {
                         <td>{item.role}</td>
                         <td>{item.is_enabled ? t("adminEnabled") : t("adminDisabled")}</td>
                         <td>
-                          <button
-                            className="button ghost"
-                            type="button"
-                            onClick={() => void runAction(
-                              () => updateAdminUser(adminAuth, item.user_id, {
-                                role: item.role === "admin" ? "user" : "admin",
-                                is_enabled: item.is_enabled,
-                                reason: "Updated from admin user management."
-                              }),
-                              t("adminSaved")
-                            )}
-                          >
-                            {item.role === "admin" ? t("adminMakeUser") : t("adminMakeAdmin")}
-                          </button>
-                          <button
-                            className="button ghost"
-                            type="button"
-                            onClick={() => void runAction(
-                              () => updateAdminUser(adminAuth, item.user_id, {
-                                role: item.role === "admin" ? "admin" : "user",
-                                is_enabled: !item.is_enabled,
-                                reason: "Updated from admin user management."
-                              }),
-                              t("adminSaved")
-                            )}
-                          >
-                            {item.is_enabled ? t("adminDisableUser") : t("adminEnableUser")}
-                          </button>
+                          <div className="admin-inline-actions">
+                            <button className="button ghost" type="button" onClick={() => showUserEditForm(item)}>
+                              <FaEdit aria-hidden="true" />{t("adminEdit")}
+                            </button>
+                            <button
+                              className="button ghost"
+                              type="button"
+                              onClick={() => void runAction(
+                                () => updateAdminUser(adminAuth, item.user_id, {
+                                  role: item.role === "admin" ? "user" : "admin",
+                                  is_enabled: item.is_enabled,
+                                  reason: "Updated from admin user management."
+                                }),
+                                t("adminUserSaved")
+                              )}
+                            >
+                              {item.role === "admin" ? t("adminMakeUser") : t("adminMakeAdmin")}
+                            </button>
+                            <button
+                              className="button ghost"
+                              type="button"
+                              onClick={() => void runAction(
+                                () => updateAdminUser(adminAuth, item.user_id, {
+                                  role: item.role === "admin" ? "admin" : "user",
+                                  is_enabled: !item.is_enabled,
+                                  reason: "Updated from admin user management."
+                                }),
+                                t("adminUserSaved")
+                              )}
+                            >
+                              {item.is_enabled ? t("adminDisableUser") : t("adminEnableUser")}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -731,6 +814,24 @@ const AIModelAdmin: React.FC = () => {
                 <button className="secondary-button" type="button" disabled={usersOffset <= 0} onClick={() => void loadUsersPage(usersOffset - usersLimit)}>{t("adminPrevious")}</button>
                 <button className="secondary-button" type="button" disabled={usersOffset + usersLimit >= usersTotal} onClick={() => void loadUsersPage(usersOffset + usersLimit)}>{t("adminNext")}</button>
               </div>
+              {userMode !== "table" ? (
+                <form className="admin-form-stack" onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveUserForm();
+                }}>
+                  <h3>{t("adminUserEditTitle")}</h3>
+                  <label>{t("adminUser")}<input value={`${userForm.full_name} (${userForm.email})`} readOnly /></label>
+                  <label>{t("adminRole")}<select value={userForm.role} onChange={(event) => setUserForm({ ...userForm, role: event.target.value })}><option value="user">user</option><option value="admin">admin</option></select></label>
+                  <div className="admin-toggle-row">
+                    <label><input type="checkbox" checked={userForm.is_enabled} onChange={(event) => setUserForm({ ...userForm, is_enabled: event.target.checked })} />{t("adminEnabled")}</label>
+                  </div>
+                  <label>{t("adminReason")}<input value={userForm.reason} onChange={(event) => setUserForm({ ...userForm, reason: event.target.value })} /></label>
+                  <div className="admin-inline-actions">
+                    <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSaveUser")}</button>
+                    <button className="button ghost" type="button" onClick={cancelUserForm}>{t("adminCancel")}</button>
+                  </div>
+                </form>
+              ) : null}
             </section>
           ) : null}
 
@@ -1252,75 +1353,89 @@ const AIModelAdmin: React.FC = () => {
             </section>
           ) : null}
 
-          {activeSection === "ollama" ? (
-            <section className="admin-grid">
-              <form className="admin-panel" onSubmit={(event) => {
-                event.preventDefault();
-                void runAction(async () => {
-                  await importOllamaModel(adminAuth, ollamaModel, ollamaReason);
-                  setOllamaModel("");
-                  setOllamaReason("");
-                  await reloadOllama();
-                }, t("adminOllamaImportStarted"));
-              }}>
-                <h2>{t("adminOllamaImportTitle")}</h2>
-                <label>{t("adminOllamaModelTag")}<input value={ollamaModel} onChange={(event) => setOllamaModel(event.target.value)} placeholder="qwen3:1.7b" /></label>
-                <label>{t("adminReason")}<input value={ollamaReason} onChange={(event) => setOllamaReason(event.target.value)} /></label>
-                <button className="primary-button" type="submit" disabled={!ollamaModel.trim() || !ollamaReason.trim()}><FaDownload aria-hidden="true" />{t("adminOllamaImport")}</button>
-              </form>
+          {activeSection === "ollamaImport" ? (
+            <form className="admin-panel" onSubmit={(event) => {
+              event.preventDefault();
+              void runAction(async () => {
+                await importOllamaModel(adminAuth, ollamaModel, ollamaReason);
+                setOllamaModel("");
+                setOllamaReason("");
+                await reloadOllama();
+              }, t("adminOllamaImportStarted"));
+            }}>
+              <h2>{t("adminOllamaImportTitle")}</h2>
+              <label>{t("adminOllamaModelTag")}<input value={ollamaModel} onChange={(event) => setOllamaModel(event.target.value)} placeholder="qwen3:1.7b" /></label>
+              <label>{t("adminReason")}<input value={ollamaReason} onChange={(event) => setOllamaReason(event.target.value)} /></label>
+              <button className="primary-button" type="submit" disabled={!ollamaModel.trim() || !ollamaReason.trim()}><FaDownload aria-hidden="true" />{t("adminOllamaImport")}</button>
+            </form>
+          ) : null}
 
-              <section className="admin-table-section admin-panel--wide">
-                <div className="admin-section-heading">
-                  <h2>{t("adminOllamaTitle")}</h2>
-                  <button className="secondary-button" type="button" onClick={() => void reloadOllama()}>{t("adminRefresh")}</button>
-                </div>
-                <p className="admin-muted">{ollamaInventory?.base_url ?? "http://127.0.0.1:11434"}</p>
-                <label>{t("adminOllamaActionReason")}<input value={ollamaRemoveReason} onChange={(event) => setOllamaRemoveReason(event.target.value)} /></label>
-                <div className="admin-table-scroll">
-                  <table>
-                    <thead><tr><th>{t("adminModelCode")}</th><th>{t("adminStatus")}</th><th>{t("adminProfilesTitle")}</th><th>{t("adminAction")}</th></tr></thead>
-                    <tbody>{ollamaInventory?.models.map((item) => (
-                      <tr key={item.name}>
-                        <td>{item.name}<br /><small>{formatModelSize(item.size)}</small></td>
-                        <td>
-                          {!item.installed ? t("adminOllamaNotInstalled") : item.is_default ? t("adminOllamaDefault") : item.is_running ? t("adminOllamaRunning") : t("adminOllamaUnused")}
-                          {item.removal_blockers.length ? <ul className="admin-compact-list">{item.removal_blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul> : null}
-                        </td>
-                        <td>{item.configured_profile_ids.length ? item.configured_profile_ids.join(", ") : t("adminNotConfigured")}</td>
-                        <td>
-                          <div className="admin-inline-actions">
-                            <button
-                              className="button ghost"
-                              type="button"
-                              disabled={!item.configured_profile_ids.length || !ollamaRemoveReason.trim()}
-                              onClick={() => void runAction(async () => {
-                                await disableOllamaConfiguredProfiles(item.configured_profile_ids);
-                                setOllamaRemoveReason("");
-                                await reloadOllama();
-                              }, t("adminOllamaProfilesDisabled"))}
-                            >
-                              <FaCheck aria-hidden="true" />{t("adminOllamaDisable")}
-                            </button>
-                            <button
-                              className="button ghost"
-                              type="button"
-                              disabled={!item.removable || !ollamaRemoveReason.trim()}
-                              title={item.removal_blockers.join(" ")}
-                              onClick={() => void runAction(async () => {
-                                await removeOllamaModel(adminAuth, item.name, ollamaRemoveReason);
-                                setOllamaRemoveReason("");
-                                await reloadOllama();
-                              }, t("adminOllamaRemoveStarted"))}
-                            >
-                              <FaTrash aria-hidden="true" />{t("adminOllamaRemove")}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              </section>
+          {activeSection === "ollama" ? (
+            <section className="admin-table-section">
+              <div className="admin-section-heading">
+                <h2>{t("adminOllamaTitle")}</h2>
+                <button className="secondary-button" type="button" onClick={() => void reloadOllama()}>{t("adminRefresh")}</button>
+              </div>
+              <p className="admin-muted">{ollamaInventory?.base_url ?? "http://127.0.0.1:11434"}</p>
+              <label className="admin-field">{t("adminOllamaActionReason")}<input value={ollamaRemoveReason} onChange={(event) => setOllamaRemoveReason(event.target.value)} /></label>
+              <div className="admin-table-scroll">
+                <table>
+                  <thead><tr><th>{t("adminModelCode")}</th><th>{t("adminStatus")}</th><th>{t("adminProfilesTitle")}</th><th>{t("adminAction")}</th></tr></thead>
+                  <tbody>{ollamaInventory?.models.map((item) => (
+                    <tr key={item.name}>
+                      <td>{item.name}<br /><small>{formatModelSize(item.size)}</small></td>
+                      <td>
+                        {!item.installed ? t("adminOllamaNotInstalled") : item.is_default ? t("adminOllamaDefault") : item.is_running ? t("adminOllamaRunning") : t("adminOllamaUnused")}
+                        {item.is_default ? <p className="admin-muted">{t("adminOllamaDefaultWarning")}</p> : null}
+                        {item.removal_blockers.length ? <ul className="admin-compact-list">{item.removal_blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul> : null}
+                      </td>
+                      <td>{item.configured_profile_ids.length ? item.configured_profile_ids.join(", ") : t("adminNotConfigured")}</td>
+                      <td>
+                        <div className="admin-inline-actions">
+                          <button
+                            className="button ghost"
+                            type="button"
+                            hidden={item.is_default}
+                            disabled={!item.installed || localOllamaProvider == null}
+                            onClick={() => void runAction(
+                              () => setOllamaModelAsDefault(item),
+                              t("adminOllamaDefaultSet")
+                            )}
+                          >
+                            <FaCheck aria-hidden="true" />{t("adminOllamaSetDefault")}
+                          </button>
+                          <button
+                            className="button ghost"
+                            type="button"
+                            disabled={item.is_default || !item.configured_profile_ids.length}
+                            title={item.is_default ? t("adminOllamaDefaultWarning") : undefined}
+                            onClick={() => void runAction(async () => {
+                              await disableOllamaConfiguredProfiles(item.configured_profile_ids);
+                              setOllamaRemoveReason("");
+                              await reloadOllama();
+                            }, t("adminOllamaProfilesDisabled"))}
+                          >
+                            <FaCheck aria-hidden="true" />{t("adminOllamaDisable")}
+                          </button>
+                          <button
+                            className="button ghost"
+                            type="button"
+                            disabled={item.is_default || !item.removable}
+                            title={item.is_default ? t("adminOllamaDefaultWarning") : item.removal_blockers.join(" ")}
+                            onClick={() => void runAction(async () => {
+                              await removeOllamaModel(adminAuth, item.name, ollamaRemoveReason || "Remove local Ollama model from admin UI.");
+                              setOllamaRemoveReason("");
+                              await reloadOllama();
+                            }, t("adminOllamaRemoveStarted"))}
+                          >
+                            <FaTrash aria-hidden="true" />{t("adminOllamaRemove")}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
             </section>
           ) : null}
 
