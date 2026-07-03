@@ -97,6 +97,10 @@ class AIModelProviderDeleteRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class AIModelDeleteRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class AIModelProfileResponse(BaseModel):
     model_profile_id: str
     provider_id: str
@@ -114,6 +118,9 @@ class AIModelProfileResponse(BaseModel):
     enabled: bool
     created_at: str
     updated_at: str
+    deleted_at: str | None
+    deleted_by_admin_user_id: str
+    deleted_reason: str
 
 
 class AIModelProfileUpsertRequest(BaseModel):
@@ -178,6 +185,9 @@ class AITaskRoutePolicyResponse(BaseModel):
     enabled: bool
     created_at: str
     updated_at: str
+    deleted_at: str | None
+    deleted_by_admin_user_id: str
+    deleted_reason: str
 
 
 class AITaskRoutePolicyUpsertRequest(BaseModel):
@@ -206,6 +216,9 @@ class AIModelGroupResponse(BaseModel):
     enabled: bool
     created_at: str
     updated_at: str
+    deleted_at: str | None
+    deleted_by_admin_user_id: str
+    deleted_reason: str
 
 
 class AIModelGroupUpsertRequest(BaseModel):
@@ -419,7 +432,7 @@ def get_ai_model_admin_dashboard(
     users_limit = 25
     return AIModelAdminDashboardResponse(
         admin=admin,
-        providers=[_provider_response(item) for item in store.list_ai_model_providers(include_deleted=True)],
+        providers=[_provider_response(item) for item in store.list_ai_model_providers()],
         profiles=[_profile_response(item) for item in store.list_ai_model_profiles()],
         credentials=[_credential_response(item) for item in store.list_ai_model_credentials(reveal=False)],
         policies=[_policy_response(item) for item in store.list_ai_task_route_policies()],
@@ -651,6 +664,39 @@ def upsert_ai_model_profile(
         request=request,
         admin=admin,
         action="upsert",
+        entity_type="ai_model_profile",
+        entity_id=profile.model_profile_id,
+        old=existing,
+        new=profile,
+        reason=payload.reason,
+    )
+    return _profile_response(profile)
+
+
+@router.delete("/profiles/{model_profile_id}", response_model=AIModelProfileResponse)
+def soft_delete_ai_model_profile(
+    model_profile_id: str,
+    payload: AIModelDeleteRequest,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AIModelProfileResponse:
+    existing = {item.model_profile_id: item for item in store.list_ai_model_profiles(include_deleted=True)}.get(model_profile_id)
+    try:
+        profile = store.soft_delete_ai_model_profile(
+            model_profile_id=model_profile_id,
+            admin_user_id=admin.user_id,
+            reason=payload.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model profile not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="profile.soft_delete",
         entity_type="ai_model_profile",
         entity_id=profile.model_profile_id,
         old=existing,
@@ -912,6 +958,39 @@ def upsert_ai_task_route_policy(
     return _policy_response(policy)
 
 
+@router.delete("/policies/{policy_id}", response_model=AITaskRoutePolicyResponse)
+def soft_delete_ai_task_route_policy(
+    policy_id: str,
+    payload: AIModelDeleteRequest,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AITaskRoutePolicyResponse:
+    existing = {item.policy_id: item for item in store.list_ai_task_route_policies(include_deleted=True)}.get(policy_id)
+    try:
+        policy = store.soft_delete_ai_task_route_policy(
+            policy_id=policy_id,
+            admin_user_id=admin.user_id,
+            reason=payload.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routing policy not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="policy.soft_delete",
+        entity_type="ai_task_route_policy",
+        entity_id=policy.policy_id,
+        old=existing,
+        new=policy,
+        reason=payload.reason,
+    )
+    return _policy_response(policy)
+
+
 @router.post("/groups", response_model=AIModelGroupResponse)
 def upsert_ai_model_group(
     payload: AIModelGroupUpsertRequest,
@@ -943,26 +1022,37 @@ def upsert_ai_model_group(
     return _group_response(group)
 
 
-@router.delete("/groups/{model_group_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_ai_model_group(
+@router.delete("/groups/{model_group_id}", response_model=AIModelGroupResponse)
+def soft_delete_ai_model_group(
     model_group_id: str,
+    payload: AIModelDeleteRequest,
     request: Request,
     admin: AdminContext = Depends(require_ai_model_admin),
     store: ApiDatabaseStore = Depends(get_admin_store),
-) -> None:
-    existing = {item.model_group_id: item for item in store.list_ai_model_groups()}.get(model_group_id)
-    store.delete_ai_model_group(model_group_id=model_group_id)
+) -> AIModelGroupResponse:
+    existing = {item.model_group_id: item for item in store.list_ai_model_groups(include_deleted=True)}.get(model_group_id)
+    try:
+        group = store.soft_delete_ai_model_group(
+            model_group_id=model_group_id,
+            admin_user_id=admin.user_id,
+            reason=payload.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model group not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     _record_audit(
         store=store,
         request=request,
         admin=admin,
-        action="delete",
+        action="group.soft_delete",
         entity_type="ai_model_group",
         entity_id=model_group_id,
         old=existing,
-        new=None,
-        reason="Deleted from admin model-management page.",
+        new=group,
+        reason=payload.reason,
     )
+    return _group_response(group)
 
 
 @router.post("/groups/{model_group_id}/members", response_model=AIModelGroupMembershipResponse)

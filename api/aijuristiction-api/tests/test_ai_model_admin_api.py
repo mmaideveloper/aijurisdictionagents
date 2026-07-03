@@ -470,14 +470,102 @@ def test_admin_can_soft_delete_provider_with_audit_and_routing_fallback(tmp_path
     assert route.provider.provider_id == "local_ollama"
 
     payload = dashboard_response.json()
-    dashboard_provider = next(item for item in payload["providers"] if item["provider_id"] == provider.provider_id)
-    assert dashboard_provider["deleted_at"]
-    assert dashboard_provider["deleted_reason"] == "Provider contract ended."
+    assert all(item["provider_id"] != provider.provider_id for item in payload["providers"])
     audit_events = store.list_ai_model_admin_audit_events(limit=5)
     assert audit_events[0].action == "provider.soft_delete"
     assert audit_events[0].entity_id == provider.provider_id
     assert "secret-delete-test" not in audit_events[0].old_value_summary
     assert "secret-delete-test" not in audit_events[0].new_value_summary
+
+
+def test_admin_can_soft_delete_model_admin_records_and_hide_them_from_dashboard(tmp_path: Path, monkeypatch) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    provider = store.upsert_ai_model_provider(
+        provider_code="external_record_delete_test",
+        provider_type="openai_compatible",
+        display_name="External Record Delete Test",
+        base_url="https://llm.example.test/v1",
+        region="eu",
+        data_zone="eu",
+        is_external=True,
+        enabled=True,
+    )
+    profile = store.upsert_ai_model_profile(
+        provider_id=provider.provider_id,
+        model_code="record-delete-model",
+        deployment_name="record-delete-model",
+        eu_data_zone_capable=True,
+        enabled=True,
+    )
+    group = store.upsert_ai_model_group(
+        group_code="record_delete_group",
+        display_name="Record delete group",
+        priority=30,
+        enabled=True,
+    )
+    policy = store.upsert_ai_task_route_policy(
+        task_type="record_delete",
+        plan_code="case",
+        model_group_id=group.model_group_id,
+        preferred_external_model_profile_id=profile.model_profile_id,
+        preferred_local_model_profile_id="local_ollama_default",
+        allow_external=True,
+        require_external_ack=True,
+        require_eu_data_zone=True,
+        priority=30,
+        enabled=True,
+    )
+    app.dependency_overrides[get_admin_store] = lambda: store
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id}
+    try:
+        blocked_profile_delete = client.request(
+            "DELETE",
+            f"/v1/admin/ai-models/profiles/{profile.model_profile_id}",
+            headers=headers,
+            json={"reason": "Retire profile."},
+        )
+        policy_delete = client.request(
+            "DELETE",
+            f"/v1/admin/ai-models/policies/{policy.policy_id}",
+            headers=headers,
+            json={"reason": "Retire policy."},
+        )
+        profile_delete = client.request(
+            "DELETE",
+            f"/v1/admin/ai-models/profiles/{profile.model_profile_id}",
+            headers=headers,
+            json={"reason": "Retire profile."},
+        )
+        group_delete = client.request(
+            "DELETE",
+            f"/v1/admin/ai-models/groups/{group.model_group_id}",
+            headers=headers,
+            json={"reason": "Retire group."},
+        )
+        dashboard_response = client.get("/v1/admin/ai-models", headers=headers)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert blocked_profile_delete.status_code == 400
+    assert "enabled routing policy" in blocked_profile_delete.json()["detail"]
+    assert policy_delete.status_code == 200
+    assert policy_delete.json()["deleted_at"]
+    assert profile_delete.status_code == 200
+    assert profile_delete.json()["deleted_at"]
+    assert group_delete.status_code == 200
+    assert group_delete.json()["deleted_at"]
+
+    payload = dashboard_response.json()
+    assert all(item["policy_id"] != policy.policy_id for item in payload["policies"])
+    assert all(item["model_profile_id"] != profile.model_profile_id for item in payload["profiles"])
+    assert all(item["model_group_id"] != group.model_group_id for item in payload["groups"])
+    audit_actions = [item.action for item in store.list_ai_model_admin_audit_events(limit=10)]
+    assert "policy.soft_delete" in audit_actions
+    assert "profile.soft_delete" in audit_actions
+    assert "group.soft_delete" in audit_actions
 
 
 def test_external_policy_requires_external_model(tmp_path: Path, monkeypatch) -> None:
