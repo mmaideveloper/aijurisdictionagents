@@ -949,7 +949,10 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws", "offline_access"]
     assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
     assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
-    assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/mcp"]
+    assert authorization_metadata.json()["protected_resources"] == [
+        "https://mcp.jurisdigta.eu/MCP",
+        "https://mcp.jurisdigta.eu/mcp",
+    ]
 
     registration_response = mcp_client.post(
         "/oauth/register",
@@ -1198,6 +1201,98 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert token_payload["refresh_token"] not in mcp_log_text
 
 
+def test_claude_oauth_without_resource_uses_uppercase_mcp_audience(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
+    client_id = "https://claude.ai/oauth/mcp-oauth-client-metadata"
+    redirect_uri = "https://claude.ai/api/mcp/auth_callback"
+    monkeypatch.setattr(
+        "app.mcp_api._fetch_client_id_metadata_document",
+        lambda fetched_client_id: {
+            "client_id": fetched_client_id,
+            "client_name": "Claude",
+            "redirect_uris": [redirect_uri],
+        },
+    )
+    sign_up_response = api_client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421 900 111 239",
+            "email": "mcp-claude-oauth@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+
+    code_verifier = "test-code-verifier-claude-1234567890"
+    code_challenge = _pkce_challenge(code_verifier)
+    authorize_page = mcp_client.get(
+        "/oauth/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "state": "claude-no-resource",
+            "scope": "mcp:laws offline_access",
+            "prompt": "consent",
+        },
+    )
+    assert authorize_page.status_code == 200
+    selected_resource = _extract_hidden_value(authorize_page.text, "resource")
+    assert selected_resource == "https://mcp.jurisdigta.eu/MCP"
+
+    verify_response = mcp_client.post(
+        "/oauth/authorize/verify",
+        data={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "state": "claude-no-resource",
+            "resource": selected_resource,
+            "email": "mcp-claude-oauth@example.com",
+            "verification_code": "123456",
+        },
+        follow_redirects=False,
+    )
+    assert verify_response.status_code == 303
+    callback_query = parse_qs(urlparse(verify_response.headers["location"]).query)
+    authorization_code = callback_query["code"][0]
+
+    token_response = mcp_client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "code_verifier": code_verifier,
+        },
+    )
+    assert token_response.status_code == 200
+    token_payload = token_response.json()
+    access_claims = _jwt_claims(token_payload["access_token"])
+    refresh_claims = _jwt_claims(token_payload["refresh_token"])
+    assert access_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+    assert refresh_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+
+    refresh_response = mcp_client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": token_payload["refresh_token"],
+            "client_id": client_id,
+        },
+    )
+    assert refresh_response.status_code == 200
+    refreshed_claims = _jwt_claims(refresh_response.json()["access_token"])
+    assert refreshed_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+
+
 def test_oauth_authorization_response_issuer_can_be_enabled(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
@@ -1376,12 +1471,17 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/mcp"
     assert protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
     assert legacy_mcp_protected_metadata.status_code == 200
-    assert legacy_mcp_protected_metadata.json() == protected_metadata.json()
+    assert legacy_mcp_protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
+    assert legacy_mcp_protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
     assert authorization_metadata.json()["registration_endpoint"] == "https://mcp.jurisdigta.eu/oauth/register"
     assert authorization_metadata.json()["client_id_metadata_document_supported"] is True
+    assert authorization_metadata.json()["protected_resources"] == [
+        "https://mcp.jurisdigta.eu/MCP",
+        "https://mcp.jurisdigta.eu/mcp",
+    ]
     assert mcp_path_authorization_metadata.status_code == 200
     assert mcp_path_authorization_metadata.json() == authorization_metadata.json()
     assert legacy_mcp_authorization_metadata.status_code == 200

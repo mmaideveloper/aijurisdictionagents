@@ -326,7 +326,7 @@ def mcp_sign_up_page(request: Request) -> HTMLResponse:
 @oauth_router.get("/.well-known/oauth-protected-resource")
 def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
     base_url = _base_url(request)
-    resource = _resource_url(request)
+    resource = _metadata_resource_url(request)
     logger.info(
         "mcp_oauth_protected_resource_metadata_served request_path=%s resource=%s authorization_server=%s user_agent=%s",
         request.url.path,
@@ -355,12 +355,12 @@ def oauth_mcp_protected_resource_metadata(request: Request) -> dict[str, Any]:
 @oauth_router.get("/.well-known/oauth-authorization-server/mcp")
 def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
     base_url = _base_url(request)
-    resource = _resource_url(request)
+    protected_resources = _all_mcp_resource_urls(request)
     logger.info(
-        "mcp_oauth_authorization_server_metadata_served request_path=%s issuer=%s protected_resource=%s user_agent=%s",
+        "mcp_oauth_authorization_server_metadata_served request_path=%s issuer=%s protected_resources=%s user_agent=%s",
         request.url.path,
         base_url,
-        resource,
+        ",".join(protected_resources),
         _oauth_user_agent_family(request),
     )
     return {
@@ -375,7 +375,7 @@ def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
         "scopes_supported": [MCP_TOKEN_SCOPE, MCP_REFRESH_TOKEN_SCOPE],
         "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": _oauth_authorization_response_iss_enabled(),
-        "protected_resources": [resource],
+        "protected_resources": protected_resources,
     }
 
 
@@ -445,7 +445,12 @@ def oauth_authorize_page(
     scope: str = "",
     prompt: str = "",
 ) -> HTMLResponse:
-    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
+    resolved_resource = _resolve_oauth_resource(
+        request=request,
+        resource=resource,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+    )
     expected_resource = _resource_url(request)
     logger.info(
         "mcp_oauth_authorize_started response_type=%s client_id_hash=%s client_id_host=%s client_id_path=%s "
@@ -525,7 +530,12 @@ def oauth_authorize_login(
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> Response:
-    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
+    resolved_resource = _resolve_oauth_resource(
+        request=request,
+        resource=resource,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+    )
     _validate_oauth_authorize_request(
         response_type=response_type,
         client_id=client_id,
@@ -594,7 +604,12 @@ def oauth_authorize_mfa_method(
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> HTMLResponse:
-    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
+    resolved_resource = _resolve_oauth_resource(
+        request=request,
+        resource=resource,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+    )
     _validate_oauth_authorize_request(
         response_type=response_type,
         client_id=client_id,
@@ -653,7 +668,12 @@ def oauth_authorize_verify(
     state: str = Form(""),
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> Response:
-    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
+    resolved_resource = _resolve_oauth_resource(
+        request=request,
+        resource=resource,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+    )
     _validate_oauth_authorize_request(
         response_type=response_type,
         client_id=client_id,
@@ -777,7 +797,12 @@ def oauth_token(
             record_resource=str(record["resource"]),
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Authorization code context mismatch")
-    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
+    resolved_resource = _resolve_oauth_resource(
+        request=request,
+        resource=resource,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+    )
     if not _is_mcp_resource_match(request=request, resource=record["resource"]) or not _is_mcp_resource_match(
         request=request,
         resource=resolved_resource,
@@ -859,7 +884,11 @@ def _oauth_refresh_token_response(
             request=request,
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing refresh_token")
-    resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
+    resolved_resource = _resolve_oauth_resource(
+        request=request,
+        resource=resource,
+        client_id=client_id,
+    )
     if not _is_mcp_resource_match(request=request, resource=resolved_resource):
         _log_oauth_token_failed(
             reason="refresh_resource_mismatch",
@@ -869,11 +898,13 @@ def _oauth_refresh_token_response(
             request=request,
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
-    payload = validate_mcp_refresh_token(refresh_token, audience=resolved_resource)
-    if payload is None:
-        canonical_resource = _canonicalize_mcp_resource(request=request, resource=resolved_resource)
-        if canonical_resource != resolved_resource:
-            payload = validate_mcp_refresh_token(refresh_token, audience=canonical_resource)
+    matched_audience = resolved_resource
+    payload = None
+    for audience in _mcp_resource_audience_candidates(request=request, preferred=resolved_resource):
+        payload = validate_mcp_refresh_token(refresh_token, audience=audience)
+        if payload is not None:
+            matched_audience = audience
+            break
     if payload is None:
         _log_oauth_token_failed(
             reason="invalid_refresh_token",
@@ -898,16 +929,16 @@ def _oauth_refresh_token_response(
         store=store,
         user=user,
         expires_in_days=1,
-        audience=resolved_resource,
+        audience=matched_audience,
     )
-    refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=resolved_resource)
+    refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=matched_audience)
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
     logger.info(
         "mcp_oauth_token_succeeded grant_type=refresh_token client_id_hash=%s resource_supplied=%s "
         "token_audience=%s access_scope=%s refresh_scope=%s expires_in=%d user_id=%s user_agent=%s",
         _stable_hash(client_id),
         bool(resource.strip()),
-        resolved_resource,
+        matched_audience,
         MCP_TOKEN_SCOPE,
         MCP_REFRESH_TOKEN_SCOPE,
         expires_in,
@@ -2275,6 +2306,20 @@ def _resource_url(request: Request) -> str:
     return f"{_base_url(request)}/mcp"
 
 
+def _uppercase_resource_url(request: Request) -> str:
+    return f"{_base_url(request)}/MCP"
+
+
+def _all_mcp_resource_urls(request: Request) -> list[str]:
+    return [_uppercase_resource_url(request), _resource_url(request)]
+
+
+def _metadata_resource_url(request: Request) -> str:
+    if request.url.path.rstrip("/").endswith("/MCP"):
+        return _uppercase_resource_url(request)
+    return _resource_url(request)
+
+
 def _base_url_from_resource(resource: str) -> str:
     parsed = urlparse(resource)
     if parsed.scheme and parsed.netloc:
@@ -2282,8 +2327,32 @@ def _base_url_from_resource(resource: str) -> str:
     return resource.rstrip("/")
 
 
-def _resolve_oauth_resource(*, request: Request, resource: str) -> str:
-    return resource.strip() or _resource_url(request)
+def _resolve_oauth_resource(
+    *,
+    request: Request,
+    resource: str,
+    client_id: str = "",
+    redirect_uri: str = "",
+) -> str:
+    if resource.strip():
+        return resource.strip()
+    if _is_claude_oauth_client(client_id=client_id, redirect_uri=redirect_uri):
+        return _uppercase_resource_url(request)
+    return _resource_url(request)
+
+
+def _is_claude_oauth_client(*, client_id: str, redirect_uri: str = "") -> bool:
+    return _url_host(client_id) == "claude.ai" or _url_host(redirect_uri) == "claude.ai"
+
+
+def _mcp_resource_audience_candidates(*, request: Request, preferred: str) -> list[str]:
+    candidates = [preferred, _canonicalize_mcp_resource(request=request, resource=preferred)]
+    candidates.extend(_all_mcp_resource_urls(request))
+    unique: list[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in unique:
+            unique.append(candidate)
+    return unique
 
 
 def _canonicalize_mcp_resource(*, request: Request, resource: str) -> str:
@@ -2345,7 +2414,8 @@ def _first_payload_id(payload: Any) -> Any:
 
 
 def _www_authenticate_header(request: Request) -> str:
-    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/mcp"
+    resource_path = "MCP" if request.url.path.rstrip("/").endswith("/MCP") else "mcp"
+    metadata_url = f"{_base_url(request)}/.well-known/oauth-protected-resource/{resource_path}"
     return f'Bearer resource_metadata="{metadata_url}", scope="{MCP_TOKEN_SCOPE}"'
 
 
