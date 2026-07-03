@@ -14,7 +14,7 @@ The endpoint returns safe operational status only:
 
 - API health, API version, core system version, database status, and LLM provider status.
 - Host status from `jurisdigta-server`: disk, memory, Git commit, Docker container state.
-- Laws collector status: last collector run, last processed law, next law to check, import state, totals, latest run duration.
+- Laws collector status: total imported laws over time, last imported law number/year, next law to check, import state, totals, latest run duration.
 - Error counts by application for the requested time window.
 
 The endpoint requires the existing `x-api-key` header.
@@ -245,6 +245,8 @@ Useful Grafana panels:
 - `jurisdigta_component_status{component="laws_collector"}`
 - `jurisdigta_errors_window`
 - `jurisdigta_laws_last_processed_number`
+- `jurisdigta_laws_last_processed_year`
+- `jurisdigta_laws_total{name="laws_imported"}`
 - `jurisdigta_laws_next_number`
 - `jurisdigta_laws_runtime_last_run_started_at_timestamp_seconds`
 - `jurisdigta_laws_runtime_last_run_finished_at_timestamp_seconds`

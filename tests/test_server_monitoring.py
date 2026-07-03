@@ -86,6 +86,26 @@ def test_monitoring_dashboards_include_court_decision_service_dashboard() -> Non
     assert "Recent Sanitized Error List" in panel_titles
 
 
+def test_monitoring_dashboards_include_laws_collector_corpus_panels() -> None:
+    dashboard_path = MONITORING_DIR / "grafana" / "dashboards" / "jurisdigta-laws-collector.json"
+    dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    panel_titles = {str(panel.get("title")) for panel in dashboard["panels"]}
+    target_queries = {
+        str(target.get("expr"))
+        for panel in dashboard["panels"]
+        for target in panel.get("targets", [])
+        if isinstance(target, dict)
+    }
+
+    assert dashboard["uid"] == "jurisdigta-laws-collector"
+    assert "Total Laws Over Time" in panel_titles
+    assert "Last Imported Law Number" in panel_titles
+    assert "Last Imported Law Year" in panel_titles
+    assert 'jurisdigta_laws_total{name="laws_imported"}' in target_queries
+    assert "jurisdigta_laws_last_processed_number" in target_queries
+    assert "jurisdigta_laws_last_processed_year" in target_queries
+
+
 def test_monitoring_stack_loads_ai_model_alert_rules() -> None:
     compose = (MONITORING_DIR / "docker-compose.yml").read_text(encoding="utf-8")
     prometheus_config = (MONITORING_DIR / "prometheus.yml").read_text(encoding="utf-8")
