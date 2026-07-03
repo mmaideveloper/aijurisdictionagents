@@ -37,6 +37,10 @@ print(
     "Claude OAuth without a resource parameter receives an /MCP audience token."
 )
 print(
+    "mcp_protocol_negotiation => initialize echoes supported client protocol versions "
+    "2025-03-26, 2025-06-18, and 2025-11-25 for stricter MCP clients."
+)
+print(
     "mcp_oauth_redirects => hosted callbacks use explicit allowed hosts; local MCP clients keep "
     "http://localhost, http://127.0.0.1, and http://[::1] loopback redirect_uri support."
 )
