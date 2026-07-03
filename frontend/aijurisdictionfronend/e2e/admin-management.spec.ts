@@ -92,7 +92,20 @@ const dashboard = {
       updated_at: "2026-06-27T10:00:00Z"
     }
   ],
-  credentials: [],
+  credentials: [
+    {
+      credential_id: "azure_foundry:api_key:default",
+      provider_id: "azure_foundry",
+      credential_name: "default",
+      secret_type: "api_key",
+      secret_preview: "****cret",
+      secret_value: null,
+      enabled: true,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-06-27T10:00:00Z",
+      last_revealed_at: null
+    }
+  ],
   policies: [
     {
       policy_id: "default:free:default",
@@ -376,11 +389,11 @@ test("admin can set an Ollama model as default and remove the previous non-defau
 });
 
 test.describe("provider credentials lifecycle", () => {
-  test("logs in, opens Admin Provider credentials, adds and updates a provider", async ({ page }) => {
-    let providers = dashboard.providers.map((provider) => ({ ...provider }));
+  test("logs in, opens Admin Provider credentials, and edits a credential form", async ({ page }) => {
+    let credentials = dashboard.credentials.map((credential) => ({ ...credential }));
     const currentDashboard = () => ({
       ...dashboard,
-      providers
+      credentials
     });
 
     await page.route("**/v1/users/sign-in", async (route) => {
@@ -397,32 +410,33 @@ test.describe("provider credentials lifecycle", () => {
       });
     });
 
-    await page.route("**/v1/admin/ai-models/providers", async (route) => {
-      const input = route.request().postDataJSON() as typeof dashboard.providers[number] & { reason?: string };
-      const existingIndex = providers.findIndex((provider) => provider.provider_code === input.provider_code);
-      const savedProvider = {
-        provider_id: existingIndex >= 0 ? providers[existingIndex]!.provider_id : input.provider_code,
-        provider_code: input.provider_code,
-        provider_type: input.provider_type,
-        display_name: input.display_name,
-        base_url: input.base_url,
-        api_version: input.api_version ?? "",
-        region: input.region,
-        data_zone: input.data_zone,
-        is_external: input.is_external,
-        is_local: input.is_local,
-        health_check_url: input.health_check_url,
-        enabled: input.enabled,
-        created_at: existingIndex >= 0 ? providers[existingIndex]!.created_at : "2026-07-03T10:00:00Z",
-        updated_at: "2026-07-03T10:10:00Z",
-        deleted_at: null,
-        deleted_by_admin_user_id: "",
-        deleted_reason: ""
+    await page.route("**/v1/admin/ai-models/providers/*/credentials", async (route) => {
+      const providerId = decodeURIComponent(route.request().url().split("/providers/")[1]!.split("/credentials")[0]!);
+      const input = route.request().postDataJSON() as {
+        credential_id?: string | null;
+        credential_name: string;
+        secret_type: string;
+        secret_value: string;
+        enabled: boolean;
       };
-      providers = existingIndex >= 0
-        ? providers.map((provider, index) => (index === existingIndex ? savedProvider : provider))
-        : [...providers, savedProvider];
-      await route.fulfill({ contentType: "application/json", body: JSON.stringify(savedProvider) });
+      const credentialId = input.credential_id ?? `${providerId}:${input.secret_type}:${input.credential_name}`;
+      const existingIndex = credentials.findIndex((credential) => credential.credential_id === credentialId);
+      const savedCredential = {
+        credential_id: credentialId,
+        provider_id: providerId,
+        credential_name: input.credential_name,
+        secret_type: input.secret_type,
+        secret_preview: "****ated",
+        secret_value: null,
+        enabled: input.enabled,
+        created_at: existingIndex >= 0 ? credentials[existingIndex]!.created_at : "2026-07-03T10:00:00Z",
+        updated_at: "2026-07-03T10:10:00Z",
+        last_revealed_at: null
+      };
+      credentials = existingIndex >= 0
+        ? credentials.map((credential, index) => (index === existingIndex ? savedCredential : credential))
+        : [...credentials, savedCredential];
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(savedCredential) });
     });
 
     await page.route("**/v1/admin/ai-models", async (route) => {
@@ -456,37 +470,26 @@ test.describe("provider credentials lifecycle", () => {
     await page.getByRole("button", { name: "Provider credentials" }).click();
     await expect(page.getByRole("button", { name: "Provider credentials" })).toHaveClass(/is-active/);
     await expect(page.getByRole("heading", { name: "Provider credentials" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "Local Ollama" })).toBeVisible();
-    await page.screenshot({ path: "test-results/codex-455-screenshots/02-provider-credentials-table.png", fullPage: true });
+    await expect(page.getByRole("cell", { name: "Azure AI Foundry (azure_foundry)" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "****cret" })).toBeVisible();
+    await page.screenshot({ path: "output/playwright/codex-465/01-provider-credentials-table.png", fullPage: true });
 
-    await page.getByRole("button", { name: "Add provider" }).click();
-    await expect(page.getByRole("heading", { name: "Add model provider" })).toBeVisible();
-    await page.getByLabel("Provider code").fill("test_provider");
-    await page.getByLabel("Provider type").selectOption("openai_compatible");
-    await page.getByLabel("Display name").fill("Test Provider");
-    await page.getByLabel("Base URL").fill("https://provider.example.test/v1");
-    await page.getByLabel("API version").fill("2026-07-03");
-    await page.getByLabel("Region").fill("eu");
-    await page.getByLabel("Data zone").fill("eu");
-    await page.getByLabel("Health URL").fill("https://provider.example.test/health");
-    await page.getByLabel("Reason").fill("Add provider from E2E.");
-    await page.getByRole("button", { name: "Save provider" }).click();
-
-    await expect(page.getByRole("heading", { name: "Add model provider" })).toBeHidden();
-    await expect(page.getByRole("cell", { name: "Test Provider" })).toBeVisible();
-
-    const testProviderRow = page.getByRole("row").filter({ hasText: "Test Provider" });
-    await testProviderRow.getByRole("button", { name: "Edit" }).click();
-    await expect(page.getByRole("heading", { name: "Edit model provider" })).toBeVisible();
+    const azureCredentialRow = page.getByRole("row").filter({ hasText: "Azure AI Foundry" });
+    await azureCredentialRow.getByRole("button", { name: "Edit" }).click();
+    await expect(page.getByRole("heading", { name: "Edit provider credential" })).toBeVisible();
+    const credentialForm = page.locator(".admin-form-stack");
+    await expect(credentialForm.getByLabel("Provider")).toHaveValue("azure_foundry");
+    await expect(credentialForm.getByLabel("Credential name")).toHaveValue("default");
+    await expect(credentialForm.getByLabel("Credential type")).toHaveValue("api_key");
     await page.addStyleTag({ content: ".site-header { display: none !important; }" });
-    await page.getByRole("heading", { name: "Edit model provider" }).scrollIntoViewIfNeeded();
-    await page.locator(".admin-form-stack").screenshot({ path: "test-results/codex-455-screenshots/03-provider-credentials-edit-form.png" });
-    await page.getByLabel("Display name").fill("Updated Test Provider");
-    await page.getByLabel("Reason").fill("Update provider from E2E.");
-    await page.getByRole("button", { name: "Save provider" }).click();
+    await page.getByRole("heading", { name: "Edit provider credential" }).scrollIntoViewIfNeeded();
+    await credentialForm.screenshot({ path: "output/playwright/codex-465/02-provider-credentials-edit-form.png" });
+    await credentialForm.getByLabel("Secret value").fill("rotated-secret-value");
+    await credentialForm.getByLabel("Reason").fill("Rotate Azure Foundry credential from E2E.");
+    await page.getByRole("button", { name: "Save credential" }).click();
 
-    await expect(page.getByRole("heading", { name: "Edit model provider" })).toBeHidden();
-    await expect(page.getByRole("cell", { name: "Updated Test Provider" })).toBeVisible();
-    await expect(page.getByText("Test Provider", { exact: true })).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Edit provider credential" })).toBeHidden();
+    await expect(page.getByRole("cell", { name: "****ated" })).toBeVisible();
+    await page.screenshot({ path: "output/playwright/codex-465/03-provider-credentials-after-save.png", fullPage: true });
   });
 });

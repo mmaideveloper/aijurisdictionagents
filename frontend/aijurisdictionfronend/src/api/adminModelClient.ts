@@ -289,6 +289,7 @@ export interface ProfileUpsertInput {
 }
 
 export interface CredentialUpsertInput {
+  credential_id?: string | null;
   provider_id: string;
   credential_name: string;
   secret_type: string;
@@ -520,6 +521,7 @@ export const upsertAIModelCredential = (
   adminRequest<AIModelCredential>(`/v1/admin/ai-models/providers/${input.provider_id}/credentials`, adminUserId, {
     method: "POST",
     body: JSON.stringify({
+      credential_id: input.credential_id,
       credential_name: input.credential_name,
       secret_type: input.secret_type,
       secret_value: input.secret_value,

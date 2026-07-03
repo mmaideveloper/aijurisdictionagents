@@ -308,6 +308,10 @@ describe("AIModelAdmin Ollama management", () => {
     });
     apiMocks.removeOllamaModel.mockResolvedValue({ job_id: "job-2", action: "remove", model: "llama3.2:3b", status: "queued" });
     apiMocks.upsertAIModelProvider.mockResolvedValue(dashboard.providers[1]);
+    apiMocks.upsertAIModelCredential.mockResolvedValue({
+      ...dashboard.credentials[0],
+      updated_at: "2026-07-03T10:10:00Z"
+    });
     apiMocks.deleteAIModelProvider.mockResolvedValue({ ...dashboard.providers[1], enabled: false, deleted_at: "2026-07-03T10:10:00Z" });
     apiMocks.deleteAIModelProfile.mockResolvedValue({ ...dashboard.profiles[1], enabled: false, deleted_at: "2026-07-03T10:10:00Z" });
     apiMocks.deleteAIModelGroup.mockResolvedValue({
@@ -416,41 +420,48 @@ describe("AIModelAdmin Ollama management", () => {
     expect(await screen.findByText("adminPolicyHelp")).toBeDefined();
   });
 
-  it("shows provider credentials table first and hides the edit form after save or cancel", async () => {
+  it("shows provider credentials table first and opens a credential edit form", async () => {
     const user = userEvent.setup();
     render(<AIModelAdmin />);
 
     await user.click(await screen.findByRole("button", { name: /adminCredentialsTitle/ }));
-    expect(await screen.findByText("Local Ollama")).toBeDefined();
-    expect(screen.queryByRole("heading", { name: /adminProviderEditTitle/ })).toBeNull();
+    expect(await screen.findByText("Azure AI Foundry (azure_foundry)")).toBeDefined();
+    expect(screen.getByText("default")).toBeDefined();
+    expect(screen.getByText("api_key")).toBeDefined();
+    expect(screen.getByText("****cret")).toBeDefined();
+    expect(screen.queryByRole("heading", { name: /adminCredentialEditTitle/ })).toBeNull();
 
-    await user.click(screen.getAllByRole("button", { name: /adminEdit/ }).at(1)!);
-    expect(await screen.findByRole("heading", { name: /adminProviderEditTitle/ })).toBeDefined();
-    const baseUrlInput = screen.getByLabelText("adminBaseUrl") as HTMLInputElement;
-    expect(baseUrlInput.value).toBe("");
+    await user.click(screen.getByRole("button", { name: /adminEdit/ }));
+    expect(await screen.findByRole("heading", { name: /adminCredentialEditTitle/ })).toBeDefined();
+    expect((screen.getByLabelText("adminProvider") as HTMLSelectElement).value).toBe("azure_foundry");
+    expect((screen.getByLabelText("adminCredentialName") as HTMLInputElement).value).toBe("default");
+    expect((screen.getByLabelText("adminCredentialType") as HTMLSelectElement).value).toBe("api_key");
 
-    await user.type(baseUrlInput, "https://example.openai.azure.com");
-    await user.type(screen.getByLabelText("adminReason"), "Configure Azure Foundry endpoint.");
-    await user.click(screen.getByRole("button", { name: /adminSaveProvider/ }));
+    await user.type(screen.getByLabelText("adminCredentialValue"), "rotated-secret");
+    await user.type(screen.getByLabelText("adminReason"), "Rotate Azure Foundry credential.");
+    await user.click(screen.getByRole("button", { name: /adminSaveCredential/ }));
 
     await waitFor(() => {
-      expect(apiMocks.upsertAIModelProvider).toHaveBeenCalledWith(
+      expect(apiMocks.upsertAIModelCredential).toHaveBeenCalledWith(
         expect.objectContaining({ userId: "admin-1" }),
         expect.objectContaining({
-          provider_code: "azure_foundry",
-          base_url: "https://example.openai.azure.com",
-          reason: "Configure Azure Foundry endpoint."
+          credential_id: "azure_foundry:api_key:default",
+          provider_id: "azure_foundry",
+          credential_name: "default",
+          secret_type: "api_key",
+          secret_value: "rotated-secret",
+          reason: "Rotate Azure Foundry credential."
         })
       );
     });
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /adminProviderEditTitle/ })).toBeNull();
+      expect(screen.queryByRole("heading", { name: /adminCredentialEditTitle/ })).toBeNull();
     });
 
-    await user.click(screen.getByRole("button", { name: /adminAddProvider/ }));
-    expect(await screen.findByRole("heading", { name: /adminProviderCreateTitle/ })).toBeDefined();
+    await user.click(screen.getByRole("button", { name: /adminAddCredential/ }));
+    expect(await screen.findByRole("heading", { name: /adminCredentialCreateTitle/ })).toBeDefined();
     await user.click(screen.getByRole("button", { name: /adminCancel/ }));
-    expect(screen.queryByRole("heading", { name: /adminProviderCreateTitle/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /adminCredentialCreateTitle/ })).toBeNull();
   });
 
   it("lets admins edit and delete routing policies", async () => {
