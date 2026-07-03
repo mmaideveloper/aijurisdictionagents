@@ -585,7 +585,7 @@ describe("AIModelAdmin Ollama management", () => {
     });
   });
 
-  it("disables configured Ollama model profiles from the runtime inventory", async () => {
+  it("removes configured Ollama model profiles from the runtime inventory", async () => {
     const user = userEvent.setup();
     const profileDashboard = {
       ...dashboard,
@@ -631,8 +631,8 @@ describe("AIModelAdmin Ollama management", () => {
           active_policy_ids: [],
           is_default: false,
           is_running: false,
-          removable: false,
-          removal_blockers: ["Configured profile local_ollama_mistral is still enabled."]
+          removable: true,
+          removal_blockers: []
         }
       ]
     });
@@ -643,13 +643,10 @@ describe("AIModelAdmin Ollama management", () => {
     await user.click(within(modelRow).getByRole("button", { name: /adminOllamaDisable/ }));
 
     await waitFor(() => {
-      expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
+      expect(apiMocks.removeOllamaModel).toHaveBeenCalledWith(
         expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
-        expect.objectContaining({
-          model_profile_id: "local_ollama_mistral",
-          enabled: false,
-          reason: "Disable local Ollama model profile from admin UI."
-        })
+        "mistral:7b",
+        "Disable local Ollama model profile from admin UI."
       );
     });
   });
