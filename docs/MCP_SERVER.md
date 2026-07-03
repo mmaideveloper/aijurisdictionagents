@@ -68,7 +68,10 @@ The browser authorization page validates the user password, sends an email OTP,
 and only creates a short-lived authorization code after OTP verification. The
 token endpoint exchanges that code for the same revocable JWT bearer token
 accepted by `POST /mcp` and a separate audience-bound refresh token. Token
-responses include `Cache-Control: no-store` and `Pragma: no-cache`.
+responses include `Cache-Control: no-store` and `Pragma: no-cache`. Clients may
+request `offline_access` to receive a refresh token, but the token response
+`scope` reports only the access-token scope, `mcp:laws`; the refresh token
+itself carries `offline_access`.
 
 Production settings:
 
