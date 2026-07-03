@@ -9,17 +9,20 @@ It is intended for AI assistants that can connect to remote MCP servers over HTT
 For ChatGPT, Claude, and VS Code OAuth-capable clients, start from the OAuth metadata endpoints instead of manually copying a token.
 The API `/version`, MCP `/version`, and MCP `getVersion` tool expose `mcp_server_version`.
 For the current deployable package this value is aligned with the API package revision.
-`POST /MCP` remains accepted as a legacy compatibility alias for older client
-records, and `POST /MC` is also accepted for connector records that were
-accidentally saved with the truncated Claude URL `/MC`; OAuth metadata
-advertises the canonical protected resource as `https://mcp.jurisdigta.eu/mcp`.
+`POST /MCP` remains accepted as a Claude compatibility endpoint and for older
+client records, and `POST /MC` is also accepted for connector records that were
+accidentally saved with the truncated Claude URL `/MC`. OAuth metadata keeps
+`https://mcp.jurisdigta.eu/mcp` for lowercase clients and advertises
+`https://mcp.jurisdigta.eu/MCP` from the uppercase protected-resource metadata
+path because Claude web may store custom connector URLs with uppercase `/MCP`.
 
 `GET /` on the MCP service is a public human-facing setup page. In production,
 `https://mcp.jurisdigta.eu/` should show:
 
 - Registration and login steps for creating an MCP account and short-lived MCP API key.
 - Remote MCP setup guidance for ChatGPT custom connectors, Claude, Perplexity-compatible clients, VS Code, and other MCP clients.
-- OAuth discovery URLs and the canonical MCP endpoint `https://mcp.jurisdigta.eu/mcp`.
+- OAuth discovery URLs and the MCP endpoints `https://mcp.jurisdigta.eu/mcp`
+  and Claude-compatible `https://mcp.jurisdigta.eu/MCP`.
 - Privacy and compliance notes explaining that protected tools require per-user authentication and privacy-safe logging.
 
 Start locally with Docker Compose:
@@ -56,11 +59,14 @@ remote clients that request `offline_access`. Remote clients can use OAuth
 Client ID Metadata Documents, dynamic client registration at `/oauth/register`,
 or a preconfigured public OAuth Client ID. New dynamic registrations may return
 either `200 OK` or `201 Created` with the issued public client metadata.
-ChatGPT and Claude should pass the protected resource value
+ChatGPT and other lowercase clients should pass the protected resource value
 `https://mcp.jurisdigta.eu/mcp` on the authorization, token, and refresh
-requests. Protected-resource metadata includes a human-readable
-`resource_name`, and authorization-server metadata advertises the protected MCP
-resource, `client_id_metadata_document_supported=true`, and
+requests. Claude web custom connectors may omit `resource` and store the server
+URL as `https://mcp.jurisdigta.eu/MCP`; JurisDigta detects Claude OAuth clients
+from the public client id/redirect host and issues `/MCP`-audience access and
+refresh tokens for that flow. Protected-resource metadata includes a
+human-readable `resource_name`, and authorization-server metadata advertises
+both protected MCP resources, `client_id_metadata_document_supported=true`, and
 `authorization_response_iss_parameter_supported=true`. The authorization
 callback returns `iss=https://mcp.jurisdigta.eu` with the authorization code so
 strict OAuth clients can bind the response to the issuer.
@@ -263,6 +269,9 @@ These records include the request path, redirect host/path, client id hash,
 whether a `resource` parameter was supplied, the resolved resource, stored
 authorization-code resource, token audience, scopes, and user-agent family so
 Claude-style connector failures can be correlated without exposing credentials.
+For Claude web, `resource_supplied=false` with
+`token_audience=https://mcp.jurisdigta.eu/MCP` is expected when Claude omits the
+OAuth `resource` parameter.
 MCP endpoint entry logs use `mcp_endpoint_called` and include the actual request
 path, which helps distinguish canonical `/mcp` traffic from legacy `/MCP` or
 `/MC` compatibility traffic.
