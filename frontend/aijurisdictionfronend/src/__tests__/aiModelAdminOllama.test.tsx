@@ -2,7 +2,7 @@
 
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AIModelAdmin from "../pages/AIModelAdmin";
 
@@ -346,9 +346,42 @@ describe("AIModelAdmin Ollama management", () => {
     expect(await screen.findByText("qwen3:1.7b")).toBeDefined();
     expect(screen.getByText("llama3.2:3b")).toBeDefined();
     expect(screen.getByText("local_ollama_default")).toBeDefined();
+    expect(screen.getByText("adminOllamaDefaultWarning")).toBeDefined();
 
     const removeButtons = screen.getAllByRole("button", { name: /adminOllamaRemove/ });
     expect(removeButtons.at(0)?.hasAttribute("disabled")).toBe(true);
+    expect(removeButtons.at(1)?.hasAttribute("disabled")).toBe(false);
+    expect(screen.getAllByRole("button", { name: /adminOllamaSetDefault/ })).toHaveLength(1);
+  });
+
+  it("shows a user edit form and hides it after save or cancel", async () => {
+    const user = userEvent.setup();
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminEdit/ }));
+    expect(await screen.findByRole("heading", { name: /adminUserEditTitle/ })).toBeDefined();
+    await user.selectOptions(screen.getByLabelText("adminRole"), "user");
+    await user.type(screen.getByLabelText("adminReason"), "Update user from table.");
+    await user.click(screen.getByRole("button", { name: /adminSaveUser/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.updateAdminUser).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        "admin-1",
+        {
+          role: "user",
+          is_enabled: true,
+          reason: "Update user from table."
+        }
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: /adminUserEditTitle/ })).toBeNull();
+    });
+
+    await user.click(screen.getByRole("button", { name: /adminEdit/ }));
+    await user.click(screen.getByRole("button", { name: /adminCancel/ }));
+    expect(screen.queryByRole("heading", { name: /adminUserEditTitle/ })).toBeNull();
   });
 
   it("shows seeded providers, profiles, users, and routing guidance", async () => {
@@ -513,10 +546,10 @@ describe("AIModelAdmin Ollama management", () => {
     const user = userEvent.setup();
     render(<AIModelAdmin />);
 
-    await user.click(await screen.findByRole("button", { name: /adminOllamaTitle/ }));
+    await user.click(await screen.findByRole("button", { name: /adminOllamaImportTitle/ }));
     await user.type(screen.getByLabelText("adminOllamaModelTag"), "gemma3:4b");
     await user.type(screen.getByLabelText("adminReason"), "Add fallback model");
-    await user.click(screen.getByRole("button", { name: /adminOllamaImport/ }));
+    await user.click(screen.getByRole("button", { name: /^adminOllamaImport$/ }));
 
     await waitFor(() => {
       expect(apiMocks.importOllamaModel).toHaveBeenCalledWith(
@@ -526,7 +559,7 @@ describe("AIModelAdmin Ollama management", () => {
       );
     });
 
-    await user.type(screen.getByLabelText("adminOllamaActionReason"), "Remove unused model");
+    await user.click(screen.getByRole("button", { name: /adminOllamaTitle/ }));
     const removeButtons = screen.getAllByRole("button", { name: /adminOllamaRemove/ });
     const unusedRemoveButton = removeButtons.at(1);
     expect(unusedRemoveButton).toBeDefined();
@@ -536,27 +569,98 @@ describe("AIModelAdmin Ollama management", () => {
       expect(apiMocks.removeOllamaModel).toHaveBeenCalledWith(
         expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
         "llama3.2:3b",
-        "Remove unused model"
+        "Remove local Ollama model from admin UI."
       );
     });
   });
 
   it("disables configured Ollama model profiles from the runtime inventory", async () => {
     const user = userEvent.setup();
+    const profileDashboard = {
+      ...dashboard,
+      profiles: [
+        ...dashboard.profiles,
+        {
+          model_profile_id: "local_ollama_mistral",
+          provider_id: "local_ollama",
+          model_code: "mistral:7b",
+          deployment_name: "mistral:7b",
+          context_window_tokens: 0,
+          input_price_per_1m: 0,
+          cached_input_price_per_1m: 0,
+          output_price_per_1m: 0,
+          billing_currency: "EUR",
+          effective_from: null,
+          effective_to: null,
+          eu_data_zone_capable: true,
+          is_default_for_free: false,
+          enabled: true,
+          created_at: "2026-06-27T10:00:00Z",
+          updated_at: "2026-06-27T10:00:00Z",
+          deleted_at: null,
+          deleted_by_admin_user_id: "",
+          deleted_reason: ""
+        }
+      ]
+    };
+    apiMocks.fetchAIModelAdminDashboard.mockResolvedValue(profileDashboard);
+    apiMocks.fetchOllamaModels.mockResolvedValue({
+      ...inventory,
+      models: [
+        ...inventory.models,
+        {
+          name: "mistral:7b",
+          model: "mistral:7b",
+          modified_at: "2026-06-27T12:00:00Z",
+          size: 4_000_000_000,
+          digest: "sha256:mistral",
+          details: {},
+          installed: true,
+          configured_profile_ids: ["local_ollama_mistral"],
+          active_policy_ids: [],
+          is_default: false,
+          is_running: false,
+          removable: false,
+          removal_blockers: ["Configured profile local_ollama_mistral is still enabled."]
+        }
+      ]
+    });
     render(<AIModelAdmin />);
 
     await user.click(await screen.findByRole("button", { name: /adminOllamaTitle/ }));
-    await user.type(screen.getByLabelText("adminOllamaActionReason"), "Disable imported local model");
-    const disableButtons = screen.getAllByRole("button", { name: /adminOllamaDisable/ });
-    await user.click(disableButtons.at(0) as HTMLElement);
+    const modelRow = screen.getByRole("row", { name: /mistral:7b/ });
+    await user.click(within(modelRow).getByRole("button", { name: /adminOllamaDisable/ }));
 
     await waitFor(() => {
       expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
         expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
         expect.objectContaining({
-          model_profile_id: "local_ollama_default",
+          model_profile_id: "local_ollama_mistral",
           enabled: false,
-          reason: "Disable imported local model"
+          reason: "Disable local Ollama model profile from admin UI."
+        })
+      );
+    });
+  });
+
+  it("sets an installed non-default Ollama model as the local default", async () => {
+    const user = userEvent.setup();
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminOllamaTitle/ }));
+    const modelRow = screen.getByRole("row", { name: /llama3.2:3b/ });
+    await user.click(within(modelRow).getByRole("button", { name: /adminOllamaSetDefault/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
+        expect.objectContaining({
+          provider_id: "local_ollama",
+          model_code: "llama3.2:3b",
+          deployment_name: "llama3.2:3b",
+          enabled: true,
+          is_default_for_free: true,
+          reason: "Set local Ollama model as default from admin UI."
         })
       );
     });
