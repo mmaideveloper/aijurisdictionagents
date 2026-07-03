@@ -117,6 +117,9 @@ class OllamaModelJobRegistry:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def complete(self, *, job_id: str, message: str = "Completed") -> None:
+        self._update(job_id=job_id, status="succeeded", message=message)
+
     def run(self, *, job_id: str, operation: str, model: str, service: OllamaAdminService) -> None:
         self._update(job_id=job_id, status="running", message="Running")
         try:

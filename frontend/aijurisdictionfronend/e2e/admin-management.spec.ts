@@ -375,6 +375,101 @@ test("admin can set an Ollama model as default and remove the previous non-defau
   await qwen4bRow.screenshot({ path: "output/playwright/codex-462/03-after-non-default-remove.png" });
 });
 
+test("admin local Ollama table loads on menu click and removes not-installed configured models", async ({ page }) => {
+  let removedModel = "";
+  let ollamaFetchCount = 0;
+  const currentInventory = () => ({
+    base_url: "http://127.0.0.1:11434",
+    models: [
+      {
+        name: "qwen3:4b",
+        model: "qwen3:4b",
+        modified_at: "2026-07-03T10:00:00Z",
+        size: 2300000000,
+        digest: "sha256:qwen4b",
+        details: {},
+        installed: true,
+        configured_profile_ids: ["local_ollama_qwen4b"],
+        active_policy_ids: ["default:free:default"],
+        is_default: true,
+        is_running: false,
+        removable: false,
+        removal_blockers: ["Profile local_ollama_qwen4b is marked as the free/default local model."]
+      },
+      {
+        name: "Qwen3:4b",
+        model: "Qwen3:4b",
+        modified_at: "",
+        size: 0,
+        digest: "",
+        details: { configured_only: true },
+        installed: false,
+        configured_profile_ids: ["local_ollama_missing_qwen4b"],
+        active_policy_ids: [],
+        is_default: false,
+        is_running: false,
+        removable: true,
+        removal_blockers: ["Model is configured in JurisDigta but is not installed in Ollama."]
+      }
+    ].filter((model) => model.name !== removedModel)
+  });
+
+  await page.route("**/v1/admin/ai-models", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(dashboard) });
+  });
+  await page.route("**/v1/admin/users?**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ items: dashboard.users, total: 1, limit: 25, offset: 0 })
+    });
+  });
+  await page.route("**/v1/admin/ai-models/ollama/models", async (route) => {
+    ollamaFetchCount += 1;
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(currentInventory()) });
+  });
+  await page.route("**/v1/admin/ai-models/ollama/models/*", async (route) => {
+    removedModel = decodeURIComponent(route.request().url().split("/ollama/models/")[1] ?? "");
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        job_id: "remove-missing-job-1",
+        action: "remove",
+        model: removedModel,
+        status: "succeeded",
+        message: "Configured Ollama model profile removed; model was not installed in Ollama.",
+        created_at: "2026-07-03T10:10:00Z",
+        updated_at: "2026-07-03T10:10:00Z"
+      })
+    });
+  });
+
+  await page.addInitScript((user) => {
+    window.localStorage.setItem("aj_frontend_lang", "en");
+    window.sessionStorage.setItem("jurisdigta.web.auth.user.v1", JSON.stringify(user));
+  }, adminUser);
+
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/app/admin", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Local Ollama models" }).click();
+  await expect(page.getByRole("heading", { name: "Local Ollama models" })).toBeVisible();
+  await expect.poll(() => ollamaFetchCount).toBeGreaterThan(0);
+  await page.screenshot({ path: "output/playwright/codex-468/01-ollama-menu-loads-table.png", fullPage: true });
+
+  const missingRow = page.getByRole("row", { name: /^Qwen3:4b\s+Not installed/ });
+  await expect(missingRow).toContainText("Not installed");
+  await expect(missingRow.locator(".admin-default-model-name")).toHaveCount(0);
+  await expect(missingRow.getByRole("button", { name: "Set as default" })).toBeDisabled();
+  await expect(missingRow.getByRole("button", { name: "Disable model" })).toBeEnabled();
+  await expect(missingRow.getByRole("button", { name: "Remove model" })).toBeEnabled();
+  await missingRow.screenshot({ path: "output/playwright/codex-468/02-not-installed-removable.png" });
+
+  await missingRow.getByRole("button", { name: "Disable model" }).click();
+  await expect(page.getByText("Ollama model removal was started.")).toBeVisible();
+  await expect(page.getByRole("row", { name: /^Qwen3:4b\s+Not installed/ })).toHaveCount(0);
+  expect(removedModel).toBe("Qwen3:4b");
+  await page.screenshot({ path: "output/playwright/codex-468/03-after-disable-removes-row.png", fullPage: true });
+});
+
 test.describe("provider credentials lifecycle", () => {
   test("logs in, opens Admin Provider credentials, adds and updates a provider", async ({ page }) => {
     let providers = dashboard.providers.map((provider) => ({ ...provider }));

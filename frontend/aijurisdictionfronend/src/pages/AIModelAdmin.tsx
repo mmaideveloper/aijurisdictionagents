@@ -649,23 +649,15 @@ const AIModelAdmin: React.FC = () => {
       setPolicyMode("table");
     }
   };
-  const disableOllamaConfiguredProfiles = async (profileIds: string[]) => {
-    const profiles = activeProfiles.filter((profile) => profileIds.includes(profile.model_profile_id));
-    await Promise.all(
-      profiles.map((profile) =>
-        upsertAIModelProfile(
-          adminAuth,
-          profileToForm(profile, {
-            enabled: false,
-            reason: ollamaRemoveReason || "Disable local Ollama model profile from admin UI."
-          })
-        )
-      )
-    );
-  };
   const setOllamaModelAsDefault = async (item: OllamaModelInventory["models"][number]) => {
     await setOllamaModelDefault(adminAuth, item.name, ollamaRemoveReason || "Set local Ollama model as default from admin UI.");
     await reloadOllama();
+  };
+  const selectAdminSection = (section: AdminSection) => {
+    setActiveSection(section);
+    if (section === "ollama") {
+      void reloadOllama();
+    }
   };
 
   const sections: Array<{ key: AdminSection; label: string; icon: React.ReactNode }> = [
@@ -710,7 +702,7 @@ const AIModelAdmin: React.FC = () => {
               key={section.key}
               type="button"
               className={`admin-sidebar__item ${activeSection === section.key ? "is-active" : ""}`}
-              onClick={() => setActiveSection(section.key)}
+              onClick={() => selectAdminSection(section.key)}
             >
               {section.icon}
               <span>{section.label}</span>
@@ -1384,13 +1376,13 @@ const AIModelAdmin: React.FC = () => {
                           <button
                             className="button ghost"
                             type="button"
-                            disabled={item.is_default || !item.configured_profile_ids.length}
-                            title={item.is_default ? t("adminOllamaDefaultWarning") : undefined}
+                            disabled={item.is_default || !item.configured_profile_ids.length || !item.removable}
+                            title={item.is_default ? t("adminOllamaDefaultWarning") : item.removal_blockers.join(" ")}
                             onClick={() => void runAction(async () => {
-                              await disableOllamaConfiguredProfiles(item.configured_profile_ids);
+                              await removeOllamaModel(adminAuth, item.name, ollamaRemoveReason || "Disable local Ollama model profile from admin UI.");
                               setOllamaRemoveReason("");
                               await reloadOllama();
-                            }, t("adminOllamaProfilesDisabled"))}
+                            }, t("adminOllamaRemoveStarted"))}
                           >
                             <FaCheck aria-hidden="true" />{t("adminOllamaDisable")}
                           </button>

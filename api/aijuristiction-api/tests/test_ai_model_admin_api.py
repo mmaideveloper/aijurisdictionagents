@@ -715,9 +715,58 @@ def test_admin_ollama_inventory_includes_configured_profile_when_runtime_has_no_
     models = response.json()["models"]
     configured_model = next(item for item in models if item["name"] == "qwen3:1.7b")
     assert configured_model["installed"] is False
-    assert configured_model["removable"] is False
+    assert configured_model["is_default"] is False
+    assert configured_model["removable"] is True
     assert configured_model["configured_profile_ids"] == ["local_ollama_default"]
     assert any("not installed" in item.lower() for item in configured_model["removal_blockers"])
+
+
+def test_admin_ollama_inventory_deduplicates_configured_profile_by_case(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    store.upsert_ai_model_profile(
+        model_profile_id="local_ollama_qwen4b",
+        provider_id="local_ollama",
+        model_code="qwen3:4b",
+        deployment_name="Qwen3:4b",
+        billing_currency="EUR",
+        eu_data_zone_capable=True,
+        is_default_for_free=True,
+        enabled=True,
+    )
+    fake_ollama = FakeOllamaAdminService(
+        models=[
+            OllamaInstalledModel(
+                name="qwen3:4b",
+                model="qwen3:4b",
+                modified_at="2026-07-03T10:00:00Z",
+                size=4_000_000_000,
+                digest="sha256:qwen4b",
+            )
+        ]
+    )
+    app.dependency_overrides[get_admin_store] = lambda: store
+    app.dependency_overrides[get_ollama_admin_service] = lambda: fake_ollama
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    try:
+        response = TestClient(app).get(
+            "/v1/admin/ai-models/ollama/models",
+            headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    models = response.json()["models"]
+    assert [item["name"] for item in models].count("qwen3:4b") == 1
+    assert "Qwen3:4b" not in [item["name"] for item in models]
+    qwen_model = next(item for item in models if item["name"] == "qwen3:4b")
+    assert qwen_model["installed"] is True
+    assert qwen_model["is_default"] is True
+    assert qwen_model["configured_profile_ids"] == ["local_ollama_qwen4b"]
 
 
 def test_admin_can_start_ollama_import_job(tmp_path: Path, monkeypatch) -> None:
@@ -877,7 +926,7 @@ def test_admin_can_remove_configured_non_default_ollama_model_and_rewrite_polici
             headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id},
             json={"reason": "Remove non-default configured model."},
         )
-        profiles = {item.model_profile_id: item for item in store.list_ai_model_profiles()}
+        profiles = {item.model_profile_id: item for item in store.list_ai_model_profiles(include_deleted=True)}
         policies = {item.policy_id: item for item in store.list_ai_task_route_policies()}
         audit_events = store.list_ai_model_admin_audit_events(limit=5)
     finally:
@@ -887,9 +936,66 @@ def test_admin_can_remove_configured_non_default_ollama_model_and_rewrite_polici
     assert response.json()["action"] == "remove"
     assert fake_ollama.removed == ["qwen3:4b"]
     assert profiles["local_ollama_qwen4b"].enabled is False
+    assert profiles["local_ollama_qwen4b"].deleted_at is not None
     assert policies["default:free:custom"].preferred_local_model_profile_id == "local_ollama_default"
     assert audit_events[0].action == "ollama_remove_started"
     assert "local_ollama_qwen4b" in audit_events[0].old_value_summary
+
+
+def test_admin_can_delete_not_installed_configured_ollama_model_even_if_marked_default(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    store.upsert_ai_model_profile(
+        model_profile_id="local_ollama_missing",
+        provider_id="local_ollama",
+        model_code="Qwen3:4b",
+        deployment_name="Qwen3:4b",
+        billing_currency="EUR",
+        eu_data_zone_capable=True,
+        is_default_for_free=True,
+        enabled=True,
+    )
+    store.upsert_ai_task_route_policy(
+        policy_id="default:free:custom",
+        task_type="default",
+        plan_code="free",
+        preferred_local_model_profile_id="local_ollama_missing",
+        allow_external=False,
+        enabled=True,
+    )
+    fake_ollama = FakeOllamaAdminService(models=[])
+    app.dependency_overrides[get_admin_store] = lambda: store
+    app.dependency_overrides[get_ollama_admin_service] = lambda: fake_ollama
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id}
+    try:
+        inventory_response = client.get("/v1/admin/ai-models/ollama/models", headers=headers)
+        remove_response = client.request(
+            "DELETE",
+            "/v1/admin/ai-models/ollama/models/Qwen3:4b",
+            headers=headers,
+            json={"reason": "Delete missing configured Ollama model."},
+        )
+        profiles = {item.model_profile_id: item for item in store.list_ai_model_profiles(include_deleted=True)}
+        policies = {item.policy_id: item for item in store.list_ai_task_route_policies()}
+        refreshed_inventory_response = client.get("/v1/admin/ai-models/ollama/models", headers=headers)
+    finally:
+        app.dependency_overrides.clear()
+
+    missing_model = next(item for item in inventory_response.json()["models"] if item["name"] == "Qwen3:4b")
+    assert missing_model["installed"] is False
+    assert missing_model["is_default"] is False
+    assert missing_model["removable"] is True
+    assert remove_response.status_code == 200
+    assert remove_response.json()["status"] == "succeeded"
+    assert fake_ollama.removed == []
+    assert profiles["local_ollama_missing"].deleted_at is not None
+    assert policies["default:free:custom"].preferred_local_model_profile_id is None
+    assert all(item["name"] != "Qwen3:4b" for item in refreshed_inventory_response.json()["models"])
 
 
 def test_admin_can_remove_ollama_model_after_linked_profiles_are_disabled(
