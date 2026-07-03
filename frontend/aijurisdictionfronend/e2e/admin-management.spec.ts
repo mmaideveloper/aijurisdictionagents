@@ -10,6 +10,8 @@ const adminUser = {
   isEnabled: true
 };
 
+test.use({ video: "on" });
+
 const dashboard = {
   admin: { user_id: "admin-1", email: "admin@example.test" },
   providers: [
@@ -27,7 +29,10 @@ const dashboard = {
       health_check_url: "http://127.0.0.1:11434/api/tags",
       enabled: true,
       created_at: "2026-06-27T10:00:00Z",
-      updated_at: "2026-06-27T10:00:00Z"
+      updated_at: "2026-06-27T10:00:00Z",
+      deleted_at: null,
+      deleted_by_admin_user_id: "",
+      deleted_reason: ""
     },
     {
       provider_id: "azure_foundry",
@@ -43,7 +48,10 @@ const dashboard = {
       health_check_url: "",
       enabled: true,
       created_at: "2026-06-27T10:00:00Z",
-      updated_at: "2026-06-27T10:00:00Z"
+      updated_at: "2026-06-27T10:00:00Z",
+      deleted_at: null,
+      deleted_by_admin_user_id: "",
+      deleted_reason: ""
     }
   ],
   profiles: [
@@ -225,4 +233,120 @@ test("admin management shows users, providers, models, policies, Ollama inventor
 
   await page.getByRole("button", { name: "Admin audit" }).click();
   await expect(page.getByText("ai_task_route_policy: default:free:default")).toBeVisible();
+});
+
+test.describe("provider credentials lifecycle", () => {
+  test("logs in, opens Admin Provider credentials, adds and updates a provider", async ({ page }) => {
+    let providers = dashboard.providers.map((provider) => ({ ...provider }));
+    const currentDashboard = () => ({
+      ...dashboard,
+      providers
+    });
+
+    await page.route("**/v1/users/sign-in", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          user_id: adminUser.userId,
+          email: adminUser.email,
+          full_name: adminUser.name,
+          role: adminUser.role,
+          is_enabled: true,
+          device_auth_token: adminUser.deviceAuthToken
+        })
+      });
+    });
+
+    await page.route("**/v1/admin/ai-models/providers", async (route) => {
+      const input = route.request().postDataJSON() as typeof dashboard.providers[number] & { reason?: string };
+      const existingIndex = providers.findIndex((provider) => provider.provider_code === input.provider_code);
+      const savedProvider = {
+        provider_id: existingIndex >= 0 ? providers[existingIndex]!.provider_id : input.provider_code,
+        provider_code: input.provider_code,
+        provider_type: input.provider_type,
+        display_name: input.display_name,
+        base_url: input.base_url,
+        api_version: input.api_version ?? "",
+        region: input.region,
+        data_zone: input.data_zone,
+        is_external: input.is_external,
+        is_local: input.is_local,
+        health_check_url: input.health_check_url,
+        enabled: input.enabled,
+        created_at: existingIndex >= 0 ? providers[existingIndex]!.created_at : "2026-07-03T10:00:00Z",
+        updated_at: "2026-07-03T10:10:00Z",
+        deleted_at: null,
+        deleted_by_admin_user_id: "",
+        deleted_reason: ""
+      };
+      providers = existingIndex >= 0
+        ? providers.map((provider, index) => (index === existingIndex ? savedProvider : provider))
+        : [...providers, savedProvider];
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(savedProvider) });
+    });
+
+    await page.route("**/v1/admin/ai-models", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(currentDashboard()) });
+    });
+
+    await page.route("**/v1/admin/users?**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ items: dashboard.users, total: 1, limit: 25, offset: 0 })
+      });
+    });
+
+    await page.route("**/v1/admin/ai-models/ollama/models", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ base_url: "http://127.0.0.1:11434", models: [] }) });
+    });
+
+    await page.addInitScript(() => {
+      window.localStorage.setItem("aj_frontend_lang", "en");
+    });
+
+    await page.goto("/auth", { waitUntil: "domcontentloaded" });
+    await page.getByLabel("Work email").fill(adminUser.email);
+    await page.getByLabel("Password").fill("admin123");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("button", { name: "Admin" }).click();
+
+    await expect(page).toHaveURL(/\/app\/admin/);
+    await page.screenshot({ path: "test-results/codex-455-screenshots/01-admin-page.png", fullPage: true });
+    await expect(page.getByRole("button", { name: "Provider credentials" })).toBeVisible();
+    await page.getByRole("button", { name: "Provider credentials" }).click();
+    await expect(page.getByRole("button", { name: "Provider credentials" })).toHaveClass(/is-active/);
+    await expect(page.getByRole("heading", { name: "Provider credentials" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Local Ollama" })).toBeVisible();
+    await page.screenshot({ path: "test-results/codex-455-screenshots/02-provider-credentials-table.png", fullPage: true });
+
+    await page.getByRole("button", { name: "Add provider" }).click();
+    await expect(page.getByRole("heading", { name: "Add model provider" })).toBeVisible();
+    await page.getByLabel("Provider code").fill("test_provider");
+    await page.getByLabel("Provider type").selectOption("openai_compatible");
+    await page.getByLabel("Display name").fill("Test Provider");
+    await page.getByLabel("Base URL").fill("https://provider.example.test/v1");
+    await page.getByLabel("API version").fill("2026-07-03");
+    await page.getByLabel("Region").fill("eu");
+    await page.getByLabel("Data zone").fill("eu");
+    await page.getByLabel("Health URL").fill("https://provider.example.test/health");
+    await page.getByLabel("Reason").fill("Add provider from E2E.");
+    await page.getByRole("button", { name: "Save provider" }).click();
+
+    await expect(page.getByRole("heading", { name: "Add model provider" })).toBeHidden();
+    await expect(page.getByRole("cell", { name: "Test Provider" })).toBeVisible();
+
+    const testProviderRow = page.getByRole("row").filter({ hasText: "Test Provider" });
+    await testProviderRow.getByRole("button", { name: "Edit" }).click();
+    await expect(page.getByRole("heading", { name: "Edit model provider" })).toBeVisible();
+    await page.addStyleTag({ content: ".site-header { display: none !important; }" });
+    await page.getByRole("heading", { name: "Edit model provider" }).scrollIntoViewIfNeeded();
+    await page.locator(".admin-form-stack").screenshot({ path: "test-results/codex-455-screenshots/03-provider-credentials-edit-form.png" });
+    await page.getByLabel("Display name").fill("Updated Test Provider");
+    await page.getByLabel("Reason").fill("Update provider from E2E.");
+    await page.getByRole("button", { name: "Save provider" }).click();
+
+    await expect(page.getByRole("heading", { name: "Edit model provider" })).toBeHidden();
+    await expect(page.getByRole("cell", { name: "Updated Test Provider" })).toBeVisible();
+    await expect(page.getByText("Test Provider", { exact: true })).toBeHidden();
+  });
 });

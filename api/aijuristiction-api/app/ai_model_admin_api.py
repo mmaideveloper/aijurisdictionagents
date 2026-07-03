@@ -73,6 +73,9 @@ class AIModelProviderResponse(BaseModel):
     enabled: bool
     created_at: str
     updated_at: str
+    deleted_at: str | None
+    deleted_by_admin_user_id: str
+    deleted_reason: str
 
 
 class AIModelProviderUpsertRequest(BaseModel):
@@ -88,6 +91,10 @@ class AIModelProviderUpsertRequest(BaseModel):
     health_check_url: str = ""
     enabled: bool = True
     reason: str = ""
+
+
+class AIModelProviderDeleteRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class AIModelProfileResponse(BaseModel):
@@ -412,7 +419,7 @@ def get_ai_model_admin_dashboard(
     users_limit = 25
     return AIModelAdminDashboardResponse(
         admin=admin,
-        providers=[_provider_response(item) for item in store.list_ai_model_providers()],
+        providers=[_provider_response(item) for item in store.list_ai_model_providers(include_deleted=True)],
         profiles=[_profile_response(item) for item in store.list_ai_model_profiles()],
         credentials=[_credential_response(item) for item in store.list_ai_model_credentials(reveal=False)],
         policies=[_policy_response(item) for item in store.list_ai_task_route_policies()],
@@ -545,7 +552,7 @@ def upsert_ai_model_provider(
     admin: AdminContext = Depends(require_ai_model_admin),
     store: ApiDatabaseStore = Depends(get_admin_store),
 ) -> AIModelProviderResponse:
-    existing = {item.provider_code: item for item in store.list_ai_model_providers()}.get(
+    existing = {item.provider_code: item for item in store.list_ai_model_providers(include_deleted=True)}.get(
         payload.provider_code.strip().lower()
     )
     provider = store.upsert_ai_model_provider(
@@ -566,6 +573,39 @@ def upsert_ai_model_provider(
         request=request,
         admin=admin,
         action="upsert",
+        entity_type="ai_model_provider",
+        entity_id=provider.provider_id,
+        old=existing,
+        new=provider,
+        reason=payload.reason,
+    )
+    return _provider_response(provider)
+
+
+@router.delete("/providers/{provider_id}", response_model=AIModelProviderResponse)
+def soft_delete_ai_model_provider(
+    provider_id: str,
+    payload: AIModelProviderDeleteRequest,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> AIModelProviderResponse:
+    existing = {item.provider_id: item for item in store.list_ai_model_providers(include_deleted=True)}.get(provider_id)
+    try:
+        provider = store.soft_delete_ai_model_provider(
+            provider_id=provider_id,
+            admin_user_id=admin.user_id,
+            reason=payload.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="provider.soft_delete",
         entity_type="ai_model_provider",
         entity_id=provider.provider_id,
         old=existing,

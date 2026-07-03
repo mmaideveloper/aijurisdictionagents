@@ -215,6 +215,9 @@ class AIModelProvider:
     enabled: bool
     created_at: str
     updated_at: str
+    deleted_at: str | None
+    deleted_by_admin_user_id: str
+    deleted_reason: str
 
 
 @dataclass(frozen=True)
@@ -792,7 +795,8 @@ class ApiDatabaseStore:
                 """
                 SELECT provider_id, provider_code, provider_type, display_name, base_url,
                        api_version, region, data_zone, is_external, is_local, health_check_url,
-                       enabled, created_at, updated_at
+                       enabled, created_at, updated_at, deleted_at, deleted_by_admin_user_id,
+                       deleted_reason
                 FROM ai_model_providers
                 WHERE provider_code = ?
                 """,
@@ -802,19 +806,105 @@ class ApiDatabaseStore:
             raise RuntimeError(f"AI model provider was not saved: {normalized_code}")
         return _row_to_ai_model_provider(row)
 
-    def list_ai_model_providers(self) -> list[AIModelProvider]:
+    def list_ai_model_providers(self, *, include_deleted: bool = False) -> list[AIModelProvider]:
+        where = "" if include_deleted else "WHERE deleted_at IS NULL"
         with self._connect() as conn:
             rows = self._execute(
+                conn,
+                f"""
+                SELECT provider_id, provider_code, provider_type, display_name, base_url,
+                       api_version, region, data_zone, is_external, is_local, health_check_url,
+                       enabled, created_at, updated_at, deleted_at, deleted_by_admin_user_id,
+                       deleted_reason
+                FROM ai_model_providers
+                {where}
+                ORDER BY deleted_at IS NOT NULL, is_local DESC, display_name, provider_code
+                """,
+            ).fetchall()
+        return [_row_to_ai_model_provider(row) for row in rows]
+
+    def soft_delete_ai_model_provider(
+        self,
+        *,
+        provider_id: str,
+        admin_user_id: str,
+        reason: str,
+    ) -> AIModelProvider:
+        normalized_provider_id = provider_id.strip()
+        normalized_admin_user_id = admin_user_id.strip()
+        normalized_reason = reason.strip()
+        if not normalized_provider_id:
+            raise ValueError("provider_id is required")
+        if not normalized_reason:
+            raise ValueError("reason is required")
+        now = _now_iso()
+        with self._connect() as conn:
+            existing = self._fetchone(
+                conn,
+                """
+                SELECT provider_id
+                FROM ai_model_providers
+                WHERE provider_id = ?
+                """,
+                (normalized_provider_id,),
+            )
+            if existing is None:
+                raise KeyError(f"AI model provider {normalized_provider_id} not found")
+            self._execute(
+                conn,
+                """
+                UPDATE ai_model_providers
+                SET enabled = 0,
+                    deleted_at = ?,
+                    deleted_by_admin_user_id = ?,
+                    deleted_reason = ?,
+                    updated_at = ?
+                WHERE provider_id = ?
+                """,
+                (
+                    now,
+                    normalized_admin_user_id,
+                    normalized_reason,
+                    now,
+                    normalized_provider_id,
+                ),
+            )
+            self._execute(
+                conn,
+                """
+                UPDATE ai_model_profiles
+                SET enabled = 0,
+                    updated_at = ?
+                WHERE provider_id = ?
+                """,
+                (now, normalized_provider_id),
+            )
+            self._execute(
+                conn,
+                """
+                UPDATE ai_model_credentials
+                SET enabled = 0,
+                    updated_at = ?
+                WHERE provider_id = ?
+                """,
+                (now, normalized_provider_id),
+            )
+            conn.commit()
+            row = self._fetchone(
                 conn,
                 """
                 SELECT provider_id, provider_code, provider_type, display_name, base_url,
                        api_version, region, data_zone, is_external, is_local, health_check_url,
-                       enabled, created_at, updated_at
+                       enabled, created_at, updated_at, deleted_at, deleted_by_admin_user_id,
+                       deleted_reason
                 FROM ai_model_providers
-                ORDER BY is_local DESC, display_name, provider_code
+                WHERE provider_id = ?
                 """,
-            ).fetchall()
-        return [_row_to_ai_model_provider(row) for row in rows]
+                (normalized_provider_id,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model provider was not soft-deleted: {normalized_provider_id}")
+        return _row_to_ai_model_provider(row)
 
     def upsert_ai_model_profile(
         self,
@@ -3923,6 +4013,7 @@ class ApiDatabaseStore:
             SELECT p.provider_id, p.provider_code, p.provider_type, p.display_name, p.base_url,
                    p.api_version, p.region, p.data_zone, p.is_external, p.is_local,
                    p.health_check_url, p.enabled, p.created_at, p.updated_at,
+                   p.deleted_at, p.deleted_by_admin_user_id, p.deleted_reason,
                    m.model_profile_id, m.provider_id, m.model_code, m.deployment_name,
                    m.context_window_tokens, m.input_price_per_1m, m.cached_input_price_per_1m,
                    m.output_price_per_1m, m.billing_currency, m.effective_from, m.effective_to,
@@ -3932,12 +4023,13 @@ class ApiDatabaseStore:
             WHERE m.model_profile_id = ?
               AND m.enabled = 1
               AND p.enabled = 1
+              AND p.deleted_at IS NULL
             """,
             (model_profile_id,),
         )
         if row is None:
             return None
-        return _row_to_ai_model_provider(row[:14]), _row_to_ai_model_profile(row[14:])
+        return _row_to_ai_model_provider(row[:17]), _row_to_ai_model_profile(row[17:])
 
     def _get_enabled_ai_model_user_override_target(
         self,
@@ -3988,7 +4080,10 @@ class ApiDatabaseStore:
                 health_check_url TEXT NOT NULL DEFAULT '',
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                deleted_at TEXT,
+                deleted_by_admin_user_id TEXT NOT NULL DEFAULT '',
+                deleted_reason TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS ai_model_profiles (
@@ -4155,7 +4250,40 @@ class ApiDatabaseStore:
             """,
         )
         self._ensure_ai_model_profile_columns(conn)
+        self._ensure_ai_model_provider_soft_delete_columns(conn)
         self._ensure_ai_model_usage_audit_columns(conn)
+
+    def _ensure_ai_model_provider_soft_delete_columns(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            provider_columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'ai_model_providers'
+                    """,
+                ).fetchall()
+            }
+        else:
+            provider_columns = {
+                row[1]
+                for row in self._execute(conn, "PRAGMA table_info(ai_model_providers)").fetchall()
+            }
+        missing_columns = {
+            "deleted_at": "TEXT",
+            "deleted_by_admin_user_id": "TEXT NOT NULL DEFAULT ''",
+            "deleted_reason": "TEXT NOT NULL DEFAULT ''",
+        }
+        for column_name, column_definition in missing_columns.items():
+            if column_name not in provider_columns:
+                self._execute(
+                    conn,
+                    f"ALTER TABLE ai_model_providers ADD COLUMN {column_name} {column_definition}",
+                )
 
     def _ensure_ai_model_profile_columns(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -4747,6 +4875,9 @@ def _row_to_ai_model_provider(row: tuple[object, ...]) -> AIModelProvider:
         enabled=_row_bool(row[11]),
         created_at=str(row[12]),
         updated_at=str(row[13]),
+        deleted_at=str(row[14]) if len(row) > 14 and row[14] is not None else None,
+        deleted_by_admin_user_id=str(row[15]) if len(row) > 15 else "",
+        deleted_reason=str(row[16]) if len(row) > 16 else "",
     )
 
 

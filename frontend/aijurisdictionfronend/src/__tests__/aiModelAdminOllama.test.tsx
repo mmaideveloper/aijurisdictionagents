@@ -14,6 +14,7 @@ const apiMocks = vi.hoisted(() => ({
   upsertAIModelUserOverride: vi.fn(),
   disableAIModelUserOverride: vi.fn(),
   fetchOllamaModels: vi.fn(),
+  deleteAIModelProvider: vi.fn(),
   importOllamaModel: vi.fn(),
   removeOllamaModel: vi.fn(),
   upsertAIModelProvider: vi.fn(),
@@ -70,7 +71,10 @@ const dashboard = {
       health_check_url: "http://127.0.0.1:11434/api/tags",
       enabled: true,
       created_at: "2026-06-27T10:00:00Z",
-      updated_at: "2026-06-27T10:00:00Z"
+      updated_at: "2026-06-27T10:00:00Z",
+      deleted_at: null,
+      deleted_by_admin_user_id: "",
+      deleted_reason: ""
     },
     {
       provider_id: "azure_foundry",
@@ -86,7 +90,10 @@ const dashboard = {
       health_check_url: "",
       enabled: true,
       created_at: "2026-06-27T10:00:00Z",
-      updated_at: "2026-06-27T10:00:00Z"
+      updated_at: "2026-06-27T10:00:00Z",
+      deleted_at: null,
+      deleted_by_admin_user_id: "",
+      deleted_reason: ""
     }
   ],
   profiles: [
@@ -282,6 +289,7 @@ describe("AIModelAdmin Ollama management", () => {
     apiMocks.importOllamaModel.mockResolvedValue({ job_id: "job-1", action: "pull", model: "gemma3:4b", status: "queued" });
     apiMocks.removeOllamaModel.mockResolvedValue({ job_id: "job-2", action: "remove", model: "llama3.2:3b", status: "queued" });
     apiMocks.upsertAIModelProvider.mockResolvedValue(dashboard.providers[1]);
+    apiMocks.deleteAIModelProvider.mockResolvedValue({ ...dashboard.providers[1], enabled: false, deleted_at: "2026-07-03T10:10:00Z" });
     apiMocks.upsertAIModelProfile.mockImplementation((_, input) => {
       const existingProfile =
         dashboard.profiles.find((profile) => profile.model_profile_id === input.model_profile_id) ??
@@ -338,12 +346,16 @@ describe("AIModelAdmin Ollama management", () => {
     expect(await screen.findByText("adminPolicyHelp")).toBeDefined();
   });
 
-  it("lets admins edit Azure provider URL and soft-disable provider credentials", async () => {
+  it("shows provider credentials table first and hides the edit form after save or cancel", async () => {
     const user = userEvent.setup();
     render(<AIModelAdmin />);
 
-    await user.click(await screen.findByRole("button", { name: /adminProvidersTitle/ }));
+    await user.click(await screen.findByRole("button", { name: /adminCredentialsTitle/ }));
+    expect(await screen.findByText("Local Ollama")).toBeDefined();
+    expect(screen.queryByRole("heading", { name: /adminProviderEditTitle/ })).toBeNull();
+
     await user.click(screen.getAllByRole("button", { name: /adminEdit/ }).at(1)!);
+    expect(await screen.findByRole("heading", { name: /adminProviderEditTitle/ })).toBeDefined();
     const baseUrlInput = screen.getByLabelText("adminBaseUrl") as HTMLInputElement;
     expect(baseUrlInput.value).toBe("");
 
@@ -361,20 +373,14 @@ describe("AIModelAdmin Ollama management", () => {
         })
       );
     });
-
-    await user.click(screen.getByRole("button", { name: /adminCredentialsTitle/ }));
-    await user.click(await screen.findByRole("button", { name: /adminDisableCredential/ }));
-
     await waitFor(() => {
-      expect(apiMocks.patchAIModelCredential).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: "admin-1" }),
-        "azure_foundry:api_key:default",
-        expect.objectContaining({
-          enabled: false,
-          reason: "Disable provider credential from admin UI."
-        })
-      );
+      expect(screen.queryByRole("heading", { name: /adminProviderEditTitle/ })).toBeNull();
     });
+
+    await user.click(screen.getByRole("button", { name: /adminAddProvider/ }));
+    expect(await screen.findByRole("heading", { name: /adminProviderCreateTitle/ })).toBeDefined();
+    await user.click(screen.getByRole("button", { name: /adminCancel/ }));
+    expect(screen.queryByRole("heading", { name: /adminProviderCreateTitle/ })).toBeNull();
   });
 
   it("lets admins update and disable routing policies", async () => {
