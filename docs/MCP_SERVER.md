@@ -250,6 +250,19 @@ For protected tools, send the MCP API key as a Bearer token or `x-mcp-api-key` h
 MCP server logs use the `jurisdigta-mcp-server.http` and `aijuristiction-api.mcp` loggers with the shared `API_LOG_LEVEL` or `LOG_LEVEL` setting.
 Each JSON-RPC request logs request and correlation IDs from `x-request-id` and `x-correlation-id`, batch/message counts, method names, HTTP status, and request duration.
 Tool calls log stable event names such as `mcp_tool_started`, `mcp_tool_completed`, `mcp_tool_auth_failed`, and `mcp_laws_db_session_failed`.
+OAuth connector diagnostics log stable event names such as
+`mcp_oauth_protected_resource_metadata_served`,
+`mcp_oauth_authorization_server_metadata_served`,
+`mcp_oauth_authorize_started`, `mcp_oauth_authorize_succeeded`,
+`mcp_oauth_authorize_failed`, `mcp_oauth_token_started`,
+`mcp_oauth_token_succeeded`, and `mcp_oauth_token_failed`.
+These records include the request path, redirect host/path, client id hash,
+whether a `resource` parameter was supplied, the resolved resource, stored
+authorization-code resource, token audience, scopes, and user-agent family so
+Claude-style connector failures can be correlated without exposing credentials.
+MCP endpoint entry logs use `mcp_endpoint_called` and include the actual request
+path, which helps distinguish canonical `/mcp` traffic from legacy `/MCP` or
+`/MC` compatibility traffic.
 The HTTP middleware also emits `mcp_wire_request` and `mcp_wire_response`
 records for MCP-service traffic. These records include method, path, redacted
 query string, selected headers, content type, body bytes, and a body preview.
@@ -259,7 +272,7 @@ Set `MCP_WIRE_LOGGING_ENABLED=false` to disable these wire-level records.
 
 Debugging fields are intentionally minimized:
 
-- Logged: tool name, argument keys, country code, limit, query length, result count, content length, database backend, user id after successful authentication, and a short SHA-256 hash for document ids.
+- Logged: tool name, argument keys, country code, limit, query length, result count, content length, database backend, user id after successful authentication, OAuth endpoint path/resource/audience context, redirect host/path, user-agent family, and short SHA-256 hashes for document ids and OAuth client ids.
 - Redacted from wire logs: authorization and cookie headers, MCP API keys,
   OAuth/JWT access and refresh tokens, OAuth authorization codes, PKCE
   verifiers, passwords, OTP verification codes, client secrets, pending ids,

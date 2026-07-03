@@ -257,6 +257,12 @@ async def mcp_json_rpc(
     request_id = getattr(request.state, "request_id", None)
     correlation_id = getattr(request.state, "correlation_id", None)
     logger.info(
+        "mcp_endpoint_called request_path=%s canonical_resource=%s user_agent=%s",
+        request.url.path,
+        _resource_url(request),
+        _oauth_user_agent_family(request),
+    )
+    logger.info(
         "mcp_json_rpc_received request_id=%s correlation_id=%s batch=%s message_count=%d methods=%s",
         request_id,
         correlation_id,
@@ -321,6 +327,13 @@ def mcp_sign_up_page(request: Request) -> HTMLResponse:
 def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
     base_url = _base_url(request)
     resource = _resource_url(request)
+    logger.info(
+        "mcp_oauth_protected_resource_metadata_served request_path=%s resource=%s authorization_server=%s user_agent=%s",
+        request.url.path,
+        resource,
+        base_url,
+        _oauth_user_agent_family(request),
+    )
     return {
         "resource": resource,
         "resource_name": "JurisDigta MCP",
@@ -342,6 +355,14 @@ def oauth_mcp_protected_resource_metadata(request: Request) -> dict[str, Any]:
 @oauth_router.get("/.well-known/oauth-authorization-server/mcp")
 def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
     base_url = _base_url(request)
+    resource = _resource_url(request)
+    logger.info(
+        "mcp_oauth_authorization_server_metadata_served request_path=%s issuer=%s protected_resource=%s user_agent=%s",
+        request.url.path,
+        base_url,
+        resource,
+        _oauth_user_agent_family(request),
+    )
     return {
         "issuer": base_url,
         "authorization_endpoint": f"{base_url}/oauth/authorize",
@@ -354,7 +375,7 @@ def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
         "scopes_supported": [MCP_TOKEN_SCOPE, MCP_REFRESH_TOKEN_SCOPE],
         "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": _oauth_authorization_response_iss_enabled(),
-        "protected_resources": [_resource_url(request)],
+        "protected_resources": [resource],
     }
 
 
@@ -421,16 +442,59 @@ def oauth_authorize_page(
     code_challenge_method: str,
     state: str = "",
     resource: str = "",
+    scope: str = "",
+    prompt: str = "",
 ) -> HTMLResponse:
     resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
-    _validate_oauth_authorize_request(
-        response_type=response_type,
-        client_id=client_id,
-        redirect_uri=redirect_uri,
-        code_challenge=code_challenge,
-        code_challenge_method=code_challenge_method,
-        resource=resolved_resource,
-        expected_resource=_resource_url(request),
+    expected_resource = _resource_url(request)
+    logger.info(
+        "mcp_oauth_authorize_started response_type=%s client_id_hash=%s client_id_host=%s client_id_path=%s "
+        "redirect_host=%s redirect_path=%s requested_scope=%s prompt=%s resource_supplied=%s "
+        "resolved_resource=%s expected_resource=%s user_agent=%s",
+        response_type,
+        _stable_hash(client_id),
+        _url_host(client_id),
+        _url_path(client_id),
+        _url_host(redirect_uri),
+        _url_path(redirect_uri),
+        _oauth_scope_summary(scope),
+        prompt,
+        bool(resource.strip()),
+        resolved_resource,
+        expected_resource,
+        _oauth_user_agent_family(request),
+    )
+    try:
+        _validate_oauth_authorize_request(
+            response_type=response_type,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            resource=resolved_resource,
+            expected_resource=expected_resource,
+        )
+    except HTTPException as exc:
+        logger.warning(
+            "mcp_oauth_authorize_failed reason=validation_error detail=%s client_id_hash=%s "
+            "redirect_host=%s redirect_path=%s resolved_resource=%s expected_resource=%s user_agent=%s",
+            _http_exception_detail(exc),
+            _stable_hash(client_id),
+            _url_host(redirect_uri),
+            _url_path(redirect_uri),
+            resolved_resource,
+            expected_resource,
+            _oauth_user_agent_family(request),
+        )
+        raise
+    logger.info(
+        "mcp_oauth_authorize_succeeded client_id_hash=%s redirect_host=%s redirect_path=%s "
+        "resolved_resource=%s user_agent=%s",
+        _stable_hash(client_id),
+        _url_host(redirect_uri),
+        _url_path(redirect_uri),
+        resolved_resource,
+        _oauth_user_agent_family(request),
     )
     return HTMLResponse(
         _oauth_login_form_html(
@@ -650,30 +714,96 @@ def oauth_token(
     refresh_token: str = Form(""),
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> JSONResponse:
+    logger.info(
+        "mcp_oauth_token_started grant_type=%s client_id_hash=%s client_id_host=%s client_id_path=%s "
+        "redirect_host=%s redirect_path=%s resource_supplied=%s requested_resource=%s user_agent=%s",
+        grant_type,
+        _stable_hash(client_id),
+        _url_host(client_id),
+        _url_path(client_id),
+        _url_host(redirect_uri),
+        _url_path(redirect_uri),
+        bool(resource.strip()),
+        _redacted_if_blank(resource),
+        _oauth_user_agent_family(request),
+    )
     if grant_type == "refresh_token":
         return _oauth_refresh_token_response(
             request=request,
             refresh_token=refresh_token,
+            client_id=client_id,
             resource=resource,
             store=store,
         )
     if grant_type != "authorization_code":
+        _log_oauth_token_failed(
+            reason="unsupported_grant_type",
+            grant_type=grant_type,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            resource=resource,
+            request=request,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported grant_type")
     if not code or not redirect_uri or not code_verifier:
+        _log_oauth_token_failed(
+            reason="missing_authorization_code_parameters",
+            grant_type=grant_type,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            resource=resource,
+            request=request,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing authorization code parameters")
     record = store.consume_mcp_oauth_authorization_code(code=code)
     if record is None:
+        _log_oauth_token_failed(
+            reason="invalid_authorization_code",
+            grant_type=grant_type,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            resource=resource,
+            request=request,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid authorization code")
     if record["client_id"] != client_id or record["redirect_uri"] != redirect_uri:
+        _log_oauth_token_failed(
+            reason="authorization_code_context_mismatch",
+            grant_type=grant_type,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            resource=resource,
+            request=request,
+            record_resource=str(record["resource"]),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Authorization code context mismatch")
     resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
     if not _is_mcp_resource_match(request=request, resource=record["resource"]) or not _is_mcp_resource_match(
         request=request,
         resource=resolved_resource,
     ):
+        _log_oauth_token_failed(
+            reason="resource_mismatch",
+            grant_type=grant_type,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            resource=resolved_resource,
+            request=request,
+            record_resource=str(record["resource"]),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
     token_audience = resolved_resource if resource.strip() else str(record["resource"])
     if _pkce_s256_challenge(code_verifier) != record["code_challenge"]:
+        _log_oauth_token_failed(
+            reason="invalid_pkce_verifier",
+            grant_type=grant_type,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            resource=resolved_resource,
+            request=request,
+            record_resource=str(record["resource"]),
+            token_audience=token_audience,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid PKCE code verifier")
     user = store.get_user(user_id=record["user_id"])
     token, expires_at = _issue_mcp_api_key(
@@ -684,6 +814,23 @@ def oauth_token(
     )
     refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=token_audience)
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
+    logger.info(
+        "mcp_oauth_token_succeeded grant_type=%s client_id_hash=%s redirect_host=%s redirect_path=%s "
+        "resource_supplied=%s record_resource=%s token_audience=%s access_scope=%s refresh_scope=%s "
+        "expires_in=%d user_id=%s user_agent=%s",
+        grant_type,
+        _stable_hash(client_id),
+        _url_host(redirect_uri),
+        _url_path(redirect_uri),
+        bool(resource.strip()),
+        str(record["resource"]),
+        token_audience,
+        MCP_TOKEN_SCOPE,
+        MCP_REFRESH_TOKEN_SCOPE,
+        expires_in,
+        user.user_id,
+        _oauth_user_agent_family(request),
+    )
     return _oauth_token_json_response(
         {
             "access_token": token,
@@ -699,13 +846,28 @@ def _oauth_refresh_token_response(
     *,
     request: Request,
     refresh_token: str,
+    client_id: str,
     resource: str,
     store: ApiDatabaseStore,
 ) -> JSONResponse:
     if not refresh_token:
+        _log_oauth_token_failed(
+            reason="missing_refresh_token",
+            grant_type="refresh_token",
+            client_id=client_id,
+            resource=resource,
+            request=request,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing refresh_token")
     resolved_resource = _resolve_oauth_resource(request=request, resource=resource)
     if not _is_mcp_resource_match(request=request, resource=resolved_resource):
+        _log_oauth_token_failed(
+            reason="refresh_resource_mismatch",
+            grant_type="refresh_token",
+            client_id=client_id,
+            resource=resolved_resource,
+            request=request,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
     payload = validate_mcp_refresh_token(refresh_token, audience=resolved_resource)
     if payload is None:
@@ -713,9 +875,24 @@ def _oauth_refresh_token_response(
         if canonical_resource != resolved_resource:
             payload = validate_mcp_refresh_token(refresh_token, audience=canonical_resource)
     if payload is None:
+        _log_oauth_token_failed(
+            reason="invalid_refresh_token",
+            grant_type="refresh_token",
+            client_id=client_id,
+            resource=resolved_resource,
+            request=request,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid refresh_token")
     user = store.find_user_by_id(user_id=str(payload["sub"]))
     if user is None or not user.mcp_api_key_hash:
+        _log_oauth_token_failed(
+            reason="mcp_access_revoked",
+            grant_type="refresh_token",
+            client_id=client_id,
+            resource=resolved_resource,
+            request=request,
+            token_audience=str(payload.get("aud") or ""),
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MCP access revoked")
     token, expires_at = _issue_mcp_api_key(
         store=store,
@@ -725,6 +902,18 @@ def _oauth_refresh_token_response(
     )
     refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=resolved_resource)
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
+    logger.info(
+        "mcp_oauth_token_succeeded grant_type=refresh_token client_id_hash=%s resource_supplied=%s "
+        "token_audience=%s access_scope=%s refresh_scope=%s expires_in=%d user_id=%s user_agent=%s",
+        _stable_hash(client_id),
+        bool(resource.strip()),
+        resolved_resource,
+        MCP_TOKEN_SCOPE,
+        MCP_REFRESH_TOKEN_SCOPE,
+        expires_in,
+        user.user_id,
+        _oauth_user_agent_family(request),
+    )
     return _oauth_token_json_response(
         {
             "access_token": token,
@@ -1916,6 +2105,7 @@ def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> Use
         audience=expected_audience,
         required_scope=MCP_TOKEN_SCOPE,
     )
+    legacy_audience = ""
     if payload is None and expected_audience.lower().endswith("/mcp"):
         legacy_audience = f"{expected_audience[:-4]}/MCP"
         payload = validate_mcp_api_token(
@@ -1926,7 +2116,11 @@ def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> Use
     if payload is None:
         user = store.find_user_by_mcp_api_key(api_key=api_key)
         if user is None:
-            logger.warning("mcp_auth_failed reason=invalid_or_expired_token")
+            logger.warning(
+                "mcp_auth_failed reason=invalid_or_expired_token expected_audience=%s legacy_audience=%s",
+                expected_audience,
+                legacy_audience,
+            )
             raise HTTPException(status_code=401, detail="Invalid or expired MCP API key")
         logger.info("mcp_auth_succeeded token_type=opaque user_id=%s", user.user_id)
         return user
@@ -1940,6 +2134,12 @@ def _authenticate_mcp_api_token(*, api_key: str, store: ApiDatabaseStore) -> Use
     if not user.mcp_api_key_hash:
         logger.warning("mcp_auth_failed reason=mcp_access_revoked user_id=%s", user.user_id)
         raise HTTPException(status_code=401, detail="Invalid or expired MCP API key")
+    logger.info(
+        "mcp_auth_succeeded token_type=jwt user_id=%s token_audience=%s token_scope=%s",
+        user.user_id,
+        payload.get("aud"),
+        payload.get("scope"),
+    )
     return user
 
 
@@ -2332,6 +2532,71 @@ def _value_type(value: Any) -> str:
     if isinstance(value, str):
         return "str"
     return type(value).__name__
+
+
+def _url_host(value: str) -> str:
+    parsed = urlparse(value)
+    return (parsed.hostname or "").lower()
+
+
+def _url_path(value: str) -> str:
+    return urlparse(value).path or ""
+
+
+def _oauth_scope_summary(scope: str) -> str:
+    values = sorted({item for item in scope.split() if item})
+    return ",".join(values)
+
+
+def _oauth_user_agent_family(request: Request) -> str:
+    user_agent = request.headers.get("user-agent", "").lower()
+    if "python-httpx" in user_agent:
+        return "python-httpx"
+    if "claude" in user_agent:
+        return "claude"
+    if "mozilla" in user_agent or "chrome" in user_agent or "safari" in user_agent:
+        return "browser"
+    return "unknown"
+
+
+def _http_exception_detail(exc: HTTPException) -> str:
+    if isinstance(exc.detail, str):
+        return exc.detail
+    return _value_type(exc.detail)
+
+
+def _redacted_if_blank(value: str) -> str:
+    return value.strip() or "<not_supplied>"
+
+
+def _log_oauth_token_failed(
+    *,
+    reason: str,
+    grant_type: str,
+    client_id: str,
+    request: Request,
+    redirect_uri: str = "",
+    resource: str = "",
+    record_resource: str = "",
+    token_audience: str = "",
+) -> None:
+    logger.warning(
+        "mcp_oauth_token_failed reason=%s grant_type=%s client_id_hash=%s client_id_host=%s client_id_path=%s "
+        "redirect_host=%s redirect_path=%s resource_supplied=%s requested_resource=%s record_resource=%s "
+        "token_audience=%s user_agent=%s",
+        reason,
+        grant_type,
+        _stable_hash(client_id),
+        _url_host(client_id),
+        _url_path(client_id),
+        _url_host(redirect_uri),
+        _url_path(redirect_uri),
+        bool(resource.strip()),
+        _redacted_if_blank(resource),
+        _redacted_if_blank(record_resource),
+        _redacted_if_blank(token_audience),
+        _oauth_user_agent_family(request),
+    )
 
 
 def _stable_hash(value: str) -> str:
