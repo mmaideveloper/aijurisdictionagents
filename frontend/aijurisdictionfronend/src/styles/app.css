@@ -383,6 +383,11 @@
   margin: 0;
 }
 
+.admin-default-model-name {
+  color: #15803d;
+  font-weight: 700;
+}
+
 .admin-highlight {
   background: #f8fafc;
   border: 1px solid var(--border);
