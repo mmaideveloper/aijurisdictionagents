@@ -206,6 +206,7 @@ test("admin management shows users, providers, models, policies, Ollama inventor
     window.sessionStorage.setItem("jurisdigta.web.auth.user.v1", JSON.stringify(user));
   }, adminUser);
 
+  await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/app/admin", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByText("Admin User (admin@example.test)")).toBeVisible();
@@ -238,6 +239,140 @@ test("admin management shows users, providers, models, policies, Ollama inventor
 
   await page.getByRole("button", { name: "Admin audit" }).click();
   await expect(page.getByText("ai_task_route_policy: default:free:default")).toBeVisible();
+});
+
+test("admin can set an Ollama model as default and remove the previous non-default model", async ({ page }) => {
+  let profiles = [
+    { ...dashboard.profiles[0], is_default_for_free: true },
+    {
+      model_profile_id: "local_ollama_qwen4b",
+      provider_id: "local_ollama",
+      model_code: "qwen3:4b",
+      deployment_name: "qwen3:4b",
+      context_window_tokens: 0,
+      input_price_per_1m: 0,
+      cached_input_price_per_1m: 0,
+      output_price_per_1m: 0,
+      billing_currency: "EUR",
+      effective_from: null,
+      effective_to: null,
+      eu_data_zone_capable: true,
+      is_default_for_free: false,
+      enabled: true,
+      created_at: "2026-07-03T10:00:00Z",
+      updated_at: "2026-07-03T10:00:00Z"
+    }
+  ];
+  let policies = dashboard.policies.map((policy) => ({ ...policy, preferred_local_model_profile_id: "local_ollama_default" }));
+  let removedModel = "";
+  const currentDashboard = () => ({
+    ...dashboard,
+    profiles,
+    policies
+  });
+  const currentInventory = () => ({
+    base_url: "http://127.0.0.1:11434",
+    models: [
+      {
+        name: "qwen3:1.7b",
+        model: "qwen3:1.7b",
+        modified_at: "2026-06-27T10:00:00Z",
+        size: 1700000000,
+        digest: "sha256:qwen",
+        details: {},
+        installed: true,
+        configured_profile_ids: ["local_ollama_default"],
+        active_policy_ids: policies.filter((policy) => policy.preferred_local_model_profile_id === "local_ollama_default").map((policy) => policy.policy_id),
+        is_default: profiles.some((profile) => profile.model_code === "qwen3:1.7b" && profile.is_default_for_free),
+        is_running: false,
+        removable: !profiles.some((profile) => profile.model_code === "qwen3:1.7b" && profile.is_default_for_free),
+        removal_blockers: profiles.some((profile) => profile.model_code === "qwen3:1.7b" && profile.is_default_for_free)
+          ? ["Profile local_ollama_default is marked as the free/default local model."]
+          : []
+      },
+      {
+        name: "qwen3:4b",
+        model: "qwen3:4b",
+        modified_at: "2026-07-03T10:00:00Z",
+        size: 4000000000,
+        digest: "sha256:qwen4b",
+        details: {},
+        installed: true,
+        configured_profile_ids: ["local_ollama_qwen4b"],
+        active_policy_ids: policies.filter((policy) => policy.preferred_local_model_profile_id === "local_ollama_qwen4b").map((policy) => policy.policy_id),
+        is_default: profiles.some((profile) => profile.model_code === "qwen3:4b" && profile.is_default_for_free),
+        is_running: false,
+        removable: !profiles.some((profile) => profile.model_code === "qwen3:4b" && profile.is_default_for_free),
+        removal_blockers: profiles.some((profile) => profile.model_code === "qwen3:4b" && profile.is_default_for_free)
+          ? ["Profile local_ollama_qwen4b is marked as the free/default local model."]
+          : []
+      }
+    ].filter((model) => model.name !== removedModel)
+  });
+
+  await page.route("**/v1/admin/ai-models", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(currentDashboard()) });
+  });
+  await page.route("**/v1/admin/users?**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ items: dashboard.users, total: 1, limit: 25, offset: 0 })
+    });
+  });
+  await page.route("**/v1/admin/ai-models/ollama/models", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(currentInventory()) });
+  });
+  await page.route("**/v1/admin/ai-models/ollama/models/**/default", async (route) => {
+    profiles = profiles.map((profile) => ({
+      ...profile,
+      is_default_for_free: profile.model_code === "qwen3:4b",
+      enabled: profile.model_code === "qwen3:4b" ? true : profile.enabled
+    }));
+    policies = policies.map((policy) => ({ ...policy, preferred_local_model_profile_id: "local_ollama_qwen4b" }));
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(profiles.find((profile) => profile.model_code === "qwen3:4b"))
+    });
+  });
+  await page.route("**/v1/admin/ai-models/ollama/models/*", async (route) => {
+    removedModel = decodeURIComponent(route.request().url().split("/ollama/models/")[1] ?? "");
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        job_id: "remove-job-1",
+        action: "remove",
+        model: removedModel,
+        status: "queued",
+        message: "queued",
+        created_at: "2026-07-03T10:10:00Z",
+        updated_at: "2026-07-03T10:10:00Z"
+      })
+    });
+  });
+
+  await page.addInitScript((user) => {
+    window.localStorage.setItem("aj_frontend_lang", "en");
+    window.sessionStorage.setItem("jurisdigta.web.auth.user.v1", JSON.stringify(user));
+  }, adminUser);
+
+  await page.goto("/app/admin", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Local Ollama models" }).click();
+  const firstDefaultRow = page.getByRole("row").filter({ hasText: "qwen3:1.7b" });
+  await expect(firstDefaultRow.locator(".admin-default-model-name")).toBeVisible();
+  await firstDefaultRow.screenshot({ path: "output/playwright/codex-462/01-before-default-change.png" });
+
+  const qwen4bRow = page.getByRole("row").filter({ hasText: "qwen3:4b" });
+  await qwen4bRow.getByRole("button", { name: "Set as default" }).click();
+  await expect(qwen4bRow.locator(".admin-default-model-name")).toContainText("qwen3:4b");
+  await expect(qwen4bRow.getByRole("button", { name: "Set as default" })).toBeDisabled();
+  await qwen4bRow.screenshot({ path: "output/playwright/codex-462/02-after-default-change.png" });
+
+  const oldDefaultRow = page.getByRole("row").filter({ hasText: "qwen3:1.7b" });
+  await expect(oldDefaultRow.getByRole("button", { name: "Remove model" })).toBeEnabled();
+  await oldDefaultRow.getByRole("button", { name: "Remove model" }).click();
+  await expect(page.getByText("Ollama model removal was started.")).toBeVisible();
+  expect(removedModel).toBe("qwen3:1.7b");
+  await qwen4bRow.screenshot({ path: "output/playwright/codex-462/03-after-non-default-remove.png" });
 });
 
 test.describe("provider credentials lifecycle", () => {

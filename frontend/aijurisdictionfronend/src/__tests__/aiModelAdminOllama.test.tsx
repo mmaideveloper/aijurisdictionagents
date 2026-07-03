@@ -19,6 +19,7 @@ const apiMocks = vi.hoisted(() => ({
   deleteAIModelGroup: vi.fn(),
   deleteAIModelRoutePolicy: vi.fn(),
   importOllamaModel: vi.fn(),
+  setOllamaModelDefault: vi.fn(),
   removeOllamaModel: vi.fn(),
   upsertAIModelProvider: vi.fn(),
   upsertAIModelProfile: vi.fn(),
@@ -299,6 +300,12 @@ describe("AIModelAdmin Ollama management", () => {
     });
     apiMocks.fetchOllamaModels.mockResolvedValue(inventory);
     apiMocks.importOllamaModel.mockResolvedValue({ job_id: "job-1", action: "pull", model: "gemma3:4b", status: "queued" });
+    apiMocks.setOllamaModelDefault.mockResolvedValue({
+      ...dashboard.profiles[0],
+      model_profile_id: "local_ollama:llama3.2:3b",
+      model_code: "llama3.2:3b",
+      deployment_name: "llama3.2:3b"
+    });
     apiMocks.removeOllamaModel.mockResolvedValue({ job_id: "job-2", action: "remove", model: "llama3.2:3b", status: "queued" });
     apiMocks.upsertAIModelProvider.mockResolvedValue(dashboard.providers[1]);
     apiMocks.deleteAIModelProvider.mockResolvedValue({ ...dashboard.providers[1], enabled: false, deleted_at: "2026-07-03T10:10:00Z" });
@@ -351,7 +358,11 @@ describe("AIModelAdmin Ollama management", () => {
     const removeButtons = screen.getAllByRole("button", { name: /adminOllamaRemove/ });
     expect(removeButtons.at(0)?.hasAttribute("disabled")).toBe(true);
     expect(removeButtons.at(1)?.hasAttribute("disabled")).toBe(false);
-    expect(screen.getAllByRole("button", { name: /adminOllamaSetDefault/ })).toHaveLength(1);
+    const defaultButtons = screen.getAllByRole("button", { name: /adminOllamaSetDefault/ });
+    expect(defaultButtons).toHaveLength(2);
+    expect(defaultButtons.at(0)?.hasAttribute("disabled")).toBe(true);
+    expect(defaultButtons.at(1)?.hasAttribute("disabled")).toBe(false);
+    expect(screen.getByText("qwen3:1.7b").className).toContain("admin-default-model-name");
   });
 
   it("shows a user edit form and hides it after save or cancel", async () => {
@@ -652,16 +663,10 @@ describe("AIModelAdmin Ollama management", () => {
     await user.click(within(modelRow).getByRole("button", { name: /adminOllamaSetDefault/ }));
 
     await waitFor(() => {
-      expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
+      expect(apiMocks.setOllamaModelDefault).toHaveBeenCalledWith(
         expect.objectContaining({ userId: "admin-1", deviceAuthToken: "device-token-1" }),
-        expect.objectContaining({
-          provider_id: "local_ollama",
-          model_code: "llama3.2:3b",
-          deployment_name: "llama3.2:3b",
-          enabled: true,
-          is_default_for_free: true,
-          reason: "Set local Ollama model as default from admin UI."
-        })
+        "llama3.2:3b",
+        "Set local Ollama model as default from admin UI."
       );
     });
   });

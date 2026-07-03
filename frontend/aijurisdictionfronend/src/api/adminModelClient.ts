@@ -638,6 +638,12 @@ export const importOllamaModel = (adminUserId: AdminAuthInput, model: string, re
     body: JSON.stringify({ model, reason })
   });
 
+export const setOllamaModelDefault = (adminUserId: AdminAuthInput, model: string, reason: string): Promise<AIModelProfile> =>
+  adminRequest<AIModelProfile>(`/v1/admin/ai-models/ollama/models/${encodeURIComponent(model)}/default`, adminUserId, {
+    method: "POST",
+    body: JSON.stringify({ reason })
+  });
+
 export const removeOllamaModel = (adminUserId: AdminAuthInput, model: string, reason: string): Promise<OllamaModelJob> =>
   adminRequest<OllamaModelJob>(`/v1/admin/ai-models/ollama/models/${encodeURIComponent(model)}`, adminUserId, {
     method: "DELETE",

@@ -763,6 +763,46 @@ def test_admin_can_start_unused_ollama_remove_job(tmp_path: Path, monkeypatch) -
     assert fake_ollama.removed == ["llama3.2:3b"]
 
 
+def test_admin_can_set_ollama_default_and_free_route_uses_new_model(tmp_path: Path, monkeypatch) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    free_user = store.create_user(email="free@example.com", password="secret", full_name="Free User")
+    fake_ollama = FakeOllamaAdminService()
+    app.dependency_overrides[get_admin_store] = lambda: store
+    app.dependency_overrides[get_ollama_admin_service] = lambda: fake_ollama
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id}
+    try:
+        response = client.post(
+            "/v1/admin/ai-models/ollama/models/llama3.2:3b/default",
+            headers=headers,
+            json={"reason": "Promote smaller local model for free users."},
+        )
+        inventory_response = client.get("/v1/admin/ai-models/ollama/models", headers=headers)
+        route = store.resolve_ai_model_route(user_id=free_user.user_id, plan_code="free", task_type="default")
+        policies = {item.policy_id: item for item in store.list_ai_task_route_policies()}
+        audit_events = store.list_ai_model_admin_audit_events(limit=5)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["model_code"] == "llama3.2:3b"
+    assert response.json()["is_default_for_free"] is True
+    assert route.model_profile is not None
+    assert route.model_profile.model_code == "llama3.2:3b"
+    assert policies["default:free:default"].preferred_local_model_profile_id == response.json()["model_profile_id"]
+    assert policies["default:case:default"].preferred_local_model_profile_id == response.json()["model_profile_id"]
+    models = inventory_response.json()["models"]
+    promoted_model = next(item for item in models if item["name"] == "llama3.2:3b")
+    old_model = next(item for item in models if item["name"] == "qwen3:1.7b")
+    assert promoted_model["is_default"] is True
+    assert promoted_model["removable"] is False
+    assert old_model["is_default"] is False
+    assert old_model["removable"] is True
+    assert audit_events[0].action == "ollama_default.set"
+
+
 def test_admin_cannot_remove_default_ollama_model(tmp_path: Path, monkeypatch) -> None:
     store = _store(tmp_path)
     admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
@@ -783,6 +823,73 @@ def test_admin_cannot_remove_default_ollama_model(tmp_path: Path, monkeypatch) -
     assert response.status_code == 409
     assert "blockers" in response.json()["detail"]
     assert fake_ollama.removed == []
+
+
+def test_admin_can_remove_configured_non_default_ollama_model_and_rewrite_policies(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = _store(tmp_path)
+    admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
+    store.upsert_ai_model_profile(
+        model_profile_id="local_ollama_qwen4b",
+        provider_id="local_ollama",
+        model_code="qwen3:4b",
+        deployment_name="qwen3:4b",
+        billing_currency="EUR",
+        eu_data_zone_capable=True,
+        is_default_for_free=False,
+        enabled=True,
+    )
+    store.upsert_ai_task_route_policy(
+        policy_id="default:free:custom",
+        task_type="default",
+        plan_code="free",
+        preferred_local_model_profile_id="local_ollama_qwen4b",
+        allow_external=False,
+        enabled=True,
+    )
+    fake_ollama = FakeOllamaAdminService(
+        models=[
+            OllamaInstalledModel(
+                name="qwen3:1.7b",
+                model="qwen3:1.7b",
+                modified_at="2026-06-27T10:00:00Z",
+                size=17_000_000_000,
+                digest="sha256:default",
+            ),
+            OllamaInstalledModel(
+                name="qwen3:4b",
+                model="qwen3:4b",
+                modified_at="2026-07-03T10:00:00Z",
+                size=4_000_000_000,
+                digest="sha256:qwen4b",
+            ),
+        ]
+    )
+    app.dependency_overrides[get_admin_store] = lambda: store
+    app.dependency_overrides[get_ollama_admin_service] = lambda: fake_ollama
+    monkeypatch.setenv("JURISDIGTA_ADMIN_EMAILS", "admin@example.com")
+    try:
+        response = TestClient(app).request(
+            "DELETE",
+            "/v1/admin/ai-models/ollama/models/qwen3:4b",
+            headers={**AUTH_HEADERS, "x-jurisdigta-admin-user-id": admin.user_id},
+            json={"reason": "Remove non-default configured model."},
+        )
+        profiles = {item.model_profile_id: item for item in store.list_ai_model_profiles()}
+        policies = {item.policy_id: item for item in store.list_ai_task_route_policies()}
+        audit_events = store.list_ai_model_admin_audit_events(limit=5)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["action"] == "remove"
+    assert fake_ollama.removed == ["qwen3:4b"]
+    assert profiles["local_ollama_qwen4b"].enabled is False
+    assert policies["default:free:custom"].preferred_local_model_profile_id == "local_ollama_default"
+    assert audit_events[0].action == "ollama_remove_started"
+    assert "local_ollama_qwen4b" in audit_events[0].old_value_summary
 
 
 def test_admin_can_remove_ollama_model_after_linked_profiles_are_disabled(

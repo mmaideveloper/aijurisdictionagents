@@ -352,6 +352,10 @@ class OllamaModelImportRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class OllamaModelDefaultRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class OllamaModelRemoveRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
@@ -789,6 +793,82 @@ def import_ollama_model(
     return _ollama_job_response(job)
 
 
+@router.post("/ollama/models/{model_name:path}/default", response_model=AIModelProfileResponse)
+def set_ollama_model_default(
+    model_name: str,
+    payload: OllamaModelDefaultRequest,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+    ollama: OllamaAdminService = Depends(get_ollama_admin_service),
+) -> AIModelProfileResponse:
+    try:
+        model = validate_ollama_registry_model_name(model_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    try:
+        installed_names = {item.name for item in ollama.list_models()}
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Ollama service is unavailable") from exc
+    if model not in installed_names:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ollama model is not installed")
+
+    providers = store.list_ai_model_providers()
+    profiles = store.list_ai_model_profiles()
+    policies = store.list_ai_task_route_policies()
+    provider = _local_ollama_provider(providers)
+    if provider is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Local Ollama provider is not configured")
+
+    existing = _local_ollama_profile_for_model(model, profiles, providers)
+    old_default_ids = {
+        item.model_profile_id
+        for item in profiles
+        if _is_local_ollama_profile(item, providers) and item.is_default_for_free
+    }
+    profile = store.upsert_ai_model_profile(
+        model_profile_id=existing.model_profile_id if existing else None,
+        provider_id=existing.provider_id if existing else provider.provider_id,
+        model_code=existing.model_code if existing else model,
+        deployment_name=(existing.deployment_name if existing else model) or model,
+        context_window_tokens=existing.context_window_tokens if existing else 0,
+        input_price_per_1m=existing.input_price_per_1m if existing else 0,
+        cached_input_price_per_1m=existing.cached_input_price_per_1m if existing else 0,
+        output_price_per_1m=existing.output_price_per_1m if existing else 0,
+        billing_currency=existing.billing_currency if existing else "EUR",
+        effective_from=existing.effective_from if existing else None,
+        effective_to=existing.effective_to if existing else None,
+        eu_data_zone_capable=existing.eu_data_zone_capable if existing else True,
+        is_default_for_free=True,
+        enabled=True,
+    )
+    updated_policies = _move_default_local_policies(
+        store=store,
+        policies=policies,
+        old_default_ids=old_default_ids,
+        new_profile_id=profile.model_profile_id,
+    )
+    _record_audit(
+        store=store,
+        request=request,
+        admin=admin,
+        action="ollama_default.set",
+        entity_type="ollama_model",
+        entity_id=model,
+        old={
+            "model_profile_id": existing.model_profile_id if existing else "",
+            "default_profile_ids": sorted(old_default_ids),
+        },
+        new={
+            "model_profile_id": profile.model_profile_id,
+            "model_code": profile.model_code,
+            "updated_policy_ids": [item.policy_id for item in updated_policies],
+        },
+        reason=payload.reason,
+    )
+    return _profile_response(profile)
+
+
 @router.delete("/ollama/models/{model_name:path}", response_model=OllamaModelJobResponse)
 def remove_ollama_model(
     model_name: str,
@@ -808,15 +888,31 @@ def remove_ollama_model(
         running_model_names = ollama.list_running_model_names()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Ollama service is unavailable") from exc
+    profiles = store.list_ai_model_profiles()
+    providers = store.list_ai_model_providers()
+    policies = store.list_ai_task_route_policies()
     blockers = _ollama_model_removal_blockers(
         model_name=model,
-        profiles=store.list_ai_model_profiles(),
-        providers=store.list_ai_model_providers(),
-        policies=store.list_ai_task_route_policies(),
+        profiles=profiles,
+        providers=providers,
+        policies=policies,
         running_model_names=running_model_names,
     )
     if blockers:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"message": "Ollama model is in active use", "blockers": blockers})
+    disabled_profiles = _disable_non_default_ollama_profiles_for_model(
+        store=store,
+        model_name=model,
+        profiles=profiles,
+        providers=providers,
+    )
+    current_default = _current_default_local_ollama_profile(store.list_ai_model_profiles(), providers)
+    updated_policies = _move_policies_from_profiles(
+        store=store,
+        policies=policies,
+        old_profile_ids={item.model_profile_id for item in disabled_profiles},
+        new_profile_id=current_default.model_profile_id if current_default else None,
+    )
     job = jobs.start(action="remove", model=model)
     _record_audit(
         store=store,
@@ -825,8 +921,8 @@ def remove_ollama_model(
         action="ollama_remove_started",
         entity_type="ollama_model",
         entity_id=model,
-        old={"model": model},
-        new={"job_id": job.job_id, "status": job.status},
+        old={"model": model, "disabled_profile_ids": [item.model_profile_id for item in disabled_profiles]},
+        new={"job_id": job.job_id, "status": job.status, "updated_policy_ids": [item.policy_id for item in updated_policies]},
         reason=payload.reason,
     )
     background_tasks.add_task(jobs.run, job_id=job.job_id, operation="remove", model=model, service=ollama)
@@ -1248,6 +1344,7 @@ def _ollama_inventory_item_response(
         for item in policies
         if item.enabled and item.preferred_local_model_profile_id in configured_profile_ids
     ]
+    is_default = _is_ollama_model_default(model.name, profiles, providers)
     return OllamaModelInventoryItemResponse(
         name=model.name,
         model=model.model,
@@ -1258,7 +1355,7 @@ def _ollama_inventory_item_response(
         installed=installed,
         configured_profile_ids=configured_profile_ids,
         active_policy_ids=active_policy_ids,
-        is_default=any("default" in blocker.lower() for blocker in blockers),
+        is_default=is_default,
         is_running=model.name in running_model_names,
         removable=not blockers,
         removal_blockers=blockers,
@@ -1308,6 +1405,158 @@ def _configured_ollama_profile_model_names(
     return sorted(name for name in names if name and name not in exclude_model_names)
 
 
+def _local_ollama_provider(providers: list[AIModelProvider]) -> AIModelProvider | None:
+    for provider in providers:
+        provider_type = provider.provider_type.strip().lower()
+        if provider.provider_code == "local_ollama" or provider.is_local or provider_type in {"ollama", "local_ollama"}:
+            return provider
+    return None
+
+
+def _local_ollama_profile_for_model(
+    model_name: str,
+    profiles: list[AIModelProfile],
+    providers: list[AIModelProvider],
+) -> AIModelProfile | None:
+    return next(
+        (
+            item
+            for item in profiles
+            if _is_local_ollama_profile(item, providers) and _profile_matches_ollama_model(item, model_name)
+        ),
+        None,
+    )
+
+
+def _current_default_local_ollama_profile(
+    profiles: list[AIModelProfile],
+    providers: list[AIModelProvider],
+) -> AIModelProfile | None:
+    return next(
+        (
+            item
+            for item in profiles
+            if item.enabled and item.is_default_for_free and _is_local_ollama_profile(item, providers)
+        ),
+        None,
+    )
+
+
+def _is_ollama_model_default(
+    model_name: str,
+    profiles: list[AIModelProfile],
+    providers: list[AIModelProvider],
+) -> bool:
+    return any(
+        item.enabled
+        and item.is_default_for_free
+        and _is_local_ollama_profile(item, providers)
+        and _profile_matches_ollama_model(item, model_name)
+        for item in profiles
+    )
+
+
+def _move_default_local_policies(
+    *,
+    store: ApiDatabaseStore,
+    policies: list[AITaskRoutePolicy],
+    old_default_ids: set[str],
+    new_profile_id: str,
+) -> list[AITaskRoutePolicy]:
+    candidate_old_ids = set(old_default_ids)
+    candidate_old_ids.add(_LOCAL_DEFAULT_PROFILE_ID)
+    updated: list[AITaskRoutePolicy] = []
+    for policy in policies:
+        should_follow_default = (
+            policy.enabled
+            and policy.preferred_local_model_profile_id != new_profile_id
+            and (
+                policy.preferred_local_model_profile_id in candidate_old_ids
+                or policy.plan_code in {"", "free"}
+            )
+        )
+        if not should_follow_default:
+            continue
+        updated.append(_upsert_policy_local_profile(store=store, policy=policy, new_profile_id=new_profile_id))
+    return updated
+
+
+def _move_policies_from_profiles(
+    *,
+    store: ApiDatabaseStore,
+    policies: list[AITaskRoutePolicy],
+    old_profile_ids: set[str],
+    new_profile_id: str | None,
+) -> list[AITaskRoutePolicy]:
+    if not old_profile_ids or not new_profile_id:
+        return []
+    updated: list[AITaskRoutePolicy] = []
+    for policy in policies:
+        if policy.enabled and policy.preferred_local_model_profile_id in old_profile_ids:
+            updated.append(_upsert_policy_local_profile(store=store, policy=policy, new_profile_id=new_profile_id))
+    return updated
+
+
+def _upsert_policy_local_profile(
+    *,
+    store: ApiDatabaseStore,
+    policy: AITaskRoutePolicy,
+    new_profile_id: str,
+) -> AITaskRoutePolicy:
+    return store.upsert_ai_task_route_policy(
+        policy_id=policy.policy_id,
+        task_type=policy.task_type,
+        plan_code=policy.plan_code,
+        model_group_id=policy.model_group_id,
+        preferred_external_model_profile_id=policy.preferred_external_model_profile_id,
+        preferred_local_model_profile_id=new_profile_id,
+        allow_external=policy.allow_external,
+        require_external_ack=policy.require_external_ack,
+        require_eu_data_zone=policy.require_eu_data_zone,
+        fallback_local_on_error=policy.fallback_local_on_error,
+        fallback_local_on_budget=policy.fallback_local_on_budget,
+        max_cost_eur=policy.max_cost_eur,
+        priority=policy.priority,
+        enabled=policy.enabled,
+    )
+
+
+def _disable_non_default_ollama_profiles_for_model(
+    *,
+    store: ApiDatabaseStore,
+    model_name: str,
+    profiles: list[AIModelProfile],
+    providers: list[AIModelProvider],
+) -> list[AIModelProfile]:
+    disabled: list[AIModelProfile] = []
+    for profile in profiles:
+        if (
+            profile.enabled
+            and not profile.is_default_for_free
+            and _is_local_ollama_profile(profile, providers)
+            and _profile_matches_ollama_model(profile, model_name)
+        ):
+            disabled.append(
+                store.upsert_ai_model_profile(
+                    model_profile_id=profile.model_profile_id,
+                    provider_id=profile.provider_id,
+                    model_code=profile.model_code,
+                    deployment_name=profile.deployment_name,
+                    context_window_tokens=profile.context_window_tokens,
+                    input_price_per_1m=profile.input_price_per_1m,
+                    cached_input_price_per_1m=profile.cached_input_price_per_1m,
+                    output_price_per_1m=profile.output_price_per_1m,
+                    billing_currency=profile.billing_currency,
+                    effective_from=profile.effective_from,
+                    effective_to=profile.effective_to,
+                    eu_data_zone_capable=profile.eu_data_zone_capable,
+                    is_default_for_free=False,
+                    enabled=False,
+                )
+            )
+    return disabled
+
+
 def _ollama_model_removal_blockers(
     *,
     model_name: str,
@@ -1323,24 +1572,15 @@ def _ollama_model_removal_blockers(
         if _is_local_ollama_profile(item, providers) and _profile_matches_ollama_model(item, model_name)
     ]
     enabled_matching_profiles = [item for item in matching_profiles if item.enabled]
-    enabled_matching_profile_ids = {item.model_profile_id for item in enabled_matching_profiles}
     for profile in enabled_matching_profiles:
         if profile.is_default_for_free:
             blockers.append(f"Profile {profile.model_profile_id} is marked as the free/default local model.")
-        if profile.model_profile_id == _LOCAL_DEFAULT_PROFILE_ID:
-            blockers.append(f"Profile {profile.model_profile_id} is the seeded system local default.")
-
-    for policy in policies:
-        if policy.enabled and policy.preferred_local_model_profile_id in enabled_matching_profile_ids:
-            blockers.append(
-                f"Enabled route policy {policy.policy_id} uses profile {policy.preferred_local_model_profile_id}."
-            )
 
     env_default = os.getenv("LOCAL_LLM_MODEL", "").strip()
-    if env_default and env_default.lower() != "unknown-variable" and env_default == model_name:
+    if env_default and env_default.lower() != "unknown-variable" and env_default == model_name and blockers:
         blockers.append("LOCAL_LLM_MODEL currently selects this model.")
 
-    if model_name in running_model_names and enabled_matching_profile_ids:
+    if model_name in running_model_names and blockers:
         blockers.append("Ollama reports this configured model as currently loaded.")
 
     return sorted(set(blockers))

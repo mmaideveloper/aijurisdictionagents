@@ -31,6 +31,7 @@ import {
   addAIModelGroupMember,
   upsertAIModelRoutePolicy,
   importOllamaModel,
+  setOllamaModelDefault,
   removeOllamaModel,
   updateAdminUser
 } from "../api/adminModelClient";
@@ -337,9 +338,6 @@ const AIModelAdmin: React.FC = () => {
   const enabledProfiles = activeProfiles.filter((profile) => profile.enabled);
   const freeDefaultProfile = activeProfiles.find((profile) => profile.is_default_for_free);
   const freeDefaultProvider = freeDefaultProfile ? providerById.get(freeDefaultProfile.provider_id) : undefined;
-  const localOllamaProvider = activeProviders.find(
-    (provider) => provider.provider_code === "local_ollama" || provider.provider_type === "ollama" || provider.is_local
-  );
   const freeDefaultLabel = freeDefaultProfile
     ? `${freeDefaultProfile.deployment_name || freeDefaultProfile.model_code} (${freeDefaultProvider?.display_name ?? freeDefaultProfile.provider_id})`
     : t("adminNoFreeModel");
@@ -666,31 +664,7 @@ const AIModelAdmin: React.FC = () => {
     );
   };
   const setOllamaModelAsDefault = async (item: OllamaModelInventory["models"][number]) => {
-    const existingProfile =
-      activeProfiles.find((profile) => item.configured_profile_ids.includes(profile.model_profile_id)) ??
-      activeProfiles.find((profile) => profile.provider_id === localOllamaProvider?.provider_id && profile.model_code === item.name);
-    const providerId = existingProfile?.provider_id ?? localOllamaProvider?.provider_id ?? "";
-    if (!providerId) {
-      throw new Error(t("adminOllamaNoLocalProvider"));
-    }
-    await upsertAIModelProfile(
-      adminAuth,
-      existingProfile
-        ? profileToForm(existingProfile, {
-            enabled: true,
-            is_default_for_free: true,
-            reason: ollamaRemoveReason || "Set local Ollama model as default from admin UI."
-          })
-        : {
-            ...emptyProfile,
-            provider_id: providerId,
-            model_code: item.name,
-            deployment_name: item.name,
-            enabled: true,
-            is_default_for_free: true,
-            reason: ollamaRemoveReason || "Set local Ollama model as default from admin UI."
-          }
-    );
+    await setOllamaModelDefault(adminAuth, item.name, ollamaRemoveReason || "Set local Ollama model as default from admin UI.");
     await reloadOllama();
   };
 
@@ -1383,7 +1357,10 @@ const AIModelAdmin: React.FC = () => {
                   <thead><tr><th>{t("adminModelCode")}</th><th>{t("adminStatus")}</th><th>{t("adminProfilesTitle")}</th><th>{t("adminAction")}</th></tr></thead>
                   <tbody>{ollamaInventory?.models.map((item) => (
                     <tr key={item.name}>
-                      <td>{item.name}<br /><small>{formatModelSize(item.size)}</small></td>
+                      <td>
+                        <span className={item.is_default ? "admin-default-model-name" : undefined}>{item.name}</span><br />
+                        <small>{formatModelSize(item.size)}</small>
+                      </td>
                       <td>
                         {!item.installed ? t("adminOllamaNotInstalled") : item.is_default ? t("adminOllamaDefault") : item.is_running ? t("adminOllamaRunning") : t("adminOllamaUnused")}
                         {item.is_default ? <p className="admin-muted">{t("adminOllamaDefaultWarning")}</p> : null}
@@ -1395,8 +1372,8 @@ const AIModelAdmin: React.FC = () => {
                           <button
                             className="button ghost"
                             type="button"
-                            hidden={item.is_default}
-                            disabled={!item.installed || localOllamaProvider == null}
+                            disabled={item.is_default || !item.installed}
+                            title={item.is_default ? t("adminOllamaDefaultWarning") : undefined}
                             onClick={() => void runAction(
                               () => setOllamaModelAsDefault(item),
                               t("adminOllamaDefaultSet")
