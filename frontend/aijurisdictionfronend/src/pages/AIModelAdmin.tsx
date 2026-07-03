@@ -18,6 +18,9 @@ import {
   fetchAIModelUserOverride,
   fetchOllamaModels,
   deleteAIModelProvider,
+  deleteAIModelProfile,
+  deleteAIModelGroup,
+  deleteAIModelRoutePolicy,
   searchAdminCaseUsers,
   searchAIModelAssignmentUsers,
   softDeleteAdminCase,
@@ -35,6 +38,7 @@ import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
 type AdminSection = "users" | "assignments" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollama" | "audit";
+type AdminFormMode = "table" | "create" | "edit";
 
 const emptyProvider = {
   provider_code: "",
@@ -100,10 +104,14 @@ const AIModelAdmin: React.FC = () => {
   const [usersPage, setUsersPage] = React.useState<AdminUsersPage | null>(null);
   const [ollamaInventory, setOllamaInventory] = React.useState<OllamaModelInventory | null>(null);
   const [providerForm, setProviderForm] = React.useState(emptyProvider);
-  const [providerCredentialsMode, setProviderCredentialsMode] = React.useState<"table" | "create" | "edit">("table");
+  const [providerMode, setProviderMode] = React.useState<AdminFormMode>("table");
+  const [providerCredentialsMode, setProviderCredentialsMode] = React.useState<AdminFormMode>("table");
   const [profileForm, setProfileForm] = React.useState(emptyProfile);
+  const [profileMode, setProfileMode] = React.useState<AdminFormMode>("table");
   const [groupForm, setGroupForm] = React.useState(emptyGroup);
+  const [groupMode, setGroupMode] = React.useState<AdminFormMode>("table");
   const [policyForm, setPolicyForm] = React.useState(emptyPolicy);
+  const [policyMode, setPolicyMode] = React.useState<AdminFormMode>("table");
   const [selectedGroupId, setSelectedGroupId] = React.useState("");
   const [selectedUserId, setSelectedUserId] = React.useState("");
   const [caseUserQuery, setCaseUserQuery] = React.useState("");
@@ -142,6 +150,22 @@ const AIModelAdmin: React.FC = () => {
   const activeProviders = React.useMemo(
     () => (dashboard?.providers ?? []).filter((provider) => !provider.deleted_at),
     [dashboard?.providers]
+  );
+  const activeProfiles = React.useMemo(
+    () => (dashboard?.profiles ?? []).filter((profile) => !profile.deleted_at),
+    [dashboard?.profiles]
+  );
+  const activeGroups = React.useMemo(
+    () => (dashboard?.groups ?? []).filter((group) => !group.deleted_at),
+    [dashboard?.groups]
+  );
+  const activeGroupIds = React.useMemo(
+    () => new Set(activeGroups.map((group) => group.model_group_id)),
+    [activeGroups]
+  );
+  const activePolicies = React.useMemo(
+    () => (dashboard?.policies ?? []).filter((policy) => !policy.deleted_at),
+    [dashboard?.policies]
   );
 
   const reload = React.useCallback(async () => {
@@ -263,8 +287,10 @@ const AIModelAdmin: React.FC = () => {
       setStatus(successMessage);
       await reload();
       await loadUsersPage(usersOffset);
+      return true;
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : t("adminSaveFailed"));
+      return false;
     }
   };
 
@@ -295,10 +321,10 @@ const AIModelAdmin: React.FC = () => {
     }
   };
 
-  const localProfiles = dashboard?.profiles.filter((profile) => profile.model_profile_id.includes("local") || profile.provider_id.includes("local")) ?? [];
-  const externalProfiles = dashboard?.profiles.filter((profile) => !localProfiles.includes(profile)) ?? [];
-  const enabledProfiles = dashboard?.profiles.filter((profile) => profile.enabled) ?? [];
-  const freeDefaultProfile = dashboard?.profiles.find((profile) => profile.is_default_for_free);
+  const localProfiles = activeProfiles.filter((profile) => profile.model_profile_id.includes("local") || profile.provider_id.includes("local"));
+  const externalProfiles = activeProfiles.filter((profile) => !localProfiles.includes(profile));
+  const enabledProfiles = activeProfiles.filter((profile) => profile.enabled);
+  const freeDefaultProfile = activeProfiles.find((profile) => profile.is_default_for_free);
   const freeDefaultProvider = freeDefaultProfile ? providerById.get(freeDefaultProfile.provider_id) : undefined;
   const freeDefaultLabel = freeDefaultProfile
     ? `${freeDefaultProfile.deployment_name || freeDefaultProfile.model_code} (${freeDefaultProvider?.display_name ?? freeDefaultProfile.provider_id})`
@@ -333,11 +359,6 @@ const AIModelAdmin: React.FC = () => {
     reason: "",
     ...overrides
   });
-  const saveProviderChange = (
-    provider: AIModelAdminDashboard["providers"][number],
-    overrides: Partial<typeof emptyProvider>,
-    successMessage: string
-  ) => runAction(() => upsertAIModelProvider(adminAuth, providerToForm(provider, overrides)), successMessage);
   const providerStatusLabel = (provider: AIModelAdminDashboard["providers"][number]) => {
     if (provider.deleted_at) {
       return t("adminDeleted");
@@ -363,21 +384,52 @@ const AIModelAdmin: React.FC = () => {
     setError("");
   };
   const saveProviderCredentialsForm = async () => {
-    await runAction(() => upsertAIModelProvider(adminAuth, providerForm), t("adminProviderSaved"));
-    setProviderForm(emptyProvider);
-    setProviderCredentialsMode("table");
+    const saved = await runAction(() => upsertAIModelProvider(adminAuth, providerForm), t("adminProviderSaved"));
+    if (saved) {
+      setProviderForm(emptyProvider);
+      setProviderCredentialsMode("table");
+      setProviderMode("table");
+    }
   };
   const deleteProviderFromCredentials = async (provider: AIModelAdminDashboard["providers"][number]) => {
     const reason = window.prompt(t("adminProviderDeleteReasonPrompt"), "Soft delete provider from admin UI.");
     if (!reason?.trim()) {
       return;
     }
-    await runAction(
+    const deleted = await runAction(
       () => deleteAIModelProvider(adminAuth, provider.provider_id, { reason: reason.trim() }),
       t("adminProviderDeleted")
     );
-    setProviderCredentialsMode("table");
+    if (deleted) {
+      setProviderCredentialsMode("table");
+      setProviderMode("table");
+      setProviderForm(emptyProvider);
+    }
+  };
+  const showProviderAdminCreateForm = () => {
     setProviderForm(emptyProvider);
+    setProviderMode("create");
+    setStatus("");
+    setError("");
+  };
+  const showProviderAdminEditForm = (provider: AIModelAdminDashboard["providers"][number]) => {
+    setProviderForm(providerToForm(provider));
+    setProviderMode("edit");
+    setStatus("");
+    setError("");
+  };
+  const cancelProviderAdminForm = () => {
+    setProviderForm(emptyProvider);
+    setProviderMode("table");
+    setStatus("");
+    setError("");
+  };
+  const saveProviderAdminForm = async () => {
+    const saved = await runAction(() => upsertAIModelProvider(adminAuth, providerForm), t("adminProviderSaved"));
+    if (saved) {
+      setProviderForm(emptyProvider);
+      setProviderMode("table");
+    }
   };
   const profileToForm = (profile: AIModelProfile, overrides: Partial<typeof emptyProfile> = {}) => ({
     model_profile_id: profile.model_profile_id,
@@ -394,6 +446,43 @@ const AIModelAdmin: React.FC = () => {
     reason: "",
     ...overrides
   });
+  const showProfileCreateForm = () => {
+    setProfileForm(emptyProfile);
+    setProfileMode("create");
+    setStatus("");
+    setError("");
+  };
+  const showProfileEditForm = (profile: AIModelProfile) => {
+    setProfileForm(profileToForm(profile));
+    setProfileMode("edit");
+    setStatus("");
+    setError("");
+  };
+  const cancelProfileForm = () => {
+    setProfileForm(emptyProfile);
+    setProfileMode("table");
+    setStatus("");
+    setError("");
+  };
+  const saveProfileForm = async () => {
+    const saved = await runAction(() => upsertAIModelProfile(adminAuth, profileForm), t("adminProfileSaved"));
+    if (saved) {
+      setProfileForm(emptyProfile);
+      setProfileMode("table");
+    }
+  };
+  const deleteProfileFromAdmin = async (profile: AIModelProfile) => {
+    const reason = window.prompt(t("adminDeleteReasonPrompt"), "Soft delete model profile from admin UI.");
+    if (!reason?.trim()) return;
+    const deleted = await runAction(
+      () => deleteAIModelProfile(adminAuth, profile.model_profile_id, { reason: reason.trim() }),
+      t("adminProfileDeleted")
+    );
+    if (deleted) {
+      setProfileForm(emptyProfile);
+      setProfileMode("table");
+    }
+  };
   const saveProfileChange = (
     profile: AIModelProfile,
     overrides: Partial<typeof emptyProfile>,
@@ -431,13 +520,90 @@ const AIModelAdmin: React.FC = () => {
     reason: "",
     ...overrides
   });
-  const savePolicyChange = (
-    policy: AIModelRoutePolicy,
-    overrides: Partial<typeof emptyPolicy>,
-    successMessage: string
-  ) => runAction(() => upsertAIModelRoutePolicy(adminAuth, policyToForm(policy, overrides)), successMessage);
+  const groupToForm = (group: AIModelAdminDashboard["groups"][number], overrides: Partial<typeof emptyGroup> = {}) => ({
+    group_code: group.group_code,
+    display_name: group.display_name,
+    priority: group.priority,
+    enabled: group.enabled,
+    reason: "",
+    ...overrides
+  });
+  const showGroupCreateForm = () => {
+    setGroupForm(emptyGroup);
+    setGroupMode("create");
+    setStatus("");
+    setError("");
+  };
+  const showGroupEditForm = (group: AIModelAdminDashboard["groups"][number]) => {
+    setGroupForm(groupToForm(group));
+    setGroupMode("edit");
+    setStatus("");
+    setError("");
+  };
+  const cancelGroupForm = () => {
+    setGroupForm(emptyGroup);
+    setGroupMode("table");
+    setStatus("");
+    setError("");
+  };
+  const saveGroupForm = async () => {
+    const saved = await runAction(() => upsertAIModelGroup(adminAuth, groupForm), t("adminGroupSaved"));
+    if (saved) {
+      setGroupForm(emptyGroup);
+      setGroupMode("table");
+    }
+  };
+  const deleteGroupFromAdmin = async (group: AIModelAdminDashboard["groups"][number]) => {
+    const reason = window.prompt(t("adminDeleteReasonPrompt"), "Soft delete model group from admin UI.");
+    if (!reason?.trim()) return;
+    const deleted = await runAction(
+      () => deleteAIModelGroup(adminAuth, group.model_group_id, { reason: reason.trim() }),
+      t("adminGroupDeleted")
+    );
+    if (deleted) {
+      setGroupForm(emptyGroup);
+      setGroupMode("table");
+    }
+  };
+  const showPolicyCreateForm = () => {
+    setPolicyForm(emptyPolicy);
+    setPolicyMode("create");
+    setStatus("");
+    setError("");
+  };
+  const showPolicyEditForm = (policy: AIModelRoutePolicy) => {
+    setPolicyForm(policyToForm(policy));
+    setPolicyMode("edit");
+    setStatus("");
+    setError("");
+  };
+  const cancelPolicyForm = () => {
+    setPolicyForm(emptyPolicy);
+    setPolicyMode("table");
+    setStatus("");
+    setError("");
+  };
+  const savePolicyForm = async () => {
+    const saved = await runAction(() => upsertAIModelRoutePolicy(adminAuth, policyForm), t("adminPolicySaved"));
+    if (saved) {
+      setPolicyForm(emptyPolicy);
+      setPolicyMode("table");
+    }
+  };
+  const deletePolicyFromAdmin = async (policy: AIModelRoutePolicy) => {
+    const reason = window.prompt(t("adminDeleteReasonPrompt"), "Soft delete routing policy from admin UI.");
+    if (!reason?.trim()) return;
+    const deleted = await runAction(
+      () => deleteAIModelRoutePolicy(adminAuth, policy.policy_id, { reason: reason.trim() }),
+      t("adminPolicyDeleted")
+    );
+    if (deleted) {
+      setPolicyForm(emptyPolicy);
+      setPolicyMode("table");
+    }
+  };
   const disableOllamaConfiguredProfiles = async (profileIds: string[]) => {
-    const profiles = dashboard?.profiles.filter((profile) => profileIds.includes(profile.model_profile_id)) ?? [];
+    const profiles = activeProfiles.filter((profile) => profileIds.includes(profile.model_profile_id));
     await Promise.all(
       profiles.map((profile) =>
         upsertAIModelProfile(
@@ -762,89 +928,80 @@ const AIModelAdmin: React.FC = () => {
           ) : null}
 
           {activeSection === "providers" ? (
-            <form className="admin-panel" onSubmit={(event) => {
-              event.preventDefault();
-              void runAction(() => upsertAIModelProvider(adminAuth, providerForm), t("adminSaved"));
-            }}>
+            <section className="admin-panel">
               <h2>{t("adminProvidersTitle")}</h2>
+              {providerMode === "table" ? (
+                <button className="primary-button" type="button" onClick={showProviderAdminCreateForm}>
+                  <FaPlus aria-hidden="true" />{t("adminAddProvider")}
+                </button>
+              ) : null}
               <AdminRecordsTable
                 emptyLabel={t("adminEmptyProviders")}
                 headers={[t("adminProviderCode"), t("adminProviderType"), t("adminBaseUrl"), t("adminStatus"), t("adminAction")]}
-                rows={(dashboard?.providers ?? []).map((provider) => [
+                rows={activeProviders.map((provider) => [
                   provider.display_name,
                   provider.provider_type,
                   provider.base_url || provider.health_check_url || t("adminNotConfigured"),
                   provider.enabled ? t("adminEnabled") : t("adminDisabled"),
                   <div className="admin-inline-actions">
-                    <button className="button ghost" type="button" onClick={() => setProviderForm(providerToForm(provider))}>
+                    <button className="button ghost" type="button" onClick={() => showProviderAdminEditForm(provider)}>
                       <FaEdit aria-hidden="true" />{t("adminEdit")}
                     </button>
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => void saveProviderChange(
-                        provider,
-                        {
-                          enabled: !provider.enabled,
-                          reason: provider.enabled ? "Disable provider from admin UI." : "Enable provider from admin UI."
-                        },
-                        provider.enabled ? t("adminProviderDisabled") : t("adminProviderEnabled")
-                      )}
-                    >
-                      <FaCheck aria-hidden="true" />{provider.enabled ? t("adminDisableProvider") : t("adminEnableProvider")}
+                    <button className="button ghost" type="button" onClick={() => void deleteProviderFromCredentials(provider)}>
+                      <FaTrash aria-hidden="true" />{t("adminDeleteProvider")}
                     </button>
                   </div>
                 ])}
               />
-              <label>{t("adminProviderCode")}<input value={providerForm.provider_code} onChange={(event) => setProviderForm({ ...providerForm, provider_code: event.target.value })} /></label>
-              <label>{t("adminProviderType")}<select value={providerForm.provider_type} onChange={(event) => setProviderForm({ ...providerForm, provider_type: event.target.value })}><option value="local">local</option><option value="azurefoundry">azurefoundry</option><option value="openai">openai</option><option value="openai_compatible">openai_compatible</option></select></label>
-              <label>{t("adminDisplayName")}<input value={providerForm.display_name} onChange={(event) => setProviderForm({ ...providerForm, display_name: event.target.value })} /></label>
-              <label>{t("adminBaseUrl")}<input value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} /></label>
-              <label>{t("adminRegion")}<input value={providerForm.region} onChange={(event) => setProviderForm({ ...providerForm, region: event.target.value })} /></label>
-              <label>{t("adminDataZone")}<input value={providerForm.data_zone} onChange={(event) => setProviderForm({ ...providerForm, data_zone: event.target.value })} /></label>
-              <label>{t("adminHealthUrl")}<input value={providerForm.health_check_url} onChange={(event) => setProviderForm({ ...providerForm, health_check_url: event.target.value })} /></label>
-              <div className="admin-toggle-row">
-                <label><input type="checkbox" checked={providerForm.is_external} onChange={(event) => setProviderForm({ ...providerForm, is_external: event.target.checked })} />{t("adminExternal")}</label>
-                <label><input type="checkbox" checked={providerForm.is_local} onChange={(event) => setProviderForm({ ...providerForm, is_local: event.target.checked })} />{t("adminLocal")}</label>
-                <label><input type="checkbox" checked={providerForm.enabled} onChange={(event) => setProviderForm({ ...providerForm, enabled: event.target.checked })} />{t("adminEnabled")}</label>
-              </div>
-              <label>{t("adminReason")}<input value={providerForm.reason} onChange={(event) => setProviderForm({ ...providerForm, reason: event.target.value })} /></label>
-              <button className="primary-button" type="submit"><FaPlus aria-hidden="true" />{t("adminSaveProvider")}</button>
-            </form>
+              {providerMode !== "table" ? (
+                <form className="admin-form-stack" onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveProviderAdminForm();
+                }}>
+                  <h3>{providerMode === "create" ? t("adminProviderCreateTitle") : t("adminProviderEditTitle")}</h3>
+                  <label>{t("adminProviderCode")}<input value={providerForm.provider_code} onChange={(event) => setProviderForm({ ...providerForm, provider_code: event.target.value })} disabled={providerMode === "edit"} /></label>
+                  <label>{t("adminProviderType")}<select value={providerForm.provider_type} onChange={(event) => setProviderForm({ ...providerForm, provider_type: event.target.value })}><option value="local">local</option><option value="ollama">ollama</option><option value="azurefoundry">azurefoundry</option><option value="openai">openai</option><option value="openai_compatible">openai_compatible</option></select></label>
+                  <label>{t("adminDisplayName")}<input value={providerForm.display_name} onChange={(event) => setProviderForm({ ...providerForm, display_name: event.target.value })} /></label>
+                  <label>{t("adminBaseUrl")}<input value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} /></label>
+                  <label>{t("adminApiVersion")}<input value={providerForm.api_version} onChange={(event) => setProviderForm({ ...providerForm, api_version: event.target.value })} /></label>
+                  <label>{t("adminRegion")}<input value={providerForm.region} onChange={(event) => setProviderForm({ ...providerForm, region: event.target.value })} /></label>
+                  <label>{t("adminDataZone")}<input value={providerForm.data_zone} onChange={(event) => setProviderForm({ ...providerForm, data_zone: event.target.value })} /></label>
+                  <label>{t("adminHealthUrl")}<input value={providerForm.health_check_url} onChange={(event) => setProviderForm({ ...providerForm, health_check_url: event.target.value })} /></label>
+                  <div className="admin-toggle-row">
+                    <label><input type="checkbox" checked={providerForm.is_external} onChange={(event) => setProviderForm({ ...providerForm, is_external: event.target.checked })} />{t("adminExternal")}</label>
+                    <label><input type="checkbox" checked={providerForm.is_local} onChange={(event) => setProviderForm({ ...providerForm, is_local: event.target.checked })} />{t("adminLocal")}</label>
+                    <label><input type="checkbox" checked={providerForm.enabled} onChange={(event) => setProviderForm({ ...providerForm, enabled: event.target.checked })} />{t("adminEnabled")}</label>
+                  </div>
+                  <label>{t("adminReason")}<input value={providerForm.reason} onChange={(event) => setProviderForm({ ...providerForm, reason: event.target.value })} /></label>
+                  <div className="admin-inline-actions">
+                    <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSaveProvider")}</button>
+                    <button className="button ghost" type="button" onClick={cancelProviderAdminForm}>{t("adminCancel")}</button>
+                  </div>
+                </form>
+              ) : null}
+            </section>
           ) : null}
 
           {activeSection === "profiles" ? (
-            <form className="admin-panel" onSubmit={(event) => {
-              event.preventDefault();
-              void runAction(() => upsertAIModelProfile(adminAuth, profileForm), t("adminSaved"));
-            }}>
+            <section className="admin-panel">
               <h2>{t("adminProfilesTitle")}</h2>
+              {profileMode === "table" ? (
+                <button className="primary-button" type="button" onClick={showProfileCreateForm}>
+                  <FaPlus aria-hidden="true" />{t("adminAddProfile")}
+                </button>
+              ) : null}
               <AdminRecordsTable
                 emptyLabel={t("adminEmptyProfiles")}
                 headers={[t("adminModelCode"), t("adminProvider"), t("adminDeployment"), t("adminPrices"), t("adminStatus"), t("adminAction")]}
-                rows={(dashboard?.profiles ?? []).map((profile) => [
+                rows={activeProfiles.map((profile) => [
                   profile.model_profile_id,
                   providerById.get(profile.provider_id)?.display_name ?? profile.provider_id,
                   profile.deployment_name || profile.model_code,
                   `${profile.input_price_per_1m}/${profile.cached_input_price_per_1m}/${profile.output_price_per_1m} ${profile.billing_currency}`,
                   `${profile.enabled ? t("adminEnabled") : t("adminDisabled")}${profile.is_default_for_free ? `, ${t("adminDefaultFreeModel")}` : ""}`,
                   <div className="admin-inline-actions">
-                    <button className="button ghost" type="button" onClick={() => setProfileForm(profileToForm(profile))}>
+                    <button className="button ghost" type="button" onClick={() => showProfileEditForm(profile)}>
                       <FaEdit aria-hidden="true" />{t("adminEdit")}
-                    </button>
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => void saveProfileChange(
-                        profile,
-                        {
-                          enabled: !profile.enabled,
-                          reason: profile.enabled ? "Disable model profile from admin UI." : "Enable model profile from admin UI."
-                        },
-                        profile.enabled ? t("adminProfileDisabled") : t("adminProfileEnabled")
-                      )}
-                    >
-                      <FaCheck aria-hidden="true" />{profile.enabled ? t("adminDisableModel") : t("adminEnableModel")}
                     </button>
                     <button
                       className="button ghost"
@@ -862,24 +1019,39 @@ const AIModelAdmin: React.FC = () => {
                     >
                       <FaCheck aria-hidden="true" />{t("adminSetFreeDefault")}
                     </button>
+                    <button className="button ghost" type="button" onClick={() => void deleteProfileFromAdmin(profile)}>
+                      <FaTrash aria-hidden="true" />{t("adminDelete")}
+                    </button>
                   </div>
                 ])}
               />
               <p className="admin-muted">{t("adminCurrentFreeModel")}: <strong>{freeDefaultLabel}</strong></p>
-              <label>{t("adminProvider")}<select value={profileForm.provider_id} onChange={(event) => setProfileForm({ ...profileForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{activeProviders.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
-              <label>{t("adminModelCode")}<input value={profileForm.model_code} onChange={(event) => setProfileForm({ ...profileForm, model_code: event.target.value })} /></label>
-              <label>{t("adminDeployment")}<input value={profileForm.deployment_name} onChange={(event) => setProfileForm({ ...profileForm, deployment_name: event.target.value })} /></label>
-              <div className="admin-price-grid">
-                <label>{t("adminInputPrice")}<input type="number" min="0" step="0.0001" value={profileForm.input_price_per_1m} onChange={(event) => setProfileForm({ ...profileForm, input_price_per_1m: Number(event.target.value) })} /></label>
-                <label>{t("adminCachedInputPrice")}<input type="number" min="0" step="0.0001" value={profileForm.cached_input_price_per_1m} onChange={(event) => setProfileForm({ ...profileForm, cached_input_price_per_1m: Number(event.target.value) })} /></label>
-                <label>{t("adminOutputPrice")}<input type="number" min="0" step="0.0001" value={profileForm.output_price_per_1m} onChange={(event) => setProfileForm({ ...profileForm, output_price_per_1m: Number(event.target.value) })} /></label>
-              </div>
-              <div className="admin-toggle-row">
-                <label><input type="checkbox" checked={profileForm.eu_data_zone_capable} onChange={(event) => setProfileForm({ ...profileForm, eu_data_zone_capable: event.target.checked })} />{t("adminEuDataZone")}</label>
-                <label><input type="checkbox" checked={profileForm.enabled} onChange={(event) => setProfileForm({ ...profileForm, enabled: event.target.checked })} />{t("adminEnabled")}</label>
-              </div>
-              <button className="primary-button" type="submit"><FaPlus aria-hidden="true" />{t("adminSaveProfile")}</button>
-            </form>
+              {profileMode !== "table" ? (
+                <form className="admin-form-stack" onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveProfileForm();
+                }}>
+                  <h3>{profileMode === "create" ? t("adminProfileCreateTitle") : t("adminProfileEditTitle")}</h3>
+                  <label>{t("adminProvider")}<select value={profileForm.provider_id} onChange={(event) => setProfileForm({ ...profileForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{activeProviders.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
+                  <label>{t("adminModelCode")}<input value={profileForm.model_code} onChange={(event) => setProfileForm({ ...profileForm, model_code: event.target.value })} disabled={profileMode === "edit"} /></label>
+                  <label>{t("adminDeployment")}<input value={profileForm.deployment_name} onChange={(event) => setProfileForm({ ...profileForm, deployment_name: event.target.value })} /></label>
+                  <div className="admin-price-grid">
+                    <label>{t("adminInputPrice")}<input type="number" min="0" step="0.0001" value={profileForm.input_price_per_1m} onChange={(event) => setProfileForm({ ...profileForm, input_price_per_1m: Number(event.target.value) })} /></label>
+                    <label>{t("adminCachedInputPrice")}<input type="number" min="0" step="0.0001" value={profileForm.cached_input_price_per_1m} onChange={(event) => setProfileForm({ ...profileForm, cached_input_price_per_1m: Number(event.target.value) })} /></label>
+                    <label>{t("adminOutputPrice")}<input type="number" min="0" step="0.0001" value={profileForm.output_price_per_1m} onChange={(event) => setProfileForm({ ...profileForm, output_price_per_1m: Number(event.target.value) })} /></label>
+                  </div>
+                  <div className="admin-toggle-row">
+                    <label><input type="checkbox" checked={profileForm.eu_data_zone_capable} onChange={(event) => setProfileForm({ ...profileForm, eu_data_zone_capable: event.target.checked })} />{t("adminEuDataZone")}</label>
+                    <label><input type="checkbox" checked={profileForm.enabled} onChange={(event) => setProfileForm({ ...profileForm, enabled: event.target.checked })} />{t("adminEnabled")}</label>
+                  </div>
+                  <label>{t("adminReason")}<input value={profileForm.reason} onChange={(event) => setProfileForm({ ...profileForm, reason: event.target.value })} /></label>
+                  <div className="admin-inline-actions">
+                    <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSaveProfile")}</button>
+                    <button className="button ghost" type="button" onClick={cancelProfileForm}>{t("adminCancel")}</button>
+                  </div>
+                </form>
+              ) : null}
+            </section>
           ) : null}
 
           {activeSection === "credentials" ? (
@@ -951,26 +1123,51 @@ const AIModelAdmin: React.FC = () => {
 
           {activeSection === "groups" ? (
             <section className="admin-grid">
-              <form className="admin-panel" onSubmit={(event) => {
-                event.preventDefault();
-                void runAction(() => upsertAIModelGroup(adminAuth, groupForm), t("adminSaved"));
-              }}>
+              <section className="admin-panel">
                 <h2>{t("adminGroupsTitle")}</h2>
+                {groupMode === "table" ? (
+                  <button className="primary-button" type="button" onClick={showGroupCreateForm}>
+                    <FaPlus aria-hidden="true" />{t("adminAddGroup")}
+                  </button>
+                ) : null}
                 <AdminRecordsTable
                   emptyLabel={t("adminEmptyGroups")}
-                  headers={[t("adminGroupCode"), t("adminDisplayName"), t("adminPriority"), t("adminStatus")]}
-                  rows={(dashboard?.groups ?? []).map((group) => [
+                  headers={[t("adminGroupCode"), t("adminDisplayName"), t("adminPriority"), t("adminStatus"), t("adminAction")]}
+                  rows={activeGroups.map((group) => [
                     group.group_code,
                     group.display_name,
                     String(group.priority),
-                    group.enabled ? t("adminEnabled") : t("adminDisabled")
+                    group.enabled ? t("adminEnabled") : t("adminDisabled"),
+                    <div className="admin-inline-actions">
+                      <button className="button ghost" type="button" onClick={() => showGroupEditForm(group)}>
+                        <FaEdit aria-hidden="true" />{t("adminEdit")}
+                      </button>
+                      <button className="button ghost" type="button" onClick={() => void deleteGroupFromAdmin(group)}>
+                        <FaTrash aria-hidden="true" />{t("adminDelete")}
+                      </button>
+                    </div>
                   ])}
                 />
-                <label>{t("adminGroupCode")}<input value={groupForm.group_code} onChange={(event) => setGroupForm({ ...groupForm, group_code: event.target.value })} /></label>
-                <label>{t("adminDisplayName")}<input value={groupForm.display_name} onChange={(event) => setGroupForm({ ...groupForm, display_name: event.target.value })} /></label>
-                <label>{t("adminPriority")}<input type="number" value={groupForm.priority} onChange={(event) => setGroupForm({ ...groupForm, priority: Number(event.target.value) })} /></label>
-                <button className="primary-button" type="submit"><FaPlus aria-hidden="true" />{t("adminSaveGroup")}</button>
-              </form>
+                {groupMode !== "table" ? (
+                  <form className="admin-form-stack" onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveGroupForm();
+                  }}>
+                    <h3>{groupMode === "create" ? t("adminGroupCreateTitle") : t("adminGroupEditTitle")}</h3>
+                    <label>{t("adminGroupCode")}<input value={groupForm.group_code} onChange={(event) => setGroupForm({ ...groupForm, group_code: event.target.value })} disabled={groupMode === "edit"} /></label>
+                    <label>{t("adminDisplayName")}<input value={groupForm.display_name} onChange={(event) => setGroupForm({ ...groupForm, display_name: event.target.value })} /></label>
+                    <label>{t("adminPriority")}<input type="number" value={groupForm.priority} onChange={(event) => setGroupForm({ ...groupForm, priority: Number(event.target.value) })} /></label>
+                    <div className="admin-toggle-row">
+                      <label><input type="checkbox" checked={groupForm.enabled} onChange={(event) => setGroupForm({ ...groupForm, enabled: event.target.checked })} />{t("adminEnabled")}</label>
+                    </div>
+                    <label>{t("adminReason")}<input value={groupForm.reason} onChange={(event) => setGroupForm({ ...groupForm, reason: event.target.value })} /></label>
+                    <div className="admin-inline-actions">
+                      <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSaveGroup")}</button>
+                      <button className="button ghost" type="button" onClick={cancelGroupForm}>{t("adminCancel")}</button>
+                    </div>
+                  </form>
+                ) : null}
+              </section>
               <form className="admin-panel" onSubmit={(event) => {
                 event.preventDefault();
                 void runAction(() => addAIModelGroupMember(adminAuth, selectedGroupId, selectedUserId), t("adminSaved"));
@@ -979,13 +1176,13 @@ const AIModelAdmin: React.FC = () => {
                 <AdminRecordsTable
                   emptyLabel={t("adminEmptyMembers")}
                   headers={[t("adminGroup"), t("adminUser"), t("adminCreated")]}
-                  rows={(dashboard?.memberships ?? []).map((membership) => [
-                    dashboard?.groups.find((group) => group.model_group_id === membership.model_group_id)?.display_name ?? membership.model_group_id,
+                  rows={(dashboard?.memberships ?? []).filter((membership) => activeGroupIds.has(membership.model_group_id)).map((membership) => [
+                    activeGroups.find((group) => group.model_group_id === membership.model_group_id)?.display_name ?? membership.model_group_id,
                     `${membership.full_name} (${membership.email})`,
                     membership.created_at
                   ])}
                 />
-                <label>{t("adminGroup")}<select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}>{dashboard?.groups.map((group) => <option key={group.model_group_id} value={group.model_group_id}>{group.display_name}</option>)}</select></label>
+                <label>{t("adminGroup")}<select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}>{activeGroups.map((group) => <option key={group.model_group_id} value={group.model_group_id}>{group.display_name}</option>)}</select></label>
                 <label>{t("adminUser")}<select value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)}>{dashboard?.users.map((item) => <option key={item.user_id} value={item.user_id}>{item.full_name} ({item.email})</option>)}</select></label>
                 <button className="primary-button" type="submit"><FaUserPlus aria-hidden="true" />{t("adminAssignUser")}</button>
               </form>
@@ -993,62 +1190,66 @@ const AIModelAdmin: React.FC = () => {
           ) : null}
 
           {activeSection === "policies" ? (
-            <form className="admin-panel" onSubmit={(event) => {
-              event.preventDefault();
-              void runAction(() => upsertAIModelRoutePolicy(adminAuth, policyForm), t("adminSaved"));
-            }}>
+            <section className="admin-panel">
               <h2>{t("adminPoliciesTitle")}</h2>
               <p className="admin-muted">{t("adminPolicyHelp")}</p>
+              {policyMode === "table" ? (
+                <button className="primary-button" type="button" onClick={showPolicyCreateForm}>
+                  <FaPlus aria-hidden="true" />{t("adminAddPolicy")}
+                </button>
+              ) : null}
               <AdminRecordsTable
                 emptyLabel={t("adminEmptyPolicies")}
                 headers={[t("adminPolicyId"), t("adminTaskType"), t("adminPlanCode"), t("adminGroup"), t("adminExternalModel"), t("adminLocalModel"), t("adminPriority"), t("adminStatus"), t("adminAction")]}
-                rows={(dashboard?.policies ?? []).map((policy) => [
+                rows={activePolicies.map((policy) => [
                   policy.policy_id,
                   policy.task_type,
                   policy.plan_code || t("adminDefaultPolicy"),
-                  dashboard?.groups.find((group) => group.model_group_id === policy.model_group_id)?.display_name ?? t("adminDefaultPolicy"),
+                  activeGroups.find((group) => group.model_group_id === policy.model_group_id)?.display_name ?? t("adminDefaultPolicy"),
                   policy.preferred_external_model_profile_id ?? t("adminNotConfigured"),
                   policy.preferred_local_model_profile_id ?? t("adminNotConfigured"),
                   String(policy.priority),
                   policy.enabled ? t("adminEnabled") : t("adminDisabled"),
                   <div className="admin-inline-actions">
-                    <button className="button ghost" type="button" onClick={() => setPolicyForm(policyToForm(policy))}>
+                    <button className="button ghost" type="button" onClick={() => showPolicyEditForm(policy)}>
                       <FaEdit aria-hidden="true" />{t("adminEdit")}
                     </button>
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => void savePolicyChange(
-                        policy,
-                        {
-                          enabled: !policy.enabled,
-                          reason: policy.enabled ? "Disable route policy from admin UI." : "Enable route policy from admin UI."
-                        },
-                        policy.enabled ? t("adminPolicyDisabled") : t("adminPolicyEnabled")
-                      )}
-                    >
-                      <FaCheck aria-hidden="true" />{policy.enabled ? t("adminDisablePolicy") : t("adminEnablePolicy")}
+                    <button className="button ghost" type="button" onClick={() => void deletePolicyFromAdmin(policy)}>
+                      <FaTrash aria-hidden="true" />{t("adminDelete")}
                     </button>
                   </div>
                 ])}
               />
-              <div className="admin-price-grid">
-                <label>{t("adminTaskType")}<input value={policyForm.task_type} onChange={(event) => setPolicyForm({ ...policyForm, task_type: event.target.value })} /></label>
-                <label>{t("adminPlanCode")}<input value={policyForm.plan_code} onChange={(event) => setPolicyForm({ ...policyForm, plan_code: event.target.value })} /></label>
-                <label>{t("adminPriority")}<input type="number" value={policyForm.priority} onChange={(event) => setPolicyForm({ ...policyForm, priority: Number(event.target.value) })} /></label>
-              </div>
-              <div className="admin-price-grid">
-                <label>{t("adminGroup")}<select value={policyForm.model_group_id ?? ""} onChange={(event) => setPolicyForm({ ...policyForm, model_group_id: event.target.value || null })}><option value="">{t("adminDefaultPolicy")}</option>{dashboard?.groups.map((group) => <option key={group.model_group_id} value={group.model_group_id}>{group.display_name}</option>)}</select></label>
-                <label>{t("adminExternalModel")}<select value={policyForm.preferred_external_model_profile_id ?? ""} onChange={(event) => setPolicyForm({ ...policyForm, preferred_external_model_profile_id: event.target.value || null })}><option value="">{t("adminSelect")}</option>{externalProfiles.map((profile) => <option key={profile.model_profile_id} value={profile.model_profile_id}>{profile.model_code}</option>)}</select></label>
-                <label>{t("adminLocalModel")}<select value={policyForm.preferred_local_model_profile_id ?? ""} onChange={(event) => setPolicyForm({ ...policyForm, preferred_local_model_profile_id: event.target.value || null })}><option value="">{t("adminSelect")}</option>{localProfiles.map((profile) => <option key={profile.model_profile_id} value={profile.model_profile_id}>{profile.model_code}</option>)}</select></label>
-              </div>
-              <div className="admin-toggle-row">
-                <label><input type="checkbox" checked={policyForm.allow_external} onChange={(event) => setPolicyForm({ ...policyForm, allow_external: event.target.checked })} />{t("adminAllowExternal")}</label>
-                <label><input type="checkbox" checked={policyForm.require_external_ack} onChange={(event) => setPolicyForm({ ...policyForm, require_external_ack: event.target.checked })} />{t("adminRequireAck")}</label>
-                <label><input type="checkbox" checked={policyForm.fallback_local_on_budget} onChange={(event) => setPolicyForm({ ...policyForm, fallback_local_on_budget: event.target.checked })} />{t("adminBudgetFallback")}</label>
-              </div>
-              <button className="primary-button" type="submit"><FaPlus aria-hidden="true" />{t("adminSavePolicy")}</button>
-            </form>
+              {policyMode !== "table" ? (
+                <form className="admin-form-stack" onSubmit={(event) => {
+                  event.preventDefault();
+                  void savePolicyForm();
+                }}>
+                  <h3>{policyMode === "create" ? t("adminPolicyCreateTitle") : t("adminPolicyEditTitle")}</h3>
+                  <div className="admin-price-grid">
+                    <label>{t("adminTaskType")}<input value={policyForm.task_type} onChange={(event) => setPolicyForm({ ...policyForm, task_type: event.target.value })} /></label>
+                    <label>{t("adminPlanCode")}<input value={policyForm.plan_code} onChange={(event) => setPolicyForm({ ...policyForm, plan_code: event.target.value })} /></label>
+                    <label>{t("adminPriority")}<input type="number" value={policyForm.priority} onChange={(event) => setPolicyForm({ ...policyForm, priority: Number(event.target.value) })} /></label>
+                  </div>
+                  <div className="admin-price-grid">
+                    <label>{t("adminGroup")}<select value={policyForm.model_group_id ?? ""} onChange={(event) => setPolicyForm({ ...policyForm, model_group_id: event.target.value || null })}><option value="">{t("adminDefaultPolicy")}</option>{activeGroups.map((group) => <option key={group.model_group_id} value={group.model_group_id}>{group.display_name}</option>)}</select></label>
+                    <label>{t("adminExternalModel")}<select value={policyForm.preferred_external_model_profile_id ?? ""} onChange={(event) => setPolicyForm({ ...policyForm, preferred_external_model_profile_id: event.target.value || null })}><option value="">{t("adminSelect")}</option>{externalProfiles.map((profile) => <option key={profile.model_profile_id} value={profile.model_profile_id}>{profile.model_code}</option>)}</select></label>
+                    <label>{t("adminLocalModel")}<select value={policyForm.preferred_local_model_profile_id ?? ""} onChange={(event) => setPolicyForm({ ...policyForm, preferred_local_model_profile_id: event.target.value || null })}><option value="">{t("adminSelect")}</option>{localProfiles.map((profile) => <option key={profile.model_profile_id} value={profile.model_profile_id}>{profile.model_code}</option>)}</select></label>
+                  </div>
+                  <div className="admin-toggle-row">
+                    <label><input type="checkbox" checked={policyForm.allow_external} onChange={(event) => setPolicyForm({ ...policyForm, allow_external: event.target.checked })} />{t("adminAllowExternal")}</label>
+                    <label><input type="checkbox" checked={policyForm.require_external_ack} onChange={(event) => setPolicyForm({ ...policyForm, require_external_ack: event.target.checked })} />{t("adminRequireAck")}</label>
+                    <label><input type="checkbox" checked={policyForm.fallback_local_on_budget} onChange={(event) => setPolicyForm({ ...policyForm, fallback_local_on_budget: event.target.checked })} />{t("adminBudgetFallback")}</label>
+                    <label><input type="checkbox" checked={policyForm.enabled} onChange={(event) => setPolicyForm({ ...policyForm, enabled: event.target.checked })} />{t("adminEnabled")}</label>
+                  </div>
+                  <label>{t("adminReason")}<input value={policyForm.reason} onChange={(event) => setPolicyForm({ ...policyForm, reason: event.target.value })} /></label>
+                  <div className="admin-inline-actions">
+                    <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSavePolicy")}</button>
+                    <button className="button ghost" type="button" onClick={cancelPolicyForm}>{t("adminCancel")}</button>
+                  </div>
+                </form>
+              ) : null}
+            </section>
           ) : null}
 
           {activeSection === "ollama" ? (

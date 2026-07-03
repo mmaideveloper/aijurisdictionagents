@@ -238,6 +238,9 @@ class AIModelProfile:
     enabled: bool
     created_at: str
     updated_at: str
+    deleted_at: str | None
+    deleted_by_admin_user_id: str
+    deleted_reason: str
 
 
 @dataclass(frozen=True)
@@ -273,6 +276,9 @@ class AITaskRoutePolicy:
     enabled: bool
     created_at: str
     updated_at: str
+    deleted_at: str | None
+    deleted_by_admin_user_id: str
+    deleted_reason: str
 
 
 @dataclass(frozen=True)
@@ -284,6 +290,9 @@ class AIModelGroup:
     enabled: bool
     created_at: str
     updated_at: str
+    deleted_at: str | None
+    deleted_by_admin_user_id: str
+    deleted_reason: str
 
 
 @dataclass(frozen=True)
@@ -938,6 +947,7 @@ class ApiDatabaseStore:
                     eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(model_profile_id) DO UPDATE SET
+                    provider_id = excluded.provider_id,
                     model_code = excluded.model_code,
                     deployment_name = excluded.deployment_name,
                     context_window_tokens = excluded.context_window_tokens,
@@ -950,6 +960,9 @@ class ApiDatabaseStore:
                     eu_data_zone_capable = excluded.eu_data_zone_capable,
                     is_default_for_free = excluded.is_default_for_free,
                     enabled = excluded.enabled,
+                    deleted_at = NULL,
+                    deleted_by_admin_user_id = '',
+                    deleted_reason = '',
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -989,7 +1002,8 @@ class ApiDatabaseStore:
                 SELECT model_profile_id, provider_id, model_code, deployment_name,
                        context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                        output_price_per_1m, billing_currency, effective_from, effective_to,
-                       eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
+                       eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
                 FROM ai_model_profiles
                 WHERE model_profile_id = ?
                 """,
@@ -999,12 +1013,96 @@ class ApiDatabaseStore:
             raise RuntimeError(f"AI model profile was not saved: {resolved_id}")
         return _row_to_ai_model_profile(row)
 
-    def list_ai_model_profiles(self, *, provider_id: str | None = None) -> list[AIModelProfile]:
-        params: tuple[Any, ...] = ()
-        where = ""
+    def soft_delete_ai_model_profile(
+        self,
+        *,
+        model_profile_id: str,
+        admin_user_id: str,
+        reason: str,
+    ) -> AIModelProfile:
+        normalized_id = model_profile_id.strip()
+        if not normalized_id:
+            raise ValueError("model_profile_id is required")
+        now = _now_iso()
+        with self._connect() as conn:
+            existing = self._fetchone(
+                conn,
+                """
+                SELECT model_profile_id, provider_id, model_code, deployment_name,
+                       context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
+                       output_price_per_1m, billing_currency, effective_from, effective_to,
+                       eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                FROM ai_model_profiles
+                WHERE model_profile_id = ?
+                """,
+                (normalized_id,),
+            )
+            if existing is None:
+                raise KeyError(f"AI model profile {normalized_id} not found")
+            profile = _row_to_ai_model_profile(existing)
+            if profile.deleted_at:
+                return profile
+            if profile.is_default_for_free:
+                raise ValueError("Cannot delete the default free model profile")
+            active_policy_row = self._fetchone(
+                conn,
+                """
+                SELECT policy_id
+                FROM ai_task_route_policies
+                WHERE enabled = 1
+                  AND deleted_at IS NULL
+                  AND (
+                    preferred_external_model_profile_id = ?
+                    OR preferred_local_model_profile_id = ?
+                  )
+                LIMIT 1
+                """,
+                (normalized_id, normalized_id),
+            )
+            if active_policy_row is not None:
+                raise ValueError("Cannot delete a model profile used by an enabled routing policy")
+            self._execute(
+                conn,
+                """
+                UPDATE ai_model_profiles
+                SET enabled = 0,
+                    is_default_for_free = 0,
+                    deleted_at = ?,
+                    deleted_by_admin_user_id = ?,
+                    deleted_reason = ?,
+                    updated_at = ?
+                WHERE model_profile_id = ?
+                """,
+                (now, admin_user_id.strip(), reason.strip(), now, normalized_id),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT model_profile_id, provider_id, model_code, deployment_name,
+                       context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
+                       output_price_per_1m, billing_currency, effective_from, effective_to,
+                       eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                FROM ai_model_profiles
+                WHERE model_profile_id = ?
+                """,
+                (normalized_id,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model profile was not soft-deleted: {normalized_id}")
+        return _row_to_ai_model_profile(row)
+
+    def list_ai_model_profiles(self, *, provider_id: str | None = None, include_deleted: bool = False) -> list[AIModelProfile]:
+        filters: list[str] = []
+        params: list[Any] = []
         if provider_id is not None:
-            where = "WHERE provider_id = ?"
-            params = (provider_id.strip(),)
+            filters.append("provider_id = ?")
+            params.append(provider_id.strip())
+        if not include_deleted:
+            filters.append("deleted_at IS NULL")
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
         with self._connect() as conn:
             rows = self._execute(
                 conn,
@@ -1012,12 +1110,13 @@ class ApiDatabaseStore:
                 SELECT model_profile_id, provider_id, model_code, deployment_name,
                        context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                        output_price_per_1m, billing_currency, effective_from, effective_to,
-                       eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
+                       eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
                 FROM ai_model_profiles
                 {where}
-                ORDER BY enabled DESC, provider_id, is_default_for_free DESC, model_code
+                ORDER BY deleted_at IS NOT NULL, enabled DESC, provider_id, is_default_for_free DESC, model_code
                 """,
-                params,
+                tuple(params),
             ).fetchall()
         return [_row_to_ai_model_profile(row) for row in rows]
 
@@ -1068,6 +1167,9 @@ class ApiDatabaseStore:
                     max_cost_eur = excluded.max_cost_eur,
                     priority = excluded.priority,
                     enabled = excluded.enabled,
+                    deleted_at = NULL,
+                    deleted_by_admin_user_id = '',
+                    deleted_reason = '',
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -1097,7 +1199,8 @@ class ApiDatabaseStore:
                        preferred_external_model_profile_id, preferred_local_model_profile_id,
                        allow_external, require_external_ack, require_eu_data_zone,
                        fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
-                       priority, enabled, created_at, updated_at
+                       priority, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
                 FROM ai_task_route_policies
                 WHERE policy_id = ?
                 """,
@@ -1107,18 +1210,84 @@ class ApiDatabaseStore:
             raise RuntimeError(f"AI task route policy was not saved: {resolved_id}")
         return _row_to_ai_task_route_policy(row)
 
-    def list_ai_task_route_policies(self) -> list[AITaskRoutePolicy]:
+    def soft_delete_ai_task_route_policy(
+        self,
+        *,
+        policy_id: str,
+        admin_user_id: str,
+        reason: str,
+    ) -> AITaskRoutePolicy:
+        normalized_id = policy_id.strip()
+        if not normalized_id:
+            raise ValueError("policy_id is required")
+        now = _now_iso()
         with self._connect() as conn:
-            rows = self._execute(
+            existing = self._fetchone(
                 conn,
                 """
                 SELECT policy_id, task_type, plan_code, model_group_id,
                        preferred_external_model_profile_id, preferred_local_model_profile_id,
                        allow_external, require_external_ack, require_eu_data_zone,
                        fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
-                       priority, enabled, created_at, updated_at
+                       priority, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
                 FROM ai_task_route_policies
-                ORDER BY enabled DESC, priority DESC, task_type, plan_code, model_group_id
+                WHERE policy_id = ?
+                """,
+                (normalized_id,),
+            )
+            if existing is None:
+                raise KeyError(f"AI task route policy {normalized_id} not found")
+            policy = _row_to_ai_task_route_policy(existing)
+            if policy.deleted_at:
+                return policy
+            self._execute(
+                conn,
+                """
+                UPDATE ai_task_route_policies
+                SET enabled = 0,
+                    deleted_at = ?,
+                    deleted_by_admin_user_id = ?,
+                    deleted_reason = ?,
+                    updated_at = ?
+                WHERE policy_id = ?
+                """,
+                (now, admin_user_id.strip(), reason.strip(), now, normalized_id),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT policy_id, task_type, plan_code, model_group_id,
+                       preferred_external_model_profile_id, preferred_local_model_profile_id,
+                       allow_external, require_external_ack, require_eu_data_zone,
+                       fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
+                       priority, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                FROM ai_task_route_policies
+                WHERE policy_id = ?
+                """,
+                (normalized_id,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI task route policy was not soft-deleted: {normalized_id}")
+        return _row_to_ai_task_route_policy(row)
+
+    def list_ai_task_route_policies(self, *, include_deleted: bool = False) -> list[AITaskRoutePolicy]:
+        where = "" if include_deleted else "WHERE deleted_at IS NULL"
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                f"""
+                SELECT policy_id, task_type, plan_code, model_group_id,
+                       preferred_external_model_profile_id, preferred_local_model_profile_id,
+                       allow_external, require_external_ack, require_eu_data_zone,
+                       fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
+                       priority, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                FROM ai_task_route_policies
+                {where}
+                ORDER BY deleted_at IS NOT NULL, enabled DESC, priority DESC, task_type, plan_code, model_group_id
                 """,
             ).fetchall()
         return [_row_to_ai_task_route_policy(row) for row in rows]
@@ -1326,6 +1495,9 @@ class ApiDatabaseStore:
                     display_name = excluded.display_name,
                     priority = excluded.priority,
                     enabled = excluded.enabled,
+                    deleted_at = NULL,
+                    deleted_by_admin_user_id = '',
+                    deleted_reason = '',
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -1342,7 +1514,8 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT model_group_id, group_code, display_name, priority, enabled, created_at, updated_at
+                SELECT model_group_id, group_code, display_name, priority, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
                 FROM ai_model_groups
                 WHERE group_code = ?
                 """,
@@ -1352,19 +1525,77 @@ class ApiDatabaseStore:
             raise RuntimeError(f"AI model group was not saved: {normalized_code}")
         return _row_to_ai_model_group(row)
 
+    def soft_delete_ai_model_group(
+        self,
+        *,
+        model_group_id: str,
+        admin_user_id: str,
+        reason: str,
+    ) -> AIModelGroup:
+        normalized_id = model_group_id.strip()
+        if not normalized_id:
+            raise ValueError("model_group_id is required")
+        now = _now_iso()
+        with self._connect() as conn:
+            existing = self._fetchone(
+                conn,
+                """
+                SELECT model_group_id, group_code, display_name, priority, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                FROM ai_model_groups
+                WHERE model_group_id = ?
+                """,
+                (normalized_id,),
+            )
+            if existing is None:
+                raise KeyError(f"AI model group {normalized_id} not found")
+            group = _row_to_ai_model_group(existing)
+            if group.deleted_at:
+                return group
+            self._execute(
+                conn,
+                """
+                UPDATE ai_model_groups
+                SET enabled = 0,
+                    deleted_at = ?,
+                    deleted_by_admin_user_id = ?,
+                    deleted_reason = ?,
+                    updated_at = ?
+                WHERE model_group_id = ?
+                """,
+                (now, admin_user_id.strip(), reason.strip(), now, normalized_id),
+            )
+            conn.commit()
+            row = self._fetchone(
+                conn,
+                """
+                SELECT model_group_id, group_code, display_name, priority, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                FROM ai_model_groups
+                WHERE model_group_id = ?
+                """,
+                (normalized_id,),
+            )
+        if row is None:
+            raise RuntimeError(f"AI model group was not soft-deleted: {normalized_id}")
+        return _row_to_ai_model_group(row)
+
     def delete_ai_model_group(self, *, model_group_id: str) -> None:
         with self._connect() as conn:
             self._execute(conn, "DELETE FROM ai_model_groups WHERE model_group_id = ?", (model_group_id,))
             conn.commit()
 
-    def list_ai_model_groups(self) -> list[AIModelGroup]:
+    def list_ai_model_groups(self, *, include_deleted: bool = False) -> list[AIModelGroup]:
+        where = "" if include_deleted else "WHERE deleted_at IS NULL"
         with self._connect() as conn:
             rows = self._execute(
                 conn,
-                """
-                SELECT model_group_id, group_code, display_name, priority, enabled, created_at, updated_at
+                f"""
+                SELECT model_group_id, group_code, display_name, priority, enabled, created_at, updated_at,
+                       deleted_at, deleted_by_admin_user_id, deleted_reason
                 FROM ai_model_groups
-                ORDER BY enabled DESC, priority DESC, display_name
+                {where}
+                ORDER BY deleted_at IS NOT NULL, enabled DESC, priority DESC, display_name
                 """,
             ).fetchall()
         return [_row_to_ai_model_group(row) for row in rows]
@@ -3958,9 +4189,12 @@ class ApiDatabaseStore:
         group_rows = self._execute(
             conn,
             """
-            SELECT model_group_id
-            FROM ai_model_group_users
-            WHERE user_id = ?
+            SELECT gu.model_group_id
+            FROM ai_model_group_users gu
+            JOIN ai_model_groups g ON g.model_group_id = gu.model_group_id
+            WHERE gu.user_id = ?
+              AND g.enabled = 1
+              AND g.deleted_at IS NULL
             """,
             (user_id,),
         ).fetchall()
@@ -3979,9 +4213,11 @@ class ApiDatabaseStore:
                    preferred_external_model_profile_id, preferred_local_model_profile_id,
                    allow_external, require_external_ack, require_eu_data_zone,
                    fallback_local_on_error, fallback_local_on_budget, max_cost_eur,
-                   priority, enabled, created_at, updated_at
+                   priority, enabled, created_at, updated_at,
+                   deleted_at, deleted_by_admin_user_id, deleted_reason
             FROM ai_task_route_policies
             WHERE enabled = 1
+              AND deleted_at IS NULL
               AND task_type IN (?, ?)
               AND plan_code IN (?, ?, ?)
               AND ({group_clause})
@@ -4017,11 +4253,13 @@ class ApiDatabaseStore:
                    m.model_profile_id, m.provider_id, m.model_code, m.deployment_name,
                    m.context_window_tokens, m.input_price_per_1m, m.cached_input_price_per_1m,
                    m.output_price_per_1m, m.billing_currency, m.effective_from, m.effective_to,
-                   m.eu_data_zone_capable, m.is_default_for_free, m.enabled, m.created_at, m.updated_at
+                   m.eu_data_zone_capable, m.is_default_for_free, m.enabled, m.created_at, m.updated_at,
+                   m.deleted_at, m.deleted_by_admin_user_id, m.deleted_reason
             FROM ai_model_profiles m
             JOIN ai_model_providers p ON p.provider_id = m.provider_id
             WHERE m.model_profile_id = ?
               AND m.enabled = 1
+              AND m.deleted_at IS NULL
               AND p.enabled = 1
               AND p.deleted_at IS NULL
             """,
@@ -4103,6 +4341,9 @@ class ApiDatabaseStore:
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
+                deleted_at TEXT,
+                deleted_by_admin_user_id TEXT NOT NULL DEFAULT '',
+                deleted_reason TEXT NOT NULL DEFAULT '',
                 UNIQUE(provider_id, model_code),
                 FOREIGN KEY(provider_id) REFERENCES ai_model_providers(provider_id) ON DELETE CASCADE
             );
@@ -4129,7 +4370,10 @@ class ApiDatabaseStore:
                 priority INTEGER NOT NULL DEFAULT 0,
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                deleted_at TEXT,
+                deleted_by_admin_user_id TEXT NOT NULL DEFAULT '',
+                deleted_reason TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS ai_model_group_users (
@@ -4158,6 +4402,9 @@ class ApiDatabaseStore:
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
+                deleted_at TEXT,
+                deleted_by_admin_user_id TEXT NOT NULL DEFAULT '',
+                deleted_reason TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY(model_group_id) REFERENCES ai_model_groups(model_group_id) ON DELETE SET NULL,
                 FOREIGN KEY(preferred_external_model_profile_id) REFERENCES ai_model_profiles(model_profile_id) ON DELETE SET NULL,
                 FOREIGN KEY(preferred_local_model_profile_id) REFERENCES ai_model_profiles(model_profile_id) ON DELETE SET NULL
@@ -4250,28 +4497,35 @@ class ApiDatabaseStore:
             """,
         )
         self._ensure_ai_model_profile_columns(conn)
-        self._ensure_ai_model_provider_soft_delete_columns(conn)
+        self._ensure_ai_model_soft_delete_columns(conn)
         self._ensure_ai_model_usage_audit_columns(conn)
 
-    def _ensure_ai_model_provider_soft_delete_columns(
+    def _ensure_ai_model_soft_delete_columns(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
     ) -> None:
+        for table_name in ("ai_model_providers", "ai_model_profiles", "ai_model_groups", "ai_task_route_policies"):
+            self._ensure_soft_delete_columns(conn, table_name=table_name)
+
+    def _ensure_soft_delete_columns(
+        self, conn: sqlite3.Connection | PostgresConnection[Any], *, table_name: str
+    ) -> None:
         if self.uses_postgres:
-            provider_columns = {
+            existing_columns = {
                 row[0]
                 for row in self._execute(
                     conn,
                     """
                     SELECT column_name
                     FROM information_schema.columns
-                    WHERE table_name = 'ai_model_providers'
+                    WHERE table_name = ?
                     """,
+                    (table_name,),
                 ).fetchall()
             }
         else:
-            provider_columns = {
+            existing_columns = {
                 row[1]
-                for row in self._execute(conn, "PRAGMA table_info(ai_model_providers)").fetchall()
+                for row in self._execute(conn, f"PRAGMA table_info({table_name})").fetchall()
             }
         missing_columns = {
             "deleted_at": "TEXT",
@@ -4279,10 +4533,10 @@ class ApiDatabaseStore:
             "deleted_reason": "TEXT NOT NULL DEFAULT ''",
         }
         for column_name, column_definition in missing_columns.items():
-            if column_name not in provider_columns:
+            if column_name not in existing_columns:
                 self._execute(
                     conn,
-                    f"ALTER TABLE ai_model_providers ADD COLUMN {column_name} {column_definition}",
+                    f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}",
                 )
 
     def _ensure_ai_model_profile_columns(
@@ -4899,6 +5153,9 @@ def _row_to_ai_model_profile(row: tuple[object, ...]) -> AIModelProfile:
         enabled=_row_bool(row[13]),
         created_at=str(row[14]),
         updated_at=str(row[15]),
+        deleted_at=str(row[16]) if len(row) > 16 and row[16] is not None else None,
+        deleted_by_admin_user_id=str(row[17]) if len(row) > 17 else "",
+        deleted_reason=str(row[18]) if len(row) > 18 else "",
     )
 
 
@@ -4939,6 +5196,9 @@ def _row_to_ai_task_route_policy(row: tuple[object, ...]) -> AITaskRoutePolicy:
         enabled=_row_bool(row[13]),
         created_at=str(row[14]),
         updated_at=str(row[15]),
+        deleted_at=str(row[16]) if len(row) > 16 and row[16] is not None else None,
+        deleted_by_admin_user_id=str(row[17]) if len(row) > 17 else "",
+        deleted_reason=str(row[18]) if len(row) > 18 else "",
     )
 
 
@@ -4951,6 +5211,9 @@ def _row_to_ai_model_group(row: tuple[object, ...]) -> AIModelGroup:
         enabled=_row_bool(row[4]),
         created_at=str(row[5]),
         updated_at=str(row[6]),
+        deleted_at=str(row[7]) if len(row) > 7 and row[7] is not None else None,
+        deleted_by_admin_user_id=str(row[8]) if len(row) > 8 else "",
+        deleted_reason=str(row[9]) if len(row) > 9 else "",
     )
 
 

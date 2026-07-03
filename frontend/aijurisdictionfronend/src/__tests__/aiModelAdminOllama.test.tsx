@@ -15,6 +15,9 @@ const apiMocks = vi.hoisted(() => ({
   disableAIModelUserOverride: vi.fn(),
   fetchOllamaModels: vi.fn(),
   deleteAIModelProvider: vi.fn(),
+  deleteAIModelProfile: vi.fn(),
+  deleteAIModelGroup: vi.fn(),
+  deleteAIModelRoutePolicy: vi.fn(),
   importOllamaModel: vi.fn(),
   removeOllamaModel: vi.fn(),
   upsertAIModelProvider: vi.fn(),
@@ -113,7 +116,10 @@ const dashboard = {
       is_default_for_free: true,
       enabled: true,
       created_at: "2026-06-27T10:00:00Z",
-      updated_at: "2026-06-27T10:00:00Z"
+      updated_at: "2026-06-27T10:00:00Z",
+      deleted_at: null,
+      deleted_by_admin_user_id: "",
+      deleted_reason: ""
     },
     {
       model_profile_id: "azure_foundry_gpt_4o_mini",
@@ -131,7 +137,10 @@ const dashboard = {
       is_default_for_free: false,
       enabled: true,
       created_at: "2026-06-27T10:00:00Z",
-      updated_at: "2026-06-27T10:00:00Z"
+      updated_at: "2026-06-27T10:00:00Z",
+      deleted_at: null,
+      deleted_by_admin_user_id: "",
+      deleted_reason: ""
     }
   ],
   credentials: [
@@ -165,7 +174,10 @@ const dashboard = {
       priority: 0,
       enabled: true,
       created_at: "2026-06-27T10:00:00Z",
-      updated_at: "2026-06-27T10:00:00Z"
+      updated_at: "2026-06-27T10:00:00Z",
+      deleted_at: null,
+      deleted_by_admin_user_id: "",
+      deleted_reason: ""
     }
   ],
   groups: [],
@@ -290,6 +302,20 @@ describe("AIModelAdmin Ollama management", () => {
     apiMocks.removeOllamaModel.mockResolvedValue({ job_id: "job-2", action: "remove", model: "llama3.2:3b", status: "queued" });
     apiMocks.upsertAIModelProvider.mockResolvedValue(dashboard.providers[1]);
     apiMocks.deleteAIModelProvider.mockResolvedValue({ ...dashboard.providers[1], enabled: false, deleted_at: "2026-07-03T10:10:00Z" });
+    apiMocks.deleteAIModelProfile.mockResolvedValue({ ...dashboard.profiles[1], enabled: false, deleted_at: "2026-07-03T10:10:00Z" });
+    apiMocks.deleteAIModelGroup.mockResolvedValue({
+      model_group_id: "paid",
+      group_code: "paid",
+      display_name: "Paid",
+      priority: 10,
+      enabled: false,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-07-03T10:10:00Z",
+      deleted_at: "2026-07-03T10:10:00Z",
+      deleted_by_admin_user_id: "admin-1",
+      deleted_reason: "Test delete"
+    });
+    apiMocks.deleteAIModelRoutePolicy.mockResolvedValue({ ...dashboard.policies[0], enabled: false, deleted_at: "2026-07-03T10:10:00Z" });
     apiMocks.upsertAIModelProfile.mockImplementation((_, input) => {
       const existingProfile =
         dashboard.profiles.find((profile) => profile.model_profile_id === input.model_profile_id) ??
@@ -383,29 +409,39 @@ describe("AIModelAdmin Ollama management", () => {
     expect(screen.queryByRole("heading", { name: /adminProviderCreateTitle/ })).toBeNull();
   });
 
-  it("lets admins update and disable routing policies", async () => {
+  it("lets admins edit and delete routing policies", async () => {
     const user = userEvent.setup();
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Retire old policy.");
     render(<AIModelAdmin />);
 
     await user.click(await screen.findByRole("button", { name: /adminPoliciesTitle/ }));
-    await user.click(await screen.findByRole("button", { name: /adminDisablePolicy/ }));
+    await user.click(await screen.findByRole("button", { name: /adminEdit/ }));
+    expect((screen.getByLabelText("adminPlanCode") as HTMLInputElement).value).toBe("free");
+    await user.type(screen.getByLabelText("adminReason"), "Update route policy.");
+    await user.click(screen.getByRole("button", { name: /adminSavePolicy/ }));
 
     await waitFor(() => {
       expect(apiMocks.upsertAIModelRoutePolicy).toHaveBeenCalledWith(
         expect.objectContaining({ userId: "admin-1" }),
         expect.objectContaining({
           policy_id: "default:free:default",
-          enabled: false,
-          reason: "Disable route policy from admin UI."
+          reason: "Update route policy."
         })
       );
     });
 
-    await user.click(screen.getByRole("button", { name: /adminEdit/ }));
-    expect((screen.getByLabelText("adminPlanCode") as HTMLInputElement).value).toBe("free");
+    await user.click(screen.getByRole("button", { name: /adminDelete/ }));
+    await waitFor(() => {
+      expect(apiMocks.deleteAIModelRoutePolicy).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        "default:free:default",
+        { reason: "Retire old policy." }
+      );
+    });
+    promptSpy.mockRestore();
   });
 
-  it("lets admins disable model profiles and set a local free default", async () => {
+  it("lets admins edit model profiles and set a local free default", async () => {
     const user = userEvent.setup();
     const profileDashboard = {
       ...dashboard,
@@ -427,7 +463,10 @@ describe("AIModelAdmin Ollama management", () => {
           is_default_for_free: false,
           enabled: true,
           created_at: "2026-06-27T10:00:00Z",
-          updated_at: "2026-06-27T10:00:00Z"
+          updated_at: "2026-06-27T10:00:00Z",
+          deleted_at: null,
+          deleted_by_admin_user_id: "",
+          deleted_reason: ""
         }
       ]
     };
@@ -435,15 +474,16 @@ describe("AIModelAdmin Ollama management", () => {
     render(<AIModelAdmin />);
 
     await user.click(await screen.findByRole("button", { name: /adminProfilesTitle/ }));
-    await user.click(screen.getAllByRole("button", { name: /adminDisableModel/ }).at(0) as HTMLElement);
+    await user.click(screen.getAllByRole("button", { name: /adminEdit/ }).at(0) as HTMLElement);
+    await user.type(screen.getByLabelText("adminReason"), "Update model profile.");
+    await user.click(screen.getByRole("button", { name: /adminSaveProfile/ }));
 
     await waitFor(() => {
       expect(apiMocks.upsertAIModelProfile).toHaveBeenCalledWith(
         expect.objectContaining({ userId: "admin-1" }),
         expect.objectContaining({
           model_profile_id: "local_ollama_default",
-          enabled: false,
-          reason: "Disable model profile from admin UI."
+          reason: "Update model profile."
         })
       );
     });

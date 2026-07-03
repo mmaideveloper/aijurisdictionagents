@@ -37,6 +37,9 @@ export interface AIModelProfile {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
+  deleted_by_admin_user_id: string;
+  deleted_reason: string;
 }
 
 export interface AIModelCredential {
@@ -69,6 +72,9 @@ export interface AIModelRoutePolicy {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
+  deleted_by_admin_user_id: string;
+  deleted_reason: string;
 }
 
 export interface AIModelGroup {
@@ -79,6 +85,9 @@ export interface AIModelGroup {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
+  deleted_by_admin_user_id: string;
+  deleted_reason: string;
 }
 
 export interface AIModelGroupMembership {
@@ -485,6 +494,16 @@ export const deleteAIModelProvider = (
     body: JSON.stringify(input)
   });
 
+export const deleteAIModelProfile = (
+  adminUserId: AdminAuthInput,
+  modelProfileId: string,
+  input: ProviderDeleteInput
+): Promise<AIModelProfile> =>
+  adminRequest<AIModelProfile>(`/v1/admin/ai-models/profiles/${encodeURIComponent(modelProfileId)}`, adminUserId, {
+    method: "DELETE",
+    body: JSON.stringify(input)
+  });
+
 export const upsertAIModelProfile = (
   adminUserId: AdminAuthInput,
   input: ProfileUpsertInput
@@ -571,6 +590,16 @@ export const upsertAIModelGroup = (adminUserId: AdminAuthInput, input: GroupUpse
     body: JSON.stringify(input)
   });
 
+export const deleteAIModelGroup = (
+  adminUserId: AdminAuthInput,
+  modelGroupId: string,
+  input: ProviderDeleteInput
+): Promise<AIModelGroup> =>
+  adminRequest<AIModelGroup>(`/v1/admin/ai-models/groups/${encodeURIComponent(modelGroupId)}`, adminUserId, {
+    method: "DELETE",
+    body: JSON.stringify(input)
+  });
+
 export const addAIModelGroupMember = (
   adminUserId: AdminAuthInput,
   modelGroupId: string,
@@ -587,6 +616,16 @@ export const upsertAIModelRoutePolicy = (
 ): Promise<AIModelRoutePolicy> =>
   adminRequest<AIModelRoutePolicy>("/v1/admin/ai-models/policies", adminUserId, {
     method: "POST",
+    body: JSON.stringify(input)
+  });
+
+export const deleteAIModelRoutePolicy = (
+  adminUserId: AdminAuthInput,
+  policyId: string,
+  input: ProviderDeleteInput
+): Promise<AIModelRoutePolicy> =>
+  adminRequest<AIModelRoutePolicy>(`/v1/admin/ai-models/policies/${encodeURIComponent(policyId)}`, adminUserId, {
+    method: "DELETE",
     body: JSON.stringify(input)
   });
 
