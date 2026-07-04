@@ -20,6 +20,9 @@ accidentally saved with the truncated Claude URL `/MC`. OAuth metadata keeps
 `/.well-known/oauth-protected-resource/MCP` path intentionally returns `404`
 because Claude web may store custom connector URLs with uppercase `/MCP` and
 will force OAuth when that path is advertised as protected.
+Claude web backend discovery at the root OAuth metadata URLs is also hidden
+when the request uses Claude's `python-httpx` MCP client headers, because Claude
+falls back to root discovery after uppercase path discovery returns `404`.
 Because Claude web can complete OAuth and then reject the issued credentials
 without making an authenticated MCP call, `/MCP` also acts as a public-law
 compatibility endpoint for Claude web: it allows `getVersion`, `getStatistics`,
