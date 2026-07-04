@@ -134,6 +134,32 @@ def test_mcp_accepts_claude_backend_probe_without_bearer_token() -> None:
     assert initialize_response.json()["result"]["serverInfo"]["name"] == "aijurisdiction-laws-mcp"
 
 
+def test_mcp_plain_get_keeps_method_guidance() -> None:
+    response = mcp_client.get("/MCP")
+
+    assert response.status_code == 405
+    assert response.headers["allow"] == "GET, POST"
+    assert response.json()["detail"] == "Use POST /mcp for Streamable HTTP JSON-RPC."
+
+
+def test_mcp_accepts_sse_get_probe_for_streamable_http_clients(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="aijuristiction-api.mcp")
+
+    response = mcp_client.get(
+        "/MCP",
+        headers={
+            "accept": "text/event-stream",
+            "user-agent": "python-httpx/0.28.1",
+            "mcp-protocol-version": "2025-11-25",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.text == ": jurisdigta-mcp-ready\n\n"
+    assert any("mcp_sse_stream_opened request_path=/MCP" in record.getMessage() for record in caplog.records)
+
+
 def test_mcp_initialize_defaults_to_latest_for_unknown_protocol() -> None:
     initialize_response = mcp_client.post(
         "/mcp",

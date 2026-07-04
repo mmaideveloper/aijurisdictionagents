@@ -5,6 +5,9 @@ The local default is `http://127.0.0.1:8070`, and production routing should map
 `https://mcp.jurisdigta.eu` to the MCP service, not to `api.jurisdigta.eu`.
 
 The MCP service exposes a Streamable HTTP-style MCP JSON-RPC endpoint at `POST /mcp`.
+Clients that probe the MCP endpoint with `GET /mcp` or `GET /MCP` and
+`Accept: text/event-stream` receive a minimal SSE-ready stream; plain browser
+GET requests still return `405` with guidance to use POST.
 It is intended for AI assistants that can connect to remote MCP servers over HTTP.
 For ChatGPT, Claude, and VS Code OAuth-capable clients, start from the OAuth metadata endpoints instead of manually copying a token.
 The API `/version`, MCP `/version`, and MCP `getVersion` tool expose `mcp_server_version`.
@@ -106,10 +109,10 @@ Production settings:
 - `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` by default. For controlled Claude/E2E validation only, operators may temporarily enable it for the synthetic emails `mcp-claude-test-free@jurisdigta.eu` and `mcp-claude-test-paid@jurisdigta.eu` with `MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT=2030-01-01T00:00:00Z`. The bypass is hard-limited to MCP OAuth authorization and still requires the correct password.
 - `JURISDIGTA_E2E_TEST_USER_PASSWORD=<secret>` is used by `python scripts/provision_e2e_users.py` to create or update the synthetic free/paid E2E accounts. Keep it in runtime secret storage only.
 
-Do not hide OAuth discovery from Claude web custom connector probes. Claude web
-uses `python-httpx` while validating custom connectors and must receive the
-protected-resource metadata, authorization-server metadata, and dynamic client
-registration response before it can start the browser authorization flow.
+Root OAuth discovery is hidden from Claude web custom connector probes that use
+`python-httpx` with the MCP protocol header. Claude web should validate the
+uppercase `/MCP` compatibility endpoint as a bounded public-law MCP endpoint
+instead of starting OAuth for that saved connector URL.
 Claude and other clients may send Dynamic Client Registration metadata that includes `client_credentials`; JurisDigta accepts that compatibility shape only when `authorization_code` is also requested, returns the public-client grants `authorization_code` and `refresh_token`, and continues to reject actual `grant_type=client_credentials` token exchanges.
 
 ## Authentication
