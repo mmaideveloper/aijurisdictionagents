@@ -78,6 +78,41 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         password="demo-secret",
         full_name="Minimal Routing Demo",
     )
+    demo_case = demo_store.create_case(
+        user_id=demo_user.user_id,
+        company_id=None,
+        title="Minimal citation demo",
+    )
+    demo_question_id = demo_store.add_case_message(
+        case_id=demo_case.case_id,
+        role="user",
+        content="Which law supports this answer?",
+        agent_name="User",
+    )
+    demo_answer_id = demo_store.add_case_message(
+        case_id=demo_case.case_id,
+        role="assistant",
+        content="This answer is grounded in a tracked legal source.",
+        agent_name="LawyerSlovakia",
+    )
+    demo_store.add_case_citation(
+        case_id=demo_case.case_id,
+        question_message_id=demo_question_id,
+        answer_message_id=demo_answer_id,
+        source_type="law",
+        source_id="SK:ZZ:1992:460",
+        source_url="/v1/laws/source?country_code=SK&collection_code=ZZ&law_year=1992&law_number=460",
+        title="Constitution of the Slovak Republic",
+        citation_label="460/1992 Zb. - Constitution of the Slovak Republic",
+        law_number="460/1992 Zb.",
+        effective_from="1992-10-01",
+        snippet="Privacy-minimized citation metadata for review.",
+        retrieval_tool="JurisDigta laws collector",
+    )
+    print(
+        "case_citations => "
+        f"{len(demo_store.list_case_citations(case_id=demo_case.case_id))} persisted citation"
+    )
     free_route = demo_store.resolve_ai_model_route(
         user_id=demo_user.user_id,
         plan_code="free",

@@ -12,6 +12,14 @@ The internal JurisDigta assistant should use JurisDigta MCP as its source-of-tru
 6. The model must cite MCP law identifiers and relevant sections when the MCP context contains them, and must say when current-law lookup was unavailable or inconclusive. Court decisions must be cited as case-law support with court, date, ECLI or file number when available, not as binding statutory text.
 7. Document drafting remains a separate validated workflow: ask for missing facts, require explicit user confirmation before final drafting, then export generated assets through the document export endpoints.
 
+## Case Citations
+
+Chat result metadata now normalizes JurisDigta law lookup results into durable case citations. The API stores only citation metadata and bounded snippets, linked to the case, the latest user case communication, and the assistant case communication. It does not duplicate full law text, court-decision bodies, prompts, or personal data in the citation table.
+
+`POST /v1/chat/sessions/{session_id}/reply` returns assistant messages with `citations[]` when structured legal sources are available. `GET /v1/cases/{case_id}/history` returns the same answer-level `citations[]` on each assistant/system history message plus a case-level aggregate list. `GET /v1/cases/{case_id}/citations` returns the authorized aggregate list for the active case citation panel.
+
+The frontend renders per-answer citations below assistant answers and a deduplicated case citation list in the right configuration panel. Empty states stay explicit when no reliable citation exists or lookup was inconclusive.
+
 ## Quality Target
 
 Claude-like quality here means the assistant is not answering from model memory alone. It must ground Slovak legal answers in current JurisDigta MCP data, preserve case context, use uploaded documents when available, and produce downloadable documents only after the user confirms the drafting step.
