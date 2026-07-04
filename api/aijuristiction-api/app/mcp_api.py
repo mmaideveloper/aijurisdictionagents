@@ -45,6 +45,7 @@ from app.versioning import (
     get_web_app_version,
 )
 from aijurisdictionagents.api_db import ApiDatabaseStore, User, generate_one_time_code
+from aijurisdictionagents.api_db.e2e_test_users import E2E_TEST_USER_EMAILS
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 compat_router = APIRouter(prefix="/MC", tags=["mcp"])
@@ -77,6 +78,8 @@ _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
 _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = 8_000
 _COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = 3
+_OAUTH_PUBLIC_CLIENT_GRANT_TYPES = ("authorization_code", "refresh_token")
+_OAUTH_TOLERATED_DCR_GRANT_TYPES = {*_OAUTH_PUBLIC_CLIENT_GRANT_TYPES, "client_credentials"}
 logger = logging.getLogger("aijuristiction-api.mcp")
 _CURRENT_MCP_REQUEST_ID: ContextVar[str | None] = ContextVar("current_mcp_request_id", default=None)
 _CURRENT_MCP_CORRELATION_ID: ContextVar[str | None] = ContextVar("current_mcp_correlation_id", default=None)
@@ -449,10 +452,12 @@ def oauth_dynamic_client_registration(
             detail="Unsupported token_endpoint_auth_method",
         )
 
-    grant_types = _registration_string_list(metadata.get("grant_types")) or ["authorization_code"]
-    allowed_grant_types = {"authorization_code", "refresh_token"}
-    if any(grant_type not in allowed_grant_types for grant_type in grant_types):
+    requested_grant_types = _registration_string_list(metadata.get("grant_types")) or ["authorization_code"]
+    if any(grant_type not in _OAUTH_TOLERATED_DCR_GRANT_TYPES for grant_type in requested_grant_types):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported grant_types")
+    if "authorization_code" not in requested_grant_types:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="authorization_code grant is required")
+    ignored_client_credentials = "client_credentials" in requested_grant_types
 
     response_types = _registration_string_list(metadata.get("response_types")) or ["code"]
     if any(response_type != "code" for response_type in response_types):
@@ -466,17 +471,21 @@ def oauth_dynamic_client_registration(
 
     client_id = f"jurisdigta-{secrets.token_urlsafe(18)}"
     logger.info(
-        "mcp_oauth_client_registered client_id=%s redirect_count=%d request_host=%s",
+        "mcp_oauth_client_registered client_id=%s redirect_count=%d request_host=%s "
+        "requested_grants=%s returned_grants=%s ignored_client_credentials=%s",
         client_id,
         len(redirect_uris),
         request.headers.get("host", ""),
+        ",".join(requested_grant_types),
+        ",".join(_OAUTH_PUBLIC_CLIENT_GRANT_TYPES),
+        ignored_client_credentials,
     )
     return {
         "client_id": client_id,
         "client_id_issued_at": int(time.time()),
         "client_name": str(metadata.get("client_name") or "MCP client").strip()[:100],
         "redirect_uris": redirect_uris,
-        "grant_types": ["authorization_code", "refresh_token"],
+        "grant_types": list(_OAUTH_PUBLIC_CLIENT_GRANT_TYPES),
         "response_types": ["code"],
         "token_endpoint_auth_method": "none",
         "scope": f"{MCP_TOKEN_SCOPE} {MCP_REFRESH_TOKEN_SCOPE}",
@@ -599,6 +608,26 @@ def oauth_authorize_login(
     user = store.authenticate_user(email=email, password=password)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if _mcp_oauth_test_mfa_bypass_allowed(user=user):
+        logger.warning(
+            "mcp_oauth_test_mfa_bypass_used user_id=%s email_hash=%s client_id_hash=%s "
+            "redirect_host=%s redirect_path=%s expires_at=%s",
+            user.user_id,
+            _stable_hash(user.email),
+            _stable_hash(client_id),
+            _url_host(redirect_uri),
+            _url_path(redirect_uri),
+            _mcp_oauth_test_mfa_bypass_expires_at_raw(),
+        )
+        return _redirect_with_oauth_authorization_code(
+            store=store,
+            user=user,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            resource=resolved_resource,
+            state=state,
+        )
     if _has_recent_mcp_otp_verification(store=store, user=user):
         logger.info("mcp_oauth_otp_reuse user_id=%s client_id=%s", user.user_id, client_id)
         return _redirect_with_oauth_authorization_code(
@@ -2468,6 +2497,45 @@ def _payload_requires_auth(payload: Any, *, public_tools: set[str]) -> bool:
 def _oauth_authorization_response_iss_enabled() -> bool:
     raw_value = os.getenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", "true").strip().lower()
     return raw_value not in {"0", "false", "no", "off"}
+
+
+def _mcp_oauth_test_mfa_bypass_allowed(*, user: User) -> bool:
+    if os.getenv("MCP_OAUTH_TEST_MFA_BYPASS_ENABLED", "false").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return False
+    normalized_email = user.email.strip().lower()
+    allowed_emails = {
+        email.strip().lower()
+        for email in os.getenv("MCP_OAUTH_TEST_MFA_BYPASS_EMAILS", "").split(",")
+        if email.strip() and email.strip().lower() != "unknown-variable"
+    }
+    if normalized_email not in E2E_TEST_USER_EMAILS or normalized_email not in allowed_emails:
+        return False
+    expires_at = _mcp_oauth_test_mfa_bypass_expires_at()
+    if expires_at is None:
+        return False
+    return datetime.now(timezone.utc) < expires_at
+
+
+def _mcp_oauth_test_mfa_bypass_expires_at_raw() -> str:
+    return os.getenv("MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT", "").strip()
+
+
+def _mcp_oauth_test_mfa_bypass_expires_at() -> datetime | None:
+    raw_value = _mcp_oauth_test_mfa_bypass_expires_at_raw()
+    if not raw_value or raw_value == "unknown-variable":
+        return None
+    try:
+        expires_at = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at.astimezone(timezone.utc)
 
 
 def _first_payload_id(payload: Any) -> Any:

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
+from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 
 agent = AIAudioToolRecognizerAgent()
 print("speechtype default => message (review STT transcript before send)")
@@ -52,6 +53,15 @@ print(
 print(
     "mcp_oauth_diagnostic_logs => OAuth metadata, authorize, token, refresh, and endpoint entry "
     "events log path/resource/audience context without passwords, OTPs, auth codes, PKCE verifiers, or tokens."
+)
+print(
+    "mcp_oauth_claude_dcr => Claude/SmartIdentity-style dynamic client registration may include "
+    "client_credentials, but JurisDigta normalizes public clients to authorization_code plus refresh_token "
+    "and keeps the token endpoint closed to client_credentials."
+)
+print(
+    "mcp_oauth_e2e_bypass => synthetic free/paid E2E users can skip MFA only for MCP OAuth when "
+    "MCP_OAUTH_TEST_MFA_BYPASS_ENABLED, allowlisted emails, and a future expiry are configured."
 )
 print(
     "case_document_pdf_export => linked generated PDFs export the selected legal-document block only; "
@@ -136,6 +146,11 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
     print(
         "model_disclosure_label => "
         f"{expired_route.provider.display_name} - {expired_route.model_profile.model_code}"
+    )
+    e2e_users = provision_e2e_test_users(store=demo_store, password="demo-e2e-password")
+    print(
+        "e2e_test_users => "
+        + ", ".join(f"{item.email}:{item.plan_code}" for item in e2e_users)
     )
     demo_store.upsert_ai_model_profile(
         model_profile_id="local_ollama_llama32",
