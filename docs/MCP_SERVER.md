@@ -247,10 +247,11 @@ These tools do not require an MCP API key:
 
 These tools require an MCP API key:
 
-- `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title.
+- `searchLegalSources`: protected combined metadata search for questions that need both laws and court decisions, for example `Daj mi vsetky rozhodnutia a zakony ktore sa tykaju prenajmu bytu za rok 2026?`. The MCP server does not use an LLM to answer; clients such as Codex, VS Code, Claude, or ChatGPT parse the natural-language question and pass structured filters such as `query`, `published_year`, and `source_types`. The default `year_filter_mode` is `published_in`, so `published_year=2026` means laws or decisions published in 2026.
+- `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title. Results return metadata for the current consolidated version by default and support `published_year`, `year_filter_mode=published_in`, `limit`, and `offset`.
 - `getLawText`: returns bounded latest imported text for a law document id. For large codes, pass `section_number` or `section_start`/`section_end` to retrieve only the relevant sections; use `offset` and `max_chars` when pagination is needed.
-- `searchCourtDecisions`: searches the dedicated court-decision vector store and returns pseudonymized public snippets with court/date/ECLI/file-number metadata. MCP court-decision search is bounded by a server-side PostgreSQL connect timeout and statement timeout so slow database calls return a structured `status=degraded`, `retryable=true` payload with request/correlation identifiers instead of hanging until the MCP client times out. Logs record query length, limit, duration, error kind, request ID, and correlation ID, but not the raw query, credentials, tokens, snippets, or court-decision text.
-- `getCourtDecision`: returns one imported court decision. `outputMode=public` is the default and returns pseudonymized text. `outputMode=internal_raw` is blocked unless `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP=true` is enabled for a controlled internal runtime; it must not be used for normal external model prompts or UI display.
+- `searchCourtDecisions`: searches the dedicated court-decision vector store and returns court/date/ECLI/file-number metadata by default. Set `include_snippets=true` to include pseudonymized public snippets. MCP court-decision search is bounded by a server-side PostgreSQL connect timeout and statement timeout so slow database calls return a structured `status=degraded`, `retryable=true` payload with request/correlation identifiers instead of hanging until the MCP client times out. Logs record query length, limit, duration, error kind, request ID, and correlation ID, but not the raw query, credentials, tokens, snippets, or court-decision text.
+- `getCourtDecision`: returns one imported court decision. The default response is metadata-only. Set `full_version=true` to return bounded pseudonymized public text. `outputMode=internal_raw` is blocked unless `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP=true` is enabled for a controlled internal runtime; it must not be used for normal external model prompts or UI display.
 
 ## Minimal JSON-RPC Example
 
@@ -260,15 +261,20 @@ These tools require an MCP API key:
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "searchLaws",
+    "name": "searchLegalSources",
     "arguments": {
-      "query": "civil",
+      "query": "prenajom bytu",
       "country_code": "SK",
-      "limit": 10
+      "source_types": ["laws", "court_decisions"],
+      "published_year": 2026,
+      "year_filter_mode": "published_in",
+      "limit_per_source": 10
     }
   }
 }
 ```
+
+For a natural-language question such as `Daj mi vsetky rozhodnutia a zakony ktore sa tykaju prenajmu bytu za rok 2026?`, the MCP client should call `searchLegalSources` with a normalized query such as `prenajom bytu`, `published_year=2026`, and `source_types=["laws","court_decisions"]`. The MCP server returns grouped source metadata only; the client formats the answer and may call `getCourtDecision(full_version=true)` or `getLawText(...)` only if the user asks for full text or a specific citation.
 
 For Civil Code style questions, call `searchLaws` with the exact identifier first, for example `{"query": "40/1964", "law_number": 40, "law_year": 1964}`. Then call `getLawText` with the returned `document_id` and a focused range, for example `{"document_id": "...", "section_start": 685, "section_end": 716}`. Avoid asking for the full law text unless the law is small or pagination is explicitly required.
 

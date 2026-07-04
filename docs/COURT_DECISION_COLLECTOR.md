@@ -139,7 +139,8 @@ The MCP server exposes:
 
 - `getVersion()` includes court-decision collector version, status, latest imported decision/source GUID, and latest import time.
 - `getStatistics(country_code)` includes court-decision collector version, total court decisions, published decisions, total versions, latest imported decision/source GUID, latest import time, court metadata, ECLI/file number, issue date, and collector cursor status.
-- `searchCourtDecisions(query, limit)` for pseudonymized metadata/snippet search.
-- `getCourtDecision(decision_id, outputMode)` where `outputMode=public` is the default and returns pseudonymized text.
+- `searchCourtDecisions(query, limit, offset, published_year, year_filter_mode, court_type, include_snippets)` for metadata-first search. The default `year_filter_mode` is `published_in`, and snippets are omitted unless `include_snippets=true`.
+- `getCourtDecision(decision_id, full_version, outputMode)` where the default response is metadata-only. `full_version=true` returns bounded pseudonymized public text. `outputMode=internal_raw` remains restricted to controlled internal runtimes.
+- `searchLegalSources(query, source_types, published_year, year_filter_mode, limit_per_source)` for protected combined metadata search across current consolidated laws and court decisions. The MCP server is model-free; clients parse natural-language questions and pass structured filters.
 
 `outputMode=internal_raw` is reserved for controlled internal callers and is blocked unless `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP=true` is set in that controlled runtime. Keep it disabled for normal external MCP clients.
