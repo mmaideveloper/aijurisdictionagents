@@ -12,7 +12,7 @@ import os
 import re
 import secrets
 import time
-from typing import Any, Callable, Sequence, cast
+from typing import Any, AsyncIterator, Callable, Sequence, cast
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
 from urllib.parse import urlparse
@@ -21,7 +21,7 @@ from urllib.request import Request as UrlRequest
 from urllib.request import urlopen
 
 from fastapi import APIRouter, Body, Depends, Form, Header, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from app.laws_api import _laws_db_config, _read_laws_statistics
 from app.mcp_tokens import (
@@ -249,10 +249,39 @@ def require_mcp_api_key(
     return str(user.user_id)
 
 
-@router.get("", response_class=JSONResponse)
-@legacy_uppercase_router.get("", response_class=JSONResponse)
-def mcp_status() -> JSONResponse:
-    return JSONResponse(status_code=405, content={"detail": "Use POST /mcp for Streamable HTTP JSON-RPC."})
+@router.get("")
+@compat_router.get("")
+@legacy_uppercase_router.get("")
+async def mcp_status(request: Request) -> Response:
+    accept = request.headers.get("accept", "").lower()
+    if "text/event-stream" not in accept:
+        return JSONResponse(
+            status_code=405,
+            content={"detail": "Use POST /mcp for Streamable HTTP JSON-RPC."},
+            headers={"Allow": "GET, POST"},
+        )
+
+    request_id = getattr(request.state, "request_id", None)
+    correlation_id = getattr(request.state, "correlation_id", None)
+    logger.info(
+        "mcp_sse_stream_opened request_path=%s request_id=%s correlation_id=%s user_agent=%s",
+        request.url.path,
+        request_id,
+        correlation_id,
+        _oauth_user_agent_family(request),
+    )
+
+    async def events() -> AsyncIterator[str]:
+        yield ": jurisdigta-mcp-ready\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/status", response_class=JSONResponse)
