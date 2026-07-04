@@ -153,6 +153,12 @@ def test_legacy_uppercase_mcp_allows_claude_web_public_law_search(monkeypatch, t
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
 
+    legacy_protected_metadata = mcp_client.get(
+        "/.well-known/oauth-protected-resource/MCP",
+        headers={"user-agent": "python-httpx/0.28.1", "mcp-protocol-version": "2025-11-25"},
+    )
+    assert legacy_protected_metadata.status_code == 404
+
     lowercase_search = _mcp_call("searchLaws", {"query": "civil"})
     assert lowercase_search.status_code == 401
     assert "oauth-protected-resource" in lowercase_search.headers["www-authenticate"]
@@ -993,7 +999,6 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
     assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
     assert authorization_metadata.json()["protected_resources"] == [
-        "https://mcp.jurisdigta.eu/MCP",
         "https://mcp.jurisdigta.eu/mcp",
     ]
 
@@ -1513,16 +1518,13 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert protected_metadata.status_code == 200
     assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/mcp"
     assert protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
-    assert legacy_mcp_protected_metadata.status_code == 200
-    assert legacy_mcp_protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
-    assert legacy_mcp_protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
+    assert legacy_mcp_protected_metadata.status_code == 404
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
     assert authorization_metadata.json()["registration_endpoint"] == "https://mcp.jurisdigta.eu/oauth/register"
     assert authorization_metadata.json()["client_id_metadata_document_supported"] is True
     assert authorization_metadata.json()["protected_resources"] == [
-        "https://mcp.jurisdigta.eu/MCP",
         "https://mcp.jurisdigta.eu/mcp",
     ]
     assert mcp_path_authorization_metadata.status_code == 200

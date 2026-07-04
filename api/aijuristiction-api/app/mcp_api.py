@@ -366,10 +366,19 @@ def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
     }
 
 
-@oauth_router.get("/.well-known/oauth-protected-resource/MCP")
 @oauth_router.get("/.well-known/oauth-protected-resource/mcp")
 def oauth_mcp_protected_resource_metadata(request: Request) -> dict[str, Any]:
     return oauth_protected_resource_metadata(request)
+
+
+@oauth_router.get("/.well-known/oauth-protected-resource/MCP")
+def oauth_legacy_public_mcp_protected_resource_metadata() -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "detail": "Legacy Claude web MCP compatibility endpoint is public and is not an OAuth protected resource"
+        },
+    )
 
 
 @oauth_router.get("/.well-known/oauth-authorization-server")
@@ -2344,7 +2353,7 @@ def _uppercase_resource_url(request: Request) -> str:
 
 
 def _all_mcp_resource_urls(request: Request) -> list[str]:
-    return [_uppercase_resource_url(request), _resource_url(request)]
+    return [_resource_url(request)]
 
 
 def _metadata_resource_url(request: Request) -> str:
