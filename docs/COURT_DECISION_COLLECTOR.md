@@ -57,6 +57,7 @@ The dashboard uses aggregate Prometheus metrics from
 - `jurisdigta_court_decision_collector_events_total`
 - `jurisdigta_court_decision_collector_last_activity_timestamp_seconds`
 - `jurisdigta_court_decision_latest_imported_timestamp_seconds`
+- `jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds`
 - `jurisdigta_court_decision_recent_error_info`
 
 These metrics must remain operational and aggregate-only. Do not expose raw

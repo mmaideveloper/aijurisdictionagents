@@ -18,7 +18,7 @@ GET /v1/system/status?minutes=60
 - Total imported laws over time, last imported law number/year, next law to check, latest laws collector run timestamps, and latest run duration.
 - Email sent counts, email queue counts, and aggregate email send duration from the outbox.
 - Document processor queue counts, processed document counts, latest run duration, and aggregate processing duration.
-- Court-decision collector status, imported decision/version counts, embedding-vector coverage, worker activity counts, activity timestamps, and sanitized recent errors.
+- Court-decision collector status, imported decision/version counts, newest stored decision issue date, embedding-vector coverage, worker activity counts, activity timestamps, and sanitized recent errors.
 - AI model token and cost telemetry: input tokens, cached input tokens, output tokens, total tokens, estimated EUR cost, request count, and fallback count by provider, model, task type, plan, route type, route class, and 1h/24h/7d/30d window.
 - Host CPU, memory, disk, filesystem, and kernel metrics through Node Exporter.
 - Docker container CPU, memory, filesystem, and restart behavior through cAdvisor.
@@ -518,7 +518,7 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 - `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
 - `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, local/Ollama tokens, paid-model tokens, requests, estimated cost, and masked top cases by token volume.
 - `JurisDigta Laws Collector`: total imported laws over time, latest imported law identifier, execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
-- `JurisDigta Court Decision Service`: current collector status, imported decisions, latest imported decision timestamp, stored versions, versions with embeddings, processing/processed/idle activity, storage totals, and recent sanitized collector errors.
+- `JurisDigta Court Decision Service`: current collector status, imported decisions, newest stored decision issue date, latest imported decision timestamp, stored versions, versions with embeddings, processing/processed/idle activity, storage totals, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
 - `JurisDigta System Logs`: Loki log stream with source, severity, stream, and regex search filters for Docker container logs and server job log files.
 
@@ -571,6 +571,7 @@ Useful starter queries:
 - `jurisdigta_court_decision_collector_events_total{event="processed"}`
 - `jurisdigta_court_decision_collector_last_activity_timestamp_seconds`
 - `jurisdigta_court_decision_latest_imported_timestamp_seconds`
+- `jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds`
 - `jurisdigta_court_decision_recent_error_info`
 - `jurisdigta_system_disk_used_percent`
 - `jurisdigta_system_memory_used_percent`

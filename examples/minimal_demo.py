@@ -212,3 +212,8 @@ print(
     "pseudonymized MCP search output; run "
     "`python examples/court_decision_collector_minimal_demo.py` for the focused fixture demo."
 )
+print(
+    "court_decision_grafana => JurisDigta Court Decision Service shows the aggregate "
+    "Najnovší uložený dátum rozhodnutia date without exposing court decision text, "
+    "parties, file numbers, ECLI values, or source identifiers."
+)
