@@ -58,10 +58,11 @@ def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law() 
 
     assert tools_response.status_code == 200
     tools = {tool["name"]: tool for tool in tools_response.json()["result"]["tools"]}
+    assert "metadata search for Slovak legal sources" in tools["searchLegalSources"]["description"]
     assert "Use this first for Slovak legal questions" in tools["searchLaws"]["description"]
     assert "Use after searchLaws to cite exact Slovak legal text" in tools["getLawText"]["description"]
-    assert "pseudonymized public snippets" in tools["searchCourtDecisions"]["description"]
-    assert "outputMode=public" in tools["getCourtDecision"]["description"]
+    assert "metadata only by default" in tools["searchCourtDecisions"]["description"]
+    assert "full_version=true" in tools["getCourtDecision"]["description"]
 
 
 def test_mcp_accepts_mc_path_compatibility_alias_for_claude_connector_typo() -> None:
@@ -317,11 +318,92 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
 
 
 def test_mcp_court_decision_tools_require_auth() -> None:
+    unauthenticated_legal_sources = _mcp_call(
+        "searchLegalSources",
+        {"query": "prenajom bytu", "published_year": 2026},
+        path="/MCP",
+    )
+    assert unauthenticated_legal_sources.status_code == 401
+
     unauthenticated_search = _mcp_call("searchCourtDecisions", {"query": "najomna zmluva"})
     assert unauthenticated_search.status_code == 401
 
     unauthenticated_detail = _mcp_call("getCourtDecision", {"decision_id": "decision-1"})
     assert unauthenticated_detail.status_code == 401
+
+
+def test_mcp_search_legal_sources_returns_grouped_metadata_only(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-10-2026",
+        version_id="ver-10-2026",
+        metadata_id="meta-10-2026",
+        artifact_id="artifact-10-2026",
+        law_year=2026,
+        law_number=10,
+        official_name="Zakon o prenajme bytu",
+        lawyer_title="Prenajom bytu",
+        law_identifier_text="10/2026 Z. z.",
+        title="Zakon o prenajme bytu",
+        content_text="Konsolidovane znenie o prenajme bytu.",
+    )
+
+    class FakeCourtDecisionStore:
+        def search(
+            self,
+            *,
+            query: str,
+            limit: int,
+            offset: int,
+            published_year: int | None,
+            year_filter_mode: str,
+            court_type: str,
+        ) -> list[CourtDecisionSearchResult]:
+            assert query == "prenajom bytu"
+            assert limit == 2
+            assert offset == 0
+            assert published_year == 2026
+            assert year_filter_mode == "published_in"
+            assert court_type == ""
+            return [
+                CourtDecisionSearchResult(
+                    decision_id="decision-lease-2026",
+                    version_id="version-lease-2026",
+                    source_guid="infosud-lease-2026",
+                    court_name="Okresny sud Bratislava I",
+                    court_type="Okresny sud",
+                    file_number="12C/10/2026",
+                    case_number="12C/10/2026",
+                    ecli="ECLI:SK:OSBA1:2026:10.1",
+                    issue_date="2026-02-03",
+                    source_url="https://example.test/decision/lease-2026",
+                    snippet="Pseudonymizovany text o prenajme bytu.",
+                    score=0.88,
+                )
+            ]
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: FakeCourtDecisionStore())
+
+    response = _mcp_call(
+        "searchLegalSources",
+        {"query": "prenajom bytu", "published_year": 2026, "limit_per_source": 2},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["status"] == "ok"
+    assert payload["year_filter_mode"] == "published_in"
+    assert payload["published_year"] == 2026
+    assert payload["laws"][0]["document_id"] == "doc-10-2026"
+    assert payload["laws"][0]["law_year"] == 2026
+    assert payload["court_decisions"][0]["decision_id"] == "decision-lease-2026"
+    assert "snippet" not in payload["court_decisions"][0]
+    assert "content_text" not in payload["laws"][0]
 
 
 def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_logs(
@@ -333,9 +415,22 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     mcp_key = _create_mcp_key(tmp_path)
 
     class FakeCourtDecisionStore:
-        def search(self, *, query: str, limit: int) -> list[CourtDecisionSearchResult]:
+        def search(
+            self,
+            *,
+            query: str,
+            limit: int,
+            offset: int,
+            published_year: int | None,
+            year_filter_mode: str,
+            court_type: str,
+        ) -> list[CourtDecisionSearchResult]:
             assert query == "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu"
             assert limit == 1
+            assert offset == 0
+            assert published_year == 2026
+            assert year_filter_mode == "published_in"
+            assert court_type == "Okresny sud"
             return [
                 CourtDecisionSearchResult(
                     decision_id="decision-1",
@@ -365,7 +460,12 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
 
     response = _mcp_call(
         "searchCourtDecisions",
-        {"query": secret_query, "limit": 1},
+        {
+            "query": secret_query,
+            "limit": 1,
+            "published_year": 2026,
+            "court_type": "Okresny sud",
+        },
         headers={"authorization": f"Bearer {mcp_key}", "x-request-id": "court-search-request"},
     )
 
@@ -373,9 +473,25 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     payload = _tool_payload(response)
     assert payload["status"] == "ok"
     assert payload["output_mode"] == "public"
+    assert payload["metadata_only"] is True
     assert payload["timeout_ms"] == 8000
     assert payload["results"][0]["decision_id"] == "decision-1"
     assert payload["results"][0]["issue_date"] == "2026-06-29"
+    assert "snippet" not in payload["results"][0]
+    snippet_response = _mcp_call(
+        "searchCourtDecisions",
+        {
+            "query": secret_query,
+            "limit": 1,
+            "published_year": 2026,
+            "court_type": "Okresny sud",
+            "include_snippets": True,
+        },
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    snippet_payload = _tool_payload(snippet_response)
+    assert snippet_payload["metadata_only"] is False
+    assert "Pseudonymizovane rozhodnutie" in snippet_payload["results"][0]["snippet"]
     mcp_log_messages = [
         record.getMessage() for record in caplog.records if record.name == "aijuristiction-api.mcp"
     ]
@@ -384,6 +500,56 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     assert secret_query not in joined_logs
     assert "Pseudonymizovane rozhodnutie" not in joined_logs
     assert mcp_key not in joined_logs
+
+
+def test_mcp_get_court_decision_defaults_to_metadata_only(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class FakeCourtDecisionStore:
+        def get_decision(self, *, decision_id: str, raw: bool = False) -> dict[str, object] | None:
+            assert decision_id == "decision-1"
+            assert raw is False
+            return {
+                "decision_id": "decision-1",
+                "version_id": "version-1",
+                "source_guid": "infosud-1",
+                "court_name": "Okresny sud Bratislava I",
+                "court_type": "Okresny sud",
+                "file_number": "12C/34/2026",
+                "case_number": "12C/34/2026",
+                "ecli": "ECLI:SK:OSBA1:2026:1234567890.1",
+                "issue_date": "2026-06-29",
+                "source_url": "https://example.test/decision/1",
+                "output_mode": "public",
+                "text": "Pseudonymizovane plne znenie rozhodnutia o prenajme bytu.",
+            }
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: FakeCourtDecisionStore())
+
+    metadata_response = _mcp_call(
+        "getCourtDecision",
+        {"decision_id": "decision-1"},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    full_response = _mcp_call(
+        "getCourtDecision",
+        {"decision_id": "decision-1", "fullversion": True, "max_chars": 20},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert metadata_response.status_code == 200
+    metadata_payload = _tool_payload(metadata_response)
+    assert metadata_payload["metadata_only"] is True
+    assert metadata_payload["full_version"] is False
+    assert "text" not in metadata_payload
+
+    assert full_response.status_code == 200
+    full_payload = _tool_payload(full_response)
+    assert full_payload["metadata_only"] is False
+    assert full_payload["full_version"] is True
+    assert full_payload["text"] == "Pseudonymizovane pln"
+    assert full_payload["content_truncated"] is True
 
 
 def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
@@ -395,7 +561,16 @@ def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
     mcp_key = _create_mcp_key(tmp_path)
 
     class TimeoutCourtDecisionStore:
-        def search(self, *, query: str, limit: int) -> list[CourtDecisionSearchResult]:
+        def search(
+            self,
+            *,
+            query: str,
+            limit: int,
+            offset: int,
+            published_year: int | None,
+            year_filter_mode: str,
+            court_type: str,
+        ) -> list[CourtDecisionSearchResult]:
             raise TimeoutError("statement timeout")
 
     monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: TimeoutCourtDecisionStore())
@@ -490,6 +665,54 @@ def test_mcp_search_prefers_base_law_over_newer_amendment(monkeypatch, tmp_path:
     assert _tool_payload(identifier_search)["results"][0]["document_id"] == "doc-40-1964"
     explicit_results = _tool_payload(explicit_identifier_search)["results"]
     assert [result["document_id"] for result in explicit_results] == ["doc-40-1964"]
+
+
+def test_mcp_search_laws_supports_published_year_metadata_filter(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-lease-2025",
+        version_id="ver-lease-2025",
+        metadata_id="meta-lease-2025",
+        artifact_id="artifact-lease-2025",
+        law_year=2025,
+        law_number=30,
+        official_name="Zakon o prenajme bytu 2025",
+        lawyer_title="Prenajom bytu",
+        law_identifier_text="30/2025 Z. z.",
+        title="Prenajom bytu",
+        content_text="Starsi zakon o prenajme bytu.",
+    )
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-lease-2026",
+        version_id="ver-lease-2026",
+        metadata_id="meta-lease-2026",
+        artifact_id="artifact-lease-2026",
+        law_year=2026,
+        law_number=11,
+        official_name="Zakon o prenajme bytu 2026",
+        lawyer_title="Prenajom bytu",
+        law_identifier_text="11/2026 Z. z.",
+        title="Prenajom bytu",
+        content_text="Aktualne konsolidovane znenie o prenajme bytu.",
+    )
+
+    response = _mcp_call(
+        "searchLaws",
+        {"query": "prenajom bytu", "published_year": 2026},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["metadata_only"] is True
+    assert payload["published_year"] == 2026
+    assert [result["document_id"] for result in payload["results"]] == ["doc-lease-2026"]
+    assert "content_text" not in payload["results"][0]
 
 
 def test_mcp_get_law_text_caps_large_default_payload(monkeypatch, tmp_path: Path) -> None:

@@ -34,6 +34,13 @@ print(
     "https://mcp.jurisdigta.eu/mcp."
 )
 print(
+    "mcp_legal_source_search => MCP remains model-free; clients parse natural-language legal "
+    "questions and call protected searchLegalSources with structured filters such as "
+    "query='prenajom bytu', source_types=['laws','court_decisions'], published_year=2026, "
+    "year_filter_mode='published_in'. Search defaults to metadata only; court-decision text "
+    "requires getCourtDecision(full_version=True)."
+)
+print(
     "mcp_endpoint_claude_compat => /MCP remains accepted for Claude web and existing clients; "
     "it allows public-law tools without OAuth and does not advertise protected-resource metadata "
     "or Claude-web root OAuth discovery because Claude web can reject issued OAuth credentials."
