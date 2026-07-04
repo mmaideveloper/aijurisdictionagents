@@ -92,7 +92,20 @@ const dashboard = {
       updated_at: "2026-06-27T10:00:00Z"
     }
   ],
-  credentials: [],
+  credentials: [
+    {
+      credential_id: "azure_foundry:api_key:default",
+      provider_id: "azure_foundry",
+      credential_name: "default",
+      secret_type: "api_key",
+      secret_preview: "****cret",
+      secret_value: null,
+      enabled: true,
+      created_at: "2026-06-27T10:00:00Z",
+      updated_at: "2026-06-27T10:00:00Z",
+      last_revealed_at: null
+    }
+  ],
   policies: [
     {
       policy_id: "default:free:default",
@@ -217,6 +230,11 @@ test("admin management shows users, providers, models, policies, Ollama inventor
   await page.getByRole("button", { name: "Providers" }).click();
   await expect(page.getByRole("cell", { name: "Local Ollama" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "Azure AI Foundry" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Provider credentials" }).click();
+  await expect(page.getByRole("cell", { name: "****cret" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "api_key" })).toBeVisible();
+  await expect(page.getByLabel("Secret value")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Models and prices" }).click();
   await expect(page.getByText("local_ollama_default")).toBeVisible();
@@ -547,10 +565,10 @@ test.describe("provider credentials lifecycle", () => {
 
     await expect(page).toHaveURL(/\/app\/admin/);
     await page.screenshot({ path: "test-results/codex-455-screenshots/01-admin-page.png", fullPage: true });
-    await expect(page.getByRole("button", { name: "Provider credentials" })).toBeVisible();
-    await page.getByRole("button", { name: "Provider credentials" }).click();
-    await expect(page.getByRole("button", { name: "Provider credentials" })).toHaveClass(/is-active/);
-    await expect(page.getByRole("heading", { name: "Provider credentials" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Providers" })).toBeVisible();
+    await page.getByRole("button", { name: "Providers" }).click();
+    await expect(page.getByRole("button", { name: "Providers" })).toHaveClass(/is-active/);
+    await expect(page.getByRole("heading", { name: "Providers" })).toBeVisible();
     await expect(page.getByRole("cell", { name: "Local Ollama" })).toBeVisible();
     await page.screenshot({ path: "test-results/codex-455-screenshots/02-provider-credentials-table.png", fullPage: true });
 
