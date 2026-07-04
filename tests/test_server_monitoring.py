@@ -12,6 +12,7 @@ from scripts.server.write_system_status import (
     _latest_document_processor_run_summary,
     _latest_laws_run_summary,
     _recent_error_lines,
+    _read_recent_log_text,
 )
 
 
@@ -454,6 +455,21 @@ def test_court_decision_log_status_is_aggregate_and_sanitized(tmp_path: Path) ->
             ),
         }
     ]
+
+
+def test_recent_log_reader_bounds_large_runtime_logs(tmp_path: Path) -> None:
+    log_file = tmp_path / "court-decision-collector.log"
+    log_file.write_text(
+        "old line\n"
+        + ("x" * 64)
+        + "\n[2026-06-20T01:06:00Z] court_decision_collector failed token=abc123\n",
+        encoding="utf-8",
+    )
+
+    text = _read_recent_log_text(log_file, max_bytes=80)
+
+    assert "old line" not in text
+    assert "court_decision_collector failed token=abc123" in text
 
 
 def test_exporter_renders_court_decision_metrics() -> None:

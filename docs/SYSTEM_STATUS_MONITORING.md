@@ -69,6 +69,8 @@ python3 scripts/server/write_system_status.py \
   --laws-log /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log
 ```
 
+The status writer reads only a bounded recent tail of runtime log files so long-lived collectors cannot exhaust memory, and the emitted payload remains aggregate and redacted.
+
 Install the minute cron:
 
 ```bash

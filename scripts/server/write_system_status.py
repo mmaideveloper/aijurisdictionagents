@@ -17,6 +17,7 @@ DEFAULT_DOCUMENT_PROCESSOR_LOG = "/srv/jurisdigta/runs/logs/document-processor-l
 DEFAULT_COURT_DECISION_COLLECTOR_LOG = (
     "/srv/jurisdigta/runs/logs/court-decision-collector.log"
 )
+LOG_TAIL_BYTES = 5 * 1024 * 1024
 DEFAULT_APP_ROOT = "/srv/jurisdigta/app"
 ERROR_PATTERN = re.compile(r"\b(error|exception|traceback|critical|failed)\b", re.IGNORECASE)
 HTTP_REQUEST_PATTERN = re.compile(
@@ -425,7 +426,7 @@ def _laws_log_status(path: Path) -> dict[str, Any]:
             "last_run_duration_seconds": None,
             "error_count": 0,
         }
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = _read_recent_log_text(path)
     started = _last_timestamp(text, START_PATTERN)
     finished = _last_timestamp(text, FINISH_PATTERN)
     duration = None
@@ -458,7 +459,7 @@ def _document_processor_log_status(path: Path) -> dict[str, Any]:
             "last_run_failed": 0,
             "error_count": 0,
         }
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = _read_recent_log_text(path)
     started = _last_timestamp(text, DOCUMENT_PROCESSOR_START_PATTERN)
     finished = _last_timestamp(text, DOCUMENT_PROCESSOR_FINISH_PATTERN)
     duration = None
@@ -488,7 +489,7 @@ def _court_decision_log_status(path: Path) -> dict[str, Any]:
             "recent_errors": [],
             "error_count": 0,
         }
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = _read_recent_log_text(path)
     last_activity = _last_line_timestamp(text)
     return {
         "latest_log": str(path),
@@ -499,6 +500,17 @@ def _court_decision_log_status(path: Path) -> dict[str, Any]:
         "recent_errors": _recent_error_lines(text),
         "error_count": _count_error_lines(text),
     }
+
+
+def _read_recent_log_text(path: Path, *, max_bytes: int = LOG_TAIL_BYTES) -> str:
+    size = path.stat().st_size
+    if size <= max_bytes:
+        return path.read_text(encoding="utf-8", errors="replace")
+
+    with path.open("rb") as handle:
+        handle.seek(-max_bytes, os.SEEK_END)
+        data = handle.read(max_bytes)
+    return data.decode("utf-8", errors="replace")
 
 
 def _resource_status() -> dict[str, Any]:
