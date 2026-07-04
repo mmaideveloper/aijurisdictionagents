@@ -19,6 +19,11 @@ from app.mcp_main import _redact_payload
 from app.mcp_tokens import create_mcp_api_token
 from app.users.totp import current_totp_code
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.api_db.e2e_test_users import (
+    E2E_TEST_FREE_EMAIL,
+    E2E_TEST_PAID_EMAIL,
+    provision_e2e_test_users,
+)
 from services.court_decision_collector.domain import CourtDecisionSearchResult
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
@@ -1047,6 +1052,56 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert claude_variant_payload["token_endpoint_auth_method"] == "none"
     assert claude_variant_payload["scope"] == "mcp:laws offline_access"
 
+    smartidentity_style_registration = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Claude SmartIdentity-style Connector",
+            "redirect_uris": [
+                "https://claude.ai/api/mcp/auth_callback",
+                "https://vscode.dev/redirect",
+                "https://www.perplexity.ai/rest/connections/oauth_callback",
+                "http://localhost:5100/oauth/callback",
+            ],
+            "grant_types": ["authorization_code", "client_credentials"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+    assert smartidentity_style_registration.status_code == 201
+    smartidentity_style_payload = smartidentity_style_registration.json()
+    assert smartidentity_style_payload["client_id"].startswith("jurisdigta-")
+    assert smartidentity_style_payload["grant_types"] == ["authorization_code", "refresh_token"]
+    assert smartidentity_style_payload["redirect_uris"] == [
+        "https://claude.ai/api/mcp/auth_callback",
+        "https://vscode.dev/redirect",
+        "https://www.perplexity.ai/rest/connections/oauth_callback",
+        "http://localhost:5100/oauth/callback",
+    ]
+
+    client_credentials_only_registration = mcp_client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Machine-only client",
+            "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+            "grant_types": ["client_credentials"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        },
+    )
+    assert client_credentials_only_registration.status_code == 400
+    assert client_credentials_only_registration.json()["detail"] == "authorization_code grant is required"
+
+    client_credentials_token = mcp_client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": smartidentity_style_payload["client_id"],
+        },
+    )
+    assert client_credentials_token.status_code == 400
+    assert client_credentials_token.json()["detail"] == "Unsupported grant_type"
+
     additional_hosted_registration = mcp_client.post(
         "/oauth/register",
         json={
@@ -1257,6 +1312,75 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_code not in mcp_log_text
     assert token_payload["access_token"] not in mcp_log_text
     assert token_payload["refresh_token"] not in mcp_log_text
+
+
+def test_oauth_mfa_bypass_is_limited_to_synthetic_e2e_users(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    caplog.set_level(logging.INFO, logger="aijuristiction-api.mcp")
+    monkeypatch.setenv("MCP_OAUTH_TEST_MFA_BYPASS_ENABLED", "true")
+    monkeypatch.setenv(
+        "MCP_OAUTH_TEST_MFA_BYPASS_EMAILS",
+        f"{E2E_TEST_FREE_EMAIL},{E2E_TEST_PAID_EMAIL},real-user@example.com",
+    )
+    monkeypatch.setenv("MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT", "2030-01-01T00:00:00Z")
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    provisioned = provision_e2e_test_users(store=store, password="test-secret-pass")
+    assert [user.plan_code for user in provisioned] == ["free", "case"]
+    real_user = store.create_user(
+        email="real-user@example.com",
+        password="test-secret-pass",
+        full_name="Real User",
+    )
+
+    code_verifier = "test-code-verifier-bypass-1234567890"
+    code_challenge = _pkce_challenge(code_verifier)
+    bypass_response = mcp_client.post(
+        "/oauth/authorize/login",
+        data={
+            "response_type": "code",
+            "client_id": "claude",
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "state": "bypass-ok",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+            "email": E2E_TEST_FREE_EMAIL,
+            "password": "test-secret-pass",
+        },
+        follow_redirects=False,
+    )
+    assert bypass_response.status_code == 303
+    assert bypass_response.headers["location"].startswith("https://claude.ai/api/mcp/auth_callback?")
+    assert "state=bypass-ok" in bypass_response.headers["location"]
+
+    real_user_response = mcp_client.post(
+        "/oauth/authorize/login",
+        data={
+            "response_type": "code",
+            "client_id": "claude",
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "state": "bypass-deny",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+            "email": real_user.email,
+            "password": "test-secret-pass",
+        },
+    )
+    assert real_user_response.status_code == 200
+    assert "Verify MCP OAuth login" in real_user_response.text
+
+    mcp_log_text = "\n".join(
+        record.getMessage() for record in caplog.records if record.name == "aijuristiction-api.mcp"
+    )
+    assert "mcp_oauth_test_mfa_bypass_used" in mcp_log_text
+    assert E2E_TEST_FREE_EMAIL not in mcp_log_text
+    assert "test-secret-pass" not in mcp_log_text
 
 
 def test_claude_oauth_without_resource_uses_uppercase_mcp_audience(monkeypatch, tmp_path: Path) -> None:
@@ -1657,6 +1781,10 @@ def _configure_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("EMAIL_DB_OPTION", "local")
     monkeypatch.setenv("EMAIL_DB_LOCAL", str(tmp_path / "email.sqlite3"))
     monkeypatch.setenv("EMAIL_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("EMAIL_TRANSPORT", "log")
+    monkeypatch.setenv("EMAIL_SENDER", "noreply@example.test")
+    monkeypatch.setenv("EMAIL_SMTP_PORT", "587")
+    monkeypatch.setenv("EMAIL_SMTP_USE_TLS", "true")
     monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
     monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "laws.sqlite3"))
     monkeypatch.setenv("MCP_API_JWT_SECRET", "test-mcp-secret")

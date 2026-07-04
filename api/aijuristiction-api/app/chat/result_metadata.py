@@ -441,7 +441,7 @@ def _read_or_create_model_knowledge_cutoff_snapshot(
     model_name: str | None = None,
 ) -> tuple[str | None, str]:
     model_name = (model_name or "").strip() or _resolve_llm_model_name()
-    manual_cutoff = str(os.getenv("MODEL_KNOWLEDGE_CUTOFF_DATE") or "").strip()
+    manual_cutoff = _optional_env_value("MODEL_KNOWLEDGE_CUTOFF_DATE")
     cache_path = _resolve_model_knowledge_cutoff_cache_path()
 
     try:
@@ -584,10 +584,17 @@ def _resolve_llm_model_name() -> str:
 
 
 def _resolve_model_knowledge_cutoff_cache_path() -> Path | None:
-    configured = str(os.getenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE") or "").strip()
+    configured = _optional_env_value("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE")
     if not configured:
         return None
     return _resolve_repo_path(configured)
+
+
+def _optional_env_value(name: str) -> str:
+    value = str(os.getenv(name) or "").strip()
+    if value.lower() == "unknown-variable":
+        return ""
+    return value
 
 
 def _read_model_knowledge_cutoff_from_permanent_memory(
