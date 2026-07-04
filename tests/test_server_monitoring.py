@@ -122,6 +122,14 @@ def test_monitoring_dashboards_include_laws_collector_corpus_panels() -> None:
     assert 'jurisdigta_laws_total{name="laws_imported"}' in target_queries
     assert "jurisdigta_laws_last_processed_info" in target_queries
 
+    last_imported_law_panel = next(
+        panel for panel in dashboard["panels"] if panel.get("title") == "Last Imported Law"
+    )
+    assert last_imported_law_panel["fieldConfig"]["defaults"]["displayName"] == "${__field.labels.law}"
+    assert last_imported_law_panel["options"]["textMode"] == "name"
+    assert last_imported_law_panel["targets"][0]["instant"] is True
+    assert last_imported_law_panel["targets"][0]["range"] is False
+
 
 def test_monitoring_stack_loads_ai_model_alert_rules() -> None:
     compose = (MONITORING_DIR / "docker-compose.yml").read_text(encoding="utf-8")

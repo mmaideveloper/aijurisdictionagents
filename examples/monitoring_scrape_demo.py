@@ -51,6 +51,7 @@ def main() -> int:
             "jurisdigta_ai_model_total_tokens_window",
             "jurisdigta_ai_model_top_case_total_tokens_window",
             'jurisdigta_laws_total{name="laws_imported"}',
+            "jurisdigta_laws_last_processed_info",
             "jurisdigta_laws_last_processed_number",
             "jurisdigta_laws_last_processed_year",
             "jurisdigta_component_status{component=\"court_decision_collector\"}",
