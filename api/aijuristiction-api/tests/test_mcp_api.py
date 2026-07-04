@@ -964,19 +964,30 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         headers={"user-agent": "python-httpx/0.28.1", "mcp-protocol-version": "2025-11-25"},
     )
     assert claude_web_protected_metadata.status_code == 200
-    claude_web_authorization_metadata = mcp_client.get(
+    claude_web_root_protected_metadata = mcp_client.get(
+        "/.well-known/oauth-protected-resource",
+        headers={"user-agent": "python-httpx/0.28.1", "mcp-protocol-version": "2025-11-25"},
+    )
+    assert claude_web_root_protected_metadata.status_code == 404
+    claude_web_root_authorization_metadata = mcp_client.get(
+        "/.well-known/oauth-authorization-server",
+        headers={"user-agent": "python-httpx/0.28.1", "mcp-protocol-version": "2025-11-25"},
+    )
+    assert claude_web_root_authorization_metadata.status_code == 404
+    claude_web_authorization_metadata_without_protocol_header = mcp_client.get(
         "/.well-known/oauth-authorization-server",
         headers={"user-agent": "python-httpx/0.28.1"},
     )
-    assert claude_web_authorization_metadata.status_code == 200
-    assert claude_web_authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
-    assert claude_web_authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
-    monkeypatch.setenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY", "true")
-    claude_web_authorization_metadata_with_legacy_flag = mcp_client.get(
-        "/.well-known/oauth-authorization-server",
-        headers={"user-agent": "python-httpx/0.28.1"},
+    assert claude_web_authorization_metadata_without_protocol_header.status_code == 200
+    assert claude_web_authorization_metadata_without_protocol_header.json()["registration_endpoint"].endswith(
+        "/oauth/register"
     )
-    assert claude_web_authorization_metadata_with_legacy_flag.status_code == 200
+    assert (
+        claude_web_authorization_metadata_without_protocol_header.json()[
+            "authorization_response_iss_parameter_supported"
+        ]
+        is True
+    )
     claude_web_registration_with_legacy_flag = mcp_client.post(
         "/oauth/register",
         headers={"user-agent": "python-httpx/0.28.1"},
@@ -990,7 +1001,6 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         },
     )
     assert claude_web_registration_with_legacy_flag.status_code == 201
-    monkeypatch.delenv("MCP_CLAUDE_WEB_PUBLIC_DISCOVERY")
     authorization_metadata = mcp_client.get("/.well-known/oauth-authorization-server")
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["code_challenge_methods_supported"] == ["S256"]
