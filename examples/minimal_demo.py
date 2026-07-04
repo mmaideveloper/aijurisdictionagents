@@ -202,6 +202,10 @@ print(
     "emails, phone numbers, or legal-case facts in labels."
 )
 print(
+    "laws_collector_grafana_monitoring => JurisDigta Laws Collector displays the "
+    "latest imported law from the aggregate law label, for example 179/2026."
+)
+print(
     "service_healthchecks => HTTP services expose privacy-minimized /health; "
     "worker services report supervisor state, freshness, latest run result, "
     "and sanitized errors through protected operational status."

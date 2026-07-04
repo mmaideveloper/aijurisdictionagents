@@ -517,7 +517,7 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 - `JurisDigta Server Performance`: CPU, RAM, disk, load, network, disk I/O, and container memory.
 - `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
 - `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, local/Ollama tokens, paid-model tokens, requests, estimated cost, and masked top cases by token volume.
-- `JurisDigta Laws Collector`: total imported laws over time, latest imported law identifier, execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
+- `JurisDigta Laws Collector`: total imported laws over time, latest imported law identifier such as `179/2026`, execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
 - `JurisDigta Court Decision Service`: current collector status, imported decisions, newest stored decision issue date, latest imported decision timestamp, stored versions, versions with embeddings, processing/processed/idle activity, storage totals, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
 - `JurisDigta System Logs`: Loki log stream with source, severity, stream, and regex search filters for Docker container logs and server job log files.
@@ -604,6 +604,10 @@ Useful starter queries:
 - `jurisdigta_ai_model_top_case_estimated_cost_eur_window{case_ref="case-....",route_class="...",window_minutes="..."}`
 - `up{job="node-exporter"}`
 - `up{job="cadvisor"}`
+
+The laws collector `Last Imported Law` stat panel uses the `law` label from
+`jurisdigta_laws_last_processed_info` as its display name, so Grafana shows the
+full identifier (`number/year`) instead of the Prometheus sample value `1`.
 
 Suggested alert rules:
 

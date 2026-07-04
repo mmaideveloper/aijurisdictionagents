@@ -275,6 +275,11 @@ Useful Grafana panels:
 - `jurisdigta_ai_model_top_case_total_tokens_window`
 - `jurisdigta_ai_model_top_case_estimated_cost_eur_window`
 
+The laws collector dashboard renders `jurisdigta_laws_last_processed_info` with
+the `law` label as the stat display name, so the latest imported law appears as
+`number/year` such as `179/2026`. Use the numeric number/year metrics for
+charts and alert thresholds.
+
 The provisioned `JurisDigta Application Performance` dashboard includes
 aggregate AI model panels for usage status, EUR cost, requests by route, and
 tokens by provider/model/route for 1h, 24h, 7d, and 30d windows. The provisioned
