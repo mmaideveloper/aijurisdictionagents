@@ -483,6 +483,23 @@ def _append_court_decision_collector_metrics(lines: list[str], system: dict[str,
         f"{_number(collector.get('versions_with_embeddings'), 0)}"
     )
 
+    latest_imported_decision = collector.get("latest_imported_decision")
+    if isinstance(latest_imported_decision, dict):
+        short_name = str(latest_imported_decision.get("short_name") or "Court decision")
+        published_date = str(latest_imported_decision.get("published_date") or "")
+        stored_at = str(latest_imported_decision.get("stored_at") or "")
+        _append_help(
+            lines,
+            "jurisdigta_court_decision_latest_imported_info",
+            "Privacy-safe display metadata for the latest imported court decision.",
+            "gauge",
+        )
+        lines.append(
+            "jurisdigta_court_decision_latest_imported_info"
+            f'{{short_name="{_label(short_name)}",published_date="{_label(published_date)}",'
+            f'stored_at="{_label(stored_at)}"}} 1'
+        )
+
     _append_help(
         lines,
         "jurisdigta_court_decision_collector_events_total",

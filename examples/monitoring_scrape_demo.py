@@ -56,6 +56,7 @@ def main() -> int:
             "jurisdigta_laws_last_processed_year",
             "jurisdigta_component_status{component=\"court_decision_collector\"}",
             "jurisdigta_court_decisions_total",
+            "jurisdigta_court_decision_latest_imported_info",
             "jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds",
         )
         if not _query(expression)

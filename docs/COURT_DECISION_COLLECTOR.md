@@ -57,13 +57,16 @@ The dashboard uses aggregate Prometheus metrics from
 - `jurisdigta_court_decision_collector_events_total`
 - `jurisdigta_court_decision_collector_last_activity_timestamp_seconds`
 - `jurisdigta_court_decision_latest_imported_timestamp_seconds`
+- `jurisdigta_court_decision_latest_imported_info`
 - `jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds`
 - `jurisdigta_court_decision_recent_error_info`
 
 These metrics must remain operational and aggregate-only. Do not expose raw
 decision text, source URLs, source GUIDs, ECLI values, file numbers, party
 names, retrieved snippets, embeddings, prompts, or other personal/legal-risk
-content in Grafana labels or tables.
+content in Grafana labels or tables. The latest imported decision panel may
+show only a safe short name from decision form plus court type and the published
+date.
 
 ## Service loop and restart test
 

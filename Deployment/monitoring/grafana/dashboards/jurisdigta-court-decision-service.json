@@ -174,123 +174,82 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
-                "value": null
-              },
-              {
                 "color": "green",
-                "value": 1
+                "value": null
               }
             ]
-          },
-          "unit": "dateTimeAsIso"
+          }
         },
         "overrides": []
       },
       "gridPos": {
         "h": 7,
-        "w": 4,
+        "w": 8,
         "x": 8,
-        "y": 0
-      },
-      "id": 9,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "13.0.2",
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds * 1000",
-          "legendFormat": "Decision issue date",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Najnovší uložený dátum rozhodnutia",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "jurisdigta-prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "dateTimeAsIso"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 12,
         "y": 0
       },
       "id": 8,
       "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
           "fields": "",
-          "values": false
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "textMode": "auto",
-        "wideLayout": true
+        "showHeader": true
       },
       "pluginVersion": "13.0.2",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "jurisdigta_court_decision_latest_imported_timestamp_seconds * 1000",
-          "legendFormat": "Latest import",
-          "range": true,
+          "exemplar": false,
+          "expr": "jurisdigta_court_decision_latest_imported_info",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{short_name}}",
+          "range": false,
           "refId": "A"
         }
       ],
       "title": "Latest Imported Decision",
-      "type": "stat"
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "published_date": "Published date",
+              "short_name": "Decision",
+              "stored_at": "Stored at"
+            }
+          }
+        }
+      ],
+      "type": "table"
     },
     {
       "datasource": {
@@ -714,5 +673,5 @@
   "timezone": "browser",
   "title": "JurisDigta Court Decision Service",
   "uid": "jurisdigta-court-decision-service",
-  "version": 2
+  "version": 3
 }
