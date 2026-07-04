@@ -511,6 +511,11 @@ def _append_court_decision_collector_metrics(lines: list[str], system: dict[str,
             "Unix timestamp for latest imported court decision.",
         ),
         (
+            "latest_stored_issue_date",
+            "jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds",
+            "Unix timestamp for newest stored court decision issue date.",
+        ),
+        (
             "latest_update_event_at",
             "jurisdigta_court_decision_latest_update_event_timestamp_seconds",
             "Unix timestamp for latest court decision update event.",

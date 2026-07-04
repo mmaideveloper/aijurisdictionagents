@@ -373,6 +373,9 @@ def _court_decision_db_status(postgres_container: str) -> dict[str, Any]:
       'latest_imported_at', (
         SELECT MAX(last_stored_at) FROM court_decision_documents
       ),
+      'latest_stored_issue_date', (
+        SELECT MAX(NULLIF(issue_date, '')) FROM court_decision_documents
+      ),
       'latest_update_event_at', (
         SELECT MAX(created_at) FROM court_decision_update_events
       ),
