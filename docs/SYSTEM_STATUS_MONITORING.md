@@ -244,6 +244,7 @@ Useful Grafana panels:
 - `jurisdigta_component_status{component="ai_model_usage"}`
 - `jurisdigta_component_status{component="laws_collector"}`
 - `jurisdigta_errors_window`
+- `jurisdigta_laws_last_processed_info`
 - `jurisdigta_laws_last_processed_number`
 - `jurisdigta_laws_last_processed_year`
 - `jurisdigta_laws_total{name="laws_imported"}`

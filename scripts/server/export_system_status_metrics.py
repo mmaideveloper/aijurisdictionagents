@@ -227,8 +227,20 @@ def _render_metrics(payload: dict[str, Any]) -> str:
 
 
 def _append_laws_metrics(lines: list[str], laws: dict[str, Any]) -> None:
-    last_number, last_year = _split_law_number(str(laws.get("last_processed_law") or ""))
+    last_processed_law = str(laws.get("last_processed_law") or "")
+    last_number, last_year = _split_law_number(last_processed_law)
     next_number, next_year = _split_law_number(str(laws.get("next_law_to_check") or ""))
+    if last_number is not None and last_year is not None:
+        _append_help(
+            lines,
+            "jurisdigta_laws_last_processed_info",
+            "Latest processed law identifier as labels for display panels.",
+            "gauge",
+        )
+        lines.append(
+            "jurisdigta_laws_last_processed_info"
+            f'{{law="{_label(last_processed_law)}",number="{last_number}",year="{last_year}"}} 1'
+        )
     if last_number is not None:
         _append_help(lines, "jurisdigta_laws_last_processed_number", "Last processed law number.", "gauge")
         lines.append(f"jurisdigta_laws_last_processed_number {last_number}")

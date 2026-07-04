@@ -78,12 +78,24 @@ def test_monitoring_dashboards_include_court_decision_service_dashboard() -> Non
     )
     dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
     panel_titles = {str(panel.get("title")) for panel in dashboard["panels"]}
+    target_queries = {
+        str(target.get("expr"))
+        for panel in dashboard["panels"]
+        for target in panel.get("targets", [])
+        if isinstance(target, dict)
+    }
 
     assert dashboard["uid"] == "jurisdigta-court-decision-service"
     assert "Collector Status" in panel_titles
     assert "Imported Decisions" in panel_titles
+    assert "Latest Imported Decision" in panel_titles
     assert "Versions With Embeddings" in panel_titles
     assert "Recent Sanitized Error List" in panel_titles
+    assert (
+        'max without(status) (last_over_time(jurisdigta_component_status{component="court_decision_collector"}[15m]))'
+        in target_queries
+    )
+    assert "jurisdigta_court_decision_latest_imported_timestamp_seconds * 1000" in target_queries
 
 
 def test_monitoring_dashboards_include_laws_collector_corpus_panels() -> None:
@@ -99,11 +111,10 @@ def test_monitoring_dashboards_include_laws_collector_corpus_panels() -> None:
 
     assert dashboard["uid"] == "jurisdigta-laws-collector"
     assert "Total Laws Over Time" in panel_titles
-    assert "Last Imported Law Number" in panel_titles
-    assert "Last Imported Law Year" in panel_titles
+    assert "Last Imported Law" in panel_titles
+    assert "Last Imported Law Year" not in panel_titles
     assert 'jurisdigta_laws_total{name="laws_imported"}' in target_queries
-    assert "jurisdigta_laws_last_processed_number" in target_queries
-    assert "jurisdigta_laws_last_processed_year" in target_queries
+    assert "jurisdigta_laws_last_processed_info" in target_queries
 
 
 def test_monitoring_stack_loads_ai_model_alert_rules() -> None:
@@ -278,6 +289,7 @@ def test_exporter_renders_laws_runtime_and_recent_error_metrics() -> None:
             "status": "ok",
             "laws_collector": {
                 "status": "ok",
+                "last_processed_law": "179/2026",
                 "runtime": {
                     "last_run_duration_seconds": 42,
                     "last_run_imported_laws": 3,
@@ -294,6 +306,9 @@ def test_exporter_renders_laws_runtime_and_recent_error_metrics() -> None:
         }
     )
 
+    assert 'jurisdigta_laws_last_processed_info{law="179/2026",number="179",year="2026"} 1' in metrics
+    assert "jurisdigta_laws_last_processed_number 179" in metrics
+    assert "jurisdigta_laws_last_processed_year 2026" in metrics
     assert "jurisdigta_laws_runtime_duration_seconds 42.0" in metrics
     assert "jurisdigta_laws_runtime_imported_laws 3.0" in metrics
     assert "jurisdigta_laws_runtime_entries_processed 4.0" in metrics

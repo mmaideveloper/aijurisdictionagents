@@ -401,7 +401,7 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 6,
+        "w": 12,
         "x": 12,
         "y": 7
       },
@@ -418,83 +418,20 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto",
+        "textMode": "name",
         "wideLayout": true
       },
       "pluginVersion": "13.0.2",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "jurisdigta_laws_last_processed_number",
-          "legendFormat": "Law number",
+          "expr": "jurisdigta_laws_last_processed_info",
+          "legendFormat": "{{law}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Last Imported Law Number",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "jurisdigta-prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 6,
-        "x": 18,
-        "y": 7
-      },
-      "id": 10,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "13.0.2",
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "jurisdigta_laws_last_processed_year",
-          "legendFormat": "Law year",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Last Imported Law Year",
+      "title": "Last Imported Law",
       "type": "stat"
     },
     {

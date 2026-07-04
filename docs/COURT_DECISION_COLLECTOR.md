@@ -50,12 +50,13 @@ Self-managed production provisions a separate Grafana dashboard named
 The dashboard uses aggregate Prometheus metrics from
 `scripts/server/export_system_status_metrics.py`:
 
-- `jurisdigta_component_status{component="court_decision_collector"}`
+- `max without(status) (last_over_time(jurisdigta_component_status{component="court_decision_collector"}[15m]))`
 - `jurisdigta_court_decisions_total`
 - `jurisdigta_court_decision_versions_total`
 - `jurisdigta_court_decision_versions_with_embeddings_total`
 - `jurisdigta_court_decision_collector_events_total`
 - `jurisdigta_court_decision_collector_last_activity_timestamp_seconds`
+- `jurisdigta_court_decision_latest_imported_timestamp_seconds`
 - `jurisdigta_court_decision_recent_error_info`
 
 These metrics must remain operational and aggregate-only. Do not expose raw

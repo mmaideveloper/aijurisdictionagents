@@ -517,8 +517,8 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 - `JurisDigta Server Performance`: CPU, RAM, disk, load, network, disk I/O, and container memory.
 - `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
 - `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, local/Ollama tokens, paid-model tokens, requests, estimated cost, and masked top cases by token volume.
-- `JurisDigta Laws Collector`: total imported laws over time, latest imported law number/year, execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
-- `JurisDigta Court Decision Service`: collector status, imported decisions, stored versions, versions with embeddings, processing/processed/idle activity, storage totals, and recent sanitized collector errors.
+- `JurisDigta Laws Collector`: total imported laws over time, latest imported law identifier, execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
+- `JurisDigta Court Decision Service`: current collector status, imported decisions, latest imported decision timestamp, stored versions, versions with embeddings, processing/processed/idle activity, storage totals, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
 - `JurisDigta System Logs`: Loki log stream with source, severity, stream, and regex search filters for Docker container logs and server job log files.
 
@@ -551,6 +551,7 @@ Useful starter queries:
 - `jurisdigta_component_status{component="system"}`
 - `jurisdigta_component_status{component="laws_collector"}`
 - `jurisdigta_errors_window`
+- `jurisdigta_laws_last_processed_info`
 - `jurisdigta_laws_last_processed_number`
 - `jurisdigta_laws_last_processed_year`
 - `jurisdigta_laws_total{name="laws_imported"}`
@@ -562,7 +563,7 @@ Useful starter queries:
 - `jurisdigta_laws_runtime_entries_processed`
 - `jurisdigta_laws_runtime_processed`
 - `jurisdigta_laws_recent_error_info`
-- `jurisdigta_component_status{component="court_decision_collector"}`
+- `max without(status) (last_over_time(jurisdigta_component_status{component="court_decision_collector"}[15m]))`
 - `jurisdigta_court_decisions_total{status="all"}`
 - `jurisdigta_court_decisions_total{status="published"}`
 - `jurisdigta_court_decision_versions_total`
