@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchCaseDocumentBlob } from "../api/caseClient";
+import { fetchCaseDocumentBlob, fetchCaseExportBlob } from "../api/caseClient";
 
 vi.mock("../logging/consoleLogger", () => ({
   consoleLogger: {
@@ -81,5 +81,36 @@ describe("caseClient", () => {
     );
     expect(document.contentType).toBe("application/pdf");
     expect(document.filename).toBe("generated.pdf");
+  });
+
+  it("fetches a case export zip with the configured API key header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("zip body", {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": 'attachment; filename="case-export.zip"'
+        }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const exported = await fetchCaseExportBlob({
+      userId: "user-1",
+      caseId: "case-1"
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toContain("/v1/cases/case-1/export?user_id=user-1");
+    expect(fetchMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        method: "GET",
+        headers: {
+          "x-api-key": "aijuris"
+        }
+      })
+    );
+    expect(exported.contentType).toBe("application/zip");
+    expect(exported.filename).toBe("case-export.zip");
+    await expect(exported.blob.text()).resolves.toBe("zip body");
   });
 });

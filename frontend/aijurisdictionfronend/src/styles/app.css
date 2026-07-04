@@ -2798,10 +2798,14 @@ textarea {
 
 .profile-case-item {
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .profile-case-button {
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
   border: 1px solid var(--border);
   background: var(--surface-muted);
   color: inherit;
@@ -2834,6 +2838,12 @@ textarea {
 
 .profile-case-button:hover {
   border-color: rgba(31, 27, 22, 0.18);
+}
+
+.profile-case-export-button {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 10px;
 }
 
 .profile-document-list {

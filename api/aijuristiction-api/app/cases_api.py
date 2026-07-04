@@ -3,9 +3,13 @@ from __future__ import annotations
 import logging
 import os
 import base64
+import hashlib
+import io
+import json
 import re
 import threading
 import unicodedata
+import zipfile
 from mimetypes import guess_type
 from pathlib import Path
 from datetime import datetime, timezone
@@ -37,6 +41,7 @@ router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(req
 _LOGGER = logging.getLogger(__name__)
 _STORE_LOCK = threading.Lock()
 _STORE_CACHE: dict[tuple[str, str, str, str, str], ApiDatabaseStore] = {}
+_ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
 
 
 def _document_processor_mode() -> str:
@@ -188,6 +193,12 @@ class CaseDocumentDebugResponse(BaseModel):
     prompt_preview: str
 
 
+class CaseExportWarning(BaseModel):
+    code: str
+    message: str
+    artifact: str | None = None
+
+
 def _store_cache_key() -> tuple[str, str, str, str, str]:
     return (
         os.getenv("DB_OPTION", "local").strip().lower(),
@@ -297,6 +308,22 @@ def get_case_ai_model_audit(
         case_id=case_id,
         has_more=has_more,
         entries=[_to_case_ai_model_audit_entry_response(item) for item in visible_entries],
+    )
+
+
+@router.get('/{case_id}/export')
+def export_case(
+    case_id: str,
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_store),
+) -> Response:
+    case = _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    _ensure_paid_case_export_access(user_id=user_id, store=store)
+    return build_case_export_response(
+        case=case,
+        user_id=user_id,
+        store=store,
+        exported_by="case-owner",
     )
 
 
@@ -491,36 +518,20 @@ def download_generated_case_document_pdf(
         document = store.get_case_document(case_id=case_id, doc_id=doc_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    visible_content = _generated_case_document_storage_content(document=document, store=store)
-    if not visible_content:
-        visible_content = _generated_case_document_visible_content(
-            case_id=case_id,
-            doc_id=document.doc_id,
-            store=store,
-        )
-    if not visible_content:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Rendered PDF content is unavailable for document {doc_id}",
-        )
-    title = _generated_case_document_title(visible_content)
+    visible_content = _generated_case_document_storage_content(document=document, store=store) or (
+        _generated_case_document_visible_content(case_id=case_id, doc_id=document.doc_id, store=store)
+    )
     document_type = _generated_case_document_type(visible_content)
     filename = _generated_case_document_filename(
         case_title=case.title,
         doc_id=document.doc_id,
         document_type=document_type,
     )
-    pdf_content = _build_professional_document_pdf(
-        title=title,
-        lines=visible_content.splitlines(),
-        country="SK",
-        language="SK",
-        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        case_id=case_id,
-        session_id=getattr(document, "session_id", None),
+    pdf_content = _render_generated_case_document_pdf_bytes(
+        case=case,
         user_id=user_id,
-        footer_line="JurisDigta generated case document",
-        verification_score=None,
+        document=document,
+        store=store,
     )
     return Response(
         content=pdf_content,
@@ -586,6 +597,368 @@ def send_case_documents_email(
         attachment_count=len(attachments),
         correlation_id=correlation_id,
     )
+
+
+def build_case_export_response(
+    *,
+    case: Case,
+    user_id: str,
+    store: ApiDatabaseStore,
+    exported_by: str,
+) -> Response:
+    export = _build_case_export_zip(case=case, user_id=user_id, store=store, exported_by=exported_by)
+    filename = f"{_safe_filename(case.title or case.case_id)}_{case.case_id}_case_export.zip"
+    return Response(
+        content=export,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Case-Export-Schema": "jurisdigta.case-export.v1",
+        },
+    )
+
+
+def _build_case_export_zip(
+    *,
+    case: Case,
+    user_id: str,
+    store: ApiDatabaseStore,
+    exported_by: str,
+) -> bytes:
+    warnings: list[CaseExportWarning] = []
+    checksums: dict[str, str] = {}
+    files: dict[str, bytes] = {}
+    generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    communications = store.list_case_communications(case_id=case.case_id, limit=None, offset=0)
+    chronological_messages = list(reversed(communications))
+    messages = [
+        _case_export_message_dict(store=store, communication=item)
+        for item in chronological_messages
+    ]
+    documents = store.list_case_documents(case_id=case.case_id)
+    audit_entries = [
+        _case_export_ai_model_audit_dict(item)
+        for item in store.list_ai_model_usage_audit(case_id=case.case_id, limit=500, offset=0)
+    ]
+    citations = _collect_case_export_citations(messages=messages, audit_entries=audit_entries)
+
+    case_payload = {
+        "schema": "jurisdigta.case-export.case.v1",
+        "case_id": case.case_id,
+        "user_id": case.user_id,
+        "company_id": case.company_id,
+        "title": case.title,
+        "status": case.status,
+        "created_at": case.created_at,
+        "updated_at": case.updated_at,
+    }
+    document_manifest: list[dict[str, object]] = []
+
+    files["case.json"] = _json_bytes(case_payload)
+    files["messages.jsonl"] = "\n".join(_json_line(item) for item in messages).encode("utf-8")
+    files["ai-model-audit.json"] = _json_bytes(
+        {
+            "schema": "jurisdigta.case-export.ai-model-audit.v1",
+            "case_id": case.case_id,
+            "entries": audit_entries,
+        }
+    )
+    files["citations.json"] = _json_bytes(
+        {
+            "schema": "jurisdigta.case-export.citations.v1",
+            "case_id": case.case_id,
+            "items": citations,
+        }
+    )
+
+    for index, document in enumerate(documents, start=1):
+        source_artifact = _case_export_document_artifact_path(
+            document=document,
+            index=index,
+            rendered=False,
+        )
+        document_entry: dict[str, object] = {
+            "doc_id": document.doc_id,
+            "kind": document.kind,
+            "version": document.version,
+            "original_filename": document.original_filename,
+            "processing_status": document.processing_status,
+            "processing_error": document.processing_error,
+            "processed_at": document.processed_at,
+            "created_at": document.created_at,
+            "source_artifact": source_artifact,
+        }
+        try:
+            files[source_artifact] = store.read_storage_bytes(storage_uri=document.storage_uri)
+        except FileNotFoundError:
+            warnings.append(
+                CaseExportWarning(
+                    code="document_payload_missing",
+                    message=f"Stored payload is unavailable for document {document.doc_id}.",
+                    artifact=source_artifact,
+                )
+            )
+        except ValueError:
+            warnings.append(
+                CaseExportWarning(
+                    code="document_storage_unavailable",
+                    message=f"Storage backend is unavailable for document {document.doc_id}.",
+                    artifact=source_artifact,
+                )
+            )
+
+        if document.kind == "generated_document":
+            rendered_artifact = _case_export_document_artifact_path(
+                document=document,
+                index=index,
+                rendered=True,
+                case_title=case.title,
+            )
+            document_entry["rendered_pdf_artifact"] = rendered_artifact
+            try:
+                rendered_pdf = _render_generated_case_document_pdf_bytes(
+                    case=case,
+                    user_id=user_id,
+                    document=document,
+                    store=store,
+                )
+                files[rendered_artifact] = rendered_pdf
+            except HTTPException as exc:
+                warnings.append(
+                    CaseExportWarning(
+                        code="generated_pdf_unavailable",
+                        message=str(exc.detail),
+                        artifact=rendered_artifact,
+                    )
+                )
+        document_manifest.append(document_entry)
+
+    manifest = {
+        "schema": "jurisdigta.case-export.v1",
+        "generated_at": generated_at,
+        "exported_by": exported_by,
+        "case_id": case.case_id,
+        "user_id": user_id,
+        "case_title": case.title,
+        "artifact_count": 0,
+        "message_count": len(messages),
+        "document_count": len(documents),
+        "ai_model_audit_count": len(audit_entries),
+        "citation_count": len(citations),
+        "documents": document_manifest,
+    }
+    files["warnings.json"] = _json_bytes(
+        {
+            "schema": "jurisdigta.case-export.warnings.v1",
+            "case_id": case.case_id,
+            "items": [_warning_dict(item) for item in warnings],
+        }
+    )
+    files["manifest.json"] = _json_bytes({**manifest, "artifact_count": len(files) + 2})
+
+    for path, payload in sorted(files.items()):
+        checksums[path] = hashlib.sha256(payload).hexdigest()
+    checksums_payload = "".join(
+        f"{digest}  {path}\n" for path, digest in sorted(checksums.items())
+    ).encode("utf-8")
+    files["sha256sums.txt"] = checksums_payload
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(files):
+            _writestr_deterministic(archive, path, files[path])
+    return buffer.getvalue()
+
+
+def _render_generated_case_document_pdf_bytes(
+    *,
+    case: Case,
+    user_id: str,
+    document: CaseDocument,
+    store: ApiDatabaseStore,
+) -> bytes:
+    visible_content = _generated_case_document_storage_content(document=document, store=store)
+    if not visible_content:
+        visible_content = _generated_case_document_visible_content(
+            case_id=case.case_id,
+            doc_id=document.doc_id,
+            store=store,
+        )
+    if not visible_content:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rendered PDF content is unavailable for document {document.doc_id}",
+        )
+    return _build_professional_document_pdf(
+        title=_generated_case_document_title(visible_content),
+        lines=visible_content.splitlines(),
+        country="SK",
+        language="SK",
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        case_id=case.case_id,
+        session_id=getattr(document, "session_id", None),
+        user_id=user_id,
+        footer_line="JurisDigta generated case document",
+        verification_score=None,
+    )
+
+
+def _case_export_message_dict(
+    *,
+    store: ApiDatabaseStore,
+    communication: CaseCommunication,
+) -> dict[str, object]:
+    response = _to_case_history_message_response(store=store, communication=communication)
+    return {
+        "communication_id": response.communication_id,
+        "role": response.role,
+        "content": response.content,
+        "agent_name": response.agent_name,
+        "created_at": response.created_at,
+    }
+
+
+def _case_export_ai_model_audit_dict(item: AIModelUsageAuditEntry) -> dict[str, object]:
+    return {
+        "usage_id": item.usage_id,
+        "case_id": item.case_id,
+        "user_id": item.user_id,
+        "subscription_id": item.subscription_id,
+        "plan_code": item.plan_code,
+        "task_type": item.task_type,
+        "model_group_id": item.model_group_id,
+        "provider": item.provider,
+        "model": item.model,
+        "route_type": item.route_type,
+        "input_tokens": item.input_tokens,
+        "cached_input_tokens": item.cached_input_tokens,
+        "output_tokens": item.output_tokens,
+        "total_tokens": item.total_tokens,
+        "estimated_cost_eur": item.estimated_cost_eur,
+        "provider_currency": item.provider_currency,
+        "request_started_at": item.request_started_at,
+        "request_completed_at": item.request_completed_at,
+        "latency_ms": item.latency_ms,
+        "status": item.status,
+        "fallback_reason": item.fallback_reason,
+        "session_id": item.session_id,
+        "question_id": item.question_id,
+        "question_preview": item.question_preview,
+        "question_sha256": item.question_sha256,
+        "answer_id": item.answer_id,
+        "audit_metadata": item.audit_metadata,
+        "created_at": item.created_at,
+    }
+
+
+def _collect_case_export_citations(
+    *,
+    messages: list[dict[str, object]],
+    audit_entries: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    seen: set[str] = set()
+    citations: list[dict[str, object]] = []
+    for entry in audit_entries:
+        metadata = entry.get("audit_metadata")
+        for candidate in _find_law_citations(metadata):
+            key = _json_line(candidate)
+            if key not in seen:
+                seen.add(key)
+                citations.append(candidate)
+    for message in messages:
+        content = str(message.get("content") or "")
+        for candidate in _extract_visible_citation_lines(content):
+            key = str(candidate.get("text") or "")
+            if key and key not in seen:
+                seen.add(key)
+                citations.append(candidate)
+    return citations
+
+
+def _find_law_citations(value: object) -> list[dict[str, object]]:
+    citations: list[dict[str, object]] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if key == "law_citations" and isinstance(nested, list):
+                citations.extend(item for item in nested if isinstance(item, dict))
+            else:
+                citations.extend(_find_law_citations(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            citations.extend(_find_law_citations(nested))
+    return citations
+
+
+def _extract_visible_citation_lines(content: str) -> list[dict[str, object]]:
+    citations: list[dict[str, object]] = []
+    capture = False
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        lowered = line.lower()
+        if lowered in {"pravne citacie", "právne citácie", "legal citations"}:
+            capture = True
+            continue
+        if capture and not line:
+            continue
+        if capture and line:
+            if len(line) > 500:
+                line = line[:500]
+            citations.append({"source": "visible_message", "text": line})
+            if len(citations) >= 20:
+                break
+    return citations
+
+
+def _case_export_document_artifact_path(
+    *,
+    document: CaseDocument,
+    index: int,
+    rendered: bool,
+    case_title: str = "",
+) -> str:
+    if rendered:
+        filename = _generated_case_document_filename(
+            case_title=case_title,
+            doc_id=document.doc_id,
+            document_type="dokument",
+        )
+        return f"documents/generated/rendered-pdf/{index:04d}_{_safe_filename(filename)}"
+    folder = "generated/source" if document.kind == "generated_document" else _safe_filename(document.kind)
+    return f"documents/{folder}/{index:04d}_{_safe_filename(document.original_filename)}"
+
+
+def _ensure_paid_case_export_access(*, user_id: str, store: ApiDatabaseStore) -> None:
+    plan = store.get_effective_subscription_plan(user_id=user_id)
+    if plan.plan_code == "free" or plan.price_eur <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Case export is available only for active paid subscriptions.",
+        )
+
+
+def _safe_filename(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    normalized = normalized.strip(".-")
+    return normalized[:120] or "case-export"
+
+
+def _json_line(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _json_bytes(value: object) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+
+def _warning_dict(item: CaseExportWarning) -> dict[str, str | None]:
+    return {"code": item.code, "message": item.message, "artifact": item.artifact}
+
+
+def _writestr_deterministic(archive: zipfile.ZipFile, path: str, payload: bytes) -> None:
+    info = zipfile.ZipInfo(path, date_time=_ZIP_EPOCH)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    archive.writestr(info, payload)
 
 
 def _to_case_response(case: Case) -> CaseResponse:

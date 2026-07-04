@@ -1,5 +1,7 @@
 ﻿import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { FaDownload } from "react-icons/fa";
+import { fetchCaseExportBlob } from "../api/caseClient";
 import { chatApiRuntimeConfig } from "../api/chatClient";
 import { useLanguage } from "../components/LanguageProvider";
 import { useAuth } from "../auth/webAuth";
@@ -37,6 +39,7 @@ const Profile: React.FC = () => {
   const [isSendingEmailOtp, setIsSendingEmailOtp] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [exportingCaseId, setExportingCaseId] = useState<string | null>(null);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [totpSetup, setTotpSetup] = useState<{
@@ -113,6 +116,38 @@ const Profile: React.FC = () => {
       userId: user?.userId ?? ""
     });
     navigate(`/app/documents/view?${params.toString()}`);
+  };
+
+  const handleExportCase = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    caseItem: (typeof cases)[number]
+  ) => {
+    event.stopPropagation();
+    if (!user?.userId) {
+      return;
+    }
+    setExportingCaseId(caseItem.id);
+    setProfileError(null);
+    setProfileMessage(null);
+    try {
+      const exported = await fetchCaseExportBlob({
+        userId: user.userId,
+        caseId: caseItem.id
+      });
+      const objectUrl = URL.createObjectURL(exported.blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = exported.filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : t("profileCaseExportFailed"));
+    } finally {
+      setExportingCaseId(null);
+    }
   };
 
   const handleSendEmailCode = async () => {
@@ -320,6 +355,16 @@ const Profile: React.FC = () => {
                       <small title={t(caseStatusTranslationKeys[caseItem.status])}>
                         {t(caseStatusTranslationKeys[caseItem.status])}
                       </small>
+                    </button>
+                    <button
+                      type="button"
+                      className="button ghost icon-button profile-case-export-button"
+                      onClick={(event) => void handleExportCase(event, caseItem)}
+                      disabled={exportingCaseId === caseItem.id}
+                      title={t("profileCaseExport")}
+                      aria-label={t("profileCaseExport")}
+                    >
+                      <FaDownload aria-hidden="true" />
                     </button>
                   </li>
                 ))}

@@ -280,6 +280,59 @@ export const fetchCaseDocumentBlob = async ({
   };
 };
 
+export const fetchCaseExportBlob = async ({
+  userId,
+  caseId,
+  signal
+}: {
+  userId: string;
+  caseId: string;
+  signal?: AbortSignal;
+}): Promise<FetchedCaseDocument> => {
+  const config = chatApiRuntimeConfig();
+  const params = new URLSearchParams({ user_id: userId });
+  const path = `/v1/cases/${encodeURIComponent(caseId)}/export?${params.toString()}`;
+  const url = `${config.baseUrl}${path}`;
+
+  consoleLogger.info("Fetching case export", { path, url });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "x-api-key": config.apiKey
+      },
+      signal
+    });
+  } catch (error) {
+    consoleLogger.error("Case export request failed", { url }, error);
+    throw new ApiRequestError(
+      "network",
+      "Network request failed. Check API availability, CORS, and URL/protocol."
+    );
+  }
+
+  if (!response.ok) {
+    const detail = await parseApiErrorResponse(response);
+    consoleLogger.warn("Case export request failed", {
+      status: response.status,
+      detail: detail.message,
+      code: detail.code
+    });
+    throw new ApiRequestError("http", detail.message, response.status, {
+      code: detail.code,
+      params: detail.params
+    });
+  }
+
+  return {
+    blob: await response.blob(),
+    contentType: response.headers.get("Content-Type") || "application/zip",
+    filename: extractFilenameFromContentDisposition(response.headers.get("Content-Disposition")) || `${caseId}-export.zip`
+  };
+};
+
 export const sendCaseDocumentEmail = async (
   input: SendCaseDocumentEmailInput
 ): Promise<SendCaseDocumentEmailResult> => {

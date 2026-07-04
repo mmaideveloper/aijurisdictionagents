@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+import json
 import sqlite3
 import time
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
@@ -386,6 +388,154 @@ def test_generated_case_document_pdf_reads_generated_document_storage(
     )
     assert "Emilia Matonokova" in generated_pdf_text
     assert "firemneho auta" in generated_pdf_text
+
+
+def test_paid_user_can_export_case_zip_with_documents_model_audit_and_checksums(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=25)
+    subscription_response = client.post(
+        f"/v1/users/{user_id}/subscriptions",
+        headers=_headers(),
+        json={"plan_code": "case"},
+    )
+    assert subscription_response.status_code == 201
+    subscription_id = subscription_response.json()["subscription_id"]
+    paid_response = client.patch(
+        f"/v1/users/subscriptions/{subscription_id}",
+        headers=_headers(),
+        json={"status": "paid"},
+    )
+    assert paid_response.status_code == 200
+
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Golden export case"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    store.add_case_message(case_id=case_id, role="user", content="Priprav potvrdenie.")
+    store.add_case_message(
+        case_id=case_id,
+        role="assistant",
+        content="Právne citácie\n- Občiansky zákonník § 588",
+        agent_name="LawyerSlovakia",
+    )
+    uploaded_doc_id = store.add_case_text_document(
+        case_id=case_id,
+        original_filename="facts.txt",
+        content="Source facts",
+        uploaded_by_user_id=user_id,
+    )
+    generated_doc_id = store.add_case_document(
+        case_id=case_id,
+        kind="generated_document",
+        version=1,
+        original_filename="potvrdenie.txt",
+        payload="Potvrdenie\n\nSuma: 1000 EUR\nPodpis: __________".encode("utf-8"),
+        uploaded_by_user_id=user_id,
+    )
+    usage_id = store.record_ai_model_usage(
+        provider="azurefoundry",
+        model="gpt-4.1",
+        route_type="external",
+        input_tokens=120,
+        output_tokens=80,
+        case_id=case_id,
+        user_id=user_id,
+        subscription_id=subscription_id,
+        plan_code="case",
+        task_type="chat_reply",
+        session_id="session-1",
+        question_id="question-1",
+        question_text="Priprav potvrdenie.",
+        answer_id="answer-1",
+        audit_metadata={
+            "law_citations": [
+                {
+                    "label": "Občiansky zákonník",
+                    "summary": "Kúpna zmluva",
+                }
+            ]
+        },
+    )
+
+    response = client.get(
+        f"/v1/cases/{case_id}/export?user_id={user_id}",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    assert response.headers["x-case-export-schema"] == "jurisdigta.case-export.v1"
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = set(archive.namelist())
+        assert {
+            "manifest.json",
+            "case.json",
+            "messages.jsonl",
+            "ai-model-audit.json",
+            "citations.json",
+            "warnings.json",
+            "sha256sums.txt",
+        }.issubset(names)
+        assert any(name.endswith("_facts.txt") for name in names)
+        assert any(name.endswith("_potvrdenie.txt") for name in names)
+        assert any(name.startswith("documents/generated/rendered-pdf/") for name in names)
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["case_id"] == case_id
+        assert manifest["message_count"] == 2
+        assert manifest["document_count"] == 2
+        assert manifest["ai_model_audit_count"] == 1
+        audit = json.loads(archive.read("ai-model-audit.json"))
+        assert audit["entries"][0]["usage_id"] == usage_id
+        assert audit["entries"][0]["provider"] == "azurefoundry"
+        assert audit["entries"][0]["model"] == "gpt-4.1"
+        assert audit["entries"][0]["route_type"] == "external"
+        citations = json.loads(archive.read("citations.json"))
+        assert citations["items"]
+        checksums = archive.read("sha256sums.txt").decode("utf-8")
+        assert "manifest.json" in checksums
+        assert "sha256sums.txt" not in checksums
+        case_payload = json.loads(archive.read("case.json"))
+        assert case_payload["user_id"] == user_id
+        assert "password" not in json.dumps(case_payload).lower()
+        assert uploaded_doc_id in json.dumps(manifest)
+        assert generated_doc_id in json.dumps(manifest)
+
+
+def test_free_user_case_export_is_rejected(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=26)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Free export blocked"},
+    )
+    assert created.status_code == 201
+
+    response = client.get(
+        f"/v1/cases/{created.json()['case_id']}/export?user_id={user_id}",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Case export is available only for active paid subscriptions."
 
 
 def test_generated_case_document_pdf_uses_first_selected_document_block(
