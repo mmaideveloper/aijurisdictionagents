@@ -149,6 +149,29 @@ def test_mcp_initialize_defaults_to_latest_for_unknown_protocol() -> None:
     assert initialize_response.json()["result"]["serverInfo"]["name"] == "aijurisdiction-laws-mcp"
 
 
+def test_legacy_uppercase_mcp_allows_claude_web_public_law_search(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _create_laws_db(tmp_path / "laws.sqlite3")
+
+    lowercase_search = _mcp_call("searchLaws", {"query": "civil"})
+    assert lowercase_search.status_code == 401
+    assert "oauth-protected-resource" in lowercase_search.headers["www-authenticate"]
+
+    claude_search = _mcp_call("searchLaws", {"query": "civil"}, path="/MCP")
+    assert claude_search.status_code == 200
+    results = _tool_payload(claude_search)["results"]
+    assert results[0]["document_id"] == "doc-1"
+    assert results[0]["law_identifier_text"] == "1/1993 Z. z."
+
+    raw_court_decision = _mcp_call(
+        "getCourtDecision",
+        {"decisionId": "decision-1", "outputMode": "internal_raw"},
+        path="/MCP",
+    )
+    assert raw_court_decision.status_code == 401
+    assert "oauth-protected-resource" in raw_court_decision.headers["www-authenticate"]
+
+
 def test_mcp_empty_discovery_methods_for_claude_connector() -> None:
     expected_results = {
         "resources/list": {"resources": []},
@@ -1657,6 +1680,7 @@ def _mcp_call(
     name: str,
     arguments: dict[str, object] | None = None,
     headers: dict[str, str] | None = None,
+    path: str = "/mcp",
 ):
     payload = {
         "jsonrpc": "2.0",
@@ -1664,7 +1688,7 @@ def _mcp_call(
         "method": "tools/call",
         "params": {"name": name, "arguments": arguments or {}},
     }
-    return mcp_client.post("/mcp", json=payload, headers=headers or {})
+    return mcp_client.post(path, json=payload, headers=headers or {})
 
 
 def _tool_payload(response) -> dict[str, object]:

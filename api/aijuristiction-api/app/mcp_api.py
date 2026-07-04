@@ -61,6 +61,7 @@ MCP_SERVER_INSTRUCTIONS = (
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
 _PUBLIC_TOOLS = {"getVersion", "getStatistics"}
+_CLAUDE_WEB_PUBLIC_TOOLS = _PUBLIC_TOOLS | {"searchLaws", "getLawText", "searchCourtDecisions"}
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = (
     "chatgpt.com",
     "chat.openai.com",
@@ -289,7 +290,8 @@ async def mcp_json_rpc(
         _payload_message_count(payload),
         ",".join(_payload_methods(payload)),
     )
-    payload_requires_auth = _payload_requires_auth(payload)
+    public_tools = _public_tools_for_request(request)
+    payload_requires_auth = _payload_requires_auth(payload, public_tools=public_tools)
     api_key = _extract_mcp_api_key(
         authorization=authorization,
         x_mcp_api_key=x_mcp_api_key,
@@ -313,6 +315,7 @@ async def mcp_json_rpc(
             authorization=authorization,
             x_mcp_api_key=x_mcp_api_key,
             store=store,
+            public_tools=public_tools,
         )
         duration_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(
@@ -1258,6 +1261,7 @@ def _handle_json_rpc(
     authorization: str | None,
     x_mcp_api_key: str | None,
     store: ApiDatabaseStore | None,
+    public_tools: set[str],
 ) -> JSONResponse:
     if isinstance(payload, list):
         logger.info("mcp_json_rpc_batch_started message_count=%d", len(payload))
@@ -1267,6 +1271,7 @@ def _handle_json_rpc(
                 authorization=authorization,
                 x_mcp_api_key=x_mcp_api_key,
                 store=store,
+                public_tools=public_tools,
             )
             for item in payload
         ]
@@ -1279,6 +1284,7 @@ def _handle_json_rpc(
         authorization=authorization,
         x_mcp_api_key=x_mcp_api_key,
         store=store,
+        public_tools=public_tools,
     )
     if response is None:
         return JSONResponse(status_code=202, content={})
@@ -1291,6 +1297,7 @@ def _handle_json_rpc_message(
     authorization: str | None,
     x_mcp_api_key: str | None,
     store: ApiDatabaseStore | None,
+    public_tools: set[str],
 ) -> dict[str, Any] | None:
     if not isinstance(message, dict):
         logger.warning("mcp_json_rpc_invalid_message reason=non_object")
@@ -1351,13 +1358,14 @@ def _handle_json_rpc_message(
                 "mcp_tool_started tool=%s argument_keys=%s auth_required=%s",
                 tool_name,
                 ",".join(sorted(str(key) for key in arguments.keys())),
-                tool_name not in _PUBLIC_TOOLS,
+                tool_name not in public_tools,
             )
             _require_auth_for_tool(
                 tool_name=tool_name,
                 authorization=authorization,
                 x_mcp_api_key=x_mcp_api_key,
                 store=store,
+                public_tools=public_tools,
             )
             result = _call_tool(tool_name, arguments)
             logger.info(
@@ -1388,8 +1396,9 @@ def _require_auth_for_tool(
     authorization: str | None,
     x_mcp_api_key: str | None,
     store: ApiDatabaseStore | None,
+    public_tools: set[str],
 ) -> None:
-    if tool_name in _PUBLIC_TOOLS:
+    if tool_name in public_tools:
         logger.info("mcp_tool_auth_skipped tool=%s reason=public_tool", tool_name)
         return
     api_key = _extract_mcp_api_key(authorization=authorization, x_mcp_api_key=x_mcp_api_key)
@@ -2406,7 +2415,13 @@ def _allowed_oauth_redirect_hosts() -> set[str]:
     return set(_DEFAULT_ALLOWED_REDIRECT_HOSTS)
 
 
-def _payload_requires_auth(payload: Any) -> bool:
+def _public_tools_for_request(request: Request) -> set[str]:
+    if request.url.path.rstrip("/") == "/MCP":
+        return _CLAUDE_WEB_PUBLIC_TOOLS
+    return _PUBLIC_TOOLS
+
+
+def _payload_requires_auth(payload: Any, *, public_tools: set[str]) -> bool:
     messages = payload if isinstance(payload, list) else [payload]
     for message in messages:
         if not isinstance(message, dict):
@@ -2416,7 +2431,7 @@ def _payload_requires_auth(payload: Any) -> bool:
         raw_params = message.get("params")
         params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
         tool_name = params.get("name")
-        if isinstance(tool_name, str) and tool_name not in _PUBLIC_TOOLS:
+        if isinstance(tool_name, str) and tool_name not in public_tools:
             return True
     return False
 

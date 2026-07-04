@@ -19,6 +19,12 @@ accidentally saved with the truncated Claude URL `/MC`. OAuth metadata keeps
 `https://mcp.jurisdigta.eu/mcp` for lowercase clients and advertises
 `https://mcp.jurisdigta.eu/MCP` from the uppercase protected-resource metadata
 path because Claude web may store custom connector URLs with uppercase `/MCP`.
+Because Claude web can complete OAuth and then reject the issued credentials
+without making an authenticated MCP call, `/MCP` also acts as a public-law
+compatibility endpoint for Claude web: it allows `getVersion`, `getStatistics`,
+`searchLaws`, `getLawText`, and `searchCourtDecisions` without a bearer token.
+The canonical lowercase `/mcp` endpoint still requires OAuth or an MCP API key
+for protected tools.
 
 `GET /` on the MCP service is a public human-facing setup page. In production,
 `https://mcp.jurisdigta.eu/` should show:
@@ -137,7 +143,7 @@ Manual JWT generation remains useful for local VS Code setups that pass an `Auth
 Use `https://mcp.jurisdigta.eu/mcp` as the remote MCP server URL in clients that support custom HTTP MCP servers.
 
 - ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it. Users may self-register during the browser authorization flow, but ChatGPT only receives the OAuth access token and tool results, not a raw API key.
-- Claude: add a custom connector or remote MCP server and enter the MCP server URL. OAuth-capable Claude clients can discover authorization metadata from `https://mcp.jurisdigta.eu` and register dynamically. If Claude reports that automatic client registration is not supported, open Advanced settings, set OAuth Client ID to a stable public value such as `claude`, leave OAuth Client Secret empty, and retry after confirming `claude.ai` is allowed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...`, `http://127.0.0.1/...`, or `http://[::1]/...`.
+- Claude web custom connectors: use `https://mcp.jurisdigta.eu/MCP`. This uppercase path is intentionally a public-law compatibility endpoint because Claude web may complete OAuth and then reject the issued credentials before making any authenticated MCP request. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...`, `http://127.0.0.1/...`, or `http://[::1]/...`.
 - VS Code: add an HTTP MCP server in MCP settings. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/mcp/login`.
 - Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. Hosted OAuth callbacks include `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback` when their hosts are listed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
 
