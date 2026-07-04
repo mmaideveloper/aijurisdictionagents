@@ -89,19 +89,22 @@ def test_monitoring_dashboards_include_court_decision_service_dashboard() -> Non
     assert dashboard["uid"] == "jurisdigta-court-decision-service"
     assert "Collector Status" in panel_titles
     assert "Imported Decisions" in panel_titles
-    assert "Najnovší uložený dátum rozhodnutia" in panel_titles
     assert "Latest Imported Decision" in panel_titles
     assert "Versions With Embeddings" in panel_titles
     assert "Recent Sanitized Error List" in panel_titles
+    assert "Najnovší uložený dátum rozhodnutia" not in panel_titles
     assert (
         'max without(status) (last_over_time(jurisdigta_component_status{component="court_decision_collector"}[15m]))'
         in target_queries
     )
-    assert "jurisdigta_court_decision_latest_imported_timestamp_seconds * 1000" in target_queries
-    assert (
-        "jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds * 1000"
-        in target_queries
+    assert "jurisdigta_court_decision_latest_imported_info" in target_queries
+
+    latest_imported_panel = next(
+        panel for panel in dashboard["panels"] if panel.get("title") == "Latest Imported Decision"
     )
+    assert latest_imported_panel["type"] == "table"
+    assert latest_imported_panel["targets"][0]["instant"] is True
+    assert latest_imported_panel["targets"][0]["range"] is False
 
 
 def test_monitoring_dashboards_include_laws_collector_corpus_panels() -> None:
@@ -503,6 +506,11 @@ def test_exporter_renders_court_decision_metrics() -> None:
                         "idle_events": 2,
                         "last_activity_at": "2026-06-20T01:06:00Z",
                         "latest_imported_at": "2026-06-20T01:00:01Z",
+                        "latest_imported_decision": {
+                            "short_name": "uznesenie - Krajsky sud",
+                            "published_date": "2026-06-29",
+                            "stored_at": "2026-06-20T01:00:01Z",
+                        },
                         "latest_stored_issue_date": "2026-06-29",
                         "latest_update_event_at": "2026-06-20T01:00:02Z",
                         "recent_errors": [
@@ -531,6 +539,11 @@ def test_exporter_renders_court_decision_metrics() -> None:
     )
     assert "jurisdigta_court_decision_collector_last_activity_timestamp_seconds" in metrics
     assert "jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds" in metrics
+    assert (
+        'jurisdigta_court_decision_latest_imported_info{short_name="uznesenie - Krajsky sud",'
+        'published_date="2026-06-29",stored_at="2026-06-20T01:00:01Z"} 1'
+        in metrics
+    )
     assert (
         'jurisdigta_court_decision_recent_error_info{index="1",'
         'timestamp="2026-06-20T01:06:00Z",message="failed import_key=live_loop"} 1'

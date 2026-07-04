@@ -218,6 +218,6 @@ print(
 )
 print(
     "court_decision_grafana => JurisDigta Court Decision Service shows the aggregate "
-    "Najnovší uložený dátum rozhodnutia date without exposing court decision text, "
-    "parties, file numbers, ECLI values, or source identifiers."
+    "latest imported court decision short name and published date without exposing "
+    "court decision text, parties, file numbers, ECLI values, or source identifiers."
 )

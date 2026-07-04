@@ -373,6 +373,19 @@ def _court_decision_db_status(postgres_container: str) -> dict[str, Any]:
       'latest_imported_at', (
         SELECT MAX(last_stored_at) FROM court_decision_documents
       ),
+      'latest_imported_decision', COALESCE((
+        SELECT json_build_object(
+          'short_name', COALESCE(
+            NULLIF(BTRIM(CONCAT_WS(' - ', NULLIF(decision_form, ''), NULLIF(court_type, ''))), ''),
+            'Court decision'
+          ),
+          'published_date', COALESCE(NULLIF(issue_date, ''), ''),
+          'stored_at', last_stored_at
+        )
+        FROM court_decision_documents
+        ORDER BY last_stored_at DESC NULLS LAST, updated_at DESC
+        LIMIT 1
+      ), '{}'::json),
       'latest_stored_issue_date', (
         SELECT MAX(NULLIF(issue_date, '')) FROM court_decision_documents
       ),
