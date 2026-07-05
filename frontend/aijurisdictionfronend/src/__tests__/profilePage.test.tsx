@@ -238,7 +238,7 @@ describe("Profile page", () => {
   it("downloads a case export without opening the case", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce(
-      new Response(new Blob(["zip"], { type: "application/zip" }), {
+      new Response("zip", {
         status: 200,
         headers: {
           "Content-Type": "application/zip",
