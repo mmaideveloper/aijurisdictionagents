@@ -550,6 +550,7 @@ class ApiDatabaseStore:
                     redirect_uri TEXT NOT NULL,
                     code_challenge TEXT NOT NULL,
                     resource TEXT NOT NULL DEFAULT '',
+                    scope TEXT NOT NULL DEFAULT 'mcp:laws',
                     expires_at TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
@@ -2601,6 +2602,7 @@ class ApiDatabaseStore:
         redirect_uri: str,
         code_challenge: str,
         resource: str,
+        scope: str = "mcp:laws",
         expires_in_minutes: int = 10,
     ) -> None:
         now = datetime.now(timezone.utc)
@@ -2609,9 +2611,9 @@ class ApiDatabaseStore:
                 conn,
                 """
                 INSERT INTO mcp_oauth_authorization_codes(
-                    code, user_id, client_id, redirect_uri, code_challenge, resource, expires_at, created_at
+                    code, user_id, client_id, redirect_uri, code_challenge, resource, scope, expires_at, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     code.strip(),
@@ -2620,6 +2622,7 @@ class ApiDatabaseStore:
                     redirect_uri.strip(),
                     code_challenge.strip(),
                     resource.strip(),
+                    scope.strip() or "mcp:laws",
                     (now + timedelta(minutes=max(expires_in_minutes, 1))).isoformat(),
                     now.isoformat(),
                 ),
@@ -2634,7 +2637,7 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT user_id, client_id, redirect_uri, code_challenge, resource, expires_at
+                SELECT user_id, client_id, redirect_uri, code_challenge, resource, scope, expires_at
                 FROM mcp_oauth_authorization_codes
                 WHERE code = ?
                 """,
@@ -2644,7 +2647,7 @@ class ApiDatabaseStore:
                 return None
             self._execute(conn, "DELETE FROM mcp_oauth_authorization_codes WHERE code = ?", (normalized_code,))
             conn.commit()
-        if not _is_future_iso_datetime(str(row[5])):
+        if not _is_future_iso_datetime(str(row[6])):
             return None
         return {
             "user_id": str(row[0]),
@@ -2652,6 +2655,7 @@ class ApiDatabaseStore:
             "redirect_uri": str(row[2]),
             "code_challenge": str(row[3]),
             "resource": str(row[4]),
+            "scope": str(row[5]),
         }
 
     def save_mcp_otp_verification(
@@ -4835,6 +4839,11 @@ class ApiDatabaseStore:
             self._execute(
                 conn,
                 "ALTER TABLE mcp_oauth_authorization_codes ADD COLUMN resource TEXT NOT NULL DEFAULT ''",
+            )
+        if "scope" not in columns:
+            self._execute(
+                conn,
+                "ALTER TABLE mcp_oauth_authorization_codes ADD COLUMN scope TEXT NOT NULL DEFAULT 'mcp:laws'",
             )
         self._execute(
             conn,

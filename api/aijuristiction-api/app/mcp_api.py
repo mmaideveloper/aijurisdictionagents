@@ -77,8 +77,10 @@ _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
 _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = 8_000
 _COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = 3
-_OAUTH_PUBLIC_CLIENT_GRANT_TYPES = ("authorization_code",)
+_OAUTH_PUBLIC_CLIENT_GRANT_TYPES = ("authorization_code", "refresh_token")
 _OAUTH_TOLERATED_DCR_GRANT_TYPES = {"authorization_code", "refresh_token", "client_credentials"}
+_OAUTH_PROTECTED_RESOURCE_SCOPES = (MCP_TOKEN_SCOPE,)
+_OAUTH_AUTHORIZATION_SERVER_SCOPES = (MCP_TOKEN_SCOPE, "offline_access")
 _OAUTH_GRANTED_SCOPE = MCP_TOKEN_SCOPE
 logger = logging.getLogger("aijuristiction-api.mcp")
 _CURRENT_MCP_REQUEST_ID: ContextVar[str | None] = ContextVar("current_mcp_request_id", default=None)
@@ -412,7 +414,7 @@ def oauth_protected_resource_metadata(request: Request) -> Any:
         "resource_name": "JurisDigta MCP",
         "authorization_servers": [base_url],
         "bearer_methods_supported": ["header"],
-        "scopes_supported": [MCP_TOKEN_SCOPE],
+        "scopes_supported": list(_OAUTH_PROTECTED_RESOURCE_SCOPES),
         "resource_documentation": f"{base_url}/mcp/login",
     }
 
@@ -449,7 +451,7 @@ def oauth_authorization_server_metadata(request: Request) -> Any:
         "grant_types_supported": list(_OAUTH_PUBLIC_CLIENT_GRANT_TYPES),
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
-        "scopes_supported": [MCP_TOKEN_SCOPE],
+        "scopes_supported": list(_OAUTH_AUTHORIZATION_SERVER_SCOPES),
         "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": _oauth_authorization_response_iss_enabled(),
         "protected_resources": protected_resources,
@@ -481,6 +483,9 @@ def oauth_dynamic_client_registration(
     if "authorization_code" not in requested_grant_types:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="authorization_code grant is required")
     ignored_client_credentials = "client_credentials" in requested_grant_types
+    returned_grant_types = ["authorization_code"]
+    if "refresh_token" in requested_grant_types:
+        returned_grant_types.append("refresh_token")
 
     response_types = _registration_string_list(metadata.get("response_types")) or ["code"]
     if any(response_type != "code" for response_type in response_types):
@@ -500,7 +505,7 @@ def oauth_dynamic_client_registration(
         len(redirect_uris),
         request.headers.get("host", ""),
         ",".join(requested_grant_types),
-        ",".join(_OAUTH_PUBLIC_CLIENT_GRANT_TYPES),
+        ",".join(returned_grant_types),
         ignored_client_credentials,
     )
     return {
@@ -508,10 +513,10 @@ def oauth_dynamic_client_registration(
         "client_id_issued_at": int(time.time()),
         "client_name": str(metadata.get("client_name") or "MCP client").strip()[:100],
         "redirect_uris": redirect_uris,
-        "grant_types": list(_OAUTH_PUBLIC_CLIENT_GRANT_TYPES),
+        "grant_types": returned_grant_types,
         "response_types": ["code"],
         "token_endpoint_auth_method": "none",
-        "scope": _OAUTH_GRANTED_SCOPE,
+        "scope": _normalize_oauth_scope(scope),
     }
 
 
@@ -535,6 +540,7 @@ def oauth_authorize_page(
         client_id=client_id,
         redirect_uri=redirect_uri,
     )
+    normalized_scope = _normalize_oauth_scope(scope)
     expected_resource = _resource_url(request)
     logger.info(
         "mcp_oauth_authorize_started response_type=%s client_id_hash=%s client_id_host=%s client_id_path=%s "
@@ -595,6 +601,7 @@ def oauth_authorize_page(
             code_challenge_method=code_challenge_method,
             state=state,
             resource=resolved_resource,
+            scope=normalized_scope,
         )
     )
 
@@ -609,6 +616,7 @@ def oauth_authorize_login(
     code_challenge_method: str = Form(...),
     resource: str = Form(""),
     state: str = Form(""),
+    scope: str = Form(MCP_TOKEN_SCOPE),
     email: str = Form(...),
     password: str = Form(...),
     store: ApiDatabaseStore = Depends(get_user_store),
@@ -629,6 +637,7 @@ def oauth_authorize_login(
         resource=resolved_resource,
         expected_resource=_resource_url(request),
     )
+    normalized_scope = _normalize_oauth_scope(scope)
     user = store.authenticate_user(email=email, password=password)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
@@ -651,6 +660,7 @@ def oauth_authorize_login(
             code_challenge=code_challenge,
             resource=resolved_resource,
             state=state,
+            scope=normalized_scope,
         )
     if _has_recent_mcp_otp_verification(store=store, user=user):
         logger.info("mcp_oauth_otp_reuse user_id=%s client_id=%s", user.user_id, client_id)
@@ -662,6 +672,7 @@ def oauth_authorize_login(
             code_challenge=code_challenge,
             resource=resolved_resource,
             state=state,
+            scope=normalized_scope,
         )
     if _user_has_totp_enabled(store=store, user=user):
         return HTMLResponse(
@@ -675,6 +686,7 @@ def oauth_authorize_login(
                 code_challenge_method=code_challenge_method,
                 state=state,
                 resource=resolved_resource,
+                scope=normalized_scope,
             )
         )
     _send_oauth_login_code(store=store, scheduler=scheduler, user=user, client_id=client_id)
@@ -689,6 +701,7 @@ def oauth_authorize_login(
             code_challenge_method=code_challenge_method,
             state=state,
             resource=resolved_resource,
+            scope=normalized_scope,
         )
     )
 
@@ -705,6 +718,7 @@ def oauth_authorize_mfa_method(
     email: str = Form(...),
     mfa_method: str = Form(...),
     state: str = Form(""),
+    scope: str = Form(MCP_TOKEN_SCOPE),
     store: ApiDatabaseStore = Depends(get_user_store),
     scheduler: EmailScheduler = Depends(get_email_scheduler),
 ) -> HTMLResponse:
@@ -723,6 +737,7 @@ def oauth_authorize_mfa_method(
         resource=resolved_resource,
         expected_resource=_resource_url(request),
     )
+    normalized_scope = _normalize_oauth_scope(scope)
     user = store.find_user_by_email(email=email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -739,6 +754,7 @@ def oauth_authorize_mfa_method(
                 code_challenge_method=code_challenge_method,
                 state=state,
                 resource=resolved_resource,
+                scope=normalized_scope,
             )
         )
     _send_oauth_login_code(store=store, scheduler=scheduler, user=user, client_id=client_id)
@@ -753,6 +769,7 @@ def oauth_authorize_mfa_method(
             code_challenge_method=code_challenge_method,
             state=state,
             resource=resolved_resource,
+            scope=normalized_scope,
         )
     )
 
@@ -770,6 +787,7 @@ def oauth_authorize_verify(
     verification_code: str = Form(...),
     mfa_method: str = Form("email"),
     state: str = Form(""),
+    scope: str = Form(MCP_TOKEN_SCOPE),
     store: ApiDatabaseStore = Depends(get_user_store),
 ) -> Response:
     resolved_resource = _resolve_oauth_resource(
@@ -787,6 +805,7 @@ def oauth_authorize_verify(
         resource=resolved_resource,
         expected_resource=_resource_url(request),
     )
+    normalized_scope = _normalize_oauth_scope(scope)
     user = store.find_user_by_email(email=email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -810,6 +829,7 @@ def oauth_authorize_verify(
                 code_challenge_method=code_challenge_method,
                 state=state,
                 resource=resolved_resource,
+                scope=normalized_scope,
                 warning_key="invalid_code",
             ),
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -823,6 +843,7 @@ def oauth_authorize_verify(
         code_challenge=code_challenge,
         resource=resolved_resource,
         state=state,
+        scope=normalized_scope,
     )
 
 
@@ -945,6 +966,17 @@ def oauth_token(
         audience=token_audience,
     )
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
+    granted_scope = _normalize_oauth_scope(str(record.get("scope") or _OAUTH_GRANTED_SCOPE))
+    issue_refresh_token = _oauth_scope_includes_offline_access(granted_scope)
+    token_payload: dict[str, Any] = {
+        "access_token": token,
+        "token_type": "Bearer",
+        "expires_in": expires_in,
+        "scope": granted_scope,
+    }
+    if issue_refresh_token:
+        refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=token_audience)
+        token_payload["refresh_token"] = refresh_token_value
     logger.info(
         "mcp_oauth_token_succeeded grant_type=%s client_id_hash=%s redirect_host=%s redirect_path=%s "
         "resource_supplied=%s record_resource=%s token_audience=%s access_scope=%s refresh_scope=%s "
@@ -957,19 +989,12 @@ def oauth_token(
         str(record["resource"]),
         token_audience,
         MCP_TOKEN_SCOPE,
-        "not_issued",
+        MCP_REFRESH_TOKEN_SCOPE if issue_refresh_token else "not_issued",
         expires_in,
         user.user_id,
         _oauth_user_agent_family(request),
     )
-    return _oauth_token_json_response(
-        {
-            "access_token": token,
-            "token_type": "Bearer",
-            "expires_in": expires_in,
-            "scope": _OAUTH_GRANTED_SCOPE,
-        }
-    )
+    return _oauth_token_json_response(token_payload)
 
 
 def _oauth_refresh_token_response(
@@ -1080,6 +1105,7 @@ def _redirect_with_oauth_authorization_code(
     code_challenge: str,
     resource: str,
     state: str,
+    scope: str,
 ) -> RedirectResponse:
     authorization_code = secrets.token_urlsafe(32)
     store.save_mcp_oauth_authorization_code(
@@ -1089,6 +1115,7 @@ def _redirect_with_oauth_authorization_code(
         redirect_uri=redirect_uri,
         code_challenge=code_challenge,
         resource=resource,
+        scope=_normalize_oauth_scope(scope),
     )
     query = {"code": authorization_code}
     if state:
@@ -3080,6 +3107,18 @@ def _oauth_scope_summary(scope: str) -> str:
     return ",".join(values)
 
 
+def _normalize_oauth_scope(scope: str) -> str:
+    requested = {item for item in scope.split() if item}
+    granted = [MCP_TOKEN_SCOPE]
+    if "offline_access" in requested:
+        granted.append("offline_access")
+    return " ".join(granted)
+
+
+def _oauth_scope_includes_offline_access(scope: str) -> bool:
+    return "offline_access" in {item for item in scope.split() if item}
+
+
 def _oauth_user_agent_family(request: Request) -> str:
     user_agent = request.headers.get("user-agent", "").lower()
     if "python-httpx" in user_agent:
@@ -3564,6 +3603,7 @@ def _oauth_login_form_html(
     code_challenge_method: str,
     state: str,
     resource: str,
+    scope: str,
 ) -> str:
     hidden = _hidden_inputs(
         {
@@ -3574,6 +3614,7 @@ def _oauth_login_form_html(
             "code_challenge_method": code_challenge_method,
             "state": state,
             "resource": resource,
+            "scope": scope,
         }
     )
     return _mcp_auth_page_html(
@@ -3612,6 +3653,7 @@ def _oauth_otp_form_html(
     code_challenge_method: str,
     state: str,
     resource: str,
+    scope: str,
     warning_key: str | None = None,
 ) -> str:
     hidden = _hidden_inputs(
@@ -3624,6 +3666,7 @@ def _oauth_otp_form_html(
             "code_challenge_method": code_challenge_method,
             "state": state,
             "resource": resource,
+            "scope": scope,
         }
     )
     escaped_email = escape(email, quote=False)
@@ -3654,6 +3697,7 @@ def _oauth_mfa_method_form_html(
     code_challenge_method: str,
     state: str,
     resource: str,
+    scope: str,
 ) -> str:
     hidden = _hidden_inputs(
         {
@@ -3665,6 +3709,7 @@ def _oauth_mfa_method_form_html(
             "code_challenge_method": code_challenge_method,
             "state": state,
             "resource": resource,
+            "scope": scope,
         }
     )
     return _mcp_auth_page_html(
@@ -3696,6 +3741,7 @@ def _oauth_totp_form_html(
     code_challenge_method: str,
     state: str,
     resource: str,
+    scope: str,
     warning_key: str | None = None,
 ) -> str:
     hidden = _hidden_inputs(
@@ -3709,6 +3755,7 @@ def _oauth_totp_form_html(
             "code_challenge_method": code_challenge_method,
             "state": state,
             "resource": resource,
+            "scope": scope,
         }
     )
     return _mcp_auth_page_html(

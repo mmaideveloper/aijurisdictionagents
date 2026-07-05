@@ -119,7 +119,7 @@ def check_authorization_server(base_url: str) -> str:
         assert_equal(payload.get("authorization_endpoint"), f"{base_url}/oauth/authorize", "authorization_endpoint")
         assert_equal(payload.get("token_endpoint"), f"{base_url}/oauth/token", "token_endpoint")
         assert_equal(payload.get("registration_endpoint"), f"{base_url}/oauth/register", "registration_endpoint")
-        assert_equal(payload.get("scopes_supported"), ["mcp:laws"], "scopes_supported")
+        assert_equal(payload.get("scopes_supported"), ["mcp:laws", "offline_access"], "scopes_supported")
         methods = set(payload.get("token_endpoint_auth_methods_supported") or [])
         if "none" not in methods:
             raise AssertionError(f"Authorization server must support public OAuth clients, got {sorted(methods)}")

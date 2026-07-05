@@ -108,7 +108,7 @@ VS Code, ChatGPT, and other OAuth-capable clients. Protected unauthenticated
 `WWW-Authenticate` header containing a `resource_metadata` URL, so OAuth-capable
 clients can open the JurisDigta browser login and complete authorization
 automatically before retrying MCP discovery.
-Claude and other clients may send Dynamic Client Registration metadata that includes `client_credentials` or `refresh_token`; JurisDigta accepts those compatibility shapes only when `authorization_code` is also requested, returns the public-client grant `authorization_code`, and continues to reject actual `grant_type=client_credentials` token exchanges.
+Claude and other clients may send Dynamic Client Registration metadata that includes `client_credentials` or `refresh_token`; JurisDigta accepts those compatibility shapes only when `authorization_code` is also requested, returns `refresh_token` only when the client requested that grant, and continues to reject actual `grant_type=client_credentials` token exchanges.
 
 ## Authentication
 
@@ -122,11 +122,15 @@ Claude and other clients may send Dynamic Client Registration metadata that incl
   OAuth/browser tokens for that user remain usable until their own JWT expiry
   unless access is revoked.
 - Protected MCP tools accept either `Authorization: Bearer <mcp_api_key>` or `x-mcp-api-key: <mcp_api_key>`.
-- OAuth tokens are audience-bound to the MCP resource URL and include `scope=mcp:laws`.
-- Previously issued OAuth refresh tokens are audience-bound, use
-  `scope=offline_access`, are not accepted as MCP bearer tokens, and can be
-  exchanged at `/oauth/token` with `grant_type=refresh_token`. New connector
-  authorization-code responses are access-token-only.
+- OAuth access tokens are audience-bound to the MCP resource URL and include
+  `scope=mcp:laws`.
+- The OAuth authorization-server metadata advertises `offline_access` and the
+  `refresh_token` grant for persistent hosted connectors such as Claude web.
+  Protected-resource metadata still advertises only `mcp:laws`.
+- OAuth refresh tokens are issued only when the authorization request includes
+  `offline_access`. They are audience-bound, use `scope=offline_access`, are not
+  accepted as MCP bearer tokens, and can be exchanged at `/oauth/token` with
+  `grant_type=refresh_token`.
 
 Users can generate a key in either way:
 

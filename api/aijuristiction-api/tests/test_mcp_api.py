@@ -1333,8 +1333,8 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     authorization_metadata = mcp_client.get("/.well-known/oauth-authorization-server")
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["code_challenge_methods_supported"] == ["S256"]
-    assert authorization_metadata.json()["grant_types_supported"] == ["authorization_code"]
-    assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws"]
+    assert authorization_metadata.json()["grant_types_supported"] == ["authorization_code", "refresh_token"]
+    assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws", "offline_access"]
     assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
     assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
     assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/MCP"]
@@ -1370,9 +1370,9 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert claude_variant_registration.status_code == 201
     claude_variant_payload = claude_variant_registration.json()
     assert claude_variant_payload["client_id"].startswith("jurisdigta-")
-    assert claude_variant_payload["grant_types"] == ["authorization_code"]
+    assert claude_variant_payload["grant_types"] == ["authorization_code", "refresh_token"]
     assert claude_variant_payload["token_endpoint_auth_method"] == "none"
-    assert claude_variant_payload["scope"] == "mcp:laws"
+    assert claude_variant_payload["scope"] == "mcp:laws offline_access"
 
     smartidentity_style_registration = mcp_client.post(
         "/oauth/register",
@@ -1609,6 +1609,79 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert existing_oauth_search.status_code == 200
     assert _tool_payload(existing_oauth_search)["results"][0]["document_id"] == "doc-1"
 
+    claude_code_verifier = "claude-code-verifier-1234567890"
+    claude_code_challenge = _pkce_challenge(claude_code_verifier)
+    claude_authorize_page = mcp_client.get(
+        "/oauth/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "https://claude.ai/oauth/mcp-oauth-client-metadata",
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "code_challenge": claude_code_challenge,
+            "code_challenge_method": "S256",
+            "state": "claude-refresh",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+    assert claude_authorize_page.status_code == 200
+    assert _extract_hidden_value(claude_authorize_page.text, "scope") == "mcp:laws offline_access"
+    claude_login_response = mcp_client.post(
+        "/oauth/authorize/login",
+        data={
+            "response_type": "code",
+            "client_id": "https://claude.ai/oauth/mcp-oauth-client-metadata",
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "code_challenge": claude_code_challenge,
+            "code_challenge_method": "S256",
+            "state": "claude-refresh",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+            "scope": "mcp:laws offline_access",
+            "email": "mcp-oauth@example.com",
+            "password": "secret-pass",
+        },
+        follow_redirects=False,
+    )
+    assert claude_login_response.status_code == 303
+    claude_callback_query = parse_qs(urlparse(claude_login_response.headers["location"]).query)
+    assert claude_callback_query["state"] == ["claude-refresh"]
+    claude_token_response = mcp_client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": claude_callback_query["code"][0],
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "client_id": "https://claude.ai/oauth/mcp-oauth-client-metadata",
+            "code_verifier": claude_code_verifier,
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+        },
+    )
+    assert claude_token_response.status_code == 200
+    claude_token_payload = claude_token_response.json()
+    assert claude_token_payload["scope"] == "mcp:laws offline_access"
+    assert claude_token_payload["token_type"] == "Bearer"
+    assert "refresh_token" in claude_token_payload
+    claude_access_claims = _jwt_claims(claude_token_payload["access_token"])
+    assert claude_access_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+    assert claude_access_claims["scope"] == "mcp:laws"
+
+    refresh_token_response = mcp_client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "refresh_token",
+            "client_id": "https://claude.ai/oauth/mcp-oauth-client-metadata",
+            "refresh_token": claude_token_payload["refresh_token"],
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+        },
+    )
+    assert refresh_token_response.status_code == 200
+    refresh_token_payload = refresh_token_response.json()
+    assert refresh_token_payload["scope"] == "mcp:laws"
+    assert "refresh_token" in refresh_token_payload
+    refreshed_access_claims = _jwt_claims(refresh_token_payload["access_token"])
+    assert refreshed_access_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+    assert refreshed_access_claims["scope"] == "mcp:laws"
+
     mcp_log_text = "\n".join(
         record.getMessage() for record in caplog.records if record.name == "aijuristiction-api.mcp"
     )
@@ -1626,6 +1699,10 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert code_verifier not in mcp_log_text
     assert authorization_code not in mcp_log_text
     assert token_payload["access_token"] not in mcp_log_text
+    assert claude_token_payload["access_token"] not in mcp_log_text
+    assert claude_token_payload["refresh_token"] not in mcp_log_text
+    assert refresh_token_payload["access_token"] not in mcp_log_text
+    assert refresh_token_payload["refresh_token"] not in mcp_log_text
     assert "refresh_token" not in token_payload
 
 
