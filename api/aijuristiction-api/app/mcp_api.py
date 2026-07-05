@@ -62,7 +62,6 @@ MCP_SERVER_INSTRUCTIONS = (
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
 _PUBLIC_TOOLS = {"getVersion", "getStatistics"}
-_CLAUDE_WEB_PUBLIC_TOOLS = _PUBLIC_TOOLS | {"searchLaws", "getLawText", "searchCourtDecisions"}
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = (
     "chatgpt.com",
     "chat.openai.com",
@@ -379,16 +378,6 @@ def mcp_sign_up_page(request: Request) -> HTMLResponse:
 
 @oauth_router.get("/.well-known/oauth-protected-resource")
 def oauth_protected_resource_metadata(request: Request) -> Any:
-    if _is_claude_web_root_oauth_discovery(request):
-        logger.info(
-            "mcp_oauth_root_discovery_hidden_for_claude_web request_path=%s user_agent=%s",
-            request.url.path,
-            _oauth_user_agent_family(request),
-        )
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={"detail": "Root OAuth protected-resource discovery is not available for Claude web"},
-        )
     base_url = _base_url(request)
     resource = _metadata_resource_url(request)
     logger.info(
@@ -414,29 +403,14 @@ def oauth_mcp_protected_resource_metadata(request: Request) -> Any:
 
 
 @oauth_router.get("/.well-known/oauth-protected-resource/MCP")
-def oauth_legacy_public_mcp_protected_resource_metadata() -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "detail": "Legacy Claude web MCP compatibility endpoint is public and is not an OAuth protected resource"
-        },
-    )
+def oauth_legacy_public_mcp_protected_resource_metadata(request: Request) -> Any:
+    return oauth_protected_resource_metadata(request)
 
 
 @oauth_router.get("/.well-known/oauth-authorization-server")
 @oauth_router.get("/.well-known/oauth-authorization-server/MCP")
 @oauth_router.get("/.well-known/oauth-authorization-server/mcp")
 def oauth_authorization_server_metadata(request: Request) -> Any:
-    if _is_claude_web_root_oauth_discovery(request):
-        logger.info(
-            "mcp_oauth_root_discovery_hidden_for_claude_web request_path=%s user_agent=%s",
-            request.url.path,
-            _oauth_user_agent_family(request),
-        )
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={"detail": "Root OAuth authorization-server discovery is not available for Claude web"},
-        )
     base_url = _base_url(request)
     protected_resources = _all_mcp_resource_urls(request)
     logger.info(
@@ -2697,7 +2671,7 @@ def _uppercase_resource_url(request: Request) -> str:
 
 
 def _all_mcp_resource_urls(request: Request) -> list[str]:
-    return [_resource_url(request)]
+    return [_resource_url(request), _uppercase_resource_url(request)]
 
 
 def _metadata_resource_url(request: Request) -> str:
@@ -2769,8 +2743,6 @@ def _allowed_oauth_redirect_hosts() -> set[str]:
 
 
 def _public_tools_for_request(request: Request) -> set[str]:
-    if request.url.path.rstrip("/") == "/MCP":
-        return _CLAUDE_WEB_PUBLIC_TOOLS
     return _PUBLIC_TOOLS
 
 
@@ -3058,19 +3030,6 @@ def _oauth_user_agent_family(request: Request) -> str:
     if "mozilla" in user_agent or "chrome" in user_agent or "safari" in user_agent:
         return "browser"
     return "unknown"
-
-
-def _is_claude_web_root_oauth_discovery(request: Request) -> bool:
-    path = request.url.path.rstrip("/")
-    if path not in {
-        "/.well-known/oauth-protected-resource",
-        "/.well-known/oauth-authorization-server",
-        "/.well-known/oauth-authorization-server/MCP",
-    }:
-        return False
-    user_agent = request.headers.get("user-agent", "").lower()
-    protocol_version = request.headers.get("mcp-protocol-version", "").strip()
-    return "python-httpx" in user_agent and protocol_version == MCP_PROTOCOL_VERSION
 
 
 def _http_exception_detail(exc: HTTPException) -> str:

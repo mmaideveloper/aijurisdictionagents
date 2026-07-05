@@ -42,8 +42,8 @@ print(
 )
 print(
     "mcp_endpoint_claude_compat => /MCP remains accepted for Claude web and existing clients; "
-    "it allows public-law tools without OAuth and does not advertise protected-resource metadata "
-    "or Claude-web root OAuth discovery because Claude web can reject issued OAuth credentials."
+    "it now advertises OAuth protected-resource metadata and requires the same per-user "
+    "OAuth or MCP API key authentication for protected legal tools as /mcp."
 )
 print(
     "mcp_protocol_negotiation => initialize echoes supported client protocol versions "

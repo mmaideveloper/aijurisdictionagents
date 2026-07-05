@@ -100,11 +100,20 @@ def check_protected_resource(base_url: str) -> str:
     resource = str(payload.get("resource") or "")
     if resource != f"{base_url}/mcp":
         raise AssertionError(f"Unexpected protected resource URL: {resource!r}")
-    return "OAuth protected resource metadata is advertised"
+    uppercase_payload = request_json("GET", f"{base_url}/.well-known/oauth-protected-resource/MCP")
+    assert_equal(uppercase_payload.get("resource_name"), "JurisDigta MCP", "uppercase.resource_name")
+    uppercase_resource = str(uppercase_payload.get("resource") or "")
+    if uppercase_resource != f"{base_url}/MCP":
+        raise AssertionError(f"Unexpected uppercase protected resource URL: {uppercase_resource!r}")
+    return "OAuth protected resource metadata is advertised for /mcp and /MCP"
 
 
 def check_authorization_server(base_url: str) -> str:
-    for path in ("/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/mcp"):
+    for path in (
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-authorization-server/mcp",
+        "/.well-known/oauth-authorization-server/MCP",
+    ):
         payload = request_json("GET", f"{base_url}{path}")
         assert_equal(payload.get("issuer"), base_url, f"{path}.issuer")
         assert_equal(payload.get("authorization_endpoint"), f"{base_url}/oauth/authorize", "authorization_endpoint")
@@ -116,7 +125,10 @@ def check_authorization_server(base_url: str) -> str:
         methods = set(payload.get("token_endpoint_auth_methods_supported") or [])
         if "none" not in methods:
             raise AssertionError(f"Authorization server must support public OAuth clients, got {sorted(methods)}")
-    return "OAuth authorization metadata is advertised for root and /mcp"
+        resources = set(payload.get("protected_resources") or [])
+        if {f"{base_url}/mcp", f"{base_url}/MCP"} - resources:
+            raise AssertionError(f"Authorization metadata does not advertise both MCP resources: {sorted(resources)}")
+    return "OAuth authorization metadata is advertised for root, /mcp, and /MCP"
 
 
 def check_claude_registration(base_url: str) -> str:

@@ -181,7 +181,10 @@ def test_mcp_initialize_defaults_to_latest_for_unknown_protocol() -> None:
     assert initialize_response.json()["result"]["serverInfo"]["name"] == "aijurisdiction-laws-mcp"
 
 
-def test_legacy_uppercase_mcp_allows_claude_web_public_law_search(monkeypatch, tmp_path: Path) -> None:
+def test_legacy_uppercase_mcp_advertises_oauth_and_requires_auth_for_law_search(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
 
@@ -189,17 +192,17 @@ def test_legacy_uppercase_mcp_allows_claude_web_public_law_search(monkeypatch, t
         "/.well-known/oauth-protected-resource/MCP",
         headers={"user-agent": "python-httpx/0.28.1", "mcp-protocol-version": "2025-11-25"},
     )
-    assert legacy_protected_metadata.status_code == 404
+    assert legacy_protected_metadata.status_code == 200
+    assert legacy_protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
+    assert legacy_protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
 
     lowercase_search = _mcp_call("searchLaws", {"query": "civil"})
     assert lowercase_search.status_code == 401
     assert "oauth-protected-resource" in lowercase_search.headers["www-authenticate"]
 
     claude_search = _mcp_call("searchLaws", {"query": "civil"}, path="/MCP")
-    assert claude_search.status_code == 200
-    results = _tool_payload(claude_search)["results"]
-    assert results[0]["document_id"] == "doc-1"
-    assert results[0]["law_identifier_text"] == "1/1993 Z. z."
+    assert claude_search.status_code == 401
+    assert "oauth-protected-resource/MCP" in claude_search.headers["www-authenticate"]
 
     raw_court_decision = _mcp_call(
         "getCourtDecision",
@@ -1222,12 +1225,12 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         "/.well-known/oauth-protected-resource",
         headers={"user-agent": "python-httpx/0.28.1", "mcp-protocol-version": "2025-11-25"},
     )
-    assert claude_web_root_protected_metadata.status_code == 404
+    assert claude_web_root_protected_metadata.status_code == 200
     claude_web_root_authorization_metadata = mcp_client.get(
         "/.well-known/oauth-authorization-server",
         headers={"user-agent": "python-httpx/0.28.1", "mcp-protocol-version": "2025-11-25"},
     )
-    assert claude_web_root_authorization_metadata.status_code == 404
+    assert claude_web_root_authorization_metadata.status_code == 200
     claude_web_authorization_metadata_without_protocol_header = mcp_client.get(
         "/.well-known/oauth-authorization-server",
         headers={"user-agent": "python-httpx/0.28.1"},
@@ -1264,6 +1267,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
     assert authorization_metadata.json()["protected_resources"] == [
         "https://mcp.jurisdigta.eu/mcp",
+        "https://mcp.jurisdigta.eu/MCP",
     ]
 
     registration_response = mcp_client.post(
@@ -1372,6 +1376,17 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
         "https://claude.ai/api/mcp/auth_callback",
         "https://www.perplexity.ai/rest/connections/oauth_callback",
     ]
+
+    vscode_challenge = _mcp_call(
+        "searchLaws",
+        {"query": "civil"},
+        headers={"user-agent": "Visual Studio Code MCP client"},
+    )
+    assert vscode_challenge.status_code == 401
+    assert (
+        'resource_metadata="https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/mcp"'
+        in vscode_challenge.headers["www-authenticate"]
+    )
 
     loopback_registration = mcp_client.post(
         "/oauth/register",
@@ -1916,7 +1931,9 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert protected_metadata.status_code == 200
     assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/mcp"
     assert protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
-    assert legacy_mcp_protected_metadata.status_code == 404
+    assert legacy_mcp_protected_metadata.status_code == 200
+    assert legacy_mcp_protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
+    assert legacy_mcp_protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
@@ -1924,6 +1941,7 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert authorization_metadata.json()["client_id_metadata_document_supported"] is True
     assert authorization_metadata.json()["protected_resources"] == [
         "https://mcp.jurisdigta.eu/mcp",
+        "https://mcp.jurisdigta.eu/MCP",
     ]
     assert mcp_path_authorization_metadata.status_code == 200
     assert mcp_path_authorization_metadata.json() == authorization_metadata.json()

@@ -9,7 +9,9 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ApiRoot = Join-Path $RepoRoot "api\aijuristiction-api"
 $PythonCandidates = @(
     (Join-Path $RepoRoot "conda\python.exe"),
-    (Join-Path $RepoRoot ".conda\python.exe")
+    (Join-Path $RepoRoot "conda\python-run.exe"),
+    (Join-Path $RepoRoot ".conda\python.exe"),
+    (Join-Path $RepoRoot ".conda\python-run.exe")
 )
 
 $Python = $null

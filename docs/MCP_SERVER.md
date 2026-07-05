@@ -18,20 +18,12 @@ version when it is one of the supported protocol versions (`2025-03-26`,
 unknown future value, the server falls back to the latest supported version.
 `POST /MCP` remains accepted as a Claude compatibility endpoint and for older
 client records, and `POST /MC` is also accepted for connector records that were
-accidentally saved with the truncated Claude URL `/MC`. OAuth metadata keeps
-`https://mcp.jurisdigta.eu/mcp` for lowercase clients. The uppercase
-`/.well-known/oauth-protected-resource/MCP` path intentionally returns `404`
-because Claude web may store custom connector URLs with uppercase `/MCP` and
-will force OAuth when that path is advertised as protected.
-Claude web backend discovery at the root OAuth metadata URLs is also hidden
-when the request uses Claude's `python-httpx` MCP client headers, because Claude
-falls back to root discovery after uppercase path discovery returns `404`.
-Because Claude web can complete OAuth and then reject the issued credentials
-without making an authenticated MCP call, `/MCP` also acts as a public-law
-compatibility endpoint for Claude web: it allows `getVersion`, `getStatistics`,
-`searchLaws`, `getLawText`, and `searchCourtDecisions` without a bearer token.
-The canonical lowercase `/mcp` endpoint still requires OAuth or an MCP API key
-for protected tools.
+accidentally saved with the truncated Claude URL `/MC`. OAuth metadata now
+advertises both `https://mcp.jurisdigta.eu/mcp` and the Claude-compatible
+`https://mcp.jurisdigta.eu/MCP` resource. The lowercase `/mcp` endpoint is the
+canonical URL for new clients, while `/MCP` is an authenticated compatibility
+alias for existing Claude web connector records. Both paths require OAuth or an
+MCP API key for protected tools.
 
 `GET /` on the MCP service is a public human-facing setup page. In production,
 `https://mcp.jurisdigta.eu/` should show:
@@ -65,8 +57,10 @@ curl http://127.0.0.1:8070/
 ## OAuth Discovery
 
 - Protected resource metadata: `GET /.well-known/oauth-protected-resource/mcp`
+  and `GET /.well-known/oauth-protected-resource/MCP`
 - Authorization server metadata: `GET /.well-known/oauth-authorization-server`
-- Claude/path-derived authorization server metadata: `GET /.well-known/oauth-authorization-server/mcp`
+- Path-derived authorization server metadata: `GET /.well-known/oauth-authorization-server/mcp`
+  and `GET /.well-known/oauth-authorization-server/MCP`
 - Dynamic client registration endpoint: `POST /oauth/register`
 - Authorization endpoint: `GET /oauth/authorize`
 - Token endpoint: `POST /oauth/token`
@@ -79,11 +73,13 @@ either `200 OK` or `201 Created` with the issued public client metadata.
 ChatGPT and other lowercase clients should pass the protected resource value
 `https://mcp.jurisdigta.eu/mcp` on the authorization, token, and refresh
 requests. Claude web custom connectors should store the server URL as
-`https://mcp.jurisdigta.eu/MCP`; that uppercase path is public for bounded
-public-law tools and is not advertised as an OAuth protected resource.
+`https://mcp.jurisdigta.eu/MCP` when an existing connector record requires the
+uppercase path; otherwise use the canonical `https://mcp.jurisdigta.eu/mcp`.
+The uppercase path is advertised as an OAuth protected resource and is not a
+public-law bypass.
 Protected-resource metadata includes a human-readable `resource_name`, and
-authorization-server metadata advertises only the lowercase protected MCP
-resource, `client_id_metadata_document_supported=true`, and
+authorization-server metadata advertises both protected MCP resource URLs,
+`client_id_metadata_document_supported=true`, and
 `authorization_response_iss_parameter_supported=true`. The authorization
 callback returns `iss=https://mcp.jurisdigta.eu` with the authorization code so
 strict OAuth clients can bind the response to the issuer.
@@ -109,10 +105,11 @@ Production settings:
 - `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` by default. For controlled Claude/E2E validation only, operators may temporarily enable it for the synthetic emails `mcp-claude-test-free@jurisdigta.eu` and `mcp-claude-test-paid@jurisdigta.eu` with `MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT=2030-01-01T00:00:00Z`. The bypass is hard-limited to MCP OAuth authorization and still requires the correct password.
 - `JURISDIGTA_E2E_TEST_USER_PASSWORD=<secret>` is used by `python scripts/provision_e2e_users.py` to create or update the synthetic free/paid E2E accounts. Keep it in runtime secret storage only.
 
-Root OAuth discovery is hidden from Claude web custom connector probes that use
-`python-httpx` with the MCP protocol header. Claude web should validate the
-uppercase `/MCP` compatibility endpoint as a bounded public-law MCP endpoint
-instead of starting OAuth for that saved connector URL.
+Root OAuth discovery and path-specific discovery are both available to Claude,
+VS Code, ChatGPT, and other OAuth-capable clients. Protected unauthenticated
+tool calls return `401` with a `WWW-Authenticate` header containing a
+`resource_metadata` URL, so VS Code can open the JurisDigta browser login and
+complete authorization automatically.
 Claude and other clients may send Dynamic Client Registration metadata that includes `client_credentials`; JurisDigta accepts that compatibility shape only when `authorization_code` is also requested, returns the public-client grants `authorization_code` and `refresh_token`, and continues to reject actual `grant_type=client_credentials` token exchanges.
 
 ## Authentication
@@ -146,15 +143,15 @@ Keys can be revoked with:
 
 - `DELETE /v1/users/{user_id}/mcp-api-key`
 
-Manual JWT generation remains useful for local VS Code setups that pass an `Authorization` header directly. Standards-based remote clients should prefer OAuth discovery. Newly issued tokens use the lowercase `/mcp` audience; existing `/MCP` audience tokens remain accepted as a compatibility path until they expire or are revoked.
+Manual JWT generation remains useful for local VS Code setups that pass an `Authorization` header directly. Standards-based remote clients should prefer OAuth discovery. Newly issued OAuth tokens use the requested protected-resource audience when supplied by the client. Existing `/MCP` audience tokens remain accepted as a compatibility path until they expire or are revoked.
 
 ## Assistant Setup
 
 Use `https://mcp.jurisdigta.eu/mcp` as the remote MCP server URL in clients that support custom HTTP MCP servers.
 
 - ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it. Users may self-register during the browser authorization flow, but ChatGPT only receives the OAuth access token and tool results, not a raw API key.
-- Claude web custom connectors: use `https://mcp.jurisdigta.eu/MCP`. This uppercase path is intentionally a public-law compatibility endpoint without OAuth protected-resource discovery because Claude web may complete OAuth and then reject the issued credentials before making any authenticated MCP request. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...`, `http://127.0.0.1/...`, or `http://[::1]/...`.
-- VS Code: add an HTTP MCP server in MCP settings. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/mcp/login`.
+- Claude web custom connectors: use `https://mcp.jurisdigta.eu/mcp` for new connectors. If Claude has already stored the uppercase endpoint, `https://mcp.jurisdigta.eu/MCP` remains a fully authenticated OAuth-compatible alias. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...`, `http://127.0.0.1/...`, or `http://[::1]/...`.
+- VS Code: add an HTTP MCP server in MCP settings with `https://mcp.jurisdigta.eu/mcp`. When VS Code receives the OAuth challenge, it should open the JurisDigta browser login automatically. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/mcp/login`.
 - Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. Hosted OAuth callbacks include `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback` when their hosts are listed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
 
 ### Claude Desktop via `mcp-remote`
