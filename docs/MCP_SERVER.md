@@ -75,8 +75,11 @@ metadata, protected-resource discovery, and issued JWT audiences canonicalize to
 the uppercase `/MCP` resource. Neither path is a public-law bypass.
 Protected-resource metadata includes a human-readable `resource_name`, and
 authorization-server metadata advertises the canonical protected MCP resource,
-`client_id_metadata_document_supported=true`, and
-`authorization_response_iss_parameter_supported=true`. The authorization
+`registration_endpoint=/oauth/register`, and
+`authorization_response_iss_parameter_supported=true`. JurisDigta keeps
+explicit client ID metadata document validation for compatible clients, but does
+not advertise CIMD to Claude web because the hosted connector path is more
+reliable with Dynamic Client Registration. The authorization
 callback returns `iss=https://mcp.jurisdigta.eu` with the authorization code so
 strict OAuth clients can bind the response to the issuer.
 The browser authorization page validates the user password, sends an email OTP,
@@ -127,6 +130,9 @@ Claude and other clients may send Dynamic Client Registration metadata that incl
 - The OAuth authorization-server metadata advertises `offline_access` and the
   `refresh_token` grant for persistent hosted connectors such as Claude web.
   Protected-resource metadata still advertises only `mcp:laws`.
+- The OAuth authorization-server metadata advertises DCR and intentionally does
+  not advertise CIMD, so Claude web uses a server-issued public client ID for
+  the hosted connector flow.
 - OAuth refresh tokens are issued only when the authorization request includes
   `offline_access`. They are audience-bound, use `scope=offline_access`, are not
   accepted as MCP bearer tokens, and can be exchanged at `/oauth/token` with

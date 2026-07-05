@@ -1336,6 +1336,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorization_metadata.json()["grant_types_supported"] == ["authorization_code", "refresh_token"]
     assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws", "offline_access"]
     assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
+    assert "client_id_metadata_document_supported" not in authorization_metadata.json()
     assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
     assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/MCP"]
 
@@ -2214,7 +2215,7 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert authorization_metadata.json()["issuer"] == "https://mcp.jurisdigta.eu"
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
     assert authorization_metadata.json()["registration_endpoint"] == "https://mcp.jurisdigta.eu/oauth/register"
-    assert authorization_metadata.json()["client_id_metadata_document_supported"] is True
+    assert "client_id_metadata_document_supported" not in authorization_metadata.json()
     assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/MCP"]
     assert mcp_path_authorization_metadata.status_code == 200
     assert mcp_path_authorization_metadata.json() == authorization_metadata.json()

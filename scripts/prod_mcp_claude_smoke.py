@@ -123,6 +123,8 @@ def check_authorization_server(base_url: str) -> str:
         methods = set(payload.get("token_endpoint_auth_methods_supported") or [])
         if "none" not in methods:
             raise AssertionError(f"Authorization server must support public OAuth clients, got {sorted(methods)}")
+        if "client_id_metadata_document_supported" in payload:
+            raise AssertionError("Authorization server should steer Claude web to DCR, not CIMD")
         assert_equal(payload.get("protected_resources"), [f"{base_url}/MCP"], "protected_resources")
     return "OAuth authorization metadata is advertised for root, /mcp, and /MCP"
 

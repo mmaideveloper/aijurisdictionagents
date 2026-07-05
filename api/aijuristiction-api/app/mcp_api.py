@@ -452,7 +452,6 @@ def oauth_authorization_server_metadata(request: Request) -> Any:
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": list(_OAUTH_AUTHORIZATION_SERVER_SCOPES),
-        "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": _oauth_authorization_response_iss_enabled(),
         "protected_resources": protected_resources,
     }
