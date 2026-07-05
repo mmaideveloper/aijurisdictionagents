@@ -77,9 +77,9 @@ _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
 _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = 8_000
 _COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = 3
-_OAUTH_PUBLIC_CLIENT_GRANT_TYPES = ("authorization_code", "refresh_token")
-_OAUTH_TOLERATED_DCR_GRANT_TYPES = {*_OAUTH_PUBLIC_CLIENT_GRANT_TYPES, "client_credentials"}
-_OAUTH_GRANTED_SCOPE = f"{MCP_TOKEN_SCOPE} {MCP_REFRESH_TOKEN_SCOPE}"
+_OAUTH_PUBLIC_CLIENT_GRANT_TYPES = ("authorization_code",)
+_OAUTH_TOLERATED_DCR_GRANT_TYPES = {"authorization_code", "refresh_token", "client_credentials"}
+_OAUTH_GRANTED_SCOPE = MCP_TOKEN_SCOPE
 logger = logging.getLogger("aijuristiction-api.mcp")
 _CURRENT_MCP_REQUEST_ID: ContextVar[str | None] = ContextVar("current_mcp_request_id", default=None)
 _CURRENT_MCP_CORRELATION_ID: ContextVar[str | None] = ContextVar("current_mcp_correlation_id", default=None)
@@ -322,6 +322,12 @@ async def mcp_json_rpc(
         _payload_message_count(payload),
         ",".join(_payload_methods(payload)),
     )
+    logger.info(
+        "mcp_json_rpc_auth_state has_authorization=%s has_x_mcp_api_key=%s methods=%s",
+        bool(authorization and authorization.strip()),
+        bool(x_mcp_api_key and x_mcp_api_key.strip()),
+        ",".join(_payload_methods(payload)),
+    )
     public_tools = _public_tools_for_request(request)
     payload_requires_auth = _payload_requires_auth(
         request=request,
@@ -343,7 +349,7 @@ async def mcp_json_rpc(
             headers={"WWW-Authenticate": _www_authenticate_header(request)},
         )
     store = get_user_store() if payload_requires_auth else None
-    if api_key and store is not None and _payload_requires_vscode_discovery_auth(request=request, payload=payload):
+    if api_key and store is not None and _payload_requires_discovery_auth(payload=payload):
         try:
             _authenticate_mcp_api_token(api_key=api_key, store=store)
         except HTTPException as exc:
@@ -440,10 +446,10 @@ def oauth_authorization_server_metadata(request: Request) -> Any:
         "token_endpoint": f"{base_url}/oauth/token",
         "registration_endpoint": f"{base_url}/oauth/register",
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "grant_types_supported": list(_OAUTH_PUBLIC_CLIENT_GRANT_TYPES),
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
-        "scopes_supported": [MCP_TOKEN_SCOPE, MCP_REFRESH_TOKEN_SCOPE],
+        "scopes_supported": [MCP_TOKEN_SCOPE],
         "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": _oauth_authorization_response_iss_enabled(),
         "protected_resources": protected_resources,
@@ -915,7 +921,10 @@ def oauth_token(
             record_resource=str(record["resource"]),
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth resource mismatch")
-    token_audience = resolved_resource if resource.strip() else str(record["resource"])
+    token_audience = _canonicalize_mcp_resource(
+        request=request,
+        resource=resolved_resource if resource.strip() else str(record["resource"]),
+    )
     if _pkce_s256_challenge(code_verifier) != record["code_challenge"]:
         _log_oauth_token_failed(
             reason="invalid_pkce_verifier",
@@ -935,7 +944,6 @@ def oauth_token(
         expires_in_days=1,
         audience=token_audience,
     )
-    refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=token_audience)
     expires_in = max(1, int((datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).total_seconds()))
     logger.info(
         "mcp_oauth_token_succeeded grant_type=%s client_id_hash=%s redirect_host=%s redirect_path=%s "
@@ -949,7 +957,7 @@ def oauth_token(
         str(record["resource"]),
         token_audience,
         MCP_TOKEN_SCOPE,
-        MCP_REFRESH_TOKEN_SCOPE,
+        "not_issued",
         expires_in,
         user.user_id,
         _oauth_user_agent_family(request),
@@ -957,7 +965,6 @@ def oauth_token(
     return _oauth_token_json_response(
         {
             "access_token": token,
-            "refresh_token": refresh_token_value,
             "token_type": "Bearer",
             "expires_in": expires_in,
             "scope": _OAUTH_GRANTED_SCOPE,
@@ -2672,7 +2679,7 @@ def _base_url(request: Request) -> str:
 
 
 def _resource_url(request: Request) -> str:
-    return f"{_base_url(request)}/mcp"
+    return _uppercase_resource_url(request)
 
 
 def _uppercase_resource_url(request: Request) -> str:
@@ -2680,13 +2687,11 @@ def _uppercase_resource_url(request: Request) -> str:
 
 
 def _all_mcp_resource_urls(request: Request) -> list[str]:
-    return [_resource_url(request), _uppercase_resource_url(request)]
+    return [_uppercase_resource_url(request)]
 
 
 def _metadata_resource_url(request: Request) -> str:
-    if request.url.path.rstrip("/").endswith("/MCP"):
-        return _uppercase_resource_url(request)
-    return _resource_url(request)
+    return _uppercase_resource_url(request)
 
 
 def _base_url_from_resource(resource: str) -> str:
@@ -2776,7 +2781,7 @@ def _public_tools_for_request(request: Request) -> set[str]:
 
 
 def _payload_requires_auth(*, request: Request, payload: Any, public_tools: set[str]) -> bool:
-    if _payload_requires_vscode_discovery_auth(request=request, payload=payload):
+    if _payload_requires_discovery_auth(payload=payload):
         return True
     messages = payload if isinstance(payload, list) else [payload]
     for message in messages:
@@ -2792,9 +2797,7 @@ def _payload_requires_auth(*, request: Request, payload: Any, public_tools: set[
     return False
 
 
-def _payload_requires_vscode_discovery_auth(*, request: Request, payload: Any) -> bool:
-    if not _is_vscode_mcp_client(request=request, payload=payload):
-        return False
+def _payload_requires_discovery_auth(*, payload: Any) -> bool:
     methods = set(_payload_methods(payload))
     return bool(methods & {"initialize", "tools/list"})
 

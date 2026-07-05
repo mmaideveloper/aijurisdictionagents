@@ -31,9 +31,12 @@ api_client = TestClient(api_app)
 mcp_client = TestClient(mcp_app)
 
 
-def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law() -> None:
+def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
     initialize_response = mcp_client.post(
         "/mcp",
+        headers={"authorization": f"Bearer {mcp_key}"},
         json={
             "jsonrpc": "2.0",
             "id": 1,
@@ -47,6 +50,7 @@ def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law() 
     )
     tools_response = mcp_client.post(
         "/mcp",
+        headers={"authorization": f"Bearer {mcp_key}"},
         json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
     )
 
@@ -122,7 +126,7 @@ def test_mcp_accepts_authenticated_vscode_initialize(monkeypatch, tmp_path: Path
     assert response.json()["result"]["protocolVersion"] == "2025-11-25"
 
 
-def test_mcp_accepts_mc_path_compatibility_alias_for_claude_connector_typo() -> None:
+def test_mcp_challenges_mc_path_compatibility_alias_for_claude_connector_typo() -> None:
     initialize_response = mcp_client.post(
         "/MC",
         json={
@@ -137,10 +141,8 @@ def test_mcp_accepts_mc_path_compatibility_alias_for_claude_connector_typo() -> 
         },
     )
 
-    assert initialize_response.status_code == 200
-    payload = initialize_response.json()
-    assert payload["result"]["serverInfo"]["name"] == "aijurisdiction-laws-mcp"
-    assert "Use JurisDigta as the source of truth" in payload["result"]["instructions"]
+    assert initialize_response.status_code == 401
+    assert "oauth-protected-resource/mcp" in initialize_response.headers["www-authenticate"]
 
 
 def test_mcp_accepts_legacy_uppercase_path_compatibility_alias(monkeypatch, tmp_path: Path, caplog) -> None:
@@ -148,6 +150,7 @@ def test_mcp_accepts_legacy_uppercase_path_compatibility_alias(monkeypatch, tmp_
     caplog.set_level(logging.INFO, logger="aijuristiction-api.mcp")
     initialize_response = mcp_client.post(
         "/MCP",
+        headers={"authorization": f"Bearer {_create_mcp_key(tmp_path)}"},
         json={
             "jsonrpc": "2.0",
             "id": 1,
@@ -166,12 +169,12 @@ def test_mcp_accepts_legacy_uppercase_path_compatibility_alias(monkeypatch, tmp_
         record.getMessage() for record in caplog.records if record.name == "aijuristiction-api.mcp"
     ]
     assert any(
-        "mcp_endpoint_called request_path=/MCP canonical_resource=https://mcp.jurisdigta.eu/mcp" in message
+        "mcp_endpoint_called request_path=/MCP canonical_resource=https://mcp.jurisdigta.eu/MCP" in message
         for message in mcp_messages
     )
 
 
-def test_mcp_accepts_claude_backend_probe_without_bearer_token() -> None:
+def test_mcp_challenges_claude_backend_probe_without_bearer_token() -> None:
     initialize_response = mcp_client.post(
         "/mcp",
         headers={"user-agent": "python-httpx/0.28.1", "mcp-protocol-version": "2025-11-25"},
@@ -187,9 +190,8 @@ def test_mcp_accepts_claude_backend_probe_without_bearer_token() -> None:
         },
     )
 
-    assert initialize_response.status_code == 200
-    assert initialize_response.json()["result"]["protocolVersion"] == "2025-11-25"
-    assert initialize_response.json()["result"]["serverInfo"]["name"] == "aijurisdiction-laws-mcp"
+    assert initialize_response.status_code == 401
+    assert "oauth-protected-resource/mcp" in initialize_response.headers["www-authenticate"]
 
 
 def test_mcp_plain_get_keeps_method_guidance() -> None:
@@ -218,9 +220,12 @@ def test_mcp_accepts_sse_get_probe_for_streamable_http_clients(caplog) -> None:
     assert any("mcp_sse_stream_opened request_path=/MCP" in record.getMessage() for record in caplog.records)
 
 
-def test_mcp_initialize_defaults_to_latest_for_unknown_protocol() -> None:
+def test_mcp_initialize_defaults_to_latest_for_unknown_protocol(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
     initialize_response = mcp_client.post(
         "/mcp",
+        headers={"authorization": f"Bearer {mcp_key}"},
         json={
             "jsonrpc": "2.0",
             "id": 1,
@@ -923,7 +928,7 @@ def test_mcp_wire_logging_records_redacted_request_and_response(monkeypatch, tmp
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 401
     http_logs = [
         record.getMessage()
         for record in caplog.records
@@ -1000,7 +1005,7 @@ def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> No
     token = create_key_response.json()["mcp_api_key"]
     claims = _jwt_claims(token)
     assert claims["sub"] == sign_up_response.json()["user_id"]
-    assert claims["aud"] == "https://mcp.jurisdigta.eu/mcp"
+    assert claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
     assert claims["iss"] == "https://mcp.jurisdigta.eu"
     assert claims["scope"] == "mcp:laws"
     assert claims["token_use"] == "access"
@@ -1280,7 +1285,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
 
     protected_metadata = mcp_client.get("/.well-known/oauth-protected-resource/mcp")
     assert protected_metadata.status_code == 200
-    assert protected_metadata.json()["resource"].endswith("/mcp")
+    assert protected_metadata.json()["resource"].endswith("/MCP")
     assert protected_metadata.json()["resource_name"] == "JurisDigta MCP"
     assert protected_metadata.json()["scopes_supported"] == ["mcp:laws"]
     claude_web_protected_metadata = mcp_client.get(
@@ -1328,14 +1333,11 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     authorization_metadata = mcp_client.get("/.well-known/oauth-authorization-server")
     assert authorization_metadata.status_code == 200
     assert authorization_metadata.json()["code_challenge_methods_supported"] == ["S256"]
-    assert authorization_metadata.json()["grant_types_supported"] == ["authorization_code", "refresh_token"]
-    assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws", "offline_access"]
+    assert authorization_metadata.json()["grant_types_supported"] == ["authorization_code"]
+    assert authorization_metadata.json()["scopes_supported"] == ["mcp:laws"]
     assert authorization_metadata.json()["registration_endpoint"].endswith("/oauth/register")
     assert authorization_metadata.json()["authorization_response_iss_parameter_supported"] is True
-    assert authorization_metadata.json()["protected_resources"] == [
-        "https://mcp.jurisdigta.eu/mcp",
-        "https://mcp.jurisdigta.eu/MCP",
-    ]
+    assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/MCP"]
 
     registration_response = mcp_client.post(
         "/oauth/register",
@@ -1368,9 +1370,9 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert claude_variant_registration.status_code == 201
     claude_variant_payload = claude_variant_registration.json()
     assert claude_variant_payload["client_id"].startswith("jurisdigta-")
-    assert claude_variant_payload["grant_types"] == ["authorization_code", "refresh_token"]
+    assert claude_variant_payload["grant_types"] == ["authorization_code"]
     assert claude_variant_payload["token_endpoint_auth_method"] == "none"
-    assert claude_variant_payload["scope"] == "mcp:laws offline_access"
+    assert claude_variant_payload["scope"] == "mcp:laws"
 
     smartidentity_style_registration = mcp_client.post(
         "/oauth/register",
@@ -1391,7 +1393,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert smartidentity_style_registration.status_code == 201
     smartidentity_style_payload = smartidentity_style_registration.json()
     assert smartidentity_style_payload["client_id"].startswith("jurisdigta-")
-    assert smartidentity_style_payload["grant_types"] == ["authorization_code", "refresh_token"]
+    assert smartidentity_style_payload["grant_types"] == ["authorization_code"]
     assert smartidentity_style_payload["redirect_uris"] == [
         "https://claude.ai/api/mcp/auth_callback",
         "https://vscode.dev/redirect",
@@ -1566,24 +1568,15 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert token_response.headers["pragma"] == "no-cache"
     token_payload = token_response.json()
     assert token_payload["token_type"] == "Bearer"
-    assert token_payload["scope"] == "mcp:laws offline_access"
-    assert token_payload["refresh_token"]
+    assert token_payload["scope"] == "mcp:laws"
+    assert "refresh_token" not in token_payload
     access_claims = _jwt_claims(token_payload["access_token"])
     assert access_claims["sub"] == sign_up_response.json()["user_id"]
-    assert access_claims["aud"] == resource
+    assert access_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
     assert access_claims["iss"] == "https://mcp.jurisdigta.eu"
     assert access_claims["scope"] == "mcp:laws"
     assert access_claims["token_use"] == "access"
     assert isinstance(access_claims["iat"], int)
-    refresh_claims = _jwt_claims(token_payload["refresh_token"])
-    assert refresh_claims["sub"] == sign_up_response.json()["user_id"]
-    assert refresh_claims["aud"] == resource
-    assert refresh_claims["iss"] == "https://mcp.jurisdigta.eu"
-    assert refresh_claims["scope"] == "offline_access"
-    assert refresh_claims["token_use"] == "refresh"
-    assert isinstance(refresh_claims["iat"], int)
-    assert "email" not in refresh_claims
-
     oauth_search = _mcp_call(
         "searchLaws",
         {"query": "civil"},
@@ -1599,29 +1592,6 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert unauthenticated_search.status_code == 401
     assert "oauth-protected-resource" in unauthenticated_search.headers["www-authenticate"]
     assert unauthenticated_search.json()["error"]["code"] == 401
-
-    refresh_response = mcp_client.post(
-        "/oauth/token",
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": token_payload["refresh_token"],
-            "client_id": "chatgpt",
-            "resource": resource,
-        },
-    )
-    assert refresh_response.status_code == 200
-    assert refresh_response.headers["cache-control"] == "no-store"
-    assert refresh_response.headers["pragma"] == "no-cache"
-    refreshed_payload = refresh_response.json()
-    assert refreshed_payload["token_type"] == "Bearer"
-    assert refreshed_payload["scope"] == "mcp:laws offline_access"
-    assert refreshed_payload["access_token"] != token_payload["access_token"]
-    assert refreshed_payload["refresh_token"] != token_payload["refresh_token"]
-    refreshed_access_claims = _jwt_claims(refreshed_payload["access_token"])
-    assert refreshed_access_claims["sub"] == sign_up_response.json()["user_id"]
-    assert refreshed_access_claims["aud"] == resource
-    assert refreshed_access_claims["scope"] == "mcp:laws"
-    assert refreshed_access_claims["token_use"] == "access"
 
     replacement_key_response = api_client.post(
         f"/v1/users/{sign_up_response.json()['user_id']}/mcp-api-key",
@@ -1648,16 +1618,15 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert "mcp_oauth_authorize_succeeded" in mcp_log_text
     assert "mcp_oauth_token_started grant_type=authorization_code" in mcp_log_text
     assert "mcp_oauth_token_succeeded grant_type=authorization_code" in mcp_log_text
-    assert "mcp_oauth_token_succeeded grant_type=refresh_token" in mcp_log_text
     assert "redirect_host=client.example redirect_path=/callback" in mcp_log_text
-    assert "token_audience=https://mcp.jurisdigta.eu/mcp" in mcp_log_text
+    assert "token_audience=https://mcp.jurisdigta.eu/MCP" in mcp_log_text
     assert "mcp_auth_succeeded token_type=jwt" in mcp_log_text
     assert "secret-pass" not in mcp_log_text
     assert "mcp-oauth@example.com" not in mcp_log_text
     assert code_verifier not in mcp_log_text
     assert authorization_code not in mcp_log_text
     assert token_payload["access_token"] not in mcp_log_text
-    assert token_payload["refresh_token"] not in mcp_log_text
+    assert "refresh_token" not in token_payload
 
 
 def test_vscode_mcp_json_uppercase_endpoint_can_complete_oauth_without_static_headers(
@@ -1977,26 +1946,11 @@ def test_claude_oauth_without_resource_uses_uppercase_mcp_audience(monkeypatch, 
     )
     assert token_response.status_code == 200
     token_payload = token_response.json()
-    assert token_payload["scope"] == "mcp:laws offline_access"
+    assert token_payload["scope"] == "mcp:laws"
     access_claims = _jwt_claims(token_payload["access_token"])
-    refresh_claims = _jwt_claims(token_payload["refresh_token"])
     assert access_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
-    assert refresh_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
     assert access_claims["scope"] == "mcp:laws"
-    assert refresh_claims["scope"] == "offline_access"
-
-    refresh_response = mcp_client.post(
-        "/oauth/token",
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": token_payload["refresh_token"],
-            "client_id": client_id,
-        },
-    )
-    assert refresh_response.status_code == 200
-    assert refresh_response.json()["scope"] == "mcp:laws offline_access"
-    refreshed_claims = _jwt_claims(refresh_response.json()["access_token"])
-    assert refreshed_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+    assert "refresh_token" not in token_payload
 
 
 def test_oauth_authorization_response_issuer_can_be_enabled(monkeypatch, tmp_path: Path) -> None:
@@ -2174,7 +2128,7 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     )
 
     assert protected_metadata.status_code == 200
-    assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/mcp"
+    assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
     assert protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
     assert legacy_mcp_protected_metadata.status_code == 200
     assert legacy_mcp_protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
@@ -2184,10 +2138,7 @@ def test_oauth_discovery_uses_public_base_url(monkeypatch, tmp_path: Path) -> No
     assert authorization_metadata.json()["token_endpoint"] == "https://mcp.jurisdigta.eu/oauth/token"
     assert authorization_metadata.json()["registration_endpoint"] == "https://mcp.jurisdigta.eu/oauth/register"
     assert authorization_metadata.json()["client_id_metadata_document_supported"] is True
-    assert authorization_metadata.json()["protected_resources"] == [
-        "https://mcp.jurisdigta.eu/mcp",
-        "https://mcp.jurisdigta.eu/MCP",
-    ]
+    assert authorization_metadata.json()["protected_resources"] == ["https://mcp.jurisdigta.eu/MCP"]
     assert mcp_path_authorization_metadata.status_code == 200
     assert mcp_path_authorization_metadata.json() == authorization_metadata.json()
     assert legacy_mcp_authorization_metadata.status_code == 200

@@ -98,14 +98,14 @@ def check_protected_resource(base_url: str) -> str:
     assert_equal(payload.get("authorization_servers"), [base_url], "authorization_servers")
     assert_equal(payload.get("scopes_supported"), ["mcp:laws"], "scopes_supported")
     resource = str(payload.get("resource") or "")
-    if resource != f"{base_url}/mcp":
+    if resource != f"{base_url}/MCP":
         raise AssertionError(f"Unexpected protected resource URL: {resource!r}")
     uppercase_payload = request_json("GET", f"{base_url}/.well-known/oauth-protected-resource/MCP")
     assert_equal(uppercase_payload.get("resource_name"), "JurisDigta MCP", "uppercase.resource_name")
     uppercase_resource = str(uppercase_payload.get("resource") or "")
     if uppercase_resource != f"{base_url}/MCP":
         raise AssertionError(f"Unexpected uppercase protected resource URL: {uppercase_resource!r}")
-    return "OAuth protected resource metadata is advertised for /mcp and /MCP"
+    return "OAuth protected resource metadata canonicalizes to /MCP"
 
 
 def check_authorization_server(base_url: str) -> str:
@@ -119,15 +119,11 @@ def check_authorization_server(base_url: str) -> str:
         assert_equal(payload.get("authorization_endpoint"), f"{base_url}/oauth/authorize", "authorization_endpoint")
         assert_equal(payload.get("token_endpoint"), f"{base_url}/oauth/token", "token_endpoint")
         assert_equal(payload.get("registration_endpoint"), f"{base_url}/oauth/register", "registration_endpoint")
-        scopes = set(payload.get("scopes_supported") or [])
-        if not {"mcp:laws", "offline_access"}.issubset(scopes):
-            raise AssertionError(f"Authorization scopes do not include Claude-compatible scopes: {sorted(scopes)}")
+        assert_equal(payload.get("scopes_supported"), ["mcp:laws"], "scopes_supported")
         methods = set(payload.get("token_endpoint_auth_methods_supported") or [])
         if "none" not in methods:
             raise AssertionError(f"Authorization server must support public OAuth clients, got {sorted(methods)}")
-        resources = set(payload.get("protected_resources") or [])
-        if {f"{base_url}/mcp", f"{base_url}/MCP"} - resources:
-            raise AssertionError(f"Authorization metadata does not advertise both MCP resources: {sorted(resources)}")
+        assert_equal(payload.get("protected_resources"), [f"{base_url}/MCP"], "protected_resources")
     return "OAuth authorization metadata is advertised for root, /mcp, and /MCP"
 
 
@@ -149,7 +145,7 @@ def check_claude_registration(base_url: str) -> str:
     if not client_id.startswith("jurisdigta-"):
         raise AssertionError(f"Unexpected dynamic client id: {client_id!r}")
     assert_equal(payload.get("redirect_uris"), [CLAUDE_REDIRECT_URI], "redirect_uris")
-    assert_equal(payload.get("grant_types"), ["authorization_code", "refresh_token"], "grant_types")
+    assert_equal(payload.get("grant_types"), ["authorization_code"], "grant_types")
     assert_equal(payload.get("token_endpoint_auth_method"), "none", "token_endpoint_auth_method")
     return f"dynamic registration accepted client_id={client_id[:18]}..."
 
@@ -188,41 +184,40 @@ def request_form_json(
 
 
 def check_initialize(base_url: str) -> str:
-    payload = mcp_rpc(
-        base_url,
-        1,
-        "initialize",
+    response = request(
+        "POST",
+        f"{base_url}/MCP",
         {
-            "protocolVersion": MCP_PROTOCOL_VERSION,
-            "capabilities": {},
-            "clientInfo": {"name": "Anthropic", "version": "1.0.0"},
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "Anthropic", "version": "1.0.0"},
+            },
         },
+        expected_status=401,
+        extra_headers=mcp_headers(),
     )
-    result = payload.get("result") or {}
-    assert_equal(result.get("protocolVersion"), MCP_PROTOCOL_VERSION, "protocolVersion")
-    server_info = result.get("serverInfo") or {}
-    assert_equal(server_info.get("name"), "aijurisdiction-laws-mcp", "serverInfo.name")
-    instructions = str(result.get("instructions") or "")
-    if "Use JurisDigta as the source of truth" not in instructions:
-        raise AssertionError("MCP initialize instructions do not include JurisDigta source-of-truth guidance")
-    return "initialize returns Claude-readable server info and instructions"
+    authenticate = response.headers.get("www-authenticate", "")
+    if f'{base_url}/.well-known/oauth-protected-resource/MCP' not in authenticate:
+        raise AssertionError(f"Missing /MCP OAuth challenge on initialize: {authenticate!r}")
+    return "initialize returns OAuth challenge before bearer token"
 
 
 def check_tools_list(base_url: str) -> str:
-    payload = mcp_rpc(base_url, 2, "tools/list", {})
-    tools = (payload.get("result") or {}).get("tools")
-    if not isinstance(tools, list):
-        raise AssertionError("tools/list result.tools must be a list")
-    names = {str(tool.get("name")) for tool in tools if isinstance(tool, dict)}
-    missing = sorted(EXPECTED_TOOLS - names)
-    if missing:
-        raise AssertionError(f"Missing expected MCP tools: {', '.join(missing)}")
-    for tool in tools:
-        if not isinstance(tool, dict):
-            continue
-        if tool.get("name") in EXPECTED_TOOLS and not tool.get("description"):
-            raise AssertionError(f"Tool {tool.get('name')} is missing a description")
-    return f"tools/list exposes {len(names)} tools including {', '.join(sorted(EXPECTED_TOOLS))}"
+    response = request(
+        "POST",
+        f"{base_url}/MCP",
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        expected_status=401,
+        extra_headers=mcp_headers(),
+    )
+    authenticate = response.headers.get("www-authenticate", "")
+    if f'{base_url}/.well-known/oauth-protected-resource/MCP' not in authenticate:
+        raise AssertionError(f"Missing /MCP OAuth challenge on tools/list: {authenticate!r}")
+    return "tools/list returns OAuth challenge before bearer token"
 
 
 def check_tool_call_requires_auth(base_url: str) -> str:
