@@ -19,6 +19,10 @@ param(
 
     [switch]$InWorktreeEnv,
 
+    [switch]$SetupEnvOnly,
+
+    [switch]$RecreateEnv,
+
     [switch]$SkipEnvCreate
 )
 
@@ -97,11 +101,57 @@ function Find-CloneSourceEnv {
         "C:\projects\aijurisdictionagents\.conda"
     )
     foreach ($candidate in $candidates) {
-        if ((Test-Path (Join-Path $candidate "python.exe")) -and (Test-Path (Join-Path $candidate "Lib\site-packages"))) {
+        if (Test-CondaPrefix -PrefixPath $candidate) {
             return (Resolve-Path $candidate).Path
         }
     }
     return ""
+}
+
+function Test-CondaPrefix {
+    param([string]$PrefixPath)
+
+    if (-not $PrefixPath) {
+        return $false
+    }
+    $python = Join-Path $PrefixPath "python.exe"
+    if (-not (Test-Path $python)) {
+        return $false
+    }
+    if (-not (Test-Path (Join-Path $PrefixPath "Lib\site-packages"))) {
+        return $false
+    }
+    & $python -c "import sys; raise SystemExit(0 if sys.executable else 1)" 2>$null
+    return $LASTEXITCODE -eq 0
+}
+
+function Remove-EnvironmentPrefix {
+    param(
+        [string]$PrefixPath,
+        [string]$WorktreeRoot,
+        [string]$StorageRoot
+    )
+
+    if (-not (Test-Path $PrefixPath)) {
+        return
+    }
+
+    $resolvedPrefix = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($PrefixPath)
+    $resolvedWorktree = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($WorktreeRoot)
+    $resolvedStorage = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($StorageRoot)
+    $allowedRoots = @($resolvedWorktree, $resolvedStorage) | Where-Object { $_ }
+    $isAllowed = $false
+    foreach ($root in $allowedRoots) {
+        if ($resolvedPrefix.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $isAllowed = $true
+            break
+        }
+    }
+    if (-not $isAllowed) {
+        throw "Refusing to remove environment prefix outside the worktree or env storage root: $resolvedPrefix"
+    }
+
+    Remove-Item -LiteralPath $resolvedPrefix -Recurse -Force
 }
 
 function Invoke-EnvironmentTool {
@@ -129,7 +179,7 @@ function Invoke-EnvironmentTool {
     }
     & $Tool.Path @effectiveArguments
     if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+        throw "Environment tool failed with exit code ${LASTEXITCODE}: $($Tool.Path) $($effectiveArguments -join ' ')"
     }
 }
 
@@ -176,20 +226,29 @@ if (-not $WorktreePath) {
 }
 $WorktreePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($WorktreePath)
 
-Push-Location $RepoRoot
-try {
-    git fetch origin main
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
-    }
+if ($SkipEnvCreate -and $SetupEnvOnly) {
+    throw "-SkipEnvCreate cannot be combined with -SetupEnvOnly."
+}
 
-    git worktree add -b $Branch $WorktreePath $Base
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+if (-not $SetupEnvOnly) {
+    Push-Location $RepoRoot
+    try {
+        git fetch origin main
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+
+        git worktree add -b $Branch $WorktreePath $Base
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+    finally {
+        Pop-Location
     }
 }
-finally {
-    Pop-Location
+elseif (-not (Test-Path $WorktreePath)) {
+    throw "Cannot set up environment because worktree path does not exist: $WorktreePath"
 }
 
 if ($SkipEnvCreate) {
@@ -215,13 +274,25 @@ $ActualEnvPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFr
 $PythonPath = Join-Path $LocalEnvPath "python.exe"
 $ActualPythonPath = Join-Path $ActualEnvPath "python.exe"
 
-if (Test-Path $PythonPath) {
+if ($RecreateEnv -and (Test-Path $ActualEnvPath)) {
+    Write-Host "Removing existing conda environment at $ActualEnvPath because -RecreateEnv was specified."
+    Remove-EnvironmentPrefix -PrefixPath $ActualEnvPath -WorktreeRoot $WorktreePath -StorageRoot $EnvStorageRoot
+}
+
+if ((Test-Path $ActualEnvPath) -and (-not (Test-CondaPrefix -PrefixPath $ActualEnvPath))) {
+    Write-Host "Removing incomplete conda environment at $ActualEnvPath because python.exe validation failed."
+    Remove-EnvironmentPrefix -PrefixPath $ActualEnvPath -WorktreeRoot $WorktreePath -StorageRoot $EnvStorageRoot
+}
+
+if (Test-CondaPrefix -PrefixPath $LocalEnvPath) {
     Write-Host "Conda environment already exists at $LocalEnvPath."
 }
+elseif ($UseExternalEnv -and (Test-CondaPrefix -PrefixPath $ActualEnvPath)) {
+    New-DirectoryJunction -LinkPath $LocalEnvPath -TargetPath $ActualEnvPath
+    Write-Host "Linked existing conda environment from $ActualEnvPath to $LocalEnvPath."
+    Refresh-EditableInstalls -PythonPath $PythonPath -WorktreeRoot $WorktreePath
+}
 else {
-    if (Test-Path $ActualEnvPath) {
-        Remove-Item -LiteralPath $ActualEnvPath -Recurse -Force
-    }
     $actualParent = Split-Path -Parent $ActualEnvPath
     if (-not (Test-Path $actualParent)) {
         New-Item -ItemType Directory -Force -Path $actualParent | Out-Null
@@ -230,7 +301,7 @@ else {
     $ResolvedCloneSource = ""
     if ($CloneEnvFrom) {
         $ResolvedCloneSource = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($CloneEnvFrom)
-        if (-not (Test-Path (Join-Path $ResolvedCloneSource "python.exe"))) {
+        if (-not (Test-CondaPrefix -PrefixPath $ResolvedCloneSource)) {
             throw "Clone source '$ResolvedCloneSource' does not look like a conda prefix with python.exe."
         }
     }
@@ -238,24 +309,30 @@ else {
         $ResolvedCloneSource = Find-CloneSourceEnv -RepoRoot $RepoRoot
     }
 
-    if ($ResolvedCloneSource -and $Tool.Kind -ne "micromamba") {
-        Write-Host "Cloning conda environment from $ResolvedCloneSource."
-        Invoke-EnvironmentTool -Tool $Tool -Arguments @("create", "--prefix", $ActualEnvPath, "--clone", $ResolvedCloneSource, "-y")
-    }
-    else {
-        if ($ResolvedCloneSource -and $Tool.Kind -eq "micromamba") {
-            Write-Host "Micromamba does not reliably clone pip-heavy prefixes; creating from environment.yml instead."
-        }
-        Write-Host "Creating fresh conda environment from environment.yml."
-        if ($Tool.Kind -eq "micromamba") {
-            Invoke-EnvironmentTool -Tool $Tool -Arguments @("env", "create", "--prefix", $ActualEnvPath, "--file", $EnvironmentFile)
+    try {
+        if ($ResolvedCloneSource -and $Tool.Kind -ne "micromamba") {
+            Write-Host "Cloning conda environment from $ResolvedCloneSource."
+            Invoke-EnvironmentTool -Tool $Tool -Arguments @("create", "--prefix", $ActualEnvPath, "--clone", $ResolvedCloneSource, "-y")
         }
         else {
+            if ($ResolvedCloneSource -and $Tool.Kind -eq "micromamba") {
+                Write-Host "Micromamba does not reliably clone pip-heavy prefixes; creating from environment.yml instead."
+            }
+            Write-Host "Creating fresh conda environment from environment.yml."
             Invoke-EnvironmentTool -Tool $Tool -Arguments @("env", "create", "--prefix", $ActualEnvPath, "--file", $EnvironmentFile)
         }
     }
+    catch {
+        if (Test-Path $ActualEnvPath) {
+            Remove-EnvironmentPrefix -PrefixPath $ActualEnvPath -WorktreeRoot $WorktreePath -StorageRoot $EnvStorageRoot
+        }
+        throw
+    }
 
-    if (-not (Test-Path $ActualPythonPath)) {
+    if (-not (Test-CondaPrefix -PrefixPath $ActualEnvPath)) {
+        if (Test-Path $ActualEnvPath) {
+            Remove-EnvironmentPrefix -PrefixPath $ActualEnvPath -WorktreeRoot $WorktreePath -StorageRoot $EnvStorageRoot
+        }
         throw "Environment creation finished, but python.exe was not found at $ActualPythonPath."
     }
 
@@ -266,11 +343,16 @@ else {
     Refresh-EditableInstalls -PythonPath $PythonPath -WorktreeRoot $WorktreePath
 }
 
-if (-not (Test-Path $PythonPath)) {
+if (-not (Test-CondaPrefix -PrefixPath $LocalEnvPath)) {
     throw "Conda environment setup finished, but python.exe was not found at $PythonPath."
 }
 
-Write-Host "Created worktree at $WorktreePath."
+if ($SetupEnvOnly) {
+    Write-Host "Prepared conda environment for existing worktree at $WorktreePath."
+}
+else {
+    Write-Host "Created worktree at $WorktreePath."
+}
 if ($UseExternalEnv) {
     Write-Host "Conda environment stored at $ActualEnvPath and linked as $LocalEnvPath."
 }
