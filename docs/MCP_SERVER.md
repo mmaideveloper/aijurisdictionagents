@@ -233,17 +233,17 @@ Client documentation:
 - Claude MCP connector documentation: <https://platform.claude.com/docs/en/agents-and-tools/mcp-connector>
 - VS Code MCP server documentation: <https://code.visualstudio.com/docs/agent-customization/mcp-servers>
 
-## Public Tools
+## Protected Tools
 
-These tools do not require an MCP API key:
+All MCP tools require OAuth or an MCP API key. Unauthenticated clients can still
+call protocol bootstrap methods such as `initialize`, `tools/list`,
+`resources/list`, `resources/templates/list`, `prompts/list`, and `ping` so they
+can discover the server and start OAuth authorization. Every `tools/call`
+without a valid token returns `401` with a `WWW-Authenticate`
+`resource_metadata` challenge.
 
 - `getVersion`: returns API, system/core, mobile app, web app versions, court-decision collector version, and court-decision collector status with latest imported decision metadata.
 - `getStatistics`: returns processed laws count, last processed law, last processed day, laws collector details, court-decision collector version, and court-decision statistics such as total decisions, published decisions, total versions, last imported decision/source GUID, last import time, court, court type, ECLI, file number, issue date, and collector cursor status.
-
-## Protected Tools
-
-These tools require an MCP API key:
-
 - `searchLegalSources`: protected combined metadata search for questions that need both laws and court decisions, for example `Daj mi vsetky rozhodnutia a zakony ktore sa tykaju prenajmu bytu za rok 2026?`. The MCP server does not use an LLM to answer; clients such as Codex, VS Code, Claude, or ChatGPT parse the natural-language question and pass structured filters such as `query`, `published_year`, and `source_types`. The default `year_filter_mode` is `published_in`, so `published_year=2026` means laws or decisions published in 2026.
 - `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title. Results return metadata for the current consolidated version by default and support `published_year`, `year_filter_mode=published_in`, `limit`, and `offset`.
 - `getLawText`: returns bounded latest imported text for a law document id. For large codes, pass `section_number` or `section_start`/`section_end` to retrieve only the relevant sections; use `offset` and `max_chars` when pagination is needed.
@@ -275,7 +275,10 @@ For a natural-language question such as `Daj mi vsetky rozhodnutia a zakony ktor
 
 For Civil Code style questions, call `searchLaws` with the exact identifier first, for example `{"query": "40/1964", "law_number": 40, "law_year": 1964}`. Then call `getLawText` with the returned `document_id` and a focused range, for example `{"document_id": "...", "section_start": 685, "section_end": 716}`. Avoid asking for the full law text unless the law is small or pagination is explicitly required.
 
-For protected tools, send the MCP API key as a Bearer token or `x-mcp-api-key` header. Protected unauthenticated tool calls return `401` with a `WWW-Authenticate` header pointing clients at the protected-resource metadata endpoint.
+For all tools, send the OAuth access token or MCP API key as a Bearer token or
+`x-mcp-api-key` header. Unauthenticated tool calls return `401` with a
+`WWW-Authenticate` header pointing clients at the protected-resource metadata
+endpoint.
 
 ## Logging And Debugging
 
@@ -316,4 +319,4 @@ Debugging fields are intentionally minimized:
 
 For production troubleshooting, filter application logs by `mcp_` event names and correlate them with the `x-request-id` or `x-correlation-id` response headers.
 
-Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, audience-bound, hashed in storage, expire by default after 1 day, and can be revoked. Public tools avoid user-specific data. Protected legal-data tools remain read-only and are logged with request correlation IDs by the MCP middleware for traceability. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. OAuth and MCP tool responses do not return raw API keys to ChatGPT or Claude. Dynamic client registration only issues a public OAuth client identifier for PKCE flows; it does not issue user tokens, secrets, or data access without the existing user login and email OTP authorization. OTP reuse stores only user id, purpose, verification time, and expiry; it does not store OTP codes, passwords, OAuth tokens, email addresses, prompts, or law text. The synthetic E2E MFA bypass is off by default, hard-limited to the two JurisDigta-owned test emails, password-gated, expiry-gated, and logged with hashed identity/client context. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, set `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, keep OAuth redirect hosts restricted, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.
+Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, audience-bound, hashed in storage, expire by default after 1 day, and can be revoked. All MCP tool calls require user authentication and remain logged with request correlation IDs by the MCP middleware for traceability; unauthenticated access is limited to OAuth metadata and MCP bootstrap/discovery methods. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. OAuth and MCP tool responses do not return raw API keys to ChatGPT or Claude. Dynamic client registration only issues a public OAuth client identifier for PKCE flows; it does not issue user tokens, secrets, or data access without the existing user login and email OTP authorization. OTP reuse stores only user id, purpose, verification time, and expiry; it does not store OTP codes, passwords, OAuth tokens, email addresses, prompts, or law text. The synthetic E2E MFA bypass is off by default, hard-limited to the two JurisDigta-owned test emails, password-gated, expiry-gated, and logged with hashed identity/client context. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, set `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, keep OAuth redirect hosts restricted, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.

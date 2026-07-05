@@ -61,7 +61,7 @@ MCP_SERVER_INSTRUCTIONS = (
     "Answer with the law name or number, relevant sections or paragraphs, and a plain-language explanation. "
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
-_PUBLIC_TOOLS = {"getVersion", "getStatistics"}
+_PUBLIC_TOOLS: set[str] = set()
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = (
     "chatgpt.com",
     "chat.openai.com",
@@ -1427,7 +1427,6 @@ def _handle_json_rpc_message(
                 authorization=authorization,
                 x_mcp_api_key=x_mcp_api_key,
                 store=store,
-                public_tools=public_tools,
             )
             result = _call_tool(tool_name, arguments)
             logger.info(
@@ -1458,11 +1457,7 @@ def _require_auth_for_tool(
     authorization: str | None,
     x_mcp_api_key: str | None,
     store: ApiDatabaseStore | None,
-    public_tools: set[str],
 ) -> None:
-    if tool_name in public_tools:
-        logger.info("mcp_tool_auth_skipped tool=%s reason=public_tool", tool_name)
-        return
     api_key = _extract_mcp_api_key(authorization=authorization, x_mcp_api_key=x_mcp_api_key)
     if not api_key:
         logger.warning("mcp_tool_auth_failed tool=%s reason=missing_api_key", tool_name)
@@ -2273,7 +2268,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
         {
             "name": "getVersion",
             "description": (
-                "Public version information for the mobile, system, API, and web apps, "
+                "Authenticated version information for the mobile, system, API, and web apps, "
                 "plus court-decision collector status and latest imported decision metadata."
             ),
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
@@ -2281,8 +2276,8 @@ def _mcp_tools() -> list[dict[str, Any]]:
         {
             "name": "getStatistics",
             "description": (
-                "Public laws collector and court-decision collector processing statistics, including totals and "
-                "latest imported source identifiers."
+                "Authenticated laws collector and court-decision collector processing statistics, including "
+                "totals and latest imported source identifiers."
             ),
             "inputSchema": {
                 "type": "object",

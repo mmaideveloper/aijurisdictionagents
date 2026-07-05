@@ -29,9 +29,9 @@ print(
     "invalid OTP submissions re-render HTML warnings instead of JSON errors."
 )
 print(
-    "mcp_auth_contract => getVersion/getStatistics are public; searchLaws/getLawText require "
-    "a Bearer MCP token or x-mcp-api-key, and lowercase OAuth clients should use "
-    "https://mcp.jurisdigta.eu/mcp."
+    "mcp_auth_contract => every MCP tool call requires a Bearer MCP token or "
+    "x-mcp-api-key; unauthenticated clients can still use initialize, tools/list, "
+    "and OAuth discovery to start authorization."
 )
 print(
     "mcp_legal_source_search => MCP remains model-free; clients parse natural-language legal "
