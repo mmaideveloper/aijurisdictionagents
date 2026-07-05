@@ -26,6 +26,7 @@ import type { CaseCitation, CaseCommunicationMode, CaseDocumentRecord, CaseInter
 import { isCaseRoleAvailable } from "../state/caseRoles";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
+const EMPTY_CASE_CITATIONS: CaseCitation[] = [];
 
 const extractTextContent = (content: AdapterRunOptions["messages"][number]["content"]): string => {
   return content
@@ -687,8 +688,8 @@ const CaseMessageCitations: React.FC = () => {
   const { t } = useLanguage();
   const citations = useAuiState((state) => {
     const custom = state.message.metadata.custom as Record<string, unknown> | undefined;
-    return Array.isArray(custom?.citations) ? (custom.citations as CaseCitation[]) : [];
-  }) ?? [];
+    return Array.isArray(custom?.citations) ? (custom.citations as CaseCitation[]) : EMPTY_CASE_CITATIONS;
+  }) ?? EMPTY_CASE_CITATIONS;
   if (citations.length === 0) {
     return null;
   }

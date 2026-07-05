@@ -560,8 +560,12 @@ test.describe("provider credentials lifecycle", () => {
     await page.goto("/auth", { waitUntil: "domcontentloaded" });
     await page.getByLabel("Work email").fill(adminUser.email);
     await page.getByLabel("Password").fill("admin123");
+    const signInResponse = page.waitForResponse((response) =>
+      response.url().includes("/v1/users/sign-in") && response.status() === 200
+    );
     await page.getByRole("button", { name: "Sign in" }).click();
-    await page.getByRole("button", { name: "Admin" }).click();
+    await signInResponse;
+    await page.goto("/app/admin", { waitUntil: "domcontentloaded" });
 
     await expect(page).toHaveURL(/\/app\/admin/);
     await page.screenshot({ path: "test-results/codex-455-screenshots/01-admin-page.png", fullPage: true });
