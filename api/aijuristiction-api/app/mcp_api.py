@@ -323,7 +323,11 @@ async def mcp_json_rpc(
         ",".join(_payload_methods(payload)),
     )
     public_tools = _public_tools_for_request(request)
-    payload_requires_auth = _payload_requires_auth(payload, public_tools=public_tools)
+    payload_requires_auth = _payload_requires_auth(
+        request=request,
+        payload=payload,
+        public_tools=public_tools,
+    )
     api_key = _extract_mcp_api_key(
         authorization=authorization,
         x_mcp_api_key=x_mcp_api_key,
@@ -339,6 +343,15 @@ async def mcp_json_rpc(
             headers={"WWW-Authenticate": _www_authenticate_header(request)},
         )
     store = get_user_store() if payload_requires_auth else None
+    if api_key and store is not None and _payload_requires_vscode_discovery_auth(request=request, payload=payload):
+        try:
+            _authenticate_mcp_api_token(api_key=api_key, store=store)
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content=_json_rpc_error(_first_payload_id(payload), exc.status_code, str(exc.detail)),
+                headers={"WWW-Authenticate": _www_authenticate_header(request)},
+            )
     request_id_token = _CURRENT_MCP_REQUEST_ID.set(str(request_id) if request_id else None)
     correlation_id_token = _CURRENT_MCP_CORRELATION_ID.set(str(correlation_id) if correlation_id else None)
     try:
@@ -2762,7 +2775,9 @@ def _public_tools_for_request(request: Request) -> set[str]:
     return _PUBLIC_TOOLS
 
 
-def _payload_requires_auth(payload: Any, *, public_tools: set[str]) -> bool:
+def _payload_requires_auth(*, request: Request, payload: Any, public_tools: set[str]) -> bool:
+    if _payload_requires_vscode_discovery_auth(request=request, payload=payload):
+        return True
     messages = payload if isinstance(payload, list) else [payload]
     for message in messages:
         if not isinstance(message, dict):
@@ -2773,6 +2788,31 @@ def _payload_requires_auth(payload: Any, *, public_tools: set[str]) -> bool:
         params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
         tool_name = params.get("name")
         if isinstance(tool_name, str) and tool_name not in public_tools:
+            return True
+    return False
+
+
+def _payload_requires_vscode_discovery_auth(*, request: Request, payload: Any) -> bool:
+    if not _is_vscode_mcp_client(request=request, payload=payload):
+        return False
+    methods = set(_payload_methods(payload))
+    return bool(methods & {"initialize", "tools/list"})
+
+
+def _is_vscode_mcp_client(*, request: Request, payload: Any) -> bool:
+    user_agent = request.headers.get("user-agent", "").lower()
+    if "vscode" in user_agent or "visual studio code" in user_agent:
+        return True
+    messages = payload if isinstance(payload, list) else [payload]
+    for message in messages:
+        if not isinstance(message, dict) or message.get("method") != "initialize":
+            continue
+        raw_params = message.get("params")
+        params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
+        raw_client_info = params.get("clientInfo")
+        client_info: dict[str, Any] = raw_client_info if isinstance(raw_client_info, dict) else {}
+        client_name = str(client_info.get("name", "")).lower()
+        if "vscode" in client_name or "visual studio code" in client_name:
             return True
     return False
 

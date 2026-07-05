@@ -65,6 +65,63 @@ def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law() 
     assert "full_version=true" in tools["getCourtDecision"]["description"]
 
 
+def test_mcp_challenges_vscode_initialize_without_bearer() -> None:
+    response = mcp_client.post(
+        "/MCP",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "Visual Studio Code", "version": "1.102.0"},
+            },
+        },
+    )
+
+    assert response.status_code == 401
+    assert "WWW-Authenticate" in response.headers
+    assert "oauth-protected-resource/MCP" in response.headers["WWW-Authenticate"]
+    assert response.json()["error"]["message"] == "Tool requires OAuth authorization"
+
+
+def test_mcp_challenges_vscode_tools_list_without_bearer() -> None:
+    response = mcp_client.post(
+        "/MCP",
+        headers={"user-agent": "Visual Studio Code/1.102.0"},
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    )
+
+    assert response.status_code == 401
+    assert "WWW-Authenticate" in response.headers
+    assert "oauth-protected-resource/MCP" in response.headers["WWW-Authenticate"]
+    assert response.json()["error"]["message"] == "Tool requires OAuth authorization"
+
+
+def test_mcp_accepts_authenticated_vscode_initialize(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    response = mcp_client.post(
+        "/MCP",
+        headers={"authorization": f"Bearer {mcp_key}"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "Visual Studio Code", "version": "1.102.0"},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"]["protocolVersion"] == "2025-11-25"
+
+
 def test_mcp_accepts_mc_path_compatibility_alias_for_claude_connector_typo() -> None:
     initialize_response = mcp_client.post(
         "/MC",
@@ -1635,18 +1692,10 @@ def test_vscode_mcp_json_uppercase_endpoint_can_complete_oauth_without_static_he
             },
         },
     )
-    assert initialize_response.status_code == 200
-
-    protected_challenge = _mcp_call(
-        "searchLaws",
-        {"query": "civil"},
-        path="/MCP",
-        headers={"user-agent": "Visual Studio Code MCP client"},
-    )
-    assert protected_challenge.status_code == 401
+    assert initialize_response.status_code == 401
     assert (
         'resource_metadata="https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP"'
-        in protected_challenge.headers["www-authenticate"]
+        in initialize_response.headers["www-authenticate"]
     )
 
     protected_metadata = mcp_client.get(
@@ -1751,6 +1800,26 @@ def test_vscode_mcp_json_uppercase_endpoint_can_complete_oauth_without_static_he
     access_claims = _jwt_claims(token_payload["access_token"])
     assert access_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
     assert access_claims["scope"] == "mcp:laws"
+
+    authenticated_initialize = mcp_client.post(
+        "/MCP",
+        headers={
+            "authorization": f"Bearer {token_payload['access_token']}",
+            "user-agent": "Visual Studio Code MCP client",
+        },
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "Visual Studio Code", "version": "1"},
+            },
+        },
+    )
+    assert authenticated_initialize.status_code == 200
+    assert authenticated_initialize.json()["result"]["protocolVersion"] == "2025-11-25"
 
     protected_search = _mcp_call(
         "searchLaws",

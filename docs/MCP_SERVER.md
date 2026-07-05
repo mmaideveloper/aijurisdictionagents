@@ -170,14 +170,14 @@ Use `https://mcp.jurisdigta.eu/mcp` as the remote MCP server URL in clients that
 }
 ```
 
-  VS Code can initialize the server and list public tools without credentials.
-  On the first protected tool call, JurisDigta returns `401` with a
-  `WWW-Authenticate` `resource_metadata` challenge for the configured MCP path.
-  VS Code should then open the JurisDigta browser authorization page, complete
-  password plus OTP verification, exchange the PKCE authorization code for a
-  scoped bearer token, and retry protected tools with that token. If OAuth is
-  unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after
-  generating a key from `/mcp/login`.
+  OAuth-capable VS Code clients are challenged during `initialize` and
+  `tools/list` with `401` plus a `WWW-Authenticate` `resource_metadata`
+  challenge for the configured MCP path. VS Code should then open the JurisDigta
+  browser authorization page, complete password plus OTP verification, exchange
+  the PKCE authorization code for a scoped bearer token, and retry MCP discovery
+  and protected tools with that token. If OAuth is unavailable in the client,
+  include `Authorization: Bearer <mcp_api_key>` after generating a key from
+  `/mcp/login`.
 - Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. Hosted OAuth callbacks include `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback` when their hosts are listed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
 
 ### Claude Desktop via `mcp-remote`
