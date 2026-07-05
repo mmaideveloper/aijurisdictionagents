@@ -14,6 +14,7 @@ import {
   OllamaModelInventory,
   disableAIModelUserOverride,
   fetchAdminUsers,
+  fetchAdminCaseExportBlob,
   fetchAdminUserCases,
   fetchAIModelAdminDashboard,
   fetchAIModelUserOverride,
@@ -145,6 +146,7 @@ const AIModelAdmin: React.FC = () => {
   const [selectedCaseUser, setSelectedCaseUser] = React.useState<AdminCaseUser | null>(null);
   const [adminCaseList, setAdminCaseList] = React.useState<AdminCaseList | null>(null);
   const [caseDeleteReason, setCaseDeleteReason] = React.useState(t("adminCasesDefaultReason"));
+  const [exportingAdminCaseId, setExportingAdminCaseId] = React.useState<string | null>(null);
   const [assignmentQuery, setAssignmentQuery] = React.useState("");
   const [assignmentUsers, setAssignmentUsers] = React.useState<AdminUserSummary[]>([]);
   const [assignmentDetail, setAssignmentDetail] = React.useState<AIModelUserOverrideDetail | null>(null);
@@ -344,6 +346,38 @@ const AIModelAdmin: React.FC = () => {
       await reload();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : t("adminCasesDeleteFailed"));
+    }
+  };
+
+  const exportAdminCase = async (caseItem: AdminCaseSummary) => {
+    if (!selectedCaseUser || !caseDeleteReason.trim()) {
+      setError(t("adminCasesExportReasonRequired"));
+      return;
+    }
+    setError("");
+    setStatus("");
+    setExportingAdminCaseId(caseItem.case_id);
+    try {
+      const exported = await fetchAdminCaseExportBlob(
+        adminAuth,
+        caseItem.case_id,
+        selectedCaseUser.user_id,
+        caseDeleteReason.trim()
+      );
+      const objectUrl = URL.createObjectURL(exported.blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = exported.filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      setStatus(t("adminCasesExportSuccess"));
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : t("adminCasesExportFailed"));
+    } finally {
+      setExportingAdminCaseId(null);
     }
   };
 
@@ -1047,14 +1081,24 @@ const AIModelAdmin: React.FC = () => {
                           <td>{caseItem.created_at}</td>
                           <td>{caseItem.updated_at}</td>
                           <td>
-                            <button
-                              className="button ghost"
-                              type="button"
-                              disabled={caseItem.status === "deleted" || !caseDeleteReason.trim()}
-                              onClick={() => void deleteAdminCase(caseItem)}
-                            >
-                              <FaTrash aria-hidden="true" />{t("adminCasesSoftDelete")}
-                            </button>
+                            <div className="admin-inline-actions">
+                              <button
+                                className="button ghost"
+                                type="button"
+                                disabled={caseItem.status === "deleted" || !caseDeleteReason.trim() || exportingAdminCaseId === caseItem.case_id}
+                                onClick={() => void exportAdminCase(caseItem)}
+                              >
+                                <FaDownload aria-hidden="true" />{t("adminCasesExport")}
+                              </button>
+                              <button
+                                className="button ghost"
+                                type="button"
+                                disabled={caseItem.status === "deleted" || !caseDeleteReason.trim()}
+                                onClick={() => void deleteAdminCase(caseItem)}
+                              >
+                                <FaTrash aria-hidden="true" />{t("adminCasesSoftDelete")}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
