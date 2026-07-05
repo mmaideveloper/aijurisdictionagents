@@ -5,6 +5,9 @@ The local default is `http://127.0.0.1:8070`, and production routing should map
 `https://mcp.jurisdigta.eu` to the MCP service, not to `api.jurisdigta.eu`.
 
 The MCP service exposes a Streamable HTTP-style MCP JSON-RPC endpoint at `POST /mcp`.
+Clients that probe the MCP endpoint with `GET /mcp` or `GET /MCP` and
+`Accept: text/event-stream` receive a minimal SSE-ready stream; plain browser
+GET requests still return `405` with guidance to use POST.
 It is intended for AI assistants that can connect to remote MCP servers over HTTP.
 For ChatGPT, Claude, and VS Code OAuth-capable clients, start from the OAuth metadata endpoints instead of manually copying a token.
 The API `/version`, MCP `/version`, and MCP `getVersion` tool expose `mcp_server_version`.
@@ -16,9 +19,13 @@ unknown future value, the server falls back to the latest supported version.
 `POST /MCP` remains accepted as a Claude compatibility endpoint and for older
 client records, and `POST /MC` is also accepted for connector records that were
 accidentally saved with the truncated Claude URL `/MC`. OAuth metadata keeps
-`https://mcp.jurisdigta.eu/mcp` for lowercase clients and advertises
-`https://mcp.jurisdigta.eu/MCP` from the uppercase protected-resource metadata
-path because Claude web may store custom connector URLs with uppercase `/MCP`.
+`https://mcp.jurisdigta.eu/mcp` for lowercase clients. The uppercase
+`/.well-known/oauth-protected-resource/MCP` path intentionally returns `404`
+because Claude web may store custom connector URLs with uppercase `/MCP` and
+will force OAuth when that path is advertised as protected.
+Claude web backend discovery at the root OAuth metadata URLs is also hidden
+when the request uses Claude's `python-httpx` MCP client headers, because Claude
+falls back to root discovery after uppercase path discovery returns `404`.
 Because Claude web can complete OAuth and then reject the issued credentials
 without making an authenticated MCP call, `/MCP` also acts as a public-law
 compatibility endpoint for Claude web: it allows `getVersion`, `getStatistics`,
@@ -71,12 +78,12 @@ or a preconfigured public OAuth Client ID. New dynamic registrations may return
 either `200 OK` or `201 Created` with the issued public client metadata.
 ChatGPT and other lowercase clients should pass the protected resource value
 `https://mcp.jurisdigta.eu/mcp` on the authorization, token, and refresh
-requests. Claude web custom connectors may omit `resource` and store the server
-URL as `https://mcp.jurisdigta.eu/MCP`; JurisDigta detects Claude OAuth clients
-from the public client id/redirect host and issues `/MCP`-audience access and
-refresh tokens for that flow. Protected-resource metadata includes a
-human-readable `resource_name`, and authorization-server metadata advertises
-both protected MCP resources, `client_id_metadata_document_supported=true`, and
+requests. Claude web custom connectors should store the server URL as
+`https://mcp.jurisdigta.eu/MCP`; that uppercase path is public for bounded
+public-law tools and is not advertised as an OAuth protected resource.
+Protected-resource metadata includes a human-readable `resource_name`, and
+authorization-server metadata advertises only the lowercase protected MCP
+resource, `client_id_metadata_document_supported=true`, and
 `authorization_response_iss_parameter_supported=true`. The authorization
 callback returns `iss=https://mcp.jurisdigta.eu` with the authorization code so
 strict OAuth clients can bind the response to the issuer.
@@ -99,11 +106,14 @@ Production settings:
 - `MCP_API_JWT_SECRET=<long-random-secret>`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
 - `MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS=true` by default; keep it enabled for Claude web custom connectors so the authorization callback includes `iss`.
+- `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` by default. For controlled Claude/E2E validation only, operators may temporarily enable it for the synthetic emails `mcp-claude-test-free@jurisdigta.eu` and `mcp-claude-test-paid@jurisdigta.eu` with `MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT=2030-01-01T00:00:00Z`. The bypass is hard-limited to MCP OAuth authorization and still requires the correct password.
+- `JURISDIGTA_E2E_TEST_USER_PASSWORD=<secret>` is used by `python scripts/provision_e2e_users.py` to create or update the synthetic free/paid E2E accounts. Keep it in runtime secret storage only.
 
-Do not hide OAuth discovery from Claude web custom connector probes. Claude web
-uses `python-httpx` while validating custom connectors and must receive the
-protected-resource metadata, authorization-server metadata, and dynamic client
-registration response before it can start the browser authorization flow.
+Root OAuth discovery is hidden from Claude web custom connector probes that use
+`python-httpx` with the MCP protocol header. Claude web should validate the
+uppercase `/MCP` compatibility endpoint as a bounded public-law MCP endpoint
+instead of starting OAuth for that saved connector URL.
+Claude and other clients may send Dynamic Client Registration metadata that includes `client_credentials`; JurisDigta accepts that compatibility shape only when `authorization_code` is also requested, returns the public-client grants `authorization_code` and `refresh_token`, and continues to reject actual `grant_type=client_credentials` token exchanges.
 
 ## Authentication
 
@@ -143,7 +153,7 @@ Manual JWT generation remains useful for local VS Code setups that pass an `Auth
 Use `https://mcp.jurisdigta.eu/mcp` as the remote MCP server URL in clients that support custom HTTP MCP servers.
 
 - ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it. Users may self-register during the browser authorization flow, but ChatGPT only receives the OAuth access token and tool results, not a raw API key.
-- Claude web custom connectors: use `https://mcp.jurisdigta.eu/MCP`. This uppercase path is intentionally a public-law compatibility endpoint because Claude web may complete OAuth and then reject the issued credentials before making any authenticated MCP request. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...`, `http://127.0.0.1/...`, or `http://[::1]/...`.
+- Claude web custom connectors: use `https://mcp.jurisdigta.eu/MCP`. This uppercase path is intentionally a public-law compatibility endpoint without OAuth protected-resource discovery because Claude web may complete OAuth and then reject the issued credentials before making any authenticated MCP request. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...`, `http://127.0.0.1/...`, or `http://[::1]/...`.
 - VS Code: add an HTTP MCP server in MCP settings. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/mcp/login`.
 - Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. Hosted OAuth callbacks include `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback` when their hosts are listed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
 
@@ -237,10 +247,11 @@ These tools do not require an MCP API key:
 
 These tools require an MCP API key:
 
-- `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title.
+- `searchLegalSources`: protected combined metadata search for questions that need both laws and court decisions, for example `Daj mi vsetky rozhodnutia a zakony ktore sa tykaju prenajmu bytu za rok 2026?`. The MCP server does not use an LLM to answer; clients such as Codex, VS Code, Claude, or ChatGPT parse the natural-language question and pass structured filters such as `query`, `published_year`, and `source_types`. The default `year_filter_mode` is `published_in`, so `published_year=2026` means laws or decisions published in 2026.
+- `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title. Results return metadata for the current consolidated version by default and support `published_year`, `year_filter_mode=published_in`, `limit`, and `offset`.
 - `getLawText`: returns bounded latest imported text for a law document id. For large codes, pass `section_number` or `section_start`/`section_end` to retrieve only the relevant sections; use `offset` and `max_chars` when pagination is needed.
-- `searchCourtDecisions`: searches the dedicated court-decision vector store and returns pseudonymized public snippets with court/date/ECLI/file-number metadata. MCP court-decision search is bounded by a server-side PostgreSQL connect timeout and statement timeout so slow database calls return a structured `status=degraded`, `retryable=true` payload with request/correlation identifiers instead of hanging until the MCP client times out. Logs record query length, limit, duration, error kind, request ID, and correlation ID, but not the raw query, credentials, tokens, snippets, or court-decision text.
-- `getCourtDecision`: returns one imported court decision. `outputMode=public` is the default and returns pseudonymized text. `outputMode=internal_raw` is blocked unless `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP=true` is enabled for a controlled internal runtime; it must not be used for normal external model prompts or UI display.
+- `searchCourtDecisions`: searches the dedicated court-decision vector store and returns court/date/ECLI/file-number metadata by default. Set `include_snippets=true` to include pseudonymized public snippets. MCP court-decision search is bounded by a server-side PostgreSQL connect timeout and statement timeout so slow database calls return a structured `status=degraded`, `retryable=true` payload with request/correlation identifiers instead of hanging until the MCP client times out. Logs record query length, limit, duration, error kind, request ID, and correlation ID, but not the raw query, credentials, tokens, snippets, or court-decision text.
+- `getCourtDecision`: returns one imported court decision. The default response is metadata-only. Set `full_version=true` to return bounded pseudonymized public text. `outputMode=internal_raw` is blocked unless `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP=true` is enabled for a controlled internal runtime; it must not be used for normal external model prompts or UI display.
 
 ## Minimal JSON-RPC Example
 
@@ -250,15 +261,20 @@ These tools require an MCP API key:
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "searchLaws",
+    "name": "searchLegalSources",
     "arguments": {
-      "query": "civil",
+      "query": "prenajom bytu",
       "country_code": "SK",
-      "limit": 10
+      "source_types": ["laws", "court_decisions"],
+      "published_year": 2026,
+      "year_filter_mode": "published_in",
+      "limit_per_source": 10
     }
   }
 }
 ```
+
+For a natural-language question such as `Daj mi vsetky rozhodnutia a zakony ktore sa tykaju prenajmu bytu za rok 2026?`, the MCP client should call `searchLegalSources` with a normalized query such as `prenajom bytu`, `published_year=2026`, and `source_types=["laws","court_decisions"]`. The MCP server returns grouped source metadata only; the client formats the answer and may call `getCourtDecision(full_version=true)` or `getLawText(...)` only if the user asks for full text or a specific citation.
 
 For Civil Code style questions, call `searchLaws` with the exact identifier first, for example `{"query": "40/1964", "law_number": 40, "law_year": 1964}`. Then call `getLawText` with the returned `document_id` and a focused range, for example `{"document_id": "...", "section_start": 685, "section_end": 716}`. Avoid asking for the full law text unless the law is small or pagination is explicitly required.
 
@@ -303,4 +319,4 @@ Debugging fields are intentionally minimized:
 
 For production troubleshooting, filter application logs by `mcp_` event names and correlate them with the `x-request-id` or `x-correlation-id` response headers.
 
-Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, audience-bound, hashed in storage, expire by default after 1 day, and can be revoked. Public tools avoid user-specific data. Protected legal-data tools remain read-only and are logged with request correlation IDs by the MCP middleware for traceability. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. OAuth and MCP tool responses do not return raw API keys to ChatGPT or Claude. Dynamic client registration only issues a public OAuth client identifier for PKCE flows; it does not issue user tokens, secrets, or data access without the existing user login and email OTP authorization. OTP reuse stores only user id, purpose, verification time, and expiry; it does not store OTP codes, passwords, OAuth tokens, email addresses, prompts, or law text. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, set `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, keep OAuth redirect hosts restricted, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.
+Security/GDPR/EU AI Act notes: the current MCP surface exposes public-law data and per-user access credentials. JWT tokens are signed, audience-bound, hashed in storage, expire by default after 1 day, and can be revoked. Public tools avoid user-specific data. Protected legal-data tools remain read-only and are logged with request correlation IDs by the MCP middleware for traceability. Pending MCP sign-up data is stored server-side with a short expiry and is not echoed into hidden browser fields. OAuth and MCP tool responses do not return raw API keys to ChatGPT or Claude. Dynamic client registration only issues a public OAuth client identifier for PKCE flows; it does not issue user tokens, secrets, or data access without the existing user login and email OTP authorization. OTP reuse stores only user id, purpose, verification time, and expiry; it does not store OTP codes, passwords, OAuth tokens, email addresses, prompts, or law text. The synthetic E2E MFA bypass is off by default, hard-limited to the two JurisDigta-owned test emails, password-gated, expiry-gated, and logged with hashed identity/client context. Set `MCP_API_JWT_SECRET` to a long random value in deployed environments, set `MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`, keep OAuth redirect hosts restricted, protect `mcp.jurisdigta.eu` separately from the public API, and keep assistant/tool audit logs privacy-safe.

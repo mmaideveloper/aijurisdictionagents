@@ -69,6 +69,8 @@ python3 scripts/server/write_system_status.py \
   --laws-log /srv/jurisdigta/runs/logs/laws-collector-daily-latest.log
 ```
 
+The status writer reads only a bounded recent tail of runtime log files so long-lived collectors cannot exhaust memory, and the emitted payload remains aggregate and redacted.
+
 Install the minute cron:
 
 ```bash
@@ -272,6 +274,11 @@ Useful Grafana panels:
 - `jurisdigta_ai_model_estimated_cost_eur_window`
 - `jurisdigta_ai_model_top_case_total_tokens_window`
 - `jurisdigta_ai_model_top_case_estimated_cost_eur_window`
+
+The laws collector dashboard renders `jurisdigta_laws_last_processed_info` with
+the `law` label as the stat display name, so the latest imported law appears as
+`number/year` such as `179/2026`. Use the numeric number/year metrics for
+charts and alert thresholds.
 
 The provisioned `JurisDigta Application Performance` dashboard includes
 aggregate AI model panels for usage status, EUR cost, requests by route, and

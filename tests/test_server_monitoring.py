@@ -12,6 +12,7 @@ from scripts.server.write_system_status import (
     _latest_document_processor_run_summary,
     _latest_laws_run_summary,
     _recent_error_lines,
+    _read_recent_log_text,
 )
 
 
@@ -91,11 +92,19 @@ def test_monitoring_dashboards_include_court_decision_service_dashboard() -> Non
     assert "Latest Imported Decision" in panel_titles
     assert "Versions With Embeddings" in panel_titles
     assert "Recent Sanitized Error List" in panel_titles
+    assert "Najnovší uložený dátum rozhodnutia" not in panel_titles
     assert (
         'max without(status) (last_over_time(jurisdigta_component_status{component="court_decision_collector"}[15m]))'
         in target_queries
     )
-    assert "jurisdigta_court_decision_latest_imported_timestamp_seconds * 1000" in target_queries
+    assert "jurisdigta_court_decision_latest_imported_info" in target_queries
+
+    latest_imported_panel = next(
+        panel for panel in dashboard["panels"] if panel.get("title") == "Latest Imported Decision"
+    )
+    assert latest_imported_panel["type"] == "table"
+    assert latest_imported_panel["targets"][0]["instant"] is True
+    assert latest_imported_panel["targets"][0]["range"] is False
 
 
 def test_monitoring_dashboards_include_laws_collector_corpus_panels() -> None:
@@ -115,6 +124,14 @@ def test_monitoring_dashboards_include_laws_collector_corpus_panels() -> None:
     assert "Last Imported Law Year" not in panel_titles
     assert 'jurisdigta_laws_total{name="laws_imported"}' in target_queries
     assert "jurisdigta_laws_last_processed_info" in target_queries
+
+    last_imported_law_panel = next(
+        panel for panel in dashboard["panels"] if panel.get("title") == "Last Imported Law"
+    )
+    assert last_imported_law_panel["fieldConfig"]["defaults"]["displayName"] == "${__field.labels.law}"
+    assert last_imported_law_panel["options"]["textMode"] == "name"
+    assert last_imported_law_panel["targets"][0]["instant"] is True
+    assert last_imported_law_panel["targets"][0]["range"] is False
 
 
 def test_monitoring_stack_loads_ai_model_alert_rules() -> None:
@@ -456,6 +473,21 @@ def test_court_decision_log_status_is_aggregate_and_sanitized(tmp_path: Path) ->
     ]
 
 
+def test_recent_log_reader_bounds_large_runtime_logs(tmp_path: Path) -> None:
+    log_file = tmp_path / "court-decision-collector.log"
+    log_file.write_text(
+        "old line\n"
+        + ("x" * 64)
+        + "\n[2026-06-20T01:06:00Z] court_decision_collector failed token=abc123\n",
+        encoding="utf-8",
+    )
+
+    text = _read_recent_log_text(log_file, max_bytes=80)
+
+    assert "old line" not in text
+    assert "court_decision_collector failed token=abc123" in text
+
+
 def test_exporter_renders_court_decision_metrics() -> None:
     metrics = _render_metrics(
         {
@@ -474,6 +506,12 @@ def test_exporter_renders_court_decision_metrics() -> None:
                         "idle_events": 2,
                         "last_activity_at": "2026-06-20T01:06:00Z",
                         "latest_imported_at": "2026-06-20T01:00:01Z",
+                        "latest_imported_decision": {
+                            "short_name": "uznesenie - Krajsky sud",
+                            "published_date": "2026-06-29",
+                            "stored_at": "2026-06-20T01:00:01Z",
+                        },
+                        "latest_stored_issue_date": "2026-06-29",
                         "latest_update_event_at": "2026-06-20T01:00:02Z",
                         "recent_errors": [
                             {
@@ -500,6 +538,12 @@ def test_exporter_renders_court_decision_metrics() -> None:
         in metrics
     )
     assert "jurisdigta_court_decision_collector_last_activity_timestamp_seconds" in metrics
+    assert "jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds" in metrics
+    assert (
+        'jurisdigta_court_decision_latest_imported_info{short_name="uznesenie - Krajsky sud",'
+        'published_date="2026-06-29",stored_at="2026-06-20T01:00:01Z"} 1'
+        in metrics
+    )
     assert (
         'jurisdigta_court_decision_recent_error_info{index="1",'
         'timestamp="2026-06-20T01:06:00Z",message="failed import_key=live_loop"} 1'
