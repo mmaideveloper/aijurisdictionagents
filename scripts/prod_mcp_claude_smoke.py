@@ -60,7 +60,7 @@ def main() -> int:
     run_check("client credentials remains closed", args, lambda: check_client_credentials_rejected(base_url), results)
     run_check("MCP initialize", args, lambda: check_initialize(base_url), results)
     run_check("MCP tools/list", args, lambda: check_tools_list(base_url), results)
-    run_check("public MCP tool call", args, lambda: check_public_tool_call(base_url), results)
+    run_check("all MCP tools require auth", args, lambda: check_tool_call_requires_auth(base_url), results)
     run_check("protected tool auth challenge", args, lambda: check_auth_challenge(base_url), results)
     run_check("browser auth pages", args, lambda: check_auth_pages(base_url), results)
     run_check("Claude root authorize alias", args, lambda: check_root_authorize_alias(base_url), results)
@@ -225,17 +225,26 @@ def check_tools_list(base_url: str) -> str:
     return f"tools/list exposes {len(names)} tools including {', '.join(sorted(EXPECTED_TOOLS))}"
 
 
-def check_public_tool_call(base_url: str) -> str:
-    payload = mcp_rpc(
-        base_url,
-        3,
-        "tools/call",
-        {"name": "getVersion", "arguments": {}},
+def check_tool_call_requires_auth(base_url: str) -> str:
+    response = request(
+        "POST",
+        f"{base_url}/mcp",
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": "getVersion", "arguments": {}},
+        },
+        expected_status=401,
+        extra_headers=mcp_headers(),
     )
-    content = (payload.get("result") or {}).get("content")
-    if not isinstance(content, list) or not content:
-        raise AssertionError("getVersion returned no MCP content")
-    return "public getVersion tool call succeeds without bearer token"
+    authenticate = response.headers.get("www-authenticate", "")
+    if "Bearer" not in authenticate or ".well-known/oauth-protected-resource" not in authenticate:
+        raise AssertionError(f"Missing OAuth WWW-Authenticate challenge: {authenticate!r}")
+    payload = response.json()
+    if payload.get("error", {}).get("code") != 401:
+        raise AssertionError(f"Expected JSON-RPC 401 error, got {payload!r}")
+    return "unauthenticated getVersion tool call returns OAuth challenge"
 
 
 def check_auth_challenge(base_url: str) -> str:
