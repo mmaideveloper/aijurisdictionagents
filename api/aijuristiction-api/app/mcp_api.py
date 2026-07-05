@@ -79,6 +79,7 @@ _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = 8_000
 _COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = 3
 _OAUTH_PUBLIC_CLIENT_GRANT_TYPES = ("authorization_code", "refresh_token")
 _OAUTH_TOLERATED_DCR_GRANT_TYPES = {*_OAUTH_PUBLIC_CLIENT_GRANT_TYPES, "client_credentials"}
+_OAUTH_GRANTED_SCOPE = f"{MCP_TOKEN_SCOPE} {MCP_REFRESH_TOKEN_SCOPE}"
 logger = logging.getLogger("aijuristiction-api.mcp")
 _CURRENT_MCP_REQUEST_ID: ContextVar[str | None] = ContextVar("current_mcp_request_id", default=None)
 _CURRENT_MCP_CORRELATION_ID: ContextVar[str | None] = ContextVar("current_mcp_correlation_id", default=None)
@@ -491,7 +492,7 @@ def oauth_dynamic_client_registration(
         "grant_types": list(_OAUTH_PUBLIC_CLIENT_GRANT_TYPES),
         "response_types": ["code"],
         "token_endpoint_auth_method": "none",
-        "scope": f"{MCP_TOKEN_SCOPE} {MCP_REFRESH_TOKEN_SCOPE}",
+        "scope": _OAUTH_GRANTED_SCOPE,
     }
 
 
@@ -946,7 +947,7 @@ def oauth_token(
             "refresh_token": refresh_token_value,
             "token_type": "Bearer",
             "expires_in": expires_in,
-            "scope": MCP_TOKEN_SCOPE,
+            "scope": _OAUTH_GRANTED_SCOPE,
         }
     )
 
@@ -1035,7 +1036,7 @@ def _oauth_refresh_token_response(
             "refresh_token": refresh_token_value,
             "token_type": "Bearer",
             "expires_in": expires_in,
-            "scope": MCP_TOKEN_SCOPE,
+            "scope": _OAUTH_GRANTED_SCOPE,
         }
     )
 

@@ -1509,7 +1509,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert token_response.headers["pragma"] == "no-cache"
     token_payload = token_response.json()
     assert token_payload["token_type"] == "Bearer"
-    assert token_payload["scope"] == "mcp:laws"
+    assert token_payload["scope"] == "mcp:laws offline_access"
     assert token_payload["refresh_token"]
     access_claims = _jwt_claims(token_payload["access_token"])
     assert access_claims["sub"] == sign_up_response.json()["user_id"]
@@ -1557,7 +1557,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert refresh_response.headers["pragma"] == "no-cache"
     refreshed_payload = refresh_response.json()
     assert refreshed_payload["token_type"] == "Bearer"
-    assert refreshed_payload["scope"] == "mcp:laws"
+    assert refreshed_payload["scope"] == "mcp:laws offline_access"
     assert refreshed_payload["access_token"] != token_payload["access_token"]
     assert refreshed_payload["refresh_token"] != token_payload["refresh_token"]
     refreshed_access_claims = _jwt_claims(refreshed_payload["access_token"])
@@ -1908,10 +1908,13 @@ def test_claude_oauth_without_resource_uses_uppercase_mcp_audience(monkeypatch, 
     )
     assert token_response.status_code == 200
     token_payload = token_response.json()
+    assert token_payload["scope"] == "mcp:laws offline_access"
     access_claims = _jwt_claims(token_payload["access_token"])
     refresh_claims = _jwt_claims(token_payload["refresh_token"])
     assert access_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
     assert refresh_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+    assert access_claims["scope"] == "mcp:laws"
+    assert refresh_claims["scope"] == "offline_access"
 
     refresh_response = mcp_client.post(
         "/oauth/token",
@@ -1922,6 +1925,7 @@ def test_claude_oauth_without_resource_uses_uppercase_mcp_audience(monkeypatch, 
         },
     )
     assert refresh_response.status_code == 200
+    assert refresh_response.json()["scope"] == "mcp:laws offline_access"
     refreshed_claims = _jwt_claims(refresh_response.json()["access_token"])
     assert refreshed_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
 
