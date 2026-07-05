@@ -1426,7 +1426,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     )
     assert claude_root_authorize_page.status_code == 200
     assert "Authorize MCP access" in claude_root_authorize_page.text
-    assert 'name="resource" value="https://mcp.jurisdigta.eu/MCP"' in claude_root_authorize_page.text
+    assert _extract_hidden_value(claude_root_authorize_page.text, "resource") == "https://mcp.jurisdigta.eu/MCP"
 
     login_response = mcp_client.post(
         "/oauth/authorize/login",
