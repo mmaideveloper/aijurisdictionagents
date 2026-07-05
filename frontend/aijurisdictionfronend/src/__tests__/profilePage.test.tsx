@@ -102,6 +102,8 @@ const labels: Record<string, string> = {
   profileOpenedCasesTitle: "Opened cases",
   profileOpenedCasesSubtitle: "Jump back into active matters from your profile.",
   profileOpenedCasesEmpty: "No opened cases yet.",
+  profileCaseExport: "Export case",
+  profileCaseExportFailed: "Could not export case.",
   profileDocumentsTitle: "My Documents",
   profileDocumentsSubtitle: "Uploaded documents from your case intake flow.",
   profileDocumentsEmpty: "No uploaded documents yet.",
@@ -166,6 +168,8 @@ describe("Profile page", () => {
     authMocks.completeEmailChange.mockResolvedValue({});
     authMocks.refreshUser.mockResolvedValue({});
     vi.stubGlobal("fetch", vi.fn());
+    URL.createObjectURL = vi.fn(() => "blob:case-export");
+    URL.revokeObjectURL = vi.fn();
   });
 
   afterEach(() => {
@@ -229,6 +233,39 @@ describe("Profile page", () => {
     fireEvent.click(screen.getByRole("button", { name: /keystone-timeline\.pdf/i }));
 
     expect(caseMocks.selectCase).toHaveBeenCalledWith("case-1");
+  });
+
+  it("downloads a case export without opening the case", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      new Response("zip", {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": 'attachment; filename="case-export.zip"'
+        }
+      })
+    );
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    render(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Export case" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/cases/case-1/export?user_id=user-1"),
+        expect.objectContaining({ method: "GET" })
+      );
+    });
+    expect(clickSpy).toHaveBeenCalled();
+    expect(caseMocks.selectCase).not.toHaveBeenCalled();
+
+    clickSpy.mockRestore();
   });
 
   it("saves editable profile fields", async () => {

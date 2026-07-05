@@ -194,6 +194,12 @@ export interface AdminCaseDeleteResult {
   deleted: boolean;
 }
 
+export interface AdminCaseExportResult {
+  blob: Blob;
+  contentType: string;
+  filename: string;
+}
+
 export interface AIModelAdminAuditEvent {
   audit_event_id: string;
   admin_user_id: string;
@@ -395,6 +401,54 @@ const adminRequest = async <T>(path: string, adminAuth: AdminAuthInput, init?: R
     return undefined as T;
   }
   return (await response.json()) as T;
+};
+
+const extractFilenameFromContentDisposition = (header: string | null): string | null => {
+  if (!header) {
+    return null;
+  }
+  const encodedMatch = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encodedMatch?.[1]) {
+    try {
+      return decodeURIComponent(encodedMatch[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      return encodedMatch[1].trim().replace(/^"|"$/g, "");
+    }
+  }
+  const plainMatch = header.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1]?.trim() || null;
+};
+
+export const fetchAdminCaseExportBlob = async (
+  adminAuth: AdminAuthInput,
+  caseId: string,
+  userId: string,
+  reason: string
+): Promise<AdminCaseExportResult> => {
+  const config = chatApiRuntimeConfig();
+  const params = new URLSearchParams({
+    user_id: userId,
+    reason
+  });
+  const response = await fetch(`${config.baseUrl}/v1/admin/cases/${encodeURIComponent(caseId)}/export?${params.toString()}`, {
+    method: "GET",
+    headers: adminHeaders(adminAuth)
+  });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      detail = typeof payload.detail === "string" ? payload.detail : detail;
+    } catch {
+      detail = response.statusText || detail;
+    }
+    throw new Error(detail);
+  }
+  return {
+    blob: await response.blob(),
+    contentType: response.headers.get("Content-Type") || "application/zip",
+    filename: extractFilenameFromContentDisposition(response.headers.get("Content-Disposition")) || `${caseId}-admin-export.zip`
+  };
 };
 
 export const fetchAIModelAdminDashboard = (adminAuth: AdminAuthContext): Promise<AIModelAdminDashboard> =>

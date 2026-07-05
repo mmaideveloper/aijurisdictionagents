@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.ai_model_admin_api import AdminContext, get_admin_store, require_ai_model_admin
+from app.cases_api import build_case_export_response
 from aijurisdictionagents.api_db import AdminCaseUser, ApiDatabaseStore, Case
 
 router = APIRouter(prefix="/v1/admin/cases", tags=["admin-cases"])
@@ -135,6 +137,56 @@ def delete_admin_case(
     return AdminCaseDeleteResponse(
         case=_admin_case_response(case=after, target_user_email=user.email),
         deleted=before.status != "deleted" and after.status == "deleted",
+    )
+
+
+@router.get("/{case_id}/export")
+def export_admin_case(
+    case_id: str,
+    user_id: str,
+    reason: str,
+    request: Request,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    store: ApiDatabaseStore = Depends(get_admin_store),
+) -> Response:
+    normalized_reason = reason.strip()
+    if len(normalized_reason) < 3:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Export reason is required")
+    user = _get_admin_case_user(store=store, user_id=user_id)
+    try:
+        case = store.get_case(case_id=case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found") from exc
+    if case.user_id != user_id or case.status == "deleted":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found for target user")
+
+    store.record_ai_model_admin_audit_event(
+        admin_user_id=admin.user_id,
+        admin_email=admin.email,
+        action="case.export",
+        entity_type="case",
+        entity_id=case_id,
+        old_value_summary={
+            "case_id": case.case_id,
+            "title": case.title,
+            "status": case.status,
+            "target_user_id": user.user_id,
+            "target_user_email": user.email,
+        },
+        new_value_summary={
+            "exported": True,
+            "case_id": case.case_id,
+            "target_user_id": user.user_id,
+            "target_user_email": user.email,
+        },
+        reason=normalized_reason,
+        correlation_id=str(getattr(request.state, "correlation_id", "")),
+    )
+    return build_case_export_response(
+        case=case,
+        user_id=user_id,
+        store=store,
+        exported_by=f"admin:{admin.email}",
     )
 
 

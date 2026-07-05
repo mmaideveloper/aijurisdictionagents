@@ -6,6 +6,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AIModelAdmin from "../pages/AIModelAdmin";
 import {
+  fetchAdminCaseExportBlob,
   fetchAdminUserCases,
   fetchAIModelAdminDashboard,
   fetchOllamaModels,
@@ -34,6 +35,7 @@ vi.mock("../components/LanguageProvider", () => ({
 
 vi.mock("../api/adminModelClient", () => ({
   fetchAdminUsers: vi.fn(),
+  fetchAdminCaseExportBlob: vi.fn(),
   fetchAdminUserCases: vi.fn(),
   fetchAIModelAdminDashboard: vi.fn(),
   fetchAIModelUserOverride: vi.fn(),
@@ -96,6 +98,64 @@ describe("AIModelAdmin case reset panel", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("downloads an audited admin case export from each case row", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchAIModelAdminDashboard).mockResolvedValue(dashboard);
+    vi.mocked(fetchOllamaModels).mockResolvedValue({ base_url: "http://127.0.0.1:11434", models: [] });
+    vi.mocked(searchAdminCaseUsers).mockResolvedValue({ items: [targetUser], total: 1, limit: 25 });
+    vi.mocked(fetchAdminUserCases).mockResolvedValue({
+      user: targetUser,
+      cases: [
+        targetCase,
+        {
+          ...targetCase,
+          case_id: "case-2",
+          title: "Paid validation fixture"
+        }
+      ]
+    });
+    vi.mocked(fetchAdminCaseExportBlob).mockResolvedValue({
+      blob: new Blob(["zip body"], { type: "application/zip" }),
+      contentType: "application/zip",
+      filename: "case-export.zip"
+    });
+    URL.createObjectURL = vi.fn(() => "blob:admin-case-export");
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.fn();
+
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminCasesTitle/ }));
+    await user.type(screen.getByLabelText("adminCasesEmailSearch"), "mmatonok@gmail.com");
+    await user.click(screen.getByRole("button", { name: /adminCasesSearch/ }));
+    await screen.findByText("Expired free case");
+    await screen.findByText("Paid validation fixture");
+
+    const exportButtons = await screen.findAllByRole("button", { name: /adminCasesExport/ });
+    expect(exportButtons).toHaveLength(2);
+    const firstExportButton = exportButtons[0];
+    expect(firstExportButton).toBeDefined();
+    const appendSpy = vi.spyOn(document.body, "appendChild");
+    appendSpy.mockImplementation((node: Node) => {
+      if (node instanceof HTMLAnchorElement) {
+        node.click = clickSpy;
+      }
+      return node;
+    });
+    await user.click(firstExportButton as HTMLElement);
+
+    await waitFor(() => {
+      expect(fetchAdminCaseExportBlob).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "admin-1" }),
+        "case-1",
+        "user-1",
+        "adminCasesDefaultReason"
+      );
+    });
+    expect(clickSpy).toHaveBeenCalled();
+    expect(await screen.findByText("adminCasesExportSuccess")).not.toBeNull();
   });
 
   it("searches users, confirms a case soft-delete, and refreshes the case list", async () => {
