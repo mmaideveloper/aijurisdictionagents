@@ -1658,7 +1658,7 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     )
     assert claude_token_response.status_code == 200
     claude_token_payload = claude_token_response.json()
-    assert claude_token_payload["scope"] == "mcp:laws offline_access"
+    assert claude_token_payload["scope"] == "mcp:laws"
     assert claude_token_payload["token_type"] == "Bearer"
     assert "refresh_token" in claude_token_payload
     claude_access_claims = _jwt_claims(claude_token_payload["access_token"])

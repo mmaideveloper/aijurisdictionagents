@@ -972,7 +972,7 @@ def oauth_token(
         "access_token": token,
         "token_type": "Bearer",
         "expires_in": expires_in,
-        "scope": granted_scope,
+        "scope": _OAUTH_GRANTED_SCOPE,
     }
     if issue_refresh_token:
         refresh_token_value, _ = _issue_mcp_refresh_token(user=user, audience=token_audience)
