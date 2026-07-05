@@ -231,7 +231,7 @@ def test_mcp_empty_discovery_methods_for_claude_connector() -> None:
         assert response.json()["result"] == expected_result
 
 
-def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Path) -> None:
+def test_mcp_all_tools_require_auth_and_authenticated_calls_work(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
     mcp_key = _create_mcp_key(tmp_path)
@@ -255,7 +255,17 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
     }
     monkeypatch.setattr(mcp_api, "_court_decision_statistics", lambda: court_stats)
 
-    version_response = _mcp_call("getVersion")
+    unauthenticated_version = _mcp_call("getVersion")
+    assert unauthenticated_version.status_code == 401
+    assert "oauth-protected-resource" in unauthenticated_version.headers["www-authenticate"]
+    assert unauthenticated_version.json()["error"]["code"] == 401
+
+    unauthenticated_statistics = _mcp_call("getStatistics")
+    assert unauthenticated_statistics.status_code == 401
+    assert "oauth-protected-resource" in unauthenticated_statistics.headers["www-authenticate"]
+    assert unauthenticated_statistics.json()["error"]["code"] == 401
+
+    version_response = _mcp_call("getVersion", headers={"authorization": f"Bearer {mcp_key}"})
     assert version_response.status_code == 200
     version_payload = _tool_payload(version_response)
     assert version_payload["api_version"]
@@ -268,7 +278,7 @@ def test_mcp_public_tools_and_authenticated_law_search(monkeypatch, tmp_path: Pa
         "last_imported_at": "2026-06-30T10:00:00+00:00",
     }
 
-    statistics_response = _mcp_call("getStatistics")
+    statistics_response = _mcp_call("getStatistics", headers={"authorization": f"Bearer {mcp_key}"})
     assert statistics_response.status_code == 200
     statistics = _tool_payload(statistics_response)
     assert statistics["processed_laws"] == 1

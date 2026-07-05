@@ -29,8 +29,9 @@ print(
     "invalid OTP submissions re-render HTML warnings instead of JSON errors."
 )
 print(
-    "mcp_auth_contract => getVersion/getStatistics are public; searchLaws/getLawText require "
-    "a Bearer MCP token or x-mcp-api-key. OAuth-capable clients can use "
+    "mcp_auth_contract => every MCP tool call requires a Bearer MCP token or "
+    "x-mcp-api-key; unauthenticated clients can still use initialize, tools/list, "
+    "and OAuth discovery to start authorization. OAuth-capable clients can use "
     "https://mcp.jurisdigta.eu/mcp or the uppercase compatibility endpoint "
     "https://mcp.jurisdigta.eu/MCP."
 )
