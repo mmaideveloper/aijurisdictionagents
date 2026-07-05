@@ -147,6 +147,9 @@ These are used by infrastructure deployment and API deployment workflows:
 | `MCP_CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the dedicated MCP service; default production value should include `https://mcp.jurisdigta.eu` |
 | `INTERNAL_MCP_BASE_URL` | Optional API-to-MCP base URL for internal assistant law lookups. Self-managed prod injects `http://jurisdigta-mcp:8070` into the API container so chat answers can call the same MCP `searchLaws` and `getLawText` tools as external assistants |
 | `MCP_PORT` | Local/self-managed MCP service port when using Docker Compose, default `8070` |
+| `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED` | Optional, default `false`; enables password-only MFA bypass only for hardcoded synthetic MCP OAuth E2E emails when the allowlist and expiry are also set |
+| `MCP_OAUTH_TEST_MFA_BYPASS_EMAILS` | Optional synthetic E2E allowlist; use `mcp-claude-test-free@jurisdigta.eu,mcp-claude-test-paid@jurisdigta.eu` only for controlled connector validation |
+| `MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT` | Optional ISO timestamp for the synthetic MCP OAuth E2E bypass, for example `2030-01-01T00:00:00Z` |
 | `CONTACT_CAPTCHA_REQUIRED` | Set `true` in public environments to require Cloudflare Turnstile verification for `POST /v1/contact` |
 | `CONTACT_RATE_LIMIT_MAX_REQUESTS` | Optional backend per-IP contact form throttle, default `5` |
 | `CONTACT_RATE_LIMIT_WINDOW_SECONDS` | Optional backend per-IP contact form throttle window, default `600` |
@@ -158,6 +161,7 @@ Required GitHub Environment secret:
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI key used by the API and document processor for chat completions and embeddings |
 | `MCP_API_JWT_SECRET` | Long random secret used to sign MCP OAuth/JWT bearer tokens for ChatGPT, Claude, VS Code, and other remote MCP clients |
 | `MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS` | Optional issuer callback flag for strict OAuth clients; default `true`, keep enabled for Claude web custom connectors |
+| `JURISDIGTA_E2E_TEST_USER_PASSWORD` | Secret used by `python scripts/provision_e2e_users.py` to create/update the synthetic free and paid E2E accounts; do not expose it in logs or source |
 | `AZURE_POSTGRES_ADMIN_PASSWORD` | PostgreSQL admin password |
 
 Optional and conditional GitHub Environment secrets:
@@ -412,6 +416,9 @@ Server-local `jurisdigta.env` must include at least:
 - `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` is injected by the self-managed deploy script for the API container; it normally does not need to be stored in the GitHub Environment.
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai,localhost,127.0.0.1,::1`
 - `MCP_OTP_REUSE_WINDOW_HOURS=24`
+- `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` except during explicit Claude/MCP connector validation
+- `MCP_OAUTH_TEST_MFA_BYPASS_EMAILS=mcp-claude-test-free@jurisdigta.eu,mcp-claude-test-paid@jurisdigta.eu` only when the bypass is intentionally enabled
+- `MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT=2030-01-01T00:00:00Z` for the approved synthetic-account validation window
 - `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
@@ -512,6 +519,7 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 - `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` for API-to-MCP law-tool calls inside the Docker network; the self-managed deploy script injects this value automatically
 - `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS=chatgpt.com,chat.openai.com,claude.ai,vscode.dev,www.perplexity.ai,localhost,127.0.0.1,::1` for hosted remote connector OAuth callbacks including `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback`; loopback `http://localhost/...`, `http://127.0.0.1/...`, and `http://[::1]/...` redirects are accepted directly for local Claude/desktop OAuth proxies
 - `MCP_OTP_REUSE_WINDOW_HOURS=24` for bounded repeat OTP suppression after successful MCP OTP verification
+- `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` by default; when enabled for synthetic connector validation, also set `MCP_OAUTH_TEST_MFA_BYPASS_EMAILS` to the two approved test emails and `MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT=2030-01-01T00:00:00Z`
 - `CONTACT_CAPTCHA_REQUIRED=true`
 - `CONTACT_RATE_LIMIT_MAX_REQUESTS=5`
 - `CONTACT_RATE_LIMIT_WINDOW_SECONDS=600`

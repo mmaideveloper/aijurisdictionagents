@@ -59,6 +59,26 @@ def test_api_database_layer_end_to_end(tmp_path: Path) -> None:
     )
     assert communication_id
 
+    citation_id = store.add_case_citation(
+        case_id=case.case_id,
+        question_message_id=communication_id,
+        answer_message_id=communication_id,
+        source_type="law",
+        source_id="SK:ZZ:1993:1:19930101",
+        source_url="/v1/laws/source?country_code=SK&collection_code=ZZ&law_year=1993&law_number=1",
+        title="Prvy zakon",
+        citation_label="1/1993 Z. z. - Prvy zakon",
+        law_number="1/1993 Z. z.",
+        effective_from="1993-01-01",
+        snippet="Short legal source summary.",
+        retrieval_tool="JurisDigta laws collector",
+    )
+    assert citation_id
+    citations = store.list_case_citations(case_id=case.case_id, answer_message_id=communication_id)
+    assert len(citations) == 1
+    assert citations[0].source_type == "law"
+    assert citations[0].law_number == "1/1993 Z. z."
+
     case_root = tmp_path / "blob" / case.case_id
     assert case_root.exists()
     assert (case_root / "source" / "v1_invoice.pdf").exists()

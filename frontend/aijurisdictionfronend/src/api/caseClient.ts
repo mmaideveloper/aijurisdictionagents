@@ -17,6 +17,30 @@ export type ApiCaseHistoryMessage = {
   content: string;
   agent_name: string | null;
   created_at: string;
+  citations?: ApiCaseCitation[];
+};
+
+export type ApiCaseCitation = {
+  id: string;
+  case_id: string;
+  question_message_id: string | null;
+  answer_message_id: string | null;
+  source_type: "law" | "court_decision" | "case_document" | "web" | "other";
+  source_id: string | null;
+  source_url: string | null;
+  title: string;
+  citation_label: string | null;
+  law_number: string | null;
+  section: string | null;
+  effective_from: string | null;
+  court: string | null;
+  ecli: string | null;
+  file_number: string | null;
+  decision_date: string | null;
+  snippet: string | null;
+  retrieval_tool: string | null;
+  relevance_score: number | null;
+  created_at: string;
 };
 
 export type ApiCaseDocument = {
@@ -34,6 +58,7 @@ export type ApiCaseHistory = {
   messages: ApiCaseHistoryMessage[];
   has_more: boolean;
   documents: ApiCaseDocument[];
+  citations?: ApiCaseCitation[];
 };
 
 export type CreateApiCaseInput = {
@@ -155,6 +180,26 @@ export const getCaseHistory = async (
       "x-api-key": config.apiKey
     }
   });
+};
+
+export const getCaseCitations = async (
+  userId: string,
+  caseId: string
+): Promise<ApiCaseCitation[]> => {
+  const config = chatApiRuntimeConfig();
+  const params = new URLSearchParams({
+    user_id: userId
+  });
+  const response = await requestJson<{ case_id: string; citations: ApiCaseCitation[] }>(
+    `/v1/cases/${caseId}/citations?${params.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        "x-api-key": config.apiKey
+      }
+    }
+  );
+  return response.citations;
 };
 
 export const uploadApiCaseDocuments = async (

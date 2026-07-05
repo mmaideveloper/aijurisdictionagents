@@ -202,15 +202,38 @@ class PostgresCourtDecisionStore:
             conn.commit()
             return StoredCourtDecision(decision_id=decision_id, version_id=version_id, state=state)
 
-    def search(self, *, query: str, limit: int = 10) -> list[CourtDecisionSearchResult]:
+    def search(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        offset: int = 0,
+        published_year: int | None = None,
+        year_filter_mode: str = "published_in",
+        court_type: str = "",
+    ) -> list[CourtDecisionSearchResult]:
+        if year_filter_mode != "published_in":
+            raise ValueError("Only year_filter_mode=published_in is supported.")
         query_vector = parse_embedding_vector(
             build_embedding_vector(query, dimensions=self.embedding_dimensions)
         )
-        candidate_limit = max(limit * 10, 100)
+        candidate_limit = max((limit + offset) * 10, 100)
         pattern = f"%{query.lower()}%"
+        filters = ""
+        params: dict[str, object] = {
+            "query": query,
+            "pattern": pattern,
+            "candidate_limit": candidate_limit,
+        }
+        if published_year is not None:
+            filters += " AND LEFT(COALESCE(d.issue_date, ''), 4) = %(published_year)s"
+            params["published_year"] = str(published_year)
+        if court_type.strip():
+            filters += " AND LOWER(d.court_type) = %(court_type)s"
+            params["court_type"] = court_type.strip().lower()
         with self._connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 WITH search_query AS (
                     SELECT websearch_to_tsquery('simple', %(query)s) AS tsq
                 )
@@ -262,10 +285,11 @@ class PostgresCourtDecisionStore:
                       OR LOWER(d.ecli) LIKE %(pattern)s
                       OR LOWER(v.pseudonymized_text) LIKE %(pattern)s
                   )
+                  {filters}
                 ORDER BY lexical_rank DESC, d.issue_date DESC NULLS LAST, d.updated_at DESC
                 LIMIT %(candidate_limit)s
                 """,
-                {"query": query, "pattern": pattern, "candidate_limit": candidate_limit},
+                params,
             ).fetchall()
         scored: list[CourtDecisionSearchResult] = []
         for row in rows:
@@ -291,7 +315,7 @@ class PostgresCourtDecisionStore:
                     score=round(score, 6),
                 )
             )
-        return sorted(scored, key=lambda item: item.score, reverse=True)[:limit]
+        return sorted(scored, key=lambda item: item.score, reverse=True)[offset : offset + limit]
 
     def get_decision(self, *, decision_id: str, raw: bool = False) -> dict[str, object] | None:
         with self._connect() as conn:

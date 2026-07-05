@@ -70,7 +70,7 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 5,
+        "w": 4,
         "x": 0,
         "y": 0
       },
@@ -133,8 +133,8 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 5,
-        "x": 5,
+        "w": 4,
+        "x": 4,
         "y": 0
       },
       "id": 2,
@@ -174,60 +174,82 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
-                "value": null
-              },
-              {
                 "color": "green",
-                "value": 1
+                "value": null
               }
             ]
-          },
-          "unit": "dateTimeAsIso"
+          }
         },
         "overrides": []
       },
       "gridPos": {
         "h": 7,
-        "w": 4,
-        "x": 10,
+        "w": 8,
+        "x": 8,
         "y": 0
       },
       "id": 8,
       "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
           "fields": "",
-          "values": false
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "textMode": "auto",
-        "wideLayout": true
+        "showHeader": true
       },
       "pluginVersion": "13.0.2",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "jurisdigta_court_decision_latest_imported_timestamp_seconds * 1000",
-          "legendFormat": "Latest import",
-          "range": true,
+          "exemplar": false,
+          "expr": "jurisdigta_court_decision_latest_imported_info",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{short_name}}",
+          "range": false,
           "refId": "A"
         }
       ],
       "title": "Latest Imported Decision",
-      "type": "stat"
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "published_date": "Published date",
+              "short_name": "Decision",
+              "stored_at": "Stored at"
+            }
+          }
+        }
+      ],
+      "type": "table"
     },
     {
       "datasource": {
@@ -259,8 +281,8 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 5,
-        "x": 14,
+        "w": 4,
+        "x": 16,
         "y": 0
       },
       "id": 3,
@@ -322,8 +344,8 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 5,
-        "x": 19,
+        "w": 4,
+        "x": 20,
         "y": 0
       },
       "id": 4,
@@ -651,5 +673,5 @@
   "timezone": "browser",
   "title": "JurisDigta Court Decision Service",
   "uid": "jurisdigta-court-decision-service",
-  "version": 1
+  "version": 3
 }

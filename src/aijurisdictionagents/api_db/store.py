@@ -173,6 +173,30 @@ class CaseCommunication:
 
 
 @dataclass(frozen=True)
+class CaseCitation:
+    citation_id: str
+    case_id: str
+    question_message_id: str | None
+    answer_message_id: str | None
+    source_type: str
+    source_id: str | None
+    source_url: str | None
+    title: str
+    citation_label: str | None
+    law_number: str | None
+    section: str | None
+    effective_from: str | None
+    court: str | None
+    ecli: str | None
+    file_number: str | None
+    decision_date: str | None
+    snippet: str | None
+    retrieval_tool: str | None
+    relevance_score: float | None
+    created_at: str
+
+
+@dataclass(frozen=True)
 class CaseDocumentChunk:
     chunk_id: str
     doc_id: str
@@ -678,6 +702,7 @@ class ApiDatabaseStore:
             self._ensure_user_schema(conn)
             self._ensure_mcp_oauth_schema(conn)
             self._ensure_case_document_schema(conn)
+            self._ensure_case_citation_schema(conn)
             self._ensure_subscription_schema(conn)
             self._ensure_permanent_memory_schema(conn)
             self._ensure_ai_model_routing_schema(conn)
@@ -3695,6 +3720,102 @@ class ApiDatabaseStore:
             raise KeyError(f"Communication {communication_id} not found for case {case_id}")
         return _row_to_case_communication(row)
 
+    def add_case_citation(
+        self,
+        *,
+        case_id: str,
+        question_message_id: str | None,
+        answer_message_id: str | None,
+        source_type: str,
+        title: str,
+        source_id: str | None = None,
+        source_url: str | None = None,
+        citation_label: str | None = None,
+        law_number: str | None = None,
+        section: str | None = None,
+        effective_from: str | None = None,
+        court: str | None = None,
+        ecli: str | None = None,
+        file_number: str | None = None,
+        decision_date: str | None = None,
+        snippet: str | None = None,
+        retrieval_tool: str | None = None,
+        relevance_score: float | None = None,
+    ) -> str:
+        citation_id = str(uuid.uuid4())
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO case_citations(
+                    citation_id, case_id, question_message_id, answer_message_id,
+                    source_type, source_id, source_url, title, citation_label,
+                    law_number, section, effective_from, court, ecli, file_number,
+                    decision_date, snippet, retrieval_tool, relevance_score, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    citation_id,
+                    case_id,
+                    question_message_id,
+                    answer_message_id,
+                    source_type,
+                    source_id,
+                    source_url,
+                    title,
+                    citation_label,
+                    law_number,
+                    section,
+                    effective_from,
+                    court,
+                    ecli,
+                    file_number,
+                    decision_date,
+                    snippet,
+                    retrieval_tool,
+                    relevance_score,
+                    now,
+                ),
+            )
+            self._execute(
+                conn,
+                "UPDATE cases SET updated_at = ? WHERE case_id = ?",
+                (now, case_id),
+            )
+        return citation_id
+
+    def list_case_citations(
+        self,
+        *,
+        case_id: str,
+        answer_message_id: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[CaseCitation]:
+        query = """
+            SELECT citation_id, case_id, question_message_id, answer_message_id,
+                   source_type, source_id, source_url, title, citation_label,
+                   law_number, section, effective_from, court, ecli, file_number,
+                   decision_date, snippet, retrieval_tool, relevance_score, created_at
+            FROM case_citations
+            WHERE case_id = ?
+        """
+        params: tuple[Any, ...]
+        if answer_message_id is None:
+            params = (case_id,)
+        else:
+            query += " AND answer_message_id = ?"
+            params = (case_id, answer_message_id)
+        query += " ORDER BY created_at ASC, citation_id ASC"
+        if limit is not None:
+            query += " LIMIT ? OFFSET ?"
+            params = (*params, limit, max(offset, 0))
+        with self._connect() as conn:
+            rows = self._execute(conn, query, params).fetchall()
+        return [_row_to_case_citation(row) for row in rows]
+
     def read_storage_bytes(self, *, storage_uri: str) -> bytes:
         path = self._resolve_storage_path(storage_uri)
         return path.read_bytes()
@@ -4827,6 +4948,45 @@ class ApiDatabaseStore:
             """,
         )
 
+    def _ensure_case_citation_schema(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        self._execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS case_citations (
+                citation_id TEXT PRIMARY KEY,
+                case_id TEXT NOT NULL,
+                question_message_id TEXT,
+                answer_message_id TEXT,
+                source_type TEXT NOT NULL,
+                source_id TEXT,
+                source_url TEXT,
+                title TEXT NOT NULL,
+                citation_label TEXT,
+                law_number TEXT,
+                section TEXT,
+                effective_from TEXT,
+                court TEXT,
+                ecli TEXT,
+                file_number TEXT,
+                decision_date TEXT,
+                snippet TEXT,
+                retrieval_tool TEXT,
+                relevance_score REAL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+            )
+            """,
+        )
+        self._execute(
+            conn,
+            """
+            CREATE INDEX IF NOT EXISTS idx_case_citations_case_answer
+            ON case_citations(case_id, answer_message_id, created_at)
+            """,
+        )
+
     def _ensure_subscription_schema(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
     ) -> None:
@@ -5258,6 +5418,32 @@ def _row_to_ai_model_admin_audit_event(row: tuple[object, ...]) -> AIModelAdminA
         reason=str(row[8]),
         correlation_id=str(row[9]),
         created_at=str(row[10]),
+    )
+
+
+def _row_to_case_citation(row: tuple[object, ...]) -> CaseCitation:
+    relevance_score = row[18]
+    return CaseCitation(
+        citation_id=str(row[0]),
+        case_id=str(row[1]),
+        question_message_id=str(row[2]) if row[2] is not None else None,
+        answer_message_id=str(row[3]) if row[3] is not None else None,
+        source_type=str(row[4]),
+        source_id=str(row[5]) if row[5] is not None else None,
+        source_url=str(row[6]) if row[6] is not None else None,
+        title=str(row[7]),
+        citation_label=str(row[8]) if row[8] is not None else None,
+        law_number=str(row[9]) if row[9] is not None else None,
+        section=str(row[10]) if row[10] is not None else None,
+        effective_from=str(row[11]) if row[11] is not None else None,
+        court=str(row[12]) if row[12] is not None else None,
+        ecli=str(row[13]) if row[13] is not None else None,
+        file_number=str(row[14]) if row[14] is not None else None,
+        decision_date=str(row[15]) if row[15] is not None else None,
+        snippet=str(row[16]) if row[16] is not None else None,
+        retrieval_tool=str(row[17]) if row[17] is not None else None,
+        relevance_score=float(relevance_score) if relevance_score is not None else None,
+        created_at=str(row[19]),
     )
 
 

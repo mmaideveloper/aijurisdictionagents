@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -57,11 +57,13 @@ def main() -> int:
     run_check("oauth protected resource metadata", args, lambda: check_protected_resource(base_url), results)
     run_check("oauth authorization server metadata", args, lambda: check_authorization_server(base_url), results)
     run_check("Claude dynamic client registration", args, lambda: check_claude_registration(base_url), results)
+    run_check("client credentials remains closed", args, lambda: check_client_credentials_rejected(base_url), results)
     run_check("MCP initialize", args, lambda: check_initialize(base_url), results)
     run_check("MCP tools/list", args, lambda: check_tools_list(base_url), results)
     run_check("public MCP tool call", args, lambda: check_public_tool_call(base_url), results)
     run_check("protected tool auth challenge", args, lambda: check_auth_challenge(base_url), results)
     run_check("browser auth pages", args, lambda: check_auth_pages(base_url), results)
+    run_check("Claude root authorize alias", args, lambda: check_root_authorize_alias(base_url), results)
 
     print("Claude MCP smoke checks passed:")
     for item in results:
@@ -124,7 +126,7 @@ def check_claude_registration(base_url: str) -> str:
         {
             "client_name": "Claude Connector Smoke Test",
             "redirect_uris": [CLAUDE_REDIRECT_URI],
-            "grant_types": ["authorization_code", "refresh_token"],
+            "grant_types": ["authorization_code", "client_credentials"],
             "response_types": ["code"],
             "token_endpoint_auth_method": "none",
             "scope": "mcp:laws offline_access",
@@ -135,8 +137,42 @@ def check_claude_registration(base_url: str) -> str:
     if not client_id.startswith("jurisdigta-"):
         raise AssertionError(f"Unexpected dynamic client id: {client_id!r}")
     assert_equal(payload.get("redirect_uris"), [CLAUDE_REDIRECT_URI], "redirect_uris")
+    assert_equal(payload.get("grant_types"), ["authorization_code", "refresh_token"], "grant_types")
     assert_equal(payload.get("token_endpoint_auth_method"), "none", "token_endpoint_auth_method")
     return f"dynamic registration accepted client_id={client_id[:18]}..."
+
+
+def check_client_credentials_rejected(base_url: str) -> str:
+    payload = request_form_json(
+        "POST",
+        f"{base_url}/oauth/token",
+        {
+            "grant_type": "client_credentials",
+            "client_id": "codex-smoke-public-client",
+        },
+        expected_status={400},
+    )
+    assert_equal(payload.get("detail"), "Unsupported grant_type", "client_credentials.detail")
+    return "OAuth token endpoint rejects client_credentials"
+
+
+def request_form_json(
+    method: str,
+    url: str,
+    payload: dict[str, Any],
+    *,
+    expected_status: int | set[int] = 200,
+    extra_headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    body = urlencode(payload).encode("utf-8")
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Claude MCP smoke test",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    return request_raw(method, url, body, headers, expected_status=expected_status).json()
 
 
 def check_initialize(base_url: str) -> str:
@@ -221,6 +257,24 @@ def check_auth_pages(base_url: str) -> str:
     return "login and sign-up pages are reachable"
 
 
+def check_root_authorize_alias(base_url: str) -> str:
+    query = urlencode(
+        {
+            "response_type": "code",
+            "client_id": "pkce",
+            "redirect_uri": CLAUDE_REDIRECT_URI,
+            "code_challenge": "smoke-test-code-challenge",
+            "code_challenge_method": "S256",
+            "state": "smoke-test-state",
+        }
+    )
+    response = request("GET", f"{base_url}/authorize?{query}")
+    text = response.body.decode("utf-8", errors="replace")
+    if "Authorize MCP access" not in text and "Autorizacia MCP pristupu" not in text:
+        raise AssertionError("Root /authorize alias did not render the OAuth authorize page")
+    return "root /authorize renders the OAuth authorize page"
+
+
 def mcp_rpc(base_url: str, request_id: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
     payload = request_json(
         "POST",
@@ -262,6 +316,17 @@ def request(
         headers["Content-Type"] = "application/json"
     if extra_headers:
         headers.update(extra_headers)
+    return request_raw(method, url, body, headers, expected_status=expected_status)
+
+
+def request_raw(
+    method: str,
+    url: str,
+    body: bytes | None,
+    headers: dict[str, str],
+    *,
+    expected_status: int | set[int] = 200,
+) -> HttpResponse:
     req = Request(url, data=body, headers=headers, method=method)
     try:
         with urlopen(req, timeout=TIMEOUT_SECONDS) as response:

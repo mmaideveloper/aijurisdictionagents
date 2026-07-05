@@ -44,7 +44,8 @@ def run_document_processor(*, limit: int = 20) -> list[ProcessedDocumentResult]:
 
 
 def _load_max_running_minutes() -> int:
-    value = int(os.getenv("DOCUMENT_PROCESSOR_MAX_RUNNING_TIME", "15"))
+    raw_value = os.getenv("DOCUMENT_PROCESSOR_MAX_RUNNING_TIME", "15").strip()
+    value = int("15" if raw_value.lower() == "unknown-variable" else raw_value)
     if value < 0:
         raise ValueError("DOCUMENT_PROCESSOR_MAX_RUNNING_TIME must be >= 0")
     return value

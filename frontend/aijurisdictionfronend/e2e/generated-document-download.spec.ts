@@ -66,14 +66,25 @@ test.beforeEach(async ({ page }) => {
 
   await page.addInitScript((user) => {
     window.sessionStorage.setItem("jurisdigta.web.auth.user.v1", JSON.stringify(user));
+    window.localStorage.setItem("aj_frontend_lang", "en");
   }, authUser);
 });
 
 test("generated documents are downloadable and listed for the selected case", async ({ page }) => {
-  await page.goto("/app/assistant", { waitUntil: "domcontentloaded" });
+  const casesResponse = page.waitForResponse((response) =>
+    response.url().includes("/v1/cases?user_id=user-e2e") && response.status() === 200
+  );
+  const historyResponse = page.waitForResponse((response) =>
+    response.url().includes("/v1/cases/case-generated-doc/history") && response.status() === 200
+  );
 
-  await expect(page.getByRole("button", { name: /test generated document/i })).toBeVisible();
-  await page.getByRole("button", { name: /test generated document/i }).click();
+  await page.goto("/app/assistant", { waitUntil: "domcontentloaded" });
+  await casesResponse;
+  await historyResponse;
+
+  const caseButton = page.locator(".case-item").filter({ hasText: "test generated document" });
+  await expect(caseButton).toBeVisible();
+  await caseButton.click();
 
   await expect(page.getByRole("heading", { name: /dokumenty|documents/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /splnomocnenie_ESolutions_SK\.pdf/i })).toBeVisible();

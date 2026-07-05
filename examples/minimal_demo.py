@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
+from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 
 agent = AIAudioToolRecognizerAgent()
 print("speechtype default => message (review STT transcript before send)")
@@ -33,8 +34,16 @@ print(
     "https://mcp.jurisdigta.eu/mcp."
 )
 print(
+    "mcp_legal_source_search => MCP remains model-free; clients parse natural-language legal "
+    "questions and call protected searchLegalSources with structured filters such as "
+    "query='prenajom bytu', source_types=['laws','court_decisions'], published_year=2026, "
+    "year_filter_mode='published_in'. Search defaults to metadata only; court-decision text "
+    "requires getCourtDecision(full_version=True)."
+)
+print(
     "mcp_endpoint_claude_compat => /MCP remains accepted for Claude web and existing clients; "
-    "it allows public-law tools without OAuth because Claude web can reject issued OAuth credentials."
+    "it allows public-law tools without OAuth and does not advertise protected-resource metadata "
+    "or Claude-web root OAuth discovery because Claude web can reject issued OAuth credentials."
 )
 print(
     "mcp_protocol_negotiation => initialize echoes supported client protocol versions "
@@ -51,6 +60,15 @@ print(
 print(
     "mcp_oauth_diagnostic_logs => OAuth metadata, authorize, token, refresh, and endpoint entry "
     "events log path/resource/audience context without passwords, OTPs, auth codes, PKCE verifiers, or tokens."
+)
+print(
+    "mcp_oauth_claude_dcr => Claude/SmartIdentity-style dynamic client registration may include "
+    "client_credentials, but JurisDigta normalizes public clients to authorization_code plus refresh_token "
+    "and keeps the token endpoint closed to client_credentials."
+)
+print(
+    "mcp_oauth_e2e_bypass => synthetic free/paid E2E users can skip MFA only for MCP OAuth when "
+    "MCP_OAUTH_TEST_MFA_BYPASS_ENABLED, allowlisted emails, and a future expiry are configured."
 )
 print(
     "case_document_pdf_export => linked generated PDFs export the selected legal-document block only; "
@@ -77,6 +95,41 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         email="minimal-routing@example.com",
         password="demo-secret",
         full_name="Minimal Routing Demo",
+    )
+    demo_case = demo_store.create_case(
+        user_id=demo_user.user_id,
+        company_id=None,
+        title="Minimal citation demo",
+    )
+    demo_question_id = demo_store.add_case_message(
+        case_id=demo_case.case_id,
+        role="user",
+        content="Which law supports this answer?",
+        agent_name="User",
+    )
+    demo_answer_id = demo_store.add_case_message(
+        case_id=demo_case.case_id,
+        role="assistant",
+        content="This answer is grounded in a tracked legal source.",
+        agent_name="LawyerSlovakia",
+    )
+    demo_store.add_case_citation(
+        case_id=demo_case.case_id,
+        question_message_id=demo_question_id,
+        answer_message_id=demo_answer_id,
+        source_type="law",
+        source_id="SK:ZZ:1992:460",
+        source_url="/v1/laws/source?country_code=SK&collection_code=ZZ&law_year=1992&law_number=460",
+        title="Constitution of the Slovak Republic",
+        citation_label="460/1992 Zb. - Constitution of the Slovak Republic",
+        law_number="460/1992 Zb.",
+        effective_from="1992-10-01",
+        snippet="Privacy-minimized citation metadata for review.",
+        retrieval_tool="JurisDigta laws collector",
+    )
+    print(
+        "case_citations => "
+        f"{len(demo_store.list_case_citations(case_id=demo_case.case_id))} persisted citation"
     )
     free_route = demo_store.resolve_ai_model_route(
         user_id=demo_user.user_id,
@@ -136,6 +189,11 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         "model_disclosure_label => "
         f"{expired_route.provider.display_name} - {expired_route.model_profile.model_code}"
     )
+    e2e_users = provision_e2e_test_users(store=demo_store, password="demo-e2e-password")
+    print(
+        "e2e_test_users => "
+        + ", ".join(f"{item.email}:{item.plan_code}" for item in e2e_users)
+    )
     demo_store.upsert_ai_model_profile(
         model_profile_id="local_ollama_llama32",
         provider_id="local_ollama",
@@ -186,6 +244,10 @@ print(
     "emails, phone numbers, or legal-case facts in labels."
 )
 print(
+    "laws_collector_grafana_monitoring => JurisDigta Laws Collector displays the "
+    "latest imported law from the aggregate law label, for example 179/2026."
+)
+print(
     "service_healthchecks => HTTP services expose privacy-minimized /health; "
     "worker services report supervisor state, freshness, latest run result, "
     "and sanitized errors through protected operational status."
@@ -195,4 +257,9 @@ print(
     "PostgreSQL store with vectors, retry-hardened InfoSud requests, and "
     "pseudonymized MCP search output; run "
     "`python examples/court_decision_collector_minimal_demo.py` for the focused fixture demo."
+)
+print(
+    "court_decision_grafana => JurisDigta Court Decision Service shows the aggregate "
+    "latest imported court decision short name and published date without exposing "
+    "court decision text, parties, file numbers, ECLI values, or source identifiers."
 )

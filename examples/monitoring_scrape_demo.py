@@ -51,10 +51,13 @@ def main() -> int:
             "jurisdigta_ai_model_total_tokens_window",
             "jurisdigta_ai_model_top_case_total_tokens_window",
             'jurisdigta_laws_total{name="laws_imported"}',
+            "jurisdigta_laws_last_processed_info",
             "jurisdigta_laws_last_processed_number",
             "jurisdigta_laws_last_processed_year",
             "jurisdigta_component_status{component=\"court_decision_collector\"}",
             "jurisdigta_court_decisions_total",
+            "jurisdigta_court_decision_latest_imported_info",
+            "jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds",
         )
         if not _query(expression)
     ]

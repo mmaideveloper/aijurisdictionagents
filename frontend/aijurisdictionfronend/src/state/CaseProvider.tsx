@@ -5,6 +5,7 @@ import {
   listCases,
   uploadApiCaseDocuments,
   type ApiCase,
+  type ApiCaseCitation,
   type ApiCaseDocument,
   type ApiCaseHistoryMessage
 } from "../api/caseClient";
@@ -39,6 +40,30 @@ export type CaseInteraction = {
   createdAt: string;
   actor: string;
   message: string;
+  citations: CaseCitation[];
+};
+
+export type CaseCitation = {
+  id: string;
+  caseId: string;
+  questionMessageId: string | null;
+  answerMessageId: string | null;
+  sourceType: "law" | "court_decision" | "case_document" | "web" | "other";
+  sourceId: string | null;
+  sourceUrl: string | null;
+  title: string;
+  citationLabel: string | null;
+  lawNumber: string | null;
+  section: string | null;
+  effectiveFrom: string | null;
+  court: string | null;
+  ecli: string | null;
+  fileNumber: string | null;
+  decisionDate: string | null;
+  snippet: string | null;
+  retrievalTool: string | null;
+  relevanceScore: number | null;
+  createdAt: string;
 };
 
 export type CaseWorkspace = {
@@ -92,6 +117,7 @@ export type CaseRecord = {
   jurisdiction: string;
   opposingParty: string;
   documents: CaseDocumentRecord[];
+  citations: CaseCitation[];
   source: "api" | "mock";
 };
 
@@ -318,7 +344,8 @@ const createMockCase = (input: CreateCaseInput, createdAt: string, id: string): 
         id: `${id}-interaction-1`,
         createdAt,
         actor: "AI Lawyer",
-        message: buildLocalizedInteractionMessage("mockCreatedCaseOpenMessage")
+        message: buildLocalizedInteractionMessage("mockCreatedCaseOpenMessage"),
+        citations: []
       },
       {
         id: `${id}-interaction-2`,
@@ -329,7 +356,8 @@ const createMockCase = (input: CreateCaseInput, createdAt: string, id: string): 
             ? "mockCreatedCaseStoredDocumentsSingular"
             : "mockCreatedCaseStoredDocumentsPlural",
           { count: documents.length }
-        )
+        ),
+        citations: []
       }
     ],
     selectedRole: "AI Lawyer",
@@ -345,6 +373,7 @@ const createMockCase = (input: CreateCaseInput, createdAt: string, id: string): 
     jurisdiction: input.jurisdiction.trim(),
     opposingParty: input.opposingParty.trim(),
     documents,
+    citations: [],
     source: "mock"
   };
 };
@@ -485,6 +514,56 @@ const normalizeStoredDocument = (
   };
 };
 
+const normalizeStoredCitation = (value: unknown): CaseCitation | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.caseId !== "string" ||
+    typeof candidate.sourceType !== "string" ||
+    typeof candidate.title !== "string" ||
+    typeof candidate.createdAt !== "string"
+  ) {
+    return null;
+  }
+  const sourceType =
+    candidate.sourceType === "law" ||
+    candidate.sourceType === "court_decision" ||
+    candidate.sourceType === "case_document" ||
+    candidate.sourceType === "web" ||
+    candidate.sourceType === "other"
+      ? candidate.sourceType
+      : "other";
+  const nullableString = (field: string): string | null =>
+    typeof candidate[field] === "string" && candidate[field].trim()
+      ? candidate[field]
+      : null;
+  return {
+    id: candidate.id,
+    caseId: candidate.caseId,
+    questionMessageId: nullableString("questionMessageId"),
+    answerMessageId: nullableString("answerMessageId"),
+    sourceType,
+    sourceId: nullableString("sourceId"),
+    sourceUrl: nullableString("sourceUrl"),
+    title: candidate.title,
+    citationLabel: nullableString("citationLabel"),
+    lawNumber: nullableString("lawNumber"),
+    section: nullableString("section"),
+    effectiveFrom: nullableString("effectiveFrom"),
+    court: nullableString("court"),
+    ecli: nullableString("ecli"),
+    fileNumber: nullableString("fileNumber"),
+    decisionDate: nullableString("decisionDate"),
+    snippet: nullableString("snippet"),
+    retrievalTool: nullableString("retrievalTool"),
+    relevanceScore: typeof candidate.relevanceScore === "number" ? candidate.relevanceScore : null,
+    createdAt: candidate.createdAt
+  };
+};
+
 const normalizeStoredCase = (value: unknown): CaseRecord | null => {
   if (!value || typeof value !== "object") {
     return null;
@@ -509,6 +588,9 @@ const normalizeStoredCase = (value: unknown): CaseRecord | null => {
       ? (candidate.workspace as Record<string, unknown>)
       : {};
   const rawInteractions = Array.isArray(candidate.interactionHistory) ? candidate.interactionHistory : [];
+  const citations = (Array.isArray(candidate.citations) ? candidate.citations : [])
+    .map(normalizeStoredCitation)
+    .filter((citation): citation is CaseCitation => citation !== null);
   const interactionHistory = rawInteractions
     .map((interaction) => {
       if (!interaction || typeof interaction !== "object") {
@@ -527,7 +609,10 @@ const normalizeStoredCase = (value: unknown): CaseRecord | null => {
         id: item.id,
         createdAt: item.createdAt,
         actor: item.actor,
-        message: normalizeLegacyInteractionMessage(item.message)
+        message: normalizeLegacyInteractionMessage(item.message),
+        citations: (Array.isArray(item.citations) ? item.citations : [])
+          .map(normalizeStoredCitation)
+          .filter((citation): citation is CaseCitation => citation !== null)
       } satisfies CaseInteraction;
     })
     .filter((interaction): interaction is CaseInteraction => interaction !== null);
@@ -584,6 +669,7 @@ const normalizeStoredCase = (value: unknown): CaseRecord | null => {
     opposingParty:
       typeof candidate.opposingParty === "string" ? candidate.opposingParty : "Unknown",
     documents,
+    citations,
     source: "mock"
   };
 };
@@ -667,6 +753,29 @@ const mapApiDocument = (caseId: string, document: ApiCaseDocument): CaseDocument
   uploadedAt: document.created_at
 });
 
+const mapApiCitation = (citation: ApiCaseCitation): CaseCitation => ({
+  id: citation.id,
+  caseId: citation.case_id,
+  questionMessageId: citation.question_message_id,
+  answerMessageId: citation.answer_message_id,
+  sourceType: citation.source_type,
+  sourceId: citation.source_id,
+  sourceUrl: citation.source_url,
+  title: citation.title,
+  citationLabel: citation.citation_label,
+  lawNumber: citation.law_number,
+  section: citation.section,
+  effectiveFrom: citation.effective_from,
+  court: citation.court,
+  ecli: citation.ecli,
+  fileNumber: citation.file_number,
+  decisionDate: citation.decision_date,
+  snippet: citation.snippet,
+  retrievalTool: citation.retrieval_tool,
+  relevanceScore: citation.relevance_score,
+  createdAt: citation.created_at
+});
+
 const buildDocumentViewerUrl = ({
   apiCase,
   document
@@ -730,7 +839,8 @@ const appendGeneratedDocumentLinksToHistory = ({
 const mapApiCase = (
   apiCase: ApiCase,
   historyMessages: ApiCaseHistoryMessage[] = [],
-  historyDocuments: ApiCaseDocument[] = []
+  historyDocuments: ApiCaseDocument[] = [],
+  historyCitations: ApiCaseCitation[] = []
 ): CaseRecord => {
   const documents = historyDocuments
     .map((document) => mapApiDocument(apiCase.case_id, document))
@@ -741,6 +851,7 @@ const mapApiCase = (
     documents
   });
   const createdAt = apiCase.created_at;
+  const caseCitations = historyCitations.map(mapApiCitation);
   return {
     id: apiCase.case_id,
     title: apiCase.title,
@@ -753,7 +864,8 @@ const mapApiCase = (
       id: message.communication_id,
       createdAt: message.created_at,
       actor: mapApiRole(message.role, message.agent_name),
-      message: message.content
+      message: message.content,
+      citations: (message.citations ?? []).map(mapApiCitation)
     })),
     selectedRole: "AI Lawyer",
     selectedMode: "Draft",
@@ -768,6 +880,7 @@ const mapApiCase = (
     jurisdiction: "SK",
     opposingParty: "",
     documents,
+    citations: caseCitations,
     source: "api"
   };
 };
@@ -775,7 +888,7 @@ const mapApiCase = (
 const loadApiCaseWithHistory = async (userId: string, apiCase: ApiCase): Promise<CaseRecord> => {
   try {
     const history = await getCaseHistory(userId, apiCase.case_id, 200);
-    return mapApiCase(apiCase, history.messages, history.documents);
+    return mapApiCase(apiCase, history.messages, history.documents, history.citations ?? []);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unable to load case history.";
     consoleLogger.warn("Unable to load API case history; showing case without counts", {
@@ -896,7 +1009,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 updated_at: apiCase.createdAt
               },
               history.messages,
-              history.documents
+              history.documents,
+              history.citations ?? []
             )
           : null;
         setStoredCases((prev) =>
@@ -937,7 +1051,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
             files
           });
         }
-        newCase = mapApiCase(apiCase, history.messages, history.documents);
+        newCase = mapApiCase(apiCase, history.messages, history.documents, history.citations ?? []);
       } catch (error) {
         const detail = error instanceof Error ? error.message : "Unable to create API case.";
         setCaseLoadError(detail);
@@ -987,7 +1101,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: `${caseId}-${Date.now()}`,
         createdAt,
         actor,
-        message
+        message,
+        citations: []
       };
       setStoredCases((prev) =>
         prev.map((caseItem) =>

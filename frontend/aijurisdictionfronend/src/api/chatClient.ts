@@ -27,6 +27,7 @@ export type ChatMessage = {
   content: string;
   agent_name: string | null;
   created_at: string;
+  citations?: Array<Record<string, unknown>>;
 };
 
 export type EffectiveModelRoute = {

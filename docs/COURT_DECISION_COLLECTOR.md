@@ -57,12 +57,16 @@ The dashboard uses aggregate Prometheus metrics from
 - `jurisdigta_court_decision_collector_events_total`
 - `jurisdigta_court_decision_collector_last_activity_timestamp_seconds`
 - `jurisdigta_court_decision_latest_imported_timestamp_seconds`
+- `jurisdigta_court_decision_latest_imported_info`
+- `jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds`
 - `jurisdigta_court_decision_recent_error_info`
 
 These metrics must remain operational and aggregate-only. Do not expose raw
 decision text, source URLs, source GUIDs, ECLI values, file numbers, party
 names, retrieved snippets, embeddings, prompts, or other personal/legal-risk
-content in Grafana labels or tables.
+content in Grafana labels or tables. The latest imported decision panel may
+show only a safe short name from decision form plus court type and the published
+date.
 
 ## Service loop and restart test
 
@@ -135,7 +139,8 @@ The MCP server exposes:
 
 - `getVersion()` includes court-decision collector version, status, latest imported decision/source GUID, and latest import time.
 - `getStatistics(country_code)` includes court-decision collector version, total court decisions, published decisions, total versions, latest imported decision/source GUID, latest import time, court metadata, ECLI/file number, issue date, and collector cursor status.
-- `searchCourtDecisions(query, limit)` for pseudonymized metadata/snippet search.
-- `getCourtDecision(decision_id, outputMode)` where `outputMode=public` is the default and returns pseudonymized text.
+- `searchCourtDecisions(query, limit, offset, published_year, year_filter_mode, court_type, include_snippets)` for metadata-first search. The default `year_filter_mode` is `published_in`, and snippets are omitted unless `include_snippets=true`.
+- `getCourtDecision(decision_id, full_version, outputMode)` where the default response is metadata-only. `full_version=true` returns bounded pseudonymized public text. `outputMode=internal_raw` remains restricted to controlled internal runtimes.
+- `searchLegalSources(query, source_types, published_year, year_filter_mode, limit_per_source)` for protected combined metadata search across current consolidated laws and court decisions. The MCP server is model-free; clients parse natural-language questions and pass structured filters.
 
 `outputMode=internal_raw` is reserved for controlled internal callers and is blocked unless `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP=true` is set in that controlled runtime. Keep it disabled for normal external MCP clients.

@@ -14,6 +14,7 @@ import { useLanguage } from "../components/LanguageProvider";
 import WorkspaceWelcome from "../components/WorkspaceWelcome";
 import {
   buildLocalizedInteractionMessage,
+  type CaseCitation,
   CaseCommunicationMode,
   CaseRole,
   useCases
@@ -36,6 +37,66 @@ const configuredSpeechType = (import.meta.env.VITE_AIJ_SPEECHTYPE ?? "message")
   .toLowerCase() as SpeechType;
 const defaultSpeechType: SpeechType =
   configuredSpeechType === "conversation" ? "conversation" : "message";
+
+const citationDisplayLabel = (citation: CaseCitation): string =>
+  citation.citationLabel || citation.lawNumber || citation.title;
+
+const citationTypeLabel = (citation: CaseCitation): string => {
+  switch (citation.sourceType) {
+    case "law":
+      return "Law";
+    case "court_decision":
+      return "Court";
+    case "case_document":
+      return "Case file";
+    case "web":
+      return "Web";
+    default:
+      return "Source";
+  }
+};
+
+const dedupeCaseCitations = (citations: CaseCitation[]): CaseCitation[] => {
+  const seen = new Set<string>();
+  return citations.filter((citation) => {
+    const key = citation.sourceId || citation.sourceUrl || citation.id;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
+const CitationList: React.FC<{ citations: CaseCitation[]; emptyLabel: string; title?: string }> = ({
+  citations,
+  emptyLabel,
+  title
+}) => (
+  <section className="citation-list" aria-label={title ?? emptyLabel}>
+    {title ? <h3>{title}</h3> : null}
+    {citations.length === 0 ? (
+      <p className="hint">{emptyLabel}</p>
+    ) : (
+      <ul>
+        {citations.map((citation) => (
+          <li key={citation.id} className="citation-list__item">
+            <span className="citation-list__type">{citationTypeLabel(citation)}</span>
+            {citation.sourceUrl ? (
+              <a href={citation.sourceUrl} target="_blank" rel="noreferrer">
+                {citationDisplayLabel(citation)}
+              </a>
+            ) : (
+              <strong>{citationDisplayLabel(citation)}</strong>
+            )}
+            {citation.effectiveFrom ? <span>{citation.effectiveFrom}</span> : null}
+            {citation.snippet ? <p>{citation.snippet}</p> : null}
+          </li>
+        ))}
+      </ul>
+    )}
+  </section>
+);
 
 const parseWorkspaceVoiceConfirmation = (transcript: string): WorkspaceVoiceConfirmation => {
   const normalized = transcript
@@ -554,6 +615,12 @@ const Home: React.FC = () => {
                                     <span>{new Date(item.createdAt).toLocaleString()}</span>
                                   </div>
                                   <p>{item.message}</p>
+                                  {(item.citations ?? []).length > 0 ? (
+                                    <CitationList
+                                      citations={item.citations ?? []}
+                                      emptyLabel={t("workspaceCitationsEmpty")}
+                                    />
+                                  ) : null}
                                 </article>
                               );
                             })}
@@ -757,6 +824,11 @@ const Home: React.FC = () => {
                       })}
                     </div>
                   </fieldset>
+                  <CitationList
+                    title={t("workspaceCitationsTitle")}
+                    citations={dedupeCaseCitations(activeCase?.citations ?? [])}
+                    emptyLabel={t("workspaceCitationsEmpty")}
+                  />
                 </div>
               </div>
             </aside>

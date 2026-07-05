@@ -12,7 +12,7 @@ import os
 import re
 import secrets
 import time
-from typing import Any, Callable, Sequence, cast
+from typing import Any, AsyncIterator, Callable, Sequence, cast
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
 from urllib.parse import urlparse
@@ -21,7 +21,7 @@ from urllib.request import Request as UrlRequest
 from urllib.request import urlopen
 
 from fastapi import APIRouter, Body, Depends, Form, Header, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from app.laws_api import _laws_db_config, _read_laws_statistics
 from app.mcp_tokens import (
@@ -45,6 +45,7 @@ from app.versioning import (
     get_web_app_version,
 )
 from aijurisdictionagents.api_db import ApiDatabaseStore, User, generate_one_time_code
+from aijurisdictionagents.api_db.e2e_test_users import E2E_TEST_USER_EMAILS
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 compat_router = APIRouter(prefix="/MC", tags=["mcp"])
@@ -77,6 +78,8 @@ _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
 _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = 8_000
 _COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = 3
+_OAUTH_PUBLIC_CLIENT_GRANT_TYPES = ("authorization_code", "refresh_token")
+_OAUTH_TOLERATED_DCR_GRANT_TYPES = {*_OAUTH_PUBLIC_CLIENT_GRANT_TYPES, "client_credentials"}
 logger = logging.getLogger("aijuristiction-api.mcp")
 _CURRENT_MCP_REQUEST_ID: ContextVar[str | None] = ContextVar("current_mcp_request_id", default=None)
 _CURRENT_MCP_CORRELATION_ID: ContextVar[str | None] = ContextVar("current_mcp_correlation_id", default=None)
@@ -246,10 +249,39 @@ def require_mcp_api_key(
     return str(user.user_id)
 
 
-@router.get("", response_class=JSONResponse)
-@legacy_uppercase_router.get("", response_class=JSONResponse)
-def mcp_status() -> JSONResponse:
-    return JSONResponse(status_code=405, content={"detail": "Use POST /mcp for Streamable HTTP JSON-RPC."})
+@router.get("")
+@compat_router.get("")
+@legacy_uppercase_router.get("")
+async def mcp_status(request: Request) -> Response:
+    accept = request.headers.get("accept", "").lower()
+    if "text/event-stream" not in accept:
+        return JSONResponse(
+            status_code=405,
+            content={"detail": "Use POST /mcp for Streamable HTTP JSON-RPC."},
+            headers={"Allow": "GET, POST"},
+        )
+
+    request_id = getattr(request.state, "request_id", None)
+    correlation_id = getattr(request.state, "correlation_id", None)
+    logger.info(
+        "mcp_sse_stream_opened request_path=%s request_id=%s correlation_id=%s user_agent=%s",
+        request.url.path,
+        request_id,
+        correlation_id,
+        _oauth_user_agent_family(request),
+    )
+
+    async def events() -> AsyncIterator[str]:
+        yield ": jurisdigta-mcp-ready\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/status", response_class=JSONResponse)
@@ -346,7 +378,17 @@ def mcp_sign_up_page(request: Request) -> HTMLResponse:
 
 
 @oauth_router.get("/.well-known/oauth-protected-resource")
-def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
+def oauth_protected_resource_metadata(request: Request) -> Any:
+    if _is_claude_web_root_oauth_discovery(request):
+        logger.info(
+            "mcp_oauth_root_discovery_hidden_for_claude_web request_path=%s user_agent=%s",
+            request.url.path,
+            _oauth_user_agent_family(request),
+        )
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": "Root OAuth protected-resource discovery is not available for Claude web"},
+        )
     base_url = _base_url(request)
     resource = _metadata_resource_url(request)
     logger.info(
@@ -366,16 +408,35 @@ def oauth_protected_resource_metadata(request: Request) -> dict[str, Any]:
     }
 
 
-@oauth_router.get("/.well-known/oauth-protected-resource/MCP")
 @oauth_router.get("/.well-known/oauth-protected-resource/mcp")
-def oauth_mcp_protected_resource_metadata(request: Request) -> dict[str, Any]:
+def oauth_mcp_protected_resource_metadata(request: Request) -> Any:
     return oauth_protected_resource_metadata(request)
+
+
+@oauth_router.get("/.well-known/oauth-protected-resource/MCP")
+def oauth_legacy_public_mcp_protected_resource_metadata() -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "detail": "Legacy Claude web MCP compatibility endpoint is public and is not an OAuth protected resource"
+        },
+    )
 
 
 @oauth_router.get("/.well-known/oauth-authorization-server")
 @oauth_router.get("/.well-known/oauth-authorization-server/MCP")
 @oauth_router.get("/.well-known/oauth-authorization-server/mcp")
-def oauth_authorization_server_metadata(request: Request) -> dict[str, Any]:
+def oauth_authorization_server_metadata(request: Request) -> Any:
+    if _is_claude_web_root_oauth_discovery(request):
+        logger.info(
+            "mcp_oauth_root_discovery_hidden_for_claude_web request_path=%s user_agent=%s",
+            request.url.path,
+            _oauth_user_agent_family(request),
+        )
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": "Root OAuth authorization-server discovery is not available for Claude web"},
+        )
     base_url = _base_url(request)
     protected_resources = _all_mcp_resource_urls(request)
     logger.info(
@@ -420,10 +481,12 @@ def oauth_dynamic_client_registration(
             detail="Unsupported token_endpoint_auth_method",
         )
 
-    grant_types = _registration_string_list(metadata.get("grant_types")) or ["authorization_code"]
-    allowed_grant_types = {"authorization_code", "refresh_token"}
-    if any(grant_type not in allowed_grant_types for grant_type in grant_types):
+    requested_grant_types = _registration_string_list(metadata.get("grant_types")) or ["authorization_code"]
+    if any(grant_type not in _OAUTH_TOLERATED_DCR_GRANT_TYPES for grant_type in requested_grant_types):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported grant_types")
+    if "authorization_code" not in requested_grant_types:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="authorization_code grant is required")
+    ignored_client_credentials = "client_credentials" in requested_grant_types
 
     response_types = _registration_string_list(metadata.get("response_types")) or ["code"]
     if any(response_type != "code" for response_type in response_types):
@@ -437,23 +500,28 @@ def oauth_dynamic_client_registration(
 
     client_id = f"jurisdigta-{secrets.token_urlsafe(18)}"
     logger.info(
-        "mcp_oauth_client_registered client_id=%s redirect_count=%d request_host=%s",
+        "mcp_oauth_client_registered client_id=%s redirect_count=%d request_host=%s "
+        "requested_grants=%s returned_grants=%s ignored_client_credentials=%s",
         client_id,
         len(redirect_uris),
         request.headers.get("host", ""),
+        ",".join(requested_grant_types),
+        ",".join(_OAUTH_PUBLIC_CLIENT_GRANT_TYPES),
+        ignored_client_credentials,
     )
     return {
         "client_id": client_id,
         "client_id_issued_at": int(time.time()),
         "client_name": str(metadata.get("client_name") or "MCP client").strip()[:100],
         "redirect_uris": redirect_uris,
-        "grant_types": ["authorization_code", "refresh_token"],
+        "grant_types": list(_OAUTH_PUBLIC_CLIENT_GRANT_TYPES),
         "response_types": ["code"],
         "token_endpoint_auth_method": "none",
         "scope": f"{MCP_TOKEN_SCOPE} {MCP_REFRESH_TOKEN_SCOPE}",
     }
 
 
+@oauth_router.get("/authorize", response_class=HTMLResponse)
 @oauth_router.get("/oauth/authorize", response_class=HTMLResponse)
 def oauth_authorize_page(
     request: Request,
@@ -570,6 +638,26 @@ def oauth_authorize_login(
     user = store.authenticate_user(email=email, password=password)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if _mcp_oauth_test_mfa_bypass_allowed(user=user):
+        logger.warning(
+            "mcp_oauth_test_mfa_bypass_used user_id=%s email_hash=%s client_id_hash=%s "
+            "redirect_host=%s redirect_path=%s expires_at=%s",
+            user.user_id,
+            _stable_hash(user.email),
+            _stable_hash(client_id),
+            _url_host(redirect_uri),
+            _url_path(redirect_uri),
+            _mcp_oauth_test_mfa_bypass_expires_at_raw(),
+        )
+        return _redirect_with_oauth_authorization_code(
+            store=store,
+            user=user,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            resource=resolved_resource,
+            state=state,
+        )
     if _has_recent_mcp_otp_verification(store=store, user=user):
         logger.info("mcp_oauth_otp_reuse user_id=%s client_id=%s", user.user_id, client_id)
         return _redirect_with_oauth_authorization_code(
@@ -1416,6 +1504,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
     handlers = {
         "getVersion": _tool_get_version,
         "getStatistics": _tool_get_statistics,
+        "searchLegalSources": _tool_search_legal_sources,
         "searchLaws": _tool_search_laws,
         "getLawText": _tool_get_law_text,
         "searchCourtDecisions": _tool_search_court_decisions,
@@ -1479,12 +1568,83 @@ def _tool_get_statistics(arguments: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _tool_search_legal_sources(arguments: dict[str, Any]) -> dict[str, Any]:
+    query = _required_search_query(arguments)
+    country_code = str(arguments.get("country_code", "SK")).strip().upper() or "SK"
+    source_types = _requested_source_types(arguments.get("source_types"))
+    limit_per_source = _bounded_int(arguments.get("limit_per_source"), default=10, minimum=1, maximum=50)
+    offset = _bounded_int(arguments.get("offset"), default=0, minimum=0, maximum=10_000)
+    published_year = _optional_positive_int(arguments.get("published_year"))
+    year_filter_mode = _year_filter_mode(arguments.get("year_filter_mode"))
+    logger.info(
+        (
+            "mcp_tool_search_legal_sources_query country_code=%s source_types=%s "
+            "published_year=%s year_filter_mode=%s limit_per_source=%d offset=%d query_length=%d"
+        ),
+        country_code,
+        ",".join(source_types),
+        published_year,
+        year_filter_mode,
+        limit_per_source,
+        offset,
+        len(query),
+    )
+    laws_payload: dict[str, Any] | None = None
+    court_decisions_payload: dict[str, Any] | None = None
+    if "laws" in source_types:
+        laws_payload = _search_laws(
+            query=query,
+            country_code=country_code,
+            limit=limit_per_source,
+            offset=offset,
+            published_year=published_year,
+            year_filter_mode=year_filter_mode,
+            law_year=None,
+            law_number=None,
+            metadata_only=True,
+        )
+    if "court_decisions" in source_types:
+        court_decisions_payload = _search_court_decisions(
+            query=query,
+            limit=limit_per_source,
+            offset=offset,
+            published_year=published_year,
+            year_filter_mode=year_filter_mode,
+            court_type=str(arguments.get("court_type", "")).strip(),
+            include_snippets=False,
+        )
+    result: dict[str, Any] = {
+        "query": query,
+        "country_code": country_code,
+        "source_types": source_types,
+        "year_filter_mode": year_filter_mode,
+        "published_year": published_year,
+        "limit_per_source": limit_per_source,
+        "offset": offset,
+        "laws": laws_payload["results"] if laws_payload else [],
+        "court_decisions": court_decisions_payload["results"] if court_decisions_payload else [],
+        "status": "ok",
+        "warnings": [],
+    }
+    if court_decisions_payload and court_decisions_payload.get("status") == "degraded":
+        result["status"] = "degraded"
+        result["warnings"].append(court_decisions_payload["error"])
+    logger.info(
+        "mcp_tool_search_legal_sources_result laws=%d court_decisions=%d status=%s",
+        len(result["laws"]),
+        len(result["court_decisions"]),
+        result["status"],
+    )
+    return result
+
+
 def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
-    query = str(arguments.get("query", "")).strip()
-    if len(query) < 2:
-        raise HTTPException(status_code=400, detail="query must contain at least 2 characters")
+    query = _required_search_query(arguments)
     country_code = str(arguments.get("country_code", "SK")).strip().upper() or "SK"
     limit = _bounded_int(arguments.get("limit"), default=10, minimum=1, maximum=50)
+    offset = _bounded_int(arguments.get("offset"), default=0, minimum=0, maximum=10_000)
+    published_year = _optional_positive_int(arguments.get("published_year"))
+    year_filter_mode = _year_filter_mode(arguments.get("year_filter_mode"))
     requested_law_year = _optional_positive_int(arguments.get("law_year"))
     requested_law_number = _optional_positive_int(arguments.get("law_number"))
     parsed_identifier = _parse_law_identifier(query)
@@ -1492,13 +1652,52 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
         requested_law_year = parsed_identifier[0]
     if requested_law_number is None and parsed_identifier is not None:
         requested_law_number = parsed_identifier[1]
+    return _search_laws(
+        query=query,
+        country_code=country_code,
+        limit=limit,
+        offset=offset,
+        published_year=published_year,
+        year_filter_mode=year_filter_mode,
+        law_year=requested_law_year,
+        law_number=requested_law_number,
+        metadata_only=True,
+    )
+
+
+def _search_laws(
+    *,
+    query: str,
+    country_code: str,
+    limit: int,
+    offset: int,
+    published_year: int | None,
+    year_filter_mode: str,
+    law_year: int | None,
+    law_number: int | None,
+    metadata_only: bool,
+) -> dict[str, Any]:
+    if year_filter_mode != "published_in":
+        raise HTTPException(status_code=400, detail="Only year_filter_mode=published_in is supported")
     pattern = f"%{query.lower()}%"
     exact = query.lower()
-    logger.info("mcp_tool_search_laws_query country_code=%s limit=%d query_length=%d", country_code, limit, len(query))
+    logger.info(
+        (
+            "mcp_tool_search_laws_query country_code=%s limit=%d offset=%d "
+            "published_year=%s year_filter_mode=%s query_length=%d"
+        ),
+        country_code,
+        limit,
+        offset,
+        published_year,
+        year_filter_mode,
+        len(query),
+    )
 
     with _LawsQuerySession() as laws:
         law_year_filter = ""
         law_number_filter = ""
+        published_year_filter = ""
         query_params: list[Any] = [
             country_code,
             pattern,
@@ -1506,23 +1705,43 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
             pattern,
             pattern,
         ]
-        if requested_law_year is not None:
+        if law_year is not None:
             law_year_filter = f" AND d.law_year = {laws.param}"
-            query_params.append(requested_law_year)
-        if requested_law_number is not None:
+            query_params.append(law_year)
+        if law_number is not None:
             law_number_filter = f" AND d.law_number = {laws.param}"
-            query_params.append(requested_law_number)
+            query_params.append(law_number)
+        if published_year is not None:
+            published_year_filter = f" AND d.law_year = {laws.param}"
+            query_params.append(published_year)
         query_params.extend(
             [
                 exact,
                 exact,
                 exact,
-                f"{requested_law_number}/{requested_law_year}%" if requested_law_year and requested_law_number else "",
+                f"{law_number}/{law_year}%" if law_year and law_number else "",
                 limit,
+                offset,
             ]
         )
         rows = laws.query_all(
             f"""
+            WITH latest_versions AS (
+                SELECT version_id, document_id, version_token, effective_from
+                FROM (
+                    SELECT
+                        v.version_id,
+                        v.document_id,
+                        v.version_token,
+                        v.effective_from,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY v.document_id
+                            ORDER BY v.effective_from DESC, v.version_token DESC
+                        ) AS row_number
+                    FROM law_versions AS v
+                ) AS ranked_versions
+                WHERE row_number = 1
+            )
             SELECT
                 d.document_id,
                 d.country_code,
@@ -1539,7 +1758,7 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
                 COALESCE(m.title, d.official_name) AS title,
                 COALESCE(m.law_type, '') AS law_type
             FROM law_documents AS d
-            JOIN law_versions AS v ON v.document_id = d.document_id
+            JOIN latest_versions AS v ON v.document_id = d.document_id
             LEFT JOIN law_metadata AS m ON m.version_id = v.version_id
             WHERE UPPER(d.country_code) = {laws.param}
               AND (
@@ -1550,6 +1769,7 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
               )
               {law_year_filter}
               {law_number_filter}
+              {published_year_filter}
             ORDER BY
                 CASE
                     WHEN LOWER(COALESCE(m.law_identifier_text, '')) = {laws.param} THEN 0
@@ -1562,12 +1782,22 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
                 d.law_number DESC,
                 v.effective_from DESC
             LIMIT {laws.param}
+            OFFSET {laws.param}
             """,
             tuple(query_params),
         )
     results = [_search_result_from_row(row) for row in rows]
     logger.info("mcp_tool_search_laws_result country_code=%s result_count=%d", country_code, len(results))
-    return {"query": query, "country_code": country_code, "results": results}
+    return {
+        "query": query,
+        "country_code": country_code,
+        "year_filter_mode": year_filter_mode,
+        "published_year": published_year,
+        "metadata_only": metadata_only,
+        "limit": limit,
+        "offset": offset,
+        "results": results,
+    }
 
 
 def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1681,15 +1911,49 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
-    query = str(arguments.get("query", "")).strip()
-    if len(query) < 2:
-        raise HTTPException(status_code=400, detail="query must contain at least 2 characters")
+    query = _required_search_query(arguments)
     limit = _bounded_int(arguments.get("limit"), default=10, minimum=1, maximum=50)
+    offset = _bounded_int(arguments.get("offset"), default=0, minimum=0, maximum=10_000)
+    published_year = _optional_positive_int(arguments.get("published_year"))
+    year_filter_mode = _year_filter_mode(arguments.get("year_filter_mode"))
+    court_type = str(arguments.get("court_type", "")).strip()
+    include_snippets = _bool_argument(arguments.get("include_snippets"), default=False)
+    return _search_court_decisions(
+        query=query,
+        limit=limit,
+        offset=offset,
+        published_year=published_year,
+        year_filter_mode=year_filter_mode,
+        court_type=court_type,
+        include_snippets=include_snippets,
+    )
+
+
+def _search_court_decisions(
+    *,
+    query: str,
+    limit: int,
+    offset: int,
+    published_year: int | None,
+    year_filter_mode: str,
+    court_type: str,
+    include_snippets: bool,
+) -> dict[str, Any]:
+    if year_filter_mode != "published_in":
+        raise HTTPException(status_code=400, detail="Only year_filter_mode=published_in is supported")
     started_at = time.perf_counter()
     logger.info(
-        "mcp_tool_search_court_decisions_query query_length=%d limit=%d timeout_ms=%d",
+        (
+            "mcp_tool_search_court_decisions_query query_length=%d limit=%d offset=%d "
+            "published_year=%s year_filter_mode=%s court_type_supplied=%s include_snippets=%s timeout_ms=%d"
+        ),
         len(query),
         limit,
+        offset,
+        published_year,
+        year_filter_mode,
+        bool(court_type),
+        include_snippets,
         _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
     )
     try:
@@ -1710,11 +1974,18 @@ def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
                 "ecli": item.ecli,
                 "issue_date": item.issue_date,
                 "source_url": item.source_url,
-                "snippet": item.snippet,
                 "score": item.score,
                 "output_mode": "public",
             }
-            for item in store.search(query=query, limit=limit)
+            | ({"snippet": item.snippet} if include_snippets else {})
+            for item in store.search(
+                query=query,
+                limit=limit,
+                offset=offset,
+                published_year=published_year,
+                year_filter_mode=year_filter_mode,
+                court_type=court_type,
+            )
         ]
     except Exception as exc:
         duration_ms = int((time.perf_counter() - started_at) * 1000)
@@ -1735,6 +2006,9 @@ def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
         return _court_decision_search_degraded_result(
             query=query,
             limit=limit,
+            offset=offset,
+            published_year=published_year,
+            year_filter_mode=year_filter_mode,
             duration_ms=duration_ms,
             error_kind=error_kind,
         )
@@ -1748,6 +2022,12 @@ def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
         "query": query,
         "results": results,
         "output_mode": "public",
+        "metadata_only": not include_snippets,
+        "include_snippets": include_snippets,
+        "year_filter_mode": year_filter_mode,
+        "published_year": published_year,
+        "limit": limit,
+        "offset": offset,
         "status": "ok",
         "duration_ms": duration_ms,
         "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
@@ -1762,24 +2042,39 @@ def _tool_get_court_decision(arguments: dict[str, Any]) -> dict[str, Any]:
     raw = output_mode == "internal_raw"
     if raw and os.getenv("COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP", "").strip().lower() not in {"1", "true", "yes"}:
         raise HTTPException(status_code=403, detail="internal_raw court-decision output is not enabled")
+    full_version = _bool_argument(
+        arguments.get("full_version", arguments.get("fullVersion", arguments.get("fullversion"))),
+        default=False,
+    )
     max_chars = _bounded_int(arguments.get("max_chars"), default=12_000, minimum=1, maximum=50_000)
     logger.info(
-        "mcp_tool_get_court_decision_query decision_id_hash=%s output_mode=%s max_chars=%d",
+        "mcp_tool_get_court_decision_query decision_id_hash=%s output_mode=%s full_version=%s max_chars=%d",
         _stable_hash(decision_id),
         "internal_raw" if raw else "public",
+        full_version,
         max_chars,
     )
     record = _court_decision_store().get_decision(decision_id=decision_id, raw=raw)
     if record is None:
         raise HTTPException(status_code=404, detail="Court decision not found")
     text = str(record["text"])
-    record["text"] = text[:max_chars]
-    record["content_truncated"] = len(text) > max_chars
+    if full_version:
+        record["text"] = text[:max_chars]
+        record["content_truncated"] = len(text) > max_chars
+    else:
+        record.pop("text", None)
+        record["content_truncated"] = False
+    record["full_version"] = full_version
+    record["metadata_only"] = not full_version
     logger.info(
-        "mcp_tool_get_court_decision_result decision_id_hash=%s output_mode=%s content_length=%d truncated=%s",
+        (
+            "mcp_tool_get_court_decision_result decision_id_hash=%s output_mode=%s "
+            "full_version=%s content_length=%d truncated=%s"
+        ),
         _stable_hash(decision_id),
         record["output_mode"],
-        len(str(record["text"])),
+        full_version,
+        len(str(record.get("text", ""))),
         record["content_truncated"],
     )
     return cast(dict[str, Any], record)
@@ -1957,6 +2252,9 @@ def _court_decision_search_degraded_result(
     *,
     query: str,
     limit: int,
+    offset: int,
+    published_year: int | None,
+    year_filter_mode: str,
     duration_ms: int,
     error_kind: str,
 ) -> dict[str, Any]:
@@ -1980,6 +2278,9 @@ def _court_decision_search_degraded_result(
             "request_id": _CURRENT_MCP_REQUEST_ID.get(),
         },
         "limit": limit,
+        "offset": offset,
+        "published_year": published_year,
+        "year_filter_mode": year_filter_mode,
         "duration_ms": duration_ms,
         "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
     }
@@ -2016,9 +2317,42 @@ def _mcp_tools() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "searchLegalSources",
+            "description": (
+                "Protected combined metadata search for Slovak legal sources. Use this for user questions "
+                "that ask for both laws and court decisions. The MCP server is model-free: clients parse "
+                "natural-language questions and pass structured filters such as published_year. Results are "
+                "grouped into laws and court_decisions and return metadata only by default."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "minLength": 2},
+                    "country_code": {"type": "string", "default": "SK"},
+                    "source_types": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["laws", "court_decisions"]},
+                        "default": ["laws", "court_decisions"],
+                    },
+                    "published_year": {"type": "integer", "minimum": 1},
+                    "year_filter_mode": {
+                        "type": "string",
+                        "enum": ["published_in"],
+                        "default": "published_in",
+                    },
+                    "court_type": {"type": "string"},
+                    "limit_per_source": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "searchLaws",
             "description": (
                 "Search JurisDigta imported Slovak laws by title, identifier, and lawyer-facing title. "
+                "Returns metadata for the current consolidated version by default. "
                 "Use exact law_number and law_year when the user cites a legal identifier such as 40/1964; "
                 "otherwise prefer exact title matches over amendment acts. Use this first for Slovak legal "
                 "questions instead of relying on model memory."
@@ -2031,7 +2365,14 @@ def _mcp_tools() -> list[dict[str, Any]]:
                     "country_code": {"type": "string", "default": "SK"},
                     "law_year": {"type": "integer", "minimum": 1},
                     "law_number": {"type": "integer", "minimum": 1},
+                    "published_year": {"type": "integer", "minimum": 1},
+                    "year_filter_mode": {
+                        "type": "string",
+                        "enum": ["published_in"],
+                        "default": "published_in",
+                    },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
                 },
                 "additionalProperties": False,
             },
@@ -2071,16 +2412,26 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "name": "searchCourtDecisions",
             "description": (
                 "Search imported Slovak court decisions (sudne rozhodnutia / case law) by semantic "
-                "and metadata relevance. Returns pseudonymized public snippets by default; use this "
-                "to cite court, date, ECLI, file number, and source URL while distinguishing case-law "
-                "support from binding statutory law."
+                "and metadata relevance. Returns metadata only by default; set include_snippets=true "
+                "to include pseudonymized public snippets. Use this to cite court, date, ECLI, "
+                "file number, and source URL while distinguishing case-law support from binding "
+                "statutory law."
             ),
             "inputSchema": {
                 "type": "object",
                 "required": ["query"],
                 "properties": {
                     "query": {"type": "string", "minLength": 2},
+                    "published_year": {"type": "integer", "minimum": 1},
+                    "year_filter_mode": {
+                        "type": "string",
+                        "enum": ["published_in"],
+                        "default": "published_in",
+                    },
+                    "court_type": {"type": "string"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
+                    "include_snippets": {"type": "boolean", "default": False},
                 },
                 "additionalProperties": False,
             },
@@ -2088,15 +2439,17 @@ def _mcp_tools() -> list[dict[str, Any]]:
         {
             "name": "getCourtDecision",
             "description": (
-                "Return one imported Slovak court decision. The default outputMode=public returns "
-                "pseudonymized text. outputMode=internal_raw is restricted to controlled internal use "
-                "and must not be used for normal external model prompts or UI display."
+                "Return one imported Slovak court decision. Defaults to metadata only. Set "
+                "full_version=true to return bounded pseudonymized public text. "
+                "outputMode=internal_raw is restricted to controlled internal use and must not be used "
+                "for normal external model prompts or UI display."
             ),
             "inputSchema": {
                 "type": "object",
                 "required": ["decision_id"],
                 "properties": {
                     "decision_id": {"type": "string", "minLength": 1},
+                    "full_version": {"type": "boolean", "default": False},
                     "outputMode": {
                         "type": "string",
                         "enum": ["public", "internal_raw"],
@@ -2344,7 +2697,7 @@ def _uppercase_resource_url(request: Request) -> str:
 
 
 def _all_mcp_resource_urls(request: Request) -> list[str]:
-    return [_uppercase_resource_url(request), _resource_url(request)]
+    return [_resource_url(request)]
 
 
 def _metadata_resource_url(request: Request) -> str:
@@ -2439,6 +2792,45 @@ def _payload_requires_auth(payload: Any, *, public_tools: set[str]) -> bool:
 def _oauth_authorization_response_iss_enabled() -> bool:
     raw_value = os.getenv("MCP_OAUTH_AUTHORIZATION_RESPONSE_ISS", "true").strip().lower()
     return raw_value not in {"0", "false", "no", "off"}
+
+
+def _mcp_oauth_test_mfa_bypass_allowed(*, user: User) -> bool:
+    if os.getenv("MCP_OAUTH_TEST_MFA_BYPASS_ENABLED", "false").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return False
+    normalized_email = user.email.strip().lower()
+    allowed_emails = {
+        email.strip().lower()
+        for email in os.getenv("MCP_OAUTH_TEST_MFA_BYPASS_EMAILS", "").split(",")
+        if email.strip() and email.strip().lower() != "unknown-variable"
+    }
+    if normalized_email not in E2E_TEST_USER_EMAILS or normalized_email not in allowed_emails:
+        return False
+    expires_at = _mcp_oauth_test_mfa_bypass_expires_at()
+    if expires_at is None:
+        return False
+    return datetime.now(timezone.utc) < expires_at
+
+
+def _mcp_oauth_test_mfa_bypass_expires_at_raw() -> str:
+    return os.getenv("MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT", "").strip()
+
+
+def _mcp_oauth_test_mfa_bypass_expires_at() -> datetime | None:
+    raw_value = _mcp_oauth_test_mfa_bypass_expires_at_raw()
+    if not raw_value or raw_value == "unknown-variable":
+        return None
+    try:
+        expires_at = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at.astimezone(timezone.utc)
 
 
 def _first_payload_id(payload: Any) -> Any:
@@ -2668,6 +3060,19 @@ def _oauth_user_agent_family(request: Request) -> str:
     return "unknown"
 
 
+def _is_claude_web_root_oauth_discovery(request: Request) -> bool:
+    path = request.url.path.rstrip("/")
+    if path not in {
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-authorization-server/MCP",
+    }:
+        return False
+    user_agent = request.headers.get("user-agent", "").lower()
+    protocol_version = request.headers.get("mcp-protocol-version", "").strip()
+    return "python-httpx" in user_agent and protocol_version == MCP_PROTOCOL_VERSION
+
+
 def _http_exception_detail(exc: HTTPException) -> str:
     if isinstance(exc.detail, str):
         return exc.detail
@@ -2730,6 +3135,12 @@ def _tool_result_summary(*, tool_name: str, result: Any) -> str:
         results = result.get("results")
         result_count = len(results) if isinstance(results, list) else 0
         return f"country_code={result.get('country_code')} result_count={result_count}"
+    if tool_name == "searchLegalSources":
+        laws = result.get("laws")
+        court_decisions = result.get("court_decisions")
+        laws_count = len(laws) if isinstance(laws, list) else 0
+        court_count = len(court_decisions) if isinstance(court_decisions, list) else 0
+        return f"country_code={result.get('country_code')} laws={laws_count} court_decisions={court_count}"
     if tool_name == "getLawText":
         content_text = result.get("content_text")
         content_length = len(content_text) if isinstance(content_text, str) else 0
@@ -2780,6 +3191,47 @@ def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int
     if resolved > maximum:
         return maximum
     return resolved
+
+
+def _required_search_query(arguments: dict[str, Any]) -> str:
+    query = str(arguments.get("query", "")).strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=400, detail="query must contain at least 2 characters")
+    return query
+
+
+def _year_filter_mode(value: Any) -> str:
+    mode = str(value or "published_in").strip() or "published_in"
+    if mode != "published_in":
+        raise HTTPException(status_code=400, detail="Only year_filter_mode=published_in is supported")
+    return mode
+
+
+def _bool_argument(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    raise HTTPException(status_code=400, detail="Expected a boolean value")
+
+
+def _requested_source_types(value: Any) -> list[str]:
+    if value is None:
+        return ["laws", "court_decisions"]
+    if not isinstance(value, list):
+        raise HTTPException(status_code=400, detail="source_types must be an array")
+    requested = [str(item).strip() for item in value if str(item).strip()]
+    allowed = {"laws", "court_decisions"}
+    if not requested or any(item not in allowed for item in requested):
+        raise HTTPException(status_code=400, detail="source_types must contain laws and/or court_decisions")
+    return list(dict.fromkeys(requested))
 
 
 def _mcp_locale(request: Request) -> str:

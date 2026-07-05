@@ -928,6 +928,57 @@
   text-underline-offset: 3px;
 }
 
+.citation-list {
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.citation-list h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.citation-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.citation-list__item {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.citation-list__item a,
+.citation-list__item strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.citation-list__item p {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.citation-list__type {
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  color: var(--ink-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .assistant-document-preview {
   background: #ece7df;
   border: 1px solid rgba(31, 27, 22, 0.12);

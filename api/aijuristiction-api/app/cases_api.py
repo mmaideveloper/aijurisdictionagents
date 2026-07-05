@@ -30,6 +30,7 @@ from aijurisdictionagents.api_db import (
     AIModelUsageAuditEntry,
     ApiDatabaseStore,
     Case,
+    CaseCitation,
     CaseCommunication,
     CaseDocument,
 )
@@ -82,6 +83,30 @@ class CaseHistoryMessageResponse(BaseModel):
     content: str
     agent_name: str | None = None
     created_at: str
+    citations: list["CaseCitationResponse"] = Field(default_factory=list)
+
+
+class CaseCitationResponse(BaseModel):
+    id: str
+    case_id: str
+    question_message_id: str | None = None
+    answer_message_id: str | None = None
+    source_type: str
+    source_id: str | None = None
+    source_url: str | None = None
+    title: str
+    citation_label: str | None = None
+    law_number: str | None = None
+    section: str | None = None
+    effective_from: str | None = None
+    court: str | None = None
+    ecli: str | None = None
+    file_number: str | None = None
+    decision_date: str | None = None
+    snippet: str | None = None
+    retrieval_tool: str | None = None
+    relevance_score: float | None = None
+    created_at: str
 
 
 class CaseDocumentResponse(BaseModel):
@@ -99,6 +124,12 @@ class CaseHistoryResponse(BaseModel):
     messages: list[CaseHistoryMessageResponse]
     has_more: bool
     documents: list[CaseDocumentResponse]
+    citations: list[CaseCitationResponse] = Field(default_factory=list)
+
+
+class CaseCitationsResponse(BaseModel):
+    case_id: str
+    citations: list[CaseCitationResponse]
 
 
 class CaseAIModelAuditEntryResponse(BaseModel):
@@ -275,15 +306,51 @@ def get_case_history(
     )
     has_more = len(communications) > bounded_limit
     visible = communications[:bounded_limit]
+    list_citations = getattr(store, "list_case_citations", None)
+    case_citations = (
+        list_citations(case_id=case_id, limit=500) if callable(list_citations) else []
+    )
+    citations_by_answer_id: dict[str, list[CaseCitationResponse]] = {}
+    for citation in case_citations:
+        if not citation.answer_message_id:
+            continue
+        citations_by_answer_id.setdefault(citation.answer_message_id, []).append(
+            _to_case_citation_response(citation)
+        )
     messages = [
-        _to_case_history_message_response(store=store, communication=item)
+        _to_case_history_message_response(
+            store=store,
+            communication=item,
+            citations=citations_by_answer_id.get(item.communication_id, []),
+        )
         for item in reversed(visible)
     ]
     documents = [
         _to_case_document_response(item)
         for item in store.list_case_documents(case_id=case_id)
     ]
-    return CaseHistoryResponse(messages=messages, has_more=has_more, documents=documents)
+    return CaseHistoryResponse(
+        messages=messages,
+        has_more=has_more,
+        documents=documents,
+        citations=[_to_case_citation_response(item) for item in case_citations],
+    )
+
+
+@router.get('/{case_id}/citations', response_model=CaseCitationsResponse)
+def get_case_citations(
+    case_id: str,
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_store),
+) -> CaseCitationsResponse:
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    return CaseCitationsResponse(
+        case_id=case_id,
+        citations=[
+            _to_case_citation_response(item)
+            for item in store.list_case_citations(case_id=case_id, limit=500)
+        ],
+    )
 
 
 @router.get('/{case_id}/ai-model-audit', response_model=CaseAIModelAuditResponse)
@@ -1025,7 +1092,10 @@ def _read_case_communication_content(
 
 
 def _to_case_history_message_response(
-    *, store: ApiDatabaseStore, communication: CaseCommunication
+    *,
+    store: ApiDatabaseStore,
+    communication: CaseCommunication,
+    citations: list[CaseCitationResponse] | None = None,
 ) -> CaseHistoryMessageResponse:
     content = _read_case_communication_content(store=store, communication=communication)
     role = 'assistant'
@@ -1053,6 +1123,32 @@ def _to_case_history_message_response(
         content=normalized,
         agent_name=agent_name,
         created_at=communication.created_at,
+        citations=citations or [],
+    )
+
+
+def _to_case_citation_response(citation: CaseCitation) -> CaseCitationResponse:
+    return CaseCitationResponse(
+        id=citation.citation_id,
+        case_id=citation.case_id,
+        question_message_id=citation.question_message_id,
+        answer_message_id=citation.answer_message_id,
+        source_type=citation.source_type,
+        source_id=citation.source_id,
+        source_url=citation.source_url,
+        title=citation.title,
+        citation_label=citation.citation_label,
+        law_number=citation.law_number,
+        section=citation.section,
+        effective_from=citation.effective_from,
+        court=citation.court,
+        ecli=citation.ecli,
+        file_number=citation.file_number,
+        decision_date=citation.decision_date,
+        snippet=citation.snippet,
+        retrieval_tool=citation.retrieval_tool,
+        relevance_score=citation.relevance_score,
+        created_at=citation.created_at,
     )
 
 
