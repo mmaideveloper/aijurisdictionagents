@@ -40,6 +40,7 @@ class Message(BaseModel):
     agent_name: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     attachments: List[Attachment] = Field(default_factory=list)
+    citations: List[dict[str, Any]] = Field(default_factory=list)
 
 
 class GenerationJob(BaseModel):

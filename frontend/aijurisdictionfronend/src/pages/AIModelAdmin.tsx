@@ -385,12 +385,6 @@ const AIModelAdmin: React.FC = () => {
     reason: "",
     ...overrides
   });
-  const providerStatusLabel = (provider: AIModelAdminDashboard["providers"][number]) => {
-    if (provider.deleted_at) {
-      return t("adminDeleted");
-    }
-    return provider.enabled ? t("adminEnabled") : t("adminDisabled");
-  };
   const userToForm = (targetUser: AdminUserSummary, overrides: Partial<typeof emptyUserForm> = {}) => ({
     user_id: targetUser.user_id,
     email: targetUser.email,
@@ -424,32 +418,6 @@ const AIModelAdmin: React.FC = () => {
     if (saved) {
       setUserForm(emptyUserForm);
       setUserMode("table");
-    }
-  };
-  const showProviderCreateForm = () => {
-    setProviderForm(emptyProvider);
-    setProviderCredentialsMode("create");
-    setStatus("");
-    setError("");
-  };
-  const showProviderEditForm = (provider: AIModelAdminDashboard["providers"][number]) => {
-    setProviderForm(providerToForm(provider));
-    setProviderCredentialsMode("edit");
-    setStatus("");
-    setError("");
-  };
-  const cancelProviderCredentialsForm = () => {
-    setProviderForm(emptyProvider);
-    setProviderCredentialsMode("table");
-    setStatus("");
-    setError("");
-  };
-  const saveProviderCredentialsForm = async () => {
-    const saved = await runAction(() => upsertAIModelProvider(adminAuth, providerForm), t("adminProviderSaved"));
-    if (saved) {
-      setProviderForm(emptyProvider);
-      setProviderCredentialsMode("table");
-      setProviderMode("table");
     }
   };
   const deleteProviderFromCredentials = async (provider: AIModelAdminDashboard["providers"][number]) => {

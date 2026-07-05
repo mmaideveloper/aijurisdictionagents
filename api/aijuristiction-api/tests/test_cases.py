@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -243,6 +243,8 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert selected_email.status_code == 200
     assert selected_email.json()["attachment_count"] == 1
 
+
+
     generated_doc_id = store.add_case_text_document(
         case_id=case_id,
         original_filename="assistant-technical.json",
@@ -275,8 +277,82 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert PdfReader(BytesIO(generated_pdf.content)).metadata.title == "Dokument"
     assert "JurisDigta" in generated_pdf_text
     assert "Skore overenia dokumentu: -" in generated_pdf_text
-    assert "právny návrh" in generated_pdf_text
+    assert "Dokument je" in generated_pdf_text
+    assert "kontrolu" in generated_pdf_text
     assert "Poprad, Slovakia, 05801" in generated_pdf_text
+
+
+def test_case_history_and_citations_endpoint_return_persisted_answer_citations(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=12)
+    other_user_id = _create_user(client, idx=13)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Citation case"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    question_id = store.add_case_message(
+        case_id=case_id,
+        role="user",
+        content="Which law governs constitutional rights?",
+        agent_name="User",
+    )
+    answer_id = store.add_case_message(
+        case_id=case_id,
+        role="assistant",
+        content="The answer is grounded in the Slovak constitution.",
+        agent_name="LawyerSlovakia",
+    )
+    citation_id = store.add_case_citation(
+        case_id=case_id,
+        question_message_id=question_id,
+        answer_message_id=answer_id,
+        source_type="law",
+        source_id="SK:ZZ:1992:460:19921001",
+        source_url="/v1/laws/source?country_code=SK&collection_code=ZZ&law_year=1992&law_number=460",
+        title="Constitution of the Slovak Republic",
+        citation_label="460/1992 Zb. - Constitution of the Slovak Republic",
+        law_number="460/1992 Zb.",
+        effective_from="1992-10-01",
+        snippet="Short public law citation summary.",
+        retrieval_tool="JurisDigta laws collector",
+    )
+
+    history = client.get(
+        f"/v1/cases/{case_id}/history?user_id={user_id}&limit=10",
+        headers=_headers(),
+    )
+    assert history.status_code == 200
+    payload = history.json()
+    assistant_message = next(item for item in payload["messages"] if item["role"] == "assistant")
+    assert assistant_message["citations"][0]["id"] == citation_id
+    assert assistant_message["citations"][0]["law_number"] == "460/1992 Zb."
+    assert payload["citations"][0]["retrieval_tool"] == "JurisDigta laws collector"
+
+    citations = client.get(
+        f"/v1/cases/{case_id}/citations?user_id={user_id}",
+        headers=_headers(),
+    )
+    assert citations.status_code == 200
+    assert citations.json()["citations"][0]["id"] == citation_id
+
+    forbidden = client.get(
+        f"/v1/cases/{case_id}/citations?user_id={other_user_id}",
+        headers=_headers(),
+    )
+    assert forbidden.status_code == 404
 
 
 def test_generated_case_document_pdf_falls_back_to_latest_document_message(
@@ -309,15 +385,15 @@ def test_generated_case_document_pdf_falls_back_to_latest_document_message(
         case_id=case_id,
         role="assistant",
         content=(
-            "LawyerSlovakia: Tu je konečná verzia dokumentu:\n\n"
+            "LawyerSlovakia: Tu je koneÄnÃ¡ verzia dokumentu:\n\n"
             "---\n\n"
-            "**Potvrdenie o zaplatení**\n\n"
-            "Ja, Marek Novak, bytom Poprad, týmto potvrdzujem, že som dňa "
-            "1. júna 2026 zaplatil sumu 5000 eur Jano Mrkvička.\n\n"
-            "Dátum: 1. júna 2026\n\n"
+            "**Potvrdenie o zaplatenÃ­**\n\n"
+            "Ja, Marek Novak, bytom Poprad, tÃ½mto potvrdzujem, Å¾e som dÅˆa "
+            "1. jÃºna 2026 zaplatil sumu 5000 eur Jano MrkviÄka.\n\n"
+            "DÃ¡tum: 1. jÃºna 2026\n\n"
             "Podpis: ________________________\n\n"
             "---\n\n"
-            "Dokument je pripravený na stiahnutie vo formáte PDF."
+            "Dokument je pripravenÃ½ na stiahnutie vo formÃ¡te PDF."
         ),
         agent_name="LawyerSlovakia",
     )
@@ -335,10 +411,10 @@ def test_generated_case_document_pdf_falls_back_to_latest_document_message(
     )
     assert PdfReader(BytesIO(generated_pdf.content)).metadata.title == "Potvrdenie"
     assert "Potvrdenie\n" in generated_pdf_text
-    assert "Potvrdenie o zaplatení" in generated_pdf_text
+    assert "Potvrdenie o zaplaten" in generated_pdf_text
     assert "Marek Novak" in generated_pdf_text
     assert "5000 eur" in generated_pdf_text
-    assert "Dokument je pripravený na stiahnutie" not in generated_pdf_text
+    assert "Dokument je pripravenÃ½ na stiahnutie" not in generated_pdf_text
 
 
 def test_generated_case_document_pdf_reads_generated_document_storage(

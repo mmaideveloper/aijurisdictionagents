@@ -67,6 +67,9 @@ This guarantees every case has an isolated storage namespace.
 - `cases`: user/company legal cases.
 - `case_documents`: source/generated document metadata + versions.
 - `case_communications`: chat/audio transcript references and summaries.
+- `case_citations`: privacy-minimized legal source metadata linked to case questions and assistant answers.
+
+`case_citations` stores source type, stable source id or safe URL, display label, law/court metadata where available, a short snippet, retrieval tool, optional relevance score, and creation time. It intentionally does not store full retrieved law bodies, raw court-decision text, prompts, or sensitive case/user content. Case history returns citations attached to each answer, and `/v1/cases/{case_id}/citations` returns the authorized aggregate list for the case citation panel.
 
 ## Minimal demo
 

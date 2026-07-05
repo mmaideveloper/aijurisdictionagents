@@ -1768,18 +1768,22 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         )
     )
     _persist_session_history_document_if_needed(session=session, session_id=session_id)
-    _repository.set_result(
-        session_id,
-        _build_direct_reply_result(
-            session_id=session_id,
-            session=session,
-            messages=_repository.list_messages(session_id),
-            lawyer_message=visible_lawyer_content,
-            route=routed_llm,
-        ),
+    session_result = _build_direct_reply_result(
+        session_id=session_id,
+        session=session,
+        messages=_repository.list_messages(session_id),
+        lawyer_message=visible_lawyer_content,
+        route=routed_llm,
+    )
+    _repository.set_result(session_id, session_result)
+    persisted_citations = _persist_case_citations_for_answer(
+        session=session,
+        question=_persisted_user,
+        answer=persisted_lawyer,
+        result=session_result,
     )
 
-    return _message_for_user(persisted_lawyer)
+    return _message_for_user(persisted_lawyer).model_copy(update={"citations": persisted_citations})
 
 
 @router.get("/sessions/{session_id}/messages", response_model=List[Message])
@@ -3904,6 +3908,182 @@ def _message_for_user(message: Message) -> Message:
     if visible_content == message.content:
         return message
     return message.model_copy(update={"content": visible_content})
+
+
+def _persist_case_citations_for_answer(
+    *,
+    session: Session,
+    question: Message,
+    answer: Message,
+    result: SessionResult,
+) -> list[dict[str, object]]:
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return []
+    citation_inputs = _case_citation_inputs_from_result(case_id=case_id, result=result)
+    if not citation_inputs:
+        return []
+    store = _get_store()
+    question_message_id = _latest_case_communication_id_for_role(
+        store=store,
+        case_id=case_id,
+        role="USER",
+    ) or str(question.id)
+    answer_message_id = _latest_case_communication_id_for_role(
+        store=store,
+        case_id=case_id,
+        role="ASSISTANT",
+    ) or str(answer.id)
+    persisted: list[dict[str, object]] = []
+    for citation in citation_inputs:
+        citation_id = store.add_case_citation(
+            case_id=case_id,
+            question_message_id=question_message_id,
+            answer_message_id=answer_message_id,
+            source_type=str(citation["source_type"]),
+            source_id=_optional_str(citation.get("source_id")),
+            source_url=_optional_str(citation.get("source_url")),
+            title=str(citation["title"]),
+            citation_label=_optional_str(citation.get("citation_label")),
+            law_number=_optional_str(citation.get("law_number")),
+            section=_optional_str(citation.get("section")),
+            effective_from=_optional_str(citation.get("effective_from")),
+            court=_optional_str(citation.get("court")),
+            ecli=_optional_str(citation.get("ecli")),
+            file_number=_optional_str(citation.get("file_number")),
+            decision_date=_optional_str(citation.get("decision_date")),
+            snippet=_bounded_optional_text(citation.get("snippet"), max_chars=500),
+            retrieval_tool=_optional_str(citation.get("retrieval_tool")),
+            relevance_score=_optional_float(citation.get("relevance_score")),
+        )
+        persisted.append(
+            {
+                "id": citation_id,
+                "case_id": case_id,
+                "question_message_id": question_message_id,
+                "answer_message_id": answer_message_id,
+                **citation,
+            }
+        )
+    _LOGGER.info(
+        "Persisted case answer citations",
+        extra={
+            "case_id": case_id,
+            "answer_message_id": answer_message_id,
+            "citation_count": len(persisted),
+        },
+    )
+    return persisted
+
+
+def _case_citation_inputs_from_result(*, case_id: str, result: SessionResult) -> list[dict[str, object]]:
+    metadata = result.metadata if isinstance(result.metadata, dict) else {}
+    raw_law_citations = metadata.get("law_citations")
+    if not isinstance(raw_law_citations, list):
+        return []
+    citations: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_item in raw_law_citations:
+        if not isinstance(raw_item, dict):
+            continue
+        law_identifier = str(raw_item.get("law_identifier") or raw_item.get("label") or "").strip()
+        title = str(raw_item.get("title") or law_identifier or "Legal source").strip()
+        if not law_identifier and not title:
+            continue
+        version_token = str(raw_item.get("version_token") or "").strip()
+        source_id = ":".join(
+            part
+            for part in (
+                str(raw_item.get("country_code") or "").strip(),
+                str(raw_item.get("collection_code") or "").strip(),
+                str(raw_item.get("law_year") or "").strip(),
+                str(raw_item.get("law_number") or "").strip(),
+                version_token,
+            )
+            if part
+        )
+        source_url = str(raw_item.get("open_url") or raw_item.get("official_source_url") or "").strip()
+        key = (source_id or law_identifier, source_url)
+        if key in seen:
+            continue
+        seen.add(key)
+        snippet = str(raw_item.get("summary") or "").strip()
+        if not snippet:
+            summary_bits = [
+                title,
+                f"version {version_token}" if version_token else "",
+                f"effective from {raw_item.get('effective_from')}" if raw_item.get("effective_from") else "",
+            ]
+            snippet = ", ".join(part for part in summary_bits if part)
+        citations.append(
+            {
+                "source_type": "law",
+                "source_id": source_id or None,
+                "source_url": source_url or None,
+                "title": title,
+                "citation_label": str(raw_item.get("label") or law_identifier or title).strip(),
+                "law_number": law_identifier or None,
+                "section": None,
+                "effective_from": _optional_str(raw_item.get("effective_from")),
+                "court": None,
+                "ecli": None,
+                "file_number": None,
+                "decision_date": None,
+                "snippet": _bounded_optional_text(snippet, max_chars=500),
+                "retrieval_tool": "JurisDigta laws collector",
+                "relevance_score": None,
+            }
+        )
+    return citations
+
+
+def _latest_case_communication_id_for_role(
+    *,
+    store: Any,
+    case_id: str,
+    role: str,
+) -> str | None:
+    prefix = f"{role.strip().upper()}:"
+    try:
+        communications = store.list_case_communications(case_id=case_id, limit=20, offset=0)
+    except Exception:
+        return None
+    for communication in communications:
+        summary = str(getattr(communication, "summary", "") or "").lstrip()
+        if summary.upper().startswith(prefix):
+            return str(getattr(communication, "communication_id", "") or "") or None
+    return None
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _bounded_optional_text(value: object, *, max_chars: int) -> str | None:
+    normalized = _optional_str(value)
+    if normalized is None:
+        return None
+    normalized = " ".join(normalized.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[: max_chars - 3].rstrip()}..."
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float, str)):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    try:
+        return float(str(value))
+    except ValueError:
+        return None
 
 
 def _compose_assistant_content(
