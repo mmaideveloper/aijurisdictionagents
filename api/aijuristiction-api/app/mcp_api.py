@@ -2696,13 +2696,33 @@ def _resolve_oauth_resource(
 ) -> str:
     if resource.strip():
         return resource.strip()
-    if _is_claude_oauth_client(client_id=client_id, redirect_uri=redirect_uri):
+    if _is_uppercase_mcp_oauth_client(client_id=client_id, redirect_uri=redirect_uri):
         return _uppercase_resource_url(request)
     return _resource_url(request)
 
 
+def _is_uppercase_mcp_oauth_client(*, client_id: str, redirect_uri: str = "") -> bool:
+    return _is_claude_oauth_client(client_id=client_id, redirect_uri=redirect_uri) or _is_vscode_oauth_client(
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+    )
+
+
 def _is_claude_oauth_client(*, client_id: str, redirect_uri: str = "") -> bool:
     return _url_host(client_id) == "claude.ai" or _url_host(redirect_uri) == "claude.ai"
+
+
+def _is_vscode_oauth_client(*, client_id: str, redirect_uri: str = "") -> bool:
+    client_id_parts = urlparse(client_id)
+    redirect_parts = urlparse(redirect_uri)
+    vscode_schemes = {"vscode", "vscode-insiders"}
+    vscode_hosts = {"vscode.dev", "insiders.vscode.dev"}
+    return (
+        client_id_parts.scheme.lower() in vscode_schemes
+        or redirect_parts.scheme.lower() in vscode_schemes
+        or (client_id_parts.hostname or "").lower() in vscode_hosts
+        or (redirect_parts.hostname or "").lower() in vscode_hosts
+    )
 
 
 def _mcp_resource_audience_candidates(*, request: Request, preferred: str) -> list[str]:

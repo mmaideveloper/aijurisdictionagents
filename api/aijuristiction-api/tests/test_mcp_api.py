@@ -1593,6 +1593,168 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert token_payload["refresh_token"] not in mcp_log_text
 
 
+def test_vscode_mcp_json_uppercase_endpoint_can_complete_oauth_without_static_headers(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _create_laws_db(tmp_path / "laws.sqlite3")
+    monkeypatch.setenv("LOCAL_AUTH_ACCEPT_ANY_CODE", "true")
+    sign_up_response = api_client.post(
+        "/v1/users/sign-up",
+        headers=AUTH_HEADERS,
+        json={
+            "phone_number": "+421 900 111 231",
+            "email": "mcp-vscode@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert sign_up_response.status_code == 201
+
+    initialize_response = mcp_client.post(
+        "/MCP",
+        headers={"user-agent": "Visual Studio Code MCP client"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "Visual Studio Code", "version": "1"},
+            },
+        },
+    )
+    assert initialize_response.status_code == 200
+
+    protected_challenge = _mcp_call(
+        "searchLaws",
+        {"query": "civil"},
+        path="/MCP",
+        headers={"user-agent": "Visual Studio Code MCP client"},
+    )
+    assert protected_challenge.status_code == 401
+    assert (
+        'resource_metadata="https://mcp.jurisdigta.eu/.well-known/oauth-protected-resource/MCP"'
+        in protected_challenge.headers["www-authenticate"]
+    )
+
+    protected_metadata = mcp_client.get(
+        "/.well-known/oauth-protected-resource/MCP",
+        headers={"user-agent": "Visual Studio Code MCP client"},
+    )
+    assert protected_metadata.status_code == 200
+    assert protected_metadata.json()["resource"] == "https://mcp.jurisdigta.eu/MCP"
+    assert protected_metadata.json()["authorization_servers"] == ["https://mcp.jurisdigta.eu"]
+
+    registration_response = mcp_client.post(
+        "/oauth/register",
+        headers={"user-agent": "Visual Studio Code MCP client"},
+        json={
+            "client_name": "Visual Studio Code",
+            "redirect_uris": [
+                "vscode://vscode.github-authentication/did-authenticate",
+                "vscode-insiders://vscode.github-authentication/did-authenticate",
+                "https://vscode.dev/redirect",
+                "http://127.0.0.1:6274/callback",
+            ],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:laws offline_access",
+        },
+    )
+    assert registration_response.status_code == 201
+    registration_payload = registration_response.json()
+    assert registration_payload["client_id"].startswith("jurisdigta-")
+    assert registration_payload["token_endpoint_auth_method"] == "none"
+
+    code_verifier = "test-code-verifier-vscode-1234567890"
+    code_challenge = _pkce_challenge(code_verifier)
+    redirect_uri = "vscode://vscode.github-authentication/did-authenticate"
+    authorize_page = mcp_client.get(
+        "/oauth/authorize",
+        headers={"user-agent": "Visual Studio Code MCP client"},
+        params={
+            "response_type": "code",
+            "client_id": registration_payload["client_id"],
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "state": "vscode-state",
+        },
+    )
+    assert authorize_page.status_code == 200
+    assert _extract_hidden_value(authorize_page.text, "resource") == "https://mcp.jurisdigta.eu/MCP"
+
+    login_response = mcp_client.post(
+        "/oauth/authorize/login",
+        headers={"user-agent": "Visual Studio Code MCP client"},
+        data={
+            "response_type": "code",
+            "client_id": registration_payload["client_id"],
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "state": "vscode-state",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+            "email": "mcp-vscode@example.com",
+            "password": "secret-pass",
+        },
+    )
+    assert login_response.status_code == 200
+
+    verify_response = mcp_client.post(
+        "/oauth/authorize/verify",
+        headers={"user-agent": "Visual Studio Code MCP client"},
+        data={
+            "response_type": "code",
+            "client_id": registration_payload["client_id"],
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "state": "vscode-state",
+            "resource": "https://mcp.jurisdigta.eu/MCP",
+            "email": "mcp-vscode@example.com",
+            "verification_code": "123456",
+        },
+        follow_redirects=False,
+    )
+    assert verify_response.status_code == 303
+    callback_query = parse_qs(urlparse(verify_response.headers["location"]).query)
+    assert callback_query["state"] == ["vscode-state"]
+    assert callback_query["iss"] == ["https://mcp.jurisdigta.eu"]
+
+    token_response = mcp_client.post(
+        "/oauth/token",
+        headers={"user-agent": "Visual Studio Code MCP client"},
+        data={
+            "grant_type": "authorization_code",
+            "code": callback_query["code"][0],
+            "redirect_uri": redirect_uri,
+            "client_id": registration_payload["client_id"],
+            "code_verifier": code_verifier,
+        },
+    )
+    assert token_response.status_code == 200
+    token_payload = token_response.json()
+    access_claims = _jwt_claims(token_payload["access_token"])
+    assert access_claims["aud"] == "https://mcp.jurisdigta.eu/MCP"
+    assert access_claims["scope"] == "mcp:laws"
+
+    protected_search = _mcp_call(
+        "searchLaws",
+        {"query": "civil"},
+        path="/MCP",
+        headers={
+            "authorization": f"Bearer {token_payload['access_token']}",
+            "user-agent": "Visual Studio Code MCP client",
+        },
+    )
+    assert protected_search.status_code == 200
+    assert _tool_payload(protected_search)["results"][0]["document_id"] == "doc-1"
+
+
 def test_oauth_mfa_bypass_is_limited_to_synthetic_e2e_users(
     monkeypatch,
     tmp_path: Path,

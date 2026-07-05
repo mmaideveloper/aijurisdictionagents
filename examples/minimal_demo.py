@@ -30,8 +30,9 @@ print(
 )
 print(
     "mcp_auth_contract => getVersion/getStatistics are public; searchLaws/getLawText require "
-    "a Bearer MCP token or x-mcp-api-key, and lowercase OAuth clients should use "
-    "https://mcp.jurisdigta.eu/mcp."
+    "a Bearer MCP token or x-mcp-api-key. OAuth-capable clients can use "
+    "https://mcp.jurisdigta.eu/mcp or the uppercase compatibility endpoint "
+    "https://mcp.jurisdigta.eu/MCP."
 )
 print(
     "mcp_legal_source_search => MCP remains model-free; clients parse natural-language legal "
@@ -44,6 +45,11 @@ print(
     "mcp_endpoint_claude_compat => /MCP remains accepted for Claude web and existing clients; "
     "it now advertises OAuth protected-resource metadata and requires the same per-user "
     "OAuth or MCP API key authentication for protected legal tools as /mcp."
+)
+print(
+    "mcp_endpoint_vscode_oauth => VS Code can use only type=http and "
+    "url=https://mcp.jurisdigta.eu/MCP in .mcp.json; the first protected tool call returns "
+    "an OAuth resource_metadata challenge and then accepts the scoped bearer token."
 )
 print(
     "mcp_protocol_negotiation => initialize echoes supported client protocol versions "

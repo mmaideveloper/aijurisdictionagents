@@ -151,7 +151,31 @@ Use `https://mcp.jurisdigta.eu/mcp` as the remote MCP server URL in clients that
 
 - ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it. Users may self-register during the browser authorization flow, but ChatGPT only receives the OAuth access token and tool results, not a raw API key.
 - Claude web custom connectors: use `https://mcp.jurisdigta.eu/mcp` for new connectors. If Claude has already stored the uppercase endpoint, `https://mcp.jurisdigta.eu/MCP` remains a fully authenticated OAuth-compatible alias. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...`, `http://127.0.0.1/...`, or `http://[::1]/...`.
-- VS Code: add an HTTP MCP server in MCP settings with `https://mcp.jurisdigta.eu/mcp`. When VS Code receives the OAuth challenge, it should open the JurisDigta browser login automatically. If OAuth is unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after generating a key from `/mcp/login`.
+- VS Code: add an HTTP MCP server in MCP settings with either the canonical
+  `https://mcp.jurisdigta.eu/mcp` endpoint or the uppercase compatibility
+  endpoint `https://mcp.jurisdigta.eu/MCP`. This minimal `.mcp.json`
+  configuration is sufficient for OAuth-capable VS Code clients; do not add a
+  static bearer token unless you intentionally need a manual fallback:
+
+```json
+{
+  "servers": {
+    "jurisdigta": {
+      "type": "http",
+      "url": "https://mcp.jurisdigta.eu/MCP"
+    }
+  }
+}
+```
+
+  VS Code can initialize the server and list public tools without credentials.
+  On the first protected tool call, JurisDigta returns `401` with a
+  `WWW-Authenticate` `resource_metadata` challenge for the configured MCP path.
+  VS Code should then open the JurisDigta browser authorization page, complete
+  password plus OTP verification, exchange the PKCE authorization code for a
+  scoped bearer token, and retry protected tools with that token. If OAuth is
+  unavailable in the client, include `Authorization: Bearer <mcp_api_key>` after
+  generating a key from `/mcp/login`.
 - Perplexity and other clients: use the MCP server URL where custom remote MCP servers are supported. Hosted OAuth callbacks include `https://vscode.dev/redirect`, `https://claude.ai/api/mcp/auth_callback`, and `https://www.perplexity.ai/rest/connections/oauth_callback` when their hosts are listed in `MCP_OAUTH_ALLOWED_REDIRECT_HOSTS`. If a product only exposes its own MCP server and does not support registering external MCP servers, use another MCP-compatible host.
 
 ### Claude Desktop via `mcp-remote`
