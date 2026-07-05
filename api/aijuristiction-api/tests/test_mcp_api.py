@@ -1413,6 +1413,21 @@ def test_oauth_discovery_and_authorization_code_flow(monkeypatch, tmp_path: Path
     assert authorize_page.status_code == 200
     assert "Authorize MCP access" in authorize_page.text
 
+    claude_root_authorize_page = mcp_client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "pkce",
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "state": "claude-state",
+        },
+    )
+    assert claude_root_authorize_page.status_code == 200
+    assert "Authorize MCP access" in claude_root_authorize_page.text
+    assert 'name="resource" value="https://mcp.jurisdigta.eu/MCP"' in claude_root_authorize_page.text
+
     login_response = mcp_client.post(
         "/oauth/authorize/login",
         data={
