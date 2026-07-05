@@ -63,6 +63,7 @@ def main() -> int:
     run_check("public MCP tool call", args, lambda: check_public_tool_call(base_url), results)
     run_check("protected tool auth challenge", args, lambda: check_auth_challenge(base_url), results)
     run_check("browser auth pages", args, lambda: check_auth_pages(base_url), results)
+    run_check("Claude root authorize alias", args, lambda: check_root_authorize_alias(base_url), results)
 
     print("Claude MCP smoke checks passed:")
     for item in results:
@@ -254,6 +255,24 @@ def check_auth_pages(base_url: str) -> str:
         if marker not in text:
             raise AssertionError(f"{path} does not look like an HTML auth page")
     return "login and sign-up pages are reachable"
+
+
+def check_root_authorize_alias(base_url: str) -> str:
+    query = urlencode(
+        {
+            "response_type": "code",
+            "client_id": "pkce",
+            "redirect_uri": CLAUDE_REDIRECT_URI,
+            "code_challenge": "smoke-test-code-challenge",
+            "code_challenge_method": "S256",
+            "state": "smoke-test-state",
+        }
+    )
+    response = request("GET", f"{base_url}/authorize?{query}")
+    text = response.body.decode("utf-8", errors="replace")
+    if "Authorize MCP access" not in text and "Autorizacia MCP pristupu" not in text:
+        raise AssertionError("Root /authorize alias did not render the OAuth authorize page")
+    return "root /authorize renders the OAuth authorize page"
 
 
 def mcp_rpc(base_url: str, request_id: int, method: str, params: dict[str, Any]) -> dict[str, Any]:

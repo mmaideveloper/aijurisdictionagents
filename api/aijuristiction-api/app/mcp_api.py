@@ -521,6 +521,7 @@ def oauth_dynamic_client_registration(
     }
 
 
+@oauth_router.get("/authorize", response_class=HTMLResponse)
 @oauth_router.get("/oauth/authorize", response_class=HTMLResponse)
 def oauth_authorize_page(
     request: Request,
