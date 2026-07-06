@@ -1,7 +1,9 @@
 # Workspace Setup
 
-This repo expects a local conda environment at `.conda/` so VS Code can auto-detect
-and auto-activate the interpreter on open.
+This repo supports ignored local conda environments at `conda/` and `.conda/`.
+Codex task worktrees use `conda/` so `.\conda\python.exe` works consistently
+with repository validation scripts. VS Code can also use `.conda/` when created
+manually.
 
 ## Create the local conda environment
 
@@ -24,12 +26,15 @@ so the new checkout also contains its own ignored `conda/` environment:
 ```
 
 The helper runs `git worktree add`, then prepares an ignored `conda/` runtime for
-the new checkout. On this Windows Codex machine it stores the actual environment
-under `C:\Users\maton\.codex-envs` and creates a `conda/` junction in the
-worktree. That avoids Windows blocking direct `python.exe` creation under
-`.codex\worktrees` while keeping `.\scripts\validate_api.ps1` compatible.
+the new checkout. By default it stores the actual environment under
+`C:\Users\maton\.codex-envs` and creates a `conda/` junction in the worktree.
+That avoids Windows blocking direct `python.exe` creation under protected or
+synced checkout paths while keeping `.\scripts\validate_api.ps1` compatible.
 Each task branch gets its own environment prefix based on the branch slug, for
 example `C:\Users\maton\.codex-envs\issue-123-short-name-conda`.
+
+Use `-InWorktreeEnv` only when you explicitly need the full conda prefix created
+inside the checkout instead of a junction.
 
 With conda, the helper prefers cloning the existing repo runtime from
 `C:\Users\maton\Projects\aijurisdictionagents\conda`. If no reusable repo
@@ -39,10 +44,12 @@ called with `--ssl-no-revoke`, and uses `environment.yml` directly because
 micromamba prefix clone can fail on pip-heavy environments during metadata
 inspection.
 
-The helper validates the environment by launching `.\conda\python.exe`. If a
-previous run left a partial prefix without `python.exe`, the helper removes that
-prefix and recreates it instead of leaving the worktree pointed at a broken
-runtime.
+The helper validates the environment by launching `.\conda\python.exe` and
+importing core Windows runtime modules: `select`, `ssl`, and `sqlite3`. If a
+previous run left a partial prefix, a local non-junction `conda/` directory
+without `python.exe`, or a prefix whose interpreter starts but cannot import
+those modules, the helper removes that broken ignored path and recreates it
+instead of leaving the worktree pointed at a broken runtime.
 
 After it finishes, run API validation from inside the new worktree:
 
@@ -57,8 +64,9 @@ Use `-FreshEnv` to force a new environment from `environment.yml`. Use
 installs with the `dev` extras afterward so they point at the new worktree and
 include validation tools such as `ruff`, `mypy`, and `pytest`.
 
-To repair an existing worktree that was created without `conda/`, or where
-`.\conda\python.exe` is missing, run the helper in environment-only mode from
+To repair an existing worktree that was created without `conda/`, where
+`.\conda\python.exe` is missing, or where Python starts but fails on standard
+library imports such as `select`, run the helper in environment-only mode from
 any checkout of the repo:
 
 ```powershell
@@ -118,7 +126,14 @@ conda activate ./.conda
 python examples/conda_workspace_smoke.py
 ```
 
-The script prints the active Python executable and verifies the `.conda` path.
+For Codex task worktrees, the equivalent direct command is:
+
+```powershell
+.\conda\python.exe examples\conda_workspace_smoke.py
+```
+
+The script prints the active Python executable and verifies that it is running
+from either `conda/` or `.conda/` under the repository root.
 
 ## Task #7 tracking location
 

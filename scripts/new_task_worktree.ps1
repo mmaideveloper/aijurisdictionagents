@@ -121,7 +121,7 @@ function Test-CondaPrefix {
     if (-not (Test-Path (Join-Path $PrefixPath "Lib\site-packages"))) {
         return $false
     }
-    & $python -c "import sys; raise SystemExit(0 if sys.executable else 1)" 2>$null
+    & $python -c "import pathlib, select, sqlite3, ssl, sys; pathlib.Path(sys.executable).resolve(); raise SystemExit(0)" 2>$null
     return $LASTEXITCODE -eq 0
 }
 
@@ -151,7 +151,13 @@ function Remove-EnvironmentPrefix {
         throw "Refusing to remove environment prefix outside the worktree or env storage root: $resolvedPrefix"
     }
 
-    Remove-Item -LiteralPath $resolvedPrefix -Recurse -Force
+    $item = Get-Item -LiteralPath $resolvedPrefix -Force
+    if ($item.LinkType -eq "Junction" -or $item.Attributes.ToString().Contains("ReparsePoint")) {
+        Remove-Item -LiteralPath $resolvedPrefix -Force
+    }
+    else {
+        Remove-Item -LiteralPath $resolvedPrefix -Recurse -Force
+    }
 }
 
 function Invoke-EnvironmentTool {
@@ -263,7 +269,7 @@ if (-not (Test-Path $EnvironmentFile)) {
 
 $Tool = Find-EnvironmentTool -ExplicitPath $CondaExecutable
 $LocalEnvPath = Join-Path $WorktreePath $EnvDirectoryName
-$UseExternalEnv = (-not $InWorktreeEnv) -and ($WorktreePath -like "*\.codex\worktrees\*")
+$UseExternalEnv = -not $InWorktreeEnv
 if ($UseExternalEnv) {
     $ActualEnvPath = Join-Path $EnvStorageRoot "$BranchSlug-$EnvDirectoryName"
 }
@@ -284,13 +290,18 @@ if ((Test-Path $ActualEnvPath) -and (-not (Test-CondaPrefix -PrefixPath $ActualE
     Remove-EnvironmentPrefix -PrefixPath $ActualEnvPath -WorktreeRoot $WorktreePath -StorageRoot $EnvStorageRoot
 }
 
+if ($UseExternalEnv -and (Test-Path $LocalEnvPath) -and (-not (Test-CondaPrefix -PrefixPath $LocalEnvPath))) {
+    Write-Host "Removing incomplete local conda path at $LocalEnvPath because python.exe validation failed."
+    Remove-EnvironmentPrefix -PrefixPath $LocalEnvPath -WorktreeRoot $WorktreePath -StorageRoot $EnvStorageRoot
+}
+
 if (Test-CondaPrefix -PrefixPath $LocalEnvPath) {
     Write-Host "Conda environment already exists at $LocalEnvPath."
 }
 elseif ($UseExternalEnv -and (Test-CondaPrefix -PrefixPath $ActualEnvPath)) {
+    Refresh-EditableInstalls -PythonPath $ActualPythonPath -WorktreeRoot $WorktreePath
     New-DirectoryJunction -LinkPath $LocalEnvPath -TargetPath $ActualEnvPath
     Write-Host "Linked existing conda environment from $ActualEnvPath to $LocalEnvPath."
-    Refresh-EditableInstalls -PythonPath $PythonPath -WorktreeRoot $WorktreePath
 }
 else {
     $actualParent = Split-Path -Parent $ActualEnvPath
@@ -336,11 +347,11 @@ else {
         throw "Environment creation finished, but python.exe was not found at $ActualPythonPath."
     }
 
+    Refresh-EditableInstalls -PythonPath $ActualPythonPath -WorktreeRoot $WorktreePath
+
     if ($UseExternalEnv) {
         New-DirectoryJunction -LinkPath $LocalEnvPath -TargetPath $ActualEnvPath
     }
-
-    Refresh-EditableInstalls -PythonPath $PythonPath -WorktreeRoot $WorktreePath
 }
 
 if (-not (Test-CondaPrefix -PrefixPath $LocalEnvPath)) {
