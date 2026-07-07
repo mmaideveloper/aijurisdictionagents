@@ -43,6 +43,11 @@ print(
     "requires getCourtDecision(full_version=True)."
 )
 print(
+    "mcp_first_all_model_routes => Slovak legal, jurisdiction, and legal-document-by-law "
+    "chat turns retrieve bounded JurisDigta MCP context before local Ollama or external "
+    "models receive the prompt."
+)
+print(
     "mcp_endpoint_claude_compat => /MCP remains accepted for Claude web and existing clients; "
     "it now advertises OAuth protected-resource metadata and requires the same per-user "
     "OAuth or MCP API key authentication for protected legal tools as /mcp."

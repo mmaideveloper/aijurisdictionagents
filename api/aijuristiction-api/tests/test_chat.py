@@ -20,6 +20,13 @@ client = TestClient(app)
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 
 
+@pytest.fixture(autouse=True)
+def _disable_chat_api_mcp_law_context_by_default(monkeypatch) -> None:
+    import app.chat.api as chat_api
+
+    monkeypatch.setattr(chat_api, "build_mcp_law_context", lambda **_kwargs: None)
+
+
 def test_planned_document_tasks_keep_user_intent_order() -> None:
     from app.chat.intent_policy_service import planned_document_tasks
 
@@ -1889,13 +1896,33 @@ def test_mcp_law_context_skips_non_slovak_non_legal_turn(monkeypatch) -> None:
     assert context is None
 
 
-def test_mcp_law_context_skips_plain_document_drafting_turn(monkeypatch) -> None:
+def test_mcp_law_context_retrieves_for_legal_document_drafting_turn(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
-    monkeypatch.setattr(
-        "app.mcp_api._call_tool",
-        lambda name, arguments: (_ for _ in ()).throw(AssertionError("unexpected MCP call")),
-    )
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        if name == "searchLaws":
+            return {
+                "results": [
+                    {
+                        "document_id": "doc-513-1991",
+                        "law_identifier_text": "513/1991 Zb.",
+                        "title": "Obchodny zakonnik",
+                    }
+                ]
+            }
+        if name == "getLawText":
+            return {
+                "document_id": arguments["document_id"],
+                "law_identifier_text": "513/1991 Zb.",
+                "title": "Obchodny zakonnik",
+                "content_text": "Uprava obchodnych spolocnosti a obchodneho podielu.",
+            }
+        raise AssertionError(name)
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
 
     context = build_mcp_law_context(
         query="Priprav mi vsetky dokumenty na prevod obchodneho podielu.",
@@ -1903,7 +1930,12 @@ def test_mcp_law_context_skips_plain_document_drafting_turn(monkeypatch) -> None
         language="sk-SK",
     )
 
-    assert context is None
+    assert context is not None
+    assert calls[0][0] == "searchLaws"
+    assert calls[0][1]["country_code"] == "SK"
+    assert calls[1][0] == "getLawText"
+    assert "INTERNAL MCP LAW TOOL CONTEXT" in context.prompt_note
+    assert "513/1991 Zb." in context.prompt_note
 
 
 def test_reply_endpoint_injects_internal_mcp_law_context_in_prompt_and_documents(monkeypatch) -> None:
@@ -1983,8 +2015,87 @@ def test_reply_endpoint_injects_internal_mcp_law_context_in_prompt_and_documents
     assert any(event.get("stage") == "mcp_law_context" for event in captured_events)
 
 
+def test_free_local_reply_injects_internal_mcp_law_context_before_ollama_prompt(monkeypatch) -> None:
+    from aijurisdictionagents.schemas import Document as CoreDocument
+    from app.chat.mcp_law_context import McpLawContext
+    from app.chat.models import Session
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    session = repository.create_session(Session(country="SK", language="sk-SK", discussion_type="advice"))
+    captured_prompts: list[str] = []
+    captured_document_paths: list[str] = []
+    captured_events: list[dict[str, object]] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            captured_document_paths.extend(document.path for document in documents)
+            return SimpleNamespace(content="FREE_LOCAL_MODEL_REPLY_WITH_MCP", agent_name="LawyerSlovakia")
+
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        chat_api,
+        "prepare_country_direct_reply",
+        lambda **_kwargs: SimpleNamespace(
+            direct_reply=None,
+            prompt_note="",
+            supplemental_documents=[],
+            processing_events=[],
+        ),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "_resolve_session_llm_route",
+        lambda **_kwargs: SimpleNamespace(client=object(), route_type="free_local", provider="local_ollama"),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "build_mcp_law_context",
+        lambda **_kwargs: McpLawContext(
+            prompt_note="INTERNAL MCP LAW TOOL CONTEXT:\n- cite 40/1964 Zb.",
+            document=CoreDocument(
+                doc_id="internal-mcp-law-context",
+                path="internal-mcp-law-context.txt",
+                content="40/1964 Zb. paragraf 588",
+            ),
+            processing_event={
+                "stage": "mcp_law_context",
+                "message": "MCP searched before local model",
+                "details": {"tool_calls": ["searchLaws", "getLawText"], "result_count": 1},
+            },
+        ),
+    )
+    monkeypatch.setattr("aijurisdictionagents.agents.create_lawyer_agent", lambda llm, country: _SpyLawyer())
+
+    _user, lawyer, visible, events, route = chat_api._run_direct_lawyer_turn(
+        session_id=session.id,
+        session=session,
+        content="Co hovori Obciansky zakonnik o kupnej zmluve?",
+        processing_event_callback=captured_events.append,
+    )
+
+    assert route is not None
+    assert route.route_type == "free_local"
+    assert route.provider == "local_ollama"
+    assert lawyer.agent_name == "LawyerSlovakia"
+    assert visible == "FREE_LOCAL_MODEL_REPLY_WITH_MCP"
+    assert captured_prompts
+    assert "JurisDigta Assistant, a Slovak legal intake assistant for free-plan local model routing" in captured_prompts[-1]
+    assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_prompts[-1]
+    assert "40/1964 Zb." in captured_prompts[-1]
+    assert "internal-mcp-law-context.txt" in captured_document_paths
+    assert any(event.get("stage") == "mcp_law_context" for event in captured_events)
+    assert any(event.get("stage") == "mcp_law_context" for event in events)
+
+
 def test_uploaded_documents_contract_request_requires_extract_then_confirm_prompt(monkeypatch) -> None:
     from aijurisdictionagents.schemas import Document as CoreDocument
+    from app.chat.mcp_law_context import McpLawContext
     from app.chat.models import Session
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
@@ -2022,6 +2133,23 @@ def test_uploaded_documents_contract_request_requires_extract_then_confirm_promp
         "aijurisdictionagents.agents.create_lawyer_agent",
         lambda llm, country: _SpyLawyer(),
     )
+    monkeypatch.setattr(
+        chat_api,
+        "build_mcp_law_context",
+        lambda **_kwargs: McpLawContext(
+            prompt_note="INTERNAL MCP LAW TOOL CONTEXT:\n- cite 40/1964 Zb. before drafting lease.",
+            document=CoreDocument(
+                doc_id="internal-mcp-law-context",
+                path="internal-mcp-law-context.txt",
+                content="40/1964 Zb. najomna zmluva",
+            ),
+            processing_event={
+                "stage": "mcp_law_context",
+                "message": "MCP searched before legal-document intake",
+                "details": {"tool_calls": ["searchLaws", "getLawText"], "result_count": 1},
+            },
+        ),
+    )
     monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
     session = repository.create_session(Session(country="SK", language="SK", discussion_type="advice"))
@@ -2044,11 +2172,12 @@ def test_uploaded_documents_contract_request_requires_extract_then_confirm_promp
 
     assert visible == "MODEL_CONFIRM_EXTRACTED_DATA_REPLY"
     assert lawyer.agent_name == "LawyerSlovakia"
-    assert events == []
-    assert captured_document_paths == ["podklady-najom.txt"]
+    assert any(event.get("stage") == "mcp_law_context" for event in events)
+    assert captured_document_paths == ["podklady-najom.txt", "internal-mcp-law-context.txt"]
     assert captured_prompts
     prompt = captured_prompts[-1]
     assert "UPLOADED DOCUMENT CONTRACT INTAKE MODE" in prompt
+    assert "INTERNAL MCP LAW TOOL CONTEXT" in prompt
     assert "review every available uploaded document" in prompt
     assert "Udaje, ktore som nasiel v dokumentoch" in prompt
     assert "Suhlasite, aby som zmluvu pripravil z tychto udajov" in prompt
