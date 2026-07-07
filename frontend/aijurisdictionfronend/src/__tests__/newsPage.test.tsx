@@ -10,8 +10,11 @@ const labels: Record<string, string> = {
   navNews: "News",
   newsSubtitle: "Dated mini-blogs.",
   newsMcpDate: "22 June 2026",
+  newsLocalModelsDate: "7 July 2026",
   newsApprovalDate: "21 June 2026",
   newsMetadataDate: "20 June 2026",
+  newsLocalModelsTitle: "Local models for free users subscriptions with model routing.",
+  newsLocalModelsBody: "Free users can be routed to local Ollama models.",
   newsMetadataBody: "Outputs keep visible metadata.",
   assistantMandatoryMcpTitle: "JurisDigta MCP",
   assistantMandatoryMcpBody: "JurisDigta API and MCP are always attached.",
@@ -39,9 +42,16 @@ describe("News", () => {
     render(<News />);
 
     expect(screen.getByRole("heading", { name: "News" })).toBeDefined();
+    expect(screen.getByText("7 July 2026")).toBeDefined();
+    expect(
+      screen.getByRole("heading", { name: "Local models for free users subscriptions with model routing." })
+    ).toBeDefined();
+    expect(screen.getByText("Free users can be routed to local Ollama models.")).toBeDefined();
     expect(screen.getByText("22 June 2026")).toBeDefined();
     expect(screen.getByRole("heading", { name: "JurisDigta MCP" })).toBeDefined();
     expect(screen.getByText("Locked on")).toBeDefined();
+    expect(screen.getByRole("list")).toBeDefined();
+    expect(screen.getByText("Law search and law text")).toBeDefined();
     expect(screen.getByText("20 June 2026")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Current matter" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Document preparation" })).toBeNull();

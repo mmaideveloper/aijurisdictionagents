@@ -156,8 +156,12 @@ export const translations = {
     newsEyebrow: "Product updates",
     newsSubtitle: "Read dated JurisDigta assistant notes, compliance updates, and operational mini-blogs.",
     newsMcpDate: "22 June 2026",
+    newsLocalModelsDate: "7 July 2026",
     newsApprovalDate: "21 June 2026",
     newsMetadataDate: "20 June 2026",
+    newsLocalModelsTitle: "Local models for free users subscriptions with model routing.",
+    newsLocalModelsBody:
+      "Free users can be routed to local Ollama models for low-cost drafting while JurisDigta MCP stays mandatory for legal grounding. Administrators can upgrade a user or subscription to approved external models when quality, capacity, or case risk requires it. Model routing keeps provider choice, user assignment, and fallback rules governed centrally instead of hidden in the chat UI. External providers and models are added through controlled administration with auditability, data-minimization checks, and human oversight for legal-risk outputs.",
     newsMetadataBody:
       "Assistant outputs keep visible metadata about AI drafting, legal-risk level, and required human oversight.",
     assistantThreadsTitle: "Conversations",
@@ -833,8 +837,12 @@ export const translations = {
     newsEyebrow: "Produktové aktuality",
     newsSubtitle: "Prečítajte si dátumované poznámky asistenta JurisDigta, compliance novinky a operačné mini-blogy.",
     newsMcpDate: "22. jún 2026",
+    newsLocalModelsDate: "7. júl 2026",
     newsApprovalDate: "21. jún 2026",
     newsMetadataDate: "20. jún 2026",
+    newsLocalModelsTitle: "Lokálne modely pre bezplatné používateľské predplatné s routingom modelov",
+    newsLocalModelsBody:
+      "Bezplatných používateľov možno smerovať na lokálne modely Ollama pre nízkonákladové návrhy, pričom JurisDigta MCP zostáva povinný pre právne ukotvenie. Administrátor môže používateľa alebo predplatné povýšiť na schválené externé modely, keď to vyžaduje kvalita, kapacita alebo riziko prípadu. Routing modelov udržiava výber poskytovateľa, priradenie používateľov a fallback pravidlá pod centrálnou správou namiesto skrytia v chatovom UI. Externí poskytovatelia a modely sa pridávajú cez riadenú administráciu s auditovateľnosťou, kontrolou minimalizácie údajov a ľudským dohľadom pri právne rizikových výstupoch.",
     newsMetadataBody:
       "Výstupy asistenta zachovávajú viditeľné metadáta o AI návrhu, úrovni právneho rizika a potrebnom ľudskom dohľade.",
     assistantThreadsTitle: "Konverzácie",
@@ -1510,8 +1518,12 @@ export const translations = {
     newsEyebrow: "Produktneuigkeiten",
     newsSubtitle: "Lesen Sie datierte JurisDigta-Assistentennotizen, Compliance-Updates und operative Mini-Blogs.",
     newsMcpDate: "22. Juni 2026",
+    newsLocalModelsDate: "7. Juli 2026",
     newsApprovalDate: "21. Juni 2026",
     newsMetadataDate: "20. Juni 2026",
+    newsLocalModelsTitle: "Lokale Modelle für kostenlose Benutzerabos mit Modellrouting",
+    newsLocalModelsBody:
+      "Kostenlose Benutzer können für kostengünstige Entwürfe auf lokale Ollama-Modelle geroutet werden, während JurisDigta MCP für die rechtliche Fundierung verpflichtend bleibt. Administratoren können Benutzer oder Abos auf freigegebene externe Modelle hochstufen, wenn Qualität, Kapazität oder Fallrisiko es erfordern. Das Modellrouting hält Provider-Auswahl, Benutzerzuordnung und Fallback-Regeln zentral gesteuert statt verborgen im Chat-UI. Externe Provider und Modelle werden über kontrollierte Administration mit Auditierbarkeit, Datenminimierungsprüfung und menschlicher Aufsicht für rechtlich riskante Ausgaben hinzugefügt.",
     newsMetadataBody:
       "Assistentenausgaben behalten sichtbare Metadaten zu KI-Entwurf, Rechtsrisiko und erforderlicher menschlicher Aufsicht.",
     assistantThreadsTitle: "Konversationen",

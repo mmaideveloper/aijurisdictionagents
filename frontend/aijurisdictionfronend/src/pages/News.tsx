@@ -2,6 +2,13 @@ import React from "react";
 import { BsLockFill } from "react-icons/bs";
 import { useLanguage } from "../components/LanguageProvider";
 
+type NewsPost = {
+  date: string;
+  title: string;
+  body: string;
+  kind: "mcp" | "plain";
+};
+
 const News: React.FC = () => {
   const { t } = useLanguage();
   const capabilities = [
@@ -13,7 +20,13 @@ const News: React.FC = () => {
     t("assistantCapabilityLocation")
   ];
 
-  const posts = [
+  const posts: NewsPost[] = [
+    {
+      date: t("newsLocalModelsDate"),
+      title: t("newsLocalModelsTitle"),
+      body: t("newsLocalModelsBody"),
+      kind: "plain"
+    },
     {
       date: t("newsMcpDate"),
       title: t("assistantMandatoryMcpTitle"),
