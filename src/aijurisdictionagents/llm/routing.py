@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib import import_module
 import os
+from typing import cast
 
 from aijurisdictionagents.api_db import (
     AIModelRouteSelection,
@@ -13,6 +14,7 @@ from aijurisdictionagents.api_db import (
 
 from .azure_foundry_client import AzureFoundryClient, AzureFoundryConfig
 from .base import LLMClient
+from .ollama_client import OllamaClient, OllamaConfig
 from .openai_client import OpenAIClient, OpenAIConfig
 
 
@@ -90,13 +92,36 @@ def get_routed_llm_client(
     if route.route_type in {"local_unavailable", "external_unavailable", "external_ack_required", "blocked_non_eu_external"}:
         raise ModelRouteUnavailable(route.reason)
 
-    if provider_type in {"ollama", "local_ollama", "local_llamacpp_openai", "local_lmstudio"}:
+    if provider_type in {"ollama", "local_ollama"}:
         if not provider.base_url.strip():
             raise ModelRouteUnavailable("Local model provider has no base URL configured.")
         return RoutedLLMClient(
+            client=OllamaClient(
+                OllamaConfig(
+                    model=model,
+                    base_url=provider.base_url,
+                    temperature=_temperature(),
+                    timeout_seconds=_local_timeout_seconds(),
+                    provider_label=provider.provider_code,
+                    max_tokens=256,
+                )
+            ),
+            route=route,
+            plan=plan,
+            subscription=subscription,
+            provider=provider.provider_code,
+            model=model,
+            route_type=route.route_type,
+            fallback_reason="",
+        )
+
+    if provider_type in {"local_llamacpp_openai", "local_lmstudio"}:
+        if not provider.base_url.strip():
+            raise ModelRouteUnavailable("Local OpenAI-compatible provider has no base URL configured.")
+        return RoutedLLMClient(
             client=OpenAIClient(
                 OpenAIConfig(
-                    api_key="local-ollama",
+                    api_key="local-openai-compatible",
                     model=model,
                     base_url=_openai_compatible_base_url(provider.base_url),
                     provider_label=provider.provider_code,
@@ -189,11 +214,15 @@ def _legacy_llm_factory_overridden() -> bool:
 
 def _mock_llm_client() -> LLMClient:
     llm_module = import_module("aijurisdictionagents.llm")
-    return llm_module.get_llm_client()
+    return cast(LLMClient, llm_module.get_llm_client())
 
 
 def _temperature() -> float:
     return float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
+
+
+def _local_timeout_seconds() -> float:
+    return float(os.getenv("LOCAL_LLM_REQUEST_TIMEOUT_SECONDS", "120"))
 
 
 def _openai_compatible_base_url(base_url: str) -> str:
