@@ -155,9 +155,17 @@ export const translations = {
       "Open the assistant workspace for legal search, document preparation, verification planning, and approval-gated tool calls.",
     newsEyebrow: "Product updates",
     newsSubtitle: "Read dated JurisDigta assistant notes, compliance updates, and operational mini-blogs.",
+    newsAudioModelsDate: "7 July 2026",
     newsMcpDate: "22 June 2026",
+    newsLocalModelsDate: "7 July 2026",
     newsApprovalDate: "21 June 2026",
     newsMetadataDate: "20 June 2026",
+    newsAudioModelsTitle: "STT/TTS improves communication between the client and the AI Lawyer",
+    newsAudioModelsBody:
+      "Audio models can record a client consultation, convert speech to text, and prepare a structured conversation record. This helps the lawyer review facts faster because the system preserves the full dialogue instead of relying only on handwritten notes. Text-to-speech can read back summaries, missing questions, or next steps so the client can confirm meaning immediately. Clear transcripts improve the quality of follow-up analysis and reduce the risk that an important fact is missed before a legal decision. For legal-risk work, recording must stay consent-based, auditable, and under human lawyer oversight. Work on this capability has already started.",
+    newsLocalModelsTitle: "Local models for free users subscriptions with model routing.",
+    newsLocalModelsBody:
+      "Free users can be routed to local Ollama models for low-cost drafting while JurisDigta MCP stays mandatory for legal grounding. Administrators can upgrade a user or subscription to approved external models when quality, capacity, or case risk requires it. Model routing keeps provider choice, user assignment, and fallback rules governed centrally instead of hidden in the chat UI. External providers and models are added through controlled administration with auditability, data-minimization checks, and human oversight for legal-risk outputs.",
     newsMetadataBody:
       "Assistant outputs keep visible metadata about AI drafting, legal-risk level, and required human oversight.",
     assistantThreadsTitle: "Conversations",
@@ -832,9 +840,17 @@ export const translations = {
       "Otvorte pracovisko asistenta pre právne vyhľadávanie, prípravu dokumentov, plánovanie overovania a schvaľované volania nástrojov.",
     newsEyebrow: "Produktové aktuality",
     newsSubtitle: "Prečítajte si dátumované poznámky asistenta JurisDigta, compliance novinky a operačné mini-blogy.",
+    newsAudioModelsDate: "7. júl 2026",
     newsMcpDate: "22. jún 2026",
+    newsLocalModelsDate: "7. júl 2026",
     newsApprovalDate: "21. jún 2026",
     newsMetadataDate: "20. jún 2026",
+    newsAudioModelsTitle: "STT/TTS zlepšenie komunikácie medzi klientom a AI Advokátom",
+    newsAudioModelsBody:
+      "Audio model môže zaznamenať rozhovor s klientom, previesť reč na text a pripraviť štruktúrovaný záznam konzultácie. Advokát tak rýchlejšie skontroluje skutkový stav, pretože systém zachytí celý dialóg a nie iba ručné poznámky. Text-to-speech vie klientovi prečítať zhrnutie, chýbajúce otázky alebo ďalšie kroky, aby klient hneď potvrdil význam. Presný prepis zvyšuje kvalitu následnej právnej analýzy a znižuje riziko, že pred rozhodnutím unikne dôležitý fakt. Pri právne rizikovej práci musí nahrávanie zostať založené na súhlase, auditovateľné a pod dohľadom ľudského advokáta. Na tejto funkcii sa už začalo pracovať.",
+    newsLocalModelsTitle: "Lokálne modely pre bezplatné používateľské predplatné s routingom modelov",
+    newsLocalModelsBody:
+      "Bezplatných používateľov možno smerovať na lokálne modely Ollama pre nízkonákladové návrhy, pričom JurisDigta MCP zostáva povinný pre právne ukotvenie. Administrátor môže používateľa alebo predplatné povýšiť na schválené externé modely, keď to vyžaduje kvalita, kapacita alebo riziko prípadu. Routing modelov udržiava výber poskytovateľa, priradenie používateľov a fallback pravidlá pod centrálnou správou namiesto skrytia v chatovom UI. Externí poskytovatelia a modely sa pridávajú cez riadenú administráciu s auditovateľnosťou, kontrolou minimalizácie údajov a ľudským dohľadom pri právne rizikových výstupoch.",
     newsMetadataBody:
       "Výstupy asistenta zachovávajú viditeľné metadáta o AI návrhu, úrovni právneho rizika a potrebnom ľudskom dohľade.",
     assistantThreadsTitle: "Konverzácie",
@@ -1509,9 +1525,17 @@ export const translations = {
       "Öffnen Sie den Assistenten-Workspace für Rechtssuche, Dokumentvorbereitung, Verifizierungsplanung und genehmigungspflichtige Tool-Aufrufe.",
     newsEyebrow: "Produktneuigkeiten",
     newsSubtitle: "Lesen Sie datierte JurisDigta-Assistentennotizen, Compliance-Updates und operative Mini-Blogs.",
+    newsAudioModelsDate: "7. Juli 2026",
     newsMcpDate: "22. Juni 2026",
+    newsLocalModelsDate: "7. Juli 2026",
     newsApprovalDate: "21. Juni 2026",
     newsMetadataDate: "20. Juni 2026",
+    newsAudioModelsTitle: "STT/TTS verbessert die Kommunikation zwischen Mandant und KI-Anwalt",
+    newsAudioModelsBody:
+      "Audiomodelle können eine Mandantenberatung aufnehmen, Sprache in Text umwandeln und ein strukturiertes Gesprächsprotokoll vorbereiten. Dadurch prüft der Anwalt den Sachverhalt schneller, weil der vollständige Dialog erhalten bleibt und nicht nur handschriftliche Notizen. Text-to-Speech kann Zusammenfassungen, offene Fragen oder nächste Schritte vorlesen, damit der Mandant die Bedeutung sofort bestätigt. Präzise Transkripte verbessern die Qualität der weiteren Rechtsanalyse und verringern das Risiko, dass vor einer Entscheidung ein wichtiger Fakt fehlt. Bei rechtlich riskanter Arbeit muss die Aufnahme einwilligungsbasiert, auditierbar und unter menschlicher anwaltlicher Aufsicht bleiben. Die Arbeit an dieser Funktion hat bereits begonnen.",
+    newsLocalModelsTitle: "Lokale Modelle für kostenlose Benutzerabos mit Modellrouting",
+    newsLocalModelsBody:
+      "Kostenlose Benutzer können für kostengünstige Entwürfe auf lokale Ollama-Modelle geroutet werden, während JurisDigta MCP für die rechtliche Fundierung verpflichtend bleibt. Administratoren können Benutzer oder Abos auf freigegebene externe Modelle hochstufen, wenn Qualität, Kapazität oder Fallrisiko es erfordern. Das Modellrouting hält Provider-Auswahl, Benutzerzuordnung und Fallback-Regeln zentral gesteuert statt verborgen im Chat-UI. Externe Provider und Modelle werden über kontrollierte Administration mit Auditierbarkeit, Datenminimierungsprüfung und menschlicher Aufsicht für rechtlich riskante Ausgaben hinzugefügt.",
     newsMetadataBody:
       "Assistentenausgaben behalten sichtbare Metadaten zu KI-Entwurf, Rechtsrisiko und erforderlicher menschlicher Aufsicht.",
     assistantThreadsTitle: "Konversationen",

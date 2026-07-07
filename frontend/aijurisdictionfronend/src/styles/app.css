@@ -1529,6 +1529,15 @@
   margin: 0;
 }
 
+.assistant-capability-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.assistant-capability-list li {
+  padding-left: 0.15rem;
+}
+
 .workspace-page {
   padding-top: 0;
   height: calc(100vh - 6rem);
