@@ -7,10 +7,11 @@ The internal JurisDigta assistant should use JurisDigta MCP as its source-of-tru
 1. The frontend starts or resumes a `/v1/chat` session.
 2. The chat API records the user turn and gathers case history, uploaded documents, and processed document chunks.
 3. For Slovak legal, jurisdiction, and legal-document-by-law turns, the chat API builds an internal MCP legal context over the configured MCP endpoint (`INTERNAL_MCP_BASE_URL` in production, with an in-process fallback for local tests) before any local or external model receives the prompt. Law-only and legal-document turns call `searchLaws` and focused `getLawText`; court-decision turns call `searchLegalSources` with `source_types=["laws","court_decisions"]` so laws and case-law use the same governed tool surface.
-4. When a Slovak legal turn needs case-law support, the chat API or MCP client may call `searchCourtDecisions` and `getCourtDecision`. Court-decision context must default to metadata or pseudonymized public text for UI and external model routes.
-5. The lawyer model receives the user conversation, case documents, uploaded documents, internal MCP law context, and optional court-decision context.
-6. The model must cite MCP law identifiers and relevant sections when the MCP context contains them, and must say when current-law lookup was unavailable or inconclusive. Court decisions must be cited as case-law support with court, date, ECLI or file number when available, not as binding statutory text.
-7. Document drafting remains a separate validated workflow: ask for missing facts, require explicit user confirmation before final drafting, then export generated assets through the document export endpoints.
+4. For Slovak MCP status/statistics questions, including free-plan local Ollama routes, the chat API calls MCP `getVersion` and `getStatistics` before the model reply. The model receives only aggregate JSON from those tools and formats it for the user; it must not invent version, imported-law count, or jurisdiction values not present in the JSON.
+5. When a Slovak legal turn needs case-law support, the chat API or MCP client may call `searchCourtDecisions` and `getCourtDecision`. Court-decision context must default to metadata or pseudonymized public text for UI and external model routes.
+6. The lawyer model receives the user conversation, case documents, uploaded documents, internal MCP law context, optional court-decision context, and optional aggregate MCP status JSON.
+7. The model must cite MCP law identifiers and relevant sections when the MCP context contains them, and must say when current-law lookup was unavailable or inconclusive. Court decisions must be cited as case-law support with court, date, ECLI or file number when available, not as binding statutory text.
+8. Document drafting remains a separate validated workflow: ask for missing facts, require explicit user confirmation before final drafting, then export generated assets through the document export endpoints.
 
 ## Case Citations
 
@@ -38,7 +39,11 @@ The chat API resolves provider, model, deployment, and credentials through the A
 
 The compact free-plan prompt does not bypass MCP grounding. If a free-plan local Ollama turn asks about Slovak law, jurisdiction, court decisions, or legal documents that must be created under law, the API retrieves bounded JurisDigta MCP context first and then passes that context to Ollama for drafting or formatting.
 
+The compact free-plan prompt still accepts aggregate JurisDigta MCP status context for MCP version/statistics questions. That context is limited to `getVersion` and `getStatistics` JSON, contains no user identifiers or raw legal text, and is supplied to Ollama only for Slovak presentation formatting.
+
 Local Ollama chat routes use Ollama's native `/api/chat` endpoint with `think: false`, `stream: false`, and a bounded `num_predict` value. This avoids Qwen reasoning models returning an OpenAI-compatible response with empty `message.content` and reasoning-only metadata, which would otherwise look like a missing assistant answer in the web app.
+
+Language selection is enforced at the orchestration prompt layer for local and external routes. When the requested language is `sk-SK`, all visible assistant content, including notes, summaries, questions, labels, and any reasoning explanation, must stay in Slovak. Local Ollama prompts explicitly reject English meta-analysis such as "We need to..." and hidden chain-of-thought text because smaller reasoning models can otherwise emit English analysis as normal answer content.
 
 The API must not load large local model files directly inside the FastAPI process for normal production traffic. Loading a 10 GB to 30 GB model inside API workers increases startup time, RAM/VRAM pressure, deployment risk, and failure blast radius. The API should stay lightweight and call the local model service through the model router, while Ollama owns model download, storage, loading, unloading, health checks, and runtime isolation.
 

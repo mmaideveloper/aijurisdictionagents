@@ -1430,6 +1430,25 @@ def test_current_date_prompt_note_uses_runtime_date() -> None:
     assert "Do not invent" in note
 
 
+def test_compact_free_local_prompt_blocks_mixed_language_reasoning_for_slovak() -> None:
+    from app.chat.api import _build_compact_free_local_lawyer_prompt
+    from app.chat.models import Session
+
+    prompt = _build_compact_free_local_lawyer_prompt(
+        session=Session(country="SK", language="SK"),
+        case_memory_note="",
+        user_profile_note="",
+        preparation_prompt_note="",
+        document_generation_requested=False,
+    )
+
+    assert "Reply in SK." in prompt
+    assert "Use only Slovak (sk-SK)" in prompt
+    assert "Do not mix English and Slovak" in prompt
+    assert "English meta-analysis" in prompt
+    assert "Do not expose hidden chain-of-thought" in prompt
+
+
 def test_reply_endpoint_includes_current_date_context_in_lawyer_prompt(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
@@ -1877,6 +1896,126 @@ def test_mcp_law_context_prefers_remote_mcp_endpoint(monkeypatch) -> None:
         "http://jurisdigta-mcp:8070/mcp",
     ]
     assert "§ 588 text" in context.prompt_note
+
+def test_mcp_status_context_calls_version_and_statistics_for_slovak_status_query(monkeypatch) -> None:
+    from app.chat.mcp_status_context import build_mcp_status_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        if name == "getVersion":
+            return {"mcp_server_version": "1.0.260512", "api_version": "1.0.260512"}
+        if name == "getStatistics":
+            return {
+                "country_code": "SK",
+                "processed_laws_count": 1245,
+                "jurisdictions": ["SK"],
+            }
+        raise AssertionError(name)
+
+    monkeypatch.setattr("app.chat.mcp_status_context._call_mcp_tool", fake_call_tool)
+
+    context = build_mcp_status_context(
+        query="Daj mi verziu  mcp servra a pocej importovancnych zakonou a jurisdikcii?",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert calls == [("getVersion", {}), ("getStatistics", {"country_code": "SK"})]
+    assert "INTERNAL MCP STATUS CONTEXT" in context.prompt_note
+    assert "getVersion" in context.prompt_note
+    assert "getStatistics" in context.prompt_note
+    assert "1.0.260512" in context.prompt_note
+    assert "1245" in context.prompt_note
+    assert context.document is not None
+    assert context.document.path == "internal-mcp-status-context.json"
+    details = context.processing_event["details"]
+    assert isinstance(details, dict)
+    assert details["tool_calls"] == ["getVersion", "getStatistics"]
+    assert details["source_origin"] == "jurisdigta_mcp"
+
+
+def test_free_plan_ollama_reply_gets_mcp_status_json_before_model_formatting(monkeypatch) -> None:
+    from app.chat.models import Session
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    session = repository.create_session(Session(country="SK", language="sk-SK", discussion_type="advice"))
+    captured_prompts: list[str] = []
+    captured_document_paths: list[str] = []
+    captured_events: list[dict[str, object]] = []
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            captured_document_paths.extend(document.path for document in documents)
+            return SimpleNamespace(
+                content=(
+                    "MCP server: 1.0.260512. Importovane zakony: 1245. Jurisdikcie: SK.\n"
+                    'CASE_UPDATE_JSON: {"case":{"status":"intake_open",'
+                    '"jurisdiction":{"country":"SK","language":"sk-SK"},'
+                    '"facts_summary":"MCP status preview","client_goal":"MCP status","open_questions":[]}}'
+                ),
+                agent_name="LawyerSlovakia",
+            )
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        if name == "getVersion":
+            return {"mcp_server_version": "1.0.260512", "api_version": "1.0.260512"}
+        if name == "getStatistics":
+            return {"country_code": "SK", "processed_laws_count": 1245, "jurisdictions": ["SK"]}
+        raise AssertionError(name)
+
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        chat_api,
+        "prepare_country_direct_reply",
+        lambda **_kwargs: SimpleNamespace(
+            direct_reply=None,
+            prompt_note="",
+            supplemental_documents=[],
+            processing_events=[],
+        ),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "_resolve_session_llm_route",
+        lambda **_kwargs: SimpleNamespace(client=object(), route_type="free_local", provider="local_ollama"),
+    )
+    monkeypatch.setattr("aijurisdictionagents.agents.create_lawyer_agent", lambda llm, country: _SpyLawyer())
+    monkeypatch.setattr("app.chat.mcp_status_context._call_mcp_tool", fake_call_tool)
+    monkeypatch.setattr(chat_api, "build_mcp_law_context", lambda **_kwargs: None)
+
+    _user, lawyer, visible, events, route = chat_api._run_direct_lawyer_turn(
+        session_id=session.id,
+        session=session,
+        content="Daj mi verziu  mcp servra a pocej importovancnych zakonou a jurisdikcii?",
+        processing_event_callback=captured_events.append,
+    )
+
+    assert route is not None
+    assert route.route_type == "free_local"
+    assert route.provider == "local_ollama"
+    assert calls == [("getVersion", {}), ("getStatistics", {"country_code": "SK"})]
+    assert lawyer.agent_name == "LawyerSlovakia"
+    assert "MCP server: 1.0.260512" in visible
+    assert captured_prompts
+    prompt = captured_prompts[-1]
+    assert "JurisDigta Assistant, a Slovak legal intake assistant for free-plan local model routing" in prompt
+    assert "INTERNAL MCP STATUS CONTEXT" in prompt
+    assert '"getVersion":{"api_version":"1.0.260512","mcp_server_version":"1.0.260512"}' in prompt
+    assert '"getStatistics":{"country_code":"SK","jurisdictions":["SK"],"processed_laws_count":1245}' in prompt
+    assert "internal-mcp-status-context.json" in captured_document_paths
+    assert any(event.get("stage") == "mcp_status_context" for event in captured_events)
+    assert any(event.get("stage") == "mcp_status_context" for event in events)
 
 
 def test_mcp_law_context_skips_non_slovak_non_legal_turn(monkeypatch) -> None:

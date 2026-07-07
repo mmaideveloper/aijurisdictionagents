@@ -4,7 +4,12 @@ from aijurisdictionagents.agents import create_judge, create_lawyer
 from aijurisdictionagents.llm import MockLLMClient
 from aijurisdictionagents.observability import TraceRecorder
 from aijurisdictionagents.orchestration import Orchestrator
-from aijurisdictionagents.orchestration.orchestrator import _augment_prompt, _extract_question
+from aijurisdictionagents.orchestration.orchestrator import (
+    _augment_prompt,
+    _extract_question,
+    _final_summary_prompt,
+    _parse_final_summary,
+)
 from aijurisdictionagents.schemas import Document
 
 
@@ -304,6 +309,42 @@ def test_discussion_prompt_respects_language_override() -> None:
     )
 
     assert "Respond in English." in prompt
+
+
+def test_discussion_prompt_blocks_mixed_language_reasoning_for_slovak() -> None:
+    base_prompt = "BASE PROMPT"
+    prompt = _augment_prompt(
+        base_prompt,
+        country="SK",
+        output_language_hint="Slovak (sk-SK)",
+        discussion_only=True,
+        discussion_type="advice",
+        role="lawyer",
+    )
+
+    assert "Use only Slovak (sk-SK)" in prompt
+    assert "Do not mix English and Slovak" in prompt
+    assert "Do not expose hidden chain-of-thought" in prompt
+    assert "We need to" in prompt
+
+
+def test_final_summary_prompt_uses_slovak_labels_and_language_guard() -> None:
+    prompt = _final_summary_prompt(country="SK", output_language_hint="Slovak (sk-SK)")
+
+    assert "Odporucanie: <text>" in prompt
+    assert "Odovodnenie: <text>" in prompt
+    assert "Use only Slovak (sk-SK)" in prompt
+    assert "do not write English meta-analysis" in prompt
+
+
+def test_parse_final_summary_accepts_slovak_labels() -> None:
+    recommendation, rationale = _parse_final_summary(
+        "Odporucanie: Pokracujte slovenskou odpovedou.\n"
+        "Odovodnenie: Pouzivatel zvolil slovencinu."
+    )
+
+    assert recommendation == "Pokracujte slovenskou odpovedou."
+    assert rationale == "Pouzivatel zvolil slovencinu."
 
 
 def test_extract_question_prefers_non_pdf_question() -> None:

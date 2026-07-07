@@ -546,7 +546,7 @@ Typical order:
 2. `Database Schema Upgrade` if needed
 3. `API Build and Deploy` with `deploy=true`
 4. `Document Processor Build and Deploy`
-5. `Laws Collector Build and Deploy`
+5. `Laws Collector Build and Deploy` with `deploy=true`
 6. `Email Scheduler Build and Deploy` with `deploy=true`
 7. `web_build_deploy`
 8. `mobile_flutter_build`
@@ -570,7 +570,7 @@ Observability note:
 
 ## 14. Current Workflow Defaults
 
-Some workflows default to `dev` for push-based execution. The API and email scheduler workflows are build/test by default and deploy only when manually dispatched with `deploy=true`.
+Some workflows default to `dev` for push-based execution. The laws collector and email scheduler workflows are build/test by default and deploy only when manually dispatched with `deploy=true`.
 
 That means:
 
@@ -581,7 +581,8 @@ That means:
 - `API Build and Deploy` injects `EMAIL_DB_OPTION=azure`, `EMAIL_DB_CLOUD=secretref:db-cloud`, and `EMAIL_DB_LOCAL=/tmp/email.sqlite3` automatically, so email outbox storage follows the API PostgreSQL deployment.
 - `API Build and Deploy` injects SMTP settings and vehicle validation settings into the API Container App; `EMAIL_SMTP_PASSWORD` and `CAR_VALIDATION_API_KEY` are stored as Container App secrets.
 - `API Build and Deploy` fails during environment validation when `EMAIL_TRANSPORT=smtp` and `EMAIL_SMTP_PASSWORD` is empty.
-- `Laws Collector Build and Deploy` now deploys automatically to `dev` on `push` to `main` after its tests/build pass
+- `Laws Collector Build and Deploy` runs tests and builds the laws collector image on pull requests and pushes to `main`, but does not deploy by default.
+- `Laws Collector Build and Deploy` has a manual `workflow_dispatch` input `deploy` with default `false`; set `deploy=true` and choose `github_environment` to deploy the ACA Job.
 - `Email Scheduler Build and Deploy` runs tests and builds the scheduler API image on pull requests and pushes to `main`, but does not deploy by default.
 - `Email Scheduler Build and Deploy` has a manual `workflow_dispatch` input `deploy` with default `false`; set `deploy=true` and choose `github_environment` to deploy the dedicated ACA Job.
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
