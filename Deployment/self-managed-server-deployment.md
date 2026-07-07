@@ -346,6 +346,13 @@ cd /srv/jurisdigta/app
 docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/Dockerfile .
 ```
 
+The API, document processor, and laws collector Dockerfiles set
+`PIP_DEFAULT_TIMEOUT=120` and `PIP_RETRIES=10` for the heavy numpy/Torch install
+layers. Keep these settings in sync when changing those images. The self-managed
+runner can have slow external package downloads during production releases, and
+the deploy should retry transient `files.pythonhosted.org` or PyTorch wheel
+timeouts instead of failing the release immediately.
+
 Run migrations for the laws PostgreSQL database before a long-running import:
 
 ```bash
