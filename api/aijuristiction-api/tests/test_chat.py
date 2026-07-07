@@ -1696,6 +1696,111 @@ def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
     assert "§ 588" in context.document.content
 
 
+def test_mcp_law_context_uses_combined_legal_sources_for_court_decision_query(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        if name == "searchLegalSources":
+            return {
+                "laws": [],
+                "court_decisions": [
+                    {
+                        "decision_id": f"decision-{index}",
+                        "court_name": "Najvyssi sud SR",
+                        "file_number": f"{index}Cdo/{2020 + index}",
+                        "issue_date": f"{2020 + index}-03-01",
+                        "source_url": f"https://obcan.justice.sk/infosud/-/detail/decision-{index}",
+                        "score": 0.99 - index / 100,
+                    }
+                    for index in range(1, 6)
+                ],
+            }
+        raise AssertionError(name)
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+
+    context = build_mcp_law_context(
+        query="Daj mi top 5 sudnych rozhodnuti ohladom podnajmu?",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert calls == [
+        (
+            "searchLegalSources",
+            {
+                "query": "Daj mi top 5 sudnych rozhodnuti ohladom podnajmu?",
+                "country_code": "SK",
+                "source_types": ["laws", "court_decisions"],
+                "limit_per_source": 5,
+            },
+        )
+    ]
+    assert "MCP court-decision results" in context.prompt_note
+    assert context.prompt_note.count("Najvyssi sud SR") == 5
+    details = context.processing_event["details"]
+    assert isinstance(details, dict)
+    assert details["source_origin"] == "system_vector_db"
+    assert details["court_decision_count"] == 5
+    citations = details["citations"]
+    assert isinstance(citations, list)
+    assert len(citations) == 5
+    assert citations[0]["source_type"] == "court_decision"
+    assert citations[0]["decision_date"] == "2021-03-01"
+    assert citations[0]["retrieval_tool"] == "JurisDigta MCP searchCourtDecisions"
+
+
+def test_mcp_law_context_warns_when_official_web_fallback_is_used(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        assert name == "searchLegalSources"
+        return {"laws": [], "court_decisions": []}
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+    monkeypatch.setattr(
+        "app.chat.mcp_law_context.AIWebSearchAgent",
+        lambda: SimpleNamespace(
+            search=lambda **_kwargs: [
+                SimpleNamespace(
+                    title="Rozhodnutie o podnajme",
+                    url="https://obcan.justice.sk/infosud/-/detail/fallback-decision",
+                    snippet="Oficialny zdroj sudneho rozhodnutia.",
+                ),
+                SimpleNamespace(
+                    title="Neoficialny blog",
+                    url="https://example.com/blog",
+                    snippet="Ignored unofficial source.",
+                ),
+            ]
+        ),
+    )
+
+    context = build_mcp_law_context(
+        query="Daj mi top 5 sudnych rozhodnuti ohladom podnajmu?",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert "OFFICIAL WEB FALLBACK RESULTS" in context.prompt_note
+    assert "not from JurisDigta system vector DB" in context.prompt_note
+    details = context.processing_event["details"]
+    assert isinstance(details, dict)
+    assert details["source_origin"] == "official_web_fallback"
+    assert details["warning_required"] is True
+    citations = details["citations"]
+    assert isinstance(citations, list)
+    assert len(citations) == 1
+    assert citations[0]["source_type"] == "web"
+    assert citations[0]["retrieval_tool"] == "AIWebSearchAgent official web fallback"
+    assert citations[0]["relevance_score"] == 0.9
+
+
 def test_mcp_law_context_prefers_remote_mcp_endpoint(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
@@ -6391,6 +6496,77 @@ def test_direct_reply_result_includes_structured_law_citations(monkeypatch) -> N
     assert result.metadata["law_citations"][0]["law_identifier"] == "1/1993 Z. z."
     assert result.citations[0]["filename"] == "1/1993 Z. z."
     assert "effective from 1993-01-01" in result.citations[0]["snippet"]
+
+
+def test_direct_reply_result_includes_mcp_court_and_web_source_citations(monkeypatch) -> None:
+    from app.chat.api import _build_direct_reply_result, _case_citation_inputs_from_result
+    from app.chat.models import Message, MessageRole, Session
+    import app.chat.result_metadata as result_metadata
+
+    monkeypatch.setattr(result_metadata, "resolve_session_law_citations", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        result_metadata,
+        "get_law_knowledge_snapshot",
+        lambda _country, **_kwargs: result_metadata.LawKnowledgeSnapshot(
+            last_law_update_date=None,
+            last_law_update_source="unavailable",
+            model_knowledge_cutoff_date="2023-10-01",
+            model_knowledge_cutoff_source="https://platform.openai.com/docs/models/gpt-4o-mini",
+        ),
+    )
+
+    class _FakeValidator:
+        def evaluate(self, **_kwargs):
+            return SimpleNamespace(weighted_accuracy=91.0, summary="Validated.", scores=[])
+
+    monkeypatch.setattr(result_metadata, "AIAgentsValidator", lambda **_kwargs: _FakeValidator())
+
+    session_id = uuid4()
+    session = Session(id=session_id, country="SK", language="SK")
+    messages = [
+        Message(session_id=session_id, role=MessageRole.USER, content="Daj mi top 5 sudnych rozhodnuti ohladom podnajmu?"),
+        Message(session_id=session_id, role=MessageRole.ASSISTANT, content="Nasiel som relevantne rozhodnutia."),
+    ]
+
+    result = _build_direct_reply_result(
+        session_id=session_id,
+        session=session,
+        messages=messages,
+        lawyer_message=messages[-1].content,
+        legal_source_citations=[
+            {
+                "source_type": "court_decision",
+                "source_id": "decision-1",
+                "source_url": "https://obcan.justice.sk/infosud/-/detail/decision-1",
+                "title": "Najvyssi sud SR - 1Cdo/2021 - 2021",
+                "citation_label": "Najvyssi sud SR - 1Cdo/2021 - 2021",
+                "court": "Najvyssi sud SR",
+                "file_number": "1Cdo/2021",
+                "decision_date": "2021-03-01",
+                "retrieval_tool": "JurisDigta MCP searchCourtDecisions",
+                "relevance_score": 1.0,
+            },
+            {
+                "source_type": "web",
+                "source_id": "https://obcan.justice.sk/infosud/-/detail/fallback",
+                "source_url": "https://obcan.justice.sk/infosud/-/detail/fallback",
+                "title": "Fallback rozhodnutie",
+                "citation_label": "Fallback rozhodnutie",
+                "snippet": "Official web fallback.",
+                "retrieval_tool": "AIWebSearchAgent official web fallback",
+                "relevance_score": 0.9,
+            },
+        ],
+    )
+
+    assert result.metadata["legal_source_citations"][0]["source_type"] == "court_decision"
+    assert result.citations[0]["filename"] == "Najvyssi sud SR - 1Cdo/2021 - 2021"
+    assert "JurisDigta MCP searchCourtDecisions" in result.citations[0]["snippet"]
+    persisted_inputs = _case_citation_inputs_from_result(case_id="case-1", result=result)
+    assert [item["source_type"] for item in persisted_inputs] == ["court_decision", "web"]
+    assert persisted_inputs[0]["decision_date"] == "2021-03-01"
+    assert persisted_inputs[1]["retrieval_tool"] == "AIWebSearchAgent official web fallback"
+    assert persisted_inputs[1]["relevance_score"] == 0.9
 
 
 def test_law_snapshot_falls_back_to_model_cutoff_and_writes_cache(monkeypatch, tmp_path) -> None:

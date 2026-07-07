@@ -6,8 +6,8 @@ The internal JurisDigta assistant should use JurisDigta MCP as its source-of-tru
 
 1. The frontend starts or resumes a `/v1/chat` session.
 2. The chat API records the user turn and gathers case history, uploaded documents, and processed document chunks.
-3. For Slovak legal turns, the chat API builds an internal MCP law context by calling `searchLaws` and `getLawText` over the configured MCP endpoint (`INTERNAL_MCP_BASE_URL` in production, with an in-process fallback for local tests).
-4. When a Slovak legal turn needs case-law support, the chat API or MCP client may call `searchCourtDecisions` and `getCourtDecision`. Court-decision context must default to pseudonymized public text for UI and external model routes.
+3. For Slovak legal turns, the chat API builds an internal MCP legal context over the configured MCP endpoint (`INTERNAL_MCP_BASE_URL` in production, with an in-process fallback for local tests). Law-only turns call `searchLaws` and focused `getLawText`; court-decision turns call `searchLegalSources` with `source_types=["laws","court_decisions"]` so laws and case-law use the same governed tool surface.
+4. When a Slovak legal turn needs case-law support, the chat API or MCP client may call `searchCourtDecisions` and `getCourtDecision`. Court-decision context must default to metadata or pseudonymized public text for UI and external model routes.
 5. The lawyer model receives the user conversation, case documents, uploaded documents, internal MCP law context, and optional court-decision context.
 6. The model must cite MCP law identifiers and relevant sections when the MCP context contains them, and must say when current-law lookup was unavailable or inconclusive. Court decisions must be cited as case-law support with court, date, ECLI or file number when available, not as binding statutory text.
 7. Document drafting remains a separate validated workflow: ask for missing facts, require explicit user confirmation before final drafting, then export generated assets through the document export endpoints.
@@ -19,6 +19,8 @@ Chat result metadata now normalizes JurisDigta law lookup results into durable c
 `POST /v1/chat/sessions/{session_id}/reply` returns assistant messages with `citations[]` when structured legal sources are available. `GET /v1/cases/{case_id}/history` returns the same answer-level `citations[]` on each assistant/system history message plus a case-level aggregate list. `GET /v1/cases/{case_id}/citations` returns the authorized aggregate list for the active case citation panel.
 
 The frontend renders per-answer citations below assistant answers and a deduplicated case citation list in the right configuration panel. Empty states stay explicit when no reliable citation exists or lookup was inconclusive.
+
+Legal-source citations carry retrieval provenance. JurisDigta MCP/vector results use source score `1.0` and retrieval tools such as `JurisDigta MCP searchLaws` or `JurisDigta MCP searchCourtDecisions`. If the system vector DB has no reliable legal source, the backend may use `AIWebSearchAgent` only for official legal sources such as Slov-Lex or official court-decision pages; these fallback citations use source score `0.9`, `source_type=web`, and must render a visible warning that the source came from official web search rather than the JurisDigta system vector DB.
 
 ## Quality Target
 

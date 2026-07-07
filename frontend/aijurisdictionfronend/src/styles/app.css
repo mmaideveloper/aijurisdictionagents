@@ -968,6 +968,13 @@
   line-height: 1.4;
 }
 
+.citation-list__warning {
+  border-left: 3px solid #b7791f;
+  padding-left: 0.55rem;
+  color: #6f3f05 !important;
+  font-weight: 700;
+}
+
 .citation-list__type {
   width: fit-content;
   border: 1px solid var(--border);

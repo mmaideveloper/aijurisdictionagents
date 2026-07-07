@@ -134,6 +134,35 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         snippet="Privacy-minimized citation metadata for review.",
         retrieval_tool="JurisDigta laws collector",
     )
+    demo_store.add_case_citation(
+        case_id=demo_case.case_id,
+        question_message_id=demo_question_id,
+        answer_message_id=demo_answer_id,
+        source_type="court_decision",
+        source_id="decision-demo-1",
+        source_url="https://obcan.justice.sk/infosud/-/detail/decision-demo-1",
+        title="Najvyssi sud SR - 1Cdo/2021 - 2021",
+        citation_label="Najvyssi sud SR - 1Cdo/2021 - 2021",
+        court="Najvyssi sud SR",
+        file_number="1Cdo/2021",
+        decision_date="2021-03-01",
+        snippet="Pseudonymized court-decision metadata for case-law support.",
+        retrieval_tool="JurisDigta MCP searchCourtDecisions",
+        relevance_score=1.0,
+    )
+    demo_store.add_case_citation(
+        case_id=demo_case.case_id,
+        question_message_id=demo_question_id,
+        answer_message_id=demo_answer_id,
+        source_type="web",
+        source_id="https://obcan.justice.sk/infosud/-/detail/fallback-demo",
+        source_url="https://obcan.justice.sk/infosud/-/detail/fallback-demo",
+        title="Official web fallback source",
+        citation_label="Official web fallback source",
+        snippet="Warning source: official web fallback, not JurisDigta system vector DB.",
+        retrieval_tool="AIWebSearchAgent official web fallback",
+        relevance_score=0.9,
+    )
     print(
         "case_citations => "
         f"{len(demo_store.list_case_citations(case_id=demo_case.case_id))} persisted citation"
