@@ -544,7 +544,7 @@ Typical order:
 
 1. `infra_deploy`
 2. `Database Schema Upgrade` if needed
-3. `API Build and Deploy`
+3. `API Build and Deploy` with `deploy=true`
 4. `Document Processor Build and Deploy`
 5. `Laws Collector Build and Deploy`
 6. `Email Scheduler Build and Deploy`
@@ -570,11 +570,12 @@ Observability note:
 
 ## 14. Current Workflow Defaults
 
-Some workflows default to `dev` for push-based execution.
+Some workflows default to `dev` for push-based execution. The API workflow is build/test by default and deploys only when manually dispatched with `deploy=true`.
 
 That means:
 
-- `API Build and Deploy` now deploys automatically to `dev` on `push` to `main` after tests/build pass
+- `API Build and Deploy` runs tests and builds the Docker image on pull requests and pushes to `main`, but does not deploy by default.
+- `API Build and Deploy` has a manual `workflow_dispatch` input `deploy` with default `false`; set `deploy=true` and choose `github_environment` to deploy to Azure Container Apps.
 - `API Build and Deploy` waits for Azure Container App provisioning to settle before applying secret and environment updates, which reduces transient `ContainerAppOperationInProgress` failures during deployment
 - `API Build and Deploy` now fails during environment validation when `AZURE_OPENAI_API_KEY` is empty, because the deployed API always requires that secret for Azure OpenAI access
 - `API Build and Deploy` injects `EMAIL_DB_OPTION=azure`, `EMAIL_DB_CLOUD=secretref:db-cloud`, and `EMAIL_DB_LOCAL=/tmp/email.sqlite3` automatically, so email outbox storage follows the API PostgreSQL deployment.
