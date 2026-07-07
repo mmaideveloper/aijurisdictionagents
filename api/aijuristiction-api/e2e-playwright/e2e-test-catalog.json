@@ -178,5 +178,15 @@
     "area": "Frontend document preview",
     "scheduled": false,
     "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-mcp-court-decisions",
+    "file": "tests/frontend-mcp-court-decisions.spec.ts",
+    "title": "assistant asks MCP for top five court decisions and renders provenance",
+    "name": "Frontend MCP court-decision retrieval",
+    "description": "Drives the assistant workspace with a Slovak court-decision prompt and verifies MCP retrieval status, five decision results, citation provenance, and official web fallback warning rendering.",
+    "area": "Frontend legal RAG",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
   }
 ]

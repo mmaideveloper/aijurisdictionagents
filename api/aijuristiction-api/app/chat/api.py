@@ -1760,7 +1760,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     if not content:
         raise HTTPException(status_code=400, detail="Reply content is required")
 
-    _persisted_user, persisted_lawyer, visible_lawyer_content, _processing_events, routed_llm = (
+    _persisted_user, persisted_lawyer, visible_lawyer_content, processing_events, routed_llm = (
         _run_direct_lawyer_turn(
             session_id=session_id,
             session=session,
@@ -1774,6 +1774,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         messages=_repository.list_messages(session_id),
         lawyer_message=visible_lawyer_content,
         route=routed_llm,
+        legal_source_citations=_legal_source_citations_from_processing_events(processing_events),
     )
     _repository.set_result(session_id, session_result)
     persisted_citations = _persist_case_citations_for_answer(
@@ -2174,7 +2175,7 @@ def _stream_read_user_session(
                 return
             if session.state == SessionState.COMPLETED:
                 _repository.reactivate_session(session_id)
-            _persisted_user, persisted_lawyer, visible_lawyer_content, _processing_events, routed_llm = (
+            _persisted_user, persisted_lawyer, visible_lawyer_content, processing_events, routed_llm = (
                 _run_direct_lawyer_turn(
                     session_id=session_id,
                     session=session,
@@ -2217,6 +2218,7 @@ def _stream_read_user_session(
                     messages=current_messages,
                     lawyer_message=visible_lawyer_content,
                     route=routed_llm,
+                    legal_source_citations=_legal_source_citations_from_processing_events(processing_events),
                 )
                 _persist_session_history_document_if_needed(session=session, session_id=session_id)
                 _repository.set_result(session_id, session_result)
@@ -2933,6 +2935,7 @@ def _build_direct_reply_result(
     messages: list[Message],
     lawyer_message: str,
     route: RoutedLLMClient | None = None,
+    legal_source_citations: list[dict[str, object]] | None = None,
 ) -> SessionResult:
     visible_text = _user_visible_text(lawyer_message)
     document_requested = _document_generation_requested(messages)
@@ -2955,6 +2958,7 @@ def _build_direct_reply_result(
             "document_requested": document_requested,
             "document_confirmed": document_confirmed,
             "document_ready": document_ready,
+            "legal_source_citations": legal_source_citations or [],
         },
         routed_model_name=route.model if route is not None else None,
     )
@@ -3043,6 +3047,33 @@ def _document_completion_processing_events(
             },
         }
     ]
+
+
+def _legal_source_citations_from_processing_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    citations: list[dict[str, object]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for event in events:
+        details = event.get("details")
+        if not isinstance(details, dict):
+            continue
+        raw_citations = details.get("citations")
+        if not isinstance(raw_citations, list):
+            continue
+        for raw_item in raw_citations:
+            if not isinstance(raw_item, dict):
+                continue
+            source_type = str(raw_item.get("source_type") or "other").strip() or "other"
+            source_id = str(raw_item.get("source_id") or "").strip()
+            source_url = str(raw_item.get("source_url") or "").strip()
+            title = str(raw_item.get("title") or raw_item.get("citation_label") or source_id or source_url).strip()
+            if not title:
+                continue
+            key = (source_type, source_id, source_url or title)
+            if key in seen:
+                continue
+            seen.add(key)
+            citations.append({**raw_item, "source_type": source_type, "title": title})
+    return citations
 
 
 def _document_generation_requested(messages: list[Message]) -> bool:
@@ -3978,10 +4009,10 @@ def _persist_case_citations_for_answer(
 
 def _case_citation_inputs_from_result(*, case_id: str, result: SessionResult) -> list[dict[str, object]]:
     metadata = result.metadata if isinstance(result.metadata, dict) else {}
+    citations: list[dict[str, object]] = _legal_source_citation_inputs(metadata=metadata)
     raw_law_citations = metadata.get("law_citations")
     if not isinstance(raw_law_citations, list):
-        return []
-    citations: list[dict[str, object]] = []
+        return citations
     seen: set[tuple[str, str]] = set()
     for raw_item in raw_law_citations:
         if not isinstance(raw_item, dict):
@@ -4032,6 +4063,49 @@ def _case_citation_inputs_from_result(*, case_id: str, result: SessionResult) ->
                 "snippet": _bounded_optional_text(snippet, max_chars=500),
                 "retrieval_tool": "JurisDigta laws collector",
                 "relevance_score": None,
+            }
+        )
+    return citations
+
+
+def _legal_source_citation_inputs(*, metadata: dict[str, object]) -> list[dict[str, object]]:
+    raw_citations = metadata.get("legal_source_citations")
+    if not isinstance(raw_citations, list):
+        return []
+    citations: list[dict[str, object]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for raw_item in raw_citations:
+        if not isinstance(raw_item, dict):
+            continue
+        source_type = str(raw_item.get("source_type") or "other").strip()
+        if source_type not in {"law", "court_decision", "case_document", "web", "other"}:
+            source_type = "other"
+        source_id = _optional_str(raw_item.get("source_id"))
+        source_url = _optional_str(raw_item.get("source_url"))
+        title = str(raw_item.get("title") or raw_item.get("citation_label") or source_id or source_url or "").strip()
+        if not title:
+            continue
+        key = (source_type, source_id or "", source_url or title)
+        if key in seen:
+            continue
+        seen.add(key)
+        citations.append(
+            {
+                "source_type": source_type,
+                "source_id": source_id,
+                "source_url": source_url,
+                "title": title,
+                "citation_label": _optional_str(raw_item.get("citation_label")) or title,
+                "law_number": _optional_str(raw_item.get("law_number")),
+                "section": _optional_str(raw_item.get("section")),
+                "effective_from": _optional_str(raw_item.get("effective_from")),
+                "court": _optional_str(raw_item.get("court")),
+                "ecli": _optional_str(raw_item.get("ecli")),
+                "file_number": _optional_str(raw_item.get("file_number")),
+                "decision_date": _optional_str(raw_item.get("decision_date")),
+                "snippet": _bounded_optional_text(raw_item.get("snippet"), max_chars=500),
+                "retrieval_tool": _optional_str(raw_item.get("retrieval_tool")),
+                "relevance_score": _optional_float(raw_item.get("relevance_score")),
             }
         )
     return citations
@@ -5736,10 +5810,33 @@ def _merge_session_citations(
     metadata: dict[str, object],
 ) -> list[dict[str, str]]:
     merged = list(generic_citations)
+    for citation in _legal_source_session_citations(metadata):
+        if citation not in merged:
+            merged.append(citation)
     for citation in _law_citation_session_citations(metadata):
         if citation not in merged:
             merged.append(citation)
     return merged
+
+
+def _legal_source_session_citations(metadata: dict[str, object]) -> list[dict[str, str]]:
+    citations: list[dict[str, str]] = []
+    raw_citations = metadata.get("legal_source_citations")
+    if not isinstance(raw_citations, list):
+        return citations
+    for raw_item in raw_citations:
+        if not isinstance(raw_item, dict):
+            continue
+        label = str(raw_item.get("citation_label") or raw_item.get("title") or "").strip()
+        if not label:
+            continue
+        source_type = str(raw_item.get("source_type") or "source").strip()
+        source_url = str(raw_item.get("source_url") or "").strip()
+        date = str(raw_item.get("decision_date") or raw_item.get("effective_from") or "").strip()
+        retrieval_tool = str(raw_item.get("retrieval_tool") or "").strip()
+        snippet_parts = [part for part in (source_type, date, retrieval_tool, source_url) if part]
+        citations.append({"filename": label, "snippet": ", ".join(snippet_parts)})
+    return citations
 
 
 def _law_citation_session_citations(metadata: dict[str, object]) -> list[dict[str, str]]:

@@ -73,6 +73,9 @@ const citationTypeLabel = (citation: CaseCitation): string => {
   }
 };
 
+const isFallbackCitation = (citation: CaseCitation): boolean =>
+  citation.sourceType === "web" || /AIWebSearchAgent/i.test(citation.retrievalTool ?? "");
+
 const dedupeCaseCitations = (citations: CaseCitation[]): CaseCitation[] => {
   const seen = new Set<string>();
   return citations.filter((citation) => {
@@ -107,6 +110,13 @@ const CitationList: React.FC<{ citations: CaseCitation[]; emptyLabel: string; ti
               <strong>{citationDisplayLabel(citation)}</strong>
             )}
             {citation.effectiveFrom ? <span>{citation.effectiveFrom}</span> : null}
+            {citation.decisionDate ? <span>{citation.decisionDate}</span> : null}
+            {citation.retrievalTool ? <span>{citation.retrievalTool}</span> : null}
+            {isFallbackCitation(citation) ? (
+              <p className="citation-list__warning">
+                Warning: this source came from official web-search fallback, not from JurisDigta system vector DB. Human legal review is required.
+              </p>
+            ) : null}
             {citation.snippet ? <p>{citation.snippet}</p> : null}
           </li>
         ))}
