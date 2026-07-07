@@ -39,6 +39,9 @@ def __getattr__(name: str) -> Any:
     if name in {"OpenAIClient", "load_openai_config_from_env"}:
         module = import_module(".openai_client", __name__)
         return getattr(module, name)
+    if name in {"OllamaClient", "OllamaConfig"}:
+        module = import_module(".ollama_client", __name__)
+        return getattr(module, name)
     if name in {"AzureFoundryClient", "load_azure_foundry_config_from_env"}:
         module = import_module(".azure_foundry_client", __name__)
         return getattr(module, name)
@@ -56,6 +59,8 @@ __all__ = [
     "LocalEmbeddingClient",
     "LocalEmbeddingConfig",
     "OpenAIClient",
+    "OllamaClient",
+    "OllamaConfig",
     "OpenAIEmbeddingClient",
     "get_llm_client",
     "get_embedding_client",
