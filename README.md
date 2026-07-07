@@ -299,6 +299,7 @@ python -m aijurisdictionagents --country SK --data-dir data --instruction "We be
 Country and language parameters:
 - `--country` is required (ISO 3166-1 alpha-2 or alpha-3 recommended, e.g. `SK`, `US`).
 - `--language` is optional (BCP-47 tag recommended, e.g. `sk-SK`, `en-US`). If omitted, outputs default to the user's input language. If set, agent discussion and final outputs follow the requested language.
+- Local Ollama routes receive the same language guardrails as external routes. For `sk-SK`, every visible note, summary, question, label, and reasoning explanation must stay in Slovak and must not expose English meta-analysis or hidden chain-of-thought text.
 
 Discussion type:
 - `--discussion-type advice` (default): Lawyer gives advice without judge review.

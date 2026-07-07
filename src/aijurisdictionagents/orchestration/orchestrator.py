@@ -553,7 +553,7 @@ def _augment_prompt(
     language_line = f"Respond in {output_language_hint}."
     if discussion_only and output_language_hint == "the same language as the user's instruction":
         language_line = "Respond in the same language as the user's instruction."
-    language_line += " Use only this language in every answer and do not mix languages."
+    language_line += f" {_language_guard(output_language_hint)}"
 
     court_guidance = ""
     if discussion_type == "court":
@@ -601,14 +601,16 @@ def _augment_prompt(
 
 
 def _final_summary_prompt(country: str, output_language_hint: str) -> str:
+    recommendation_label, rationale_label = _final_summary_labels(output_language_hint)
     return (
         "You are preparing the final outcome of the discussion.\n"
         f"Jurisdiction focus: Only use laws/regulations applicable to {country} "
         "or supranational rules accepted in that jurisdiction.\n"
         f"Write the final recommendation and rationale in {output_language_hint}.\n"
+        f"{_language_guard(output_language_hint)}\n"
         "Return exactly two labeled lines:\n"
-        "Recommendation: <text>\n"
-        "Rationale: <text>"
+        f"{recommendation_label}: <text>\n"
+        f"{rationale_label}: <text>"
     )
 
 
@@ -626,15 +628,56 @@ def _output_language_hint(language: str | None) -> str:
     return "the same language as the user's instruction"
 
 
+def _language_guard(output_language_hint: str) -> str:
+    if output_language_hint == "Slovak (sk-SK)":
+        return (
+            "Use only Slovak (sk-SK) in every visible answer, including notes, summaries, "
+            "questions, labels, and any explanation of your reasoning. Do not mix English and "
+            "Slovak, and do not write English meta-analysis such as 'We need to', 'The user has', "
+            "or 'However, the problem is'. Do not expose hidden chain-of-thought; provide only the "
+            "concise user-facing Slovak answer."
+        )
+    if output_language_hint == "German (de-DE)":
+        return (
+            "Use only German (de-DE) in every visible answer, including notes, summaries, "
+            "questions, labels, and any explanation of your reasoning. Do not mix English and "
+            "German. Do not expose hidden chain-of-thought; provide only the concise user-facing "
+            "German answer."
+        )
+    if output_language_hint == "English (en-US)":
+        return (
+            "Use only English (en-US) in every visible answer, including notes, summaries, "
+            "questions, labels, and any explanation of your reasoning. Do not expose hidden "
+            "chain-of-thought; provide only the concise user-facing English answer."
+        )
+    return (
+        "Use only the requested/user language in every visible answer, including notes, summaries, "
+        "questions, labels, and any explanation of your reasoning. Do not mix languages. Do not "
+        "expose hidden chain-of-thought; provide only the concise user-facing answer."
+    )
+
+
+def _final_summary_labels(output_language_hint: str) -> tuple[str, str]:
+    if output_language_hint == "Slovak (sk-SK)":
+        return "Odporucanie", "Odovodnenie"
+    if output_language_hint == "German (de-DE)":
+        return "Empfehlung", "Begrundung"
+    return "Recommendation", "Rationale"
+
+
 def _parse_final_summary(text: str) -> tuple[str, str]:
     recommendation = ""
     rationale = ""
+    recommendation_labels = {"recommendation", "odporucanie", "odporúčanie", "empfehlung"}
+    rationale_labels = {"rationale", "odovodnenie", "odôvodnenie", "begrundung", "begründung"}
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.lower().startswith("recommendation:"):
-            recommendation = stripped.partition(":")[2].strip()
-        elif stripped.lower().startswith("rationale:"):
-            rationale = stripped.partition(":")[2].strip()
+        label, separator, value = stripped.partition(":")
+        normalized_label = label.strip().lower()
+        if separator and normalized_label in recommendation_labels:
+            recommendation = value.strip()
+        elif separator and normalized_label in rationale_labels:
+            rationale = value.strip()
     if not recommendation and text.strip():
         recommendation = text.strip()
     return recommendation, rationale

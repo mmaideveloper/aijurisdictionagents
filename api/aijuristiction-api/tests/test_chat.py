@@ -1423,6 +1423,25 @@ def test_current_date_prompt_note_uses_runtime_date() -> None:
     assert "Do not invent" in note
 
 
+def test_compact_free_local_prompt_blocks_mixed_language_reasoning_for_slovak() -> None:
+    from app.chat.api import _build_compact_free_local_lawyer_prompt
+    from app.chat.models import Session
+
+    prompt = _build_compact_free_local_lawyer_prompt(
+        session=Session(country="SK", language="SK"),
+        case_memory_note="",
+        user_profile_note="",
+        preparation_prompt_note="",
+        document_generation_requested=False,
+    )
+
+    assert "Reply in SK." in prompt
+    assert "Use only Slovak (sk-SK)" in prompt
+    assert "Do not mix English and Slovak" in prompt
+    assert "English meta-analysis" in prompt
+    assert "Do not expose hidden chain-of-thought" in prompt
+
+
 def test_reply_endpoint_includes_current_date_context_in_lawyer_prompt(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
