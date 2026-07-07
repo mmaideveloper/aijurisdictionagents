@@ -24,7 +24,7 @@ on:
         description: "Deploy the email scheduler ACA job"
         required: false
         type: boolean
-        default: true
+        default: false
       github_environment:
         description: "GitHub Environment that contains Azure variables"
         required: true
@@ -63,7 +63,7 @@ jobs:
   deploy_to_azure:
     runs-on: windows-latest
     needs: test_and_build
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.github_environment || 'dev' }}
     permissions:
       id-token: write
