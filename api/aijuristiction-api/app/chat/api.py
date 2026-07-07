@@ -1577,6 +1577,18 @@ def _run_direct_lawyer_turn(
         processing_events.append(mcp_status_context.processing_event)
         if processing_event_callback is not None:
             processing_event_callback(mcp_status_context.processing_event)
+    mcp_law_context = build_mcp_law_context(
+        query=content,
+        country=session.country,
+        language=session.language,
+    )
+    if mcp_law_context is not None:
+        prompt_override = f"{prompt_override}\n\n{mcp_law_context.prompt_note}"
+        if mcp_law_context.document is not None:
+            all_documents.append(mcp_law_context.document)
+        processing_events.append(mcp_law_context.processing_event)
+        if processing_event_callback is not None:
+            processing_event_callback(mcp_law_context.processing_event)
     if not use_compact_local_prompt:
         legal_document_policy_note = _build_legal_document_preparation_policy_note(
             content=content,
@@ -1584,18 +1596,6 @@ def _run_direct_lawyer_turn(
         )
         if legal_document_policy_note:
             prompt_override = f"{prompt_override}\n\n{legal_document_policy_note}"
-        mcp_law_context = build_mcp_law_context(
-            query=content,
-            country=session.country,
-            language=session.language,
-        )
-        if mcp_law_context is not None:
-            prompt_override = f"{prompt_override}\n\n{mcp_law_context.prompt_note}"
-            if mcp_law_context.document is not None:
-                all_documents.append(mcp_law_context.document)
-            processing_events.append(mcp_law_context.processing_event)
-            if processing_event_callback is not None:
-                processing_event_callback(mcp_law_context.processing_event)
     lawyer_message = lawyer.respond(
         conversation=conversation,
         documents=all_documents,

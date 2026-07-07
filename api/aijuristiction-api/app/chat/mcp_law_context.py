@@ -55,6 +55,25 @@ _COURT_QUERY_MARKERS = (
     "court decision",
     "court decisions",
 )
+_LEGAL_DOCUMENT_QUERY_MARKERS = (
+    "zmluv",
+    "dohod",
+    "splnomocnen",
+    "zalob",
+    "žalob",
+    "navrh",
+    "návrh",
+    "podanie",
+    "dokument",
+    "listin",
+    "spis",
+    "prevod obchodneho podielu",
+    "prevod obchodného podielu",
+    "najomn",
+    "nájomn",
+    "podnajm",
+    "podnájm",
+)
 _OFFICIAL_LEGAL_SOURCE_HOSTS = (
     "slov-lex.sk",
     "obcan.justice.sk",
@@ -220,7 +239,10 @@ def _should_use_mcp_law_context(*, query: str, country: str, language: str | Non
     normalized_query = _canonical(query)
     if _LAW_IDENTIFIER_RE.search(query):
         return True
-    return any(marker in normalized_query for marker in (*_LEGAL_QUERY_MARKERS, *_COURT_QUERY_MARKERS))
+    return any(
+        marker in normalized_query
+        for marker in (*_LEGAL_QUERY_MARKERS, *_COURT_QUERY_MARKERS, *_LEGAL_DOCUMENT_QUERY_MARKERS)
+    )
 
 
 def _should_search_court_decisions(query: str) -> bool:

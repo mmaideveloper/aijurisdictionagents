@@ -43,6 +43,11 @@ print(
     "requires getCourtDecision(full_version=True)."
 )
 print(
+    "mcp_first_all_model_routes => Slovak legal, jurisdiction, and legal-document-by-law "
+    "chat turns retrieve bounded JurisDigta MCP context before local Ollama or external "
+    "models receive the prompt."
+)
+print(
     "mcp_status_for_free_ollama => free-plan local Ollama chat can still answer MCP status "
     "questions from authoritative getVersion and getStatistics JSON; Ollama formats the "
     "aggregate JSON only and must not invent missing version, imported-law, or jurisdiction values."
