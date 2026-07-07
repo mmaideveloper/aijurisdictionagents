@@ -241,11 +241,13 @@ Purpose: point `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, 
 8. Validate HTTPS externally from outside the LAN after DNS propagation.
 9. Protect `agent.jurisdigta.eu` with JurisDigta account login against the API users table for the current release, and protect `admin.jurisdigta.eu` plus MCP endpoints with Cloudflare Access, authentication, rate limits, audit logging, and preferably VPN/IP allow-list before production use.
 10. If external HTTPS validation fails before an HTTP response, inspect the served certificate issuer. A local antivirus or enterprise proxy issuer such as `Avast Web/Mail Shield Root` means the failure is on the client TLS-inspection path, not on the Cloudflare Tunnel app route. Disable or exclude HTTPS scanning for JurisDigta MCP/API validation clients, or configure the client runtime to use the operating-system trust store where appropriate.
+11. Optional MCP fallback: install `jurisdigta-mcp-trycloudflared.service` on `jurisdigta-server` with `bash /srv/jurisdigta/app/Deployment/server/install_mcp_trycloudflared_fallback.sh install`. It creates a temporary `trycloudflare.com` URL to `http://127.0.0.1:8070` for diagnostics when the named `mcp.jurisdigta.eu` route is blocked by Cloudflare Access, WAF, bot challenges, partial DNS errors, or tunnel hostname mapping issues. The current URL created on 2026-07-07 is `https://fuel-showed-principles-rotation.trycloudflare.com/MCP`; retrieve the latest URL with `ssh jurisdigta-server "/srv/jurisdigta/app/Deployment/server/install_mcp_trycloudflared_fallback.sh url"`.
 
 ### Secrets And Access Values
 
 - setup.sk account credentials; never commit them.
 - Cloudflare Tunnel token/connector credentials; keep them server-local only and never commit them, paste them into tickets, or expose them in screenshots/logs.
+- The `trycloudflare.com` fallback uses no checked-in token, but its generated URL is public while the service runs. Treat it as an operational endpoint and stop it when the diagnostic window ends.
 - Router administrator credentials; never commit them.
 - TLS is terminated/managed by Cloudflare for the public tunnel hostname path; do not commit any origin certificates if optional origin TLS is later added.
 
@@ -257,11 +259,13 @@ Purpose: point `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, 
 - `cloudflared --version`, `systemctl status cloudflared --no-pager`, and `journalctl -u cloudflared -n 100 --no-pager` succeed on the server.
 - External checks such as `curl -fsS https://api.jurisdigta.eu/health` succeed from outside the LAN.
 - Strict client checks such as `curl.exe -Iv https://mcp.jurisdigta.eu/health` and `python scripts/prod_mcp_claude_smoke.py --retries 1 --retry-delay 1` succeed without `--ssl-no-revoke`, `-k`, or disabled verification. If they fail and the peer issuer is an antivirus/proxy root rather than Cloudflare or a public CA, fix the local TLS-inspection configuration before testing Claude again.
+- For fallback diagnostics, `curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/health` returns MCP health and `curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/.well-known/oauth-protected-resource/mcp` returns metadata whose canonical resource remains `https://mcp.jurisdigta.eu/MCP`.
 
 ### Rollback Notes
 
 - Remove setup.sk `CNAME` records for the service subdomains.
 - Disable the Cloudflare Tunnel public hostnames and stop/disable `cloudflared`; if any direct router forwards were created as an exception, disable them too.
+- Stop and remove the temporary MCP quick tunnel with `bash /srv/jurisdigta/app/Deployment/server/install_mcp_trycloudflared_fallback.sh uninstall`.
 - Disable the nginx virtual hosts and reload nginx.
 - Revoke Cloudflare tunnel tokens if no longer needed or if exposed.
 - Keep replacement DNS/TLS/ingress in place before disabling active production traffic.

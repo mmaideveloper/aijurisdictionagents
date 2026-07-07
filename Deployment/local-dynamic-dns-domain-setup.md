@@ -288,6 +288,53 @@ hostnames from HTTPS scanning or configure the client runtime to use the
 operating-system trust store where appropriate. Do not treat `--ssl-no-revoke`,
 `-k`, or disabled certificate verification as a production MCP/Claude fix.
 
+### 8a. Temporary trycloudflare MCP fallback
+
+Use the temporary `trycloudflare.com` fallback only when the local MCP service
+is healthy but the named `mcp.jurisdigta.eu` Cloudflare route is blocked or
+misconfigured. On `jurisdigta-server`, the fallback systemd service is:
+
+```text
+jurisdigta-mcp-trycloudflared.service
+```
+
+It runs:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8070
+```
+
+Current live URL created on 2026-07-07:
+
+```text
+https://fuel-showed-principles-rotation.trycloudflare.com/MCP
+```
+
+Get the current URL from the server:
+
+```bash
+ssh jurisdigta-server "/srv/jurisdigta/app/Deployment/server/install_mcp_trycloudflared_fallback.sh url"
+```
+
+Validate:
+
+```bash
+curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/health
+curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/.well-known/oauth-protected-resource/mcp
+```
+
+The fallback proves whether the MCP origin at `127.0.0.1:8070` works through a
+fresh Cloudflare quick tunnel. If it works while `mcp.jurisdigta.eu` fails, the
+problem is usually the named Cloudflare route, partial DNS record, Access/WAF
+policy, bot challenge, or tunnel hostname mapping. MCP clients need JSON and
+OAuth metadata; Cloudflare browser challenges, Access login pages, and WAF HTML
+responses block clients such as Claude, ChatGPT, VS Code, and `mcp-remote` even
+when a browser appears to load something.
+
+Do not use the quick-tunnel URL as the stable production MCP endpoint. It can
+change on restart and does not change the canonical MCP OAuth issuer:
+`https://mcp.jurisdigta.eu`.
+
 ### 9. Add Cloudflare Access before exposing admin
 
 Before using `admin.jurisdigta.eu` for anything real:

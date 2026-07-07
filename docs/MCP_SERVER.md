@@ -158,6 +158,33 @@ Manual JWT generation remains useful for local VS Code setups that pass an `Auth
 
 Use `https://mcp.jurisdigta.eu/MCP` as the remote MCP server URL in clients that support custom HTTP MCP servers.
 
+### Temporary trycloudflare fallback
+
+The currently active quick-tunnel URL on `jurisdigta-server` is
+`https://fuel-showed-principles-rotation.trycloudflare.com/MCP`. It forwards to
+the same local MCP origin, `http://127.0.0.1:8070`, through the server-side
+`jurisdigta-mcp-trycloudflared.service`. Use it only for diagnostics or a
+short-lived fallback when the named `mcp.jurisdigta.eu` Cloudflare route is
+blocked. The URL can change whenever the quick tunnel restarts.
+
+Retrieve the current URL from the server with:
+
+```bash
+ssh jurisdigta-server "/srv/jurisdigta/app/Deployment/server/install_mcp_trycloudflared_fallback.sh url"
+```
+
+Validate it from the server with:
+
+```bash
+curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/health
+curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/.well-known/oauth-protected-resource/mcp
+```
+
+The quick tunnel does not replace the production OAuth issuer. OAuth metadata
+and issued tokens remain canonical to `https://mcp.jurisdigta.eu/MCP`. Hosted
+connector flows should continue to use `https://mcp.jurisdigta.eu/MCP` when
+that route is healthy.
+
 - ChatGPT custom connectors: create a remote MCP connector and enter the MCP server URL. Prefer OAuth discovery when the connector supports it. Users may self-register during the browser authorization flow, but ChatGPT only receives the OAuth access token and tool results, not a raw API key.
 - Claude web custom connectors: use `https://mcp.jurisdigta.eu/MCP` for new connectors. Claude Desktop, Claude Code, and local OAuth proxies can use loopback callbacks such as `http://localhost/...`, `http://127.0.0.1/...`, or `http://[::1]/...`.
 - VS Code: add an HTTP MCP server in MCP settings with the canonical
@@ -252,6 +279,19 @@ for the local workstation. Then re-run:
 python scripts/prod_mcp_claude_smoke.py --retries 1 --retry-delay 1
 curl.exe -Iv https://mcp.jurisdigta.eu/health
 ```
+
+If the failure happens only on `https://mcp.jurisdigta.eu` but the local origin
+and trycloudflare fallback work, inspect Cloudflare configuration before
+changing MCP code. MCP clients are not normal browsers: they need machine-readable
+OAuth metadata, dynamic client registration, and JSON-RPC responses from
+`/.well-known/*`, `/oauth/register`, and `/MCP`. Cloudflare Access, WAF rules,
+Bot Fight Mode, managed challenges, browser interstitials, incorrect partial DNS
+CNAMEs, or a broken named tunnel can replace those responses with HTML, `403`,
+`530`, `1033`, or cookie-based challenges. That blocks Claude, ChatGPT, VS Code,
+and `mcp-remote` even when the MCP container is healthy. The temporary
+`*.trycloudflare.com` route is useful because it bypasses the JurisDigta zone
+hostname configuration and points directly at `http://127.0.0.1:8070`; if it
+works, the issue is in the named Cloudflare/DNS route, not in the MCP app.
 
 Discovery endpoints:
 

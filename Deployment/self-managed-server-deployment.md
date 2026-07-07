@@ -474,6 +474,61 @@ Configure these Cloudflare Tunnel public hostnames:
 | `www.jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Optional alias for the public web app. |
 | `jurisdigta.eu` | HTTP | `http://127.0.0.1:8090` after web deployment | Optional root domain for the public web app. |
 
+### Temporary MCP quick tunnel
+
+When the named Cloudflare route for `mcp.jurisdigta.eu` is blocked or returning
+Cloudflare errors, operators may start a temporary quick tunnel on
+`jurisdigta-server`:
+
+```bash
+cd /srv/jurisdigta/app
+bash Deployment/server/install_mcp_trycloudflared_fallback.sh install
+```
+
+The service is:
+
+```text
+jurisdigta-mcp-trycloudflared.service
+```
+
+It forwards the same local MCP origin:
+
+```text
+http://127.0.0.1:8070
+```
+
+Current live URL created on 2026-07-07:
+
+```text
+https://fuel-showed-principles-rotation.trycloudflare.com/MCP
+```
+
+Fetch the current URL after any restart:
+
+```bash
+/srv/jurisdigta/app/Deployment/server/install_mcp_trycloudflared_fallback.sh url
+journalctl -u jurisdigta-mcp-trycloudflared.service -n 100 --no-pager | grep -Eo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' | tail -n 1
+```
+
+Validate:
+
+```bash
+curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/health
+curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/.well-known/oauth-protected-resource/mcp
+```
+
+This is a diagnostic or short-lived fallback only. The URL is random, can change
+when the service restarts, and is not the production OAuth issuer. Keep
+`MCP_PUBLIC_BASE_URL=https://mcp.jurisdigta.eu`; OAuth metadata and issued MCP
+tokens remain canonical to `https://mcp.jurisdigta.eu/MCP`.
+
+Rollback:
+
+```bash
+cd /srv/jurisdigta/app
+bash Deployment/server/install_mcp_trycloudflared_fallback.sh uninstall
+```
+
 Minimal runnable validation examples:
 
 ```bash
