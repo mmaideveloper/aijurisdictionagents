@@ -211,9 +211,12 @@ class PostgresCourtDecisionStore:
         published_year: int | None = None,
         year_filter_mode: str = "published_in",
         court_type: str = "",
+        sort: str = "relevance",
     ) -> list[CourtDecisionSearchResult]:
         if year_filter_mode != "published_in":
             raise ValueError("Only year_filter_mode=published_in is supported.")
+        if sort not in {"relevance", "latest"}:
+            raise ValueError("sort must be relevance or latest.")
         query_vector = parse_embedding_vector(
             build_embedding_vector(query, dimensions=self.embedding_dimensions)
         )
@@ -231,6 +234,11 @@ class PostgresCourtDecisionStore:
         if court_type.strip():
             filters += " AND LOWER(d.court_type) = %(court_type)s"
             params["court_type"] = court_type.strip().lower()
+        order_by = (
+            "d.issue_date DESC NULLS LAST, d.updated_at DESC, lexical_rank DESC"
+            if sort == "latest"
+            else "lexical_rank DESC, d.issue_date DESC NULLS LAST, d.updated_at DESC"
+        )
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
@@ -286,7 +294,7 @@ class PostgresCourtDecisionStore:
                       OR LOWER(v.pseudonymized_text) LIKE %(pattern)s
                   )
                   {filters}
-                ORDER BY lexical_rank DESC, d.issue_date DESC NULLS LAST, d.updated_at DESC
+                ORDER BY {order_by}
                 LIMIT %(candidate_limit)s
                 """,
                 params,
@@ -315,6 +323,12 @@ class PostgresCourtDecisionStore:
                     score=round(score, 6),
                 )
             )
+        if sort == "latest":
+            return sorted(
+                scored,
+                key=lambda item: (item.issue_date or "", item.score),
+                reverse=True,
+            )[offset : offset + limit]
         return sorted(scored, key=lambda item: item.score, reverse=True)[offset : offset + limit]
 
     def get_decision(self, *, decision_id: str, raw: bool = False) -> dict[str, object] | None:

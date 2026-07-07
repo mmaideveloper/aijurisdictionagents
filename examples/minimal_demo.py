@@ -39,8 +39,14 @@ print(
     "mcp_legal_source_search => MCP remains model-free; clients parse natural-language legal "
     "questions and call protected searchLegalSources with structured filters such as "
     "query='prenajom bytu', source_types=['laws','court_decisions'], published_year=2026, "
-    "year_filter_mode='published_in'. Search defaults to metadata only; court-decision text "
-    "requires getCourtDecision(full_version=True)."
+    "year_filter_mode='published_in', sort='latest'. Search defaults to metadata only; "
+    "court-decision text requires getCourtDecision(full_version=True)."
+)
+print(
+    "mcp_async_legal_search => broad newest-result queries can call "
+    "startLegalSearch(tool_name='searchCourtDecisions', arguments={'query':'podnajom', "
+    "'sort':'latest', 'limit':10}), then poll getLegalSearchStatus and fetch "
+    "getLegalSearchResult with the returned user-scoped search_id."
 )
 print(
     "mcp_first_all_model_routes => Slovak legal, jurisdiction, and legal-document-by-law "

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextvars import ContextVar
 from dataclasses import dataclass
 import base64
@@ -11,6 +12,7 @@ import logging
 import os
 import re
 import secrets
+from threading import Lock
 import time
 from typing import Any, AsyncIterator, Callable, Sequence, cast
 from datetime import datetime, timedelta, timezone
@@ -62,6 +64,19 @@ MCP_SERVER_INSTRUCTIONS = (
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
 _PUBLIC_TOOLS: set[str] = set()
+
+
+def _bounded_env_int(name: str, *, default: int, minimum: int, maximum: int) -> int:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return min(max(value, minimum), maximum)
+
+
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = (
     "chatgpt.com",
     "chat.openai.com",
@@ -75,8 +90,26 @@ _DEFAULT_ALLOWED_REDIRECT_HOSTS = (
 _MCP_OTP_VERIFICATION_PURPOSE = "mcp_access"
 _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
-_COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = 8_000
-_COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = 3
+_LEGAL_SEARCH_TIMEOUT_SECONDS = _bounded_env_int("MCP_LEGAL_SEARCH_TIMEOUT_SECONDS", default=30, minimum=1, maximum=300)
+_LEGAL_SEARCH_TIMEOUT_MS = _LEGAL_SEARCH_TIMEOUT_SECONDS * 1000
+_COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = _bounded_env_int(
+    "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS",
+    default=_LEGAL_SEARCH_TIMEOUT_MS,
+    minimum=1_000,
+    maximum=300_000,
+)
+_COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = _bounded_env_int(
+    "COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS",
+    default=3,
+    minimum=1,
+    maximum=30,
+)
+_MCP_ASYNC_SEARCH_RETENTION_SECONDS = _bounded_env_int(
+    "MCP_ASYNC_SEARCH_RETENTION_SECONDS",
+    default=900,
+    minimum=60,
+    maximum=86_400,
+)
 _OAUTH_PUBLIC_CLIENT_GRANT_TYPES = ("authorization_code", "refresh_token")
 _OAUTH_TOLERATED_DCR_GRANT_TYPES = {"authorization_code", "refresh_token", "client_credentials"}
 _OAUTH_PROTECTED_RESOURCE_SCOPES = (MCP_TOKEN_SCOPE,)
@@ -86,6 +119,21 @@ logger = logging.getLogger("aijuristiction-api.mcp")
 _CURRENT_MCP_REQUEST_ID: ContextVar[str | None] = ContextVar("current_mcp_request_id", default=None)
 _CURRENT_MCP_CORRELATION_ID: ContextVar[str | None] = ContextVar("current_mcp_correlation_id", default=None)
 _MCP_SUPPORTED_LOCALES = {"en", "sk"}
+
+
+@dataclass
+class _AsyncSearchJob:
+    search_id: str
+    user_id: str
+    tool_name: str
+    created_at: float
+    expires_at: float
+    future: Future[dict[str, Any]]
+
+
+_ASYNC_SEARCH_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mcp-legal-search")
+_ASYNC_SEARCH_JOBS: dict[str, _AsyncSearchJob] = {}
+_ASYNC_SEARCH_LOCK = Lock()
 _MCP_TEXT: dict[str, dict[str, str]] = {
     "en": {
         "security_label": "Security and privacy",
@@ -1469,13 +1517,13 @@ def _handle_json_rpc_message(
                 ",".join(sorted(str(key) for key in arguments.keys())),
                 tool_name not in public_tools,
             )
-            _require_auth_for_tool(
+            user_id = _require_auth_for_tool(
                 tool_name=tool_name,
                 authorization=authorization,
                 x_mcp_api_key=x_mcp_api_key,
                 store=store,
             )
-            result = _call_tool(tool_name, arguments)
+            result = _call_tool(tool_name, arguments, user_id=user_id)
             logger.info(
                 "mcp_tool_completed tool=%s duration_ms=%d result_summary=%s",
                 tool_name,
@@ -1504,7 +1552,7 @@ def _require_auth_for_tool(
     authorization: str | None,
     x_mcp_api_key: str | None,
     store: ApiDatabaseStore | None,
-) -> None:
+) -> str:
     api_key = _extract_mcp_api_key(authorization=authorization, x_mcp_api_key=x_mcp_api_key)
     if not api_key:
         logger.warning("mcp_tool_auth_failed tool=%s reason=missing_api_key", tool_name)
@@ -1514,10 +1562,11 @@ def _require_auth_for_tool(
         raise HTTPException(status_code=500, detail="MCP user store is unavailable")
     user = _authenticate_mcp_api_token(api_key=api_key, store=store)
     logger.info("mcp_tool_auth_succeeded tool=%s user_id=%s", tool_name, user.user_id)
+    return str(user.user_id)
 
 
-def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
-    handlers = {
+def _call_tool(name: str, arguments: dict[str, Any], *, user_id: str = "internal") -> Any:
+    handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
         "getVersion": _tool_get_version,
         "getStatistics": _tool_get_statistics,
         "searchLegalSources": _tool_search_legal_sources,
@@ -1525,12 +1574,172 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
         "getLawText": _tool_get_law_text,
         "searchCourtDecisions": _tool_search_court_decisions,
         "getCourtDecision": _tool_get_court_decision,
+        "startLegalSearch": lambda args: _tool_start_legal_search(args, user_id=user_id),
+        "getLegalSearchStatus": lambda args: _tool_get_legal_search_status(args, user_id=user_id),
+        "getLegalSearchResult": lambda args: _tool_get_legal_search_result(args, user_id=user_id),
     }
     handler = handlers.get(name)
     if handler is None:
         logger.warning("mcp_tool_unknown tool=%s", name)
         raise HTTPException(status_code=404, detail=f"Unknown MCP tool: {name}")
     return handler(arguments)
+
+
+def _tool_start_legal_search(arguments: dict[str, Any], *, user_id: str) -> dict[str, Any]:
+    tool_name = str(arguments.get("tool_name") or arguments.get("tool") or "searchLegalSources").strip()
+    if tool_name not in {"searchLegalSources", "searchLaws", "searchCourtDecisions"}:
+        raise HTTPException(
+            status_code=400,
+            detail="tool_name must be searchLegalSources, searchLaws, or searchCourtDecisions",
+        )
+    raw_tool_arguments = arguments.get("arguments")
+    if isinstance(raw_tool_arguments, dict):
+        tool_arguments = dict(raw_tool_arguments)
+    else:
+        tool_arguments = {
+            key: value
+            for key, value in arguments.items()
+            if key not in {"tool", "tool_name", "arguments"}
+        }
+    search_id = secrets.token_urlsafe(24)
+    created_at = time.time()
+    expires_at = created_at + _MCP_ASYNC_SEARCH_RETENTION_SECONDS
+    future = _ASYNC_SEARCH_EXECUTOR.submit(_run_async_legal_search, tool_name, tool_arguments)
+    job = _AsyncSearchJob(
+        search_id=search_id,
+        user_id=user_id,
+        tool_name=tool_name,
+        created_at=created_at,
+        expires_at=expires_at,
+        future=future,
+    )
+    with _ASYNC_SEARCH_LOCK:
+        _purge_expired_async_search_jobs(now=created_at)
+        _ASYNC_SEARCH_JOBS[search_id] = job
+    logger.info(
+        "mcp_async_legal_search_started search_id_hash=%s tool=%s user_id=%s retention_seconds=%d",
+        _stable_hash(search_id),
+        tool_name,
+        user_id,
+        _MCP_ASYNC_SEARCH_RETENTION_SECONDS,
+    )
+    return {
+        "search_id": search_id,
+        "status": "running",
+        "tool_name": tool_name,
+        "created_at": _iso_from_epoch(created_at),
+        "expires_at": _iso_from_epoch(expires_at),
+        "retention_seconds": _MCP_ASYNC_SEARCH_RETENTION_SECONDS,
+        "timeout_ms": _LEGAL_SEARCH_TIMEOUT_MS,
+    }
+
+
+def _tool_get_legal_search_status(arguments: dict[str, Any], *, user_id: str) -> dict[str, Any]:
+    search_id = _required_search_id(arguments)
+    job = _async_search_job_for_user(search_id=search_id, user_id=user_id)
+    return {
+        "search_id": search_id,
+        "status": _async_search_job_status(job),
+        "tool_name": job.tool_name,
+        "created_at": _iso_from_epoch(job.created_at),
+        "expires_at": _iso_from_epoch(job.expires_at),
+        "done": job.future.done(),
+        "retention_seconds": _MCP_ASYNC_SEARCH_RETENTION_SECONDS,
+    }
+
+
+def _tool_get_legal_search_result(arguments: dict[str, Any], *, user_id: str) -> dict[str, Any]:
+    search_id = _required_search_id(arguments)
+    job = _async_search_job_for_user(search_id=search_id, user_id=user_id)
+    if not job.future.done():
+        return {
+            "search_id": search_id,
+            "status": "running",
+            "tool_name": job.tool_name,
+            "created_at": _iso_from_epoch(job.created_at),
+            "expires_at": _iso_from_epoch(job.expires_at),
+            "result": None,
+        }
+    try:
+        result = job.future.result()
+    except Exception as exc:
+        logger.warning(
+            "mcp_async_legal_search_failed search_id_hash=%s tool=%s error_kind=%s exception=%s",
+            _stable_hash(search_id),
+            job.tool_name,
+            _legal_search_error_kind(exc),
+            exc.__class__.__name__,
+        )
+        result = _legal_search_degraded_result(
+            query="",
+            country_code="SK",
+            limit=0,
+            offset=0,
+            published_year=None,
+            year_filter_mode="published_in",
+            sort="relevance",
+            duration_ms=0,
+            error_kind=_legal_search_error_kind(exc),
+        )
+    result_status = str(result.get("status", "ok"))
+    return {
+        "search_id": search_id,
+        "status": "completed" if result_status == "ok" else result_status,
+        "tool_name": job.tool_name,
+        "created_at": _iso_from_epoch(job.created_at),
+        "expires_at": _iso_from_epoch(job.expires_at),
+        "result": result,
+    }
+
+
+def _run_async_legal_search(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if tool_name == "searchLegalSources":
+        return _tool_search_legal_sources(arguments)
+    if tool_name == "searchLaws":
+        return _tool_search_laws(arguments)
+    if tool_name == "searchCourtDecisions":
+        return _tool_search_court_decisions(arguments)
+    raise ValueError(f"Unsupported async legal search tool: {tool_name}")
+
+
+def _required_search_id(arguments: dict[str, Any]) -> str:
+    search_id = str(arguments.get("search_id", "")).strip()
+    if not search_id:
+        raise HTTPException(status_code=400, detail="search_id is required")
+    return search_id
+
+
+def _async_search_job_for_user(*, search_id: str, user_id: str) -> _AsyncSearchJob:
+    now = time.time()
+    with _ASYNC_SEARCH_LOCK:
+        _purge_expired_async_search_jobs(now=now)
+        job = _ASYNC_SEARCH_JOBS.get(search_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Legal search job not found or expired")
+    if job.user_id != user_id:
+        logger.warning("mcp_async_legal_search_access_denied search_id_hash=%s", _stable_hash(search_id))
+        raise HTTPException(status_code=404, detail="Legal search job not found or expired")
+    return job
+
+
+def _purge_expired_async_search_jobs(*, now: float) -> None:
+    expired = [search_id for search_id, job in _ASYNC_SEARCH_JOBS.items() if job.expires_at <= now]
+    for search_id in expired:
+        _ASYNC_SEARCH_JOBS.pop(search_id, None)
+
+
+def _async_search_job_status(job: _AsyncSearchJob) -> str:
+    if not job.future.done():
+        return "running"
+    if job.future.exception() is not None:
+        return "degraded"
+    result = job.future.result()
+    status = str(result.get("status", "ok"))
+    return "completed" if status == "ok" else status
+
+
+def _iso_from_epoch(value: float) -> str:
+    return datetime.fromtimestamp(value, timezone.utc).replace(microsecond=0).isoformat()
 
 
 def _tool_get_version(_arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1592,15 +1801,17 @@ def _tool_search_legal_sources(arguments: dict[str, Any]) -> dict[str, Any]:
     offset = _bounded_int(arguments.get("offset"), default=0, minimum=0, maximum=10_000)
     published_year = _optional_positive_int(arguments.get("published_year"))
     year_filter_mode = _year_filter_mode(arguments.get("year_filter_mode"))
+    sort = _search_sort(arguments.get("sort"))
     logger.info(
         (
             "mcp_tool_search_legal_sources_query country_code=%s source_types=%s "
-            "published_year=%s year_filter_mode=%s limit_per_source=%d offset=%d query_length=%d"
+            "published_year=%s year_filter_mode=%s sort=%s limit_per_source=%d offset=%d query_length=%d"
         ),
         country_code,
         ",".join(source_types),
         published_year,
         year_filter_mode,
+        sort,
         limit_per_source,
         offset,
         len(query),
@@ -1618,6 +1829,7 @@ def _tool_search_legal_sources(arguments: dict[str, Any]) -> dict[str, Any]:
             law_year=None,
             law_number=None,
             metadata_only=True,
+            sort=sort,
         )
     if "court_decisions" in source_types:
         court_decisions_payload = _search_court_decisions(
@@ -1628,12 +1840,14 @@ def _tool_search_legal_sources(arguments: dict[str, Any]) -> dict[str, Any]:
             year_filter_mode=year_filter_mode,
             court_type=str(arguments.get("court_type", "")).strip(),
             include_snippets=False,
+            sort=sort,
         )
     result: dict[str, Any] = {
         "query": query,
         "country_code": country_code,
         "source_types": source_types,
         "year_filter_mode": year_filter_mode,
+        "sort": sort,
         "published_year": published_year,
         "limit_per_source": limit_per_source,
         "offset": offset,
@@ -1641,7 +1855,11 @@ def _tool_search_legal_sources(arguments: dict[str, Any]) -> dict[str, Any]:
         "court_decisions": court_decisions_payload["results"] if court_decisions_payload else [],
         "status": "ok",
         "warnings": [],
+        "timeout_ms": _LEGAL_SEARCH_TIMEOUT_MS,
     }
+    if laws_payload and laws_payload.get("status") == "degraded":
+        result["status"] = "degraded"
+        result["warnings"].append(laws_payload["error"])
     if court_decisions_payload and court_decisions_payload.get("status") == "degraded":
         result["status"] = "degraded"
         result["warnings"].append(court_decisions_payload["error"])
@@ -1661,6 +1879,7 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
     offset = _bounded_int(arguments.get("offset"), default=0, minimum=0, maximum=10_000)
     published_year = _optional_positive_int(arguments.get("published_year"))
     year_filter_mode = _year_filter_mode(arguments.get("year_filter_mode"))
+    sort = _search_sort(arguments.get("sort"))
     requested_law_year = _optional_positive_int(arguments.get("law_year"))
     requested_law_number = _optional_positive_int(arguments.get("law_number"))
     parsed_identifier = _parse_law_identifier(query)
@@ -1678,6 +1897,7 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
         law_year=requested_law_year,
         law_number=requested_law_number,
         metadata_only=True,
+        sort=sort,
     )
 
 
@@ -1692,6 +1912,7 @@ def _search_laws(
     law_year: int | None,
     law_number: int | None,
     metadata_only: bool,
+    sort: str,
 ) -> dict[str, Any]:
     if year_filter_mode != "published_in":
         raise HTTPException(status_code=400, detail="Only year_filter_mode=published_in is supported")
@@ -1700,107 +1921,145 @@ def _search_laws(
     logger.info(
         (
             "mcp_tool_search_laws_query country_code=%s limit=%d offset=%d "
-            "published_year=%s year_filter_mode=%s query_length=%d"
+            "published_year=%s year_filter_mode=%s sort=%s timeout_ms=%d query_length=%d"
         ),
         country_code,
         limit,
         offset,
         published_year,
         year_filter_mode,
+        sort,
+        _LEGAL_SEARCH_TIMEOUT_MS,
         len(query),
     )
 
-    with _LawsQuerySession() as laws:
-        law_year_filter = ""
-        law_number_filter = ""
-        published_year_filter = ""
-        query_params: list[Any] = [
-            country_code,
-            pattern,
-            pattern,
-            pattern,
-            pattern,
-        ]
-        if law_year is not None:
-            law_year_filter = f" AND d.law_year = {laws.param}"
-            query_params.append(law_year)
-        if law_number is not None:
-            law_number_filter = f" AND d.law_number = {laws.param}"
-            query_params.append(law_number)
-        if published_year is not None:
-            published_year_filter = f" AND d.law_year = {laws.param}"
-            query_params.append(published_year)
-        query_params.extend(
-            [
-                exact,
-                exact,
-                exact,
-                f"{law_number}/{law_year}%" if law_year and law_number else "",
-                limit,
-                offset,
+    started_at = time.perf_counter()
+    try:
+        with _LawsQuerySession(statement_timeout_ms=_LEGAL_SEARCH_TIMEOUT_MS) as laws:
+            law_year_filter = ""
+            law_number_filter = ""
+            published_year_filter = ""
+            query_params: list[Any] = [
+                country_code,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
             ]
-        )
-        rows = laws.query_all(
-            f"""
-            WITH latest_versions AS (
-                SELECT version_id, document_id, version_token, effective_from
-                FROM (
-                    SELECT
-                        v.version_id,
-                        v.document_id,
-                        v.version_token,
-                        v.effective_from,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY v.document_id
-                            ORDER BY v.effective_from DESC, v.version_token DESC
-                        ) AS row_number
-                    FROM law_versions AS v
-                ) AS ranked_versions
-                WHERE row_number = 1
-            )
-            SELECT
-                d.document_id,
-                d.country_code,
-                d.collection_code,
-                d.law_year,
-                d.law_number,
-                d.official_name,
-                d.lawyer_title,
-                d.source_url,
-                v.version_id,
-                v.version_token,
-                v.effective_from,
-                COALESCE(m.law_identifier_text, '') AS law_identifier_text,
-                COALESCE(m.title, d.official_name) AS title,
-                COALESCE(m.law_type, '') AS law_type
-            FROM law_documents AS d
-            JOIN latest_versions AS v ON v.document_id = d.document_id
-            LEFT JOIN law_metadata AS m ON m.version_id = v.version_id
-            WHERE UPPER(d.country_code) = {laws.param}
-              AND (
-                  LOWER(d.official_name) LIKE {laws.param}
-                  OR LOWER(d.lawyer_title) LIKE {laws.param}
-                  OR LOWER(COALESCE(m.title, '')) LIKE {laws.param}
-                  OR LOWER(COALESCE(m.law_identifier_text, '')) LIKE {laws.param}
-              )
-              {law_year_filter}
-              {law_number_filter}
-              {published_year_filter}
-            ORDER BY
+            if law_year is not None:
+                law_year_filter = f" AND d.law_year = {laws.param}"
+                query_params.append(law_year)
+            if law_number is not None:
+                law_number_filter = f" AND d.law_number = {laws.param}"
+                query_params.append(law_number)
+            if published_year is not None:
+                published_year_filter = f" AND d.law_year = {laws.param}"
+                query_params.append(published_year)
+            order_by = (
+                "d.law_year DESC, d.law_number DESC, v.effective_from DESC"
+                if sort == "latest"
+                else """
                 CASE
-                    WHEN LOWER(COALESCE(m.law_identifier_text, '')) = {laws.param} THEN 0
-                    WHEN LOWER(COALESCE(m.title, d.official_name)) = {laws.param} THEN 1
-                    WHEN LOWER(d.lawyer_title) = {laws.param} THEN 2
-                    WHEN COALESCE(m.law_identifier_text, '') LIKE {laws.param} THEN 3
+                    WHEN LOWER(COALESCE(m.law_identifier_text, '')) = {param} THEN 0
+                    WHEN LOWER(COALESCE(m.title, d.official_name)) = {param} THEN 1
+                    WHEN LOWER(d.lawyer_title) = {param} THEN 2
+                    WHEN COALESCE(m.law_identifier_text, '') LIKE {param} THEN 3
                     ELSE 10
                 END,
                 d.law_year DESC,
                 d.law_number DESC,
                 v.effective_from DESC
-            LIMIT {laws.param}
-            OFFSET {laws.param}
-            """,
-            tuple(query_params),
+                """.format(param=laws.param)
+            )
+            if sort == "relevance":
+                query_params.extend(
+                    [
+                        exact,
+                        exact,
+                        exact,
+                        f"{law_number}/{law_year}%" if law_year and law_number else "",
+                    ]
+                )
+            query_params.extend([limit, offset])
+            rows = laws.query_all(
+                f"""
+                WITH latest_versions AS (
+                    SELECT version_id, document_id, version_token, effective_from
+                    FROM (
+                        SELECT
+                            v.version_id,
+                            v.document_id,
+                            v.version_token,
+                            v.effective_from,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY v.document_id
+                                ORDER BY v.effective_from DESC, v.version_token DESC
+                            ) AS row_number
+                        FROM law_versions AS v
+                    ) AS ranked_versions
+                    WHERE row_number = 1
+                )
+                SELECT
+                    d.document_id,
+                    d.country_code,
+                    d.collection_code,
+                    d.law_year,
+                    d.law_number,
+                    d.official_name,
+                    d.lawyer_title,
+                    d.source_url,
+                    v.version_id,
+                    v.version_token,
+                    v.effective_from,
+                    COALESCE(m.law_identifier_text, '') AS law_identifier_text,
+                    COALESCE(m.title, d.official_name) AS title,
+                    COALESCE(m.law_type, '') AS law_type
+                FROM law_documents AS d
+                JOIN latest_versions AS v ON v.document_id = d.document_id
+                LEFT JOIN law_metadata AS m ON m.version_id = v.version_id
+                WHERE UPPER(d.country_code) = {laws.param}
+                  AND (
+                      LOWER(d.official_name) LIKE {laws.param}
+                      OR LOWER(d.lawyer_title) LIKE {laws.param}
+                      OR LOWER(COALESCE(m.title, '')) LIKE {laws.param}
+                      OR LOWER(COALESCE(m.law_identifier_text, '')) LIKE {laws.param}
+                  )
+                  {law_year_filter}
+                  {law_number_filter}
+                  {published_year_filter}
+                ORDER BY {order_by}
+                LIMIT {laws.param}
+                OFFSET {laws.param}
+                """,
+                tuple(query_params),
+            )
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        error_kind = _legal_search_error_kind(exc)
+        logger.warning(
+            (
+                "mcp_tool_search_laws_degraded country_code=%s query_length=%d limit=%d "
+                "duration_ms=%d error_kind=%s exception=%s request_id=%s correlation_id=%s"
+            ),
+            country_code,
+            len(query),
+            limit,
+            duration_ms,
+            error_kind,
+            exc.__class__.__name__,
+            _CURRENT_MCP_REQUEST_ID.get(),
+            _CURRENT_MCP_CORRELATION_ID.get(),
+        )
+        return _legal_search_degraded_result(
+            query=query,
+            country_code=country_code,
+            limit=limit,
+            offset=offset,
+            published_year=published_year,
+            year_filter_mode=year_filter_mode,
+            sort=sort,
+            duration_ms=duration_ms,
+            error_kind=error_kind,
         )
     results = [_search_result_from_row(row) for row in rows]
     logger.info("mcp_tool_search_laws_result country_code=%s result_count=%d", country_code, len(results))
@@ -1809,9 +2068,12 @@ def _search_laws(
         "country_code": country_code,
         "year_filter_mode": year_filter_mode,
         "published_year": published_year,
+        "sort": sort,
         "metadata_only": metadata_only,
         "limit": limit,
         "offset": offset,
+        "status": "ok",
+        "timeout_ms": _LEGAL_SEARCH_TIMEOUT_MS,
         "results": results,
     }
 
@@ -1934,6 +2196,7 @@ def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
     year_filter_mode = _year_filter_mode(arguments.get("year_filter_mode"))
     court_type = str(arguments.get("court_type", "")).strip()
     include_snippets = _bool_argument(arguments.get("include_snippets"), default=False)
+    sort = _search_sort(arguments.get("sort"))
     return _search_court_decisions(
         query=query,
         limit=limit,
@@ -1942,6 +2205,7 @@ def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
         year_filter_mode=year_filter_mode,
         court_type=court_type,
         include_snippets=include_snippets,
+        sort=sort,
     )
 
 
@@ -1954,6 +2218,7 @@ def _search_court_decisions(
     year_filter_mode: str,
     court_type: str,
     include_snippets: bool,
+    sort: str,
 ) -> dict[str, Any]:
     if year_filter_mode != "published_in":
         raise HTTPException(status_code=400, detail="Only year_filter_mode=published_in is supported")
@@ -1961,7 +2226,7 @@ def _search_court_decisions(
     logger.info(
         (
             "mcp_tool_search_court_decisions_query query_length=%d limit=%d offset=%d "
-            "published_year=%s year_filter_mode=%s court_type_supplied=%s include_snippets=%s timeout_ms=%d"
+            "published_year=%s year_filter_mode=%s court_type_supplied=%s include_snippets=%s sort=%s timeout_ms=%d"
         ),
         len(query),
         limit,
@@ -1970,6 +2235,7 @@ def _search_court_decisions(
         year_filter_mode,
         bool(court_type),
         include_snippets,
+        sort,
         _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
     )
     try:
@@ -2001,6 +2267,7 @@ def _search_court_decisions(
                 published_year=published_year,
                 year_filter_mode=year_filter_mode,
                 court_type=court_type,
+                sort=sort,
             )
         ]
     except Exception as exc:
@@ -2025,6 +2292,7 @@ def _search_court_decisions(
             offset=offset,
             published_year=published_year,
             year_filter_mode=year_filter_mode,
+            sort=sort,
             duration_ms=duration_ms,
             error_kind=error_kind,
         )
@@ -2042,6 +2310,7 @@ def _search_court_decisions(
         "include_snippets": include_snippets,
         "year_filter_mode": year_filter_mode,
         "published_year": published_year,
+        "sort": sort,
         "limit": limit,
         "offset": offset,
         "status": "ok",
@@ -2151,8 +2420,9 @@ def _extract_section_range(content_text: str, section_start: int, section_end: i
 
 
 class _LawsQuerySession:
-    def __init__(self) -> None:
+    def __init__(self, *, statement_timeout_ms: int | None = None) -> None:
         self._connection: Any = None
+        self._statement_timeout_ms = statement_timeout_ms
 
     def __enter__(self) -> _LawsQueryConfig:
         config = _laws_db_config()
@@ -2180,6 +2450,9 @@ class _LawsQuerySession:
                 raise ValueError("LAWS_DB_CLOUD must be set when LAWS_DB_BACKEND=postgres")
             psycopg = importlib.import_module("psycopg")
             self._connection = psycopg.connect(config.cloud_uri)
+            if self._statement_timeout_ms is not None:
+                with self._connection.cursor() as cursor:
+                    cursor.execute("SET LOCAL statement_timeout = %s", (self._statement_timeout_ms,))
             logger.info("mcp_laws_db_session_opened backend=postgres")
 
             def query_all(query: str, params: Sequence[Any]) -> list[Sequence[Any]]:
@@ -2271,6 +2544,7 @@ def _court_decision_search_degraded_result(
     offset: int,
     published_year: int | None,
     year_filter_mode: str,
+    sort: str,
     duration_ms: int,
     error_kind: str,
 ) -> dict[str, Any]:
@@ -2297,17 +2571,69 @@ def _court_decision_search_degraded_result(
         "offset": offset,
         "published_year": published_year,
         "year_filter_mode": year_filter_mode,
+        "sort": sort,
         "duration_ms": duration_ms,
         "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
     }
 
 
 def _court_decision_search_error_kind(exc: Exception) -> str:
+    return _legal_search_error_kind(exc)
+
+
+def _legal_search_error_kind(exc: Exception) -> str:
     exception_name = exc.__class__.__name__.lower()
     message = str(exc).lower()
     if isinstance(exc, TimeoutError) or "timeout" in exception_name or "timeout" in message:
         return "timeout"
     return "unavailable"
+
+
+def _legal_search_degraded_result(
+    *,
+    query: str,
+    country_code: str,
+    limit: int,
+    offset: int,
+    published_year: int | None,
+    year_filter_mode: str,
+    sort: str,
+    duration_ms: int,
+    error_kind: str,
+) -> dict[str, Any]:
+    message = (
+        "Legal-source search is temporarily unavailable or exceeded the server search budget. "
+        "Retry the same MCP call later or narrow the query."
+    )
+    return {
+        "query": query,
+        "country_code": country_code,
+        "results": [],
+        "status": "degraded",
+        "retryable": True,
+        "error": {
+            "code": "legal_search_timeout" if error_kind == "timeout" else "legal_search_unavailable",
+            "message": message,
+            "kind": error_kind,
+            "correlation_id": _CURRENT_MCP_CORRELATION_ID.get(),
+            "request_id": _CURRENT_MCP_REQUEST_ID.get(),
+        },
+        "metadata_only": True,
+        "limit": limit,
+        "offset": offset,
+        "published_year": published_year,
+        "year_filter_mode": year_filter_mode,
+        "sort": sort,
+        "duration_ms": duration_ms,
+        "timeout_ms": _LEGAL_SEARCH_TIMEOUT_MS,
+    }
+
+
+def _search_sort(value: object) -> str:
+    sort = str(value or "relevance").strip().lower()
+    if sort not in {"relevance", "latest"}:
+        raise HTTPException(status_code=400, detail="sort must be relevance or latest")
+    return sort
 
 
 def _mcp_tools() -> list[dict[str, Any]]:
@@ -2337,8 +2663,9 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "description": (
                 "Protected combined metadata search for Slovak legal sources. Use this for user questions "
                 "that ask for both laws and court decisions. The MCP server is model-free: clients parse "
-                "natural-language questions and pass structured filters such as published_year. Results are "
-                "grouped into laws and court_decisions and return metadata only by default."
+                "natural-language questions and pass structured filters such as published_year and sort. "
+                "Use sort=latest for newest results by publication/effective metadata or court issue_date. "
+                "Results are grouped into laws and court_decisions and return metadata only by default."
             ),
             "inputSchema": {
                 "type": "object",
@@ -2358,6 +2685,11 @@ def _mcp_tools() -> list[dict[str, Any]]:
                         "default": "published_in",
                     },
                     "court_type": {"type": "string"},
+                    "sort": {
+                        "type": "string",
+                        "enum": ["relevance", "latest"],
+                        "default": "relevance",
+                    },
                     "limit_per_source": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
                 },
@@ -2369,6 +2701,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "description": (
                 "Search JurisDigta imported Slovak laws by title, identifier, and lawyer-facing title. "
                 "Returns metadata for the current consolidated version by default. "
+                "Use sort=latest to order by latest law publication/effective metadata. "
                 "Use exact law_number and law_year when the user cites a legal identifier such as 40/1964; "
                 "otherwise prefer exact title matches over amendment acts. Use this first for Slovak legal "
                 "questions instead of relying on model memory."
@@ -2386,6 +2719,11 @@ def _mcp_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "enum": ["published_in"],
                         "default": "published_in",
+                    },
+                    "sort": {
+                        "type": "string",
+                        "enum": ["relevance", "latest"],
+                        "default": "relevance",
                     },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
@@ -2428,7 +2766,8 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "name": "searchCourtDecisions",
             "description": (
                 "Search imported Slovak court decisions (sudne rozhodnutia / case law) by semantic "
-                "and metadata relevance. Returns metadata only by default; set include_snippets=true "
+                "and metadata relevance. Use sort=latest to order by issue_date DESC. "
+                "Returns metadata only by default; set include_snippets=true "
                 "to include pseudonymized public snippets. Use this to cite court, date, ECLI, "
                 "file number, and source URL while distinguishing case-law support from binding "
                 "statutory law."
@@ -2445,10 +2784,59 @@ def _mcp_tools() -> list[dict[str, Any]]:
                         "default": "published_in",
                     },
                     "court_type": {"type": "string"},
+                    "sort": {
+                        "type": "string",
+                        "enum": ["relevance", "latest"],
+                        "default": "relevance",
+                    },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
                     "include_snippets": {"type": "boolean", "default": False},
                 },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "startLegalSearch",
+            "description": (
+                "Start a short-lived authenticated async legal search job without webhook callbacks. "
+                "Use for broad latest-result queries that may exceed client time budgets. Results are "
+                "metadata-first by default and scoped to the authenticated MCP user."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["arguments"],
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "enum": ["searchLegalSources", "searchLaws", "searchCourtDecisions"],
+                        "default": "searchLegalSources",
+                    },
+                    "arguments": {"type": "object"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "getLegalSearchStatus",
+            "description": "Poll the status of an authenticated async legal search job by search_id.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["search_id"],
+                "properties": {"search_id": {"type": "string", "minLength": 1}},
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "getLegalSearchResult",
+            "description": (
+                "Fetch the completed result for an authenticated async legal search job. "
+                "Returns running status until the job is complete; expired or cross-user IDs are not disclosed."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["search_id"],
+                "properties": {"search_id": {"type": "string", "minLength": 1}},
                 "additionalProperties": False,
             },
         },
