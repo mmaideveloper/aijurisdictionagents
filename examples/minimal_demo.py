@@ -43,6 +43,11 @@ print(
     "requires getCourtDecision(full_version=True)."
 )
 print(
+    "mcp_status_for_free_ollama => free-plan local Ollama chat can still answer MCP status "
+    "questions from authoritative getVersion and getStatistics JSON; Ollama formats the "
+    "aggregate JSON only and must not invent missing version, imported-law, or jurisdiction values."
+)
+print(
     "mcp_endpoint_claude_compat => /MCP remains accepted for Claude web and existing clients; "
     "it now advertises OAuth protected-resource metadata and requires the same per-user "
     "OAuth or MCP API key authentication for protected legal tools as /mcp."
