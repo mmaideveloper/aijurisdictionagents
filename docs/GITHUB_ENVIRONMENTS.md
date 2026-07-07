@@ -331,6 +331,9 @@ Required variable:
 | --- | --- |
 | `API_BASE_URL` | API base URL passed into Flutter builds |
 
+For the `prod` GitHub Environment, set `API_BASE_URL` to
+`https://api.jurisdigta.eu` so published mobile APKs use the production API.
+
 Recommended signing secrets for stable Android release upgrades:
 
 | Secret | Purpose |

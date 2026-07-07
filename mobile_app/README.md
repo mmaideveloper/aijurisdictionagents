@@ -375,6 +375,10 @@ and pass it to Flutter as `--dart-define=AIJ_API_BASE_URL=...` for APK/Web build
 Set `API_BASE_URL` per GitHub Environment (for example dev/stage/prod) to target
 that environment's API during build.
 
+For production mobile releases, set `API_BASE_URL=https://api.jurisdigta.eu`
+in the selected GitHub Environment before running the workflow with
+`release=true`.
+
 For a full repository checklist to create additional GitHub Environments such as
 `test` and `prod`, see `docs/GITHUB_ENVIRONMENTS.md`.
 
@@ -418,7 +422,7 @@ Local helper scripts:
 - Export the release keystore as base64 for `MOBILE_ANDROID_KEYSTORE_BASE64`:
   `pwsh ./mobile_app/tool/export_release_keystore_base64.ps1`
 - Build a signed release APK locally with the generated keystore:
-  `pwsh ./mobile_app/tool/build_release_signed.ps1 -KeystorePassword "<password>" -KeyAlias "release" -ApiBaseUrl "http://10.0.2.2:8080"`
+  `pwsh ./mobile_app/tool/build_release_signed.ps1 -KeystorePassword "<password>" -KeyAlias "release" -ApiBaseUrl "https://api.jurisdigta.eu"`
 
 Mobile app versioning rule:
 
