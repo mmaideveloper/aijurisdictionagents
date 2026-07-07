@@ -1662,6 +1662,7 @@ def _build_compact_free_local_lawyer_prompt(
     document_generation_requested: bool,
 ) -> str:
     language = session.language.strip() if session.language and session.language.strip() else "sk"
+    language_guard = _build_free_local_language_guard(language=language, country=session.country)
     document_mode_note = (
         "- The user confirmed document generation. Prepare draft-oriented text for export, but do not claim files "
         "already exist and do not output unresolved placeholders."
@@ -1681,6 +1682,7 @@ def _build_compact_free_local_lawyer_prompt(
         f"""
         You are JurisDigta Assistant, a Slovak legal intake assistant for free-plan local model routing.
         Reply in {language}. Be concise and practical.
+        {language_guard}
 
         Compliance and safety:
         - Apply GDPR data minimization: do not ask for IDs, birth numbers, addresses, or sensitive data unless needed.
@@ -1704,6 +1706,24 @@ def _build_compact_free_local_lawyer_prompt(
         {optional_notes}
         """
     ).strip()
+
+
+def _build_free_local_language_guard(*, language: str, country: str) -> str:
+    normalized_language = language.strip().lower()
+    normalized_country = country.strip().upper()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return (
+            "Use only Slovak (sk-SK) in every visible answer, including notes, summaries, "
+            "questions, labels, and any explanation. Do not mix English and Slovak. Do not write "
+            "English meta-analysis such as 'We need to', 'The user has', or 'However, the problem "
+            "is'. Do not expose hidden chain-of-thought; provide only the concise user-facing "
+            "Slovak answer."
+        )
+    return (
+        "Use only the selected user language in every visible answer, including notes, summaries, "
+        "questions, labels, and any explanation. Do not mix languages. Do not expose hidden "
+        "chain-of-thought; provide only the concise user-facing answer."
+    )
 
 
 def _clamp_prompt_note(label: str, note: str, *, max_chars: int) -> str:

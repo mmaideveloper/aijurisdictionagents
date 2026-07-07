@@ -38,6 +38,8 @@ The chat API resolves provider, model, deployment, and credentials through the A
 
 Local Ollama chat routes use Ollama's native `/api/chat` endpoint with `think: false`, `stream: false`, and a bounded `num_predict` value. This avoids Qwen reasoning models returning an OpenAI-compatible response with empty `message.content` and reasoning-only metadata, which would otherwise look like a missing assistant answer in the web app.
 
+Language selection is enforced at the orchestration prompt layer for local and external routes. When the requested language is `sk-SK`, all visible assistant content, including notes, summaries, questions, labels, and any reasoning explanation, must stay in Slovak. Local Ollama prompts explicitly reject English meta-analysis such as "We need to..." and hidden chain-of-thought text because smaller reasoning models can otherwise emit English analysis as normal answer content.
+
 The API must not load large local model files directly inside the FastAPI process for normal production traffic. Loading a 10 GB to 30 GB model inside API workers increases startup time, RAM/VRAM pressure, deployment risk, and failure blast radius. The API should stay lightweight and call the local model service through the model router, while Ollama owns model download, storage, loading, unloading, health checks, and runtime isolation.
 
 Direct model paths are reserved for a future dedicated worker/runtime adapter, not the default API process.
