@@ -317,11 +317,14 @@ without a valid token returns `401` with a `WWW-Authenticate`
 
 - `getVersion`: returns API, system/core, mobile app, web app versions, court-decision collector version, and court-decision collector status with latest imported decision metadata.
 - `getStatistics`: returns processed laws count, last processed law, last processed day, laws collector details, court-decision collector version, and court-decision statistics such as total decisions, published decisions, total versions, last imported decision/source GUID, last import time, court, court type, ECLI, file number, issue date, and collector cursor status.
-- `searchLegalSources`: protected combined metadata search for questions that need both laws and court decisions, for example `Daj mi vsetky rozhodnutia a zakony ktore sa tykaju prenajmu bytu za rok 2026?`. The MCP server does not use an LLM to answer; clients such as Codex, VS Code, Claude, or ChatGPT parse the natural-language question and pass structured filters such as `query`, `published_year`, and `source_types`. The default `year_filter_mode` is `published_in`, so `published_year=2026` means laws or decisions published in 2026.
-- `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title. Results return metadata for the current consolidated version by default and support `published_year`, `year_filter_mode=published_in`, `limit`, and `offset`.
+- `searchLegalSources`: protected combined metadata search for questions that need both laws and court decisions, for example `Daj mi vsetky rozhodnutia a zakony ktore sa tykaju prenajmu bytu za rok 2026?`. The MCP server does not use an LLM to answer; clients such as Codex, VS Code, Claude, or ChatGPT parse the natural-language question and pass structured filters such as `query`, `published_year`, `source_types`, and `sort`. Use `sort=latest` when the user asks for the newest results. The default `year_filter_mode` is `published_in`, so `published_year=2026` means laws or decisions published in 2026.
+- `searchLaws`: searches imported laws by title, identifier, and lawyer-facing title. Results return metadata for the current consolidated version by default and support `published_year`, `year_filter_mode=published_in`, `sort=relevance|latest`, `limit`, and `offset`. `sort=latest` orders by latest law publication/effective metadata.
 - `getLawText`: returns bounded latest imported text for a law document id. For large codes, pass `section_number` or `section_start`/`section_end` to retrieve only the relevant sections; use `offset` and `max_chars` when pagination is needed.
-- `searchCourtDecisions`: searches the dedicated court-decision vector store and returns court/date/ECLI/file-number metadata by default. Set `include_snippets=true` to include pseudonymized public snippets. MCP court-decision search is bounded by a server-side PostgreSQL connect timeout and statement timeout so slow database calls return a structured `status=degraded`, `retryable=true` payload with request/correlation identifiers instead of hanging until the MCP client times out. Logs record query length, limit, duration, error kind, request ID, and correlation ID, but not the raw query, credentials, tokens, snippets, or court-decision text.
+- `searchCourtDecisions`: searches the dedicated court-decision vector store and returns court/date/ECLI/file-number metadata by default. Use `sort=latest` to order by `issue_date DESC`; set `include_snippets=true` only when pseudonymized public snippets are needed. MCP court-decision search is bounded by a server-side PostgreSQL connect timeout and statement timeout so slow database calls return a structured `status=degraded`, `retryable=true` payload with request/correlation identifiers instead of hanging until the MCP client times out. Logs record query length, limit, duration, error kind, request ID, and correlation ID, but not the raw query, credentials, tokens, snippets, or court-decision text.
 - `getCourtDecision`: returns one imported court decision. The default response is metadata-only. Set `full_version=true` to return bounded pseudonymized public text. `outputMode=internal_raw` is blocked unless `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP=true` is enabled for a controlled internal runtime; it must not be used for normal external model prompts or UI display.
+- `startLegalSearch`: starts a short-lived authenticated async search job for `searchLegalSources`, `searchLaws`, or `searchCourtDecisions` and returns a `search_id`. Use this for broad newest-result queries that may exceed the client time budget.
+- `getLegalSearchStatus`: polls the async legal search job status for the authenticated user.
+- `getLegalSearchResult`: fetches the async legal search result. Results are scoped to the authenticated user and expire after `MCP_ASYNC_SEARCH_RETENTION_SECONDS`.
 
 ## Minimal JSON-RPC Example
 
@@ -338,13 +341,16 @@ without a valid token returns `401` with a `WWW-Authenticate`
       "source_types": ["laws", "court_decisions"],
       "published_year": 2026,
       "year_filter_mode": "published_in",
+      "sort": "latest",
       "limit_per_source": 10
     }
   }
 }
 ```
 
-For a natural-language question such as `Daj mi vsetky rozhodnutia a zakony ktore sa tykaju prenajmu bytu za rok 2026?`, the MCP client should call `searchLegalSources` with a normalized query such as `prenajom bytu`, `published_year=2026`, and `source_types=["laws","court_decisions"]`. The MCP server returns grouped source metadata only; the client formats the answer and may call `getCourtDecision(full_version=true)` or `getLawText(...)` only if the user asks for full text or a specific citation.
+For a natural-language question such as `Daj mi posledne sudne rozhodnutie ktore sa tyka podnajmu`, the MCP client should call `searchCourtDecisions` with a normalized query such as `podnajom`, `sort="latest"`, and `limit=1`. For mixed legal-source questions, use `searchLegalSources` with `source_types=["laws","court_decisions"]`; for court-only fallbacks, `source_types=["court_decisions"]` is supported. The MCP server returns grouped source metadata only; the client formats the answer and may call `getCourtDecision(full_version=true)` or `getLawText(...)` only if the user asks for full text or a specific citation.
+
+For broad latest-result searches that may exceed client time budgets, call `startLegalSearch` with `tool_name="searchCourtDecisions"` and `arguments={"query":"podnajom","sort":"latest","limit":10}`. Then poll `getLegalSearchStatus({"search_id":"..."})` and fetch `getLegalSearchResult({"search_id":"..."})`. Async jobs are authenticated, user-scoped, metadata-first, and short-lived.
 
 For Civil Code style questions, call `searchLaws` with the exact identifier first, for example `{"query": "40/1964", "law_number": 40, "law_year": 1964}`. Then call `getLawText` with the returned `document_id` and a focused range, for example `{"document_id": "...", "section_start": 685, "section_end": 716}`. Avoid asking for the full law text unless the law is small or pagination is explicitly required.
 

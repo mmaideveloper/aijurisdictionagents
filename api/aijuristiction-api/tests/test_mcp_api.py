@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import sqlite3
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -66,6 +67,10 @@ def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law(mo
     assert "Use this first for Slovak legal questions" in tools["searchLaws"]["description"]
     assert "Use after searchLaws to cite exact Slovak legal text" in tools["getLawText"]["description"]
     assert "metadata only by default" in tools["searchCourtDecisions"]["description"]
+    assert tools["searchCourtDecisions"]["inputSchema"]["properties"]["sort"]["enum"] == ["relevance", "latest"]
+    assert "startLegalSearch" in tools
+    assert "getLegalSearchStatus" in tools
+    assert "getLegalSearchResult" in tools
     assert "full_version=true" in tools["getCourtDecision"]["description"]
 
 
@@ -437,6 +442,7 @@ def test_mcp_search_legal_sources_returns_grouped_metadata_only(monkeypatch, tmp
             published_year: int | None,
             year_filter_mode: str,
             court_type: str,
+            sort: str = "relevance",
         ) -> list[CourtDecisionSearchResult]:
             assert query == "prenajom bytu"
             assert limit == 2
@@ -444,6 +450,7 @@ def test_mcp_search_legal_sources_returns_grouped_metadata_only(monkeypatch, tmp
             assert published_year == 2026
             assert year_filter_mode == "published_in"
             assert court_type == ""
+            assert sort == "relevance"
             return [
                 CourtDecisionSearchResult(
                     decision_id="decision-lease-2026",
@@ -499,6 +506,7 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
             published_year: int | None,
             year_filter_mode: str,
             court_type: str,
+            sort: str = "relevance",
         ) -> list[CourtDecisionSearchResult]:
             assert query == "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu"
             assert limit == 1
@@ -506,6 +514,7 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
             assert published_year == 2026
             assert year_filter_mode == "published_in"
             assert court_type == "Okresny sud"
+            assert sort == "relevance"
             return [
                 CourtDecisionSearchResult(
                     decision_id="decision-1",
@@ -526,7 +535,7 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     def fake_court_decision_store(**kwargs: object) -> FakeCourtDecisionStore:
         assert kwargs["initialize"] is False
         assert kwargs["connect_timeout_seconds"] == 3
-        assert kwargs["statement_timeout_ms"] == 8000
+        assert kwargs["statement_timeout_ms"] == 30000
         return FakeCourtDecisionStore()
 
     monkeypatch.setattr(mcp_api, "_court_decision_store", fake_court_decision_store)
@@ -549,7 +558,7 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     assert payload["status"] == "ok"
     assert payload["output_mode"] == "public"
     assert payload["metadata_only"] is True
-    assert payload["timeout_ms"] == 8000
+    assert payload["timeout_ms"] == 30000
     assert payload["results"][0]["decision_id"] == "decision-1"
     assert payload["results"][0]["issue_date"] == "2026-06-29"
     assert "snippet" not in payload["results"][0]
@@ -575,6 +584,197 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     assert secret_query not in joined_logs
     assert "Pseudonymizovane rozhodnutie" not in joined_logs
     assert mcp_key not in joined_logs
+
+
+def test_mcp_search_court_decisions_latest_sort_passes_contract(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class FakeCourtDecisionStore:
+        def search(
+            self,
+            *,
+            query: str,
+            limit: int,
+            offset: int,
+            published_year: int | None,
+            year_filter_mode: str,
+            court_type: str,
+            sort: str = "relevance",
+        ) -> list[CourtDecisionSearchResult]:
+            assert query == "podnajom"
+            assert limit == 2
+            assert offset == 0
+            assert published_year is None
+            assert year_filter_mode == "published_in"
+            assert court_type == ""
+            assert sort == "latest"
+            return [
+                CourtDecisionSearchResult(
+                    decision_id="decision-newer",
+                    version_id="version-newer",
+                    source_guid="infosud-newer",
+                    court_name="Krajsky sud Bratislava",
+                    court_type="Krajsky sud",
+                    file_number="8Co/10/2026",
+                    case_number="8Co/10/2026",
+                    ecli="ECLI:SK:KSBA:2026:10.1",
+                    issue_date="2026-06-01",
+                    source_url="https://example.test/decision/newer",
+                    snippet="Pseudonymizovane rozhodnutie k podnajmu.",
+                    score=0.7,
+                ),
+                CourtDecisionSearchResult(
+                    decision_id="decision-older",
+                    version_id="version-older",
+                    source_guid="infosud-older",
+                    court_name="Okresny sud Bratislava I",
+                    court_type="Okresny sud",
+                    file_number="12C/10/2025",
+                    case_number="12C/10/2025",
+                    ecli="ECLI:SK:OSBA1:2025:10.1",
+                    issue_date="2025-05-01",
+                    source_url="https://example.test/decision/older",
+                    snippet="Pseudonymizovane rozhodnutie k podnajmu.",
+                    score=0.9,
+                ),
+            ]
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: FakeCourtDecisionStore())
+
+    response = _mcp_call(
+        "searchCourtDecisions",
+        {"query": "podnajom", "limit": 2, "sort": "latest"},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["status"] == "ok"
+    assert payload["sort"] == "latest"
+    assert payload["timeout_ms"] == 30000
+    assert [item["decision_id"] for item in payload["results"]] == ["decision-newer", "decision-older"]
+
+
+def test_mcp_search_legal_sources_passes_latest_sort_to_court_decisions(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class FakeCourtDecisionStore:
+        def search(
+            self,
+            *,
+            query: str,
+            limit: int,
+            offset: int,
+            published_year: int | None,
+            year_filter_mode: str,
+            court_type: str,
+            sort: str = "relevance",
+        ) -> list[CourtDecisionSearchResult]:
+            assert query == "podnajom"
+            assert limit == 1
+            assert offset == 0
+            assert published_year is None
+            assert year_filter_mode == "published_in"
+            assert court_type == ""
+            assert sort == "latest"
+            return [
+                CourtDecisionSearchResult(
+                    decision_id="decision-latest",
+                    version_id="version-latest",
+                    source_guid="infosud-latest",
+                    court_name="Najvyssi sud SR",
+                    court_type="Najvyssi sud",
+                    file_number="1Cdo/10/2026",
+                    case_number="1Cdo/10/2026",
+                    ecli="ECLI:SK:NSSR:2026:10.1",
+                    issue_date="2026-06-30",
+                    source_url="https://example.test/decision/latest",
+                    snippet="Pseudonymizovane rozhodnutie k podnajmu.",
+                    score=0.8,
+                )
+            ]
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: FakeCourtDecisionStore())
+
+    response = _mcp_call(
+        "searchLegalSources",
+        {
+            "query": "podnajom",
+            "source_types": ["court_decisions"],
+            "limit_per_source": 1,
+            "sort": "latest",
+        },
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["status"] == "ok"
+    assert payload["sort"] == "latest"
+    assert payload["laws"] == []
+    assert payload["court_decisions"][0]["decision_id"] == "decision-latest"
+
+
+def test_mcp_async_legal_search_lifecycle_is_user_scoped(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    other_key = _create_mcp_key(
+        tmp_path,
+        email="other-mcp-search@example.com",
+        phone_number="+421 900 111 229",
+    )
+
+    start_response = _mcp_call(
+        "startLegalSearch",
+        {
+            "tool_name": "searchLaws",
+            "arguments": {"query": "civil", "limit": 1, "sort": "latest"},
+        },
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert start_response.status_code == 200
+    start_payload = _tool_payload(start_response)
+    search_id = start_payload["search_id"]
+    assert start_payload["status"] == "running"
+    assert start_payload["timeout_ms"] == 30000
+
+    status_response = _mcp_call(
+        "getLegalSearchStatus",
+        {"search_id": search_id},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    result_response = None
+    result_payload: dict[str, object] = {}
+    for _ in range(20):
+        result_response = _mcp_call(
+            "getLegalSearchResult",
+            {"search_id": search_id},
+            headers={"authorization": f"Bearer {mcp_key}"},
+        )
+        result_payload = _tool_payload(result_response)
+        if result_payload["status"] == "completed":
+            break
+        time.sleep(0.05)
+    other_user_response = _mcp_call(
+        "getLegalSearchResult",
+        {"search_id": search_id},
+        headers={"authorization": f"Bearer {other_key}"},
+    )
+
+    assert status_response.status_code == 200
+    assert _tool_payload(status_response)["status"] in {"running", "completed"}
+    assert result_response is not None
+    assert result_response.status_code == 200
+    assert result_payload["status"] == "completed"
+    assert result_payload["result"]["results"][0]["document_id"] == "doc-1"
+    assert result_payload["result"]["sort"] == "latest"
+    assert other_user_response.status_code == 200
+    assert other_user_response.json()["error"]["message"] == "Legal search job not found or expired"
 
 
 def test_mcp_get_court_decision_defaults_to_metadata_only(monkeypatch, tmp_path: Path) -> None:
@@ -645,7 +845,9 @@ def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
             published_year: int | None,
             year_filter_mode: str,
             court_type: str,
+            sort: str = "relevance",
         ) -> list[CourtDecisionSearchResult]:
+            assert sort == "relevance"
             raise TimeoutError("statement timeout")
 
     monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: TimeoutCourtDecisionStore())
@@ -673,7 +875,7 @@ def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
     assert payload["error"]["kind"] == "timeout"
     assert payload["error"]["correlation_id"] == "court-timeout-correlation"
     assert payload["error"]["request_id"] == "court-timeout-request"
-    assert payload["timeout_ms"] == 8000
+    assert payload["timeout_ms"] == 30000
     assert payload["limit"] == 5
     assert any(
         "mcp_tool_search_court_decisions_degraded" in record.getMessage()
@@ -2351,13 +2553,18 @@ def _configure_env(monkeypatch, tmp_path: Path) -> None:
     )
 
 
-def _create_mcp_key(tmp_path: Path) -> str:
+def _create_mcp_key(
+    tmp_path: Path,
+    *,
+    email: str = "mcp-search@example.com",
+    phone_number: str = "+421 900 111 228",
+) -> str:
     sign_up_response = api_client.post(
         "/v1/users/sign-up",
         headers=AUTH_HEADERS,
         json={
-            "phone_number": "+421 900 111 228",
-            "email": "mcp-search@example.com",
+            "phone_number": phone_number,
+            "email": email,
             "password": "secret-pass",
         },
     )
