@@ -22,6 +22,12 @@ const News: React.FC = () => {
 
   const posts: NewsPost[] = [
     {
+      date: t("newsAudioModelsDate"),
+      title: t("newsAudioModelsTitle"),
+      body: t("newsAudioModelsBody"),
+      kind: "plain"
+    },
+    {
       date: t("newsLocalModelsDate"),
       title: t("newsLocalModelsTitle"),
       body: t("newsLocalModelsBody"),

@@ -9,10 +9,13 @@ const labels: Record<string, string> = {
   newsEyebrow: "Product updates",
   navNews: "News",
   newsSubtitle: "Dated mini-blogs.",
+  newsAudioModelsDate: "7 July 2026",
   newsMcpDate: "22 June 2026",
   newsLocalModelsDate: "7 July 2026",
   newsApprovalDate: "21 June 2026",
   newsMetadataDate: "20 June 2026",
+  newsAudioModelsTitle: "STT/TTS improves communication between the client and the AI Lawyer",
+  newsAudioModelsBody: "Audio models can record a client consultation.",
   newsLocalModelsTitle: "Local models for free users subscriptions with model routing.",
   newsLocalModelsBody: "Free users can be routed to local Ollama models.",
   newsMetadataBody: "Outputs keep visible metadata.",
@@ -42,7 +45,11 @@ describe("News", () => {
     render(<News />);
 
     expect(screen.getByRole("heading", { name: "News" })).toBeDefined();
-    expect(screen.getByText("7 July 2026")).toBeDefined();
+    expect(screen.getAllByText("7 July 2026")).toHaveLength(2);
+    expect(
+      screen.getByRole("heading", { name: "STT/TTS improves communication between the client and the AI Lawyer" })
+    ).toBeDefined();
+    expect(screen.getByText("Audio models can record a client consultation.")).toBeDefined();
     expect(
       screen.getByRole("heading", { name: "Local models for free users subscriptions with model routing." })
     ).toBeDefined();
