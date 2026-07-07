@@ -44,6 +44,7 @@ from app.chat.intent_policy_service import (
     is_document_modernization_request,
 )
 from app.chat.mcp_law_context import build_mcp_law_context
+from app.chat.mcp_status_context import build_mcp_status_context
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.output_validation import AILawyerOutputMessageValidationAgent, LawyerOutputUserProfile
 from app.chat.repository import InMemoryChatRepository
@@ -1450,6 +1451,7 @@ def _run_direct_lawyer_turn(
         build_share_transfer_lines=_build_slovak_share_transfer_lines,
         processing_event_callback=processing_event_callback,
     )
+    processing_events = list(preparation.processing_events)
     if preparation.direct_reply is not None:
         normalized_direct_reply = _finalize_document_ready_reply_if_needed(
             session=session,
@@ -1474,7 +1476,7 @@ def _run_direct_lawyer_turn(
             persisted_user,
             persisted_lawyer,
             _user_visible_text(persisted_lawyer.content),
-            preparation.processing_events,
+            processing_events,
             None,
         )
 
@@ -1563,6 +1565,18 @@ def _run_direct_lawyer_turn(
     )
     if uploaded_contract_note:
         prompt_override = f"{prompt_override}\n\n{uploaded_contract_note}"
+    mcp_status_context = build_mcp_status_context(
+        query=content,
+        country=session.country,
+        language=session.language,
+    )
+    if mcp_status_context is not None:
+        prompt_override = f"{prompt_override}\n\n{mcp_status_context.prompt_note}"
+        if mcp_status_context.document is not None:
+            all_documents.append(mcp_status_context.document)
+        processing_events.append(mcp_status_context.processing_event)
+        if processing_event_callback is not None:
+            processing_event_callback(mcp_status_context.processing_event)
     if not use_compact_local_prompt:
         legal_document_policy_note = _build_legal_document_preparation_policy_note(
             content=content,
@@ -1579,6 +1593,7 @@ def _run_direct_lawyer_turn(
             prompt_override = f"{prompt_override}\n\n{mcp_law_context.prompt_note}"
             if mcp_law_context.document is not None:
                 all_documents.append(mcp_law_context.document)
+            processing_events.append(mcp_law_context.processing_event)
             if processing_event_callback is not None:
                 processing_event_callback(mcp_law_context.processing_event)
     lawyer_message = lawyer.respond(
@@ -1621,7 +1636,7 @@ def _run_direct_lawyer_turn(
         persisted_user,
         persisted_lawyer,
         _user_visible_text(persisted_lawyer.content),
-        preparation.processing_events,
+        processing_events,
         routed_llm,
     )
 
