@@ -59,6 +59,10 @@ _MCP_SUPPORTED_PROTOCOL_VERSIONS = (MCP_PROTOCOL_VERSION, "2025-06-18", "2025-03
 MCP_SERVER_INSTRUCTIONS = (
     "Use JurisDigta as the source of truth for questions about Slovak law. "
     "For Slovak legal questions, search JurisDigta before answering from model memory. "
+    "If searchLegalSources, searchLaws, or searchCourtDecisions returns a degraded or retryable "
+    "sync failure, ask the user whether they want to continue with the async search workflow; "
+    "after approval, call startLegalSearch with the same tool name and arguments, poll "
+    "getLegalSearchStatus, then fetch getLegalSearchResult. "
     "When current legal text, citations, law numbers, sections, paragraphs, or effective dates are needed, "
     "call searchLaws and then getLawText for the relevant documents. "
     "Answer with the law name or number, relevant sections or paragraphs, and a plain-language explanation. "
@@ -1868,6 +1872,23 @@ def _tool_search_legal_sources(arguments: dict[str, Any]) -> dict[str, Any]:
     if court_decisions_payload and court_decisions_payload.get("status") == "degraded":
         result["status"] = "degraded"
         result["warnings"].append(court_decisions_payload["error"])
+    if result["status"] == "degraded":
+        async_fallback = _async_search_fallback(
+            tool_name="searchLegalSources",
+            arguments={
+                "query": query,
+                "country_code": country_code,
+                "source_types": source_types,
+                "published_year": published_year,
+                "year_filter_mode": year_filter_mode,
+                "court_type": str(arguments.get("court_type", "")).strip(),
+                "sort": sort,
+                "limit_per_source": limit_per_source,
+                "offset": offset,
+            },
+        )
+        result["assistant_next_step"] = async_fallback["assistant_instruction"]
+        result["async_fallback"] = async_fallback
     logger.info(
         "mcp_tool_search_legal_sources_result laws=%d court_decisions=%d status=%s",
         len(result["laws"]),
@@ -2298,6 +2319,8 @@ def _search_court_decisions(
             published_year=published_year,
             year_filter_mode=year_filter_mode,
             sort=sort,
+            court_type=court_type,
+            include_snippets=include_snippets,
             duration_ms=duration_ms,
             error_kind=error_kind,
         )
@@ -2550,12 +2573,29 @@ def _court_decision_search_degraded_result(
     published_year: int | None,
     year_filter_mode: str,
     sort: str,
+    court_type: str,
+    include_snippets: bool,
     duration_ms: int,
     error_kind: str,
 ) -> dict[str, Any]:
     message = (
         "Court-decision search is temporarily unavailable or exceeded the server search budget. "
-        "Retry the same MCP call later or narrow the query."
+        "Ask the user whether it is OK to continue with an async search. If they approve, call "
+        "startLegalSearch with tool_name=searchCourtDecisions and the same arguments, then poll "
+        "getLegalSearchStatus and fetch getLegalSearchResult."
+    )
+    async_fallback = _async_search_fallback(
+        tool_name="searchCourtDecisions",
+        arguments={
+            "query": query,
+            "limit": limit,
+            "offset": offset,
+            "published_year": published_year,
+            "year_filter_mode": year_filter_mode,
+            "court_type": court_type,
+            "include_snippets": include_snippets,
+            "sort": sort,
+        },
     )
     return {
         "query": query,
@@ -2572,10 +2612,14 @@ def _court_decision_search_degraded_result(
             "correlation_id": _CURRENT_MCP_CORRELATION_ID.get(),
             "request_id": _CURRENT_MCP_REQUEST_ID.get(),
         },
+        "assistant_next_step": async_fallback["assistant_instruction"],
+        "async_fallback": async_fallback,
         "limit": limit,
         "offset": offset,
         "published_year": published_year,
         "year_filter_mode": year_filter_mode,
+        "court_type": court_type,
+        "include_snippets": include_snippets,
         "sort": sort,
         "duration_ms": duration_ms,
         "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
@@ -2605,10 +2649,25 @@ def _legal_search_degraded_result(
     sort: str,
     duration_ms: int,
     error_kind: str,
+    tool_name: str = "searchLaws",
 ) -> dict[str, Any]:
     message = (
         "Legal-source search is temporarily unavailable or exceeded the server search budget. "
-        "Retry the same MCP call later or narrow the query."
+        "Ask the user whether it is OK to continue with an async search. If they approve, call "
+        f"startLegalSearch with tool_name={tool_name} and the same arguments, then poll "
+        "getLegalSearchStatus and fetch getLegalSearchResult."
+    )
+    async_fallback = _async_search_fallback(
+        tool_name=tool_name,
+        arguments={
+            "query": query,
+            "country_code": country_code,
+            "limit": limit,
+            "offset": offset,
+            "published_year": published_year,
+            "year_filter_mode": year_filter_mode,
+            "sort": sort,
+        },
     )
     return {
         "query": query,
@@ -2623,6 +2682,8 @@ def _legal_search_degraded_result(
             "correlation_id": _CURRENT_MCP_CORRELATION_ID.get(),
             "request_id": _CURRENT_MCP_REQUEST_ID.get(),
         },
+        "assistant_next_step": async_fallback["assistant_instruction"],
+        "async_fallback": async_fallback,
         "metadata_only": True,
         "limit": limit,
         "offset": offset,
@@ -2631,6 +2692,28 @@ def _legal_search_degraded_result(
         "sort": sort,
         "duration_ms": duration_ms,
         "timeout_ms": _LEGAL_SEARCH_TIMEOUT_MS,
+    }
+
+
+def _async_search_fallback(*, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    sanitized_arguments = {
+        key: value for key, value in arguments.items() if value is not None and value != ""
+    }
+    return {
+        "available": True,
+        "requires_user_confirmation": True,
+        "assistant_instruction": (
+            "Tell the user the synchronous JurisDigta search failed or timed out, ask whether it is OK "
+            "to run the async legal search, and only after approval call startLegalSearch with the "
+            "provided tool_name and arguments."
+        ),
+        "start_tool": "startLegalSearch",
+        "start_arguments": {
+            "tool_name": tool_name,
+            "arguments": sanitized_arguments,
+        },
+        "poll_tool": "getLegalSearchStatus",
+        "result_tool": "getLegalSearchResult",
     }
 
 
@@ -2670,7 +2753,10 @@ def _mcp_tools() -> list[dict[str, Any]]:
                 "that ask for both laws and court decisions. The MCP server is model-free: clients parse "
                 "natural-language questions and pass structured filters such as published_year and sort. "
                 "Use sort=latest for newest results by publication/effective metadata or court issue_date. "
-                "Results are grouped into laws and court_decisions and return metadata only by default."
+                "Results are grouped into laws and court_decisions and return metadata only by default. "
+                "If this sync tool returns status=degraded or retryable=true, ask the user for approval "
+                "to continue asynchronously, then call startLegalSearch with tool_name=searchLegalSources "
+                "and the same arguments."
             ),
             "inputSchema": {
                 "type": "object",
@@ -2709,7 +2795,9 @@ def _mcp_tools() -> list[dict[str, Any]]:
                 "Use sort=latest to order by latest law publication/effective metadata. "
                 "Use exact law_number and law_year when the user cites a legal identifier such as 40/1964; "
                 "otherwise prefer exact title matches over amendment acts. Use this first for Slovak legal "
-                "questions instead of relying on model memory."
+                "questions instead of relying on model memory. If this sync tool returns status=degraded "
+                "or retryable=true, ask the user for approval to continue asynchronously, then call "
+                "startLegalSearch with tool_name=searchLaws and the same arguments."
             ),
             "inputSchema": {
                 "type": "object",
@@ -2775,7 +2863,9 @@ def _mcp_tools() -> list[dict[str, Any]]:
                 "Returns metadata only by default; set include_snippets=true "
                 "to include pseudonymized public snippets. Use this to cite court, date, ECLI, "
                 "file number, and source URL while distinguishing case-law support from binding "
-                "statutory law."
+                "statutory law. If this sync tool returns status=degraded or retryable=true, ask the "
+                "user for approval to continue asynchronously, then call startLegalSearch with "
+                "tool_name=searchCourtDecisions and the same arguments."
             ),
             "inputSchema": {
                 "type": "object",
@@ -2805,8 +2895,10 @@ def _mcp_tools() -> list[dict[str, Any]]:
             "name": "startLegalSearch",
             "description": (
                 "Start a short-lived authenticated async legal search job without webhook callbacks. "
-                "Use for broad latest-result queries that may exceed client time budgets. Results are "
-                "metadata-first by default and scoped to the authenticated MCP user."
+                "Use for broad latest-result queries that may exceed client time budgets, or after "
+                "searchLegalSources, searchLaws, or searchCourtDecisions returns a degraded/retryable "
+                "sync failure and the user approves async continuation. Results are metadata-first by "
+                "default and scoped to the authenticated MCP user."
             ),
             "inputSchema": {
                 "type": "object",

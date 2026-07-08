@@ -60,15 +60,20 @@ def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law(mo
     instructions = initialize_response.json()["result"]["instructions"]
     assert "Use JurisDigta as the source of truth" in instructions
     assert "For Slovak legal questions, search JurisDigta before answering from model memory" in instructions
+    assert "ask the user whether they want to continue with the async search workflow" in instructions
 
     assert tools_response.status_code == 200
     tools = {tool["name"]: tool for tool in tools_response.json()["result"]["tools"]}
     assert "metadata search for Slovak legal sources" in tools["searchLegalSources"]["description"]
+    assert "tool_name=searchLegalSources" in tools["searchLegalSources"]["description"]
     assert "Use this first for Slovak legal questions" in tools["searchLaws"]["description"]
+    assert "tool_name=searchLaws" in tools["searchLaws"]["description"]
     assert "Use after searchLaws to cite exact Slovak legal text" in tools["getLawText"]["description"]
     assert "metadata only by default" in tools["searchCourtDecisions"]["description"]
+    assert "tool_name=searchCourtDecisions" in tools["searchCourtDecisions"]["description"]
     assert tools["searchCourtDecisions"]["inputSchema"]["properties"]["sort"]["enum"] == ["relevance", "latest"]
     assert "startLegalSearch" in tools
+    assert "user approves async continuation" in tools["startLegalSearch"]["description"]
     assert "getLegalSearchStatus" in tools
     assert "getLegalSearchResult" in tools
     assert "full_version=true" in tools["getCourtDecision"]["description"]
@@ -894,6 +899,22 @@ def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
     assert payload["error"]["kind"] == "timeout"
     assert payload["error"]["correlation_id"] == "court-timeout-correlation"
     assert payload["error"]["request_id"] == "court-timeout-request"
+    assert "ask whether it is OK to run the async legal search" in payload["assistant_next_step"]
+    assert payload["async_fallback"]["requires_user_confirmation"] is True
+    assert payload["async_fallback"]["start_tool"] == "startLegalSearch"
+    assert payload["async_fallback"]["start_arguments"] == {
+        "tool_name": "searchCourtDecisions",
+        "arguments": {
+            "query": "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu",
+            "limit": 5,
+            "offset": 0,
+            "year_filter_mode": "published_in",
+            "sort": "relevance",
+            "include_snippets": False,
+        },
+    }
+    assert payload["async_fallback"]["poll_tool"] == "getLegalSearchStatus"
+    assert payload["async_fallback"]["result_tool"] == "getLegalSearchResult"
     assert payload["timeout_ms"] == 30000
     assert payload["limit"] == 5
     assert any(
