@@ -359,6 +359,12 @@ For all tools, send the OAuth access token or MCP API key as a Bearer token or
 `WWW-Authenticate` header pointing clients at the protected-resource metadata
 endpoint.
 
+The internal chat API may call the dedicated MCP service over
+`INTERNAL_MCP_BASE_URL` with `X-JurisDigta-Internal-MCP-Secret`. The secret is
+`INTERNAL_MCP_SHARED_SECRET` when set, otherwise `MCP_API_JWT_SECRET`. This
+service-to-service path is for API-originated legal grounding only; external MCP
+clients still need OAuth or an MCP API key.
+
 ## Logging And Debugging
 
 MCP server logs use the `jurisdigta-mcp-server.http` and `aijuristiction-api.mcp` loggers with the shared `API_LOG_LEVEL` or `LOG_LEVEL` setting.

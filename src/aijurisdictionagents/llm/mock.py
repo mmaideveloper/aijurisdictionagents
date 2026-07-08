@@ -62,6 +62,16 @@ class MockLLMClient:
             return response
 
         if "lawyer" in agent_key:
+            if documents and _is_latest_law_question(user_message):
+                response = _latest_law_context_response(documents, prefers_slovak)
+                if response:
+                    log_llm_response(
+                        logger,
+                        provider="mock",
+                        agent_name=agent_name,
+                        raw_response=response,
+                    )
+                    return response
             if documents and _is_document_summary_request(user_message):
                 response = _document_summary_response(documents, prefers_slovak)
                 log_llm_response(
@@ -355,6 +365,44 @@ def _has_answered_lawyer_question(conversation: Sequence[Message]) -> bool:
         if any(next_msg.role == "user" for next_msg in conversation[index + 1 :]):
             return True
     return False
+
+
+def _is_latest_law_question(value: str) -> bool:
+    normalized = _normalize_text(value)
+    if "zmen" in normalized:
+        return False
+    return bool(
+        re.search(
+            r"\b(posledn\w*|najnovs\w*|latest|newest|last)\b(?:\s+\w+){0,3}\s+"
+            r"(zakon\w*|pravny predpis|law|statute)\b",
+            normalized,
+        )
+        or re.search(
+            r"\b(zakon\w*|pravny predpis|law|statute)\b(?:\s+\w+){0,3}\s+"
+            r"(posledn\w*|najnovs\w*|latest|newest|last)\b",
+            normalized,
+        )
+    )
+
+
+def _latest_law_context_response(documents: Sequence[Document], prefers_slovak: bool) -> str:
+    context = "\n".join(doc.content for doc in documents if doc.path == "internal-mcp-law-context.txt")
+    if not context:
+        return ""
+    identifier_match = re.search(r"\b\d{1,4}/\d{4}\s+Z\.\s*z\.", context)
+    title_match = re.search(r"-\s*\d{1,4}/\d{4}\s+Z\.\s*z\.\s*:\s*(.+?)\s*\(document_id=", context)
+    identifier = identifier_match.group(0).replace("Z. z.", "Z. z.") if identifier_match else "najnovsi predpis"
+    title = title_match.group(1).strip() if title_match else "nazov nie je v MCP kontexte dostupny"
+    if prefers_slovak:
+        return (
+            f"Najnovsi zakon v systeme JurisDigta MCP je {identifier}: {title}. "
+            "Udaje pochadzaju z interneho MCP vyhladavania; pred praktickym pouzitim odporucam overit ucinnost a "
+            "konkretne ustanovenia pri ludskej pravnej kontrole."
+        )
+    return (
+        f"The latest law in the JurisDigta MCP system is {identifier}: {title}. "
+        "The data comes from internal MCP retrieval; verify effect and concrete sections before relying on it."
+    )
 
 
 def _collect_rental_facts(conversation: Sequence[Message]) -> dict[str, object]:

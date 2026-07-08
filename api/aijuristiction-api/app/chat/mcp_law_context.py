@@ -81,6 +81,7 @@ _OFFICIAL_LEGAL_SOURCE_HOSTS = (
     "nsud.sk",
     "ustavnysud.sk",
 )
+_INTERNAL_MCP_SECRET_HEADER = "X-JurisDigta-Internal-MCP-Secret"
 
 
 @dataclass(frozen=True)
@@ -253,17 +254,39 @@ def _should_search_court_decisions(query: str) -> bool:
 def _search_arguments(*, query: str, limit: int) -> dict[str, Any]:
     match = _LAW_IDENTIFIER_RE.search(query)
     search_query = query.strip()
+    latest_law_query = _is_latest_law_query(query)
     if match is not None:
         search_query = f"{int(match.group('number'))}/{int(match.group('year'))}"
+    elif latest_law_query:
+        search_query = "zakon"
     arguments: dict[str, Any] = {
         "query": search_query,
         "country_code": "SK",
-        "limit": limit,
+        "limit": 1 if latest_law_query else limit,
     }
+    if latest_law_query:
+        arguments["sort"] = "latest"
     if match is not None:
         arguments["law_number"] = int(match.group("number"))
         arguments["law_year"] = int(match.group("year"))
     return arguments
+
+
+def _is_latest_law_query(query: str) -> bool:
+    normalized = _canonical(query)
+    if "zmen" in normalized or "podla posled" in normalized:
+        return False
+    latest_then_law = re.search(
+        r"\b(posledn\w*|najnovs\w*|latest|newest|last)\b(?:\s+\w+){0,3}\s+"
+        r"(zakon\w*|pravny predpis|law|statute)\b",
+        normalized,
+    )
+    law_then_latest = re.search(
+        r"\b(zakon\w*|pravny predpis|law|statute)\b(?:\s+\w+){0,3}\s+"
+        r"(posledn\w*|najnovs\w*|latest|newest|last)\b",
+        normalized,
+    )
+    return latest_then_law is not None or law_then_latest is not None
 
 
 def _law_text_payload(*, result: dict[str, Any], max_chars: int) -> dict[str, Any]:
@@ -313,11 +336,15 @@ def _call_remote_mcp_tool(*, remote_base_url: str, name: str, arguments: dict[st
             "arguments": arguments,
         },
     }
+    headers = {"Content-Type": "application/json"}
+    internal_secret = _internal_mcp_shared_secret()
+    if internal_secret:
+        headers[_INTERNAL_MCP_SECRET_HEADER] = internal_secret
     with httpx.Client(timeout=10.0) as client:
         response = client.post(
             f"{remote_base_url}/mcp",
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
         response.raise_for_status()
         envelope = response.json()
@@ -340,6 +367,13 @@ def _call_remote_mcp_tool(*, remote_base_url: str, name: str, arguments: dict[st
         return {}
     decoded = json.loads(text)
     return decoded if isinstance(decoded, dict) else {}
+
+
+def _internal_mcp_shared_secret() -> str:
+    raw_value = os.getenv("INTERNAL_MCP_SHARED_SECRET", "").strip()
+    if raw_value in {"", "unknown-variable"}:
+        raw_value = os.getenv("MCP_API_JWT_SECRET", "").strip()
+    return "" if raw_value in {"", "unknown-variable"} else raw_value
 
 
 def _tool_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -372,12 +406,18 @@ def _prompt_note(
         "- Cite the law identifier and relevant section/paragraph when available; cite court decisions as case-law support, not binding statutory text.",
         "- If the legal conclusion depends on effective wording, amendment status, or missing facts, say so explicitly.",
         "- Do not invent legal citations that are not present in the MCP or official-source fallback results.",
+        "- Do not show raw MCP JSON, raw tool output, or internal field names to the user; turn the data into a short human-readable answer.",
         f"- Tool path: {_tool_path_label(search_arguments)}.",
         f"- MCP search arguments: {_compact_json(search_arguments)}",
         f"- User query: {query.strip()}",
         "",
         "MCP law results:",
     ]
+    if search_arguments.get("sort") == "latest":
+        lines.insert(
+            6,
+            "- The user asked for the latest law in the JurisDigta system; use the first MCP law result as the latest imported law.",
+        )
     for index, result in enumerate(laws, start=1):
         lines.append(
             f"{index}. document_id={result.get('document_id', '')}; "

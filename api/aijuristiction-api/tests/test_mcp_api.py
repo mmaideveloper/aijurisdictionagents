@@ -397,6 +397,25 @@ def test_mcp_all_tools_require_auth_and_authenticated_calls_work(monkeypatch, tm
     assert _tool_payload(text_response)["content_text"] == "Civil code full text."
 
 
+def test_mcp_internal_secret_allows_api_to_call_protected_tools(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _create_laws_db(tmp_path / "laws.sqlite3")
+
+    unauthenticated_response = _mcp_call("getStatistics")
+    assert unauthenticated_response.status_code == 401
+
+    internal_response = _mcp_call(
+        "getStatistics",
+        {"country_code": "SK"},
+        headers={"X-JurisDigta-Internal-MCP-Secret": "test-mcp-secret"},
+    )
+
+    assert internal_response.status_code == 200
+    payload = _tool_payload(internal_response)
+    assert payload["processed_laws"] == 1
+    assert payload["last_processed_law"] == "1/1993"
+
+
 def test_mcp_court_decision_tools_require_auth() -> None:
     unauthenticated_legal_sources = _mcp_call(
         "searchLegalSources",

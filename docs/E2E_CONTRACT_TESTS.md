@@ -24,6 +24,7 @@ This repository now includes deterministic end-to-end simulations for two docume
    - Creates a synthetic free-plan chat user.
    - Verifies the effective route is `free_local` through `local_ollama`.
    - Sends a legal chat prompt through `/v1/chat/sessions/{session_id}/reply` and fails if the API returns a network/model connection error.
+   - Asks `Daj mi posledny zakon v systeme?` and fails if the free-plan answer reports MCP unavailability or exposes raw MCP JSON/tool fields instead of a readable Slovak answer.
 
 5. `api/aijuristiction-api/e2e-playwright/tests/free-plan-ollama-document-pdf.spec.ts`
    - Creates a synthetic free-plan user and case.
