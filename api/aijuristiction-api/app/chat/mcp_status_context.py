@@ -51,10 +51,7 @@ def build_mcp_status_context(
             },
         )
 
-    status_payload = {
-        "getVersion": version_payload,
-        "getStatistics": statistics_payload,
-    }
+    status_payload = _status_context_payload(version_payload=version_payload, statistics_payload=statistics_payload)
     prompt_note = (
         "INTERNAL MCP STATUS CONTEXT:\n"
         "- The assistant backend has already queried JurisDigta MCP tools getVersion and getStatistics.\n"
@@ -118,6 +115,43 @@ def _should_use_mcp_status_context(*, query: str, country: str, language: str | 
 
 def _compact_json(value: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _status_context_payload(*, version_payload: dict[str, Any], statistics_payload: dict[str, Any]) -> dict[str, Any]:
+    laws_count = (
+        statistics_payload.get("processed_laws")
+        if statistics_payload.get("processed_laws") is not None
+        else statistics_payload.get("processed_laws_count")
+    )
+    return {
+        "getVersion": _without_none({
+            "mcp_server_version": version_payload.get("mcp_server_version"),
+            "api_version": version_payload.get("api_version"),
+            "core_version": version_payload.get("core_version"),
+        }),
+        "getStatistics": _without_none({
+            "country_code": statistics_payload.get("country_code"),
+            "processed_laws": laws_count,
+            "processed_laws_count": laws_count,
+            "jurisdictions": statistics_payload.get("jurisdictions"),
+            "collector_last_processed_law": statistics_payload.get("collector_last_processed_law"),
+            "collector_status": statistics_payload.get("collector_status"),
+            "court_decisions_total": _court_decisions_total(statistics_payload.get("court_decisions")),
+        }),
+    }
+
+
+def _without_none(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if item is not None}
+
+
+def _court_decisions_total(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return None
+    for key in ("total_decisions", "processed_decisions", "decisions_imported"):
+        if value.get(key) is not None:
+            return value.get(key)
+    return None
 
 
 def _canonical(value: str) -> str:

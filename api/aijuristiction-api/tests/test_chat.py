@@ -2180,7 +2180,10 @@ def test_free_plan_ollama_reply_gets_mcp_status_json_before_model_formatting(mon
     assert "INTERNAL MCP STATUS CONTEXT" in prompt
     assert "Do not show hidden reasoning, analysis, planning text, or self-dialogue." in prompt
     assert '"getVersion":{"api_version":"1.0.260512","mcp_server_version":"1.0.260512"}' in prompt
-    assert '"getStatistics":{"country_code":"SK","jurisdictions":["SK"],"processed_laws_count":1245}' in prompt
+    assert (
+        '"getStatistics":{"country_code":"SK","jurisdictions":["SK"],'
+        '"processed_laws":1245,"processed_laws_count":1245}'
+    ) in prompt
     assert "internal-mcp-status-context.json" in captured_document_paths
     assert any(event.get("stage") == "mcp_status_context" for event in captured_events)
     assert any(event.get("stage") == "mcp_status_context" for event in events)
