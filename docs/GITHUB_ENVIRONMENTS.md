@@ -174,6 +174,12 @@ Optional and conditional GitHub Environment secrets:
 | `CAR_VALIDATION_API_KEY` | Optional vehicle validation API key, injected as a Container App secret when configured |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key for backend contact-form verification when `CONTACT_CAPTCHA_REQUIRED=true` |
 
+Optional telemetry variable:
+
+| Variable | Purpose |
+| --- | --- |
+| `AZURE_MONITOR_ENABLED` | Set to `true` only in `test` or `prod` environments where API and worker telemetry should be exported to Azure Monitor. Defaults to disabled, even when `APPLICATIONINSIGHTS_CONNECTION_STRING` is present. |
+
 ## 6. Configure Frontend Variables
 
 These are used by the web frontend deployment workflow:

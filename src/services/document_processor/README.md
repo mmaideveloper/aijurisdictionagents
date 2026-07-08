@@ -99,7 +99,7 @@ Startup logs now print the resolved embedding runtime before processing begins, 
 - `[document-processor] startup embedding_option=local embedding_model=all-MiniLM-L6-v2 embedding_device=cpu`
 - `[document-processor] startup embedding_option=cloud embedding_model=text-embedding-3-large`
 - `[document-processor] batch_results={...}` is emitted as a single-line JSON payload so Azure Container Apps does not split one batch summary into many log rows.
-- When `APPLICATIONINSIGHTS_CONNECTION_STRING` is present on the Azure ACA job, those startup and processing logs are also exported to Application Insights under application name `document_processor`.
+- When `AZURE_MONITOR_ENABLED=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` are present on the Azure ACA job, those startup and processing logs are also exported to Application Insights under application name `document_processor`. The connection string alone does not enable export.
 - Failed documents now also emit a compact per-document error line with `doc_id`, `case_id`, `original_filename`, and `error`.
 
 ## Azure Container Apps

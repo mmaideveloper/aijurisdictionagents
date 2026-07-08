@@ -190,7 +190,7 @@ For Azure PostgreSQL deployments, the script uses `AZURE_POSTGRES_ADMIN_USERNAME
 stores that value in a Container Apps secret, and sets
 `DB_CLOUD=secretref:db-cloud` on the API container.
 If Application Insights exists or is provisioned by the same deployment, the script reads the connection string and sets
-`APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string` on the API container automatically.
+`APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:applicationinsights-connection-string` on the API container automatically. Azure Monitor export is disabled unless `AZURE_MONITOR_ENABLED=true` is also configured.
 The API deploy sets `AZURE_LOG_ANALYTICS_WORKSPACE_NAME` and
 `AZURE_MANAGED_IDENTITY_NAME` on the API container so
 `/v1/observability/logs` can resolve and query Azure telemetry. The deploy also sets

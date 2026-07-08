@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 _TELEMETRY_CONFIGURED = False
 _TELEMETRY_MODE: TelemetryMode | None = None
 TelemetryMode = Literal["azure-monitor", "otlp", "console"]
+_TRUTHY_VALUES = {"1", "true", "yes", "on"}
 
 
 def _has_resource_attribute(resource_attributes: str, key: str) -> bool:
@@ -44,6 +45,17 @@ def _set_default_resource_attributes(service_name: str, service_version: str) ->
         os.environ["OTEL_RESOURCE_ATTRIBUTES"] = ",".join(filter(None, [existing, *additions]))
 
 
+def _azure_monitor_enabled() -> bool:
+    return os.getenv("AZURE_MONITOR_ENABLED", "").strip().lower() in _TRUTHY_VALUES
+
+
+def _applicationinsights_connection_string() -> str:
+    connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "").strip()
+    if connection_string in {"", "unknown-variable"}:
+        return ""
+    return connection_string
+
+
 def configure_telemetry(service_name: str, service_version: str) -> TelemetryMode:
     global _TELEMETRY_CONFIGURED
     global _TELEMETRY_MODE
@@ -54,8 +66,8 @@ def configure_telemetry(service_name: str, service_version: str) -> TelemetryMod
 
     _set_default_resource_attributes(service_name, service_version)
 
-    connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "").strip()
-    if connection_string:
+    connection_string = _applicationinsights_connection_string()
+    if _azure_monitor_enabled() and connection_string:
         configure_azure_monitor(
             connection_string=connection_string,
             logger_name=service_name,

@@ -312,6 +312,7 @@ Email notification setup:
 Azure deployments already use Application Insights and Log Analytics for API and worker logs. Keep these settings aligned:
 
 - `APPLICATIONINSIGHTS_CONNECTION_STRING`
+- `AZURE_MONITOR_ENABLED=true` when API or worker telemetry export should be sent to Azure Monitor; leaving it unset keeps export disabled by default.
 - `AZURE_LOG_ANALYTICS_WORKSPACE_NAME`
 - `AZURE_MANAGED_IDENTITY_NAME`
 - `AZURE_RESOURCE_GROUP`
