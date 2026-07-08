@@ -1570,6 +1570,31 @@ def _run_direct_lawyer_turn(
         country=session.country,
         language=session.language,
     )
+    if use_compact_local_prompt and mcp_status_context is not None and mcp_status_context.direct_reply:
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id,
+            session=session,
+            content=mcp_status_context.direct_reply,
+            agent_name="Assistant",
+        )
+        processing_events.append(mcp_status_context.processing_event)
+        if processing_event_callback is not None:
+            processing_event_callback(mcp_status_context.processing_event)
+        _record_case_ai_model_audit(
+            session=session,
+            question=persisted_user,
+            answer=persisted_lawyer,
+            task_type="chat_status",
+            source="chat.direct_reply",
+            model_used=False,
+        )
+        return (
+            persisted_user,
+            persisted_lawyer,
+            _user_visible_text(persisted_lawyer.content),
+            processing_events,
+            routed_llm,
+        )
     if mcp_status_context is not None:
         prompt_override = f"{prompt_override}\n\n{mcp_status_context.prompt_note}"
         if mcp_status_context.document is not None:

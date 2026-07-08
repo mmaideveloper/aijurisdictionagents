@@ -2104,15 +2104,13 @@ def test_mcp_status_context_handles_imported_laws_count_without_mcp_keyword(monk
     assert "Koľko zákonov ma systém importovaných" in context.prompt_note
 
 
-def test_free_plan_ollama_reply_gets_mcp_status_json_before_model_formatting(monkeypatch) -> None:
+def test_free_plan_status_count_reply_uses_mcp_statistics_before_ollama(monkeypatch) -> None:
     from app.chat.models import Session
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
 
     repository = InMemoryChatRepository()
     session = repository.create_session(Session(country="SK", language="sk-SK", discussion_type="advice"))
-    captured_prompts: list[str] = []
-    captured_document_paths: list[str] = []
     captured_events: list[dict[str, object]] = []
     calls: list[tuple[str, dict[str, object]]] = []
 
@@ -2120,17 +2118,7 @@ def test_free_plan_ollama_reply_gets_mcp_status_json_before_model_formatting(mon
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
-            captured_document_paths.extend(document.path for document in documents)
-            return SimpleNamespace(
-                content=(
-                    "MCP server: 1.0.260512. Importovane zakony: 1245. Jurisdikcie: SK.\n"
-                    'CASE_UPDATE_JSON: {"case":{"status":"intake_open",'
-                    '"jurisdiction":{"country":"SK","language":"sk-SK"},'
-                    '"facts_summary":"MCP status preview","client_goal":"MCP status","open_questions":[]}}'
-                ),
-                agent_name="LawyerSlovakia",
-            )
+            raise AssertionError("free status count should not call local LLM")
 
     def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
         calls.append((name, arguments))
@@ -2172,19 +2160,8 @@ def test_free_plan_ollama_reply_gets_mcp_status_json_before_model_formatting(mon
     assert route.route_type == "free_local"
     assert route.provider == "local_ollama"
     assert calls == [("getVersion", {}), ("getStatistics", {"country_code": "SK"})]
-    assert lawyer.agent_name == "LawyerSlovakia"
-    assert "MCP server: 1.0.260512" in visible
-    assert captured_prompts
-    prompt = captured_prompts[-1]
-    assert "JurisDigta Assistant, a Slovak legal intake assistant for free-plan local model routing" in prompt
-    assert "INTERNAL MCP STATUS CONTEXT" in prompt
-    assert "Do not show hidden reasoning, analysis, planning text, or self-dialogue." in prompt
-    assert '"getVersion":{"api_version":"1.0.260512","mcp_server_version":"1.0.260512"}' in prompt
-    assert (
-        '"getStatistics":{"country_code":"SK","jurisdictions":["SK"],'
-        '"processed_laws":1245,"processed_laws_count":1245}'
-    ) in prompt
-    assert "internal-mcp-status-context.json" in captured_document_paths
+    assert lawyer.agent_name == "Assistant"
+    assert visible == "Systém má importovaných celkovo 1 245 zákonov."
     assert any(event.get("stage") == "mcp_status_context" for event in captured_events)
     assert any(event.get("stage") == "mcp_status_context" for event in events)
 

@@ -18,6 +18,7 @@ class McpStatusContext:
     prompt_note: str
     document: CoreDocument | None
     processing_event: dict[str, object]
+    direct_reply: str | None = None
 
 
 def build_mcp_status_context(
@@ -78,6 +79,7 @@ def build_mcp_status_context(
                 "country_code": "SK",
             },
         },
+        direct_reply=_direct_status_reply(status_payload),
     )
 
 
@@ -152,6 +154,22 @@ def _court_decisions_total(value: Any) -> Any:
         if value.get(key) is not None:
             return value.get(key)
     return None
+
+
+def _direct_status_reply(status_payload: dict[str, Any]) -> str | None:
+    statistics = status_payload.get("getStatistics")
+    if not isinstance(statistics, dict):
+        return None
+    laws_count = statistics.get("processed_laws")
+    if laws_count is None:
+        laws_count = statistics.get("processed_laws_count")
+    if laws_count is None:
+        return None
+    try:
+        formatted_count = f"{int(laws_count):,}".replace(",", " ")
+    except (TypeError, ValueError):
+        formatted_count = str(laws_count)
+    return f"Systém má importovaných celkovo {formatted_count} zákonov."
 
 
 def _canonical(value: str) -> str:
