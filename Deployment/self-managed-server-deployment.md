@@ -495,7 +495,7 @@ bash Deployment/server/install_mcp_trycloudflared_fallback.sh install
 The service is:
 
 ```text
-jurisdigta-mcp-trycloudflared.service
+jurisdigta-mcp-trycloudflare.service
 ```
 
 It forwards the same local MCP origin:
@@ -504,24 +504,24 @@ It forwards the same local MCP origin:
 http://127.0.0.1:8070
 ```
 
-Current live URL created on 2026-07-07:
+Current live URL created on 2026-07-08:
 
 ```text
-https://fuel-showed-principles-rotation.trycloudflare.com/MCP
+https://remote-neighbors-lions-councils.trycloudflare.com/MCP
 ```
 
 Fetch the current URL after any restart:
 
 ```bash
 /srv/jurisdigta/app/Deployment/server/install_mcp_trycloudflared_fallback.sh url
-journalctl -u jurisdigta-mcp-trycloudflared.service -n 100 --no-pager | grep -Eo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' | tail -n 1
+journalctl -u jurisdigta-mcp-trycloudflare.service -n 100 --no-pager | grep -Eo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' | tail -n 1
 ```
 
 Validate:
 
 ```bash
-curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/health
-curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/.well-known/oauth-protected-resource/mcp
+curl -fsS https://remote-neighbors-lions-councils.trycloudflare.com/health
+curl -fsS https://remote-neighbors-lions-councils.trycloudflare.com/.well-known/oauth-protected-resource/mcp
 ```
 
 This is a diagnostic or short-lived fallback only. The URL is random, can change

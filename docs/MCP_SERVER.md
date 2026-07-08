@@ -161,9 +161,9 @@ Use `https://mcp.jurisdigta.eu/MCP` as the remote MCP server URL in clients that
 ### Temporary trycloudflare fallback
 
 The currently active quick-tunnel URL on `jurisdigta-server` is
-`https://fuel-showed-principles-rotation.trycloudflare.com/MCP`. It forwards to
+`https://remote-neighbors-lions-councils.trycloudflare.com/MCP`. It forwards to
 the same local MCP origin, `http://127.0.0.1:8070`, through the server-side
-`jurisdigta-mcp-trycloudflared.service`. Use it only for diagnostics or a
+`jurisdigta-mcp-trycloudflare.service`. Use it only for diagnostics or a
 short-lived fallback when the named `mcp.jurisdigta.eu` Cloudflare route is
 blocked. The URL can change whenever the quick tunnel restarts.
 
@@ -176,8 +176,8 @@ ssh jurisdigta-server "/srv/jurisdigta/app/Deployment/server/install_mcp_tryclou
 Validate it from the server with:
 
 ```bash
-curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/health
-curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/.well-known/oauth-protected-resource/mcp
+curl -fsS https://remote-neighbors-lions-councils.trycloudflare.com/health
+curl -fsS https://remote-neighbors-lions-councils.trycloudflare.com/.well-known/oauth-protected-resource/mcp
 ```
 
 The quick tunnel does not replace the production OAuth issuer. OAuth metadata

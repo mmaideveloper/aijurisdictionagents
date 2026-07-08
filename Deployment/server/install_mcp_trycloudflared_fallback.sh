@@ -2,14 +2,14 @@
 set -Eeuo pipefail
 
 ACTION="${1:-install}"
-SERVICE_NAME="${SERVICE_NAME:-jurisdigta-mcp-trycloudflared.service}"
+SERVICE_NAME="${SERVICE_NAME:-jurisdigta-mcp-trycloudflare.service}"
 MCP_ORIGIN_URL="${MCP_ORIGIN_URL:-http://127.0.0.1:8070}"
 DEPLOY_ROOT="${DEPLOY_ROOT:-/srv/jurisdigta}"
-LOG_FILE="${LOG_FILE:-$DEPLOY_ROOT/runs/logs/mcp-trycloudflared.log}"
+LOG_FILE="${LOG_FILE:-$DEPLOY_ROOT/runs/logs/mcp-trycloudflare.log}"
 UNIT_PATH="/etc/systemd/system/$SERVICE_NAME"
 
 log() {
-  printf '[mcp-trycloudflared] %s\n' "$*"
+  printf '[mcp-trycloudflare] %s\n' "$*"
 }
 
 require_sudo() {

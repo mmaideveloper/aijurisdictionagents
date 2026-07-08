@@ -295,7 +295,7 @@ is healthy but the named `mcp.jurisdigta.eu` Cloudflare route is blocked or
 misconfigured. On `jurisdigta-server`, the fallback systemd service is:
 
 ```text
-jurisdigta-mcp-trycloudflared.service
+jurisdigta-mcp-trycloudflare.service
 ```
 
 It runs:
@@ -304,10 +304,10 @@ It runs:
 cloudflared tunnel --url http://127.0.0.1:8070
 ```
 
-Current live URL created on 2026-07-07:
+Current live URL created on 2026-07-08:
 
 ```text
-https://fuel-showed-principles-rotation.trycloudflare.com/MCP
+https://remote-neighbors-lions-councils.trycloudflare.com/MCP
 ```
 
 Get the current URL from the server:
@@ -319,8 +319,8 @@ ssh jurisdigta-server "/srv/jurisdigta/app/Deployment/server/install_mcp_tryclou
 Validate:
 
 ```bash
-curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/health
-curl -fsS https://fuel-showed-principles-rotation.trycloudflare.com/.well-known/oauth-protected-resource/mcp
+curl -fsS https://remote-neighbors-lions-councils.trycloudflare.com/health
+curl -fsS https://remote-neighbors-lions-councils.trycloudflare.com/.well-known/oauth-protected-resource/mcp
 ```
 
 The fallback proves whether the MCP origin at `127.0.0.1:8070` works through a
