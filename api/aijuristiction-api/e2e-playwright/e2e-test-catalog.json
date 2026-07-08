@@ -100,6 +100,16 @@
     "prerequisite": "Requires a live API with local_ollama/qwen3:1.7b reachable and a Python runtime with pypdf for PDF text extraction."
   },
   {
+    "id": "free-plan-latest-law-mcp-context",
+    "file": "tests/free-plan-api-connectivity.spec.ts",
+    "title": "free plan local model answers latest-law question from MCP context without raw tool output",
+    "name": "Free-plan latest law MCP context",
+    "description": "Creates a synthetic free-plan chat session, asks Daj mi posledny zakon v systeme?, and verifies the local-model answer is grounded in MCP data without MCP-unavailable copy or raw JSON/tool fields.",
+    "area": "Free-plan local model legal grounding",
+    "scheduled": false,
+    "prerequisite": "Requires a live API with local_ollama/qwen3:1.7b reachable and JurisDigta MCP law tools available."
+  },
+  {
     "id": "frontend-auth-case-document",
     "file": "tests/frontend-auth-case-document.spec.ts",
     "title": "registration and login can create, reopen, and preview a generated potvrdenie PDF",

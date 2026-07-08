@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 import base64
 import hashlib
+import hmac
 from html import escape
 import importlib
 import json
@@ -64,6 +65,7 @@ MCP_SERVER_INSTRUCTIONS = (
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
 _PUBLIC_TOOLS: set[str] = set()
+_INTERNAL_MCP_SECRET_HEADER = "x-jurisdigta-internal-mcp-secret"
 
 
 def _bounded_env_int(name: str, *, default: int, minimum: int, maximum: int) -> int:
@@ -1517,12 +1519,15 @@ def _handle_json_rpc_message(
                 ",".join(sorted(str(key) for key in arguments.keys())),
                 tool_name not in public_tools,
             )
-            user_id = _require_auth_for_tool(
-                tool_name=tool_name,
-                authorization=authorization,
-                x_mcp_api_key=x_mcp_api_key,
-                store=store,
-            )
+            if tool_name in public_tools:
+                user_id = "internal"
+            else:
+                user_id = _require_auth_for_tool(
+                    tool_name=tool_name,
+                    authorization=authorization,
+                    x_mcp_api_key=x_mcp_api_key,
+                    store=store,
+                )
             result = _call_tool(tool_name, arguments, user_id=user_id)
             logger.info(
                 "mcp_tool_completed tool=%s duration_ms=%d result_summary=%s",
@@ -3191,7 +3196,24 @@ def _allowed_oauth_redirect_hosts() -> set[str]:
 
 
 def _public_tools_for_request(request: Request) -> set[str]:
+    if _is_internal_mcp_request(request):
+        return {str(tool["name"]) for tool in _mcp_tools()}
     return _PUBLIC_TOOLS
+
+
+def _is_internal_mcp_request(request: Request) -> bool:
+    expected_secret = _internal_mcp_shared_secret()
+    if not expected_secret:
+        return False
+    provided_secret = request.headers.get(_INTERNAL_MCP_SECRET_HEADER, "").strip()
+    return bool(provided_secret) and hmac.compare_digest(provided_secret, expected_secret)
+
+
+def _internal_mcp_shared_secret() -> str:
+    raw_value = os.getenv("INTERNAL_MCP_SHARED_SECRET", "").strip()
+    if raw_value in {"", "unknown-variable"}:
+        raw_value = os.getenv("MCP_API_JWT_SECRET", "").strip()
+    return "" if raw_value in {"", "unknown-variable"} else raw_value
 
 
 def _payload_requires_auth(*, request: Request, payload: Any, public_tools: set[str]) -> bool:

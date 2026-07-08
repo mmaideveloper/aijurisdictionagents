@@ -146,6 +146,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the API. Include browser-hosted frontend origins such as `https://web.jurisdigta.eu` and `https://agent.jurisdigta.eu`; self-managed prod deploy appends those two origins when starting the API container |
 | `MCP_CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the dedicated MCP service; default production value should include `https://mcp.jurisdigta.eu` |
 | `INTERNAL_MCP_BASE_URL` | Optional API-to-MCP base URL for internal assistant law lookups. Self-managed prod injects `http://jurisdigta-mcp:8070` into the API container so chat answers can call the same MCP `searchLaws` and `getLawText` tools as external assistants |
+| `INTERNAL_MCP_SHARED_SECRET` | Optional service-to-service secret for API-originated internal MCP tool calls. If unset, the API and MCP service use the existing `MCP_API_JWT_SECRET`; set this only when you want a separate internal shared secret in both containers |
 | `MCP_PORT` | Local/self-managed MCP service port when using Docker Compose, default `8070` |
 | `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED` | Optional, default `false`; enables password-only MFA bypass only for hardcoded synthetic MCP OAuth E2E emails when the allowlist and expiry are also set |
 | `MCP_OAUTH_TEST_MFA_BYPASS_EMAILS` | Optional synthetic E2E allowlist; use `mcp-claude-test-free@jurisdigta.eu,mcp-claude-test-paid@jurisdigta.eu` only for controlled connector validation |

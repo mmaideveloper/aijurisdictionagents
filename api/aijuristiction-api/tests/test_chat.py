@@ -1722,6 +1722,53 @@ def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
     assert "§ 588" in context.document.content
 
 
+def test_mcp_law_context_uses_latest_sort_for_latest_law_question(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        if name == "searchLaws":
+            return {
+                "results": [
+                    {
+                        "document_id": "doc-136-2026",
+                        "law_identifier_text": "136/2026 Z. z.",
+                        "title": "Zakon o testovacom najnovsom predpise",
+                        "source_url": "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/136/",
+                    }
+                ]
+            }
+        if name == "getLawText":
+            return {
+                "document_id": arguments["document_id"],
+                "law_identifier_text": "136/2026 Z. z.",
+                "title": "Zakon o testovacom najnovsom predpise",
+                "content_text": "Uvodne ustanovenia najnovsieho predpisu.",
+            }
+        raise AssertionError(name)
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+
+    context = build_mcp_law_context(
+        query="Daj mi posledny zakon v systeme?",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert calls[0] == (
+        "searchLaws",
+        {"query": "zakon", "country_code": "SK", "limit": 1, "sort": "latest"},
+    )
+    assert calls[1][0] == "getLawText"
+    assert calls[1][1]["document_id"] == "doc-136-2026"
+    assert "latest law in the JurisDigta system" in context.prompt_note
+    assert "Do not show raw MCP JSON" in context.prompt_note
+    assert "136/2026 Z. z." in context.prompt_note
+
+
 def test_mcp_law_context_uses_combined_legal_sources_for_court_decision_query(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
@@ -1878,6 +1925,7 @@ def test_mcp_law_context_prefers_remote_mcp_endpoint(monkeypatch) -> None:
             return _FakeResponse()
 
     monkeypatch.setenv("INTERNAL_MCP_BASE_URL", "http://jurisdigta-mcp:8070")
+    monkeypatch.setenv("MCP_API_JWT_SECRET", "internal-mcp-secret")
     monkeypatch.setattr("app.chat.mcp_law_context.httpx.Client", _FakeClient)
     monkeypatch.setattr(
         "app.mcp_api._call_tool",
@@ -1896,6 +1944,98 @@ def test_mcp_law_context_prefers_remote_mcp_endpoint(monkeypatch) -> None:
         "http://jurisdigta-mcp:8070/mcp",
     ]
     assert "§ 588 text" in context.prompt_note
+
+def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+    from app.chat.models import Session
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    session = repository.create_session(Session(country="SK", language="sk-SK", discussion_type="advice"))
+    captured_prompts: list[str] = []
+    captured_document_paths: list[str] = []
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            captured_document_paths.extend(document.path for document in documents)
+            return SimpleNamespace(
+                content=(
+                    "Najnovsi zakon v systeme je 136/2026 Z. z. - Zakon o testovacom najnovsom predpise.\n"
+                    'CASE_UPDATE_JSON: {"case":{"status":"intake_open",'
+                    '"jurisdiction":{"country":"SK","language":"sk-SK"},'
+                    '"facts_summary":"Najnovsi zakon v systeme","client_goal":"Zistit najnovsi zakon",'
+                    '"open_questions":[]}}'
+                ),
+                agent_name="LawyerSlovakia",
+            )
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        if name == "searchLaws":
+            return {
+                "results": [
+                    {
+                        "document_id": "doc-136-2026",
+                        "law_identifier_text": "136/2026 Z. z.",
+                        "title": "Zakon o testovacom najnovsom predpise",
+                    }
+                ]
+            }
+        if name == "getLawText":
+            return {
+                "document_id": arguments["document_id"],
+                "law_identifier_text": "136/2026 Z. z.",
+                "title": "Zakon o testovacom najnovsom predpise",
+                "content_text": "Uvodne ustanovenia.",
+            }
+        raise AssertionError(name)
+
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        chat_api,
+        "prepare_country_direct_reply",
+        lambda **_kwargs: SimpleNamespace(
+            direct_reply=None,
+            prompt_note="",
+            supplemental_documents=[],
+            processing_events=[],
+        ),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "_resolve_session_llm_route",
+        lambda **_kwargs: SimpleNamespace(client=object(), route_type="free_local", provider="local_ollama"),
+    )
+    monkeypatch.setattr("aijurisdictionagents.agents.create_lawyer_agent", lambda llm, country: _SpyLawyer())
+    monkeypatch.setattr(chat_api, "build_mcp_law_context", build_mcp_law_context)
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+
+    _user, lawyer, visible, events, route = chat_api._run_direct_lawyer_turn(
+        session_id=session.id,
+        session=session,
+        content="Daj mi posledny zakon v systeme?",
+    )
+
+    assert route is not None
+    assert route.route_type == "free_local"
+    assert route.provider == "local_ollama"
+    assert lawyer.agent_name == "LawyerSlovakia"
+    assert "Najnovsi zakon v systeme je 136/2026 Z. z." in visible
+    assert calls[0] == (
+        "searchLaws",
+        {"query": "zakon", "country_code": "SK", "limit": 1, "sort": "latest"},
+    )
+    assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_prompts[-1]
+    assert "Do not show raw MCP JSON" in captured_prompts[-1]
+    assert "internal-mcp-law-context.txt" in captured_document_paths
+    assert any(event.get("stage") == "mcp_law_context" for event in events)
+
 
 def test_mcp_status_context_calls_version_and_statistics_for_slovak_status_query(monkeypatch) -> None:
     from app.chat.mcp_status_context import build_mcp_status_context

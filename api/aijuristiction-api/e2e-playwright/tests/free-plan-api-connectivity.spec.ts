@@ -79,3 +79,39 @@ test('free plan user can connect to JurisDigta API and receive a local-model cha
   expect(reply.content.trim().length).toBeGreaterThan(40);
   expect(reply.content).not.toMatch(/Connection error|internal_server_error|network/i);
 });
+
+test('free plan local model answers latest-law question from MCP context without raw tool output', async ({
+  request,
+  baseURL,
+}) => {
+  test.setTimeout(Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 180_000));
+
+  const userId = randomUUID();
+  const sessionResponse = await request.post(`${baseURL}/v1/chat/sessions`, {
+    headers: { 'x-api-key': apiKey },
+    data: {
+      user_id: userId,
+      country: 'SK',
+      language: 'sk',
+      discussion_type: 'advice',
+    },
+  });
+  expect(sessionResponse.status()).toBe(200);
+  const session = (await sessionResponse.json()) as ChatSession;
+
+  const replyResponse = await request.post(`${baseURL}/v1/chat/sessions/${session.id}/reply`, {
+    headers: { 'x-api-key': apiKey },
+    data: {
+      content: 'Daj mi posledny zakon v systeme?',
+    },
+    timeout: Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 180_000),
+  });
+
+  expect(replyResponse.status()).toBe(200);
+  const reply = (await replyResponse.json()) as ChatMessage;
+  expect(reply.role).toBe('assistant');
+  expect(reply.content.trim().length).toBeGreaterThan(40);
+  expect(reply.content).toMatch(/z[aá]kon|Z\. z\.|predpis/i);
+  expect(reply.content).not.toMatch(/temporarily unavailable|do[c]?asne nedostup|Connection error/i);
+  expect(reply.content).not.toMatch(/"results"|"document_id"|"content_text"|INTERNAL MCP|CASE_UPDATE_JSON/i);
+});
