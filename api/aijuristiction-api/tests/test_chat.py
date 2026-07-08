@@ -2077,6 +2077,33 @@ def test_mcp_status_context_calls_version_and_statistics_for_slovak_status_query
     assert details["source_origin"] == "jurisdigta_mcp"
 
 
+def test_mcp_status_context_handles_imported_laws_count_without_mcp_keyword(monkeypatch) -> None:
+    from app.chat.mcp_status_context import build_mcp_status_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        if name == "getVersion":
+            return {"mcp_server_version": "1.0.260512"}
+        if name == "getStatistics":
+            return {"country_code": "SK", "processed_laws_count": 1245, "jurisdictions": ["SK"]}
+        raise AssertionError(name)
+
+    monkeypatch.setattr("app.chat.mcp_status_context._call_mcp_tool", fake_call_tool)
+
+    context = build_mcp_status_context(
+        query="Koľko zákonov ma systém importovaných",
+        country="SK",
+        language="sk",
+    )
+
+    assert context is not None
+    assert calls == [("getVersion", {}), ("getStatistics", {"country_code": "SK"})]
+    assert "1245" in context.prompt_note
+    assert "Koľko zákonov ma systém importovaných" in context.prompt_note
+
+
 def test_free_plan_ollama_reply_gets_mcp_status_json_before_model_formatting(monkeypatch) -> None:
     from app.chat.models import Session
     from app.chat.repository import InMemoryChatRepository
@@ -2151,6 +2178,7 @@ def test_free_plan_ollama_reply_gets_mcp_status_json_before_model_formatting(mon
     prompt = captured_prompts[-1]
     assert "JurisDigta Assistant, a Slovak legal intake assistant for free-plan local model routing" in prompt
     assert "INTERNAL MCP STATUS CONTEXT" in prompt
+    assert "Do not show hidden reasoning, analysis, planning text, or self-dialogue." in prompt
     assert '"getVersion":{"api_version":"1.0.260512","mcp_server_version":"1.0.260512"}' in prompt
     assert '"getStatistics":{"country_code":"SK","jurisdictions":["SK"],"processed_laws_count":1245}' in prompt
     assert "internal-mcp-status-context.json" in captured_document_paths

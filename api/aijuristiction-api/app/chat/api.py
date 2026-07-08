@@ -1713,6 +1713,7 @@ def _build_compact_free_local_lawyer_prompt(
 
         Output contract:
         - First write only the user-facing answer.
+        - Do not show hidden reasoning, analysis, planning text, or self-dialogue.
         - Then include CASE_UPDATE_JSON with compact valid JSON:
           {{"case":{{"status":"intake_open|waiting_user|ready_for_next_step","jurisdiction":{{"country":"{session.country}","language":"{language}"}},"facts_summary":"...","client_goal":"...","open_questions":["..."]}}}}
         - Keep open_questions to at most one item.

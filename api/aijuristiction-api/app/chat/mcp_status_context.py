@@ -90,13 +90,13 @@ def _should_use_mcp_status_context(*, query: str, country: str, language: str | 
     if normalized_country != "SK" and not normalized_language.startswith("sk"):
         return False
     normalized_query = _canonical(query)
-    if "mcp" not in normalized_query:
-        return False
     status_markers = (
         "verzi",
         "version",
         "server",
         "servr",
+        "system",
+        "sistem",
         "statistik",
         "statistics",
         "importovan",
@@ -104,7 +104,16 @@ def _should_use_mcp_status_context(*, query: str, country: str, language: str | 
         "zakon",
         "jurisdik",
     )
-    return any(marker in normalized_query for marker in status_markers)
+    if "mcp" in normalized_query:
+        return any(marker in normalized_query for marker in status_markers)
+
+    imported_law_count_patterns = (
+        r"\bkolko\b.*\bzakon\w*\b.*\b(importovan\w*|system\w*|sistem\w*)",
+        r"\bkolko\b.*\b(importovan\w*)\b.*\bzakon\w*\b",
+        r"\b(pocet|count|number)\b.*\b(importovan\w*|imported)\b.*\b(zakon\w*|laws?)\b",
+        r"\b(importovan\w*|imported)\b.*\b(zakon\w*|laws?)\b.*\b(pocet|count|number)\b",
+    )
+    return any(re.search(pattern, normalized_query) for pattern in imported_law_count_patterns)
 
 
 def _compact_json(value: dict[str, Any]) -> str:
