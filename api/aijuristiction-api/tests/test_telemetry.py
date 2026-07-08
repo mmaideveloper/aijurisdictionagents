@@ -21,6 +21,7 @@ def _patch_common(
     *,
     otlp_endpoint: str | None,
     applicationinsights_connection_string: str | None = None,
+    azure_monitor_enabled: str | None = None,
 ) -> dict[str, object]:
     telemetry._TELEMETRY_CONFIGURED = False
     telemetry._TELEMETRY_MODE = None
@@ -37,6 +38,10 @@ def _patch_common(
     )
     if not applicationinsights_connection_string:
         monkeypatch.delenv("APPLICATIONINSIGHTS_CONNECTION_STRING", raising=False)
+    if azure_monitor_enabled is None:
+        monkeypatch.delenv("AZURE_MONITOR_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("AZURE_MONITOR_ENABLED", azure_monitor_enabled)
 
     monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
     monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
@@ -90,11 +95,30 @@ def test_configure_telemetry_uses_simple_processor_for_console(monkeypatch) -> N
     assert provider.processors == [("simple", ("console", None))]
 
 
-def test_configure_telemetry_uses_azure_monitor_when_connection_string_present(monkeypatch) -> None:
+def test_configure_telemetry_uses_console_when_connection_string_present_but_azure_monitor_disabled(
+    monkeypatch,
+) -> None:
     calls = _patch_common(
         monkeypatch,
         otlp_endpoint=None,
         applicationinsights_connection_string="InstrumentationKey=test-key",
+    )
+
+    mode = telemetry.configure_telemetry("svc", "0.1.0")
+
+    provider = calls["provider"]
+    assert mode == "console"
+    assert isinstance(provider, _DummyTracerProvider)
+    assert provider.processors == [("simple", ("console", None))]
+    assert "azure_monitor" not in calls
+
+
+def test_configure_telemetry_uses_azure_monitor_when_enabled_and_connection_string_present(monkeypatch) -> None:
+    calls = _patch_common(
+        monkeypatch,
+        otlp_endpoint=None,
+        applicationinsights_connection_string="InstrumentationKey=test-key",
+        azure_monitor_enabled="true",
     )
 
     mode = telemetry.configure_telemetry("svc", "0.1.0")
@@ -112,6 +136,7 @@ def test_instrument_fastapi_skips_manual_instrumentation_for_azure_monitor(monke
         monkeypatch,
         otlp_endpoint=None,
         applicationinsights_connection_string="InstrumentationKey=test-key",
+        azure_monitor_enabled="true",
     )
 
     telemetry.configure_telemetry("svc", "0.1.0")

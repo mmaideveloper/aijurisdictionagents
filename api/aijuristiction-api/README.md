@@ -748,7 +748,8 @@ For Slovak simulated discussions, the AI user now ends the conversation with `To
 
 ## OpenTelemetry
 
-- Recommended production path: set `APPLICATIONINSIGHTS_CONNECTION_STRING` and the API will export requests, traces, logs, and unhandled exceptions to Azure Monitor / Application Insights.
+- Azure Monitor / Application Insights export is disabled by default, even when `APPLICATIONINSIGHTS_CONNECTION_STRING` is present in `.env`.
+- Recommended production path: set `AZURE_MONITOR_ENABLED=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING`, and the API will export requests, traces, logs, and unhandled exceptions to Azure Monitor / Application Insights.
 - The API keeps writing structured request logs to console, so ACA log streaming and Log Analytics remain available even when Application Insights is enabled.
 - To enable the `/v1/observability/logs` API in Azure, the deployed Container App also needs:
   - `AZURE_LOG_ANALYTICS_WORKSPACE_NAME`
@@ -758,7 +759,7 @@ For Slovak simulated discussions, the AI user now ends the conversation with `To
 - Repository Azure deploys populate those values automatically from the shared Log Analytics workspace and the configured user-assigned managed identity. They also set the standard `AZURE_CLIENT_ID` environment variable on the Container App so Azure SDK auth selects the intended user-assigned identity.
 - The user-assigned managed identity should have `Log Analytics Data Reader` on the target Log Analytics workspace.
 - Fallback behavior:
-  - If `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, Azure Monitor OpenTelemetry is used.
+  - If `AZURE_MONITOR_ENABLED=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, Azure Monitor OpenTelemetry is used.
   - Else if `OTEL_EXPORTER_OTLP_ENDPOINT` is set, traces are exported to that OTLP endpoint.
   - Else traces are written via the console exporter.
 - `OTEL_SERVICE_NAME` defaults to `aijuristiction-api` if not set explicitly.
@@ -767,7 +768,7 @@ For Slovak simulated discussions, the AI user now ends the conversation with `To
 Local Azure Monitor example:
 
 ```bash
-APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=..." uvicorn app.main:app --reload --port 8080
+AZURE_MONITOR_ENABLED=true APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=..." uvicorn app.main:app --reload --port 8080
 ```
 
 Local OTLP fallback example:
@@ -828,7 +829,7 @@ The API echoes both `x-request-id` and `x-correlation-id` in responses, and ACA 
 
 Application Insights and alerts:
 
-- In ACA, set `APPLICATIONINSIGHTS_CONNECTION_STRING` as a secret-backed environment variable.
+- In ACA, set `AZURE_MONITOR_ENABLED=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` as a secret-backed environment variable.
 - The infra deployment now provisions or reuses the Application Insights resource `ai-juris-dev` by default and applies its connection string to the API Container App automatically.
 - Recommended alert sources:
   - failed requests / HTTP 5xx
@@ -856,7 +857,7 @@ AppRequests
 GitHub workflows:
 
 - `.github/workflows/infra_deploy.yml`: provisions or updates Azure infrastructure, including PostgreSQL Flexible Server
-- `.github/workflows/api_build_deploy.yml`: builds and deploys the API image, applies schema updates to Azure PostgreSQL, and injects `APPLICATIONINSIGHTS_CONNECTION_STRING` into ACA when the GitHub Environment secret is present
+- `.github/workflows/api_build_deploy.yml`: builds and deploys the API image, applies schema updates to Azure PostgreSQL, and injects `APPLICATIONINSIGHTS_CONNECTION_STRING` into ACA when the GitHub Environment secret is present. Azure Monitor export still requires `AZURE_MONITOR_ENABLED=true`.
 - `.github/workflows/database_schema_upgrade.yml`: upgrades schema on an existing Azure PostgreSQL server without rebuilding or redeploying the API
 
 ## Build + deployment workflow
