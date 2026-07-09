@@ -198,5 +198,15 @@
     "area": "Frontend legal RAG",
     "scheduled": false,
     "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-mcp-legal-query-answers",
+    "file": "tests/frontend-mcp-legal-query-answers.spec.ts",
+    "title": "assistant answers latest sublease court decision and newest apartment-rental laws through MCP",
+    "name": "Frontend MCP legal query answers",
+    "description": "Drives the Slovak assistant workspace with one court-decision prompt and one apartment-rental law prompt, verifies MCP tool progress, rendered answers, citation provenance, and captures a screenshot artifact.",
+    "area": "Frontend legal RAG",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
   }
 ]
