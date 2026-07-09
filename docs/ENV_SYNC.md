@@ -12,10 +12,50 @@ and copied to the self-managed `jurisdigta-server`.
 - The full local `.env` may be copied to `jurisdigta-server`, but only over SSH.
 - The server runtime file is `/srv/jurisdigta/secrets/jurisdigta.env`.
 - The server file must stay outside Git and use restrictive permissions.
+- New task worktrees should be created with `.\scripts\new_task_worktree.ps1` so
+  each worktree gets its own ignored `.env` plus `.\conda\python.exe`.
+- The optional shared workstation seed is
+  `%USERPROFILE%\.jurisdigta\aijurisdictionagents.env`; it is local-only,
+  outside Git, and must be moved to another computer only through an approved
+  encrypted/operator-controlled channel.
 
 The `unknown-variable` placeholder is intentional. Local startup and sync checks
 can warn when a required value still needs a real secret without inventing a
 default or silently switching providers.
+
+## New Worktrees
+
+The worktree helper prepares both Python and local configuration:
+
+```powershell
+.\scripts\new_task_worktree.ps1 `
+  -Branch codex/issue-123-short-name `
+  -WorktreePath C:\Users\maton\.codex\worktrees\issue-123-short-name\aijurisdictionagents
+```
+
+It seeds the new worktree `.env` from the current checkout `.env` when present,
+then from `%USERPROFILE%\.jurisdigta\aijurisdictionagents.env` when present, and
+finally appends any active `.env.example` keys that are still missing. Concrete
+local defaults from active `.env.example` entries are copied as-is; missing
+secret or placeholder values stay `unknown-variable`. The final worktree `.env`
+is copied back to the shared seed for the next worktree.
+
+Commented examples remain opt-in. This prevents local worktrees from silently
+switching to `LLM_PROVIDER=mock` or trying to export traces to a local OTLP
+collector just because those optional examples are documented.
+
+For another computer, first place the approved local seed at the same path or
+pass a machine-local seed explicitly:
+
+```powershell
+.\scripts\new_task_worktree.ps1 `
+  -Branch codex/issue-123-short-name `
+  -EnvSeedPath D:\secure-config\aijurisdictionagents.env
+```
+
+Do not source-control `.env`, `.env.*`, or the shared seed. For GDPR and EU AI
+Act security-of-processing expectations, keep these files readable only by
+approved operators and rotate any value exposed through an unapproved channel.
 
 ## Sync Command
 

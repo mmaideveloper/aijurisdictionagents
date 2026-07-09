@@ -26,7 +26,8 @@ so the new checkout also contains its own ignored `conda/` environment:
 ```
 
 The helper runs `git worktree add`, then prepares an ignored `conda/` runtime for
-the new checkout. By default it stores the actual environment under
+the new checkout and an ignored local `.env` file. By default it stores the
+actual Python environment under
 `C:\Users\maton\.codex-envs` and creates a `conda/` junction in the worktree.
 That avoids Windows blocking direct `python.exe` creation under protected or
 synced checkout paths while keeping `.\scripts\validate_api.ps1` compatible.
@@ -35,6 +36,27 @@ example `C:\Users\maton\.codex-envs\issue-123-short-name-conda`.
 
 Use `-InWorktreeEnv` only when you explicitly need the full conda prefix created
 inside the checkout instead of a junction.
+
+The helper also bootstraps local configuration before returning:
+
+- If the source checkout has an ignored `.env`, the new worktree `.env` is seeded
+  from it.
+- Otherwise, if `%USERPROFILE%\.jurisdigta\aijurisdictionagents.env` exists, the
+  new worktree `.env` is seeded from that operator-managed file.
+- Missing active keys from `.env.example` are appended. Concrete local defaults
+  are copied as-is; placeholder/secret values remain `unknown-variable` so local
+  startup fails loudly instead of guessing secrets.
+- The final worktree `.env` is copied back to
+  `%USERPROFILE%\.jurisdigta\aijurisdictionagents.env` for the next worktree.
+- Commented optional examples are not automatically activated. The helper also
+  removes stale `LLM_PROVIDER=mock`, `OTEL_EXPORTER_OTLP_ENDPOINT=...`,
+  `INTERNAL_MCP_BASE_URL=...`, and `MODEL_KNOWLEDGE_CUTOFF_DATE=...` values if
+  an older shared seed introduced them, because those commented examples alter
+  local runtime behavior.
+
+The shared seed is outside Git and should stay local to an approved workstation
+or approved encrypted transfer path. Do not commit it. On another computer,
+place the same seed file at the same path or pass `-EnvSeedPath` to a local copy.
 
 With conda, the helper prefers cloning the existing repo runtime from
 `C:\Users\maton\Projects\aijurisdictionagents\conda`. If no reusable repo
@@ -64,6 +86,27 @@ Use `-FreshEnv` to force a new environment from `environment.yml`. Use
 installs with the `dev` extras afterward so they point at the new worktree and
 include validation tools such as `ruff`, `mypy`, and `pytest`.
 
+Use `-SkipEnvSync` only when intentionally creating a checkout without local
+runtime configuration. Use `-SharedEnvSeedPath` when your approved workstation
+stores the ignored seed somewhere else, for example an encrypted local folder:
+
+```powershell
+.\scripts\new_task_worktree.ps1 `
+  -Branch codex/issue-123-short-name `
+  -WorktreePath C:\Users\maton\.codex\worktrees\issue-123-short-name\aijurisdictionagents `
+  -SharedEnvSeedPath D:\secure-config\aijurisdictionagents.env
+```
+
+Minimal runnable bootstrap demo:
+
+```powershell
+.\examples\new_task_worktree_bootstrap_demo.ps1
+```
+
+The demo creates an ignored fixture under `runs\new-task-worktree-bootstrap-demo`
+and validates the `.env` bootstrap path without creating a Git worktree or conda
+environment.
+
 To repair an existing worktree that was created without `conda/`, where
 `.\conda\python.exe` is missing, or where Python starts but fails on standard
 library imports such as `select`, run the helper in environment-only mode from
@@ -74,6 +117,17 @@ any checkout of the repo:
   -Branch codex/issue-123-short-name `
   -WorktreePath C:\Users\maton\.codex\worktrees\issue-123-short-name\aijurisdictionagents `
   -SetupEnvOnly
+```
+
+To repair only the ignored local `.env` without creating or touching the Python
+environment:
+
+```powershell
+.\scripts\new_task_worktree.ps1 `
+  -Branch codex/issue-123-short-name `
+  -WorktreePath C:\Users\maton\.codex\worktrees\issue-123-short-name\aijurisdictionagents `
+  -SetupEnvOnly `
+  -SkipEnvCreate
 ```
 
 Use `-RecreateEnv` with `-SetupEnvOnly` when the environment folder exists but

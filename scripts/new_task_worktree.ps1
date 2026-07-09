@@ -15,6 +15,16 @@ param(
 
     [string]$EnvStorageRoot = "$env:USERPROFILE\.codex-envs",
 
+    [string]$EnvExamplePath = ".env.example",
+
+    [string]$LocalEnvFileName = ".env",
+
+    [string]$EnvSeedPath,
+
+    [string]$SharedEnvSeedPath = "$env:USERPROFILE\.jurisdigta\aijurisdictionagents.env",
+
+    [string]$UnknownValue = "unknown-variable",
+
     [switch]$FreshEnv,
 
     [switch]$InWorktreeEnv,
@@ -23,7 +33,9 @@ param(
 
     [switch]$RecreateEnv,
 
-    [switch]$SkipEnvCreate
+    [switch]$SkipEnvCreate,
+
+    [switch]$SkipEnvSync
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,6 +118,319 @@ function Find-CloneSourceEnv {
         }
     }
     return ""
+}
+
+function Get-EnvKeysFromExample {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "Env example file not found: $Path"
+    }
+
+    $keys = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
+    foreach ($line in Get-Content -Path $Path) {
+        if ($line -match "^\s*([A-Za-z_][A-Za-z0-9_]*)=.*$") {
+            $key = $Matches[1]
+            if (-not $seen.ContainsKey($key)) {
+                $seen[$key] = $true
+                $keys.Add($key)
+            }
+        }
+    }
+    return $keys
+}
+
+function Get-EnvDefaultsFromExample {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "Env example file not found: $Path"
+    }
+
+    $defaults = @{}
+    foreach ($line in Get-Content -Path $Path) {
+        if ($line -match "^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$") {
+            $key = $Matches[1]
+            if (-not $defaults.ContainsKey($key)) {
+                $defaults[$key] = $Matches[2].Trim()
+            }
+        }
+    }
+    return $defaults
+}
+
+function Remove-UnsafeEnvEntries {
+    param(
+        [string]$Path,
+        [string[]]$Keys
+    )
+
+    if (-not (Test-Path $Path)) {
+        return 0
+    }
+
+    $keyLookup = @{}
+    foreach ($key in $Keys) {
+        $keyLookup[$key] = $true
+    }
+
+    $keptLines = [System.Collections.Generic.List[string]]::new()
+    $removedCount = 0
+    foreach ($line in Get-Content -Path $Path) {
+        if ($line -match "^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=" -and $keyLookup.ContainsKey($Matches[1])) {
+            $removedCount++
+            continue
+        }
+        $keptLines.Add($line)
+    }
+
+    if ($removedCount -gt 0) {
+        Set-Content -Path $Path -Value $keptLines -Encoding utf8
+    }
+    return $removedCount
+}
+
+function Test-SafeEnvDefaultValue {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    $lowerValue = $Value.ToLowerInvariant()
+    $unsafeMarkers = @(
+        "unknown-variable",
+        "your_",
+        "your-",
+        "your ",
+        "changeit",
+        "change-this",
+        "replace-with",
+        "optional_",
+        "ghp_",
+        "github_pat",
+        "instrumentationkey=",
+        "<",
+        ">",
+        "`$("
+    )
+    foreach ($marker in $unsafeMarkers) {
+        if ($lowerValue.Contains($marker)) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Resolve-EnvBootstrapValue {
+    param(
+        [hashtable]$Defaults,
+        [string]$Key,
+        [string]$PlaceholderValue
+    )
+
+    if ($Defaults.ContainsKey($Key) -and (Test-SafeEnvDefaultValue -Value $Defaults[$Key])) {
+        return $Defaults[$Key]
+    }
+    return $PlaceholderValue
+}
+
+function Repair-UnknownEnvDefaults {
+    param(
+        [string]$Path,
+        [hashtable]$Defaults,
+        [string]$PlaceholderValue
+    )
+
+    if (-not (Test-Path $Path)) {
+        return 0
+    }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in Get-Content -Path $Path) {
+        $lines.Add($line)
+    }
+
+    $repairedCount = 0
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        $line = $lines[$index]
+        if ($line -match "^(\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$") {
+            $key = $Matches[2]
+            $value = $Matches[4].Trim()
+            if ($value -eq $PlaceholderValue -and $Defaults.ContainsKey($key) -and (Test-SafeEnvDefaultValue -Value $Defaults[$key])) {
+                $lines[$index] = "$($Matches[1])$key$($Matches[3])$($Defaults[$key])"
+                $repairedCount++
+            }
+        }
+    }
+
+    if ($repairedCount -gt 0) {
+        Set-Content -Path $Path -Value $lines -Encoding utf8
+    }
+    return $repairedCount
+}
+
+function Get-ActiveEnvValues {
+    param([string]$Path)
+
+    $values = @{}
+    if (-not (Test-Path $Path)) {
+        return $values
+    }
+
+    foreach ($line in Get-Content -Path $Path) {
+        if ($line -match "^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$") {
+            $values[$Matches[1]] = $Matches[2].Trim()
+        }
+    }
+    return $values
+}
+
+function Protect-LocalSecretFile {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path) -or -not (Get-Command icacls -ErrorAction SilentlyContinue)) {
+        return
+    }
+
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    & icacls $Path /inheritance:r /grant:r "${identity}:F" | Out-Null
+    $parent = Split-Path -Parent $Path
+    if ($parent -and (Test-Path $parent)) {
+        & icacls $parent /inheritance:r /grant:r "${identity}:(OI)(CI)F" | Out-Null
+    }
+}
+
+function Sync-WorktreeEnv {
+    param(
+        [string]$SourceRepoRoot,
+        [string]$TargetWorktreeRoot,
+        [string]$ExamplePath,
+        [string]$TargetEnvName,
+        [string]$ExplicitSeedPath,
+        [string]$SharedSeedPath,
+        [string]$PlaceholderValue
+    )
+
+    $resolvedExamplePath = $ExamplePath
+    if (-not [System.IO.Path]::IsPathRooted($resolvedExamplePath)) {
+        $resolvedExamplePath = Join-Path $TargetWorktreeRoot $resolvedExamplePath
+    }
+    $resolvedExamplePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($resolvedExamplePath)
+
+    $targetEnvPath = $TargetEnvName
+    if (-not [System.IO.Path]::IsPathRooted($targetEnvPath)) {
+        $targetEnvPath = Join-Path $TargetWorktreeRoot $targetEnvPath
+    }
+    $targetEnvPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($targetEnvPath)
+
+    $seedCandidates = New-Object System.Collections.Generic.List[string]
+    if ($ExplicitSeedPath) {
+        $seedCandidates.Add($ExplicitSeedPath)
+    }
+    $sourceRepoEnv = Join-Path $SourceRepoRoot ".env"
+    if (Test-Path $sourceRepoEnv) {
+        $seedCandidates.Add($sourceRepoEnv)
+    }
+    if ($SharedSeedPath) {
+        $seedCandidates.Add($SharedSeedPath)
+    }
+
+    $selectedSeedPath = ""
+    foreach ($candidate in $seedCandidates) {
+        if (-not $candidate) {
+            continue
+        }
+        $candidatePath = $candidate
+        if (-not [System.IO.Path]::IsPathRooted($candidatePath)) {
+            $candidatePath = Join-Path $SourceRepoRoot $candidatePath
+        }
+        if ((Test-Path $candidatePath) -and ((Resolve-Path $candidatePath).Path -ne $targetEnvPath)) {
+            $selectedSeedPath = (Resolve-Path $candidatePath).Path
+            break
+        }
+    }
+
+    if ((-not (Test-Path $targetEnvPath)) -and $selectedSeedPath) {
+        $targetParent = Split-Path -Parent $targetEnvPath
+        if (-not (Test-Path $targetParent)) {
+            New-Item -ItemType Directory -Force -Path $targetParent | Out-Null
+        }
+        Copy-Item -Path $selectedSeedPath -Destination $targetEnvPath -Force
+        Write-Host "Seeded $targetEnvPath from $selectedSeedPath."
+    }
+    elseif (-not (Test-Path $targetEnvPath)) {
+        New-Item -ItemType File -Path $targetEnvPath -Force | Out-Null
+        Write-Host "Created local env file at $targetEnvPath."
+    }
+
+    $removedUnsafeCount = Remove-UnsafeEnvEntries -Path $targetEnvPath -Keys @(
+        "INTERNAL_MCP_BASE_URL",
+        "LLM_PROVIDER",
+        "MODEL_KNOWLEDGE_CUTOFF_DATE",
+        "OTEL_EXPORTER_OTLP_ENDPOINT"
+    )
+    if ($removedUnsafeCount -gt 0) {
+        Write-Host "Removed $removedUnsafeCount unsafe optional env entry/entries from $targetEnvPath."
+    }
+
+    $exampleKeys = Get-EnvKeysFromExample -Path $resolvedExamplePath
+    $exampleDefaults = Get-EnvDefaultsFromExample -Path $resolvedExamplePath
+    $activeValues = Get-ActiveEnvValues -Path $targetEnvPath
+    $missingKeys = @($exampleKeys | Where-Object { -not $activeValues.ContainsKey($_) })
+
+    if ($missingKeys.Count -gt 0) {
+        $existingContent = Get-Content -Path $targetEnvPath -Raw
+        $separator = ""
+        if (-not [string]::IsNullOrEmpty($existingContent) -and -not $existingContent.EndsWith("`n")) {
+            $separator = "`r`n"
+        }
+
+        $linesToAppend = New-Object System.Collections.Generic.List[string]
+        $linesToAppend.Add("")
+        $linesToAppend.Add("# Added from .env.example by scripts/new_task_worktree.ps1.")
+        foreach ($key in $missingKeys) {
+            $value = Resolve-EnvBootstrapValue -Defaults $exampleDefaults -Key $key -PlaceholderValue $PlaceholderValue
+            $linesToAppend.Add("$key=$value")
+        }
+
+        Add-Content -Path $targetEnvPath -Value ($separator + ($linesToAppend -join "`r`n"))
+        Write-Host "Added $($missingKeys.Count) missing key(s) to $targetEnvPath from .env.example."
+    }
+    else {
+        Write-Host "$targetEnvPath already contains every key from .env.example."
+    }
+
+    $repairedCount = Repair-UnknownEnvDefaults -Path $targetEnvPath -Defaults $exampleDefaults -PlaceholderValue $PlaceholderValue
+    if ($repairedCount -gt 0) {
+        Write-Host "Replaced $repairedCount placeholder value(s) in $targetEnvPath with safe .env.example defaults."
+    }
+
+    Protect-LocalSecretFile -Path $targetEnvPath
+
+    if ($SharedSeedPath) {
+        $resolvedSharedSeedPath = $SharedSeedPath
+        if (-not [System.IO.Path]::IsPathRooted($resolvedSharedSeedPath)) {
+            $resolvedSharedSeedPath = Join-Path $SourceRepoRoot $resolvedSharedSeedPath
+        }
+        $resolvedSharedSeedPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($resolvedSharedSeedPath)
+        if ($resolvedSharedSeedPath -ne $targetEnvPath) {
+            $sharedParent = Split-Path -Parent $resolvedSharedSeedPath
+            if (-not (Test-Path $sharedParent)) {
+                New-Item -ItemType Directory -Force -Path $sharedParent | Out-Null
+            }
+            Copy-Item -Path $targetEnvPath -Destination $resolvedSharedSeedPath -Force
+            Protect-LocalSecretFile -Path $resolvedSharedSeedPath
+            Write-Host "Updated shared local env seed at $resolvedSharedSeedPath."
+        }
+    }
+
+    $finalValues = Get-ActiveEnvValues -Path $targetEnvPath
+    $unknownKeys = @($finalValues.Keys | Sort-Object | Where-Object { $finalValues[$_] -eq $PlaceholderValue })
+    if ($unknownKeys.Count -gt 0) {
+        Write-Warning ("$targetEnvPath still contains '$PlaceholderValue' for: " + ($unknownKeys -join ", "))
+    }
 }
 
 function Test-CondaPrefix {
@@ -232,10 +557,6 @@ if (-not $WorktreePath) {
 }
 $WorktreePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($WorktreePath)
 
-if ($SkipEnvCreate -and $SetupEnvOnly) {
-    throw "-SkipEnvCreate cannot be combined with -SetupEnvOnly."
-}
-
 if (-not $SetupEnvOnly) {
     Push-Location $RepoRoot
     try {
@@ -257,8 +578,27 @@ elseif (-not (Test-Path $WorktreePath)) {
     throw "Cannot set up environment because worktree path does not exist: $WorktreePath"
 }
 
+if (-not $SkipEnvSync) {
+    Sync-WorktreeEnv `
+        -SourceRepoRoot $RepoRoot `
+        -TargetWorktreeRoot $WorktreePath `
+        -ExamplePath $EnvExamplePath `
+        -TargetEnvName $LocalEnvFileName `
+        -ExplicitSeedPath $EnvSeedPath `
+        -SharedSeedPath $SharedEnvSeedPath `
+        -PlaceholderValue $UnknownValue
+}
+else {
+    Write-Host "Skipped local .env bootstrap because -SkipEnvSync was specified."
+}
+
 if ($SkipEnvCreate) {
-    Write-Host "Created worktree at $WorktreePath. Skipped conda environment creation."
+    if ($SetupEnvOnly) {
+        Write-Host "Prepared local env file for existing worktree at $WorktreePath. Skipped conda environment creation."
+    }
+    else {
+        Write-Host "Created worktree at $WorktreePath. Skipped conda environment creation."
+    }
     exit 0
 }
 
