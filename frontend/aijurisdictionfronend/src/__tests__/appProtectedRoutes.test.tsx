@@ -186,6 +186,19 @@ describe("App protected routes", () => {
     expect(screen.queryByText("Assistant Workspace")).toBeNull();
   });
 
+  it("redirects unauthenticated users from case deep links to /auth", () => {
+    authState.isAuthenticated = false;
+
+    render(
+      <MemoryRouter initialEntries={["/case/case-1"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Auth Page")).toBeDefined();
+    expect(screen.queryByText("Assistant Workspace")).toBeNull();
+  });
+
   it("redirects unauthenticated users from /app/chat to /auth", () => {
     authState.isAuthenticated = false;
 
@@ -254,6 +267,18 @@ describe("App protected routes", () => {
 
     render(
       <MemoryRouter initialEntries={["/app/assistant"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Assistant Workspace")).toBeDefined();
+  });
+
+  it("allows authenticated users to open case deep links in the assistant", () => {
+    authState.isAuthenticated = true;
+
+    render(
+      <MemoryRouter initialEntries={["/case/case-1"]}>
         <App />
       </MemoryRouter>
     );

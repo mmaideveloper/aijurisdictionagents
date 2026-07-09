@@ -121,6 +121,9 @@ For generated court-facing or client/third-party output documents, including req
   when the client omits `recipient`, the API uses the signed-in user's profile email and returns a confirmation
   response before queueing attachments; if the user corrects the recipient in chat (for example `nie na other@example.com`),
   the corrected address is confirmed and used for the queued email
+- generated case documents can be emailed through `POST /v1/cases/{case_id}/documents/send-email`; generated
+  documents are queued as the same rendered `application/pdf` bytes shown by the case document preview, and the
+  email body includes one authenticated case deep link at `{JURISDIGTA_AGENT_BASE_URL}/case/{case_id}`
 - lawyer output is validated before display so profile-backed data does not remain listed as missing; when profile
   data is missing, the user-facing note tells the user to complete Profile for future document defaults
 - document processing status messages shown to clients hide internal `session-*.txt` filenames; those identifiers are

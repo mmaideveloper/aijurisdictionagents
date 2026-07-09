@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import base64
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
@@ -167,6 +168,7 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     monkeypatch.setenv("EMAIL_DB_OPTION", "local")
     monkeypatch.setenv("EMAIL_DB_LOCAL", str(tmp_path / "email.sqlite3"))
     monkeypatch.setenv("EMAIL_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("JURISDIGTA_AGENT_BASE_URL", "https://agent.test")
 
     client = TestClient(app)
     user_id = _create_user(client, idx=2)
@@ -282,6 +284,53 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
     assert "Dokument je" in generated_pdf_text
     assert "kontrolu" in generated_pdf_text
     assert "Poprad, Slovakia, 05801" in generated_pdf_text
+
+    generated_document_id = store.add_case_document(
+        case_id=case_id,
+        kind="generated_document",
+        version=1,
+        original_filename="splnomocnenie.txt",
+        payload=(
+            "**Splnomocnenie**\n\n"
+            "Splnomocnenec: Emilia Matonokova\n"
+            "Prava: Vsetky pravne ukony tykajuce sa pouzivania firemneho auta.\n"
+            "Podpis: ________________________\n"
+        ).encode("utf-8"),
+        uploaded_by_user_id=user_id,
+    )
+    generated_email = client.post(
+        f"/v1/cases/{case_id}/documents/send-email",
+        headers=_headers(),
+        json={
+            "user_id": user_id,
+            "recipient": "client@example.com",
+            "case_subject": "History case",
+            "doc_ids": [generated_document_id],
+        },
+    )
+    assert generated_email.status_code == 200
+    assert generated_email.json()["attachment_count"] == 1
+
+    with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
+        email_row = conn.execute(
+            """
+            SELECT body, metadata_json
+            FROM email_outbox
+            WHERE email_id = ?
+            """,
+            (generated_email.json()["email_id"],),
+        ).fetchone()
+    assert email_row is not None
+    assert "https://agent.test/case/" in email_row[0]
+    metadata = json.loads(email_row[1])
+    assert metadata["case_url"] == f"https://agent.test/case/{case_id}"
+    assert metadata["html_body"].count(f"https://agent.test/case/{case_id}") == 2
+    attachments = metadata["attachments"]
+    assert len(attachments) == 1
+    attachment = attachments[0]
+    assert attachment["filename"].endswith(f"_{generated_document_id}_splnomocnenie.pdf")
+    assert attachment["mime_type"] == "application/pdf"
+    assert base64.b64decode(attachment["content_base64"]).startswith(b"%PDF")
 
 
 def test_case_history_and_citations_endpoint_return_persisted_answer_citations(

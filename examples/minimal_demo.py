@@ -98,6 +98,10 @@ print(
     "assistant chatter, alternate-language blocks, and raw markdown stay out of the PDF."
 )
 print(
+    "case_document_email_delivery => case-document email sends selected generated documents as rendered PDF "
+    "attachments and includes an authenticated /case/{case_id} assistant deep link."
+)
+print(
     "frontend_live_document_preview_issue_503 => live assistant document responses prefer hydrated "
     "case-history previews and generated-document actions over terminal PDF progress text."
 )

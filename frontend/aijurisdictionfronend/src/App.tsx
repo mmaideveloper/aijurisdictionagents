@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { PageLayout } from "./components/PageLayout";
 import { useAuth } from "./auth/webAuth";
 import AuthCallbackView from "./auth/AuthCallbackView";
@@ -31,9 +31,10 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated } = useAuth();
+  const location = useLocation();
 
   if (!isAuthenticated) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/auth" replace state={{ from: location }} />;
   }
 
   return children;
@@ -41,9 +42,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 
 const AdminRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, user } = useAuth();
+  const location = useLocation();
 
   if (!isAuthenticated) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/auth" replace state={{ from: location }} />;
   }
   if (user?.role?.toLowerCase() !== "admin") {
     return <Navigate to="/" replace />;
@@ -86,6 +88,14 @@ const App: React.FC = () => {
         />
         <Route
           path="/app/assistant"
+          element={
+            <ProtectedRoute>
+              <AssistantWorkspace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/case/:caseId"
           element={
             <ProtectedRoute>
               <AssistantWorkspace />
