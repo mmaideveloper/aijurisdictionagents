@@ -108,8 +108,10 @@ For generated court-facing or client/third-party output documents, including req
   summary bullets, follow-up prompts, raw markdown separators/bold markers, and unselected alternate-language
   document blocks are not included in the final PDF
 - structured `CASE_UPDATE_JSON.case.documents` entries are treated as the source of truth for generated legal
-  documents; each entry with its own `content`/`body`/`text` field is persisted and exported as a separate
-  generated document by default, so case history, download, and email attachment flows expose all language variants
+  documents; each entry with its own `content`/`body`/`text` field is persisted and exported as the legal-document
+  body even when there is only one generated document, so assistant confirmations, download status text, and
+  technical payloads cannot contaminate the PDF body. Multiple entries are exported as separate generated
+  documents by default, so case history, download, and email attachment flows expose all language variants
 - missing party details in generated documents can be filled from the signed-in user's profile by default
   (name, address, tax number, identity card number, date of birth, and social security number); these values
   are used in the document body only and are not added to the QR payload

@@ -466,6 +466,83 @@ def test_generated_case_document_pdf_reads_generated_document_storage(
     assert "firemneho auta" in generated_pdf_text
 
 
+def test_generated_case_document_pdf_filters_contaminated_splnomocnenie_storage(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    user_id = _create_user(client, idx=24)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Splnomocnenie auto"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    generated_doc_id = store.add_case_document(
+        case_id=case_id,
+        kind="generated_document",
+        version=1,
+        original_filename="splnomocnenie-contaminated.txt",
+        payload=(
+            "Vyborne, pripravim finalny navrh splnomocnenia vo formate PDF.\n"
+            "---\n"
+            "**Splnomocnenie**\n\n"
+            "Ja, Marek Matonok, konatel spolocnosti ESolutions SK s.r.o., so sidlom "
+            "Partizanska 665, Spisske Bystre, 05918, tymto splnomocnujem Emiliu "
+            "Matonokovu na pouzivanie firemneho vozidla s evidencnym cislom PP472DT "
+            "v obdobi od 1. jula 2026 do 31. decembra 2026.\n\n"
+            "Podpis: ________________________\n"
+            "---\n"
+            "Tu je finalny navrh splnomocnenia.\n"
+            "CASE_UPDATE_JSON:\n{}"
+        ).encode("utf-8"),
+        uploaded_by_user_id=user_id,
+    )
+
+    generated_pdf = client.get(
+        f"/v1/cases/{case_id}/documents/{generated_doc_id}/pdf?user_id={user_id}",
+        headers=_headers(),
+    )
+
+    assert generated_pdf.status_code == 200
+    generated_pdf_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
+    )
+    normalized_text = " ".join(generated_pdf_text.lower().split())
+    for expected in (
+        "splnomocnenie",
+        "esolutions sk s.r.o.",
+        "marek matonok",
+        "emiliu matonokovu",
+        "partizanska 665",
+        "spisske bystre",
+        "05918",
+        "pp472dt",
+        "1. jula 2026",
+        "31. decembra 2026",
+    ):
+        assert expected in normalized_text
+    for polluted in (
+        "vyborne",
+        "pripravim",
+        "tu je finalny navrh",
+        "case_update_json",
+        "system",
+        "assistant",
+        "---",
+        "**",
+    ):
+        assert polluted not in normalized_text
+
+
 def test_paid_user_can_export_case_zip_with_documents_model_audit_and_checksums(
     monkeypatch, tmp_path
 ) -> None:

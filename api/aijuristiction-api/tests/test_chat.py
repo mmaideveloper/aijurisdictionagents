@@ -602,6 +602,95 @@ def test_multilingual_case_update_documents_export_as_clean_separate_assets(monk
     assert any("Power of Attorney" in page_text for page_text in page_texts[1:])
 
 
+def test_single_splnomocnenie_case_update_export_uses_clean_document_body(monkeypatch) -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    monkeypatch.setattr(chat_api, "_repository", repository)
+
+    session = repository.create_session(Session(country="SK", discussion_type="advice", language="sk-SK"))
+    document_body = (
+        "**Splnomocnenie**\n\n"
+        "Ja, Marek Matonok, konatel spolocnosti ESolutions SK s.r.o., so sidlom "
+        "Partizanska 665, Spisske Bystre, 05918, tymto splnomocnujem Emiliu "
+        "Matonokovu na pouzivanie firemneho vozidla s evidencnym cislom PP472DT "
+        "v obdobi od 1. jula 2026 do 31. decembra 2026.\n\n"
+        "Podpis: ________________________"
+    )
+    case_update = {
+        "case": {
+            "documents": [
+                {
+                    "title": "Splnomocnenie",
+                    "filename": "splnomocnenie.pdf",
+                    "language": "sk-SK",
+                    "content": document_body,
+                }
+            ]
+        }
+    }
+    assistant_content = (
+        "Vyborne, pripravim finalny navrh splnomocnenia vo formate PDF.\n\n"
+        "---\n\n"
+        f"{document_body}\n\n"
+        "---\n\n"
+        "Tu je finalny navrh splnomocnenia.\n\n"
+        "CASE_UPDATE_JSON:\n"
+        f"{json.dumps(case_update, ensure_ascii=False)}"
+    )
+    repository.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            agent_name="LawyerSlovakia",
+            content=assistant_content,
+        )
+    )
+    repository.set_result(
+        session.id,
+        SessionResult(
+            final_recommendation=assistant_content,
+            judge_rationale="Direct lawyer reply prepared for session export.",
+            metadata={},
+        ),
+    )
+
+    selected_document_pdf = client.get(
+        f"/v1/chat/sessions/{session.id}/export/documents/0",
+        headers=AUTH_HEADERS,
+    )
+
+    assert selected_document_pdf.status_code == 200
+    pdf_text = _pdf_text(selected_document_pdf.content)
+    canonical_pdf_text = _canonical_text(pdf_text)
+    for expected in (
+        "splnomocnenie",
+        "esolutions sk s.r.o.",
+        "marek matonok",
+        "emiliu matonokovu",
+        "partizanska 665",
+        "spisske bystre",
+        "05918",
+        "pp472dt",
+        "1. jula 2026",
+        "31. decembra 2026",
+    ):
+        assert expected in canonical_pdf_text
+    for polluted in (
+        "vyborne",
+        "pripravim",
+        "tu je finalny navrh",
+        "case_update_json",
+        "system",
+        "assistant",
+        "---",
+        "**",
+    ):
+        assert polluted not in canonical_pdf_text
+
+
 def test_fallback_document_entries_ignore_single_contract_section_headings() -> None:
     from app.chat.api import _fallback_document_entries_for_export
     from app.chat.models import Message, MessageRole

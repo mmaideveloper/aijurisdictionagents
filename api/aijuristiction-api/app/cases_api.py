@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from app.chat.api import (
     _build_professional_document_pdf,
     _load_case_documents_for_llm,
+    _sanitize_generated_legal_document_body,
     _user_visible_text,
 )
 from app.security import require_api_key
@@ -857,6 +858,7 @@ def _render_generated_case_document_pdf_bytes(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Rendered PDF content is unavailable for document {document.doc_id}",
         )
+    visible_content = _clean_generated_case_document_pdf_content(visible_content)
     return _build_professional_document_pdf(
         title=_generated_case_document_title(visible_content),
         lines=visible_content.splitlines(),
@@ -1235,6 +1237,19 @@ def _generated_case_document_storage_content(*, document: CaseDocument, store: A
             exc_info=True,
         )
     return ""
+
+
+def _clean_generated_case_document_pdf_content(content: str) -> str:
+    stripped = content.strip()
+    if not stripped:
+        return ""
+    extracted = _extract_generated_case_document_body(stripped)
+    if extracted:
+        return extracted
+    sanitized = _sanitize_generated_legal_document_body(stripped)
+    if sanitized and _looks_like_generated_case_document_body(sanitized):
+        return sanitized
+    return stripped
 
 
 def _latest_generated_case_document_visible_content(
