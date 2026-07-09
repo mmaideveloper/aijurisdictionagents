@@ -3487,6 +3487,8 @@ def _sanitize_generated_legal_document_body(content: str) -> str:
         "výborne pripravím",
         "pripravim splnomocnenie",
         "pripravim dokument",
+        "tu je finalny navrh",
+        "tu je finalny dokument",
         "technicke udaje som ulozil",
         "technical data was saved",
     )
@@ -6006,7 +6008,7 @@ def _build_document_export_assets(
     facts = _apply_user_profile_document_defaults(facts=facts, user_profile=user_profile)
     facts = _sanitize_missing_document_facts(facts)
     document_entries = _case_update_document_entries(case_update)
-    if len(document_entries) <= 1:
+    if not document_entries:
         document_entries = _fallback_document_entries_for_export(
             messages=messages,
             result=result,
@@ -6019,6 +6021,34 @@ def _build_document_export_assets(
             language=language,
             document_kind=document_kind,
         )
+        if entry is not None and _document_entry_content(entry):
+            entry_title, entry_lines = _build_document_asset_content(
+                entry=entry,
+                document_kind=document_kind,
+                facts=facts,
+                country=country,
+                language=language,
+                law_citation_lines=law_citation_lines,
+                fallback_index=1,
+            )
+            export_title = entry_title or title
+            return [
+                _DocumentExportAsset(
+                    filename=_document_asset_filename(
+                        entry=entry,
+                        fallback_filename=_build_pdf_filename(session_id=session_id, kind="document"),
+                    ),
+                    title=export_title,
+                    lines=_strip_duplicate_body_title(title=export_title, lines=entry_lines),
+                    disclaimer=disclaimer,
+                    use_corporate_template=_is_third_party_document(
+                        document_kind=document_kind,
+                        entry=entry,
+                        title=export_title,
+                        lines=entry_lines,
+                    ),
+                )
+            ]
         return [
             _DocumentExportAsset(
                 filename=_document_asset_filename(
