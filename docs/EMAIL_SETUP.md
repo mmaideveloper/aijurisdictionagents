@@ -30,12 +30,24 @@ Styled templates currently cover:
 - generated case-document package delivery
 - legacy non-OTP outbox messages normalized by the email scheduler before delivery
 
+Generated case-document package emails include a single authenticated case deep
+link built from `JURISDIGTA_AGENT_BASE_URL` and `/case/{case_id}`. The default
+base URL is `https://agent.jurisdigta.eu`; set `JURISDIGTA_AGENT_BASE_URL` in
+local, test, or production runtime configuration when the assistant frontend is
+served from another host. Opening the link must still require JurisDigta login
+and only loads the case for an authorized user.
+
+When the selected case document is a generated legal document, the queue stores
+the same rendered PDF bytes as the document preview endpoint, with
+`application/pdf` metadata and a user-readable filename. Uploaded/source case
+documents keep their original attachment bytes and MIME type.
+
 OTP and one-time-code emails remain plain text. This avoids placing verification codes in richer HTML previews or related image payloads and keeps code messages minimal.
 
 Privacy and compliance rules for templates:
 
 - Do not include SMTP secrets, API keys, raw legal document text, or unnecessary special-category personal data in templates.
-- Keep generated legal-document emails limited to package metadata and attachments; the footer reminds recipients that AI-assisted legal documents require review before filing, signing, or reliance.
+- Keep generated legal-document emails limited to package metadata, one authenticated case link, and attachments; the footer reminds recipients that AI-assisted legal documents require review before filing, signing, or reliance.
 - The log transport records recipient, subject, body length, HTML presence, and attachment count, not full HTML or OTP body content.
 
 ## Local scheduler

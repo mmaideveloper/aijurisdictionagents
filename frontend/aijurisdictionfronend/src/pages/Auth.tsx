@@ -1,5 +1,5 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { MfaChallenge, useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
@@ -7,6 +7,7 @@ const Auth: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, user, signIn, sendSignUpCode, signUp, signOut, sendMfaEmailCode, verifyMfa } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [authMode, setAuthMode] = React.useState<"signIn" | "signUp">("signIn");
   const [registrationStep, setRegistrationStep] = React.useState<"details" | "verify">("details");
   const [email, setEmail] = React.useState("");
@@ -24,6 +25,13 @@ const Auth: React.FC = () => {
   const [isRegistering, setIsRegistering] = React.useState(false);
   const [loginOtpRequired, setLoginOtpRequired] = React.useState(false);
   const [registrationOtpSentFor, setRegistrationOtpSentFor] = React.useState<string | null>(null);
+
+  const postAuthPath = React.useMemo(() => {
+    const candidate = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+    const pathname = candidate?.pathname?.startsWith("/") ? candidate.pathname : "/app/assistant";
+    const search = candidate?.search?.startsWith("?") ? candidate.search : "";
+    return `${pathname}${search}`;
+  }, [location.state]);
 
   const resetFeedback = () => {
     setError(null);
@@ -80,7 +88,7 @@ const Auth: React.FC = () => {
       setError(null);
       setMfaChallenge(null);
       setMessage(t("authSignedIn"));
-      navigate("/app/assistant");
+      navigate(postAuthPath);
     } catch (signInError) {
       setError(signInError instanceof Error ? signInError.message : t("authSignInFailed"));
       setMessage(null);
@@ -137,7 +145,7 @@ const Auth: React.FC = () => {
       });
       setError(null);
       setMessage(t("authRegistered"));
-      navigate("/app/assistant");
+      navigate(postAuthPath);
     } catch (signUpError) {
       setError(signUpError instanceof Error ? signUpError.message : t("authRegisterFailed"));
       setMessage(null);
@@ -174,7 +182,7 @@ const Auth: React.FC = () => {
       setError(null);
       setMfaChallenge(null);
       setMessage(t("authSignedIn"));
-      navigate("/app/assistant");
+      navigate(postAuthPath);
     } catch (verifyError) {
       setError(verifyError instanceof Error ? verifyError.message : t("authSignInFailed"));
     } finally {

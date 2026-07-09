@@ -540,6 +540,14 @@ const shouldPreferHydratedAssistantMessage = (currentText: string, hydratedText:
   );
 };
 
+const currentCaseDeepLinkId = (): string | undefined => {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+  const match = window.location.pathname.match(/^\/case\/([^/?#]+)/);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+};
+
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
   const { isAuthenticated, isAuthLoading, user } = useAuth();
@@ -879,7 +887,14 @@ const AssistantConfigurations: React.FC = () => {
 const AssistantWorkspace: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, isAuthLoading, user } = useAuth();
-  const { activeCase } = useCases();
+  const caseState = useCases();
+  const {
+    activeCase,
+    cases = [],
+    isLoadingCases = false,
+    selectCase = () => undefined
+  } = caseState;
+  const routeCaseId = currentCaseDeepLinkId();
   const threadKey = React.useMemo(() => caseThreadKey(activeCase), [activeCase]);
   const fallbackModelLabel = React.useMemo(() => chatApiRuntimeConfig().chatModelLabel, []);
   const pendingModelLabel = t("assistantModelDisclosurePending");
@@ -909,6 +924,16 @@ const AssistantWorkspace: React.FC = () => {
       isCurrent = false;
     };
   }, [fallbackModelLabel, isAuthenticated, isAuthLoading, pendingModelLabel, user?.userId]);
+
+  React.useEffect(() => {
+    const requestedCaseId = routeCaseId?.trim();
+    if (!requestedCaseId || isLoadingCases || activeCase?.id === requestedCaseId) {
+      return;
+    }
+    if (cases.some((caseItem) => caseItem.id === requestedCaseId)) {
+      selectCase(requestedCaseId);
+    }
+  }, [activeCase?.id, cases, isLoadingCases, routeCaseId, selectCase]);
 
   return (
     <div className="page assistant-workspace-page">

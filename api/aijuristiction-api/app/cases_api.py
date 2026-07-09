@@ -4,6 +4,7 @@ import logging
 import os
 import base64
 import hashlib
+import html
 import io
 import json
 import re
@@ -13,6 +14,7 @@ import zipfile
 from mimetypes import guess_type
 from pathlib import Path
 from datetime import datetime, timezone
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -628,35 +630,41 @@ def send_case_documents_email(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No case documents available to send.")
     correlation_id = (payload.correlation_id or str(uuid4())).strip()
     subject = (payload.case_subject or case.title).strip() or f"Case {case.case_id}"
-    plain = f"Dear client,\n\nPlease find attached generated documents for case '{subject}'.\n\nRegards,\nJurisDigta Legal Team"
-    html = _build_lawyer_email_html(case_subject=subject, version=payload.version.strip() or "v1", correlation_id=correlation_id)
+    case_url = _build_case_deep_link(case_id=case_id)
+    plain = (
+        f"Dear client,\n\nPlease find attached generated documents for case '{subject}'.\n\n"
+        f"Open the case in JurisDigta: {case_url}\n\n"
+        "Review the generated legal documents before filing, signing, or relying on them.\n\n"
+        "Regards,\nJurisDigta Legal Team"
+    )
+    html = _build_lawyer_email_html(
+        case_subject=subject,
+        version=payload.version.strip() or "v1",
+        correlation_id=correlation_id,
+        case_url=case_url,
+    )
     attachments: list[dict[str, str]] = []
     for document in documents:
-        try:
-            raw = store.read_storage_bytes(storage_uri=document.storage_uri)
-        except FileNotFoundError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Stored payload is unavailable for document {document.doc_id}",
-            ) from exc
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Case storage backend is not reachable for this document",
-            ) from exc
         attachments.append(
-            {
-                "filename": document.original_filename,
-                "mime_type": guess_type(document.original_filename)[0] or "application/octet-stream",
-                "content_base64": base64.b64encode(raw).decode("utf-8"),
-            }
+            _case_document_email_attachment(
+                case=case,
+                user_id=payload.user_id,
+                document=document,
+                store=store,
+            )
         )
     scheduler = EmailScheduler.from_env()
     email_id = scheduler.enqueue(
         recipient=payload.recipient.strip().lower(),
         subject=f"Legal document package | {subject}",
         body=plain,
-        metadata={"event": "case_documents_email", "case_id": case_id, "html_body": html, "attachments": attachments},
+        metadata={
+            "event": "case_documents_email",
+            "case_id": case_id,
+            "case_url": case_url,
+            "html_body": html,
+            "attachments": attachments,
+        },
     )
     return SendCaseDocumentsEmailResponse(
         email_id=email_id,
@@ -1456,15 +1464,87 @@ def _document_context(*, case_id: str, store: ApiDatabaseStore) -> CaseDocumentC
     )
 
 
-def _build_lawyer_email_html(*, case_subject: str, version: str, correlation_id: str) -> str:
+def _case_deep_link_base_url() -> str:
+    configured = os.getenv("JURISDIGTA_AGENT_BASE_URL", "").strip().rstrip("/")
+    if configured and configured != "unknown-variable":
+        return configured
+    return "https://agent.jurisdigta.eu"
+
+
+def _build_case_deep_link(*, case_id: str) -> str:
+    return f"{_case_deep_link_base_url()}/case/{quote(case_id.strip(), safe='')}"
+
+
+def _case_document_email_attachment(
+    *,
+    case: Case,
+    user_id: str,
+    document: CaseDocument,
+    store: ApiDatabaseStore,
+) -> dict[str, str]:
+    if document.kind == "generated_document":
+        pdf_content = _render_generated_case_document_pdf_bytes(
+            case=case,
+            user_id=user_id,
+            document=document,
+            store=store,
+        )
+        visible_content = _generated_case_document_storage_content(document=document, store=store) or (
+            _generated_case_document_visible_content(
+                case_id=case.case_id,
+                doc_id=document.doc_id,
+                store=store,
+            )
+        )
+        return {
+            "filename": _generated_case_document_filename(
+                case_title=case.title,
+                doc_id=document.doc_id,
+                document_type=_generated_case_document_type(visible_content),
+            ),
+            "mime_type": "application/pdf",
+            "content_base64": base64.b64encode(pdf_content).decode("utf-8"),
+        }
+    try:
+        raw = store.read_storage_bytes(storage_uri=document.storage_uri)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stored payload is unavailable for document {document.doc_id}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Case storage backend is not reachable for this document",
+        ) from exc
+    return {
+        "filename": document.original_filename,
+        "mime_type": guess_type(document.original_filename)[0] or "application/octet-stream",
+        "content_base64": base64.b64encode(raw).decode("utf-8"),
+    }
+
+
+def _build_lawyer_email_html(
+    *,
+    case_subject: str,
+    version: str,
+    correlation_id: str,
+    case_url: str,
+) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    escaped_subject = html.escape(case_subject)
+    escaped_version = html.escape(version)
+    escaped_correlation_id = html.escape(correlation_id)
+    escaped_case_url = html.escape(case_url, quote=True)
     return (
         "<html><body style='font-family:Georgia,serif;color:#1f2937'>"
         "<p>Dear Client,</p>"
         "<p>Please find attached your generated legal documents prepared for the referenced case subject.</p>"
+        f"<p>Open the case in JurisDigta: <a href='{escaped_case_url}'>{escaped_case_url}</a></p>"
+        "<p>Review the generated legal documents before filing, signing, or relying on them.</p>"
         "<p>Kind regards,<br/>JurisDigta Legal Desk</p>"
         "<hr/>"
-        f"<p style='font-size:12px;color:#6b7280'>Case Subject: {case_subject}<br/>"
-        f"Version: {version}<br/>Correlation ID: {correlation_id}<br/>Generated: {timestamp}</p>"
+        f"<p style='font-size:12px;color:#6b7280'>Case Subject: {escaped_subject}<br/>"
+        f"Version: {escaped_version}<br/>Correlation ID: {escaped_correlation_id}<br/>Generated: {timestamp}</p>"
         "</body></html>"
     )
