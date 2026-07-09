@@ -98,6 +98,10 @@ print(
     "assistant chatter, alternate-language blocks, and raw markdown stay out of the PDF."
 )
 print(
+    "frontend_live_document_preview_issue_503 => live assistant document responses prefer hydrated "
+    "case-history previews and generated-document actions over terminal PDF progress text."
+)
+print(
     "multilingual_document_exports => CASE_UPDATE_JSON case.documents entries are saved/exported "
     "as separate clean documents by default; use bundle=single_pdf only when one combined PDF is requested."
 )

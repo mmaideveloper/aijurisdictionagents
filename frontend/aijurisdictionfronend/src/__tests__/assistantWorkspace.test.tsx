@@ -535,6 +535,98 @@ describe("AssistantWorkspace", () => {
     );
   });
 
+  it("uses hydrated generated document history instead of a terminal PDF progress sentence", async () => {
+    const prompt = "Priprav splnomocnenie.";
+    vi.mocked(createChatSession).mockResolvedValue({
+      id: "session-1",
+      user_id: "user-1",
+      case_id: "case-1",
+      country: "SK",
+      language: "sk",
+      discussion_type: "advice",
+      state: "active",
+      created_at: "2026-07-09T00:00:00Z"
+    });
+    vi.mocked(streamSession).mockImplementation(async function* () {
+      yield {
+        event: "message",
+        data: {
+          id: "message-1",
+          session_id: "session-1",
+          role: "assistant",
+          content: "Teraz vytvorÃ­m PDF dokument. ChvÃ­Ä¾u prosÃ­m.",
+          agent_name: "AI Lawyer",
+          created_at: "2026-07-09T00:00:01Z"
+        }
+      };
+      yield {
+        event: "done",
+        data: { session_id: "session-1", status: "completed" }
+      };
+    });
+    caseActions.loadCaseData.mockResolvedValue({
+      id: "case-1",
+      title: "Splnomocnenie",
+      documents: [
+        {
+          id: "doc-generated",
+          caseId: "case-1",
+          kind: "generated_document",
+          originalFilename: "splnomocnenie.pdf",
+          mimeType: "application/pdf",
+          size: 0,
+          sizeLabel: "processed",
+          uploadedAt: "2026-07-09T00:00:02Z"
+        }
+      ],
+      interactionHistory: [
+        {
+          id: "message-1",
+          actor: "AI Lawyer",
+          createdAt: "2026-07-09T00:00:02Z",
+          message: `Splnomocnenie je pripravene.
+
+**Splnomocnenie**
+
+Ja, dolu podpisany, tymto splnomocnujem Emiliu Testovu.
+
+Datum: 9. jula 2026
+Podpis: ______________________
+
+Generated document:
+- [splnomocnenie.pdf](/app/documents/view?caseId=case-1&docId=doc-generated&kind=generated_document)`,
+          citations: []
+        }
+      ]
+    });
+
+    render(<AssistantWorkspace />);
+
+    const result = capturedAdapter?.run({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: prompt }]
+        }
+      ],
+      abortSignal: new AbortController().signal
+    });
+
+    let lastResult: CapturedRunResult | undefined;
+    if (result && Symbol.asyncIterator in result) {
+      for await (const update of result) {
+        lastResult = update;
+      }
+    } else {
+      lastResult = await result;
+    }
+
+    expect(lastResult?.content?.[0]?.text).toContain("**Splnomocnenie**");
+    expect(lastResult?.content?.[0]?.text).toContain("[splnomocnenie.pdf](/app/documents/view?caseId=case-1&docId=doc-generated");
+    expect(lastResult?.content?.[0]?.text).not.toContain("Teraz vytvorÃ­m PDF dokument");
+    expect(lastResult?.content?.[0]?.text?.match(/Generated document:/g)).toHaveLength(1);
+  });
+
   it("separates document drafts from conversational assistant text for preview rendering", () => {
     const presentation = parseAssistantMessagePresentation(`Pripravim teraz obidve verzie splnomocnenia.
 

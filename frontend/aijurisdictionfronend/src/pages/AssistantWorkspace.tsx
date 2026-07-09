@@ -224,8 +224,12 @@ const buildGeneratedDocumentsResponseBlock = ({
   return [heading, ...links].join("\n");
 };
 
-const appendGeneratedDocumentsResponseBlock = (content: string, block: string): string =>
-  block ? `${content.trim()}\n\n${block}`.trim() : content;
+const appendGeneratedDocumentsResponseBlock = (content: string, block: string): string => {
+  if (!block || content.includes("/app/documents/view?")) {
+    return content;
+  }
+  return `${content.trim()}\n\n${block}`.trim();
+};
 
 const localizeApiErrorDetail = (
   error: unknown,
@@ -504,6 +508,38 @@ const AssistantTextPart: React.FC = () => {
   );
 };
 
+const userInteractionActors = new Set(["You", "You (Voice)", "You (Video)"]);
+
+const isAssistantInteraction = (interaction: CaseInteraction): boolean =>
+  !userInteractionActors.has(interaction.actor) && interaction.actor !== "System";
+
+const findLatestAssistantInteraction = (caseItem: CaseRecord | null): CaseInteraction | null => {
+  if (!caseItem) {
+    return null;
+  }
+  for (let index = caseItem.interactionHistory.length - 1; index >= 0; index -= 1) {
+    const interaction = caseItem.interactionHistory[index];
+    if (interaction && isAssistantInteraction(interaction)) {
+      return interaction;
+    }
+  }
+  return null;
+};
+
+const progressOnlyAssistantPattern = /teraz\s+vytvor[ií]m\s+pdf\s+dokument|chv[ií][ľl]u\s+pros[ií]m|creating\s+(?:the\s+)?pdf/i;
+
+const shouldPreferHydratedAssistantMessage = (currentText: string, hydratedText: string): boolean => {
+  if (!hydratedText.trim() || hydratedText.trim() === currentText.trim()) {
+    return false;
+  }
+  const presentation = parseAssistantMessagePresentation(hydratedText);
+  return (
+    progressOnlyAssistantPattern.test(currentText) ||
+    presentation.documentPreviews.length > 0 ||
+    presentation.documentLinks.length > 0
+  );
+};
+
 const AssistantThread: React.FC = () => {
   const { language, t } = useLanguage();
   const { isAuthenticated, isAuthLoading, user } = useAuth();
@@ -619,8 +655,16 @@ const AssistantThread: React.FC = () => {
             previousDocumentIds: visibleDocumentIdsBeforeRun,
             userId
           });
+          const hydratedAssistantMessage = findLatestAssistantInteraction(refreshedCase)?.message ?? "";
+          const streamedAssistantText = latestAssistantText || processingMessages.join("\n\n");
+          const responseSourceText = shouldPreferHydratedAssistantMessage(
+            streamedAssistantText,
+            hydratedAssistantMessage
+          )
+            ? hydratedAssistantMessage
+            : streamedAssistantText;
           const finalAssistantText = appendGeneratedDocumentsResponseBlock(
-            latestAssistantText || processingMessages.join("\n\n"),
+            responseSourceText,
             generatedDocumentsBlock
           );
 
