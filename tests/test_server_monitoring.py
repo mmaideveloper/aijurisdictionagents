@@ -59,6 +59,7 @@ def test_monitoring_dashboards_include_ollama_ai_models_dashboard() -> None:
     dashboard_path = MONITORING_DIR / "grafana" / "dashboards" / "jurisdigta-ollama-models.json"
     dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
     panel_titles = {str(panel.get("title")) for panel in dashboard["panels"]}
+    usage_window = next(item for item in dashboard["templating"]["list"] if item["name"] == "usage_window")
 
     assert dashboard["uid"] == "jurisdigta-ollama-models"
     assert "Ollama API" in panel_titles
@@ -67,7 +68,31 @@ def test_monitoring_dashboards_include_ollama_ai_models_dashboard() -> None:
     assert "Local/Ollama Total Tokens" in panel_titles
     assert "Paid Model Total Tokens" in panel_titles
     assert "Top 10 Cases By Tokens (Masked)" in panel_titles
-    assert any(item["name"] == "usage_window" for item in dashboard["templating"]["list"])
+    assert usage_window["current"]["value"] == "43200"
+    assert usage_window["type"] == "query"
+    assert usage_window["definition"] == "label_values(jurisdigta_ai_model_total_tokens_window, window_minutes)"
+
+
+def test_monitoring_dashboards_include_ai_model_token_usage_dashboard() -> None:
+    dashboard_path = MONITORING_DIR / "grafana" / "dashboards" / "jurisdigta-ai-model-token-usage.json"
+    dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    panel_titles = {str(panel.get("title")) for panel in dashboard["panels"]}
+    target_queries = {
+        str(target.get("expr"))
+        for panel in dashboard["panels"]
+        for target in panel.get("targets", [])
+        if isinstance(target, dict)
+    }
+
+    assert dashboard["uid"] == "jurisdigta-ai-model-token-usage"
+    assert "Total Tokens By Model And Window" in panel_titles
+    assert "Current Total Tokens Per Model" in panel_titles
+    assert "30d Total Tokens By Model" in panel_titles
+    assert "Input, Output, And Cached Tokens By Model" in panel_titles
+    assert (
+        "sum by (provider, model, window_minutes) (jurisdigta_ai_model_total_tokens_window)"
+        in target_queries
+    )
 
 
 def test_monitoring_dashboards_include_court_decision_service_dashboard() -> None:
