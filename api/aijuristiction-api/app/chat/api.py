@@ -3802,6 +3802,8 @@ def _generated_case_document_legal_title(value: str) -> str:
         return "Power of Attorney"
     if "splnomocnenie" in normalized or "plnomocenstvo" in normalized:
         return "Splnomocnenie"
+    if "potvrdenie" in normalized and any(token in normalized for token in ("pozick", "dlh", "dlzob")):
+        return "Potvrdenie o pozicke"
     if "potvrdenie" in normalized and any(token in normalized for token in ("zaplat", "uhrad", "platb")):
         return "Potvrdenie o zaplatení"
     return title
@@ -8174,6 +8176,8 @@ def _detect_document_kind(
         "potvrdenie o uhrad",
         "potvrdenie o prijati plat",
         "potvrdenie prijatia plat",
+        "potvrdenie o pozick",
+        "potvrdenie o dlzob",
         "doklad o zaplat",
         "doklad o uhrad",
         "payment confirmation",

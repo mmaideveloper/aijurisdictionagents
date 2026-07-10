@@ -106,6 +106,11 @@ print(
     "case-history previews and generated-document actions over terminal PDF progress text."
 )
 print(
+    "loan_confirmation_document_flow => Slovak one-year loan confirmation requests are routed to "
+    "the direct generated-document flow with next steps, human-review disclosure, and a persisted "
+    "potvrdenie_o_pozicke PDF export body instead of echoing the user prompt."
+)
+print(
     "multilingual_document_exports => CASE_UPDATE_JSON case.documents entries are saved/exported "
     "as separate clean documents by default; use bundle=single_pdf only when one combined PDF is requested."
 )

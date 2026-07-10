@@ -6347,6 +6347,93 @@ def test_pending_payment_confirmation_reply_is_synthesized_for_storage() -> None
     assert "Chvilu prosim" not in body
 
 
+def test_exact_loan_confirmation_prompt_uses_direct_document_flow(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import MessageRole, Session
+    from app.chat.repository import InMemoryChatRepository
+
+    stored_documents: list[dict[str, object]] = []
+
+    class _FakeStore:
+        def list_case_documents(self, *, case_id: str):
+            return []
+
+        def add_case_document(
+            self,
+            *,
+            case_id: str,
+            kind: str,
+            version: int,
+            original_filename: str,
+            payload: bytes,
+            uploaded_by_user_id: str | None = None,
+        ) -> str:
+            doc_id = f"doc-generated-{len(stored_documents) + 1}"
+            stored_documents.append(
+                {
+                    "case_id": case_id,
+                    "kind": kind,
+                    "version": version,
+                    "original_filename": original_filename,
+                    "payload": payload.decode("utf-8"),
+                    "uploaded_by_user_id": uploaded_by_user_id,
+                }
+            )
+            return doc_id
+
+    def _unexpected_lawyer_agent(*_args, **_kwargs):
+        raise AssertionError("Loan confirmation prompt should not fall through to model echo")
+
+    repository = InMemoryChatRepository()
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_get_store", lambda: _FakeStore())
+    monkeypatch.setattr(chat_api, "_persist_case_message_if_needed", lambda **_kwargs: None)
+    monkeypatch.setattr(chat_api, "_record_case_ai_model_audit", lambda **_kwargs: None)
+    monkeypatch.setattr("aijurisdictionagents.agents.create_lawyer_agent", _unexpected_lawyer_agent)
+
+    session_id = uuid4()
+    session = repository.create_session(
+        Session(
+            id=session_id,
+            user_id=uuid4(),
+            case_id="case-loan-513",
+            country="SK",
+            language="SK",
+            discussion_type="advice",
+        )
+    )
+    prompt = (
+        "Chcem pozicat peniaze na 1 rok a chcem nejake potvrdenie o tom ze som "
+        "pozicala peniaze Jankovi hraskovi, adresa testova 10, Poprad, Slovensko, "
+        "cislo obcianskeho: BA12345DR."
+    )
+
+    _user, lawyer, visible, events, route = chat_api._run_direct_lawyer_turn(
+        session_id=session_id,
+        session=session,
+        content=prompt,
+    )
+
+    assert route is None
+    assert events and events[0]["stage"] == "document_ready"
+    assert lawyer.role == MessageRole.ASSISTANT
+    assert visible != prompt
+    assert "Potvrdenie o pozicke" in visible
+    assert "Odporucane kroky pred pouzitim" in visible
+    assert "CASE_UPDATE_JSON" not in visible
+    assert "Ktor" not in visible
+    generated_documents = [
+        item for item in stored_documents if item["kind"] == "generated_document"
+    ]
+    assert len(generated_documents) == 1
+    assert str(generated_documents[0]["original_filename"]).startswith("potvrdenie_o_pozicke_")
+    payload = str(generated_documents[0]["payload"])
+    assert "Potvrdenie o pozicke" in payload
+    assert "Jankovi hraskovi" in payload
+    assert "BA12345DR" in payload
+    assert "CASE_UPDATE_JSON" not in payload
+
+
 def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None:
     from app.chat.api import _build_direct_reply_result
     from app.chat.models import Message, MessageRole, Session
