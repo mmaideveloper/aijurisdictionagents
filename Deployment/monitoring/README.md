@@ -26,6 +26,7 @@ GET /v1/system/status?minutes=60
 - Docker stdout/stderr logs and server job log files through Grafana Alloy and Loki.
 - Provisioned AI model usage panels in `JurisDigta Application Performance` for aggregate status, cost, requests by route, input/output/total tokens by model, and top cost by plan/task/provider/model route.
 - Provisioned masked top-10 case token panels in `JurisDigta Ollama And AI Models` for Grafana-only operational triage.
+- Provisioned `JurisDigta AI Model Token Usage` for aggregate total-token counts over time and per model/window.
 
 ## Security Baseline
 
@@ -117,6 +118,7 @@ Provisioned Grafana panels:
 - local/Ollama and paid-model total tokens by provider/model/route
 - masked top 10 cases by token volume and estimated cost
 - input, cached input, output, and total tokens by model
+- total tokens over time by model and status window
 - top AI model cost by plan, task, provider, model, and route type
 
 Case-level drill-down remains limited to masked top-case Grafana rows. Raw
@@ -516,7 +518,8 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 
 - `JurisDigta Server Performance`: CPU, RAM, disk, load, network, disk I/O, and container memory.
 - `JurisDigta Application Performance`: API/MCP/web/Grafana HTTP probes, component status, email queue/sent/time, document queue/processed/time, laws processing cursor and runtime, and application error counts.
-- `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, local/Ollama tokens, paid-model tokens, requests, estimated cost, and masked top cases by token volume.
+- `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, local/Ollama tokens, paid-model tokens, requests, estimated cost, and masked top cases by token volume. Its usage-window selector is populated from available Prometheus token windows so it does not default to an empty status window.
+- `JurisDigta AI Model Token Usage`: total tokens over time by provider/model/window, current total-token rows per model, 30-day total-token bar gauges per model, and input/output/cached token breakdowns.
 - `JurisDigta Laws Collector`: total imported laws over time, latest imported law identifier such as `179/2026`, execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
 - `JurisDigta Court Decision Service`: current collector status, imported decisions, latest imported decision safe short name and published date, latest imported decision timestamp, stored versions, versions with embeddings, processing/processed/idle activity, storage totals, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.

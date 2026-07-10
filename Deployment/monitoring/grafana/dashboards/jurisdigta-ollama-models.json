@@ -693,9 +693,14 @@
       {
         "current": {
           "selected": true,
-          "text": "1h",
-          "value": "60"
+          "text": "30d",
+          "value": "43200"
         },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "jurisdigta-prometheus"
+        },
+        "definition": "label_values(jurisdigta_ai_model_total_tokens_window, window_minutes)",
         "hide": 0,
         "includeAll": false,
         "label": "Usage window",
@@ -703,7 +708,7 @@
         "name": "usage_window",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": "1h",
             "value": "60"
           },
@@ -718,15 +723,20 @@
             "value": "10080"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "30d",
             "value": "43200"
           }
         ],
-        "query": "60,1440,10080,43200",
+        "query": {
+          "query": "label_values(jurisdigta_ai_model_total_tokens_window, window_minutes)",
+          "refId": "StandardVariableQuery"
+        },
         "queryValue": "",
+        "refresh": 2,
         "skipUrlSync": false,
-        "type": "custom"
+        "sort": 3,
+        "type": "query"
       }
     ]
   },
