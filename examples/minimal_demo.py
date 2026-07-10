@@ -110,6 +110,10 @@ print(
     "as separate clean documents by default; use bundle=single_pdf only when one combined PDF is requested."
 )
 print(
+    "model_testing_fixtures => tests/modelsTesting/index.json registers zipped golden case exports "
+    "for model answer/document comparison, including legal-document structure and human-review checks."
+)
+print(
     "unlimited_access_emails => "
     f"{sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}"
 )
