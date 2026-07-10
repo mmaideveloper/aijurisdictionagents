@@ -1529,6 +1529,16 @@
   margin: 0;
 }
 
+.news-post-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1538 / 745;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
 .assistant-capability-list {
   margin: 0;
   padding-left: 1.1rem;

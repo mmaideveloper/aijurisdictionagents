@@ -9,11 +9,15 @@ const labels: Record<string, string> = {
   newsEyebrow: "Product updates",
   navNews: "News",
   newsSubtitle: "Dated mini-blogs.",
+  newsModelRoutingDate: "10 July 2026",
   newsAudioModelsDate: "7 July 2026",
   newsMcpDate: "22 June 2026",
   newsLocalModelsDate: "7 July 2026",
   newsApprovalDate: "21 June 2026",
   newsMetadataDate: "20 June 2026",
+  newsModelRoutingTitle: "Model Routing Administration",
+  newsModelRoutingBody: "New feature that allows Azure Foundry model routing.",
+  newsModelRoutingImageAlt: "Dashboard showing JurisDigta AI model token usage by model and route",
   newsAudioModelsTitle: "STT/TTS improves communication between the client and the AI Lawyer",
   newsAudioModelsBody: "Audio models can record a client consultation.",
   newsLocalModelsTitle: "Local models for free users subscriptions with model routing.",
@@ -45,6 +49,14 @@ describe("News", () => {
     render(<News />);
 
     expect(screen.getByRole("heading", { name: "News" })).toBeDefined();
+    expect(screen.getByText("10 July 2026")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Model Routing Administration" })).toBeDefined();
+    expect(screen.getByText("New feature that allows Azure Foundry model routing.")).toBeDefined();
+    expect(
+      screen
+        .getByRole("img", { name: "Dashboard showing JurisDigta AI model token usage by model and route" })
+        .getAttribute("src")
+    ).toBe("/news/model-routing-administration.png");
     expect(screen.getAllByText("7 July 2026")).toHaveLength(2);
     expect(
       screen.getByRole("heading", { name: "STT/TTS improves communication between the client and the AI Lawyer" })

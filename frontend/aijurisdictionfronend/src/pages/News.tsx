@@ -7,6 +7,10 @@ type NewsPost = {
   title: string;
   body: string;
   kind: "mcp" | "plain";
+  image?: {
+    src: string;
+    alt: string;
+  };
 };
 
 const News: React.FC = () => {
@@ -21,6 +25,16 @@ const News: React.FC = () => {
   ];
 
   const posts: NewsPost[] = [
+    {
+      date: t("newsModelRoutingDate"),
+      title: t("newsModelRoutingTitle"),
+      body: t("newsModelRoutingBody"),
+      kind: "plain",
+      image: {
+        src: "/news/model-routing-administration.png",
+        alt: t("newsModelRoutingImageAlt")
+      }
+    },
     {
       date: t("newsAudioModelsDate"),
       title: t("newsAudioModelsTitle"),
@@ -71,6 +85,9 @@ const News: React.FC = () => {
                 {post.title}
               </h2>
               <p>{post.body}</p>
+              {post.image ? (
+                <img className="news-post-image" src={post.image.src} alt={post.image.alt} loading="lazy" />
+              ) : null}
               {post.kind === "mcp" ? (
                 <>
                   <span className="assistant-status">{t("assistantMcpLocked")}</span>
