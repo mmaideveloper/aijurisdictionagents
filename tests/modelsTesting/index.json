@@ -1,0 +1,80 @@
+{
+  "schema_version": "jurisdigta.models-testing.index.v1",
+  "description": "Golden zipped case fixtures for model answer and generated legal-document comparison.",
+  "main_test_solution_issue": "https://github.com/mmaideveloper/aijurisdictionagents/issues/422",
+  "compliance": {
+    "data_policy": "synthetic_or_dedicated_test_accounts_only",
+    "prohibited": [
+      "production_customer_personal_data",
+      "api_keys",
+      "access_tokens",
+      "provider_secrets",
+      "payment_data",
+      "unrelated_case_history"
+    ],
+    "legal_document_outputs_require_human_review": true
+  },
+  "default_thresholds": {
+    "answer_similarity_min": 0.82,
+    "document_similarity_min": 0.9,
+    "required_legal_document_markers": [
+      "document_title",
+      "parties",
+      "operative_statement",
+      "signature_block",
+      "human_review_disclosure"
+    ]
+  },
+  "cases": [
+    {
+      "case_key": "issue-513-loan-confirmation",
+      "zip_path": "cases/issue-513-loan-confirmation-case-export.zip",
+      "sha256": "2057CAB079A8BCA76C9115CCBC87413B26CE86C8C62DDCC576CED7B18275442E",
+      "source_issue": "https://github.com/mmaideveloper/aijurisdictionagents/issues/513",
+      "source_pull_request": "https://github.com/mmaideveloper/aijurisdictionagents/pull/515",
+      "related_test_solution_issue": "https://github.com/mmaideveloper/aijurisdictionagents/issues/422",
+      "language": "sk-SK",
+      "country": "SK",
+      "category": "legal_document_generation",
+      "data_classification": "synthetic_test_fixture",
+      "fixture_purpose": "Compare whether a model generates a Slovak loan-confirmation answer and legal-document draft instead of echoing the user prompt.",
+      "prompt_kind": "single_turn_case_creation",
+      "expected_outputs": {
+        "answer": {
+          "must_contain": [
+            "Potvrdenie o pozicke",
+            "Odporucane kroky pred pouzitim",
+            "AI navrh pred pouzitim skontrolujte clovekom"
+          ],
+          "must_not_contain": [
+            "CASE_UPDATE_JSON"
+          ],
+          "similarity_min": 0.82
+        },
+        "document": {
+          "type": "loan_confirmation",
+          "must_contain": [
+            "Potvrdenie o pozicke",
+            "Dlznik:",
+            "Jankovi hraskovi",
+            "BA12345DR",
+            "Podpis poskytovatela pozicky",
+            "Podpis dlznika"
+          ],
+          "must_not_contain": [
+            "CASE_UPDATE_JSON",
+            "Tu je konecna verzia dokumentu"
+          ],
+          "similarity_min": 0.9,
+          "legal_document_markers": [
+            "document_title",
+            "parties",
+            "operative_statement",
+            "signature_block",
+            "human_review_disclosure"
+          ]
+        }
+      }
+    }
+  ]
+}
