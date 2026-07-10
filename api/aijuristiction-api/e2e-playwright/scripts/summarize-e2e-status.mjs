@@ -11,8 +11,8 @@ if (!catalogPath || !reportPath || !outputPath) {
   process.exit(2);
 }
 
-const catalog = JSON.parse(stripBom(await readFile(catalogPath, 'utf8')));
-const report = JSON.parse(stripBom(await readFile(reportPath, 'utf8')));
+const catalog = JSON.parse(await readJsonText(catalogPath));
+const report = JSON.parse(await readJsonText(reportPath));
 
 const resultsByFileAndTitle = new Map();
 collectSpecs(report.suites ?? [], []);
@@ -103,7 +103,12 @@ function resolveStatus(tests, results) {
 }
 
 function normalizePath(value) {
-  return value.replaceAll('\\', '/').replace(/^.*?tests\//, 'tests/');
+  const normalized = value.replaceAll('\\', '/');
+  const testPath = normalized.match(/(?:^|\/)(tests\/.+)$/)?.[1];
+  if (testPath) return testPath;
+
+  const fileName = normalized.split('/').pop() ?? normalized;
+  return fileName ? `tests/${fileName}` : normalized;
 }
 
 function formatDuration(milliseconds) {
@@ -120,6 +125,21 @@ function escapeCell(value) {
   return String(value ?? '').replaceAll('|', '\\|').replace(/\r?\n/g, '<br>');
 }
 
-function stripBom(value) {
-  return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
+async function readJsonText(filePath) {
+  const buffer = await readFile(filePath);
+  const text = decodeJsonBuffer(buffer);
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+function decodeJsonBuffer(buffer) {
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return buffer.subarray(2).toString('utf16le');
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return buffer.subarray(2).swap16().toString('utf16le');
+  }
+  if (buffer.length > 3 && buffer[1] === 0 && buffer[3] === 0) {
+    return buffer.toString('utf16le');
+  }
+  return buffer.toString('utf8');
 }

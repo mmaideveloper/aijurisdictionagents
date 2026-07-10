@@ -482,6 +482,10 @@ def _read_or_create_model_knowledge_cutoff_snapshot(
             )
             return cached_snapshot
 
+    if _is_non_production_model_name(model_name):
+        _ensure_model_knowledge_permanent_memory_entry(store=store, model_name=model_name)
+        return (None, _UNAVAILABLE_MODEL_KNOWLEDGE_SOURCE)
+
     resolved_snapshot = _resolve_model_knowledge_cutoff_via_web_search(model_name=model_name)
     if resolved_snapshot is not None:
         _persist_model_knowledge_cutoff_snapshot(
@@ -581,6 +585,11 @@ def _resolve_llm_model_name() -> str:
     if provider == "mock":
         return "mock"
     return "unknown"
+
+
+def _is_non_production_model_name(model_name: str) -> bool:
+    normalized = model_name.strip().lower()
+    return normalized in {"mock", "test", "fixture", "local_mock"}
 
 
 def _resolve_model_knowledge_cutoff_cache_path() -> Path | None:

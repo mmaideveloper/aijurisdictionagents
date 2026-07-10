@@ -64,7 +64,7 @@ test('mobile auth + subscription flow: sign-up, sign-in and request subscription
   const plans = (await plansResponse.json()) as Array<{ plan_code: string }>;
   expect(plans.length).toBeGreaterThan(0);
 
-  const targetPlanCode = plans[plans.length - 1]?.plan_code;
+  const targetPlanCode = plans.find((plan) => plan.plan_code === 'case')?.plan_code;
   expect(targetPlanCode).toBeTruthy();
 
   const createSubscriptionResponse = await request.post(`${baseURL}/v1/users/${userId}/subscriptions`, {

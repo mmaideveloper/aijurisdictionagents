@@ -7182,6 +7182,39 @@ def test_law_snapshot_reuses_cached_model_cutoff_without_expiration(monkeypatch,
     )
 
 
+def test_law_snapshot_does_not_web_search_for_mock_model(monkeypatch, tmp_path) -> None:
+    import app.chat.result_metadata as result_metadata
+
+    monkeypatch.setenv("LAWS_DB_BACKEND", "sqlite")
+    monkeypatch.setenv("LAWS_DB_LOCAL", str(tmp_path / "missing-laws.sqlite3"))
+    monkeypatch.delenv("MODEL_KNOWLEDGE_CUTOFF_CACHE_FILE", raising=False)
+    monkeypatch.setattr(
+        result_metadata.ApiDatabaseStore,
+        "from_env",
+        lambda: SimpleNamespace(
+            get_permanent_memory=lambda _key: None,
+            upsert_permanent_memory=lambda **_kwargs: None,
+        ),
+    )
+    monkeypatch.setattr(
+        result_metadata,
+        "AIWebSearchAgent",
+        lambda: SimpleNamespace(search=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected web search"))),
+    )
+    monkeypatch.setattr(
+        result_metadata,
+        "_fetch_text_from_url",
+        lambda _url: (_ for _ in ()).throw(AssertionError("unexpected page fetch")),
+    )
+
+    snapshot = result_metadata.get_law_knowledge_snapshot("SK", model_name="mock")
+
+    assert snapshot.last_law_update_date is None
+    assert snapshot.last_law_update_source == "unavailable"
+    assert snapshot.model_knowledge_cutoff_date is None
+    assert snapshot.model_knowledge_cutoff_source == "unavailable"
+
+
 def test_law_snapshot_uses_direct_openai_model_page_when_search_returns_no_results(
     monkeypatch, tmp_path
 ) -> None:

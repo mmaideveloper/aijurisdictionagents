@@ -943,6 +943,7 @@ Scheduled E2E status:
 - The generated artifacts are `scheduled-e2e-status.md`, `scheduled-e2e-results.json`, and Playwright `test-results`.
 - Scheduled runs use local SQLite paths under the GitHub runner temp directory, `LLM_PROVIDER=mock`, and log-only email transport. This keeps the run deterministic and avoids processing production user data or sending messages.
 - Browser frontend specs that require `FRONTEND_BASE_URL` are listed in the catalog, but they are marked `not scheduled` by the default API-focused scheduled run until a frontend environment is explicitly provided.
+- To reproduce the status-report generation locally after a Playwright JSON run, execute `node scripts/summarize-e2e-status.mjs e2e-test-catalog.json scheduled-e2e-results.json scheduled-e2e-status.md` from `api/aijuristiction-api/e2e-playwright`. The summarizer accepts both bare Playwright spec file names and `tests/...` paths from the JSON reporter.
 
 Run only the chat simulation test:
 

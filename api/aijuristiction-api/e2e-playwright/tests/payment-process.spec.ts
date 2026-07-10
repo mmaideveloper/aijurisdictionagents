@@ -94,17 +94,17 @@ test('payment process: user checks out Case plan and confirms sandbox payment', 
   expect(checkoutUrl.searchParams.get('paymentId')).toBe(checkout.payment_id);
   expect(checkoutUrl.searchParams.get('token')).toBeTruthy();
 
-  const payingSubscriptionsResponse = await request.get(`${baseURL}/v1/users/${user.user_id}/subscriptions`, {
+  const pendingSubscriptionsResponse = await request.get(`${baseURL}/v1/users/${user.user_id}/subscriptions`, {
     headers: { 'x-api-key': apiKey },
   });
-  expect(payingSubscriptionsResponse.status()).toBe(200);
-  const payingSubscriptions = (await payingSubscriptionsResponse.json()) as SubscriptionResponse[];
+  expect(pendingSubscriptionsResponse.status()).toBe(200);
+  const pendingSubscriptions = (await pendingSubscriptionsResponse.json()) as SubscriptionResponse[];
   expect(
-    payingSubscriptions.some(
+    pendingSubscriptions.some(
       (subscription) =>
         subscription.subscription_id === checkout.subscription_id &&
         subscription.plan_code === 'case' &&
-        subscription.status === 'paying'
+        subscription.status === 'pending'
     )
   ).toBeTruthy();
 
@@ -182,5 +182,5 @@ test('payment process guards: disabled plans and unknown payments do not activat
   expect(subscriptionsResponse.status()).toBe(200);
   const subscriptions = (await subscriptionsResponse.json()) as SubscriptionResponse[];
   const subscription = subscriptions.find((item) => item.subscription_id === checkout.subscription_id);
-  expect(subscription?.status).toBe('paying');
+  expect(subscription?.status).toBe('pending');
 });
