@@ -2,6 +2,8 @@
 
 This folder is the tracked golden-case database for comparing model answers and generated legal documents.
 
+It supports the broader frontend/browser test solution tracked in GitHub issue [#422](https://github.com/mmaideveloper/aijurisdictionagents/issues/422). Issue `#422` remains the main end-to-end test initiative for account, billing, invoice, and admin flows; this folder provides reusable zipped legal-answer/document fixtures that those tests and future model-comparison runners can consume.
+
 Each case is stored as a ZIP under `cases/` and registered in `index.json`. The ZIP should contain a self-contained case export with:
 
 - the original prompt,

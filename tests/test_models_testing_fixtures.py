@@ -20,6 +20,7 @@ def test_model_testing_fixture_index_is_valid() -> None:
     index = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
 
     assert index["schema_version"] == "jurisdigta.models-testing.index.v1"
+    assert index["main_test_solution_issue"].endswith("/issues/422")
     assert index["compliance"]["data_policy"] == "synthetic_or_dedicated_test_accounts_only"
     assert index["compliance"]["legal_document_outputs_require_human_review"] is True
     assert index["cases"], "At least one model-testing fixture is required."
@@ -28,6 +29,7 @@ def test_model_testing_fixture_index_is_valid() -> None:
         zip_path = FIXTURE_ROOT / case["zip_path"]
         assert zip_path.exists(), f"Missing fixture ZIP: {zip_path}"
         assert _sha256(zip_path) == case["sha256"]
+        assert case["related_test_solution_issue"] == index["main_test_solution_issue"]
         assert case["data_classification"] == "synthetic_test_fixture"
         assert case["expected_outputs"]["answer"]["similarity_min"] >= 0.7
         assert case["expected_outputs"]["document"]["similarity_min"] >= 0.8
