@@ -150,6 +150,7 @@ class CreateSessionRequest(BaseModel):
     country: str = "SK"
     language: str | None = None
     discussion_type: Literal["advice", "court"] = "advice"
+    model_profile_id: str | None = None
 
 
 class CreateMessageRequest(BaseModel):
@@ -160,6 +161,7 @@ class CreateMessageRequest(BaseModel):
 
 class ReplyRequest(BaseModel):
     content: str
+    model_profile_id: str | None = None
 
 
 class InputDocument(BaseModel):
@@ -300,7 +302,12 @@ def _resolve_audit_model_identity(
     )
 
 
-def _resolve_session_llm_route(*, session: Session, task_type: str) -> RoutedLLMClient:
+def _resolve_session_llm_route(
+    *,
+    session: Session,
+    task_type: str,
+    selected_model_profile_id: str | None = None,
+) -> RoutedLLMClient:
     store = _get_store()
     user_id = str(session.user_id) if session.user_id else ""
     if not user_id and session.case_id:
@@ -309,13 +316,23 @@ def _resolve_session_llm_route(*, session: Session, task_type: str) -> RoutedLLM
         except KeyError:
             user_id = ""
     try:
+        normalized_selected_profile_id = (
+            selected_model_profile_id or session.selected_model_profile_id or ""
+        ).strip()
+        if normalized_selected_profile_id:
+            return get_routed_llm_client(
+                store=store,
+                user_id=user_id,
+                task_type=task_type,
+                selected_model_profile_id=normalized_selected_profile_id,
+            )
         return get_routed_llm_client(
             store=store,
             user_id=user_id,
             task_type=task_type,
         )
     except ModelRouteUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 def _estimate_audit_tokens(text: str) -> int:
@@ -1785,6 +1802,7 @@ class StartSessionStreamRequest(BaseModel):
     communication_minutes: float | None = None
     user_simulation_mode: Literal["ReadUser", "AIUserSimulatorAgent"] = "ReadUser"
     user_replies: List[str] = Field(default_factory=list)
+    model_profile_id: str | None = None
 
 
 @router.post("/sessions", response_model=Session)
@@ -1795,6 +1813,7 @@ def create_session(payload: CreateSessionRequest) -> Session:
         country=payload.country,
         language=payload.language,
         discussion_type=payload.discussion_type,
+        selected_model_profile_id=(payload.model_profile_id or "").strip() or None,
     )
     created = _repository.create_session(session)
     _bootstrap_case_history_if_needed(session=created)
@@ -1821,6 +1840,8 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     content = payload.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="Reply content is required")
+    if payload.model_profile_id is not None:
+        session.selected_model_profile_id = payload.model_profile_id.strip() or None
 
     _persisted_user, persisted_lawyer, visible_lawyer_content, processing_events, routed_llm = (
         _run_direct_lawyer_turn(
@@ -1863,6 +1884,8 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if session.state == SessionState.COMPLETED and payload.user_simulation_mode != "ReadUser":
         raise HTTPException(status_code=409, detail="Session already completed")
+    if payload.model_profile_id is not None:
+        session.selected_model_profile_id = payload.model_profile_id.strip() or None
     _ensure_case_write_access_for_session(session)
     _persist_inline_case_documents_if_needed(session=session, documents=payload.documents)
     if payload.user_simulation_mode == "ReadUser":

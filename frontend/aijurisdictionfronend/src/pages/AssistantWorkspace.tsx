@@ -17,6 +17,7 @@ import {
   chatApiRuntimeConfig,
   createChatSession,
   fetchEffectiveModelRoute,
+  fetchSelectableModelProfiles,
   streamSession
 } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
@@ -548,7 +549,7 @@ const currentCaseDeepLinkId = (): string | undefined => {
   return match?.[1] ? decodeURIComponent(match[1]) : undefined;
 };
 
-const AssistantThread: React.FC = () => {
+const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ selectedModelProfileId }) => {
   const { language, t } = useLanguage();
   const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { activeCase, loadCaseData } = useCases();
@@ -611,7 +612,7 @@ const AssistantThread: React.FC = () => {
                   language,
                   userId,
                   caseId: activeCaseId,
-                  sessionId: (await createChatSession({ language, userId, caseId: activeCaseId })).id
+                  sessionId: (await createChatSession({ language, userId, caseId: activeCaseId, modelProfileId: selectedModelProfileId })).id
                 };
           sessionRef.current = session;
 
@@ -626,6 +627,7 @@ const AssistantThread: React.FC = () => {
           for await (const streamEvent of streamSession({
             sessionId: session.sessionId,
             instruction: content,
+            modelProfileId: selectedModelProfileId,
             signal: options.abortSignal
           })) {
             if (streamEvent.event === "processing" || streamEvent.event === "waiting_for_reply") {
@@ -690,7 +692,7 @@ const AssistantThread: React.FC = () => {
         }
       }
     }),
-    [activeCaseId, isAuthenticated, isAuthLoading, language, loadCaseData, t, user?.userId]
+    [activeCaseId, isAuthenticated, isAuthLoading, language, loadCaseData, selectedModelProfileId, t, user?.userId]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {
@@ -901,6 +903,10 @@ const AssistantWorkspace: React.FC = () => {
   const [modelLabel, setModelLabel] = React.useState(
     isAuthenticated ? pendingModelLabel : fallbackModelLabel
   );
+  const [selectedModelProfileId, setSelectedModelProfileId] = React.useState("");
+  const [selectableProfiles, setSelectableProfiles] = React.useState<
+    { model_profile_id: string; label: string; is_external: boolean; is_local: boolean }[]
+  >([]);
 
   React.useEffect(() => {
     if (isAuthenticated && !user?.userId) {
@@ -926,6 +932,35 @@ const AssistantWorkspace: React.FC = () => {
   }, [fallbackModelLabel, isAuthenticated, isAuthLoading, pendingModelLabel, user?.userId]);
 
   React.useEffect(() => {
+    const userId = user?.userId?.trim();
+    if (!isAuthenticated || !userId) {
+      setSelectableProfiles([]);
+      setSelectedModelProfileId("");
+      return;
+    }
+
+    let isCurrent = true;
+    void fetchSelectableModelProfiles(userId)
+      .then((response) => {
+        if (isCurrent) {
+          setSelectableProfiles(response.eligible ? response.profiles : []);
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setSelectableProfiles([]);
+        }
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [isAuthenticated, user?.userId]);
+
+  React.useEffect(() => {
+    setSelectedModelProfileId("");
+  }, [activeCase?.id]);
+
+  React.useEffect(() => {
     const requestedCaseId = routeCaseId?.trim();
     if (!requestedCaseId || isLoadingCases || activeCase?.id === requestedCaseId) {
       return;
@@ -947,11 +982,26 @@ const AssistantWorkspace: React.FC = () => {
             </div>
             <div className="assistant-model-disclosure" aria-label={t("assistantModelDisclosureAria")}>
               <span>{t("assistantModelDisclosureLabel")}</span>
-              <strong>{modelLabel}</strong>
+              {selectableProfiles.length > 0 ? (
+                <select
+                  aria-label={t("assistantModelSelectorLabel")}
+                  value={selectedModelProfileId}
+                  onChange={(event) => setSelectedModelProfileId(event.currentTarget.value)}
+                >
+                  <option value="">{modelLabel}</option>
+                  {selectableProfiles.map((profile) => (
+                    <option key={profile.model_profile_id} value={profile.model_profile_id}>
+                      {profile.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <strong>{modelLabel}</strong>
+              )}
             </div>
           </section>
 
-          <AssistantThread key={threadKey} />
+          <AssistantThread key={threadKey} selectedModelProfileId={selectedModelProfileId || undefined} />
         </main>
 
         <aside className="assistant-tool-panel" aria-label={t("workspaceConfigurations")}>

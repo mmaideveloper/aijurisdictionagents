@@ -26,6 +26,23 @@ class EffectiveModelRouteResponse(BaseModel):
     label: str
 
 
+class SelectableModelProfileResponse(BaseModel):
+    model_profile_id: str
+    provider: str
+    provider_display_name: str
+    model: str
+    label: str
+    is_local: bool
+    is_external: bool
+    eu_data_zone_capable: bool
+    context_window_tokens: int
+
+
+class SelectableModelProfilesResponse(BaseModel):
+    eligible: bool
+    profiles: list[SelectableModelProfileResponse]
+
+
 def get_store() -> ApiDatabaseStore:
     store = ApiDatabaseStore.from_env()
     store.initialize()
@@ -65,6 +82,42 @@ def get_effective_model_route(
         is_external=bool(provider.is_external) if provider is not None else False,
         label=_public_route_label(provider_name=provider_name, model_code=model_code, route_type=route.route_type),
     )
+
+
+@router.get("/selectable", response_model=SelectableModelProfilesResponse)
+def get_selectable_model_profiles(
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_store),
+) -> SelectableModelProfilesResponse:
+    normalized_user_id = user_id.strip()
+    if not normalized_user_id or not store.can_select_assistant_model(user_id=normalized_user_id):
+        return SelectableModelProfilesResponse(eligible=False, profiles=[])
+
+    providers = {item.provider_id: item for item in store.list_ai_model_providers()}
+    profiles: list[SelectableModelProfileResponse] = []
+    for profile in store.list_ai_model_profiles():
+        provider = providers.get(profile.provider_id)
+        if provider is None or not profile.enabled or not provider.enabled:
+            continue
+        provider_name = provider.display_name or provider.provider_code
+        profiles.append(
+            SelectableModelProfileResponse(
+                model_profile_id=profile.model_profile_id,
+                provider=provider.provider_code,
+                provider_display_name=provider_name,
+                model=profile.model_code,
+                label=_public_route_label(
+                    provider_name=provider_name,
+                    model_code=profile.model_code,
+                    route_type="",
+                ),
+                is_local=bool(provider.is_local),
+                is_external=bool(provider.is_external),
+                eu_data_zone_capable=bool(profile.eu_data_zone_capable),
+                context_window_tokens=int(profile.context_window_tokens),
+            )
+        )
+    return SelectableModelProfilesResponse(eligible=True, profiles=profiles)
 
 
 def _public_route_label(*, provider_name: str, model_code: str, route_type: str) -> str:

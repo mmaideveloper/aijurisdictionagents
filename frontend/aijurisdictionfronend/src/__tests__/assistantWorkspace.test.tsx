@@ -2,9 +2,9 @@
 
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import AssistantWorkspace, { parseAssistantMessagePresentation } from "../pages/AssistantWorkspace";
-import { ApiRequestError, createChatSession, fetchEffectiveModelRoute, streamSession } from "../api/chatClient";
+import { ApiRequestError, createChatSession, fetchEffectiveModelRoute, fetchSelectableModelProfiles, streamSession } from "../api/chatClient";
 
 const labels: Record<string, string> = {
   assistantThreadsTitle: "Conversations",
@@ -35,6 +35,7 @@ const labels: Record<string, string> = {
   assistantModelDisclosureAria: "AI model used for this chat",
   assistantModelDisclosureLabel: "Model",
   assistantModelDisclosurePending: "Checking model route...",
+  assistantModelSelectorLabel: "Select assistant model",
   assistantComposerLabel: "Assistant message",
   assistantComposerPlaceholder: "Ask for legal research or document preparation...",
   assistantSend: "Send message",
@@ -134,6 +135,7 @@ vi.mock("../api/chatClient", async () => {
     ...actual,
     createChatSession: vi.fn(),
     fetchEffectiveModelRoute: vi.fn(),
+    fetchSelectableModelProfiles: vi.fn(),
     streamSession: vi.fn()
   };
 });
@@ -200,6 +202,7 @@ describe("AssistantWorkspace", () => {
       is_external: false,
       label: "Local Ollama - qwen3:1.7b"
     });
+    vi.mocked(fetchSelectableModelProfiles).mockResolvedValue({ eligible: false, profiles: [] });
   });
 
   afterEach(() => {
@@ -210,6 +213,7 @@ describe("AssistantWorkspace", () => {
     caseActions.loadCaseData.mockReset();
     vi.mocked(createChatSession).mockReset();
     vi.mocked(fetchEffectiveModelRoute).mockReset();
+    vi.mocked(fetchSelectableModelProfiles).mockReset();
     vi.mocked(streamSession).mockReset();
     cleanup();
   });
@@ -237,6 +241,85 @@ describe("AssistantWorkspace", () => {
     expect(screen.getByText("AI lawyer")).toBeDefined();
     expect(screen.getByText("Opposing party")).toBeDefined();
     expect(screen.queryByText("Production access uses JurisDigta account login")).toBeNull();
+  });
+
+  it("lets eligible users select a backend-approved assistant model", async () => {
+    vi.mocked(fetchSelectableModelProfiles).mockResolvedValue({
+      eligible: true,
+      profiles: [
+        {
+          model_profile_id: "azure_foundry_gpt_4o_mini",
+          provider: "azure_foundry",
+          provider_display_name: "Azure Foundry",
+          model: "gpt-4o-mini",
+          label: "Azure Foundry - gpt-4o-mini",
+          is_local: false,
+          is_external: true,
+          eu_data_zone_capable: true,
+          context_window_tokens: 128000
+        }
+      ]
+    });
+    vi.mocked(createChatSession).mockResolvedValue({
+      id: "session-1",
+      user_id: "user-1",
+      case_id: "case-1",
+      country: "SK",
+      language: "sk",
+      discussion_type: "advice",
+      state: "active",
+      created_at: "2026-06-20T00:00:00Z"
+    });
+    vi.mocked(streamSession).mockImplementation(async function* () {
+      yield {
+        event: "message",
+        data: {
+          id: "message-1",
+          session_id: "session-1",
+          role: "assistant",
+          content: "Selected model answer",
+          agent_name: "AI Lawyer",
+          created_at: "2026-06-20T00:00:01Z"
+        }
+      };
+    });
+
+    render(<AssistantWorkspace />);
+
+    const selector = await screen.findByRole("combobox", { name: "Select assistant model" });
+    fireEvent.change(selector, { target: { value: "azure_foundry_gpt_4o_mini" } });
+
+    const result = capturedAdapter?.run({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Pouzi vybrany model" }]
+        }
+      ],
+      abortSignal: new AbortController().signal
+    });
+
+    if (result && Symbol.asyncIterator in result) {
+      for await (const _update of result) {
+        // consume stream
+      }
+    } else {
+      await result;
+    }
+
+    expect(fetchSelectableModelProfiles).toHaveBeenCalledWith("user-1");
+    expect(createChatSession).toHaveBeenCalledWith({
+      language: "sk",
+      userId: "user-1",
+      caseId: "case-1",
+      modelProfileId: "azure_foundry_gpt_4o_mini"
+    });
+    expect(streamSession).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      instruction: "Pouzi vybrany model",
+      modelProfileId: "azure_foundry_gpt_4o_mini",
+      signal: expect.any(AbortSignal)
+    });
   });
 
   it("waits for the signed-in user id before showing the effective model route", async () => {
@@ -399,10 +482,16 @@ describe("AssistantWorkspace", () => {
       lastResult = await result;
     }
 
-    expect(createChatSession).toHaveBeenCalledWith({ language: "sk", userId: "user-1", caseId: "case-1" });
+    expect(createChatSession).toHaveBeenCalledWith({
+      language: "sk",
+      userId: "user-1",
+      caseId: "case-1",
+      modelProfileId: undefined
+    });
     expect(streamSession).toHaveBeenCalledWith({
       sessionId: "session-1",
       instruction: prompt,
+      modelProfileId: undefined,
       signal: expect.any(AbortSignal)
     });
     expect(caseActions.loadCaseData).toHaveBeenCalledWith("case-1");

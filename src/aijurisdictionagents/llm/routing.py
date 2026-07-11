@@ -32,6 +32,10 @@ _AZURE_PREVIEW_MODEL_PREFIXES = (
 class ModelRouteUnavailable(RuntimeError):
     """Raised when the DB-selected model route cannot be used."""
 
+    def __init__(self, message: str, *, status_code: int = 503) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
 
 @dataclass(frozen=True)
 class RoutedLLMClient:
@@ -59,6 +63,7 @@ def get_routed_llm_client(
     user_id: str,
     task_type: str = "default",
     external_acknowledged: bool = False,
+    selected_model_profile_id: str | None = None,
 ) -> RoutedLLMClient:
     if _explicit_mock_mode():
         plan = _free_plan()
@@ -86,13 +91,28 @@ def get_routed_llm_client(
     plan = store.get_effective_subscription_plan(user_id=user_id) if user_id else _free_plan()
     subscription = store.get_effective_user_subscription(user_id=user_id) if user_id else None
 
-    route = store.resolve_ai_model_route(
-        user_id=user_id,
-        plan_code=plan.plan_code,
-        task_type=task_type,
-        external_acknowledged=external_acknowledged,
-    )
+    normalized_selected_profile_id = (selected_model_profile_id or "").strip()
+    if normalized_selected_profile_id:
+        route = store.resolve_selected_ai_model_route(
+            user_id=user_id,
+            plan_code=plan.plan_code,
+            task_type=task_type,
+            model_profile_id=normalized_selected_profile_id,
+        )
+    else:
+        route = store.resolve_ai_model_route(
+            user_id=user_id,
+            plan_code=plan.plan_code,
+            task_type=task_type,
+            external_acknowledged=external_acknowledged,
+        )
     if route.provider is None or route.model_profile is None:
+        if route.route_type == "selected_profile_forbidden":
+            raise ModelRouteUnavailable(route.reason, status_code=403)
+        if route.route_type == "selected_profile_unavailable":
+            raise ModelRouteUnavailable(route.reason, status_code=404)
+        if route.route_type == "selected_profile_missing":
+            raise ModelRouteUnavailable(route.reason, status_code=400)
         raise ModelRouteUnavailable(route.reason)
 
     provider = route.provider

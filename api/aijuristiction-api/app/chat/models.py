@@ -56,6 +56,7 @@ class Session(BaseModel):
     country: str = ""
     language: str | None = None
     discussion_type: str = "advice"
+    selected_model_profile_id: str | None = None
     state: SessionState = SessionState.ACTIVE
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
