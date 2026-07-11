@@ -4866,13 +4866,12 @@ class _ChatHomePageState extends State<ChatHomePage>
     if (!mounted) {
       return;
     }
+    final startupState = VoiceSessionStartupState.forNewChat(settings);
     setState(() {
       _voiceConversationSettings = settings;
-      if (settings.recordChatEnabled) {
-        _speakerOutputEnabled = true;
-        _speechInputEnabled = true;
-        _speechInputExplicitlyDisabled = false;
-      }
+      _speakerOutputEnabled = startupState.speakerOutputEnabled;
+      _speechInputEnabled = startupState.speechInputEnabled;
+      _speechInputExplicitlyDisabled = false;
     });
     await widget.logger.info(
       'Voice conversation settings loaded',
@@ -4880,9 +4879,6 @@ class _ChatHomePageState extends State<ChatHomePage>
         ..._voiceLogContext('voice_conversation_settings_load'),
       },
     );
-    if (settings.recordChatEnabled && _speechEnabled && !_isListening) {
-      await _startSpeechListening(resetHandledText: true);
-    }
   }
 
   Future<void> _persistVoiceConversationSettings() async {
