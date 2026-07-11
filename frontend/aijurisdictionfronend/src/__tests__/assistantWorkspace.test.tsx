@@ -300,7 +300,8 @@ describe("AssistantWorkspace", () => {
     });
 
     if (result && Symbol.asyncIterator in result) {
-      for await (const _update of result) {
+      for await (const unused of result) {
+        void unused;
         // consume stream
       }
     } else {
