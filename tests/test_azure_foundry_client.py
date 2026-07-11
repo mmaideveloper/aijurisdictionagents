@@ -41,3 +41,28 @@ def test_azure_foundry_client_clears_blank_sdk_auth_env(monkeypatch) -> None:
     assert captured["api_key"] == "test-key"
     assert "azure_ad_token" not in captured
     assert os.getenv("AZURE_OPENAI_AD_TOKEN") is None
+
+
+def test_azure_foundry_client_uses_v1_preview_base_url_for_preview_api(monkeypatch) -> None:
+    captured: dict[str, str] = {}
+
+    class FakeAzureOpenAI:
+        def __init__(self, **kwargs: str) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(azure_foundry_client, "AzureOpenAI", FakeAzureOpenAI)
+
+    config = azure_foundry_client.AzureFoundryConfig(
+        endpoint="https://example.openai.azure.com/",
+        deployment="gpt-5-mini",
+        api_version="preview",
+        temperature=0.2,
+        api_key="test-key",
+        azure_ad_token=None,
+    )
+
+    azure_foundry_client.AzureFoundryClient(config)
+
+    assert captured["base_url"] == "https://example.openai.azure.com/openai/v1"
+    assert captured["api_version"] == "preview"
+    assert "azure_endpoint" not in captured

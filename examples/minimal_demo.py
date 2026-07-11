@@ -205,7 +205,7 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         provider_type="azurefoundry",
         display_name="Azure AI Foundry",
         base_url="https://example.openai.azure.com",
-        api_version="2024-10-21",
+        api_version="2024-12-01-preview",
         data_zone="eu",
         is_external=True,
     )

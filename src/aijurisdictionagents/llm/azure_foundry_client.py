@@ -31,17 +31,16 @@ class AzureFoundryClient:
         self._config = config
         _clear_blank_azure_openai_auth_env()
         http_client = _build_system_trust_http_client()
+        client_kwargs = _build_azure_client_kwargs(config)
         if config.azure_ad_token:
             self._client = AzureOpenAI(
-                azure_endpoint=config.endpoint,
-                api_version=config.api_version,
+                **client_kwargs,
                 azure_ad_token=config.azure_ad_token,
                 http_client=http_client,
             )
         else:
             self._client = AzureOpenAI(
-                azure_endpoint=config.endpoint,
-                api_version=config.api_version,
+                **client_kwargs,
                 api_key=config.api_key,
                 http_client=http_client,
             )
@@ -144,6 +143,19 @@ def _optional_env(name: str) -> str | None:
 def _clear_blank_azure_openai_auth_env() -> None:
     _optional_env("AZURE_OPENAI_API_KEY")
     _optional_env("AZURE_OPENAI_AD_TOKEN")
+
+
+def _build_azure_client_kwargs(config: AzureFoundryConfig) -> dict[str, str]:
+    api_version = config.api_version.strip()
+    if api_version.lower() in {"v1", "preview"}:
+        return {
+            "base_url": f"{config.endpoint.rstrip('/')}/openai/v1",
+            "api_version": "preview",
+        }
+    return {
+        "azure_endpoint": config.endpoint,
+        "api_version": api_version,
+    }
 
 
 def _build_system_trust_http_client() -> httpx.Client:

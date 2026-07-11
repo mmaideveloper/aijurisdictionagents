@@ -13,6 +13,7 @@ const DocumentViewer: React.FC = () => {
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = React.useState("");
+  const [previewText, setPreviewText] = React.useState("");
   const [isLoadingDocument, setIsLoadingDocument] = React.useState(false);
   const [isDownloading, setIsDownloading] = React.useState(false);
   const [isSending, setIsSending] = React.useState(false);
@@ -29,6 +30,7 @@ const DocumentViewer: React.FC = () => {
   React.useEffect(() => {
     if (!canLoadDocument) {
       setPreviewUrl("");
+      setPreviewText("");
       setIsLoadingDocument(false);
       return;
     }
@@ -38,6 +40,7 @@ const DocumentViewer: React.FC = () => {
     setIsLoadingDocument(true);
     setError(null);
     setPreviewUrl("");
+    setPreviewText("");
 
     fetchCaseDocumentBlob({
       userId,
@@ -50,6 +53,23 @@ const DocumentViewer: React.FC = () => {
       .then((document) => {
         objectUrl = URL.createObjectURL(document.blob);
         setPreviewUrl(objectUrl);
+        if (documentKind === "generated_document") {
+          return fetchCaseDocumentBlob({
+            userId,
+            caseId,
+            docId,
+            disposition: "inline",
+            format: "source",
+            signal: controller.signal
+          })
+            .then((sourceDocument) => sourceDocument.blob.text())
+            .then((text) => {
+              if (!controller.signal.aborted) {
+                setPreviewText(text.trim());
+              }
+            });
+        }
+        return undefined;
       })
       .catch((loadError) => {
         if (controller.signal.aborted) {
@@ -69,7 +89,7 @@ const DocumentViewer: React.FC = () => {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [canLoadDocument, caseId, docId, documentFormat, t, userId]);
+  }, [canLoadDocument, caseId, docId, documentFormat, documentKind, t, userId]);
 
   const handlePrint = () => {
     iframeRef.current?.contentWindow?.focus();
@@ -169,12 +189,19 @@ const DocumentViewer: React.FC = () => {
           isLoadingDocument ? (
             <p className="hint">{t("documentViewerLoading")}</p>
           ) : previewUrl ? (
-            <iframe
-              ref={iframeRef}
-              className="document-viewer-frame"
-              src={previewUrl}
-              title={filename}
-            />
+            <>
+              {previewText ? (
+                <article className="document-viewer-text-preview" aria-label={filename}>
+                  <pre>{previewText}</pre>
+                </article>
+              ) : null}
+              <iframe
+                ref={iframeRef}
+                className="document-viewer-frame"
+                src={previewUrl}
+                title={filename}
+              />
+            </>
           ) : null
         ) : (
           <p className="hint">{t("documentViewerMissingDocument")}</p>

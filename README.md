@@ -327,7 +327,7 @@ To use Azure Foundry (Azure OpenAI), set:
 - `AZURE_OPENAI_ENDPOINT=https://YOUR_RESOURCE_NAME.openai.azure.com/`
 - `AZURE_OPENAI_DEPLOYMENT=your_deployment_name`
 - `AZURE_OPENAI_API_KEY=...` (or `AZURE_OPENAI_AD_TOKEN=...`)
-- `AZURE_OPENAI_API_VERSION=2023-09-01-preview` (optional override)
+- `AZURE_OPENAI_API_VERSION=2024-12-01-preview` (optional override; GPT-5-family routes use the Azure OpenAI v1 preview API)
 
 Or use the minimal example script:
 

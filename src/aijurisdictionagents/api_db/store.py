@@ -5123,7 +5123,7 @@ class ApiDatabaseStore:
                 "azurefoundry",
                 "Azure AI Foundry",
                 "",
-                "2024-10-21",
+                "2024-12-01-preview",
                 "",
                 "eu",
                 1,
