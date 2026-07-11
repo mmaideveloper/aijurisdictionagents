@@ -42,22 +42,42 @@ export type EffectiveModelRoute = {
   label: string;
 };
 
+export type SelectableModelProfile = {
+  model_profile_id: string;
+  provider: string;
+  provider_display_name: string;
+  model: string;
+  label: string;
+  is_local: boolean;
+  is_external: boolean;
+  eu_data_zone_capable: boolean;
+  context_window_tokens: number;
+};
+
+export type SelectableModelProfiles = {
+  eligible: boolean;
+  profiles: SelectableModelProfile[];
+};
+
 export type CreateChatSessionInput = {
   userId?: string;
   caseId?: string;
   country?: string;
   language?: string;
   discussionType?: "advice" | "court";
+  modelProfileId?: string;
 };
 
 export type ReplyToSessionInput = {
   sessionId: string;
   content: string;
+  modelProfileId?: string;
 };
 
 export type StreamSessionInput = {
   sessionId: string;
   instruction: string;
+  modelProfileId?: string;
   signal?: AbortSignal;
 };
 
@@ -261,7 +281,8 @@ export const createChatSession = async (input: CreateChatSessionInput = {}): Pro
       case_id: input.caseId || null,
       country: input.country || config.country,
       language: input.language || config.language,
-      discussion_type: input.discussionType || "advice"
+      discussion_type: input.discussionType || "advice",
+      model_profile_id: input.modelProfileId?.trim() || null
     })
   });
 };
@@ -275,7 +296,8 @@ export const replyToSession = async (input: ReplyToSessionInput): Promise<ChatMe
       "x-api-key": config.apiKey
     },
     body: JSON.stringify({
-      content: input.content
+      content: input.content,
+      model_profile_id: input.modelProfileId?.trim() || null
     })
   });
 };
@@ -287,6 +309,17 @@ export const fetchEffectiveModelRoute = async (userId?: string): Promise<Effecti
     params.set("user_id", userId.trim());
   }
   return requestJson<EffectiveModelRoute>(`/v1/model-routing/effective?${params.toString()}`, {
+    method: "GET",
+    headers: {
+      "x-api-key": config.apiKey
+    }
+  });
+};
+
+export const fetchSelectableModelProfiles = async (userId: string): Promise<SelectableModelProfiles> => {
+  const config = resolveApiConfig();
+  const params = new URLSearchParams({ user_id: userId.trim() });
+  return requestJson<SelectableModelProfiles>(`/v1/model-routing/selectable?${params.toString()}`, {
     method: "GET",
     headers: {
       "x-api-key": config.apiKey
@@ -342,7 +375,8 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
       },
       body: JSON.stringify({
         instruction: input.instruction,
-        user_simulation_mode: "ReadUser"
+        user_simulation_mode: "ReadUser",
+        model_profile_id: input.modelProfileId?.trim() || null
       }),
       signal: input.signal
     });

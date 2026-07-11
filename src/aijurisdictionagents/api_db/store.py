@@ -3585,7 +3585,69 @@ class ApiDatabaseStore:
         user = self.find_user_by_id(user_id=user_id)
         if user is None:
             return False
+        if user.role == USER_ROLE_ADMIN and user.is_enabled:
+            return True
         return user.email.strip().lower() in self.unlimited_access_email_allowlist()
+
+    def can_select_assistant_model(self, *, user_id: str) -> bool:
+        return self.has_unlimited_access(user_id=user_id)
+
+    def resolve_selected_ai_model_route(
+        self,
+        *,
+        user_id: str,
+        plan_code: str,
+        task_type: str,
+        model_profile_id: str,
+    ) -> AIModelRouteSelection:
+        normalized_user_id = user_id.strip()
+        normalized_profile_id = model_profile_id.strip()
+        normalized_task = _normalize_route_key(task_type, default="default")
+        normalized_plan = _normalize_route_key(plan_code, default="free")
+        if not normalized_profile_id:
+            return AIModelRouteSelection(
+                policy=None,
+                provider=None,
+                model_profile=None,
+                route_type="selected_profile_missing",
+                task_type=normalized_task,
+                plan_code=normalized_plan,
+                requires_external_ack=False,
+                reason="Selected model profile id is required.",
+            )
+        if not normalized_user_id or not self.can_select_assistant_model(user_id=normalized_user_id):
+            return AIModelRouteSelection(
+                policy=None,
+                provider=None,
+                model_profile=None,
+                route_type="selected_profile_forbidden",
+                task_type=normalized_task,
+                plan_code=normalized_plan,
+                requires_external_ack=False,
+                reason="User is not allowed to select assistant model profiles.",
+            )
+        with self._connect() as conn:
+            target = self._get_ai_model_route_target(conn, normalized_profile_id)
+        if target is None:
+            return AIModelRouteSelection(
+                policy=None,
+                provider=None,
+                model_profile=None,
+                route_type="selected_profile_unavailable",
+                task_type=normalized_task,
+                plan_code=normalized_plan,
+                requires_external_ack=False,
+                reason="Selected model profile is not enabled or does not exist.",
+            )
+        provider, _profile = target
+        return _route_selection(
+            policy=None,
+            target=target,
+            route_type="user_selected_external" if provider.is_external else "user_selected_local",
+            task_type=normalized_task,
+            plan_code=normalized_plan,
+            reason="User selected this assistant model profile for the current workflow.",
+        )
 
     def get_case_limit(self, *, user_id: str) -> int:
         return self.get_effective_subscription_plan(user_id=user_id).max_cases

@@ -778,8 +778,13 @@
   font-size: 0.9rem;
 }
 
+.assistant-main__header > div:first-child {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .assistant-model-disclosure {
-  flex: 0 1 18rem;
+  flex: 0 0 min(19rem, 100%);
   min-width: 0;
   display: grid;
   gap: 0.12rem;
@@ -804,6 +809,19 @@
   overflow-wrap: anywhere;
   text-align: right;
   font-size: 0.85rem;
+}
+
+.assistant-model-disclosure select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(23, 92, 75, 0.28);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #175c4b;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.28rem 0.45rem;
 }
 
 .assistant-access,

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.llm import routing
-from aijurisdictionagents.llm.routing import get_routed_llm_client
+from aijurisdictionagents.llm.routing import ModelRouteUnavailable, get_routed_llm_client
 
 
 client = TestClient(app)
@@ -296,6 +296,96 @@ def test_effective_model_route_endpoint_reports_default_free_route_without_user(
     assert payload["provider"] == "local_ollama"
     assert payload["model"] == "qwen3:1.7b"
     assert payload["is_local"] is True
+
+
+def test_admin_role_gets_unlimited_access_without_email_allowlist(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "")
+    store = _store(tmp_path)
+    user = store.create_user(email="admin-route@example.com", password="secret", full_name="Admin Route")
+    store.update_admin_user(user_id=user.user_id, role="admin", is_enabled=True)
+
+    plan = store.get_effective_subscription_plan(user_id=user.user_id)
+
+    assert store.has_unlimited_access(user_id=user.user_id) is True
+    assert plan.plan_code == "unlimited"
+
+
+def test_selectable_model_profiles_endpoint_returns_safe_metadata_for_eligible_user(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "blob"))
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "selector@example.com")
+    store = ApiDatabaseStore(db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "blob")
+    store.initialize()
+    user = store.create_user(email="selector@example.com", password="secret", full_name="Selector")
+
+    response = client.get(
+        f"/v1/model-routing/selectable?user_id={user.user_id}",
+        headers={"x-api-key": "aijuris"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["eligible"] is True
+    assert payload["profiles"]
+    first_profile = payload["profiles"][0]
+    assert first_profile["model_profile_id"]
+    assert first_profile["label"]
+    assert "base_url" not in first_profile
+    assert "api_key" not in response.text
+    assert "protected_secret" not in response.text
+
+
+def test_selectable_model_profiles_endpoint_hides_options_for_regular_user(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "blob"))
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "")
+    store = ApiDatabaseStore(db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "blob")
+    store.initialize()
+    user = store.create_user(email="regular-selector@example.com", password="secret", full_name="Regular Selector")
+
+    response = client.get(
+        f"/v1/model-routing/selectable?user_id={user.user_id}",
+        headers={"x-api-key": "aijuris"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"eligible": False, "profiles": []}
+
+
+def test_regular_user_selected_model_override_fails_closed(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "")
+    store = _store(tmp_path)
+    user = store.create_user(email="regular-override@example.com", password="secret", full_name="Regular Override")
+
+    try:
+        get_routed_llm_client(
+            store=store,
+            user_id=user.user_id,
+            task_type="chat_reply",
+            selected_model_profile_id="local_ollama_default",
+        )
+    except ModelRouteUnavailable as exc:
+        assert exc.status_code == 403
+        assert "not allowed" in str(exc)
+    else:  # pragma: no cover - defensive assertion
+        raise AssertionError("Regular user override must fail closed")
 
 
 def test_model_credentials_are_encrypted_and_revealed_only_when_requested(

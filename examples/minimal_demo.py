@@ -253,6 +253,18 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         "model_disclosure_label => "
         f"{expired_route.provider.display_name} - {expired_route.model_profile.model_code}"
     )
+    demo_store.update_admin_user(user_id=demo_user.user_id, role="admin", is_enabled=True)
+    selected_route = demo_store.resolve_selected_ai_model_route(
+        user_id=demo_user.user_id,
+        plan_code="unlimited",
+        task_type="chat_reply",
+        model_profile_id="local_ollama_default",
+    )
+    print(
+        "assistant_model_selector => "
+        f"{selected_route.route_type}/"
+        f"{selected_route.provider.provider_code}/{selected_route.model_profile.model_code}"
+    )
     e2e_users = provision_e2e_test_users(store=demo_store, password="demo-e2e-password")
     print(
         "e2e_test_users => "

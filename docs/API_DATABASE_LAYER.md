@@ -165,10 +165,11 @@ metadata (`plan_code`, `route_type`, provider, model, and label) so clients can
 display the same model route the backend will use without exposing prompts,
 secrets, or case content.
 
-`JURISDIGTA_UNLIMITED_ACCESS_EMAILS` defines a comma- or semicolon-separated
-case-insensitive allowlist for controlled test/operator accounts. Allowlisted users
-receive an internal synthetic `unlimited` plan at runtime so case-count limits,
-document-upload limits, and free-plan write TTL restrictions do not apply. The
+`role=admin` users and `JURISDIGTA_UNLIMITED_ACCESS_EMAILS` users receive an
+internal synthetic `unlimited` plan at runtime so case-count limits,
+document-upload limits, and free-plan write TTL restrictions do not apply.
+`JURISDIGTA_UNLIMITED_ACCESS_EMAILS` remains a comma- or semicolon-separated
+case-insensitive allowlist for controlled non-admin test/operator accounts. The
 setting defaults to `mmaideveloper@gmail.com` and should stay limited to explicitly
 approved accounts for GDPR/EU AI Act traceability and human-oversight controls.
 
@@ -209,9 +210,18 @@ Chat model provider, model, deployment, and credentials are resolved from these 
 
 Routing precedence is:
 
-1. Enabled per-user override from `ai_model_user_overrides`, which applies to every task type for that user.
-2. Existing group/plan/task route policy from `ai_task_route_policies`.
-3. Seeded defaults created by `ApiDatabaseStore.initialize()`.
+1. Authorized per-session assistant selection from the web model selector. The browser sends only `model_profile_id`; the backend verifies that the user is `role=admin` or in `JURISDIGTA_UNLIMITED_ACCESS_EMAILS`, then resolves the enabled profile and provider server-side.
+2. Enabled per-user override from `ai_model_user_overrides`, which applies to every task type for that user.
+3. Existing group/plan/task route policy from `ai_task_route_policies`.
+4. Seeded defaults created by `ApiDatabaseStore.initialize()`.
+
+The public `GET /v1/model-routing/selectable?user_id=...` endpoint returns
+only safe display metadata for authorized admin/unlimited users: profile id,
+provider code/display name, model label, local/external flags, EU data-zone flag,
+and context window. It does not return provider base URLs, credentials, prompts,
+documents, or case content. Regular users receive `eligible=false` and an empty
+profile list. Selected assistant models are transient: they apply to the current
+chat session/reply/stream workflow and reset on page reload or new case.
 
 Seeded defaults:
 
