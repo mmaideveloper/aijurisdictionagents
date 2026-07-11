@@ -327,3 +327,8 @@ print(
     "latest imported court decision short name and published date without exposing "
     "court decision text, parties, file numbers, ECLI values, or source identifiers."
 )
+print(
+    "loan_confirmation_regression => Slovak first-turn private loan confirmation "
+    "requests route deterministically to CASE_UPDATE_JSON case.documents content "
+    "and generated PDF export instead of local-model echo text."
+)

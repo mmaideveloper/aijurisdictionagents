@@ -3845,6 +3845,51 @@ def test_slovak_payment_confirmation_final_request_uses_tool_first_direct_reply(
     assert any(event.get("tool_name") == "slovakia_car_validate" for event in events)
 
 
+def test_slovak_private_loan_confirmation_first_turn_generates_document() -> None:
+    import app.chat.api as chat_api
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    session = Session(country="SK", language="sk-SK")
+    current_content = (
+        "Chcem pozicat peniaze na 1 rok a chcem nejake potvrdenie o tom ze som pozicala peniaze "
+        "Jankovi hraskovi, adresa testova 10, Poprad, Slovensko, cislo obcianskeho: BA12345DR."
+    )
+    messages = [Message(session_id=session.id, role=MessageRole.USER, content=current_content)]
+
+    preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=messages,
+        current_content=current_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+    )
+
+    assert preparation.direct_reply is not None
+    assert "Potvrdenie o pozicke" in preparation.direct_reply
+    assert "Jankovi hraskovi" in preparation.direct_reply
+    assert "BA12345DR" in preparation.direct_reply
+    assert "Podpis poskytovatela pozicky" in preparation.direct_reply
+    assert "Podpis dlznika" in preparation.direct_reply
+    assert "CASE_UPDATE_JSON" in preparation.direct_reply
+
+    case_update = chat_api._extract_case_update(preparation.direct_reply)
+    drafts = chat_api._generated_case_document_drafts_from_case_update(
+        case_update,
+        timestamp="20260711T080000Z",
+    )
+
+    assert len(drafts) == 1
+    assert drafts[0].filename == "potvrdenie_o_pozicke_20260711T080000Z.pdf"
+    assert "Potvrdenie o pozicke" in drafts[0].body
+    assert "Jankovi hraskovi" in drafts[0].body
+    assert "BA12345DR" in drafts[0].body
+    assert "CASE_UPDATE_JSON" not in drafts[0].body
+
+
 def test_first_turn_final_pdf_payment_request_counts_as_export_ready() -> None:
     from app.chat.api import _document_export_ready, _document_generation_confirmed
     from app.chat.models import Message, MessageRole, Session
