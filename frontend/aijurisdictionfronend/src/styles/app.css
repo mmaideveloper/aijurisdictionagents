@@ -1980,6 +1980,25 @@
   background: #fff;
 }
 
+.document-viewer-text-preview {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 1.5rem;
+  max-height: 720px;
+  overflow: auto;
+}
+
+.document-viewer-text-preview pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
 .panel-card__header {
   display: flex;
   align-items: center;

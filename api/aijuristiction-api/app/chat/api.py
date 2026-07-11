@@ -84,6 +84,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
 _WINDOWS_FONT_DIR = Path("C:/Windows/Fonts")
+_REPORTLAB_FONT_DIR = Path(str(canvas.__file__)).resolve().parents[1] / "fonts"
 _LINUX_DEJAVU_FONT_DIRS = (
     Path("/usr/share/fonts/truetype/dejavu"),
     Path("/usr/share/fonts/dejavu"),
@@ -8248,6 +8249,11 @@ def _resolve_pdf_fonts(*, country: str, language: str | None) -> tuple[str, str]
                     "AIJArial",
                     _WINDOWS_FONT_DIR / "arial.ttf",
                     _WINDOWS_FONT_DIR / "arialbd.ttf",
+                ),
+                (
+                    "AIJVera",
+                    _REPORTLAB_FONT_DIR / "Vera.ttf",
+                    _REPORTLAB_FONT_DIR / "VeraBd.ttf",
                 ),
             ]
         )

@@ -4723,6 +4723,36 @@ def test_build_simple_pdf_preserves_slovak_and_german_characters() -> None:
     assert "deutsch" in normalized_extracted and ("kundigung" in normalized_extracted or "kndigung" in normalized_extracted)
     assert "jurisdikcia: slovensk" in normalized_extracted and "republika" in normalized_extracted
 
+
+def test_build_simple_pdf_extracts_exact_slovak_loan_confirmation_characters() -> None:
+    from app.chat.api import _build_simple_pdf
+
+    pdf_bytes = _build_simple_pdf(
+        title="Potvrdenie o pôžičke",
+        lines=[
+            "Čl. I - Zmluvné strany",
+            "Veriteľ: Anna Žáčková, bytom Testová 10, Poprad, Slovenská republika.",
+            "Dlžník: Janko Hraško, číslo občianskeho preukazu BA12345DR.",
+            "Predmet: pôžička na jeden rok; splatnosť a podpisy strán.",
+        ],
+        country="SK",
+        language="sk-SK",
+        footer_line="JurisDigta generated case document",
+        draw_logo_mark=True,
+        include_title_block=True,
+    )
+
+    extracted = _pdf_text(pdf_bytes)
+    assert "Potvrdenie o pôžičke" in extracted
+    assert "Čl. I" in extracted
+    assert "Veriteľ" in extracted
+    assert "Dlžník" in extracted
+    assert "Žáčková" in extracted
+    assert "Janko Hraško" in extracted
+    assert "číslo občianskeho preukazu BA12345DR" in extracted
+    assert "Slovenská republika" in extracted
+
+
 def test_create_message_returns_404_for_unknown_session() -> None:
     response = client.post(
         "/v1/chat/messages",

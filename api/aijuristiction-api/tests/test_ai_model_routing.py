@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.llm import routing
 from aijurisdictionagents.llm.routing import get_routed_llm_client
 
 
@@ -131,6 +132,76 @@ def test_case_plan_routes_to_seeded_azure_foundry_gpt_4o_mini_model(
     assert routed.route_type == "external"
     assert routed.plan_code == "case"
     assert routed.subscription_id == subscription.subscription_id
+
+
+def test_seeded_azure_foundry_provider_uses_supported_default_api_version(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+
+    provider = next(item for item in store.list_ai_model_providers() if item.provider_code == "azure_foundry")
+
+    assert provider.api_version == "2024-12-01-preview"
+
+
+def test_gpt_5_mini_route_uses_azure_preview_api_when_provider_version_is_stale(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, str] = {}
+
+    class FakeAzureFoundryClient:
+        def __init__(self, config: Any) -> None:
+            captured["deployment"] = config.deployment
+            captured["api_version"] = config.api_version
+
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("AI_MODEL_CREDENTIAL_ENCRYPTION_KEY", "test-routing-secret")
+    monkeypatch.setattr(routing, "AzureFoundryClient", FakeAzureFoundryClient)
+    store = _store(tmp_path)
+    user = store.create_user(email="gpt5@example.com", password="secret", full_name="GPT Five User")
+    subscription = store.request_subscription_change(user_id=user.user_id, plan_code="case")
+    store.update_subscription_status(subscription_id=subscription.subscription_id, status="paid")
+    store.upsert_ai_model_provider(
+        provider_code="azure_foundry",
+        provider_type="azurefoundry",
+        display_name="Azure AI Foundry",
+        base_url="https://example.openai.azure.com",
+        api_version="2024-10-21",
+        data_zone="eu",
+        is_external=True,
+    )
+    store.upsert_ai_model_profile(
+        model_profile_id="azure_foundry_gpt_5_mini",
+        provider_id="azure_foundry",
+        model_code="gpt-5-mini",
+        deployment_name="gpt-5-mini",
+        billing_currency="EUR",
+        eu_data_zone_capable=True,
+        enabled=True,
+    )
+    store.upsert_ai_task_route_policy(
+        policy_id="case:chat_reply:gpt5",
+        task_type="chat_reply",
+        plan_code="case",
+        preferred_external_model_profile_id="azure_foundry_gpt_5_mini",
+        allow_external=True,
+        require_external_ack=False,
+        require_eu_data_zone=True,
+        enabled=True,
+    )
+    store.upsert_ai_model_credential(
+        provider_id="azure_foundry",
+        secret_value="azure-secret-key",
+        secret_type="api_key",
+    )
+
+    routed = get_routed_llm_client(
+        store=store,
+        user_id=user.user_id,
+        task_type="chat_reply",
+    )
+
+    assert routed.model == "gpt-5-mini"
+    assert captured == {"deployment": "gpt-5-mini", "api_version": "preview"}
 
 
 def test_expired_paid_subscription_routes_as_free_local_model(

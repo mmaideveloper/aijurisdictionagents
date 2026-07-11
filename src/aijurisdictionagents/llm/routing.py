@@ -17,6 +17,17 @@ from .base import LLMClient
 from .ollama_client import OllamaClient, OllamaConfig
 from .openai_client import OpenAIClient, OpenAIConfig
 
+_DEFAULT_AZURE_OPENAI_API_VERSION = "2024-12-01-preview"
+_AZURE_OPENAI_PREVIEW_API_VERSION = "preview"
+_AZURE_PREVIEW_MODEL_PREFIXES = (
+    "gpt-5",
+    "gpt-4.1",
+    "o1",
+    "o3",
+    "o4",
+    "codex-mini",
+)
+
 
 class ModelRouteUnavailable(RuntimeError):
     """Raised when the DB-selected model route cannot be used."""
@@ -153,7 +164,10 @@ def get_routed_llm_client(
                 AzureFoundryConfig(
                     endpoint=endpoint,
                     deployment=model,
-                    api_version=provider.api_version.strip() or "2024-10-21",
+                    api_version=_resolve_azure_openai_api_version(
+                        model=model,
+                        provider_api_version=provider.api_version,
+                    ),
                     temperature=_temperature(),
                     api_key=api_key,
                     azure_ad_token=azure_ad_token,
@@ -223,6 +237,14 @@ def _temperature() -> float:
 
 def _local_timeout_seconds() -> float:
     return float(os.getenv("LOCAL_LLM_REQUEST_TIMEOUT_SECONDS", "120"))
+
+
+def _resolve_azure_openai_api_version(*, model: str, provider_api_version: str) -> str:
+    configured = provider_api_version.strip()
+    normalized_model = model.strip().lower()
+    if normalized_model.startswith(_AZURE_PREVIEW_MODEL_PREFIXES):
+        return _AZURE_OPENAI_PREVIEW_API_VERSION
+    return configured or _DEFAULT_AZURE_OPENAI_API_VERSION
 
 
 def _openai_compatible_base_url(base_url: str) -> str:
