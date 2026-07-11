@@ -34,6 +34,8 @@ Use this folder for correct question/answer/document examples that should remain
 
 This fixture database supports the broader frontend/browser test solution in GitHub issue `#422` for account, billing, invoice, and admin E2E coverage. Keep `#422` as the main browser test initiative and use `tests/modelsTesting` as the reusable legal-answer/document fixture layer for scenarios that need model-output comparison.
 
+Regression issue `#518` keeps the Slovak private loan-confirmation prompt deterministic: a first-turn request such as "Chcem pozicat peniaze na 1 rok..." must route to a legal-document draft with a `CASE_UPDATE_JSON.case.documents[*].content` body, so generated-document storage and PDF export do not depend on local model wording.
+
 ## Compliance Notes
 
 - Export only the minimum fixture set required for validation.

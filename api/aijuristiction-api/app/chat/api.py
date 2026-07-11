@@ -3766,6 +3766,26 @@ def _generated_case_document_body_for_storage(content: str) -> str:
 
 def _synthesized_generated_case_document_body_for_storage(content: str) -> str:
     normalized = _canonicalize_document_text(content)
+    if (
+        "potvrdenie" in normalized
+        and any(token in normalized for token in ("pozic", "pozick", "pozical", "dlznik", "dlznika"))
+        and any(marker in normalized for marker in ("na stiahnutie", "pripravil som navrh", "pripravim finalne"))
+    ):
+        if "?" in normalized[-180:]:
+            return ""
+        visible_lines = [line.strip() for line in _user_visible_text(content).splitlines()]
+        start_index = next(
+            (
+                index
+                for index, line in enumerate(visible_lines)
+                if "potvrdenie o pozicke" in _canonicalize_document_text(line)
+            ),
+            -1,
+        )
+        if start_index >= 0:
+            body = "\n".join(line for line in visible_lines[start_index:] if line).strip()
+            if body:
+                return body
     if not (
         "potvrdenie" in normalized
         and any(token in normalized for token in ("zaplat", "uhrad", "platb"))
@@ -3802,6 +3822,8 @@ def _generated_case_document_legal_title(value: str) -> str:
         return "Power of Attorney"
     if "splnomocnenie" in normalized or "plnomocenstvo" in normalized:
         return "Splnomocnenie"
+    if "potvrdenie" in normalized and any(token in normalized for token in ("pozic", "pozick", "pozical")):
+        return "Potvrdenie o pozicke"
     if "potvrdenie" in normalized and any(token in normalized for token in ("zaplat", "uhrad", "platb")):
         return "Potvrdenie o zaplatení"
     return title

@@ -81,6 +81,34 @@ def prepare_slovakia_direct_reply(
     )
     company_query = _extract_slovak_company_query(messages=messages, current_content=current_content)
     has_company_query = bool(company_query)
+    payment_or_loan_confirmation_requested = _looks_like_payment_confirmation_final_request(
+        current_content=current_content,
+        prior_messages=prior_messages,
+    )
+    if payment_or_loan_confirmation_requested and not has_company_query:
+        direct_processing_events: list[dict[str, object]] = []
+        emit_processing_event(
+            events=direct_processing_events,
+            event=build_processing_event(
+                stage="analysis",
+                message="Analyzujem poziadavku na slovenske potvrdenie o platbe alebo pozicke.",
+            ),
+            callback=processing_event_callback,
+        )
+        _append_payment_confirmation_validation_events(
+            events=direct_processing_events,
+            current_content=current_content,
+            company_record=None,
+            callback=processing_event_callback,
+        )
+        return DirectReplyPreparation(
+            supplemental_documents=[],
+            direct_reply=_build_slovak_payment_confirmation_ready_reply(
+                current_content=current_content,
+                company_record=None,
+            ),
+            processing_events=direct_processing_events,
+        )
     if (
         not asks_company_registry_info
         and not looks_like_company_document
@@ -176,10 +204,7 @@ def prepare_slovakia_direct_reply(
             callback=processing_event_callback,
         )
 
-    if _looks_like_payment_confirmation_final_request(
-        current_content=current_content,
-        prior_messages=prior_messages,
-    ):
+    if payment_or_loan_confirmation_requested:
         _append_payment_confirmation_validation_events(
             events=processing_events,
             current_content=current_content,
@@ -491,11 +516,12 @@ def _looks_like_payment_confirmation_final_request(
         message.content for message in prior_messages if message.role == MessageRole.USER
     )
     normalized = _canonicalize_slovak_text(f"{user_context} {current_content}")
-    if "potvrdenie" not in normalized or not any(
-        token in normalized for token in ("zaplat", "uhrad", "platb", "splatk")
-    ):
+    payment_tokens = ("zaplat", "uhrad", "platb", "splatk")
+    loan_tokens = ("pozic", "pozick", "pozical", "pozicala", "pozicali", "dlh", "dlzn")
+    if "potvrdenie" not in normalized or not any(token in normalized for token in payment_tokens + loan_tokens):
         return False
     final_markers = (
+        "chcem",
         "pdf",
         "vygeneruj",
         "generuj",
@@ -504,6 +530,7 @@ def _looks_like_payment_confirmation_final_request(
         "konecnu",
         "konecna",
         "priprav",
+        "vytvor",
     )
     return any(marker in normalized for marker in final_markers)
 
@@ -575,6 +602,10 @@ def _build_slovak_payment_confirmation_ready_reply(
         current_content=current_content,
         company_record=company_record,
     )
+    document_body = "\n".join(_build_slovak_confirmation_document_lines(facts))
+    document_title = "Potvrdenie o pozicke" if facts["document_kind"] == "loan_confirmation" else "Potvrdenie o zaplateni"
+    document_filename = "Potvrdenie_o_pozicke.pdf" if facts["document_kind"] == "loan_confirmation" else "Potvrdenie_o_zaplateni.pdf"
+    document_path = f"documents/{document_filename}"
     case_update: dict[str, object] = {
         "case": {
             "case_id": None,
@@ -585,19 +616,21 @@ def _build_slovak_payment_confirmation_ready_reply(
                 "opponent": {"name": facts["recipient"]},
             },
             "matter": {
-                "category": "commercial",
-                "topic": "potvrdenie_o_zaplateni",
+                "category": "civil" if facts["document_kind"] == "loan_confirmation" else "commercial",
+                "topic": facts["document_kind"],
                 "amount_eur": facts["amount_number"],
                 "key_dates": {"splatnost": facts["due_date"]},
                 "facts_summary": facts["purpose"],
-                "client_goal": "Pripravit potvrdenie o zaplateni vo formate PDF.",
+                "client_goal": f"Pripravit {document_title.lower()} vo formate PDF.",
             },
             "documents": [
                 {
                     "doc_id": "DOC-001",
-                    "type": "payment_proof",
-                    "filename": "Potvrdenie_o_zaplateni.pdf",
-                    "path": "documents/Potvrdenie_o_zaplateni.pdf",
+                    "type": facts["document_kind"],
+                    "title": document_title,
+                    "filename": document_filename,
+                    "path": document_path,
+                    "content": document_body,
                     "received_at": datetime.now(timezone.utc).isoformat(),
                     "notes": "Finalny dokument pripraveny na export.",
                 }
@@ -610,12 +643,23 @@ def _build_slovak_payment_confirmation_ready_reply(
     verification_lines = [
         "Tu je konecna verzia dokumentu - dokument je pripraveny na export a stiahnutie.",
         "",
+        "Pripravil som navrh dokumentu. Pred podpisom doplnte chybajuce udaje, skontrolujte totoznost stran a nechajte dokument pravne skontrolovat, ak sa na nom budete spoliehat.",
+        "",
         "Podklady pre export:",
-        f"Platitel: {facts['payer']}",
-        f"Prijemca: {facts['recipient']}",
+        f"Dokument: {document_title}",
+        f"Poskytovatel / platitel: {facts['payer']}",
+        f"Prijemca / dlznik: {facts['recipient']}",
         f"Suma: {facts['amount']}",
-        f"Datum splatnosti / platby: {facts['due_date']}",
-        f"Ucel platby: {facts['purpose']}",
+        f"Doba / datum splatnosti: {facts['due_date']}",
+        f"Ucel: {facts['purpose']}",
+        "",
+        "Odporucane kroky pred pouzitim:",
+        "1. Doplnte presnu sumu pozicky a identifikacne udaje poskytovatela pozicky.",
+        "2. Overte obciansky preukaz a adresu dlznika pred podpisom.",
+        "3. Podpiste dokument oboma stranami; pri vyssej sume zvazte overenie podpisov.",
+        "AI navrh pred pouzitim skontrolujte clovekom.",
+        "",
+        document_body,
     ]
     if facts["company_summary"]:
         verification_lines.extend(["", f"Overenie firmy: {facts['company_summary']}"])
@@ -630,8 +674,10 @@ def _extract_payment_confirmation_request_facts(
     current_content: str,
     company_record: dict[str, object] | None,
 ) -> dict[str, object]:
+    normalized = _canonicalize_slovak_text(current_content)
+    is_loan_confirmation = any(token in normalized for token in ("pozic", "pozick", "pozical", "dlh", "dlzn"))
     amount_match = re.search(r"\b([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€))\b", current_content, re.IGNORECASE)
-    amount = " ".join(amount_match.group(1).split()) if amount_match else "5000 EUR"
+    amount = " ".join(amount_match.group(1).split()) if amount_match else "Suma bude doplnena pred podpisom."
     amount_number_match = re.search(r"[0-9]+(?:[.,][0-9]{1,2})?", amount.replace(" ", ""))
     amount_number = float(amount_number_match.group(0).replace(",", ".")) if amount_number_match else None
     due_match = re.search(
@@ -639,11 +685,21 @@ def _extract_payment_confirmation_request_facts(
         current_content,
         re.IGNORECASE,
     )
-    due_date = due_match.group(1) if due_match else "Dátum bude doplnený pred podpisom."
+    loan_term_match = re.search(
+        r"\bna\s+([0-9]+)\s*(rok|roky|rokov|mesiac|mesiace|mesiacov)\b",
+        current_content,
+        re.IGNORECASE,
+    )
+    if due_match:
+        due_date = due_match.group(1)
+    elif loan_term_match:
+        due_date = f"{loan_term_match.group(1)} {loan_term_match.group(2)} od odovzdania pozicky"
+    else:
+        due_date = "Datum bude doplneny pred podpisom."
     spz = _extract_slovak_spz(current_content)
-    purpose = "splátka auta"
+    purpose = "potvrdenie o prijati pozicky" if is_loan_confirmation else "splatka auta"
     if spz:
-        purpose = f"splátka auta so SPZ {spz}"
+        purpose = f"splatka auta so SPZ {spz}"
     company_name = str((company_record or {}).get("name") or "").strip()
     company_ico = str((company_record or {}).get("registration_number") or "").strip()
     company_seat = str((company_record or {}).get("seat") or "").strip()
@@ -658,9 +714,13 @@ def _extract_payment_confirmation_request_facts(
             )
             if part
         )
-    recipient = company_summary or company_name or "Príjemca bude doplnený pred podpisom."
-    payer = _extract_represented_person(current_content) or "Marek Matonok"
+    borrower_name = _extract_private_loan_borrower(current_content)
+    borrower_address = _extract_private_loan_address(current_content)
+    borrower_id = _extract_private_loan_identity_number(current_content)
+    recipient = company_summary or company_name or borrower_name or "Prijemca bude doplneny pred podpisom."
+    payer = _extract_represented_person(current_content) or "Poskytovatel pozicky bude doplneny pred podpisom."
     return {
+        "document_kind": "loan_confirmation" if is_loan_confirmation else "payment_confirmation",
         "amount": amount,
         "amount_number": amount_number,
         "due_date": due_date,
@@ -669,7 +729,90 @@ def _extract_payment_confirmation_request_facts(
         "recipient": recipient,
         "payer": payer,
         "company_summary": company_summary,
+        "borrower_address": borrower_address,
+        "borrower_id": borrower_id,
     }
+
+
+def _extract_private_loan_borrower(content: str) -> str:
+    patterns = (
+        r"pozicala\s+peniaze\s+([^,.;]+)",
+        r"pozical\s+peniaze\s+([^,.;]+)",
+        r"pozicat\s+peniaze\s+[^,.;]*?\s+([A-ZÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ][^,.;]+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, content, flags=re.IGNORECASE)
+        if match is not None:
+            return " ".join(match.group(1).strip().split())
+    return ""
+
+
+def _extract_private_loan_address(content: str) -> str:
+    match = re.search(r"\badresa\s+([^.;]+?)(?:,\s*(?:cislo|číslo)\b|$)", content, flags=re.IGNORECASE)
+    if match is None:
+        return ""
+    return " ".join(match.group(1).strip(" ,").split())
+
+
+def _extract_private_loan_identity_number(content: str) -> str:
+    match = re.search(
+        r"(?:cislo|číslo)\s+obcianskeho\s*[:=]?\s*([A-Z0-9-]+)",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return ""
+    return match.group(1).strip().upper()
+
+
+def _build_slovak_confirmation_document_lines(facts: dict[str, object]) -> list[str]:
+    if facts["document_kind"] != "loan_confirmation":
+        return [
+            "Potvrdenie o zaplateni",
+            "",
+            f"Platitel: {facts['payer']}",
+            f"Prijemca: {facts['recipient']}",
+            f"Suma: {facts['amount']}",
+            f"Datum platby / splatnosti: {facts['due_date']}",
+            f"Ucel platby: {facts['purpose']}",
+            "",
+            "Vyhlasenie:",
+            "Prijemca tymto potvrdzuje prijatie uvedenej platby od platitela.",
+            "",
+            "V [mesto], dna [datum vystavenia]",
+            "",
+            "Podpis prijemcu: _______________________________",
+        ]
+    borrower_address = str(facts.get("borrower_address") or "Adresa dlznika bude doplnena pred podpisom.")
+    borrower_id = str(facts.get("borrower_id") or "Cislo dokladu bude doplnene pred podpisom.")
+    return [
+        "Potvrdenie o pozicke",
+        "",
+        f"Poskytovatel pozicky: {facts['payer']}",
+        f"Dlznik: {facts['recipient']}",
+        f"Adresa dlznika: {borrower_address}",
+        f"Cislo obcianskeho preukazu dlznika: {borrower_id}",
+        f"Suma pozicky: {facts['amount']}",
+        f"Doba / splatnost pozicky: {facts['due_date']}",
+        "",
+        "Vyhlasenie:",
+        (
+            "Poskytovatel pozicky tymto potvrdzuje, ze dlznikovi odovzdal penaznu pozicku "
+            "v uvedenej sume. Dlznik podpisom potvrdzuje prevzatie pozicky a zavazuje sa ju "
+            "vratit v uvedenej dobe, ak sa strany pisomne nedohodnu inak."
+        ),
+        "",
+        "Poznamka:",
+        (
+            "Pred podpisom doplnte presnu sumu, datum odovzdania penazi a identifikacne udaje "
+            "poskytovatela pozicky. Pri vyssej sume zvazte overenie podpisov."
+        ),
+        "",
+        "V [mesto], dna [datum vystavenia]",
+        "",
+        "Podpis poskytovatela pozicky: _______________________________",
+        "Podpis dlznika: _______________________________",
+    ]
 
 
 def _extract_represented_person(content: str) -> str:
