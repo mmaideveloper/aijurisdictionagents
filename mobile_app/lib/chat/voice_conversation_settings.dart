@@ -3,6 +3,27 @@ import 'dart:convert';
 const String defaultVoiceConversationSettingsStorageKey =
     'mobile_voice_conversation_settings_v1';
 
+class VoiceSessionStartupState {
+  const VoiceSessionStartupState._({
+    required this.speakerOutputEnabled,
+    required this.speechInputEnabled,
+  });
+
+  factory VoiceSessionStartupState.forNewChat(
+    VoiceConversationSettings settings,
+  ) {
+    // Persisted settings configure voice after explicit user activation. They
+    // must never activate the microphone or speaker when a chat is opened.
+    return const VoiceSessionStartupState._(
+      speakerOutputEnabled: false,
+      speechInputEnabled: false,
+    );
+  }
+
+  final bool speakerOutputEnabled;
+  final bool speechInputEnabled;
+}
+
 class VoiceConversationSettings {
   const VoiceConversationSettings({
     required this.recordChatEnabled,
@@ -54,8 +75,7 @@ class VoiceConversationSettings {
       allowBargeIn: allowBargeIn ?? this.allowBargeIn,
       pauseFor: pauseFor ?? this.pauseFor,
       listenFor: listenFor ?? this.listenFor,
-      resumeListeningDelay:
-          resumeListeningDelay ?? this.resumeListeningDelay,
+      resumeListeningDelay: resumeListeningDelay ?? this.resumeListeningDelay,
     );
   }
 

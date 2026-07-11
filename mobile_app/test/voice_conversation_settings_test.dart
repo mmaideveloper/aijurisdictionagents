@@ -41,5 +41,18 @@ void main() {
       expect(decoded.allowBargeIn, isTrue);
       expect(decoded.pauseFor, const Duration(seconds: 45));
     });
+
+    test('new chat waits for explicit voice activation', () {
+      final persistedSettings = VoiceConversationSettings.recommended(
+        recordChatEnabled: true,
+      );
+
+      final startupState =
+          VoiceSessionStartupState.forNewChat(persistedSettings);
+
+      expect(persistedSettings.recordChatEnabled, isTrue);
+      expect(startupState.speakerOutputEnabled, isFalse);
+      expect(startupState.speechInputEnabled, isFalse);
+    });
   });
 }
