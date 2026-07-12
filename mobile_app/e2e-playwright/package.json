@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:case-rule": "node scripts/validate-e2e-case.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

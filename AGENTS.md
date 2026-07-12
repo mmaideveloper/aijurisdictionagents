@@ -162,3 +162,11 @@ Deployment info:
 Created new domain juridigta.eu
 with SSL and subdomains.
 jurisdigta.eu, www.jurisdigta.eu, api.jurisdigta.eu,  web.jurisdigta.eu, services.jurisdigta.eu, admin.jurisdigta.eu
+
+E2E evidence rule:
+
+- Every user-facing E2E test must produce at least one final-state screenshot.
+- Document-generation E2E tests must also retain the generated PDF, render its first page as an image, and validate PDF structure plus extracted expected text. A screenshot alone is not proof that the PDF is correct.
+- Voice E2E tests must use synthetic audio only, verify the recognized transcript before submission, and prove that the same normalized text was sent to the system. Never use recordings of real users.
+- Store transient evidence under an ignored `artifacts/` or `runs/` path and document its retention. Evidence must not expose passwords, OTP values, tokens, or real personal data.
+- Use `docs/E2E_TEST_EVIDENCE_RULE.md` as the acceptance checklist and evidence naming contract.

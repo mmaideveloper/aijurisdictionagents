@@ -1,0 +1,26 @@
+{
+  "id": "mobile-audio-payment-confirmation-sk",
+  "locale": "sk-SK",
+  "syntheticOnly": true,
+  "audioFixture": "fixtures/sk-SK/payment-confirmation-request.wav",
+  "spokenText": "Priprav mi potvrdenie o zaplatení 5000 eur Jankovi Hraškovi, adresa Testovo 10, splatné do konca roka.",
+  "expectedNormalizedTranscript": "priprav mi potvrdenie o zaplateni 5000 eur jankovi hraskovi adresa testovo 10 splatne do konca roka",
+  "document": {
+    "type": "Potvrdenie o zaplatení",
+    "amount": "5000 EUR",
+    "recipient": "Janko Hraško",
+    "address": "Testovo 10",
+    "dueDate": "do konca roka",
+    "requiresHumanReview": true
+  },
+  "requiredEvidence": [
+    "01-audio-transcript.png",
+    "02-message-submitted.png",
+    "03-document-preview.png",
+    "04-payment-confirmation.pdf",
+    "05-pdf-first-page.png",
+    "result-manifest.json"
+  ],
+  "retentionDays": 7,
+  "forbiddenEvidenceFields": ["password", "verification_code", "device_auth_token", "raw_audio"]
+}
