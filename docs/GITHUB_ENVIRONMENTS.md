@@ -6,6 +6,44 @@ Maintenance rule:
 
 - Whenever a GitHub workflow gains new parameters, or infrastructure/deployment setup changes, update this document in the same change so `test` and `prod` setup instructions stay current.
 
+## Temporary encrypted `dev` secret export
+
+The manual `Temporary encrypted dev secrets export` workflow is a short-lived,
+operator-only migration aid. It reads the explicitly allowlisted secrets from the
+protected `dev` GitHub Environment, creates a dotenv file on the hosted runner,
+encrypts it to the repository operator's age recipient, and uploads only the
+encrypted file plus its SHA-256 checksum. The artifact retention period is one day.
+
+Safety requirements:
+
+- Require environment approval for `dev` before running the job.
+- Enter `EXPORT_DEV_SECRETS` in the workflow confirmation input.
+- Never print, inspect, or upload the plaintext file.
+- Delete the workflow after the one-time transfer is complete.
+- Keep `C:\__jurisdigta\age-identity.txt` private and outside Git.
+
+Download the workflow artifact, extract it under `C:\__jurisdigta`, and decrypt it:
+
+```powershell
+age --decrypt `
+  --identity C:\__jurisdigta\age-identity.txt `
+  --output C:\__jurisdigta\.env `
+  C:\__jurisdigta\dev-secrets.env.age
+```
+
+Confirm the encrypted download before decryption when the checksum file is present:
+
+```powershell
+$expected = (Get-Content C:\__jurisdigta\dev-secrets.env.age.sha256).Split()[0]
+$actual = (Get-FileHash C:\__jurisdigta\dev-secrets.env.age -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "Encrypted artifact checksum mismatch" }
+```
+
+The resulting `.env` contains only the 12 allowlisted GitHub Environment secrets;
+it does not include ordinary `dev` Environment variables. Apply restrictive local
+ACLs and merge it with the required non-secret configuration rather than treating
+it as a complete runtime configuration.
+
 ## Goal
 
 Create two new GitHub Environments:
