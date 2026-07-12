@@ -3890,6 +3890,65 @@ def test_slovak_private_loan_confirmation_first_turn_generates_document() -> Non
     assert "CASE_UPDATE_JSON" not in drafts[0].body
 
 
+def test_document_export_uses_latest_legal_document_body_without_assistant_notes() -> None:
+    from app.chat import api as chat_api
+    from app.chat.country_services.slovakia import (
+        _build_slovak_payment_confirmation_ready_reply,
+        prepare_slovakia_direct_reply,
+    )
+    from app.chat.models import Message, MessageRole, Session
+
+    session = Session(country="SK", language="sk-SK")
+    old_reply = _build_slovak_payment_confirmation_ready_reply(
+        current_content="Priprav potvrdenie o zaplateni.",
+        company_record=None,
+    )
+    exact_prompt = (
+        "priprav mi potvrdenie napozicanie 5000 pre Jana hraska, "
+        "adresa testova 10, testov do konca roka"
+    )
+    preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=[Message(session_id=session.id, role=MessageRole.USER, content=exact_prompt)],
+        current_content=exact_prompt,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+    )
+    assert preparation.direct_reply is not None
+    messages = [
+        Message(session_id=session.id, role=MessageRole.ASSISTANT, content=old_reply),
+        Message(session_id=session.id, role=MessageRole.USER, content=exact_prompt),
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            content=preparation.direct_reply,
+        ),
+    ]
+
+    assets = chat_api._build_document_export_assets(
+        session_id=session.id,
+        messages=messages,
+        result=None,
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert len(assets) == 1
+    exported_text = "\n".join(assets[0].lines)
+    assert assets[0].title == "Potvrdenie o pozicke"
+    assert "5000" in exported_text
+    assert "Jana hraska" in exported_text
+    assert "Adresa dlznika: testova 10, testov" in exported_text
+    assert "Doba / splatnost pozicky: do konca roka" in exported_text
+    assert "Pripravil som navrh dokumentu" not in exported_text
+    assert "Podklady pre export" not in exported_text
+    assert "Odporucane kroky pred pouzitim" not in exported_text
+    assert "CASE_UPDATE_JSON" not in exported_text
+
+
 def test_first_turn_final_pdf_payment_request_counts_as_export_ready() -> None:
     from app.chat.api import _document_export_ready, _document_generation_confirmed
     from app.chat.models import Message, MessageRole, Session

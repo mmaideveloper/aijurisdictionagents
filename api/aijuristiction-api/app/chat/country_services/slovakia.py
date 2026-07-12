@@ -677,6 +677,12 @@ def _extract_payment_confirmation_request_facts(
     normalized = _canonicalize_slovak_text(current_content)
     is_loan_confirmation = any(token in normalized for token in ("pozic", "pozick", "pozical", "dlh", "dlzn"))
     amount_match = re.search(r"\b([0-9\s]+(?:[.,][0-9]{1,2})?\s*(?:eur|eu|€))\b", current_content, re.IGNORECASE)
+    if amount_match is None and is_loan_confirmation:
+        amount_match = re.search(
+            r"(?:na\s*)?pozic\w*\s+([0-9]+(?:[.,][0-9]{1,2})?)\b",
+            normalized,
+            re.IGNORECASE,
+        )
     amount = " ".join(amount_match.group(1).split()) if amount_match else "Suma bude doplnena pred podpisom."
     amount_number_match = re.search(r"[0-9]+(?:[.,][0-9]{1,2})?", amount.replace(" ", ""))
     amount_number = float(amount_number_match.group(0).replace(",", ".")) if amount_number_match else None
@@ -694,6 +700,8 @@ def _extract_payment_confirmation_request_facts(
         due_date = due_match.group(1)
     elif loan_term_match:
         due_date = f"{loan_term_match.group(1)} {loan_term_match.group(2)} od odovzdania pozicky"
+    elif "do konca roka" in normalized:
+        due_date = "do konca roka"
     else:
         due_date = "Datum bude doplneny pred podpisom."
     spz = _extract_slovak_spz(current_content)
@@ -738,6 +746,7 @@ def _extract_private_loan_borrower(content: str) -> str:
     patterns = (
         r"pozicala\s+peniaze\s+([^,.;]+)",
         r"pozical\s+peniaze\s+([^,.;]+)",
+        r"(?:na\s*)?pozic\w*\s+[0-9]+(?:[.,][0-9]{1,2})?\s+pre\s+([^,.;]+)",
         r"pozicat\s+peniaze\s+[^,.;]*?\s+([A-ZÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ][^,.;]+)",
     )
     for pattern in patterns:
@@ -751,7 +760,8 @@ def _extract_private_loan_address(content: str) -> str:
     match = re.search(r"\badresa\s+([^.;]+?)(?:,\s*(?:cislo|číslo)\b|$)", content, flags=re.IGNORECASE)
     if match is None:
         return ""
-    return " ".join(match.group(1).strip(" ,").split())
+    address = re.sub(r"\s+do\s+konca\s+roka\b.*$", "", match.group(1), flags=re.IGNORECASE)
+    return " ".join(address.strip(" ,").split())
 
 
 def _extract_private_loan_identity_number(content: str) -> str:

@@ -2674,7 +2674,7 @@ def _document_progress_names(
     source = _pick_document_message([visible_text, *discussion_messages])
     case_update = _extract_case_update(source)
     if case_update is None:
-        for content in discussion_messages:
+        for content in reversed(discussion_messages):
             case_update = _extract_case_update(content)
             if case_update is not None:
                 break
@@ -6371,12 +6371,13 @@ def _prepare_document_export_context(
         context_lines = source_lines
     if not context_lines:
         context_lines = ["No lawyer-generated document content found in this session."]
-    case_update = _extract_case_update(source)
+    case_update = None
+    for content in reversed(discussion_messages):
+        case_update = _extract_case_update(content)
+        if case_update is not None:
+            break
     if case_update is None:
-        for content in discussion_messages:
-            case_update = _extract_case_update(content)
-            if case_update is not None:
-                break
+        case_update = _extract_case_update(source)
     document_kind = _detect_document_kind(context_lines, case_update)
     facts = _extract_document_facts(context_lines, case_update)
     law_citation_lines = _law_citation_export_lines(
