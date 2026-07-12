@@ -2182,6 +2182,7 @@
 }
 
 .segment-control__option {
+  position: relative;
   border: 1px solid transparent;
   border-radius: 10px;
   padding: 0.55rem 0.4rem;
@@ -2198,9 +2199,44 @@
 }
 
 .segment-control__option.is-active {
-  background: var(--surface);
-  border-color: rgba(31, 27, 22, 0.12);
+  background: rgba(159, 70, 34, 0.08);
+  border-color: var(--accent);
   box-shadow: 0 8px 18px rgba(31, 27, 22, 0.12);
+}
+
+.segment-control__option.is-disabled,
+.segment-control__option[aria-disabled="true"] {
+  color: var(--ink-muted);
+  cursor: not-allowed;
+  opacity: 0.54;
+}
+
+.segment-control__option.is-disabled:hover,
+.segment-control__option[aria-disabled="true"]:hover {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.segment-control__option[data-tooltip]:hover::after,
+.segment-control__option[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.45rem);
+  z-index: 4;
+  width: max-content;
+  max-width: 8rem;
+  transform: translateX(-50%);
+  border: 1px solid rgba(31, 27, 22, 0.12);
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: 0 10px 20px rgba(31, 27, 22, 0.16);
+  pointer-events: none;
 }
 
 .segment-control__icon {

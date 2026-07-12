@@ -243,6 +243,25 @@ describe("AssistantWorkspace", () => {
     expect(screen.queryByText("Production access uses JurisDigta account login")).toBeNull();
   });
 
+  it("keeps chat selected and voice/video communication modes unavailable", async () => {
+    render(<AssistantWorkspace />);
+
+    const chatMode = screen.getByRole("button", { name: "Chat" });
+    const voiceMode = screen.getByRole("button", { name: "Voice" });
+    const videoMode = screen.getByRole("button", { name: "Video" });
+
+    expect(chatMode.className).toContain("is-active");
+    expect(voiceMode.getAttribute("aria-disabled")).toBe("true");
+    expect(videoMode.getAttribute("aria-disabled")).toBe("true");
+    expect(voiceMode.getAttribute("title")).toBe("Coming later");
+    expect(videoMode.getAttribute("title")).toBe("Coming later");
+
+    fireEvent.click(voiceMode);
+    fireEvent.click(videoMode);
+
+    expect(caseActions.setCaseCommunicationMode).not.toHaveBeenCalled();
+  });
+
   it("lets eligible users select a backend-approved assistant model", async () => {
     vi.mocked(fetchSelectableModelProfiles).mockResolvedValue({
       eligible: true,
