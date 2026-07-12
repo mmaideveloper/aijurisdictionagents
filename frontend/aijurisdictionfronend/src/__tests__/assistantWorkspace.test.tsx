@@ -84,7 +84,7 @@ vi.mock("../components/LanguageProvider", () => ({
 const authState = vi.hoisted(() => ({
   isAuthenticated: true,
   isAuthLoading: false,
-  user: { userId: "user-1" } as { userId: string } | null
+  user: { userId: "user-1", email: "admin@example.com" } as { userId?: string; email?: string } | null
 }));
 
 vi.mock("../auth/webAuth", () => ({
@@ -190,7 +190,7 @@ describe("AssistantWorkspace", () => {
   beforeEach(() => {
     authState.isAuthenticated = true;
     authState.isAuthLoading = false;
-    authState.user = { userId: "user-1" };
+    authState.user = { userId: "user-1", email: "admin@example.com" };
     vi.mocked(fetchEffectiveModelRoute).mockResolvedValue({
       plan_code: "free",
       route_type: "free_local",
@@ -327,7 +327,10 @@ describe("AssistantWorkspace", () => {
       await result;
     }
 
-    expect(fetchSelectableModelProfiles).toHaveBeenCalledWith("user-1");
+    expect(fetchSelectableModelProfiles).toHaveBeenCalledWith({
+      userId: "user-1",
+      userEmail: "admin@example.com"
+    });
     expect(createChatSession).toHaveBeenCalledWith({
       language: "sk",
       userId: "user-1",
@@ -352,12 +355,40 @@ describe("AssistantWorkspace", () => {
     expect(vi.mocked(fetchEffectiveModelRoute)).not.toHaveBeenCalled();
 
     authState.isAuthLoading = false;
-    authState.user = { userId: "user-1" };
+    authState.user = { userId: "user-1", email: "admin@example.com" };
     rerender(<AssistantWorkspace />);
 
     expect(await screen.findByText("Local Ollama - qwen3:1.7b")).toBeDefined();
     expect(vi.mocked(fetchEffectiveModelRoute)).toHaveBeenCalledWith("user-1");
     expect(vi.mocked(fetchEffectiveModelRoute)).not.toHaveBeenCalledWith(undefined);
+  });
+
+  it("uses the signed-in email to load selectable models when the restored session has no user id", async () => {
+    authState.user = { email: "admin@example.com" };
+    vi.mocked(fetchSelectableModelProfiles).mockResolvedValue({
+      eligible: true,
+      profiles: [
+        {
+          model_profile_id: "azurefoundryeu:gpt-5-mini",
+          provider: "azurefoundryeu",
+          provider_display_name: "azureFoundryEU",
+          model: "gpt-5-mini",
+          label: "azureFoundryEU - gpt-5-mini",
+          is_local: false,
+          is_external: true,
+          eu_data_zone_capable: true,
+          context_window_tokens: 0
+        }
+      ]
+    });
+
+    render(<AssistantWorkspace />);
+
+    expect(await screen.findByRole("combobox", { name: "Select assistant model" })).toBeDefined();
+    expect(fetchSelectableModelProfiles).toHaveBeenCalledWith({
+      userId: undefined,
+      userEmail: "admin@example.com"
+    });
   });
 
   it("does not create a chat session until a signed-in user id is available", async () => {

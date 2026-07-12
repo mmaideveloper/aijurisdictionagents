@@ -3592,6 +3592,12 @@ class ApiDatabaseStore:
     def can_select_assistant_model(self, *, user_id: str) -> bool:
         return self.has_unlimited_access(user_id=user_id)
 
+    def can_select_assistant_model_by_email(self, *, email: str) -> bool:
+        user = self.find_user_by_email(email=email)
+        if user is None:
+            return False
+        return self.can_select_assistant_model(user_id=user.user_id)
+
     def resolve_selected_ai_model_route(
         self,
         *,
