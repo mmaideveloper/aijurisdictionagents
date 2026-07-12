@@ -6821,6 +6821,45 @@ def test_summary_only_previous_assistant_reply_is_not_saved_as_generated_documen
     assert stored_documents == []
 
 
+def test_persisted_assistant_message_exposes_generated_document_without_refresh(monkeypatch) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Session
+    from app.chat.repository import InMemoryChatRepository
+
+    session = Session(
+        user_id=uuid4(),
+        case_id="case-immediate-download",
+        country="SK",
+        language="SK",
+        discussion_type="advice",
+    )
+    repository = InMemoryChatRepository()
+    repository.create_session(session)
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_persist_case_message_if_needed", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        chat_api,
+        "_persist_generated_case_document_if_needed",
+        lambda **_kwargs: ["doc-new"],
+    )
+
+    persisted = chat_api._persist_direct_assistant_message(
+        session_id=session.id,
+        session=session,
+        content="KoneÄnÃ¡ verzia dokumentu je pripravenÃ¡.",
+        agent_name="Assistant",
+    )
+
+    assert "KoneÄnÃ¡ verzia dokumentu je pripravenÃ¡." in persisted.content
+    assert (
+        f"/v1/cases/case-immediate-download/documents/doc-new?user_id={session.user_id}"
+        in persisted.content
+    )
+    assert chat_api._user_visible_text(persisted.content) == (
+        "KoneÄnÃ¡ verzia dokumentu je pripravenÃ¡."
+    )
+
+
 def test_completed_read_user_session_returns_document_status_followup() -> None:
     from app.chat import api as chat_api
     from app.chat.models import Message, MessageRole, SessionResult

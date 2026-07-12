@@ -1102,7 +1102,12 @@ def _persist_direct_assistant_message(
 ) -> Message:
     content = _validate_lawyer_output_message(session=session, content=content)
     content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
-    _persist_generated_case_document_if_needed(session=session, content=content)
+    generated_doc_ids = _persist_generated_case_document_if_needed(session=session, content=content)
+    content = _attach_generated_case_document_references(
+        session=session,
+        content=content,
+        doc_ids=generated_doc_ids,
+    )
     persisted_lawyer = _repository.add_message(
         Message(
             session_id=session_id,
@@ -2023,7 +2028,15 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 session=session,
                 content=_validate_lawyer_output_message(session=session, content=core_message.content),
             )
-            _persist_generated_case_document_if_needed(session=session, content=content)
+            generated_doc_ids = _persist_generated_case_document_if_needed(
+                session=session,
+                content=content,
+            )
+            content = _attach_generated_case_document_references(
+                session=session,
+                content=content,
+                doc_ids=generated_doc_ids,
+            )
         else:
             content = core_message.content
         core_conversation.append(core_message)
@@ -3342,6 +3355,25 @@ def _persist_generated_case_document_if_needed(*, session: Session, content: str
         if not drafts:
             return []
     return _persist_generated_case_document_drafts(session=session, case_id=case_id, drafts=drafts)
+
+
+def _attach_generated_case_document_references(
+    *,
+    session: Session,
+    content: str,
+    doc_ids: list[str],
+) -> str:
+    references = [
+        _case_document_download_url(session=session, doc_id=doc_id)
+        for doc_id in doc_ids
+        if doc_id.strip()
+    ]
+    if not references:
+        return content
+    reference_lines = "\n".join(
+        f"Generated case document: {reference}" for reference in references
+    )
+    return f"{content.rstrip()}\n\n{reference_lines}"
 
 
 def _persist_generated_case_document_drafts(
