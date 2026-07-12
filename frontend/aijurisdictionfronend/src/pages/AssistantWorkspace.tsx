@@ -769,21 +769,30 @@ const AssistantConfigurations: React.FC = () => {
       {
         mode: "Chat" as CaseCommunicationMode,
         label: t("commsChat"),
-        icon: <FiMessageSquare aria-hidden="true" />
+        icon: <FiMessageSquare aria-hidden="true" />,
+        disabled: false
       },
       {
         mode: "Voice" as CaseCommunicationMode,
         label: t("commsVoice"),
-        icon: <FiMic aria-hidden="true" />
+        icon: <FiMic aria-hidden="true" />,
+        disabled: true
       },
       {
         mode: "Video" as CaseCommunicationMode,
         label: t("commsVideo"),
-        icon: <FiVideo aria-hidden="true" />
+        icon: <FiVideo aria-hidden="true" />,
+        disabled: true
       }
     ],
     [t]
   );
+
+  React.useEffect(() => {
+    if (activeCase && activeCase.selectedCommunicationMode !== "Chat") {
+      setCaseCommunicationMode(activeCase.id, "Chat");
+    }
+  }, [activeCase, setCaseCommunicationMode]);
 
   const roleOptions = React.useMemo(
     () => [
@@ -820,17 +829,21 @@ const AssistantConfigurations: React.FC = () => {
           <p className="hint">{t("commsSubtitle")}</p>
           <div className="segment-control" role="radiogroup">
             {communicationModeOptions.map((option) => {
-              const isActive = activeCase?.selectedCommunicationMode === option.mode;
+              const isDisabled = option.disabled || !activeCase;
+              const isActive = !isDisabled && activeCase?.selectedCommunicationMode === option.mode;
               return (
                 <button
                   key={option.mode}
                   type="button"
-                  className={`segment-control__option${isActive ? " is-active" : ""}`}
+                  className={`segment-control__option${isActive ? " is-active" : ""}${isDisabled ? " is-disabled" : ""}`}
                   aria-pressed={isActive}
                   aria-label={option.label}
-                  title={option.label}
+                  aria-disabled={isDisabled}
+                  tabIndex={isDisabled ? -1 : undefined}
+                  title={option.disabled ? t("roleUnavailable") : option.label}
+                  data-tooltip={option.disabled ? t("roleUnavailable") : undefined}
                   onClick={() => {
-                    if (activeCase) {
+                    if (activeCase && !isDisabled) {
                       setCaseCommunicationMode(activeCase.id, option.mode);
                     }
                   }}
