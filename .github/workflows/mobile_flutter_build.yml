@@ -128,7 +128,14 @@ jobs:
               echo "Verify MOBILE_ANDROID_KEYSTORE_BASE64, MOBILE_ANDROID_KEYSTORE_PASSWORD, MOBILE_ANDROID_KEY_ALIAS, and MOBILE_ANDROID_KEY_PASSWORD in the selected GitHub Environment."
             fi
           else
-            echo "Android release signing secrets not fully configured; falling back to the debug signing key."
+            RELEASE_ENABLED_VALUE='${{ github.event_name == 'workflow_dispatch' && inputs.release || false }}'
+            if [ "$RELEASE_ENABLED_VALUE" = "true" ]; then
+              echo "Android release signing secrets are not fully configured for the selected GitHub Environment." >&2
+              echo "A published mobile release must never fall back to an ephemeral debug signing key." >&2
+              exit 1
+            fi
+
+            echo "Android release signing secrets not fully configured; falling back to the debug signing key for this non-release CI build."
           fi
 
       - name: Install dependencies (retry)
