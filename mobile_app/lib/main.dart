@@ -422,6 +422,7 @@ class AppStrings {
       'summary_pdf': 'PDF zhrnutie',
       'document_pdf': 'PDF dokument',
       'export_documents': 'Dokumenty',
+      'document_finalizing': 'DokonÄujem dokument...',
       'upload_documents': 'Nahrať dokumenty',
       'case_input_discussion': 'Popíšte prípad pre spustenie diskusie...',
       'case_input_question': 'Položte právnu otázku...',
@@ -697,6 +698,7 @@ class AppStrings {
       'summary_pdf': 'Summary PDF',
       'document_pdf': 'Document PDF',
       'export_documents': 'Documents',
+      'document_finalizing': 'Finalizing document...',
       'upload_documents': 'Upload documents',
       'case_input_discussion': 'Describe the case to start discussion...',
       'case_input_question': 'Ask your legal question...',
@@ -981,6 +983,7 @@ class AppStrings {
       'summary_pdf': 'PDF Zusammenfassung',
       'document_pdf': 'PDF Dokument',
       'export_documents': 'Dokumente',
+      'document_finalizing': 'Dokument wird fertiggestellt...',
       'upload_documents': 'Dokumente hochladen',
       'case_input_discussion':
           'Beschreiben Sie den Fall, um die Diskussion zu starten...',
@@ -6413,6 +6416,24 @@ class _ChatHomePageState extends State<ChatHomePage>
     return generatedDocument.docId;
   }
 
+  void _acceptGeneratedDocumentPayload(Map<String, dynamic> payload) {
+    final rawUrls = payload['generated_document_urls'];
+    if (rawUrls is! List) {
+      return;
+    }
+    for (final rawUrl in rawUrls) {
+      if (rawUrl is! String) {
+        continue;
+      }
+      final documentId = _acceptedGeneratedCaseDocumentId(rawUrl);
+      if (documentId != null) {
+        _latestGeneratedCaseDocumentId = documentId;
+        _hasExportReady = true;
+        return;
+      }
+    }
+  }
+
   Future<void> _setSpeakerOutputEnabled(bool enabled) async {
     if (!mounted) {
       return;
@@ -8271,6 +8292,7 @@ class _ChatHomePageState extends State<ChatHomePage>
         )) {
           if (event.event == 'message' && event.data is Map) {
             final payload = Map<String, dynamic>.from(event.data as Map);
+            _acceptGeneratedDocumentPayload(payload);
             final role = (payload['role'] as String? ?? 'assistant')
                 .toLowerCase()
                 .trim();
@@ -8358,6 +8380,7 @@ class _ChatHomePageState extends State<ChatHomePage>
           }
           if (event.event == 'message' && event.data is Map) {
             final payload = Map<String, dynamic>.from(event.data as Map);
+            _acceptGeneratedDocumentPayload(payload);
             final role = (payload['role'] as String? ?? 'assistant')
                 .toLowerCase()
                 .trim();
@@ -9768,13 +9791,15 @@ class _ChatHomePageState extends State<ChatHomePage>
                       ),
                       FilledButton.tonalIcon(
                         onPressed: (_isDownloading ||
+                                (_isSending && _hasExportReady) ||
                                 (!_hasExportReady &&
                                     !_caseDocuments.any(
                                       _isUserVisibleCaseDocument,
                                     )))
                             ? null
                             : _downloadRequestedDocuments,
-                        icon: _isDownloading
+                        icon: (_isDownloading ||
+                                (_isSending && _hasExportReady))
                             ? const SizedBox(
                                 width: 14,
                                 height: 14,
@@ -9782,7 +9807,13 @@ class _ChatHomePageState extends State<ChatHomePage>
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.description),
-                        label: Text(strings.t('export_documents')),
+                        label: Text(
+                          strings.t(
+                            _isSending && _hasExportReady
+                                ? 'document_finalizing'
+                                : 'export_documents',
+                          ),
+                        ),
                       ),
                     ],
                   ),

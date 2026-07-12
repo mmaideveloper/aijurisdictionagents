@@ -6858,6 +6858,11 @@ def test_persisted_assistant_message_exposes_generated_document_without_refresh(
     assert chat_api._user_visible_text(persisted.content) == (
         "KoneÄnÃ¡ verzia dokumentu je pripravenÃ¡."
     )
+    payload = chat_api._message_payload(persisted)
+    assert payload["content"] == "KoneÄnÃ¡ verzia dokumentu je pripravenÃ¡."
+    assert payload["generated_document_urls"] == [
+        f"/v1/cases/case-immediate-download/documents/doc-new?user_id={session.user_id}"
+    ]
 
 
 def test_completed_read_user_session_returns_document_status_followup() -> None:

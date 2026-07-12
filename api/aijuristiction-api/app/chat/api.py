@@ -701,7 +701,7 @@ def _bootstrap_case_history_if_needed(*, session: Session) -> None:
 
 def _message_payload(message: Message) -> dict[str, object]:
     visible_message = _message_for_user(message)
-    return {
+    payload: dict[str, object] = {
         "id": str(visible_message.id),
         "session_id": str(visible_message.session_id),
         "role": visible_message.role.value,
@@ -709,6 +709,18 @@ def _message_payload(message: Message) -> dict[str, object]:
         "content": visible_message.content,
         "created_at": visible_message.created_at.isoformat(),
     }
+    generated_document_urls = list(
+        dict.fromkeys(
+            match.group(0).rstrip(".,;)")
+            for match in re.finditer(
+                r"/v1/cases/[^/\s?]+/documents/[^/\s?]+(?:\?[^\s]+)?",
+                message.content,
+            )
+        )
+    )
+    if generated_document_urls:
+        payload["generated_document_urls"] = generated_document_urls
+    return payload
 
 
 def _build_case_memory_refresh_note(prior_messages: list[Message]) -> str:
