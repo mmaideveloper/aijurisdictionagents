@@ -215,13 +215,18 @@ Routing precedence is:
 3. Existing group/plan/task route policy from `ai_task_route_policies`.
 4. Seeded defaults created by `ApiDatabaseStore.initialize()`.
 
-The public `GET /v1/model-routing/selectable?user_id=...` endpoint returns
-only safe display metadata for authorized admin/unlimited users: profile id,
-provider code/display name, model label, local/external flags, EU data-zone flag,
-and context window. It does not return provider base URLs, credentials, prompts,
-documents, or case content. Regular users receive `eligible=false` and an empty
-profile list. Selected assistant models are transient: they apply to the current
-chat session/reply/stream workflow and reset on page reload or new case.
+The public `GET /v1/model-routing/selectable?user_id=...&user_email=...`
+endpoint returns only safe display metadata for authorized admin/unlimited
+users: profile id, provider code/display name, model label, local/external
+flags, EU data-zone flag, and context window. The `user_id` parameter is
+preferred; `user_email` is an authenticated-browser fallback for restored web
+sessions that still know the email/role but cannot provide the user id. The
+backend resolves both identifiers to a stored user and applies the same
+admin/unlimited eligibility checks. It does not return provider base URLs,
+credentials, prompts, documents, or case content. Regular users receive
+`eligible=false` and an empty profile list. Selected assistant models are
+transient: they apply to the current chat session/reply/stream workflow and
+reset on page reload or new case.
 
 Seeded defaults:
 

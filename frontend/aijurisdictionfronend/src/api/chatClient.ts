@@ -59,6 +59,11 @@ export type SelectableModelProfiles = {
   profiles: SelectableModelProfile[];
 };
 
+export type SelectableModelProfileRequest = {
+  userId?: string;
+  userEmail?: string;
+};
+
 export type CreateChatSessionInput = {
   userId?: string;
   caseId?: string;
@@ -316,9 +321,18 @@ export const fetchEffectiveModelRoute = async (userId?: string): Promise<Effecti
   });
 };
 
-export const fetchSelectableModelProfiles = async (userId: string): Promise<SelectableModelProfiles> => {
+export const fetchSelectableModelProfiles = async ({
+  userId,
+  userEmail
+}: SelectableModelProfileRequest): Promise<SelectableModelProfiles> => {
   const config = resolveApiConfig();
-  const params = new URLSearchParams({ user_id: userId.trim() });
+  const params = new URLSearchParams();
+  if (userId?.trim()) {
+    params.set("user_id", userId.trim());
+  }
+  if (userEmail?.trim()) {
+    params.set("user_email", userEmail.trim());
+  }
   return requestJson<SelectableModelProfiles>(`/v1/model-routing/selectable?${params.toString()}`, {
     method: "GET",
     headers: {

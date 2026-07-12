@@ -86,11 +86,19 @@ def get_effective_model_route(
 
 @router.get("/selectable", response_model=SelectableModelProfilesResponse)
 def get_selectable_model_profiles(
-    user_id: str,
+    user_id: str | None = None,
+    user_email: str | None = None,
     store: ApiDatabaseStore = Depends(get_store),
 ) -> SelectableModelProfilesResponse:
-    normalized_user_id = user_id.strip()
-    if not normalized_user_id or not store.can_select_assistant_model(user_id=normalized_user_id):
+    normalized_user_id = (user_id or "").strip()
+    normalized_user_email = (user_email or "").strip().lower()
+    if normalized_user_id:
+        can_select = store.can_select_assistant_model(user_id=normalized_user_id)
+    elif normalized_user_email:
+        can_select = store.can_select_assistant_model_by_email(email=normalized_user_email)
+    else:
+        can_select = False
+    if not can_select:
         return SelectableModelProfilesResponse(eligible=False, profiles=[])
 
     providers = {item.provider_id: item for item in store.list_ai_model_providers()}

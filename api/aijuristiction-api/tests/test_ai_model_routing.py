@@ -343,6 +343,30 @@ def test_selectable_model_profiles_endpoint_returns_safe_metadata_for_eligible_u
     assert "protected_secret" not in response.text
 
 
+def test_selectable_model_profiles_endpoint_accepts_email_fallback_for_eligible_user(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "blob"))
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "selector-email@example.com")
+    store = ApiDatabaseStore(db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "blob")
+    store.initialize()
+    store.create_user(email="selector-email@example.com", password="secret", full_name="Selector Email")
+
+    response = client.get(
+        "/v1/model-routing/selectable?user_email=selector-email@example.com",
+        headers={"x-api-key": "aijuris"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["eligible"] is True
+    assert payload["profiles"]
+
+
 def test_selectable_model_profiles_endpoint_hides_options_for_regular_user(
     monkeypatch: Any,
     tmp_path: Path,

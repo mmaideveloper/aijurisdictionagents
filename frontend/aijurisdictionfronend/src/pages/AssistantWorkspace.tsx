@@ -946,14 +946,15 @@ const AssistantWorkspace: React.FC = () => {
 
   React.useEffect(() => {
     const userId = user?.userId?.trim();
-    if (!isAuthenticated || !userId) {
+    const userEmail = user?.email?.trim();
+    if (!isAuthenticated || (!userId && !userEmail)) {
       setSelectableProfiles([]);
       setSelectedModelProfileId("");
       return;
     }
 
     let isCurrent = true;
-    void fetchSelectableModelProfiles(userId)
+    void fetchSelectableModelProfiles({ userId, userEmail })
       .then((response) => {
         if (isCurrent) {
           setSelectableProfiles(response.eligible ? response.profiles : []);
@@ -967,7 +968,7 @@ const AssistantWorkspace: React.FC = () => {
     return () => {
       isCurrent = false;
     };
-  }, [isAuthenticated, user?.userId]);
+  }, [isAuthenticated, user?.email, user?.userId]);
 
   React.useEffect(() => {
     setSelectedModelProfileId("");
