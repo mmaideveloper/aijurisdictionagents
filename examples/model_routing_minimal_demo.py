@@ -49,6 +49,8 @@ def main() -> None:
             preferred_local_model_profile_id="local_ollama_default",
             allow_external=True,
             require_external_ack=True,
+            fallback_local_on_budget=True,
+            max_cost_eur=0.008,
         )
 
         free_route = store.resolve_ai_model_route(
@@ -84,6 +86,18 @@ def main() -> None:
             "Usage: "
             f"requests={summary.request_count}, input={summary.input_tokens}, "
             f"output={summary.output_tokens}, cost_eur={summary.estimated_cost_eur:.4f}"
+        )
+
+        budget_route = store.resolve_ai_model_route(
+            user_id=user.user_id,
+            plan_code="case",
+            task_type="document_generation",
+            external_acknowledged=True,
+        )
+        print(
+            "Budget route: "
+            f"{budget_route.route_type} -> {budget_route.provider.provider_code}; "
+            f"reason={budget_route.reason}"
         )
 
 
