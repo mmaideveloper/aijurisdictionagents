@@ -50,6 +50,11 @@ for (const [language, productName] of Object.entries(productNames)) {
 
     await expect(page).toHaveTitle(productName);
     await expect(page.locator(".sidebar-brand strong")).toHaveText(productName);
+    await page.screenshot({
+      path: `../../runs/e2e/issue-530-assistant-branding-${language}.png`,
+      fullPage: true,
+      animations: "disabled"
+    });
   });
 }
 
