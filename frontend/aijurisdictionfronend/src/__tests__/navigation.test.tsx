@@ -23,7 +23,7 @@ vi.mock("../auth/webAuth", () => ({
 }));
 
 const labels: Record<string, string> = {
-  appName: "AI Jurisdiction",
+  appName: "Jurisdigta AI právnik",
   tagline: "Agentic legal workspace",
   navHome: "Home",
   navNews: "News",
@@ -171,18 +171,18 @@ describe("Navigation profile actions", () => {
   it("shows navbar brand on non-home routes for signed-in users", () => {
     renderNavigation({ initialEntries: ["/app"] });
 
-    expect(screen.getByText("AI Jurisdiction")).toBeDefined();
+    expect(screen.getByText("Jurisdigta AI právnik")).toBeDefined();
   });
 
   it("shows navbar brand on home when sidebar is collapsed", () => {
     renderNavigation({ initialEntries: ["/"], isSidebarCollapsed: true });
 
-    expect(screen.getByText("AI Jurisdiction")).toBeDefined();
+    expect(screen.getByText("Jurisdigta AI právnik")).toBeDefined();
   });
 
   it("hides navbar brand on home when sidebar is expanded", () => {
     renderNavigation({ initialEntries: ["/"], isSidebarCollapsed: false });
 
-    expect(screen.queryByText("AI Jurisdiction")).toBeNull();
+    expect(screen.queryByText("Jurisdigta AI právnik")).toBeNull();
   });
 });
