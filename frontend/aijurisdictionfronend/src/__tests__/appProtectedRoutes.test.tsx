@@ -6,7 +6,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import App from "../App";
-import { PRODUCT_NAME } from "../branding";
+import { PRODUCT_NAMES } from "../branding";
 
 const authState = vi.hoisted(() => ({ isAuthenticated: false, role: "user" }));
 
@@ -19,6 +19,12 @@ vi.mock("../auth/webAuth", () => ({
 
 vi.mock("../components/PageLayout", () => ({
   PageLayout: ({ children }: { children: React.ReactNode }) => <>{children}</>
+}));
+
+vi.mock("../components/LanguageProvider", () => ({
+  useLanguage: () => ({
+    t: (key: string) => (key === "appName" ? PRODUCT_NAMES.sk : key)
+  })
 }));
 
 vi.mock("../auth/AuthCallbackView", () => ({
@@ -136,12 +142,12 @@ describe("App protected routes", () => {
       </MemoryRouter>
     );
 
-    expect(document.title).toBe(PRODUCT_NAME);
+    expect(document.title).toBe(PRODUCT_NAMES.sk);
     document.title = "Legacy title";
     await user.click(screen.getByRole("button", { name: "Open assistant" }));
 
     expect(await screen.findByText("Assistant Workspace")).toBeDefined();
-    expect(document.title).toBe(PRODUCT_NAME);
+    expect(document.title).toBe(PRODUCT_NAMES.sk);
   });
 
   it("renders the assistant workspace at / on agent.jurisdigta.eu for authenticated users", () => {

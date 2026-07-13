@@ -24,7 +24,7 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import NotFound from "./pages/NotFound";
 import { isAgentHost } from "./routing";
-import { PRODUCT_NAME } from "./branding";
+import { useLanguage } from "./components/LanguageProvider";
 
 interface ProtectedRouteProps {
   children: React.ReactElement;
@@ -69,10 +69,12 @@ const RootRoute: React.FC = () => {
 
 const App: React.FC = () => {
   const { pathname } = useLocation();
+  const { t } = useLanguage();
+  const productName = t("appName");
 
   React.useEffect(() => {
-    document.title = PRODUCT_NAME;
-  }, [pathname]);
+    document.title = productName;
+  }, [pathname, productName]);
 
   return (
     <PageLayout>

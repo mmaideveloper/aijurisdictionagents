@@ -1,6 +1,6 @@
-﻿# Jurisdigta AI právnik Frontend
+﻿# Jurisdigta AI Frontend
 
-React + TypeScript + Vite frontend workspace for Jurisdigta AI právnik. This UI is aligned with the
+React + TypeScript + Vite frontend workspace for Jurisdigta AI. This UI is aligned with the
 `frontend_design` proposal and includes the public marketing pages plus authenticated workflow
 screens.
 
@@ -24,8 +24,9 @@ Open `http://localhost:5173`.
 
 Run the frontend with the setup commands above, sign in, and open
 `http://localhost:5173/app/assistant`. The sidebar/header brand and browser-tab title both read
-`Jurisdigta AI právnik`. Navigate to another app page and back to `/app/assistant` to verify that
-client-side routing retains the same browser title.
+`Jurisdigta AI právnik` (SK), `Jurisdigta AI lawyer` (EN), or `Jurisdigta AI Anwalt` (DE), according
+to the selected language. Change languages and navigate away and back to `/app/assistant` to verify
+that both titles update immediately and retain the persisted language.
 
 ## E2E Regression Tests
 
@@ -35,7 +36,7 @@ Run the browser regression suite with:
 npm run test:e2e
 ```
 
-The suite starts Vite locally and uses mocked JurisDigta API responses. Deployment workflows run this Playwright gate before deployment so a failed document-preview, document-download, or document-listing regression blocks release. If the default Playwright port is already in use, set `FRONTEND_E2E_PORT`, for example `FRONTEND_E2E_PORT=5190 npm run test:e2e`. Issue #503 is covered by `e2e/assistant-live-document-preview.spec.ts`, which verifies the live assistant response path and the post-refresh case-history path both show the formatted JurisDigta document preview, generated PDF action, and citation source. Issue #530 is covered by `e2e/assistant-branding.spec.ts`, which verifies the `Jurisdigta AI právnik` sidebar brand and browser title after both a direct assistant load and client-side navigation.
+The suite starts Vite locally and uses mocked JurisDigta API responses. Deployment workflows run this Playwright gate before deployment so a failed document-preview, document-download, or document-listing regression blocks release. If the default Playwright port is already in use, set `FRONTEND_E2E_PORT`, for example `FRONTEND_E2E_PORT=5190 npm run test:e2e`. Issue #503 is covered by `e2e/assistant-live-document-preview.spec.ts`, which verifies the live assistant response path and the post-refresh case-history path both show the formatted JurisDigta document preview, generated PDF action, and citation source. Issue #530 is covered by `e2e/assistant-branding.spec.ts`, which verifies the localized SK/EN/DE sidebar brand and browser title after persisted direct loads, live language changes, and client-side navigation.
 
 ![Issue #530 assistant branding E2E result](docs/issue-530-assistant-branding.png)
 
@@ -148,7 +149,7 @@ question/upload/answer rendering path can be tested during frontend development.
 
 ## Navbar Branding
 
-The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + `Jurisdigta AI právnik`/tagline). The browser title uses the same product name on direct loads and after client-side navigation.
+The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + localized Jurisdigta AI name/tagline). The browser title uses the same localized product name on direct loads, language changes, and client-side navigation.
 
 - The logo is rendered on the left side of the navbar for signed-out views.
 - The logo is also rendered for signed-in views on non-home routes (for example `/app` and `/profile`).
