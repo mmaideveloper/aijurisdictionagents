@@ -35,7 +35,7 @@ Run the browser regression suite with:
 npm run test:e2e
 ```
 
-The suite starts Vite locally and uses mocked JurisDigta API responses. Deployment workflows run this Playwright gate before deployment so a failed document-preview, document-download, or document-listing regression blocks release. If the default Playwright port is already in use, set `FRONTEND_E2E_PORT`, for example `FRONTEND_E2E_PORT=5190 npm run test:e2e`. Issue #503 is covered by `e2e/assistant-live-document-preview.spec.ts`, which verifies the live assistant response path and the post-refresh case-history path both show the formatted JurisDigta document preview, generated PDF action, and citation source.
+The suite starts Vite locally and uses mocked JurisDigta API responses. Deployment workflows run this Playwright gate before deployment so a failed document-preview, document-download, or document-listing regression blocks release. If the default Playwright port is already in use, set `FRONTEND_E2E_PORT`, for example `FRONTEND_E2E_PORT=5190 npm run test:e2e`. Issue #503 is covered by `e2e/assistant-live-document-preview.spec.ts`, which verifies the live assistant response path and the post-refresh case-history path both show the formatted JurisDigta document preview, generated PDF action, and citation source. Issue #530 is covered by `e2e/assistant-branding.spec.ts`, which verifies the `Jurisdigta AI právnik` sidebar brand and browser title after both a direct assistant load and client-side navigation.
 
 ## API Chat Integration (Task #238)
 
