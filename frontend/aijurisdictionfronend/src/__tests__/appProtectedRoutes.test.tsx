@@ -3,8 +3,10 @@
 import React from "react";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import App from "../App";
+import { PRODUCT_NAME } from "../branding";
 
 const authState = vi.hoisted(() => ({ isAuthenticated: false, role: "user" }));
 
@@ -117,6 +119,29 @@ describe("App protected routes", () => {
 
     expect(screen.getByText("Home Page")).toBeDefined();
     expect(screen.queryByText("Assistant Workspace")).toBeNull();
+  });
+
+  it("keeps the product title after client-side navigation to the assistant", async () => {
+    authState.isAuthenticated = true;
+    const user = userEvent.setup();
+    const NavigateToAssistant = () => {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate("/app/assistant")}>Open assistant</button>;
+    };
+
+    render(
+      <MemoryRouter initialEntries={["/app"]}>
+        <NavigateToAssistant />
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(document.title).toBe(PRODUCT_NAME);
+    document.title = "Legacy title";
+    await user.click(screen.getByRole("button", { name: "Open assistant" }));
+
+    expect(await screen.findByText("Assistant Workspace")).toBeDefined();
+    expect(document.title).toBe(PRODUCT_NAME);
   });
 
   it("renders the assistant workspace at / on agent.jurisdigta.eu for authenticated users", () => {

@@ -1,6 +1,6 @@
-﻿# AI Jurisdiction Frontend
+﻿# Jurisdigta AI právnik Frontend
 
-React + TypeScript + Vite frontend workspace for AI Jurisdiction. This UI is aligned with the
+React + TypeScript + Vite frontend workspace for Jurisdigta AI právnik. This UI is aligned with the
 `frontend_design` proposal and includes the public marketing pages plus authenticated workflow
 screens.
 
@@ -19,6 +19,13 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
+
+## Minimal Runnable Branding Example
+
+Run the frontend with the setup commands above, sign in, and open
+`http://localhost:5173/app/assistant`. The sidebar/header brand and browser-tab title both read
+`Jurisdigta AI právnik`. Navigate to another app page and back to `/app/assistant` to verify that
+client-side routing retains the same browser title.
 
 ## E2E Regression Tests
 
@@ -139,7 +146,7 @@ question/upload/answer rendering path can be tested during frontend development.
 
 ## Navbar Branding
 
-The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + app name/tagline).
+The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + `Jurisdigta AI právnik`/tagline). The browser title uses the same product name on direct loads and after client-side navigation.
 
 - The logo is rendered on the left side of the navbar for signed-out views.
 - The logo is also rendered for signed-in views on non-home routes (for example `/app` and `/profile`).
