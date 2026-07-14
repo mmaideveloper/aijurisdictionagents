@@ -1,5 +1,5 @@
-CREATE INDEX IF NOT EXISTS idx_court_decision_documents_status_issue_date_normalized
-ON court_decision_documents(current_status, issue_date_normalized DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_court_decision_documents_status_issue_date
+ON court_decision_documents(current_status, issue_date DESC, updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_court_decision_documents_metadata_search_text
 ON court_decision_documents USING GIN (
