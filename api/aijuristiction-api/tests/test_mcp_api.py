@@ -801,6 +801,59 @@ def test_mcp_async_legal_search_lifecycle_is_user_scoped(monkeypatch, tmp_path: 
     assert other_user_response.json()["error"]["message"] == "Legal search job not found or expired"
 
 
+def test_mcp_async_court_decision_failure_preserves_tool_and_arguments(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    def fail_async_search(tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
+        assert tool_name == "searchCourtDecisions"
+        assert arguments == {"query": "podnajom", "limit": 1, "sort": "latest"}
+        raise TimeoutError("statement timeout")
+
+    monkeypatch.setattr(mcp_api, "_run_async_legal_search", fail_async_search)
+
+    start_response = _mcp_call(
+        "startLegalSearch",
+        {
+            "tool_name": "searchCourtDecisions",
+            "arguments": {"query": "podnajom", "limit": 1, "sort": "latest"},
+        },
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    assert start_response.status_code == 200
+    search_id = _tool_payload(start_response)["search_id"]
+
+    result_payload: dict[str, object] = {}
+    for _ in range(20):
+        result_response = _mcp_call(
+            "getLegalSearchResult",
+            {"search_id": search_id},
+            headers={"authorization": f"Bearer {mcp_key}"},
+        )
+        assert result_response.status_code == 200
+        result_payload = _tool_payload(result_response)
+        if result_payload["status"] != "running":
+            break
+        time.sleep(0.05)
+
+    result = result_payload["result"]
+    assert isinstance(result, dict)
+    assert result_payload["status"] == "degraded"
+    assert result["tool_name"] == "searchCourtDecisions"
+    assert result["query"] == "podnajom"
+    assert "assistant_next_step" not in result
+    async_fallback = result["async_fallback"]
+    assert isinstance(async_fallback, dict)
+    assert "assistant_instruction" not in async_fallback
+    assert async_fallback["start_arguments"] == {
+        "tool_name": "searchCourtDecisions",
+        "arguments": {"query": "podnajom", "limit": 1, "sort": "latest"},
+    }
+
+
 def test_mcp_get_court_decision_defaults_to_metadata_only(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     mcp_key = _create_mcp_key(tmp_path)
@@ -899,8 +952,9 @@ def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
     assert payload["error"]["kind"] == "timeout"
     assert payload["error"]["correlation_id"] == "court-timeout-correlation"
     assert payload["error"]["request_id"] == "court-timeout-request"
-    assert "ask whether it is OK to run the async legal search" in payload["assistant_next_step"]
+    assert "assistant_next_step" not in payload
     assert payload["async_fallback"]["requires_user_confirmation"] is True
+    assert "assistant_instruction" not in payload["async_fallback"]
     assert payload["async_fallback"]["start_tool"] == "startLegalSearch"
     assert payload["async_fallback"]["start_arguments"] == {
         "tool_name": "searchCourtDecisions",

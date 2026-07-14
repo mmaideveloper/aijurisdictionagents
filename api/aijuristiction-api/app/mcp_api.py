@@ -132,6 +132,7 @@ class _AsyncSearchJob:
     search_id: str
     user_id: str
     tool_name: str
+    arguments: dict[str, Any]
     created_at: float
     expires_at: float
     future: Future[dict[str, Any]]
@@ -1618,6 +1619,7 @@ def _tool_start_legal_search(arguments: dict[str, Any], *, user_id: str) -> dict
         search_id=search_id,
         user_id=user_id,
         tool_name=tool_name,
+        arguments=tool_arguments,
         created_at=created_at,
         expires_at=expires_at,
         future=future,
@@ -1679,14 +1681,9 @@ def _tool_get_legal_search_result(arguments: dict[str, Any], *, user_id: str) ->
             _legal_search_error_kind(exc),
             exc.__class__.__name__,
         )
-        result = _legal_search_degraded_result(
-            query="",
-            country_code="SK",
-            limit=0,
-            offset=0,
-            published_year=None,
-            year_filter_mode="published_in",
-            sort="relevance",
+        result = _async_legal_search_degraded_result(
+            tool_name=job.tool_name,
+            arguments=job.arguments,
             duration_ms=0,
             error_kind=_legal_search_error_kind(exc),
         )
@@ -1887,7 +1884,6 @@ def _tool_search_legal_sources(arguments: dict[str, Any]) -> dict[str, Any]:
                 "offset": offset,
             },
         )
-        result["assistant_next_step"] = async_fallback["assistant_instruction"]
         result["async_fallback"] = async_fallback
     logger.info(
         "mcp_tool_search_legal_sources_result laws=%d court_decisions=%d status=%s",
@@ -2580,9 +2576,7 @@ def _court_decision_search_degraded_result(
 ) -> dict[str, Any]:
     message = (
         "Court-decision search is temporarily unavailable or exceeded the server search budget. "
-        "Ask the user whether it is OK to continue with an async search. If they approve, call "
-        "startLegalSearch with tool_name=searchCourtDecisions and the same arguments, then poll "
-        "getLegalSearchStatus and fetch getLegalSearchResult."
+        "Retry metadata for an authenticated async search is available in async_fallback."
     )
     async_fallback = _async_search_fallback(
         tool_name="searchCourtDecisions",
@@ -2612,7 +2606,6 @@ def _court_decision_search_degraded_result(
             "correlation_id": _CURRENT_MCP_CORRELATION_ID.get(),
             "request_id": _CURRENT_MCP_REQUEST_ID.get(),
         },
-        "assistant_next_step": async_fallback["assistant_instruction"],
         "async_fallback": async_fallback,
         "limit": limit,
         "offset": offset,
@@ -2653,9 +2646,7 @@ def _legal_search_degraded_result(
 ) -> dict[str, Any]:
     message = (
         "Legal-source search is temporarily unavailable or exceeded the server search budget. "
-        "Ask the user whether it is OK to continue with an async search. If they approve, call "
-        f"startLegalSearch with tool_name={tool_name} and the same arguments, then poll "
-        "getLegalSearchStatus and fetch getLegalSearchResult."
+        "Retry metadata for an authenticated async search is available in async_fallback."
     )
     async_fallback = _async_search_fallback(
         tool_name=tool_name,
@@ -2682,7 +2673,6 @@ def _legal_search_degraded_result(
             "correlation_id": _CURRENT_MCP_CORRELATION_ID.get(),
             "request_id": _CURRENT_MCP_REQUEST_ID.get(),
         },
-        "assistant_next_step": async_fallback["assistant_instruction"],
         "async_fallback": async_fallback,
         "metadata_only": True,
         "limit": limit,
@@ -2695,6 +2685,36 @@ def _legal_search_degraded_result(
     }
 
 
+def _async_legal_search_degraded_result(
+    *,
+    tool_name: str,
+    arguments: dict[str, Any],
+    duration_ms: int,
+    error_kind: str,
+) -> dict[str, Any]:
+    async_fallback = _async_search_fallback(tool_name=tool_name, arguments=arguments)
+    return {
+        "tool_name": tool_name,
+        "query": str(arguments.get("query", "")),
+        "results": [],
+        "status": "degraded",
+        "retryable": True,
+        "error": {
+            "code": "legal_search_timeout" if error_kind == "timeout" else "legal_search_unavailable",
+            "message": (
+                "Async legal search failed or exceeded the server search budget. "
+                "Retry metadata is available in async_fallback."
+            ),
+            "kind": error_kind,
+            "correlation_id": _CURRENT_MCP_CORRELATION_ID.get(),
+            "request_id": _CURRENT_MCP_REQUEST_ID.get(),
+        },
+        "async_fallback": async_fallback,
+        "duration_ms": duration_ms,
+        "timeout_ms": _LEGAL_SEARCH_TIMEOUT_MS,
+    }
+
+
 def _async_search_fallback(*, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     sanitized_arguments = {
         key: value for key, value in arguments.items() if value is not None and value != ""
@@ -2702,11 +2722,6 @@ def _async_search_fallback(*, tool_name: str, arguments: dict[str, Any]) -> dict
     return {
         "available": True,
         "requires_user_confirmation": True,
-        "assistant_instruction": (
-            "Tell the user the synchronous JurisDigta search failed or timed out, ask whether it is OK "
-            "to run the async legal search, and only after approval call startLegalSearch with the "
-            "provided tool_name and arguments."
-        ),
         "start_tool": "startLegalSearch",
         "start_arguments": {
             "tool_name": tool_name,
