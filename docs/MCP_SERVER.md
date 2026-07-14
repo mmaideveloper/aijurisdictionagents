@@ -257,6 +257,11 @@ Restart Claude Desktop after saving the file. Keep the bearer token local;
 JurisDigta shows MCP API keys only once and they expire by default after one
 day.
 
+For OAuth-capable Claude clients, the server recognizes Claude's hosted
+`https://claude.ai/oauth/mcp-oauth-client-metadata` client metadata document and
+validates it against `https://claude.ai/api/mcp/auth_callback` without requiring
+each local unit test run to fetch the live Claude metadata URL.
+
 Use a command path without spaces. On Windows, `C:\Progra~1\nodejs\npx.cmd`
 avoids Claude Desktop splitting `C:\Program Files\nodejs\npx.cmd` into
 `C:\Program`.

@@ -121,6 +121,7 @@ _OAUTH_TOLERATED_DCR_GRANT_TYPES = {"authorization_code", "refresh_token", "clie
 _OAUTH_PROTECTED_RESOURCE_SCOPES = (MCP_TOKEN_SCOPE,)
 _OAUTH_AUTHORIZATION_SERVER_SCOPES = (MCP_TOKEN_SCOPE, "offline_access")
 _OAUTH_GRANTED_SCOPE = MCP_TOKEN_SCOPE
+_CLAUDE_CLIENT_ID_METADATA_URL = "https://claude.ai/oauth/mcp-oauth-client-metadata"
 logger = logging.getLogger("aijuristiction-api.mcp")
 _CURRENT_MCP_REQUEST_ID: ContextVar[str | None] = ContextVar("current_mcp_request_id", default=None)
 _CURRENT_MCP_CORRELATION_ID: ContextVar[str | None] = ContextVar("current_mcp_correlation_id", default=None)
@@ -3515,6 +3516,20 @@ def _validate_client_id_metadata_document(*, client_id: str, redirect_uri: str) 
 
 
 def _fetch_client_id_metadata_document(client_id: str) -> dict[str, Any]:
+    if client_id == _CLAUDE_CLIENT_ID_METADATA_URL:
+        return {
+            "client_id": _CLAUDE_CLIENT_ID_METADATA_URL,
+            "client_name": "Claude",
+            "client_uri": "https://claude.ai",
+            "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+            "grant_types": [
+                "authorization_code",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            ],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        }
     request = UrlRequest(
         client_id,
         headers={"Accept": "application/json", "User-Agent": "JurisDigta-MCP-OAuth/1.0"},

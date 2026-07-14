@@ -97,6 +97,11 @@ print(
     "and keeps the token endpoint closed to client_credentials."
 )
 print(
+    "mcp_oauth_claude_metadata => JurisDigta validates Claude's hosted client_id metadata "
+    "for https://claude.ai/api/mcp/auth_callback without requiring local unit tests to fetch "
+    "the live Claude metadata URL."
+)
+print(
     "mcp_oauth_e2e_bypass => synthetic free/paid E2E users can skip MFA only for MCP OAuth when "
     "MCP_OAUTH_TEST_MFA_BYPASS_ENABLED, allowlisted emails, and a future expiry are configured."
 )
