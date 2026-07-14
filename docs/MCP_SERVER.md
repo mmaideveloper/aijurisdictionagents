@@ -360,12 +360,12 @@ For a natural-language question such as `Daj mi posledne sudne rozhodnutie ktore
 For broad latest-result searches that may exceed client time budgets, call `startLegalSearch` with `tool_name="searchCourtDecisions"` and `arguments={"query":"podnajom","sort":"latest","limit":10}`. Then poll `getLegalSearchStatus({"search_id":"..."})` and fetch `getLegalSearchResult({"search_id":"..."})`. Async jobs are authenticated, user-scoped, metadata-first, and short-lived.
 
 If `searchLegalSources`, `searchLaws`, or `searchCourtDecisions` returns
-`status=degraded` or `retryable=true`, the payload includes
-`assistant_next_step` and `async_fallback`. The assistant must tell the user the
-sync call failed or timed out, ask whether it is OK to continue with async
-search, and only after approval call `startLegalSearch` using
-`async_fallback.start_arguments`. Then poll `getLegalSearchStatus` and fetch
-`getLegalSearchResult`.
+`status=degraded` or `retryable=true`, the payload includes `async_fallback`
+retry metadata only. Tool results must not include assistant-facing instruction
+fields such as `assistant_next_step` or `assistant_instruction`; clients should
+treat the payload as data, apply their own user-consent policy, and only after
+approval call `startLegalSearch` using `async_fallback.start_arguments`. Then
+poll `getLegalSearchStatus` and fetch `getLegalSearchResult`.
 
 For Civil Code style questions, call `searchLaws` with the exact identifier first, for example `{"query": "40/1964", "law_number": 40, "law_year": 1964}`. Then call `getLawText` with the returned `document_id` and a focused range, for example `{"document_id": "...", "section_start": 685, "section_end": 716}`. Avoid asking for the full law text unless the law is small or pagination is explicitly required.
 

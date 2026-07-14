@@ -46,7 +46,9 @@ print(
     "mcp_async_legal_search => broad newest-result queries can call "
     "startLegalSearch(tool_name='searchCourtDecisions', arguments={'query':'podnajom', "
     "'sort':'latest', 'limit':10}), then poll getLegalSearchStatus and fetch "
-    "getLegalSearchResult with the returned user-scoped search_id."
+    "getLegalSearchResult with the returned user-scoped search_id. Degraded search "
+    "payloads expose async_fallback retry metadata only, without assistant-facing "
+    "instruction fields."
 )
 print(
     "mcp_first_all_model_routes => Slovak legal, jurisdiction, and legal-document-by-law "
