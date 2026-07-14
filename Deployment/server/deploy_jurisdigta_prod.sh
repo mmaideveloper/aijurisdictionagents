@@ -478,9 +478,11 @@ run_schema_migrations() {
   log "applying API and laws database schema migrations in the API image"
   local api_db_cloud
   local laws_db_cloud
+  local court_decisions_db_cloud
   local local_llm_base_url
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
+  court_decisions_db_cloud="$(postgres_url "postgres" "$COURT_DECISIONS_DATABASE_NAME")"
   local_llm_base_url="$(local_llm_container_base_url)"
 
   docker run --rm \
@@ -499,6 +501,21 @@ run_schema_migrations() {
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
     aijuristiction-api:local \
     python /workspace/scripts/databases/apply_api_db_schema.py
+
+  docker run --rm \
+    --network aijuristiction-api_default \
+    --env-file "$ENV_FILE" \
+    -v "$DEPLOY_ROOT/runs:/workspace/runs" \
+    -e DB_OPTION=postgres \
+    -e DB_CLOUD="$court_decisions_db_cloud" \
+    -e DB_LOCAL=/workspace/runs/storage/court-decision-collector/sqlite/court_decisions.sqlite3 \
+    -e STORAGE_OPTION=local \
+    -e STORE_LOCAL=/workspace/runs/storage/court-decision-collector/files/sk \
+    -e LOCAL_LLM_BASE_URL="$local_llm_base_url" \
+    -e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1" \
+    -e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags" \
+    aijuristiction-api:local \
+    python /workspace/scripts/databases/apply_db_migrations.py --project court-decision-collector
 
   docker run --rm \
     --network aijuristiction-api_default \
