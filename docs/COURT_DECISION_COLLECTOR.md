@@ -6,6 +6,10 @@ The collector is separate from `laws_collector` because court decisions have dif
 
 ## Storage
 
+Applied migration files are immutable because their checksums are recorded in the
+database. Add schema and index changes in a new numbered migration instead of
+editing an existing migration; deployment stops on a checksum mismatch.
+
 - SQL assets: `databases/court-decision-collector/`
 - Local runtime data: `runs/storage/court-decision-collector/`
 - Default database backend: PostgreSQL
