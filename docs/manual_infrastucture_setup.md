@@ -656,3 +656,14 @@ The self-managed production deployment script performs the Ollama install, priva
 - Local model routing keeps case content inside JurisDigta-controlled infrastructure, but normal server access controls, retention, deletion, and privacy-safe logging still apply.
 - Keep legal-risk outputs subject to human oversight before production traffic is enabled.
 - For Cloudflare Tunnel and Access, avoid logging personal data, legal documents, API keys, database credentials, or full user prompts in edge, dashboard, or application logs.
+
+### Encrypted USB environment profile store
+
+- Owner: JurisDigta server operator. The USB encryption/recovery key must be held outside the USB and outside Git/Codex context.
+- Prerequisite: complete issue #395 encryption, stable UUID mount, integrity, retention, and recovery controls for `/mnt/jurisdigta-backup`.
+- Store profiles under `/mnt/jurisdigta-backup/jurisdigta-env/profiles` with directory mode `0700` and files mode `0600`.
+- Install or rotate a profile with `sudo Deployment/server/install_env_usb_profile.sh <profile> <operator-source-file>`; the command never prints values.
+- Validate from a developer laptop with `.\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent`. Pinned SSH host verification and per-developer keys are mandatory.
+- Revoke a departing developer's SSH key, delete their local `.env`/`.env.dev` and protected backups, and retain only the approved server audit event containing actor, profile, key names, version/checksum, and result.
+- Rollback uses the encrypted/versioned USB backup repository from issue #395. Restore into an isolated location, audit names/checksums without values, then materialize atomically.
+- If the USB is missing, has the wrong UUID, is read-only/full, or fails integrity validation, fail closed and alert through privacy-safe monitoring. Never fall back to a plaintext laptop push.
