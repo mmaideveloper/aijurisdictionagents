@@ -12,6 +12,7 @@ param(
     [switch]$SkipTransfer,
     [switch]$UseSudo,
     [switch]$AcceptNewHostKey,
+    [switch]$AllowLegacyPush,
     [switch]$DryRun
 )
 
@@ -360,6 +361,9 @@ if (-not $SkipSshKeySync) {
 }
 
 if (-not $SkipTransfer) {
+    if (-not $AllowLegacyPush) {
+        throw "Legacy laptop-to-server .env push is disabled. Use scripts/sync_env_profile.ps1 -Mode Pull. Pass -AllowLegacyPush only for an explicitly approved emergency migration."
+    }
     Publish-EnvToServer `
         -LocalEnvPath $resolvedEnvPath `
         -HostAlias $ServerAlias `

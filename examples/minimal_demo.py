@@ -6,6 +6,11 @@ from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizer
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 
+print(
+    "env_profiles => run scripts/sync_env_profile.ps1 -Mode Audit -Profile codex-agent -Strict; "
+    "only key names/statuses are reported and secret values remain redacted."
+)
+
 agent = AIAudioToolRecognizerAgent()
 print("speechtype default => message (review STT transcript before send)")
 for text in [
