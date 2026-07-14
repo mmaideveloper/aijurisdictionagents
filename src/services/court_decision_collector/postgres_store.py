@@ -259,15 +259,12 @@ class PostgresCourtDecisionStore:
                         d.decision_id,
                         ts_rank_cd(
                             to_tsvector(
-                                'simple',
-                                concat_ws(
-                                    ' ',
-                                    d.court_name,
-                                    d.court_type,
-                                    d.file_number,
-                                    d.case_number,
-                                    d.ecli
-                                )
+                                'simple'::regconfig,
+                                COALESCE(d.court_name, '') || ' ' ||
+                                COALESCE(d.court_type, '') || ' ' ||
+                                COALESCE(d.file_number, '') || ' ' ||
+                                COALESCE(d.case_number, '') || ' ' ||
+                                COALESCE(d.ecli, '')
                             ),
                             search_query.tsq
                         ) AS lexical_rank
@@ -276,15 +273,12 @@ class PostgresCourtDecisionStore:
                     WHERE d.current_status = 'published'
                       AND (
                           to_tsvector(
-                              'simple',
-                              concat_ws(
-                                  ' ',
-                                  d.court_name,
-                                  d.court_type,
-                                  d.file_number,
-                                  d.case_number,
-                                  d.ecli
-                              )
+                              'simple'::regconfig,
+                              COALESCE(d.court_name, '') || ' ' ||
+                              COALESCE(d.court_type, '') || ' ' ||
+                              COALESCE(d.file_number, '') || ' ' ||
+                              COALESCE(d.case_number, '') || ' ' ||
+                              COALESCE(d.ecli, '')
                           ) @@ search_query.tsq
                           OR LOWER(d.court_name) LIKE %(pattern)s
                           OR LOWER(d.court_type) LIKE %(pattern)s
@@ -663,8 +657,12 @@ _SCHEMA_SQL = (
     CREATE INDEX IF NOT EXISTS idx_court_decision_documents_metadata_search_text
     ON court_decision_documents USING GIN (
         to_tsvector(
-            'simple',
-            concat_ws(' ', court_name, court_type, file_number, case_number, ecli)
+            'simple'::regconfig,
+            COALESCE(court_name, '') || ' ' ||
+            COALESCE(court_type, '') || ' ' ||
+            COALESCE(file_number, '') || ' ' ||
+            COALESCE(case_number, '') || ' ' ||
+            COALESCE(ecli, '')
         )
     )
     """,

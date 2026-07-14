@@ -97,7 +97,7 @@ Required owner: infrastructure operator with PostgreSQL administrator access.
 
 1. Create a separate database such as `court_decisions_sk`.
 2. Enable `pgvector` with `CREATE EXTENSION IF NOT EXISTS vector;`.
-3. Apply `databases/court-decision-collector/initdb/001_schema.sql`, then run the tracked SQL migrations in `databases/court-decision-collector/migrations/` when upgrading an existing database.
+3. Apply `databases/court-decision-collector/initdb/001_schema.sql`, then run the tracked SQL migrations in `databases/court-decision-collector/migrations/` when upgrading an existing database. Keep the metadata full-text search index expression immutable for PostgreSQL production deploys.
 4. Store the connection string only in local/server secrets as `COURT_DECISIONS_DB_CLOUD`.
 5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS=600000`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`.
 6. Run a bounded fixture import first: `python -m services.court_decision_collector --fixture`.

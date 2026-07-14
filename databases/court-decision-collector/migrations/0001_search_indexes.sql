@@ -4,8 +4,12 @@ ON court_decision_documents(current_status, issue_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_court_decision_documents_metadata_search_text
 ON court_decision_documents USING GIN (
     to_tsvector(
-        'simple',
-        concat_ws(' ', court_name, court_type, file_number, case_number, ecli)
+        'simple'::regconfig,
+        COALESCE(court_name, '') || ' ' ||
+        COALESCE(court_type, '') || ' ' ||
+        COALESCE(file_number, '') || ' ' ||
+        COALESCE(case_number, '') || ' ' ||
+        COALESCE(ecli, '')
     )
 );
 
