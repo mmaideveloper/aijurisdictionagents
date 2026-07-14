@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from hashlib import sha256
 import json
+import re
 from typing import Any
+import unicodedata
 import uuid
 
 import psycopg
@@ -99,12 +101,14 @@ class PostgresCourtDecisionStore:
                     INSERT INTO court_decision_documents(
                         decision_id, source_system, source_guid, court_name, court_type,
                         decision_form, nature, file_number, case_number, ecli, issue_date,
+                        issue_date_normalized, court_name_normalized,
                         indexed_at, update_date, source_url, current_status,
                         first_stored_at, last_stored_at, created_at, updated_at
                     ) VALUES (
                         %(decision_id)s, %(source_system)s, %(source_guid)s, %(court_name)s,
                         %(court_type)s, %(decision_form)s, %(nature)s, %(file_number)s,
-                        %(case_number)s, %(ecli)s, %(issue_date)s, %(indexed_at)s,
+                        %(case_number)s, %(ecli)s, %(issue_date)s, %(issue_date_normalized)s,
+                        %(court_name_normalized)s, %(indexed_at)s,
                         %(update_date)s, %(source_url)s, 'published',
                         %(now)s, %(now)s, %(now)s, %(now)s
                     )
@@ -123,6 +127,8 @@ class PostgresCourtDecisionStore:
                         case_number = %(case_number)s,
                         ecli = %(ecli)s,
                         issue_date = %(issue_date)s,
+                        issue_date_normalized = %(issue_date_normalized)s,
+                        court_name_normalized = %(court_name_normalized)s,
                         indexed_at = %(indexed_at)s,
                         update_date = %(update_date)s,
                         source_url = %(source_url)s,
@@ -211,6 +217,7 @@ class PostgresCourtDecisionStore:
         published_year: int | None = None,
         year_filter_mode: str = "published_in",
         court_type: str = "",
+        court_name: str = "",
         sort: str = "relevance",
     ) -> list[CourtDecisionSearchResult]:
         if year_filter_mode != "published_in":
@@ -229,15 +236,18 @@ class PostgresCourtDecisionStore:
             "candidate_limit": candidate_limit,
         }
         if published_year is not None:
-            filters += " AND LEFT(COALESCE(d.issue_date, ''), 4) = %(published_year)s"
-            params["published_year"] = str(published_year)
+            filters += " AND EXTRACT(YEAR FROM d.issue_date_normalized) = %(published_year)s"
+            params["published_year"] = published_year
         if court_type.strip():
             filters += " AND LOWER(d.court_type) = %(court_type)s"
             params["court_type"] = court_type.strip().lower()
+        if court_name.strip():
+            filters += " AND d.court_name_normalized = %(court_name_normalized)s"
+            params["court_name_normalized"] = normalize_court_name(court_name)
         order_by = (
-            "d.issue_date DESC NULLS LAST, d.updated_at DESC, lexical_rank DESC"
+            "d.issue_date_normalized DESC NULLS LAST, d.updated_at DESC, lexical_rank DESC"
             if sort == "latest"
-            else "lexical_rank DESC, d.issue_date DESC NULLS LAST, d.updated_at DESC"
+            else "lexical_rank DESC, d.issue_date_normalized DESC NULLS LAST, d.updated_at DESC"
         )
         with self._connect() as conn:
             rows = conn.execute(
@@ -298,7 +308,8 @@ class PostgresCourtDecisionStore:
                     GROUP BY decision_id
                 )
                 SELECT d.decision_id, d.source_guid, d.court_name, d.court_type,
-                       d.file_number, d.case_number, d.ecli, d.issue_date, d.source_url,
+                       d.file_number, d.case_number, d.ecli, d.issue_date,
+                       d.issue_date_normalized, d.source_url,
                        v.version_id, v.pseudonymized_text, v.embedding_vector_json,
                        candidate_ids.lexical_rank
                 FROM candidate_ids
@@ -344,7 +355,7 @@ class PostgresCourtDecisionStore:
         if sort == "latest":
             return sorted(
                 scored,
-                key=lambda item: (item.issue_date or "", item.score),
+                key=lambda item: (_parse_issue_date(item.issue_date) or date.min, item.score),
                 reverse=True,
             )[offset : offset + limit]
         return sorted(scored, key=lambda item: item.score, reverse=True)[offset : offset + limit]
@@ -534,11 +545,30 @@ def _document_params(record: CourtDecisionRecord, *, decision_id: str, now: str)
         "case_number": record.case_number,
         "ecli": record.ecli,
         "issue_date": record.issue_date,
+        "issue_date_normalized": _parse_issue_date(record.issue_date),
+        "court_name_normalized": normalize_court_name(record.court_name),
         "indexed_at": record.indexed_at,
         "update_date": record.update_date,
         "source_url": record.source_url,
         "now": now,
     }
+
+
+def _parse_issue_date(value: str) -> date | None:
+    normalized = value.strip()
+    if not normalized:
+        return None
+    for pattern in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(normalized, pattern).date()
+        except ValueError:
+            continue
+    return None
+
+
+def normalize_court_name(value: str) -> str:
+    ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", ascii_value.lower()).split())
 
 
 def _embedding_text(record: CourtDecisionRecord) -> str:
@@ -587,6 +617,8 @@ _SCHEMA_SQL = (
         case_number TEXT NOT NULL DEFAULT '',
         ecli TEXT NOT NULL DEFAULT '',
         issue_date TEXT NOT NULL DEFAULT '',
+        issue_date_normalized DATE,
+        court_name_normalized TEXT NOT NULL DEFAULT '',
         indexed_at TEXT NOT NULL DEFAULT '',
         update_date TEXT NOT NULL DEFAULT '',
         source_url TEXT NOT NULL DEFAULT '',
@@ -598,6 +630,8 @@ _SCHEMA_SQL = (
         UNIQUE(source_system, source_guid)
     )
     """,
+    "ALTER TABLE court_decision_documents ADD COLUMN IF NOT EXISTS issue_date_normalized DATE",
+    "ALTER TABLE court_decision_documents ADD COLUMN IF NOT EXISTS court_name_normalized TEXT NOT NULL DEFAULT ''",
     """
     CREATE TABLE IF NOT EXISTS court_decision_versions (
         version_id TEXT PRIMARY KEY,
@@ -646,12 +680,16 @@ _SCHEMA_SQL = (
     ON court_decision_documents(source_system, source_guid)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_court_decision_documents_issue_date
-    ON court_decision_documents(issue_date)
+    CREATE INDEX IF NOT EXISTS idx_court_decision_documents_issue_date_normalized
+    ON court_decision_documents(issue_date_normalized)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_court_decision_documents_status_issue_date
-    ON court_decision_documents(current_status, issue_date DESC, updated_at DESC)
+    CREATE INDEX IF NOT EXISTS idx_court_decision_documents_status_issue_date_normalized
+    ON court_decision_documents(current_status, issue_date_normalized DESC, updated_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_court_decision_documents_court_name_normalized
+    ON court_decision_documents(court_name_normalized)
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_court_decision_documents_metadata_search_text

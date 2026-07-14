@@ -61,6 +61,12 @@ print(
     "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS budget, defaulting to 600000 ms."
 )
 print(
+    "mcp_named_court_latest_search => searchCourtDecisions(query='sudne rozhodnutia', "
+    "court_name='Okresny sud Poprad', sort='latest', limit=5) applies an exact normalized "
+    "court filter and calendar-date ordering; check data_quality.latest_label_safe before "
+    "describing the metadata-only results as newest."
+)
+print(
     "mcp_first_all_model_routes => Slovak legal, jurisdiction, and legal-document-by-law "
     "chat turns retrieve bounded JurisDigta MCP context before local Ollama or external "
     "models receive the prompt."

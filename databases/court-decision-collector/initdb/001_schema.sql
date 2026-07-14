@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS court_decision_documents (
     case_number TEXT NOT NULL DEFAULT '',
     ecli TEXT NOT NULL DEFAULT '',
     issue_date TEXT NOT NULL DEFAULT '',
+    issue_date_normalized DATE,
+    court_name_normalized TEXT NOT NULL DEFAULT '',
     indexed_at TEXT NOT NULL DEFAULT '',
     update_date TEXT NOT NULL DEFAULT '',
     source_url TEXT NOT NULL DEFAULT '',
@@ -66,11 +68,14 @@ CREATE TABLE IF NOT EXISTS court_decision_update_events (
 CREATE INDEX IF NOT EXISTS idx_court_decision_documents_source
 ON court_decision_documents(source_system, source_guid);
 
-CREATE INDEX IF NOT EXISTS idx_court_decision_documents_issue_date
-ON court_decision_documents(issue_date);
+CREATE INDEX IF NOT EXISTS idx_court_decision_documents_issue_date_normalized
+ON court_decision_documents(issue_date_normalized);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_court_decision_documents_status_issue_date
-ON court_decision_documents(current_status, issue_date DESC, updated_at DESC);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_court_decision_documents_status_issue_date_normalized
+ON court_decision_documents(current_status, issue_date_normalized DESC, updated_at DESC);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_court_decision_documents_court_name_normalized
+ON court_decision_documents(court_name_normalized);
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_court_decision_documents_metadata_search_text
 ON court_decision_documents USING GIN (

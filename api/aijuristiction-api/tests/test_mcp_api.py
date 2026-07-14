@@ -72,6 +72,7 @@ def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law(mo
     assert "metadata only by default" in tools["searchCourtDecisions"]["description"]
     assert "tool_name=searchCourtDecisions" in tools["searchCourtDecisions"]["description"]
     assert tools["searchCourtDecisions"]["inputSchema"]["properties"]["sort"]["enum"] == ["relevance", "latest"]
+    assert "court_name" in tools["searchCourtDecisions"]["inputSchema"]["properties"]
     assert "startLegalSearch" in tools
     assert "user approves async continuation" in tools["startLegalSearch"]["description"]
     assert "getLegalSearchStatus" in tools
@@ -466,6 +467,7 @@ def test_mcp_search_legal_sources_returns_grouped_metadata_only(monkeypatch, tmp
             published_year: int | None,
             year_filter_mode: str,
             court_type: str,
+            court_name: str,
             sort: str = "relevance",
         ) -> list[CourtDecisionSearchResult]:
             assert query == "prenajom bytu"
@@ -530,6 +532,7 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
             published_year: int | None,
             year_filter_mode: str,
             court_type: str,
+            court_name: str,
             sort: str = "relevance",
         ) -> list[CourtDecisionSearchResult]:
             assert query == "zobraz mi posledne sudne rozhodnutie ktore sa tykalo rozdelenia pozemku podla podielu"
@@ -624,6 +627,7 @@ def test_mcp_search_court_decisions_latest_sort_passes_contract(monkeypatch, tmp
             published_year: int | None,
             year_filter_mode: str,
             court_type: str,
+            court_name: str,
             sort: str = "relevance",
         ) -> list[CourtDecisionSearchResult]:
             assert query == "podnajom"
@@ -678,6 +682,52 @@ def test_mcp_search_court_decisions_latest_sort_passes_contract(monkeypatch, tmp
     assert payload["sort"] == "latest"
     assert payload["timeout_ms"] == 600000
     assert [item["decision_id"] for item in payload["results"]] == ["decision-newer", "decision-older"]
+    assert payload["data_quality"]["issue_date_ordering"] == "calendar"
+    assert payload["data_quality"]["latest_label_safe"] is True
+
+
+def test_mcp_search_court_decisions_passes_exact_court_name(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class FakeCourtDecisionStore:
+        def search(self, **arguments: object) -> list[CourtDecisionSearchResult]:
+            assert arguments["court_name"] == "Okresny sud Poprad"
+            assert arguments["sort"] == "latest"
+            return [
+                CourtDecisionSearchResult(
+                    decision_id="poprad-1",
+                    version_id="poprad-version-1",
+                    source_guid="infosud-poprad-1",
+                    court_name="Okresny sud Poprad",
+                    court_type="Okresny sud",
+                    file_number="20C/444/2012",
+                    case_number="8712209850",
+                    ecli="ECLI:SK:OSPP:2012:8712209850.3",
+                    issue_date="31.12.2012",
+                    source_url="https://example.test/decision/poprad-1",
+                    snippet="",
+                    score=0.8,
+                )
+            ]
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: FakeCourtDecisionStore())
+    response = _mcp_call(
+        "searchCourtDecisions",
+        {
+            "query": "sudne rozhodnutia",
+            "court_name": "Okresny sud Poprad",
+            "sort": "latest",
+            "limit": 5,
+        },
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    payload = _tool_payload(response)
+    assert payload["status"] == "ok"
+    assert payload["court_name"] == "Okresny sud Poprad"
+    assert [item["court_name"] for item in payload["results"]] == ["Okresny sud Poprad"]
+    assert payload["data_quality"]["exact_court_filter_applied"] is True
 
 
 def test_mcp_search_court_decisions_accepts_date_desc_sort_alias(monkeypatch, tmp_path: Path) -> None:
@@ -694,6 +744,7 @@ def test_mcp_search_court_decisions_accepts_date_desc_sort_alias(monkeypatch, tm
             published_year: int | None,
             year_filter_mode: str,
             court_type: str,
+            court_name: str,
             sort: str = "relevance",
         ) -> list[CourtDecisionSearchResult]:
             assert sort == "latest"
@@ -743,6 +794,7 @@ def test_mcp_search_legal_sources_passes_latest_sort_to_court_decisions(monkeypa
             published_year: int | None,
             year_filter_mode: str,
             court_type: str,
+            court_name: str,
             sort: str = "relevance",
         ) -> list[CourtDecisionSearchResult]:
             assert query == "podnajom"
@@ -971,6 +1023,7 @@ def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
             published_year: int | None,
             year_filter_mode: str,
             court_type: str,
+            court_name: str,
             sort: str = "relevance",
         ) -> list[CourtDecisionSearchResult]:
             assert sort == "relevance"
