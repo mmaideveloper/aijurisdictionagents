@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from html import escape
 import json
 import logging
 import os
@@ -42,7 +43,7 @@ MCP_VERSION = get_mcp_server_version()
 DEFAULT_MCP_LLM_PROVIDER = "model_routing"
 
 LOG_LEVEL = configure_logging()
-_SUPPORTED_MCP_PAGE_LOCALES = {"en", "sk"}
+_SUPPORTED_MCP_PAGE_LOCALES = {"en", "sk", "de"}
 _MCP_PAGE_TEXT: dict[str, dict[str, str]] = {
     "en": {
         "title": "JurisDigta MCP server",
@@ -57,6 +58,11 @@ _MCP_PAGE_TEXT: dict[str, dict[str, str]] = {
         "setup": "Assistant setup",
         "chatgpt": "create a remote MCP connector and use {mcp_url} as the server URL. Prefer OAuth discovery when available.",
         "claude": "add a custom connector or remote MCP server and use {mcp_url}. The uppercase /MCP alias is also accepted for existing Claude connector records. OAuth-capable Claude clients can discover authorization from this domain and register dynamically. If Claude asks for a client ID, open Advanced settings, set OAuth Client ID to claude, and leave the secret empty.",
+        "claude_desktop": "Claude Desktop",
+        "claude_desktop_intro": "use a bearer token with mcp-remote when you want a local Claude Desktop configuration instead of the hosted connector flow.",
+        "claude_desktop_login": "Log in at {login_url} and generate a short-lived MCP API key.",
+        "claude_desktop_config": "Open Claude > Settings > Development > Edit Config and add or merge this JSON. Replace YOUR_BEARER_TOKEN with the key shown after login.",
+        "claude_desktop_token_note": "Keep the bearer token local. JurisDigta shows MCP API keys only once and they expire by default after one day.",
         "vscode": "add an HTTP MCP server in MCP settings with URL {mcp_url}. VS Code should open the JurisDigta browser login automatically from OAuth discovery. If your client cannot use OAuth, pass the generated key as Authorization: Bearer <key>.",
         "other_clients": "use the same remote server URL where custom MCP servers are supported. If custom remote MCP registration is not available in the product UI, use another MCP-compatible host.",
         "perplexity": "Perplexity and other MCP clients",
@@ -83,6 +89,11 @@ _MCP_PAGE_TEXT: dict[str, dict[str, str]] = {
         "setup": "Nastavenie asistenta",
         "chatgpt": "vytvorte vzdialeny MCP connector a pouzite {mcp_url} ako URL servera. Ak je dostupne OAuth discovery, uprednostnite ho.",
         "claude": "pridajte vlastny connector alebo vzdialeny MCP server a pouzite {mcp_url}. Alias /MCP je tiez akceptovany pre existujuce Claude connector zaznamy. OAuth-kompatibilni Claude klienti vedia z tejto domeny zistit autorizaciu a dynamicky sa registrovat. Ak Claude pyta client ID, v Advanced settings nastavte OAuth Client ID na claude a secret nechajte prazdny.",
+        "claude_desktop": "Claude Desktop",
+        "claude_desktop_intro": "pouzite bearer token s mcp-remote, ked chcete lokalnu konfiguraciu Claude Desktop namiesto hosted connector flow.",
+        "claude_desktop_login": "Prihlaste sa na {login_url} a vygenerujte kratkodoby MCP API kluc.",
+        "claude_desktop_config": "Otvorte Claude > Settings > Development > Edit Config a pridajte alebo zlucte tento JSON. YOUR_BEARER_TOKEN nahradte klucom zobrazenym po prihlaseni.",
+        "claude_desktop_token_note": "Bearer token nechajte iba lokalne. JurisDigta zobrazuje MCP API kluce iba raz a predvolene expiruju po jednom dni.",
         "vscode": "pridajte HTTP MCP server v MCP nastaveniach s URL {mcp_url}. VS Code by mal automaticky otvorit JurisDigta prihlasenie v prehliadaci cez OAuth discovery. Ak klient nevie pouzit OAuth, poslite vygenerovany kluc ako Authorization: Bearer <key>.",
         "other_clients": "pouzite rovnaku URL vzdialeneho servera tam, kde su podporovane vlastne MCP servery. Ak produkt nepodporuje vlastnu vzdialenu MCP registraciu, pouzite ineho MCP-kompatibilneho hostitela.",
         "perplexity": "Perplexity a dalsi MCP klienti",
@@ -95,6 +106,37 @@ _MCP_PAGE_TEXT: dict[str, dict[str, str]] = {
         "manual": "Priklad manualnej hlavicky",
         "compliance": "Poznamky ku compliance",
         "compliance_text": "Verejne nastroje spristupnuju iba metadata zakonov. Chranene nastroje vyzaduju autentifikaciu pouzivatela, pouzivaju minimalizovane JWT claims a loguju sa s request a correlation ID bez ukladania raw promptov, textov zakonov, hesiel, OTP kodov alebo tokenov.",
+    },
+    "de": {
+        "title": "JurisDigta MCP-Server",
+        "intro": "Verbinden Sie KI-Assistenten ueber das Model Context Protocol mit JurisDigta-Werkzeugen fuer oeffentliches Recht.",
+        "endpoint": "Der MCP-Endpunkt ist",
+        "registration": "Registrierung",
+        "registration_open": "Oeffnen Sie",
+        "registration_profile": "Geben Sie E-Mail, Telefonnummer, Profildaten, Ausweisnummer und die ausdrueckliche Einwilligung zur Datenverarbeitung ein.",
+        "registration_otp": "Bestaetigen Sie den E-Mail-OTP-Code, um das Konto zu erstellen.",
+        "registration_login": "Oeffnen Sie {login_url}, um einen kurzlebigen MCP-API-Schluessel zu erzeugen, oder lassen Sie einen OAuth-faehigen Assistenten die Browser-Autorisierung abschliessen.",
+        "keys": "MCP-API-Schluessel werden nur einmal angezeigt, laufen standardmaessig nach einem Tag ab und koennen ueber die Benutzer-API widerrufen werden.",
+        "setup": "Assistent einrichten",
+        "chatgpt": "erstellen Sie einen Remote-MCP-Connector und verwenden Sie {mcp_url} als Server-URL. Bevorzugen Sie OAuth Discovery, wenn verfuegbar.",
+        "claude": "fuegen Sie einen Custom Connector oder Remote-MCP-Server hinzu und verwenden Sie {mcp_url}. Der Alias /MCP wird auch fuer bestehende Claude-Connector-Eintraege akzeptiert. OAuth-faehige Claude-Clients koennen die Autorisierung von dieser Domain erkennen und sich dynamisch registrieren. Wenn Claude nach einer Client ID fragt, oeffnen Sie Advanced settings, setzen Sie OAuth Client ID auf claude und lassen Sie das Secret leer.",
+        "claude_desktop": "Claude Desktop",
+        "claude_desktop_intro": "verwenden Sie einen Bearer Token mit mcp-remote, wenn Sie eine lokale Claude-Desktop-Konfiguration statt des gehosteten Connector-Flows nutzen moechten.",
+        "claude_desktop_login": "Melden Sie sich unter {login_url} an und erzeugen Sie einen kurzlebigen MCP-API-Schluessel.",
+        "claude_desktop_config": "Oeffnen Sie Claude > Settings > Development > Edit Config und fuegen Sie dieses JSON hinzu oder fuehren Sie es zusammen. Ersetzen Sie YOUR_BEARER_TOKEN durch den nach dem Login angezeigten Schluessel.",
+        "claude_desktop_token_note": "Bewahren Sie den Bearer Token nur lokal auf. JurisDigta zeigt MCP-API-Schluessel nur einmal an; standardmaessig laufen sie nach einem Tag ab.",
+        "vscode": "fuegen Sie in den MCP-Einstellungen einen HTTP-MCP-Server mit der URL {mcp_url} hinzu. VS Code sollte den JurisDigta-Browser-Login automatisch ueber OAuth Discovery oeffnen. Wenn Ihr Client OAuth nicht verwenden kann, senden Sie den erzeugten Schluessel als Authorization: Bearer <key>.",
+        "other_clients": "verwenden Sie dieselbe Remote-Server-URL dort, wo eigene MCP-Server unterstuetzt werden. Wenn das Produkt keine eigene Remote-MCP-Registrierung unterstuetzt, verwenden Sie einen anderen MCP-kompatiblen Host.",
+        "perplexity": "Perplexity und andere MCP-Clients",
+        "discovery": "Discovery-URLs",
+        "mcp_endpoint": "MCP-Endpunkt",
+        "protected_resource": "Metadaten der geschuetzten Ressource",
+        "authorization_server": "Metadaten des Autorisierungsservers",
+        "version": "Version und Aktualitaet der Gesetze",
+        "docs": "Client-Dokumentation",
+        "manual": "Beispiel fuer manuelle Header",
+        "compliance": "Compliance-Hinweise",
+        "compliance_text": "Oeffentliche Werkzeuge stellen nur Gesetzesmetadaten bereit. Geschuetzte Werkzeuge erfordern eine benutzerbezogene Authentifizierung, verwenden minimierte JWT-Claims und werden mit Request- und Correlation-IDs protokolliert, ohne rohe Prompts, Gesetzestexte, Passwoerter, OTP-Codes oder Tokens in Anwendungslogs zu speichern.",
     },
 }
 TELEMETRY_MODE = configure_telemetry(
@@ -321,6 +363,26 @@ def _mcp_instructions_html(*, base_url: str, locale: str = "en") -> str:
     login_url = f"{base_url}/mcp/login"
     sign_up_url = f"{base_url}/mcp/sign-up"
     version_url = f"{base_url}/version"
+    claude_desktop_config_json = escape(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "jurisdigta-local": {
+                        "command": r"C:\Progra~1\nodejs\npx.cmd",
+                        "args": [
+                            "-y",
+                            "mcp-remote@latest",
+                            mcp_url,
+                            "--header",
+                            "Authorization: Bearer YOUR_BEARER_TOKEN",
+                        ],
+                    }
+                }
+            },
+            indent=2,
+        ),
+        quote=False,
+    )
     return f"""<!doctype html>
 <html lang="{locale}">
 <head>
@@ -357,6 +419,15 @@ def _mcp_instructions_html(*, base_url: str, locale: str = "en") -> str:
     }}
     code {{
       padding: 2px 5px;
+    }}
+    .setup-list > li + li {{
+      margin-top: 8px;
+    }}
+    .setup-list ol {{
+      margin-top: 8px;
+    }}
+    .setup-list pre {{
+      margin: 10px 0;
     }}
     pre {{
       overflow-x: auto;
@@ -405,9 +476,19 @@ def _mcp_instructions_html(*, base_url: str, locale: str = "en") -> str:
 
     <section>
       <h2>{_mcp_page_text(locale, "setup")}</h2>
-      <ul>
+      <ul class="setup-list">
         <li><strong>ChatGPT custom connector:</strong> {_mcp_page_text(locale, "chatgpt", mcp_url=f'<code>{mcp_url}</code>')}</li>
         <li><strong>Claude:</strong> {_mcp_page_text(locale, "claude", mcp_url=f'<code>{mcp_url}</code>')}</li>
+        <li>
+          <strong>{_mcp_page_text(locale, "claude_desktop")}:</strong>
+          {_mcp_page_text(locale, "claude_desktop_intro")}
+          <ol>
+            <li>{_mcp_page_text(locale, "claude_desktop_login", login_url=f'<a href="{login_url}">{login_url}</a>')}</li>
+            <li>{_mcp_page_text(locale, "claude_desktop_config")}</li>
+          </ol>
+          <pre><code>{claude_desktop_config_json}</code></pre>
+          <p>{_mcp_page_text(locale, "claude_desktop_token_note")}</p>
+        </li>
         <li><strong>VS Code:</strong> {_mcp_page_text(locale, "vscode", mcp_url=f'<code>{mcp_url}</code>')}</li>
         <li><strong>{_mcp_page_text(locale, "perplexity")}:</strong> {_mcp_page_text(locale, "other_clients")}</li>
       </ul>

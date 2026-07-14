@@ -217,6 +217,9 @@ that route is healthy.
 ### Claude Desktop via `mcp-remote`
 
 Claude Desktop can use a remote HTTPS MCP server through a local stdio proxy.
+For a manual bearer-token setup, first open
+`https://mcp.jurisdigta.eu/mcp/login`, complete password plus OTP verification,
+and copy the short-lived MCP API key shown after login.
 On Windows Store installs, edit:
 
 ```text
@@ -229,36 +232,40 @@ On classic desktop installs, check:
 %APPDATA%\Claude\claude_desktop_config.json
 ```
 
-Add or merge this `mcpServers` entry while keeping existing preferences:
+Then open Claude Desktop > Settings > Development > Edit Config. Add or merge
+this `mcpServers` entry while keeping existing preferences, and replace
+`YOUR_BEARER_TOKEN` with the MCP API key:
 
 ```json
 {
   "mcpServers": {
-    "jurisdigta": {
-      "type": "stdio",
-      "command": "C:\\Program Files\\nodejs\\npx.cmd",
+    "jurisdigta-local": {
+      "command": "C:\\Progra~1\\nodejs\\npx.cmd",
       "args": [
         "-y",
-        "mcp-remote",
-        "https://mcp.jurisdigta.eu/mcp"
-      ],
-      "env": {
-        "NODE_OPTIONS": "--use-system-ca"
-      }
+        "mcp-remote@latest",
+        "https://mcp.jurisdigta.eu/mcp",
+        "--header",
+        "Authorization: Bearer YOUR_BEARER_TOKEN"
+      ]
     }
   }
 }
 ```
 
-Restart Claude Desktop after saving the file. The first connection starts
-`mcp-remote`, opens the JurisDigta OAuth flow, and then stores the MCP session
-locally for Claude Desktop.
+Restart Claude Desktop after saving the file. Keep the bearer token local;
+JurisDigta shows MCP API keys only once and they expire by default after one
+day.
 
-If the Claude log shows `UNABLE_TO_VERIFY_LEAF_SIGNATURE` while running `npx`,
-keep `NODE_OPTIONS=--use-system-ca`; it tells Node.js to trust the Windows
-system certificate store. If Claude logs `Claude Code requires a Pro or Max
-subscription`, the MCP server may be configured correctly but the active Claude
-account lacks the required Claude Desktop/Code entitlement.
+Use a command path without spaces. On Windows, `C:\Progra~1\nodejs\npx.cmd`
+avoids Claude Desktop splitting `C:\Program Files\nodejs\npx.cmd` into
+`C:\Program`.
+
+Do not set `NODE_OPTIONS=--use-system-ca` for Claude Desktop. Current Node.js
+rejects that flag inside `NODE_OPTIONS`, which makes the local `mcp-remote`
+process exit before initialization. If Claude logs `Claude Code requires a Pro
+or Max subscription`, the MCP server may be configured correctly but the active
+Claude account lacks the required Claude Desktop/Code entitlement.
 
 If Claude, `mcp-remote`, `curl`, or `scripts/prod_mcp_claude_smoke.py` reports
 a TLS/certificate failure before OAuth discovery is reached, inspect the

@@ -64,6 +64,11 @@ print(
     "OAuth or MCP API key authentication for protected legal tools as /mcp."
 )
 print(
+    "mcp_claude_desktop_bearer_config => MCP setup page shows Claude Desktop users how to "
+    "log in at /mcp/login, generate a short-lived bearer token, and add mcp-remote@latest "
+    "with Authorization: Bearer YOUR_BEARER_TOKEN in Claude > Settings > Development > Edit Config."
+)
+print(
     "mcp_endpoint_vscode_oauth => VS Code can use only type=http and "
     "url=https://mcp.jurisdigta.eu/MCP in .mcp.json; the first protected tool call returns "
     "an OAuth resource_metadata challenge and then accepts the scoped bearer token."
