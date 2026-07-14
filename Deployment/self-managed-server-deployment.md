@@ -663,7 +663,7 @@ strings.
 
 For the current self-managed server maintenance path, the default production mode is a continuously running Docker container. `LAWS_COLLECTOR_RUN_MODE=continuous` starts `jurisdigta-laws-collector` with `--restart unless-stopped`, keeps `LAWS_WORKER_MAX_CYCLES=0`, sets `LAWS_COLLECTOR_MAX_RUNNING_TIME=0`, and sleeps for `LAWS_WORKER_POLL_SECONDS=3600` after the collector reaches the current Slov-Lex tail.
 
-The court-decision collector runs as a separate restartable worker container named `jurisdigta-court-decision-collector`. The production deploy creates the dedicated PostgreSQL database `${COURT_DECISIONS_DATABASE_NAME:-court_decisions_sk}`, applies `databases/court-decision-collector/initdb/001_schema.sql`, injects `COURT_DECISIONS_DB_CLOUD` into API/MCP, and starts:
+The court-decision collector runs as a separate restartable worker container named `jurisdigta-court-decision-collector`. The production deploy creates the dedicated PostgreSQL database `${COURT_DECISIONS_DATABASE_NAME:-court_decisions_sk}`, applies `databases/court-decision-collector/initdb/001_schema.sql`, runs `databases/court-decision-collector/migrations/` when `RUN_SCHEMA_MIGRATIONS=1`, injects `COURT_DECISIONS_DB_CLOUD` and `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS` into API/MCP, and starts:
 
 ```bash
 python -m services.court_decision_collector --run-service --limit "${COURT_DECISIONS_IMPORT_LIMIT:-25}" --log-file /workspace/runs/logs/court-decision-collector.log

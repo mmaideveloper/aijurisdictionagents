@@ -559,7 +559,7 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     def fake_court_decision_store(**kwargs: object) -> FakeCourtDecisionStore:
         assert kwargs["initialize"] is False
         assert kwargs["connect_timeout_seconds"] == 3
-        assert kwargs["statement_timeout_ms"] == 30000
+        assert kwargs["statement_timeout_ms"] == 600000
         return FakeCourtDecisionStore()
 
     monkeypatch.setattr(mcp_api, "_court_decision_store", fake_court_decision_store)
@@ -582,7 +582,7 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     assert payload["status"] == "ok"
     assert payload["output_mode"] == "public"
     assert payload["metadata_only"] is True
-    assert payload["timeout_ms"] == 30000
+    assert payload["timeout_ms"] == 600000
     assert payload["results"][0]["decision_id"] == "decision-1"
     assert payload["results"][0]["issue_date"] == "2026-06-29"
     assert "snippet" not in payload["results"][0]
@@ -676,8 +676,57 @@ def test_mcp_search_court_decisions_latest_sort_passes_contract(monkeypatch, tmp
     payload = _tool_payload(response)
     assert payload["status"] == "ok"
     assert payload["sort"] == "latest"
-    assert payload["timeout_ms"] == 30000
+    assert payload["timeout_ms"] == 600000
     assert [item["decision_id"] for item in payload["results"]] == ["decision-newer", "decision-older"]
+
+
+def test_mcp_search_court_decisions_accepts_date_desc_sort_alias(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class FakeCourtDecisionStore:
+        def search(
+            self,
+            *,
+            query: str,
+            limit: int,
+            offset: int,
+            published_year: int | None,
+            year_filter_mode: str,
+            court_type: str,
+            sort: str = "relevance",
+        ) -> list[CourtDecisionSearchResult]:
+            assert sort == "latest"
+            return [
+                CourtDecisionSearchResult(
+                    decision_id="decision-latest",
+                    version_id="version-latest",
+                    source_guid="infosud-latest",
+                    court_name="Najvyssi sud SR",
+                    court_type="Najvyssi sud",
+                    file_number="1Cdo/10/2026",
+                    case_number="1Cdo/10/2026",
+                    ecli="ECLI:SK:NSSR:2026:10.1",
+                    issue_date="2026-06-30",
+                    source_url="https://example.test/decision/latest",
+                    snippet="Pseudonymizovane rozhodnutie k podnajmu.",
+                    score=0.8,
+                )
+            ]
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: FakeCourtDecisionStore())
+
+    response = _mcp_call(
+        "searchCourtDecisions",
+        {"query": "podnajom", "limit": 1, "sort": "date_desc"},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["status"] == "ok"
+    assert payload["sort"] == "latest"
+    assert payload["results"][0]["decision_id"] == "decision-latest"
 
 
 def test_mcp_search_legal_sources_passes_latest_sort_to_court_decisions(monkeypatch, tmp_path: Path) -> None:
@@ -819,7 +868,7 @@ def test_mcp_async_court_decision_failure_preserves_tool_and_arguments(
         "startLegalSearch",
         {
             "tool_name": "searchCourtDecisions",
-            "arguments": {"query": "podnajom", "limit": 1, "sort": "latest"},
+            "arguments": {"query": "podnajom", "limit": 1, "sort": "date_desc"},
         },
         headers={"authorization": f"Bearer {mcp_key}"},
     )
@@ -969,7 +1018,7 @@ def test_mcp_search_court_decisions_timeout_returns_structured_degraded_result(
     }
     assert payload["async_fallback"]["poll_tool"] == "getLegalSearchStatus"
     assert payload["async_fallback"]["result_tool"] == "getLegalSearchResult"
-    assert payload["timeout_ms"] == 30000
+    assert payload["timeout_ms"] == 600000
     assert payload["limit"] == 5
     assert any(
         "mcp_tool_search_court_decisions_degraded" in record.getMessage()

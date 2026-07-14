@@ -51,6 +51,11 @@ print(
     "instruction fields."
 )
 print(
+    "mcp_court_decision_latest_search => sort aliases such as date_desc are canonicalized "
+    "to latest, and court-decision MCP search uses the scoped "
+    "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS budget, defaulting to 600000 ms."
+)
+print(
     "mcp_first_all_model_routes => Slovak legal, jurisdiction, and legal-document-by-law "
     "chat turns retrieve bounded JurisDigta MCP context before local Ollama or external "
     "models receive the prompt."

@@ -100,9 +100,9 @@ _LEGAL_SEARCH_TIMEOUT_SECONDS = _bounded_env_int("MCP_LEGAL_SEARCH_TIMEOUT_SECON
 _LEGAL_SEARCH_TIMEOUT_MS = _LEGAL_SEARCH_TIMEOUT_SECONDS * 1000
 _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = _bounded_env_int(
     "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS",
-    default=_LEGAL_SEARCH_TIMEOUT_MS,
+    default=600_000,
     minimum=1_000,
-    maximum=300_000,
+    maximum=600_000,
 )
 _COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS = _bounded_env_int(
     "COURT_DECISION_MCP_CONNECT_TIMEOUT_SECONDS",
@@ -1612,6 +1612,7 @@ def _tool_start_legal_search(arguments: dict[str, Any], *, user_id: str) -> dict
             for key, value in arguments.items()
             if key not in {"tool", "tool_name", "arguments"}
         }
+    tool_arguments = _normalized_async_search_arguments(tool_name=tool_name, arguments=tool_arguments)
     search_id = secrets.token_urlsafe(24)
     created_at = time.time()
     expires_at = created_at + _MCP_ASYNC_SEARCH_RETENTION_SECONDS
@@ -1707,6 +1708,13 @@ def _run_async_legal_search(tool_name: str, arguments: dict[str, Any]) -> dict[s
     if tool_name == "searchCourtDecisions":
         return _tool_search_court_decisions(arguments)
     raise ValueError(f"Unsupported async legal search tool: {tool_name}")
+
+
+def _normalized_async_search_arguments(*, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(arguments)
+    if tool_name in {"searchLegalSources", "searchLaws", "searchCourtDecisions"} and "sort" in normalized:
+        normalized["sort"] = _search_sort(normalized.get("sort"))
+    return normalized
 
 
 def _required_search_id(arguments: dict[str, Any]) -> str:
@@ -2735,6 +2743,8 @@ def _async_search_fallback(*, tool_name: str, arguments: dict[str, Any]) -> dict
 
 def _search_sort(value: object) -> str:
     sort = str(value or "relevance").strip().lower()
+    if sort in {"date", "date_desc", "newest", "newest_first", "latest_first"}:
+        return "latest"
     if sort not in {"relevance", "latest"}:
         raise HTTPException(status_code=400, detail="sort must be relevance or latest")
     return sort

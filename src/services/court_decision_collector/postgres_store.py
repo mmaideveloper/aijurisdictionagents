@@ -244,26 +244,71 @@ class PostgresCourtDecisionStore:
                 f"""
                 WITH search_query AS (
                     SELECT websearch_to_tsquery('simple', %(query)s) AS tsq
+                ),
+                text_candidates AS (
+                    SELECT
+                        v.decision_id,
+                        MAX(ts_rank_cd(to_tsvector('simple', v.pseudonymized_text), search_query.tsq)) AS lexical_rank
+                    FROM court_decision_versions AS v
+                    CROSS JOIN search_query
+                    WHERE to_tsvector('simple', v.pseudonymized_text) @@ search_query.tsq
+                    GROUP BY v.decision_id
+                ),
+                metadata_candidates AS (
+                    SELECT
+                        d.decision_id,
+                        ts_rank_cd(
+                            to_tsvector(
+                                'simple',
+                                concat_ws(
+                                    ' ',
+                                    d.court_name,
+                                    d.court_type,
+                                    d.file_number,
+                                    d.case_number,
+                                    d.ecli
+                                )
+                            ),
+                            search_query.tsq
+                        ) AS lexical_rank
+                    FROM court_decision_documents AS d
+                    CROSS JOIN search_query
+                    WHERE d.current_status = 'published'
+                      AND (
+                          to_tsvector(
+                              'simple',
+                              concat_ws(
+                                  ' ',
+                                  d.court_name,
+                                  d.court_type,
+                                  d.file_number,
+                                  d.case_number,
+                                  d.ecli
+                              )
+                          ) @@ search_query.tsq
+                          OR LOWER(d.court_name) LIKE %(pattern)s
+                          OR LOWER(d.court_type) LIKE %(pattern)s
+                          OR LOWER(d.file_number) LIKE %(pattern)s
+                          OR LOWER(d.case_number) LIKE %(pattern)s
+                          OR LOWER(d.ecli) LIKE %(pattern)s
+                      )
+                      {filters}
+                ),
+                candidate_ids AS (
+                    SELECT decision_id, MAX(lexical_rank) AS lexical_rank
+                    FROM (
+                        SELECT decision_id, lexical_rank FROM text_candidates
+                        UNION ALL
+                        SELECT decision_id, lexical_rank FROM metadata_candidates
+                    ) AS candidates
+                    GROUP BY decision_id
                 )
                 SELECT d.decision_id, d.source_guid, d.court_name, d.court_type,
                        d.file_number, d.case_number, d.ecli, d.issue_date, d.source_url,
                        v.version_id, v.pseudonymized_text, v.embedding_vector_json,
-                       ts_rank_cd(
-                           to_tsvector(
-                               'simple',
-                               concat_ws(
-                                   ' ',
-                                   d.court_name,
-                                   d.court_type,
-                                   d.file_number,
-                                   d.case_number,
-                                   d.ecli,
-                                   v.pseudonymized_text
-                               )
-                           ),
-                           search_query.tsq
-                       ) AS lexical_rank
-                FROM court_decision_documents AS d
+                       candidate_ids.lexical_rank
+                FROM candidate_ids
+                JOIN court_decision_documents AS d ON d.decision_id = candidate_ids.decision_id
                 JOIN LATERAL (
                     SELECT version_id, pseudonymized_text, embedding_vector_json, stored_at
                     FROM court_decision_versions
@@ -271,28 +316,7 @@ class PostgresCourtDecisionStore:
                     ORDER BY stored_at DESC
                     LIMIT 1
                 ) AS v ON true
-                CROSS JOIN search_query
                 WHERE d.current_status = 'published'
-                  AND (
-                      to_tsvector(
-                          'simple',
-                          concat_ws(
-                              ' ',
-                              d.court_name,
-                              d.court_type,
-                              d.file_number,
-                              d.case_number,
-                              d.ecli,
-                              v.pseudonymized_text
-                          )
-                      ) @@ search_query.tsq
-                      OR LOWER(d.court_name) LIKE %(pattern)s
-                      OR LOWER(d.court_type) LIKE %(pattern)s
-                      OR LOWER(d.file_number) LIKE %(pattern)s
-                      OR LOWER(d.case_number) LIKE %(pattern)s
-                      OR LOWER(d.ecli) LIKE %(pattern)s
-                      OR LOWER(v.pseudonymized_text) LIKE %(pattern)s
-                  )
                   {filters}
                 ORDER BY {order_by}
                 LIMIT %(candidate_limit)s
@@ -630,6 +654,23 @@ _SCHEMA_SQL = (
     """
     CREATE INDEX IF NOT EXISTS idx_court_decision_documents_issue_date
     ON court_decision_documents(issue_date)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_court_decision_documents_status_issue_date
+    ON court_decision_documents(current_status, issue_date DESC, updated_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_court_decision_documents_metadata_search_text
+    ON court_decision_documents USING GIN (
+        to_tsvector(
+            'simple',
+            concat_ws(' ', court_name, court_type, file_number, case_number, ecli)
+        )
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_court_decision_versions_decision_stored_at
+    ON court_decision_versions(decision_id, stored_at DESC)
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_court_decision_search_text
