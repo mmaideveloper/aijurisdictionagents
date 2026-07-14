@@ -1943,6 +1943,72 @@ def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
     assert "§ 588" in context.document.content
 
 
+def test_mcp_law_context_exposes_localized_user_visible_contact_notice(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        if name == "searchLaws":
+            return {
+                "results": [
+                    {
+                        "document_id": "doc-192-2026",
+                        "law_identifier_text": "192/2026 Z. z.",
+                        "title": "Testovaci zakon",
+                    }
+                ]
+            }
+        if name == "getLawText":
+            return {
+                "document_id": arguments["document_id"],
+                "law_identifier_text": "192/2026 Z. z.",
+                "title": "Testovaci zakon",
+                "content_text": "Testovaci obsah zakona 192/2026.",
+            }
+        raise AssertionError(name)
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+
+    sk_context = build_mcp_law_context(
+        query="Daj mi sumar zo zakona 192/2026",
+        country="SK",
+        language="sk-SK",
+    )
+    de_context = build_mcp_law_context(
+        query="Daj mi sumar zo zakona 192/2026",
+        country="SK",
+        language="de-DE",
+    )
+    en_context = build_mcp_law_context(
+        query="Daj mi sumar zo zakona 192/2026",
+        country="SK",
+        language="en-US",
+    )
+
+    assert sk_context is not None
+    assert de_context is not None
+    assert en_context is not None
+    assert (
+        sk_context.processing_event["message"]
+        == "JurisDigta MCP server bol kontaktovaný na získanie najnovších právnych informácií."
+    )
+    assert (
+        de_context.processing_event["message"]
+        == "Der JurisDigta MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen."
+    )
+    assert (
+        en_context.processing_event["message"]
+        == "JurisDigta MCP Server was contacted to retrieve the latest legal information."
+    )
+    details = sk_context.processing_event["details"]
+    assert isinstance(details, dict)
+    assert details["user_visible"] is True
+    assert details["source_notice_i18n"] == {
+        "sk": "JurisDigta MCP server bol kontaktovaný na získanie najnovších právnych informácií.",
+        "de": "Der JurisDigta MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen.",
+        "en": "JurisDigta MCP Server was contacted to retrieve the latest legal information.",
+    }
+
+
 def test_mcp_law_context_uses_latest_sort_for_latest_law_question(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
@@ -2048,7 +2114,37 @@ def test_mcp_law_context_uses_combined_legal_sources_for_court_decision_query(mo
     assert citations[0]["retrieval_tool"] == "JurisDigta MCP searchCourtDecisions"
 
 
-def test_mcp_law_context_warns_when_official_web_fallback_is_used(monkeypatch) -> None:
+def test_mcp_law_context_blocks_web_fallback_without_user_approval(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        assert name == "searchLegalSources"
+        return {"laws": [], "court_decisions": []}
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+    monkeypatch.setattr(
+        "app.chat.mcp_law_context.AIWebSearchAgent",
+        lambda: SimpleNamespace(
+            search=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected web search"))
+        ),
+    )
+
+    context = build_mcp_law_context(
+        query="Daj mi top 5 sudnych rozhodnuti ohladom podnajmu?",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert "AIWebSearchAgent internet fallback was not used" in context.prompt_note
+    details = context.processing_event["details"]
+    assert isinstance(details, dict)
+    assert details["source_origin"] == "system_vector_db"
+    assert details["web_search_status"] == "blocked_pending_user_approval"
+    assert details["web_search_approval_required"] is True
+
+
+def test_mcp_law_context_warns_when_approved_official_web_fallback_is_used(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
     def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
@@ -2078,6 +2174,7 @@ def test_mcp_law_context_warns_when_official_web_fallback_is_used(monkeypatch) -
         query="Daj mi top 5 sudnych rozhodnuti ohladom podnajmu?",
         country="SK",
         language="sk-SK",
+        web_search_approved=True,
     )
 
     assert context is not None

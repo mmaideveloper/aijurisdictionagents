@@ -541,6 +541,25 @@ const shouldPreferHydratedAssistantMessage = (currentText: string, hydratedText:
   );
 };
 
+const isUserVisibleProcessingEvent = (data: Record<string, unknown>): boolean => {
+  const details = data.details;
+  return (
+    typeof details === "object" &&
+    details !== null &&
+    "user_visible" in details &&
+    (details as { user_visible?: unknown }).user_visible === true
+  );
+};
+
+const prependUserVisibleProcessingMessages = (content: string, messages: string[]): string => {
+  const uniqueMessages = messages.filter((message, index) => messages.indexOf(message) === index);
+  if (uniqueMessages.length === 0) {
+    return content;
+  }
+  const body = content.trim();
+  return body ? `${uniqueMessages.join("\n\n")}\n\n${body}` : uniqueMessages.join("\n\n");
+};
+
 const currentCaseDeepLinkId = (): string | undefined => {
   if (typeof window === "undefined") {
     return undefined;
@@ -618,6 +637,7 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
 
           let latestAssistantText = "";
           const processingMessages: string[] = [];
+          const userVisibleProcessingMessages: string[] = [];
           const visibleDocumentIdsBeforeRun = new Set(
             (activeCase?.documents ?? [])
               .filter(isUserVisibleGeneratedDocument)
@@ -634,6 +654,9 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
               const message = typeof streamEvent.data.message === "string" ? streamEvent.data.message.trim() : "";
               if (message) {
                 processingMessages.push(message);
+                if (isUserVisibleProcessingEvent(streamEvent.data)) {
+                  userVisibleProcessingMessages.push(message);
+                }
                 yield {
                   content: [{ type: "text", text: processingMessages.join("\n\n") }]
                 };
@@ -674,7 +697,7 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
             ? hydratedAssistantMessage
             : streamedAssistantText;
           const finalAssistantText = appendGeneratedDocumentsResponseBlock(
-            responseSourceText,
+            prependUserVisibleProcessingMessages(responseSourceText, userVisibleProcessingMessages),
             generatedDocumentsBlock
           );
 
