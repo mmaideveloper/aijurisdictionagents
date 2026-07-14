@@ -13,6 +13,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from services.document_processor.runtime import (
+    DocumentChunk,
     build_embedding_vector,
     cosine_similarity,
     lexical_overlap_score,
@@ -366,9 +367,14 @@ class PostgresCourtDecisionStore:
                 """
                 SELECT d.decision_id, d.source_guid, d.court_name, d.court_type,
                        d.file_number, d.case_number, d.ecli, d.issue_date, d.source_url,
-                       v.version_id, v.raw_text, v.pseudonymized_text
+                       v.version_id, v.raw_text, v.pseudonymized_text,
+                       e.status AS enrichment_status, e.pseudonymized_summary,
+                       e.legal_topics, e.pdf_sha256, e.extraction_method,
+                       e.embedding_model AS enrichment_embedding_model,
+                       e.embedding_dimensions AS enrichment_embedding_dimensions
                 FROM court_decision_documents AS d
                 JOIN court_decision_versions AS v ON v.decision_id = d.decision_id
+                LEFT JOIN court_decision_enrichments AS e ON e.version_id = v.version_id
                 WHERE d.decision_id = %(decision_id)s
                 ORDER BY v.stored_at DESC
                 LIMIT 1
@@ -391,7 +397,90 @@ class PostgresCourtDecisionStore:
             "source_url": str(row["source_url"] or ""),
             "output_mode": "internal_raw" if raw else "public",
             "text": text,
+            "enrichment_status": str(row["enrichment_status"] or "not_started"),
+            "summary": str(row["pseudonymized_summary"] or ""),
+            "legal_topics": row["legal_topics"] or [],
+            "pdf_sha256": str(row["pdf_sha256"] or ""),
+            "extraction_method": str(row["extraction_method"] or ""),
+            "embedding_model": str(row["enrichment_embedding_model"] or ""),
+            "embedding_dimensions": int(str(row["enrichment_embedding_dimensions"] or 0)),
+            "summary_ai_generated": bool(row["pseudonymized_summary"]),
         }
+
+    def get_enrichment(self, *, version_id: str) -> dict[str, object] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT e.*, (SELECT COUNT(*) FROM court_decision_content_chunks c
+                       WHERE c.version_id=e.version_id) AS chunk_count
+                   FROM court_decision_enrichments e WHERE e.version_id=%(version_id)s""",
+                {"version_id": version_id},
+            ).fetchone()
+        return dict(row) if row else None
+
+    def mark_enrichment_processing(
+        self, *, decision_id: str, version_id: str, source_url: str, pdf_url: str,
+        pdf_filename: str, expected_size: int, metadata: dict[str, object],
+    ) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO court_decision_enrichments(
+                       version_id,decision_id,status,source_url,pdf_url,pdf_filename,
+                       expected_size,source_metadata_json,attempt_count,created_at,updated_at)
+                   VALUES (%(version_id)s,%(decision_id)s,'processing',%(source_url)s,%(pdf_url)s,
+                       %(pdf_filename)s,%(expected_size)s,%(metadata)s,1,%(now)s,%(now)s)
+                   ON CONFLICT(version_id) DO UPDATE SET status='processing', source_url=EXCLUDED.source_url,
+                       pdf_url=EXCLUDED.pdf_url,pdf_filename=EXCLUDED.pdf_filename,
+                       expected_size=EXCLUDED.expected_size,source_metadata_json=EXCLUDED.source_metadata_json,
+                       attempt_count=court_decision_enrichments.attempt_count+1,last_error_type='',updated_at=EXCLUDED.updated_at""",
+                {"version_id": version_id, "decision_id": decision_id, "source_url": source_url,
+                 "pdf_url": pdf_url, "pdf_filename": pdf_filename, "expected_size": expected_size,
+                 "metadata": json.dumps(metadata, ensure_ascii=False), "now": now},
+            )
+            conn.commit()
+
+    def mark_enrichment_failed(self, *, version_id: str, error_type: str) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE court_decision_enrichments SET status='retryable_failure',last_error_type=%s,updated_at=%s WHERE version_id=%s", (error_type, _now_iso(), version_id))
+            conn.commit()
+
+    def save_enrichment(
+        self, *, decision_id: str, version_id: str, pdf_path: str, pdf_sha256: str,
+        actual_size: int, extraction_method: str, raw_text: str, pseudonymized_text: str,
+        summary: str, legal_topics: tuple[str, ...], embedding_model: str,
+        vectors: list[list[float]], chunks: list[DocumentChunk],
+    ) -> None:
+        now = _now_iso()
+        summary_vector = vectors[0] if vectors else []
+        dimensions = len(summary_vector)
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_enrichments SET status='ready',pdf_path=%(pdf_path)s,
+                       pdf_sha256=%(pdf_sha256)s,actual_size=%(actual_size)s,
+                       extraction_method=%(extraction_method)s,raw_text=%(raw_text)s,
+                       pseudonymized_text=%(public_text)s,pseudonymized_summary=%(summary)s,
+                       legal_topics=%(topics)s,summary_model='jurisdigta-local-extractive-v1',
+                       embedding_model=%(embedding_model)s,embedding_dimensions=%(dimensions)s,
+                       summary_embedding_json=%(summary_vector)s,completed_at=%(now)s,updated_at=%(now)s
+                   WHERE version_id=%(version_id)s""",
+                {"pdf_path": pdf_path, "pdf_sha256": pdf_sha256, "actual_size": actual_size,
+                 "extraction_method": extraction_method, "raw_text": raw_text,
+                 "public_text": pseudonymized_text, "summary": summary,
+                 "topics": json.dumps(legal_topics, ensure_ascii=False),
+                 "embedding_model": embedding_model, "dimensions": dimensions,
+                 "summary_vector": json.dumps(summary_vector), "now": now, "version_id": version_id},
+            )
+            conn.execute("DELETE FROM court_decision_content_chunks WHERE version_id=%s", (version_id,))
+            for chunk, vector in zip(chunks, vectors[1:]):
+                conn.execute(
+                    """INSERT INTO court_decision_content_chunks(
+                           chunk_id,decision_id,version_id,chunk_index,pseudonymized_text,
+                           embedding_model,embedding_dimensions,embedding_vector_json,created_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (str(uuid.uuid4()), decision_id, version_id, chunk.chunk_index, chunk.text,
+                     embedding_model, len(vector), json.dumps(vector), now),
+                )
+            conn.commit()
 
     def save_import_state(
         self,
@@ -714,4 +803,26 @@ _SCHEMA_SQL = (
         to_tsvector('simple', pseudonymized_text)
     )
     """,
+    """CREATE TABLE IF NOT EXISTS court_decision_enrichments (
+        version_id TEXT PRIMARY KEY REFERENCES court_decision_versions(version_id) ON DELETE CASCADE,
+        decision_id TEXT NOT NULL REFERENCES court_decision_documents(decision_id) ON DELETE CASCADE,
+        status TEXT NOT NULL, source_url TEXT NOT NULL DEFAULT '', pdf_url TEXT NOT NULL DEFAULT '',
+        pdf_filename TEXT NOT NULL DEFAULT '', expected_size BIGINT NOT NULL DEFAULT 0,
+        actual_size BIGINT NOT NULL DEFAULT 0, pdf_path TEXT NOT NULL DEFAULT '',
+        pdf_sha256 TEXT NOT NULL DEFAULT '', extraction_method TEXT NOT NULL DEFAULT '',
+        raw_text TEXT NOT NULL DEFAULT '', pseudonymized_text TEXT NOT NULL DEFAULT '',
+        pseudonymized_summary TEXT NOT NULL DEFAULT '', legal_topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+        summary_model TEXT NOT NULL DEFAULT '', embedding_model TEXT NOT NULL DEFAULT '',
+        embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+        summary_embedding_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+        source_metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb, attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_error_type TEXT NOT NULL DEFAULT '', completed_at TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS court_decision_content_chunks (
+        chunk_id TEXT PRIMARY KEY, decision_id TEXT NOT NULL REFERENCES court_decision_documents(decision_id) ON DELETE CASCADE,
+        version_id TEXT NOT NULL REFERENCES court_decision_versions(version_id) ON DELETE CASCADE,
+        chunk_index INTEGER NOT NULL, pseudonymized_text TEXT NOT NULL,
+        embedding_model TEXT NOT NULL, embedding_dimensions INTEGER NOT NULL,
+        embedding_vector_json JSONB NOT NULL, created_at TEXT NOT NULL,
+        UNIQUE(version_id, chunk_index))""",
 )

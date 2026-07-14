@@ -99,7 +99,7 @@ Required owner: infrastructure operator with PostgreSQL administrator access.
 2. Enable `pgvector` with `CREATE EXTENSION IF NOT EXISTS vector;`.
 3. Apply `databases/court-decision-collector/initdb/001_schema.sql`, then run the tracked SQL migrations in `databases/court-decision-collector/migrations/` when upgrading an existing database. Keep the metadata full-text search index expression immutable for PostgreSQL production deploys.
 4. Store the connection string only in local/server secrets as `COURT_DECISIONS_DB_CLOUD`.
-5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS=600000`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`.
+5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, `COURT_DECISIONS_MAX_PDF_BYTES=26214400`, `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS=600000`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`. Apply `databases/court-decision-collector/migrations/0002_on_demand_enrichment.sql`, install/validate the existing local PDF/OCR runtime, and grant write access only to the dedicated storage path. Validate the Komárno example twice (cache miss then hit). Roll back by disabling enrichment before removing the new tables; retain PDFs until the approved deletion workflow handles them.
 6. Run a bounded fixture import first: `python -m services.court_decision_collector --fixture`.
 7. Validate console logs include `processing_decision source_guid=...` and no raw decision body or personal identifier is logged.
 8. Validate MCP `tools/list` advertises `searchCourtDecisions` and `getCourtDecision`.
