@@ -139,7 +139,11 @@ The MCP server exposes:
 
 - `getVersion()` includes court-decision collector version, status, latest imported decision/source GUID, and latest import time.
 - `getStatistics(country_code)` includes court-decision collector version, total court decisions, published decisions, total versions, latest imported decision/source GUID, latest import time, court metadata, ECLI/file number, issue date, and collector cursor status.
-- `searchCourtDecisions(query, limit, offset, published_year, year_filter_mode, court_type, include_snippets)` for metadata-first search. The default `year_filter_mode` is `published_in`, and snippets are omitted unless `include_snippets=true`.
+- `searchCourtDecisions(query, limit, offset, published_year, year_filter_mode, court_type, court_name, sort, include_snippets)` for metadata-first search. `court_name` is an exact normalized named-court filter, while `court_type` selects a generic court category. `issue_date` remains the original source value for provenance; `issue_date_normalized DATE` drives calendar sorting and year filtering. Invalid/missing dates sort last and are surfaced through data-quality metadata. The default `year_filter_mode` is `published_in`, and snippets are omitted unless `include_snippets=true`.
+
+Migration `databases/court-decision-collector/migrations/0002_normalize_issue_date_and_court_name.sql` backfills typed dates and normalized court names. Its validation query reports parsed, invalid, and missing dates; unparseable values remain `NULL` and are never replaced with invented dates.
+
+When InfoSud supplies `povodnySud`, that court is the issuing court used by search. The current successor court in `sud` remains preserved in the raw metadata. This prevents reorganized Kežmarok decisions (`OSKK`) currently administered by Poprad from being presented as decisions issued by Poprad (`OSPP`).
 - `getCourtDecision(decision_id, full_version, outputMode)` where the default response is metadata-only. `full_version=true` returns bounded pseudonymized public text. `outputMode=internal_raw` remains restricted to controlled internal runtimes.
 - `searchLegalSources(query, source_types, published_year, year_filter_mode, limit_per_source)` for protected combined metadata search across current consolidated laws and court decisions. The MCP server is model-free; clients parse natural-language questions and pass structured filters.
 

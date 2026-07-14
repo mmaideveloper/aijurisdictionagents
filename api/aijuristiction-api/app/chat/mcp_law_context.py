@@ -54,6 +54,8 @@ _COURT_QUERY_MARKERS = (
     "case law",
     "court decision",
     "court decisions",
+    "okresneho sudu",
+    "okresny sud",
 )
 _LEGAL_DOCUMENT_QUERY_MARKERS = (
     "zmluv",
@@ -201,6 +203,11 @@ def _build_combined_legal_context(
             "source_types": ["laws", "court_decisions"],
             "limit_per_source": search_limit,
         }
+        court_name = _court_name_filter(query)
+        if court_name:
+            search_arguments["court_name"] = court_name
+        if _is_latest_court_query(query):
+            search_arguments["sort"] = "latest"
         search_payload = _call_mcp_tool("searchLegalSources", search_arguments)
         laws = _tool_results_from_key(search_payload, "laws")
         court_decisions = _tool_results_from_key(search_payload, "court_decisions")[:search_limit]
@@ -316,6 +323,20 @@ def _is_latest_law_query(query: str) -> bool:
         normalized,
     )
     return latest_then_law is not None or law_then_latest is not None
+
+
+def _is_latest_court_query(query: str) -> bool:
+    normalized = _canonical(query)
+    return bool(re.search(r"\b(posledn\w*|najnovs\w*|latest|newest)\b", normalized))
+
+
+def _court_name_filter(query: str) -> str | None:
+    normalized = _canonical(query)
+    match = re.search(r"\bokresn(?:y|eho)\s+sud(?:u)?\s+([a-z][a-z-]*)\b", normalized)
+    if match is None:
+        return None
+    city = match.group(1)
+    return f"Okresny sud {city.title()}"
 
 
 def _law_text_payload(*, result: dict[str, Any], max_chars: int) -> dict[str, Any]:

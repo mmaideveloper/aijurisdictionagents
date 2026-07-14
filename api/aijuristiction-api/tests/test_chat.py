@@ -2114,6 +2114,39 @@ def test_mcp_law_context_uses_combined_legal_sources_for_court_decision_query(mo
     assert citations[0]["retrieval_tool"] == "JurisDigta MCP searchCourtDecisions"
 
 
+def test_mcp_law_context_extracts_poprad_and_latest_from_typo_question(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        return {
+            "laws": [],
+            "court_decisions": [
+                {
+                    "decision_id": "poprad-1",
+                    "court_name": "Okresny sud Poprad",
+                    "file_number": "20C/444/2012",
+                    "issue_date": "31.12.2012",
+                    "source_url": "https://example.test/poprad-1",
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+    context = build_mcp_law_context(
+        query="daj mi posledne sudne rozdhodnuties s okresneho sudu Poprad",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert calls[0][0] == "searchLegalSources"
+    assert calls[0][1]["court_name"] == "Okresny sud Poprad"
+    assert calls[0][1]["sort"] == "latest"
+
+
 def test_mcp_law_context_blocks_web_fallback_without_user_approval(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
