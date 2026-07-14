@@ -66,6 +66,18 @@ print(
     "models receive the prompt."
 )
 print(
+    "mcp_user_visible_proof_notice => frontend/mobile streams show the backend-localized "
+    "notice when JurisDigta MCP is contacted for latest legal information; SK='JurisDigta MCP "
+    "server bol kontaktovaný na získanie najnovších právnych informácií.', DE='Der JurisDigta "
+    "MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen.', EN='JurisDigta "
+    "MCP Server was contacted to retrieve the latest legal information.'"
+)
+print(
+    "legal_web_search_approval_gate => AIWebSearchAgent legal-source fallback is blocked until "
+    "the current turn has explicit user approval for external web search; missing MCP results do "
+    "not silently trigger internet search."
+)
+print(
     "mcp_status_for_free_ollama => free-plan local Ollama chat can still answer MCP status "
     "questions from authoritative getVersion and getStatistics JSON; Ollama formats the "
     "aggregate JSON only and must not invent missing version, imported-law, or jurisdiction values."
