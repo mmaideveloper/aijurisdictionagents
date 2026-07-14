@@ -2395,9 +2395,31 @@ def _tool_get_court_decision(arguments: dict[str, Any]) -> dict[str, Any]:
         full_version,
         max_chars,
     )
-    record = _court_decision_store().get_decision(decision_id=decision_id, raw=raw)
+    store = _court_decision_store()
+    record = store.get_decision(decision_id=decision_id, raw=raw)
     if record is None:
         raise HTTPException(status_code=404, detail="Court decision not found")
+    enrich_if_missing = _bool_argument(arguments.get("enrich_if_missing"), default=True)
+    if enrich_if_missing and record.get("enrichment_status", "ready") != "ready":
+        from services.court_decision_collector.config import CourtDecisionCollectorConfig
+        from services.court_decision_collector.enrichment import OnDemandCourtDecisionEnricher
+        from services.court_decision_collector.infosud_source import InfoSudSourceClient
+
+        config = CourtDecisionCollectorConfig.from_env()
+        source = InfoSudSourceClient(
+            base_url=config.source_base_url,
+            timeout_seconds=config.source_timeout_seconds,
+            retry_attempts=config.source_retry_attempts,
+            retry_backoff_seconds=config.source_retry_backoff_seconds,
+        )
+        enriched = OnDemandCourtDecisionEnricher(
+            store=store, source=source, storage_root=config.storage_root,
+            max_pdf_bytes=config.max_pdf_bytes,
+        ).enrich_source_url(str(record["source_url"]))
+        record = store.get_decision(decision_id=decision_id, raw=raw)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Court decision disappeared after enrichment")
+        record["cache_hit"] = enriched.cache_hit
     text = str(record["text"])
     if full_version:
         record["text"] = text[:max_chars]
@@ -2999,7 +3021,8 @@ def _mcp_tools() -> list[dict[str, Any]]:
                 "Return one imported Slovak court decision. Defaults to metadata only. Set "
                 "full_version=true to return bounded pseudonymized public text. "
                 "outputMode=internal_raw is restricted to controlled internal use and must not be used "
-                "for normal external model prompts or UI display."
+                "for normal external model prompts or UI display. Missing PDF content is enriched "
+                "locally from the allowlisted InfoSud source and cached by default."
             ),
             "inputSchema": {
                 "type": "object",
@@ -3007,6 +3030,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
                 "properties": {
                     "decision_id": {"type": "string", "minLength": 1},
                     "full_version": {"type": "boolean", "default": False},
+                    "enrich_if_missing": {"type": "boolean", "default": True},
                     "outputMode": {
                         "type": "string",
                         "enum": ["public", "internal_raw"],

@@ -67,6 +67,10 @@ print(
     "describing the metadata-only results as newest."
 )
 print(
+    "court_decision_on_demand_enrichment => exact allowlisted InfoSud decisions are cached as "
+    "complete metadata + validated PDF + pseudonymized local summary/topics/chunks/embeddings."
+)
+print(
     "mcp_first_all_model_routes => Slovak legal, jurisdiction, and legal-document-by-law "
     "chat turns retrieve bounded JurisDigta MCP context before local Ollama or external "
     "models receive the prompt."

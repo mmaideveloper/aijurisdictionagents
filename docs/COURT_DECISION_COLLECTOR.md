@@ -17,6 +17,29 @@ The first schema stores:
 - `court_decision_versions`: raw text, pseudonymized public text, checksums, metadata, and embedding vectors
 - `court_decision_import_state`: restart cursor and latest processed decision
 - `court_decision_update_events`: audit trail for created, updated, and unchanged imports
+- `court_decision_enrichments`: PDF provenance, processing state, complete source metadata,
+  pseudonymized summary/topics, and summary embedding metadata
+- `court_decision_content_chunks`: pseudonymized chunks and local embedding vectors
+
+## On-demand PDF enrichment
+
+Exact-decision requests use a cache-first pipeline. Only the configured InfoSud decision endpoint
+and `https://obcan.justice.sk/content/public/item/` PDF URLs are accepted. The service stores the
+complete source JSON, validates and atomically caches the PDF under
+`runs/storage/court-decision-collector/`, extracts text with local OCR fallback, pseudonymizes it,
+creates a local extractive summary/topics, chunks the content, and uses the shared local embedding
+runtime. An unchanged second request is a cache hit and performs no duplicate processing.
+
+```powershell
+$env:SYSTEM_EMBEDDING_MODEL_OPTION="local"
+$env:SYSTEM_EMBEDDING_MODEL="all-MiniLM-L6-v2"
+.\conda\python.exe -m services.court_decision_collector `
+  --enrich-source-url "https://obcan.justice.sk/pilot/api/ress-isu-service/v1/rozhodnutie/24beca89-d93b-4cfc-b664-bb28148db9da:34712443-63f4-4a0e-96fe-60bec5bc06f0"
+```
+
+Return metadata plus the pseudonymized AI-generated summary by default. Full pseudonymized text is
+explicit; raw PDF/text remains controlled internal data. Broad topical search covers enriched
+content only and must disclose that unprocessed PDFs may contain additional matches.
 
 ## Privacy and legal-risk controls
 
