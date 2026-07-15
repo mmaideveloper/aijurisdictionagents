@@ -71,5 +71,10 @@ For a manual check, start the frontend, open `/privacy`, and select SK, EN, and 
 controller identity, local/external model disclosure, retention criteria, user rights, complaint
 link, and human-oversight statement remain visible in every language.
 
-The Playwright test saves its full-page Slovak evidence screenshot to
-`runs/e2e/privacy-notice-sk.png`.
+The Playwright test saves full-page localized evidence screenshots to:
+
+- `runs/e2e/privacy-notice-sk.png`
+- `runs/e2e/privacy-notice-en.png`
+- `runs/e2e/privacy-notice-de.png`
+
+Reviewed copies used in pull-request documentation are stored under `docs/screenshots/`.

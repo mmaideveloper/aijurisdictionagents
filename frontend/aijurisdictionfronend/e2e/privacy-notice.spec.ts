@@ -30,22 +30,26 @@ test("privacy notice exposes compliant localized content and contact routes", as
   );
   await expect(page.locator("main")).not.toContainText("Ochrana sukromia");
   await expect(page.locator("main")).not.toContainText("AIJurisdiction");
+  await page.screenshot({
+    path: "../../runs/e2e/privacy-notice-sk.png",
+    fullPage: true
+  });
 
   await page.getByRole("button", { name: "EN" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Privacy Notice" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Automated decisions and human oversight" })).toBeVisible();
+  await page.screenshot({
+    path: "../../runs/e2e/privacy-notice-en.png",
+    fullPage: true
+  });
 
   await page.getByRole("button", { name: "DE" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Datenschutzhinweise" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Automatisierte Entscheidungen und menschliche Aufsicht" })
   ).toBeVisible();
-
-  await page.getByRole("button", { name: "SK" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Ochrana súkromia" })).toBeVisible();
-
   await page.screenshot({
-    path: "../../runs/e2e/privacy-notice-sk.png",
+    path: "../../runs/e2e/privacy-notice-de.png",
     fullPage: true
   });
 });
