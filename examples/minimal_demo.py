@@ -373,6 +373,12 @@ print(
     "and sanitized errors through protected operational status."
 )
 print(
+    "privacy_notice => /privacy identifies Esolutions SK s.r.o. as controller; "
+    "discloses local Ollama and consent-gated EU Azure AI Foundry processing; "
+    "uses Slovak-law retention criteria; and confirms human review without "
+    "solely automated legal approvals."
+)
+print(
     "court_decision_collector => imports Slovak court decisions into a separate "
     "PostgreSQL store with vectors, retry-hardened InfoSud requests, and "
     "pseudonymized MCP search output; run "
