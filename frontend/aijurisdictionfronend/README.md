@@ -233,7 +233,7 @@ Global footer links are available in all language modes (`en`, `sk`, `de`) and a
 
 The disclaimer page includes AI disclosure, no-legal-advice notice, no attorney-client relationship, limitation of liability, no warranty, jurisdiction scope, user responsibility, external resources clause, right-to-modify clause, and a `Last Updated` timestamp.
 
-The Slovak terms page uses the current `Jurisdigta AI právnik` brand, links to the privacy page, asks users to minimize submitted personal data, and warns that AI-generated legal outputs require verification and appropriate human review. These terms do not replace the complete privacy notice and do not introduce unverified controller, processor, lawful-basis, transfer, or retention claims.
+The Slovak, English, and German terms pages use the current `Jurisdigta AI právnik` brand, link to the localized privacy page, ask users to minimize submitted personal data, and warn that AI-generated legal outputs require verification and appropriate human review. These terms do not replace the complete privacy notice and do not introduce unverified controller, processor, lawful-basis, transfer, or retention claims.
 
 Minimal local verification example:
 

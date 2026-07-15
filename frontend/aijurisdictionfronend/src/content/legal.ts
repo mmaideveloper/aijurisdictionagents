@@ -126,36 +126,50 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
     terms: {
       title: "Terms of Service",
       summary:
-        "These terms govern your use of AIJurisdiction services, interfaces, and generated outputs.",
+        "These terms govern your use of Jurisdigta AI právnik services, interfaces, and generated outputs.",
       sections: [
         {
           heading: "Acceptance of Terms",
           body:
-            "By accessing or using AIJurisdiction, you agree to comply with these terms and all applicable laws."
+            "By accessing or using Jurisdigta AI právnik, you agree to these terms and to comply with all applicable laws."
         },
         {
           heading: "Permitted Use",
           body:
-            "You may use the service only for lawful purposes and must not submit content that violates rights, laws, or contractual duties."
+            "You may use the service only for lawful purposes. You must not upload content that violates another person's rights, applicable laws, or contractual obligations."
         },
         {
           heading: "Account and Access",
           body:
-            "You are responsible for maintaining account confidentiality and for all activities performed under your credentials."
+            "You are responsible for keeping your credentials secure and for all activities performed through your account."
         },
         {
           heading: "Intellectual Property",
           body:
-            "Platform software, branding, and underlying systems remain the property of AIJurisdiction and its licensors."
+            "The software, branding, and underlying systems of the Jurisdigta AI právnik platform are protected by the intellectual property rights of their respective owners."
         },
         {
           heading: "Service Changes",
           body:
-            "We may update, suspend, or discontinue features at any time, including changes required by legal or security obligations."
+            "We may update, suspend, or discontinue features, including when changes are required by legal or security obligations."
+        },
+        {
+          heading: "Personal Data Protection",
+          body:
+            "When using the service, provide only the data necessary for the relevant purpose and upload only content that you are authorized to provide. For more information about personal data processing, see the Privacy Policy.",
+          link: {
+            href: "/privacy",
+            label: "Privacy Policy"
+          }
+        },
+        {
+          heading: "AI-Generated Outputs and Human Oversight",
+          body:
+            "AI-generated outputs may be inaccurate, incomplete, or outdated. Verify them and ensure appropriate human review, by a qualified lawyer where necessary, before any decision, filing, or other action with legal consequences."
         }
       ],
       lastUpdatedLabel: "Last Updated",
-      lastUpdated: "February 18, 2026"
+      lastUpdated: "July 15, 2026"
     }
   },
   sk: {
@@ -398,36 +412,50 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
     terms: {
       title: "Nutzungsbedingungen",
       summary:
-        "Diese Bedingungen regeln die Nutzung von AIJurisdiction, einschliesslich Oberflachen und erzeugter Inhalte.",
+        "Diese Bedingungen regeln die Nutzung der Dienste, Benutzeroberflächen und generierten Ausgaben von Jurisdigta AI právnik.",
       sections: [
         {
           heading: "Annahme der Bedingungen",
           body:
-            "Mit Zugriff auf AIJurisdiction stimmen Sie diesen Bedingungen sowie den anwendbaren Gesetzen zu."
+            "Indem Sie auf Jurisdigta AI právnik zugreifen oder die Plattform nutzen, erklären Sie sich mit diesen Bedingungen einverstanden und verpflichten sich, die geltenden Rechtsvorschriften einzuhalten."
         },
         {
-          heading: "Zulassige Nutzung",
+          heading: "Zulässige Nutzung",
           body:
-            "Die Plattform darf nur rechtmassig genutzt werden. Unzulassige oder rechtsverletzende Inhalte sind untersagt."
+            "Sie dürfen den Dienst nur zu rechtmäßigen Zwecken nutzen. Sie dürfen keine Inhalte hochladen, die Rechte Dritter, Rechtsvorschriften oder vertragliche Pflichten verletzen."
         },
         {
           heading: "Konto und Zugriff",
           body:
-            "Sie sind fur die Vertraulichkeit Ihrer Zugangsdaten und fur alle Kontoaktivitaten verantwortlich."
+            "Sie sind für die Sicherheit Ihrer Zugangsdaten und für alle über Ihr Konto ausgeführten Aktivitäten verantwortlich."
         },
         {
           heading: "Geistiges Eigentum",
           body:
-            "Software, Marke und zugrunde liegende Systeme verbleiben im Eigentum von AIJurisdiction und seinen Lizenzgebern."
+            "Software, Marke und zugrunde liegende Systeme der Plattform Jurisdigta AI právnik sind durch die Rechte des geistigen Eigentums ihrer jeweiligen Inhaber geschützt."
         },
         {
-          heading: "Anderungen am Dienst",
+          heading: "Änderungen am Dienst",
           body:
-            "Wir konnen Funktionen jederzeit anpassen, aussetzen oder einstellen, auch zur Einhaltung rechtlicher oder sicherheitsbezogener Vorgaben."
+            "Wir können Funktionen ändern, aussetzen oder einstellen, auch wenn dies aufgrund rechtlicher oder sicherheitsbezogener Verpflichtungen erforderlich ist."
+        },
+        {
+          heading: "Schutz personenbezogener Daten",
+          body:
+            "Stellen Sie bei der Nutzung des Dienstes nur Daten bereit, die für den jeweiligen Zweck erforderlich sind, und laden Sie nur Inhalte hoch, zu deren Bereitstellung Sie berechtigt sind. Weitere Informationen zur Verarbeitung personenbezogener Daten finden Sie unter Datenschutz.",
+          link: {
+            href: "/privacy",
+            label: "Datenschutz"
+          }
+        },
+        {
+          heading: "KI-Ausgaben und menschliche Aufsicht",
+          body:
+            "KI-generierte Ausgaben können ungenau, unvollständig oder veraltet sein. Prüfen Sie sie und stellen Sie vor Entscheidungen, Einreichungen oder anderen Handlungen mit rechtlichen Folgen eine angemessene menschliche Kontrolle sicher, erforderlichenfalls durch einen qualifizierten Rechtsanwalt."
         }
       ],
       lastUpdatedLabel: "Letzte Aktualisierung",
-      lastUpdated: "18. Februar 2026"
+      lastUpdated: "15. Juli 2026"
     }
   }
 };

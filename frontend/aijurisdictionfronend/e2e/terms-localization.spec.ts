@@ -6,20 +6,23 @@ const languageVersions = [
     heading: "Podmienky služby",
     summary:
       "Tieto podmienky upravujú používanie služieb, rozhraní a výstupov platformy Jurisdigta AI právnik.",
+    privacyLink: "Ochrana súkromia",
     screenshot: "terms-sk.png"
   },
   {
     button: "EN",
     heading: "Terms of Service",
     summary:
-      "These terms govern your use of AIJurisdiction services, interfaces, and generated outputs.",
+      "These terms govern your use of Jurisdigta AI právnik services, interfaces, and generated outputs.",
+    privacyLink: "Privacy Policy",
     screenshot: "terms-en.png"
   },
   {
     button: "DE",
     heading: "Nutzungsbedingungen",
     summary:
-      "Diese Bedingungen regeln die Nutzung von AIJurisdiction, einschliesslich Oberflachen und erzeugter Inhalte.",
+      "Diese Bedingungen regeln die Nutzung der Dienste, Benutzeroberflächen und generierten Ausgaben von Jurisdigta AI právnik.",
+    privacyLink: "Datenschutz",
     screenshot: "terms-de.png"
   }
 ] as const;
@@ -41,11 +44,10 @@ test("terms page renders and captures all three language versions", async ({ pag
     await expect(termsArticle.getByRole("heading", { level: 1 })).toHaveText(language.heading);
     await expect(termsArticle).toContainText(language.summary);
 
-    if (language.button === "SK") {
-      await expect(
-        termsArticle.getByRole("link", { name: "Ochrana súkromia", exact: true })
-      ).toHaveAttribute("href", "/privacy");
-    }
+    await expect(
+      termsArticle.getByRole("link", { name: language.privacyLink, exact: true })
+    ).toHaveAttribute("href", "/privacy");
+    await expect(termsArticle).not.toContainText("AIJurisdiction");
 
     await page.screenshot({
       path: `../../runs/e2e/${language.screenshot}`,
