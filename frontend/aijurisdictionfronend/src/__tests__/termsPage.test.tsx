@@ -22,7 +22,7 @@ const languageVersions = [
     language: "en",
     heading: "Terms of Service",
     summary:
-      "These terms govern your use of Jurisdigta AI právnik services, interfaces, and generated outputs.",
+      "These terms govern your use of Jurisdigta AI Lawyer services, interfaces, and generated outputs.",
     privacyHeading: "Personal Data Protection",
     privacyLink: "Privacy Policy",
     oversightHeading: "AI-Generated Outputs and Human Oversight",
@@ -32,7 +32,7 @@ const languageVersions = [
     language: "de",
     heading: "Nutzungsbedingungen",
     summary:
-      "Diese Bedingungen regeln die Nutzung der Dienste, Benutzeroberflächen und generierten Ausgaben von Jurisdigta AI právnik.",
+      "Diese Bedingungen regeln die Nutzung der Dienste, Benutzeroberflächen und generierten Ausgaben von Jurisdigta AI Anwalt.",
     privacyHeading: "Schutz personenbezogener Daten",
     privacyLink: "Datenschutz",
     oversightHeading: "KI-Ausgaben und menschliche Aufsicht",

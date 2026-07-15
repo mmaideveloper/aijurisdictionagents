@@ -126,12 +126,12 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
     terms: {
       title: "Terms of Service",
       summary:
-        "These terms govern your use of Jurisdigta AI právnik services, interfaces, and generated outputs.",
+        "These terms govern your use of Jurisdigta AI Lawyer services, interfaces, and generated outputs.",
       sections: [
         {
           heading: "Acceptance of Terms",
           body:
-            "By accessing or using Jurisdigta AI právnik, you agree to these terms and to comply with all applicable laws."
+            "By accessing or using Jurisdigta AI Lawyer, you agree to these terms and to comply with all applicable laws."
         },
         {
           heading: "Permitted Use",
@@ -146,7 +146,7 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
         {
           heading: "Intellectual Property",
           body:
-            "The software, branding, and underlying systems of the Jurisdigta AI právnik platform are protected by the intellectual property rights of their respective owners."
+            "The software, branding, and underlying systems of the Jurisdigta AI Lawyer platform are protected by the intellectual property rights of their respective owners."
         },
         {
           heading: "Service Changes",
@@ -412,12 +412,12 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
     terms: {
       title: "Nutzungsbedingungen",
       summary:
-        "Diese Bedingungen regeln die Nutzung der Dienste, Benutzeroberflächen und generierten Ausgaben von Jurisdigta AI právnik.",
+        "Diese Bedingungen regeln die Nutzung der Dienste, Benutzeroberflächen und generierten Ausgaben von Jurisdigta AI Anwalt.",
       sections: [
         {
           heading: "Annahme der Bedingungen",
           body:
-            "Indem Sie auf Jurisdigta AI právnik zugreifen oder die Plattform nutzen, erklären Sie sich mit diesen Bedingungen einverstanden und verpflichten sich, die geltenden Rechtsvorschriften einzuhalten."
+            "Indem Sie auf Jurisdigta AI Anwalt zugreifen oder die Plattform nutzen, erklären Sie sich mit diesen Bedingungen einverstanden und verpflichten sich, die geltenden Rechtsvorschriften einzuhalten."
         },
         {
           heading: "Zulässige Nutzung",
@@ -432,7 +432,7 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
         {
           heading: "Geistiges Eigentum",
           body:
-            "Software, Marke und zugrunde liegende Systeme der Plattform Jurisdigta AI právnik sind durch die Rechte des geistigen Eigentums ihrer jeweiligen Inhaber geschützt."
+            "Software, Marke und zugrunde liegende Systeme der Plattform Jurisdigta AI Anwalt sind durch die Rechte des geistigen Eigentums ihrer jeweiligen Inhaber geschützt."
         },
         {
           heading: "Änderungen am Dienst",

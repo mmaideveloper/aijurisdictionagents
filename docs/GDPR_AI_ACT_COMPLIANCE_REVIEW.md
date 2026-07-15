@@ -14,7 +14,7 @@ Scope reviewed: API (`api/aijuristiction-api`), core orchestrator (`src/aijurisd
 
 The Slovak, English, and German `/terms` copy was reviewed on 2026-07-15 for language quality, product naming, GDPR data-minimization guidance, and EU AI Act transparency/human-oversight messaging.
 
-- The terms use the current `Jurisdigta AI právnik` brand and correct Slovak grammar and diacritics.
+- The terms use the localized product titles `Jurisdigta AI právnik`, `Jurisdigta AI Lawyer`, and `Jurisdigta AI Anwalt`, with corrected language-specific grammar.
 - The personal-data section directs users to the privacy page and asks them to submit only necessary data that they are authorized to provide.
 - The AI-output section warns that generated content may be inaccurate, incomplete, or outdated and calls for verification and appropriate human review before legally consequential actions.
 - The update deliberately does not state unverified controller identities, processors, lawful bases, transfer mechanisms, or retention periods.

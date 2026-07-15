@@ -13,7 +13,7 @@ const languageVersions = [
     button: "EN",
     heading: "Terms of Service",
     summary:
-      "These terms govern your use of Jurisdigta AI právnik services, interfaces, and generated outputs.",
+      "These terms govern your use of Jurisdigta AI Lawyer services, interfaces, and generated outputs.",
     privacyLink: "Privacy Policy",
     screenshot: "terms-en.png"
   },
@@ -21,7 +21,7 @@ const languageVersions = [
     button: "DE",
     heading: "Nutzungsbedingungen",
     summary:
-      "Diese Bedingungen regeln die Nutzung der Dienste, Benutzeroberflächen und generierten Ausgaben von Jurisdigta AI právnik.",
+      "Diese Bedingungen regeln die Nutzung der Dienste, Benutzeroberflächen und generierten Ausgaben von Jurisdigta AI Anwalt.",
     privacyLink: "Datenschutz",
     screenshot: "terms-de.png"
   }
