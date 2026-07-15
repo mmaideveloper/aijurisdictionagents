@@ -63,9 +63,13 @@ From `frontend/aijurisdictionfronend`:
 
 ```powershell
 npm test -- --run src/__tests__/privacyPolicy.test.tsx
+npx playwright test e2e/privacy-notice.spec.ts
 npm run build
 ```
 
 For a manual check, start the frontend, open `/privacy`, and select SK, EN, and DE. Confirm that the
 controller identity, local/external model disclosure, retention criteria, user rights, complaint
 link, and human-oversight statement remain visible in every language.
+
+The Playwright test saves its full-page Slovak evidence screenshot to
+`runs/e2e/privacy-notice-sk.png`.
