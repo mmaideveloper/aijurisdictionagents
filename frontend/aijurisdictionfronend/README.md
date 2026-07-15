@@ -250,6 +250,15 @@ cd frontend/aijurisdictionfronend
 npm run test -- src/__tests__/termsPage.test.tsx
 ```
 
+Run the localized browser test to verify the actual language switcher and capture all three full-page variants:
+
+```bash
+cd frontend/aijurisdictionfronend
+npm run test:e2e -- e2e/terms-localization.spec.ts
+```
+
+The test writes `terms-sk.png`, `terms-en.png`, and `terms-de.png` to `runs/e2e/`.
+
 ## Callback Contract
 
 The frontend expects auth callback requests to hit:
