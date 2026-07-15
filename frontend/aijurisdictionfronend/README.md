@@ -233,6 +233,23 @@ Global footer links are available in all language modes (`en`, `sk`, `de`) and a
 
 The disclaimer page includes AI disclosure, no-legal-advice notice, no attorney-client relationship, limitation of liability, no warranty, jurisdiction scope, user responsibility, external resources clause, right-to-modify clause, and a `Last Updated` timestamp.
 
+The Slovak terms page uses the current `Jurisdigta AI právnik` brand, links to the privacy page, asks users to minimize submitted personal data, and warns that AI-generated legal outputs require verification and appropriate human review. These terms do not replace the complete privacy notice and do not introduce unverified controller, processor, lawful-basis, transfer, or retention claims.
+
+Minimal local verification example:
+
+```bash
+cd frontend/aijurisdictionfronend
+npm ci
+npm run dev -- --host 127.0.0.1
+```
+
+Open `http://127.0.0.1:5173/terms`, select `SK`, and run the focused automated check in a second terminal:
+
+```bash
+cd frontend/aijurisdictionfronend
+npm run test -- src/__tests__/termsPage.test.tsx
+```
+
 ## Callback Contract
 
 The frontend expects auth callback requests to hit:

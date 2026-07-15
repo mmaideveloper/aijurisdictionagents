@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { useLanguage } from "../components/LanguageProvider";
 import { legalContent } from "../content/legal";
 
@@ -18,6 +19,7 @@ const TermsOfService: React.FC = () => {
             <section key={section.heading} className="legal-section-card">
               <h2>{section.heading}</h2>
               <p>{section.body}</p>
+              {section.link && <Link to={section.link.href}>{section.link.label}</Link>}
             </section>
           ))}
         </div>

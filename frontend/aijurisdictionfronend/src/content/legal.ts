@@ -3,6 +3,10 @@ import { Language } from "../data/translations";
 type LegalSection = {
   heading: string;
   body: string;
+  link?: {
+    href: string;
+    label: string;
+  };
 };
 
 type LegalDocument = {
@@ -156,9 +160,9 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
   },
   sk: {
     footerLinks: {
-      privacy: "Ochrana sukromia",
+      privacy: "Ochrana súkromia",
       disclaimer: "Upozornenie",
-      terms: "Podmienky sluzby"
+      terms: "Podmienky služby"
     },
     privacy: {
       title: "Ochrana sukromia",
@@ -249,38 +253,52 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
       lastUpdated: "18. februar 2026"
     },
     terms: {
-      title: "Podmienky sluzby",
+      title: "Podmienky služby",
       summary:
-        "Tieto podmienky upravuju pouzivanie sluzieb, rozhrani a vystupov AIJurisdiction.",
+        "Tieto podmienky upravujú používanie služieb, rozhraní a výstupov platformy Jurisdigta AI právnik.",
       sections: [
         {
           heading: "Prijatie podmienok",
           body:
-            "Pouzivanim AIJurisdiction suhlasite s tymito podmienkami a s platnymi pravnymi predpismi."
+            "Používaním platformy Jurisdigta AI právnik súhlasíte s týmito podmienkami a zaväzujete sa dodržiavať platné právne predpisy."
         },
         {
-          heading: "Povolene pouzitie",
+          heading: "Povolené použitie",
           body:
-            "Sluzbu mozete pouzivat iba zakonny sposobom a nesmiete nahravat obsah, ktory porusuje prava alebo zmluvne povinnosti."
+            "Službu môžete používať iba zákonným spôsobom. Nesmiete nahrávať obsah, ktorý porušuje práva iných osôb, právne predpisy alebo zmluvné povinnosti."
         },
         {
-          heading: "Ucet a pristup",
+          heading: "Účet a prístup",
           body:
-            "Za bezpecnost prihlasovacich udajov a aktivity vykonane cez vas ucet zodpovedate vy."
+            "Zodpovedáte za bezpečnosť svojich prihlasovacích údajov a za všetky aktivity vykonané prostredníctvom svojho účtu."
         },
         {
-          heading: "Dusevne vlastnictvo",
+          heading: "Duševné vlastníctvo",
           body:
-            "Softver, znacka a podkladove systemy platformy zostavaju majetkom AIJurisdiction a jeho licencnych partnerov."
+            "Softvér, značka a podkladové systémy platformy Jurisdigta AI právnik sú chránené právami duševného vlastníctva ich príslušných vlastníkov."
         },
         {
-          heading: "Zmeny sluzby",
+          heading: "Zmeny služby",
           body:
-            "Funkcie mozeme upravit, pozastavit alebo ukoncit, vratane zmien vyzadovanych pravnymi alebo bezpecnostnymi povinnostami."
+            "Funkcie môžeme upraviť, pozastaviť alebo ukončiť, a to aj v prípade zmien vyžadovaných právnymi alebo bezpečnostnými povinnosťami."
+        },
+        {
+          heading: "Ochrana osobných údajov",
+          body:
+            "Pri používaní služby poskytujte iba údaje potrebné na daný účel a nahrávajte len obsah, ktorý ste oprávnení poskytnúť. Ďalšie informácie o spracúvaní osobných údajov nájdete na stránke Ochrana súkromia.",
+          link: {
+            href: "/privacy",
+            label: "Ochrana súkromia"
+          }
+        },
+        {
+          heading: "Výstupy umelej inteligencie a ľudský dohľad",
+          body:
+            "Výstupy vytvorené umelou inteligenciou môžu byť nepresné, neúplné alebo neaktuálne. Pred rozhodnutím, podaním alebo iným úkonom s právnymi následkami ich overte a zabezpečte primerané ľudské posúdenie, podľa potreby kvalifikovaným právnikom."
         }
       ],
-      lastUpdatedLabel: "Posledna aktualizacia",
-      lastUpdated: "18. februar 2026"
+      lastUpdatedLabel: "Posledná aktualizácia",
+      lastUpdated: "15. júla 2026"
     }
   },
   de: {
