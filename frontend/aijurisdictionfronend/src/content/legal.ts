@@ -191,10 +191,12 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
           heading: "Personal Data Protection",
           body:
             "When using the service, provide only the data necessary for the relevant purpose and upload only content that you are authorized to provide. For more information about personal data processing, see the Privacy Policy.",
-          link: {
-            href: "/privacy",
-            label: "Privacy Policy"
-          }
+          links: [
+            {
+              href: "/privacy",
+              label: "Privacy Policy"
+            }
+          ]
         },
         {
           heading: "AI-Generated Outputs and Human Oversight",
@@ -363,10 +365,12 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
           heading: "Ochrana osobných údajov",
           body:
             "Pri používaní služby poskytujte iba údaje potrebné na daný účel a nahrávajte len obsah, ktorý ste oprávnení poskytnúť. Ďalšie informácie o spracúvaní osobných údajov nájdete na stránke Ochrana súkromia.",
-          link: {
-            href: "/privacy",
-            label: "Ochrana súkromia"
-          }
+          links: [
+            {
+              href: "/privacy",
+              label: "Ochrana súkromia"
+            }
+          ]
         },
         {
           heading: "Výstupy umelej inteligencie a ľudský dohľad",
@@ -535,10 +539,12 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
           heading: "Schutz personenbezogener Daten",
           body:
             "Stellen Sie bei der Nutzung des Dienstes nur Daten bereit, die für den jeweiligen Zweck erforderlich sind, und laden Sie nur Inhalte hoch, zu deren Bereitstellung Sie berechtigt sind. Weitere Informationen zur Verarbeitung personenbezogener Daten finden Sie unter Datenschutz.",
-          link: {
-            href: "/privacy",
-            label: "Datenschutz"
-          }
+          links: [
+            {
+              href: "/privacy",
+              label: "Datenschutz"
+            }
+          ]
         },
         {
           heading: "KI-Ausgaben und menschliche Aufsicht",

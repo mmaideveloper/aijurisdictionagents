@@ -19,7 +19,11 @@ const TermsOfService: React.FC = () => {
             <section key={section.heading} className="legal-section-card">
               <h2>{section.heading}</h2>
               <p>{section.body}</p>
-              {section.link && <Link to={section.link.href}>{section.link.label}</Link>}
+              {section.links?.map((link) => (
+                <p key={link.href}>
+                  <Link to={link.href}>{link.label}</Link>
+                </p>
+              ))}
             </section>
           ))}
         </div>
