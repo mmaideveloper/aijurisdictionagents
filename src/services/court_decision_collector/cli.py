@@ -9,6 +9,7 @@ import sys
 from .config import CourtDecisionCollectorConfig
 from .fixtures import FixtureCourtDecisionSource, sample_court_decision_records
 from .infosud_source import InfoSudSourceClient
+from .enrichment import OnDemandCourtDecisionEnricher
 from .postgres_store import PostgresCourtDecisionStore
 from .service import CourtDecisionCollectorService
 
@@ -22,6 +23,7 @@ def main() -> None:
         help="Use bundled fixture pages as the source for service-loop testing.",
     )
     parser.add_argument("--live", action="store_true", help="Fetch one page from the InfoSud API.")
+    parser.add_argument("--enrich-source-url", default="", help="On-demand enrich one allowlisted InfoSud decision URL.")
     parser.add_argument(
         "--run-service",
         action="store_true",
@@ -90,6 +92,16 @@ def main() -> None:
         )
     )
     service = CourtDecisionCollectorService(store=store, source=source, progress_logger=progress_logger)
+    if args.enrich_source_url:
+        if not isinstance(source, InfoSudSourceClient):
+            raise ValueError("--enrich-source-url requires the live InfoSud source")
+        result = OnDemandCourtDecisionEnricher(
+            store=store, source=source, storage_root=config.storage_root,
+            max_pdf_bytes=config.max_pdf_bytes,
+        ).enrich_source_url(args.enrich_source_url)
+        import json
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return
     limit = args.limit or config.default_limit
     if args.run_service:
         poll_seconds = args.poll_seconds if args.poll_seconds is not None else config.poll_hours * 3600

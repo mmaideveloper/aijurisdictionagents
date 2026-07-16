@@ -2155,6 +2155,34 @@ class ApiDatabaseStore:
                 requires_external_ack=False,
                 reason="External model is not marked EU data zone capable.",
             )
+        if policy.max_cost_eur > 0 and self._ai_model_usage_cost_eur(
+            user_id=user_id,
+            plan_code=normalized_plan,
+            task_type=normalized_task,
+        ) >= policy.max_cost_eur:
+            reason = (
+                "External model budget cap reached for this route policy; "
+                "using configured local fallback."
+            )
+            if local is not None and policy.fallback_local_on_budget:
+                return _route_selection(
+                    policy=policy,
+                    target=local,
+                    route_type="local_budget_fallback",
+                    task_type=normalized_task,
+                    plan_code=normalized_plan,
+                    reason=reason,
+                )
+            return _route_selection_without_target(
+                policy=policy,
+                route_type="budget_exhausted",
+                task_type=normalized_task,
+                plan_code=normalized_plan,
+                reason=(
+                    "External model budget cap reached for this route policy "
+                    "and local budget fallback is disabled or unavailable."
+                ),
+            )
         return _route_selection(
             policy=policy,
             target=external,
@@ -2163,6 +2191,32 @@ class ApiDatabaseStore:
             plan_code=normalized_plan,
             reason="Route policy selected external model routing.",
         )
+
+    def _ai_model_usage_cost_eur(
+        self,
+        *,
+        user_id: str,
+        plan_code: str,
+        task_type: str,
+    ) -> float:
+        normalized_user_id = user_id.strip()
+        if not normalized_user_id:
+            return 0.0
+        with self._connect() as conn:
+            row = self._execute(
+                conn,
+                """
+                SELECT COALESCE(SUM(estimated_cost_eur), 0)
+                FROM ai_model_usage_ledger
+                WHERE user_id = ? AND plan_code = ? AND task_type = ?
+                """,
+                (
+                    normalized_user_id,
+                    _normalize_route_key(plan_code, default="free"),
+                    _normalize_route_key(task_type, default="default"),
+                ),
+            ).fetchone()
+        return float(row[0] if row is not None and row[0] is not None else 0.0)
 
     def record_ai_model_usage(
         self,

@@ -97,9 +97,9 @@ Required owner: infrastructure operator with PostgreSQL administrator access.
 
 1. Create a separate database such as `court_decisions_sk`.
 2. Enable `pgvector` with `CREATE EXTENSION IF NOT EXISTS vector;`.
-3. Apply `databases/court-decision-collector/initdb/001_schema.sql`.
+3. Apply `databases/court-decision-collector/initdb/001_schema.sql`, then run the tracked SQL migrations in `databases/court-decision-collector/migrations/` when upgrading an existing database. Keep the metadata full-text search index expression immutable for PostgreSQL production deploys.
 4. Store the connection string only in local/server secrets as `COURT_DECISIONS_DB_CLOUD`.
-5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`.
+5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, `COURT_DECISIONS_MAX_PDF_BYTES=26214400`, `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS=600000`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`. Apply `databases/court-decision-collector/migrations/0002_on_demand_enrichment.sql`, install/validate the existing local PDF/OCR runtime, and grant write access only to the dedicated storage path. Validate the Komárno example twice (cache miss then hit). Roll back by disabling enrichment before removing the new tables; retain PDFs until the approved deletion workflow handles them.
 6. Run a bounded fixture import first: `python -m services.court_decision_collector --fixture`.
 7. Validate console logs include `processing_decision source_guid=...` and no raw decision body or personal identifier is logged.
 8. Validate MCP `tools/list` advertises `searchCourtDecisions` and `getCourtDecision`.
@@ -656,3 +656,14 @@ The self-managed production deployment script performs the Ollama install, priva
 - Local model routing keeps case content inside JurisDigta-controlled infrastructure, but normal server access controls, retention, deletion, and privacy-safe logging still apply.
 - Keep legal-risk outputs subject to human oversight before production traffic is enabled.
 - For Cloudflare Tunnel and Access, avoid logging personal data, legal documents, API keys, database credentials, or full user prompts in edge, dashboard, or application logs.
+
+### Encrypted USB environment profile store
+
+- Owner: JurisDigta server operator. The USB encryption/recovery key must be held outside the USB and outside Git/Codex context.
+- Prerequisite: complete issue #395 encryption, stable UUID mount, integrity, retention, and recovery controls for `/mnt/jurisdigta-backup`.
+- Store profiles under `/mnt/jurisdigta-backup/jurisdigta-env/profiles` with directory mode `0700` and files mode `0600`.
+- Install or rotate a profile with `sudo Deployment/server/install_env_usb_profile.sh <profile> <operator-source-file>`; the command never prints values.
+- Validate from a developer laptop with `.\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent`. Pinned SSH host verification and per-developer keys are mandatory.
+- Revoke a departing developer's SSH key, delete their local `.env`/`.env.dev` and protected backups, and retain only the approved server audit event containing actor, profile, key names, version/checksum, and result.
+- Rollback uses the encrypted/versioned USB backup repository from issue #395. Restore into an isolated location, audit names/checksums without values, then materialize atomically.
+- If the USB is missing, has the wrong UUID, is read-only/full, or fails integrity validation, fail closed and alert through privacy-safe monitoring. Never fall back to a plaintext laptop push.

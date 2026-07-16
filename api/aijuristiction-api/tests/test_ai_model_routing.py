@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import app
 from aijurisdictionagents.api_db import ApiDatabaseStore
@@ -568,6 +569,142 @@ def test_paid_external_route_requires_acknowledgement(tmp_path: Path) -> None:
     assert allowed.provider.provider_code == "azure_foundry"
     assert allowed.model_profile is not None
     assert allowed.model_profile.model_code == "gpt-4.1"
+
+
+def test_paid_external_budget_cap_falls_back_to_local_and_logs_reason(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    store = _store(tmp_path)
+    user = store.create_user(email="budget@example.com", password="secret", full_name="Budget User")
+    subscription = store.request_subscription_change(user_id=user.user_id, plan_code="case")
+    subscription = store.update_subscription_status(
+        subscription_id=subscription.subscription_id,
+        status="paid",
+    )
+    provider = store.upsert_ai_model_provider(
+        provider_code="azure_foundry",
+        provider_type="azurefoundry",
+        display_name="Azure AI Foundry",
+        base_url="https://example.openai.azure.com",
+        region="swedencentral",
+        data_zone="eu",
+        is_external=True,
+    )
+    external_profile = store.upsert_ai_model_profile(
+        provider_id=provider.provider_id,
+        model_code="gpt-4.1",
+        deployment_name="jurisdigta-gpt-4-1",
+        eu_data_zone_capable=True,
+    )
+    store.upsert_ai_task_route_policy(
+        task_type="chat_reply",
+        plan_code="case",
+        preferred_external_model_profile_id=external_profile.model_profile_id,
+        preferred_local_model_profile_id="local_ollama_default",
+        allow_external=True,
+        require_external_ack=False,
+        require_eu_data_zone=True,
+        fallback_local_on_budget=True,
+        max_cost_eur=0.01,
+    )
+    store.record_ai_model_usage(
+        provider="azure_foundry",
+        model="gpt-4.1",
+        route_type="external",
+        input_tokens=1000,
+        output_tokens=500,
+        estimated_cost_eur=0.01,
+        user_id=user.user_id,
+        subscription_id=subscription.subscription_id,
+        plan_code="case",
+        task_type="chat_reply",
+    )
+
+    routed = get_routed_llm_client(store=store, user_id=user.user_id, task_type="chat_reply")
+    usage_id = store.record_ai_model_usage(
+        provider=routed.provider,
+        model=routed.model,
+        route_type=routed.route_type,
+        input_tokens=100,
+        output_tokens=50,
+        estimated_cost_eur=0,
+        user_id=user.user_id,
+        subscription_id=routed.subscription_id,
+        plan_code=routed.plan_code,
+        task_type="chat_reply",
+        fallback_reason=routed.fallback_reason,
+    )
+    audit_entries = store.list_ai_model_usage_audit(case_id="", limit=2)
+    summaries = store.summarize_ai_model_usage(minutes=60)
+
+    assert usage_id
+    assert routed.provider == "local_ollama"
+    assert routed.route_type == "local_budget_fallback"
+    assert "budget cap reached" in routed.fallback_reason
+    assert any(
+        summary.route_type == "local_budget_fallback"
+        and "budget cap reached" in summary.fallback_reason
+        for summary in summaries
+    )
+    assert all(entry.question_preview == "" for entry in audit_entries)
+    assert all(entry.question_sha256 == "" for entry in audit_entries)
+
+
+def test_paid_non_eu_external_route_blocks_without_local_fallback(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("AI_MODEL_CREDENTIAL_ENCRYPTION_KEY", "test-routing-secret")
+    store = _store(tmp_path)
+    user = store.create_user(email="non-eu@example.com", password="secret", full_name="Non EU")
+    subscription = store.request_subscription_change(user_id=user.user_id, plan_code="case")
+    store.update_subscription_status(subscription_id=subscription.subscription_id, status="paid")
+    provider = store.upsert_ai_model_provider(
+        provider_code="openai_us",
+        provider_type="openai",
+        display_name="OpenAI US",
+        base_url="https://api.openai.com/v1",
+        region="us",
+        data_zone="us",
+        is_external=True,
+    )
+    profile = store.upsert_ai_model_profile(
+        provider_id=provider.provider_id,
+        model_code="gpt-4.1",
+        deployment_name="gpt-4.1",
+        eu_data_zone_capable=False,
+    )
+    store.upsert_ai_model_credential(
+        provider_id=provider.provider_id,
+        secret_value="openai-secret-key",
+        secret_type="api_key",
+    )
+    store.upsert_ai_task_route_policy(
+        task_type="chat_reply",
+        plan_code="case",
+        preferred_external_model_profile_id=profile.model_profile_id,
+        preferred_local_model_profile_id="local_ollama_default",
+        allow_external=True,
+        require_external_ack=False,
+        require_eu_data_zone=True,
+        fallback_local_on_error=False,
+        enabled=True,
+    )
+
+    route = store.resolve_ai_model_route(
+        user_id=user.user_id,
+        plan_code="case",
+        task_type="chat_reply",
+        external_acknowledged=True,
+    )
+
+    assert route.route_type == "blocked_non_eu_external"
+    with pytest.raises(ModelRouteUnavailable) as exc_info:
+        get_routed_llm_client(store=store, user_id=user.user_id, task_type="chat_reply")
+    assert "not marked EU data zone capable" in str(exc_info.value)
 
 
 def test_enabled_user_override_takes_precedence_over_free_plan_policy(tmp_path: Path) -> None:

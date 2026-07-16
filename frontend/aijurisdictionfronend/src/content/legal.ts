@@ -3,10 +3,10 @@ import { Language } from "../data/translations";
 type LegalSection = {
   heading: string;
   body: string;
-  link?: {
-    href: string;
+  links?: Array<{
     label: string;
-  };
+    href: string;
+  }>;
 };
 
 type LegalDocument = {
@@ -36,38 +36,72 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
       terms: "Terms of Service"
     },
     privacy: {
-      title: "Privacy Policy",
+      title: "Privacy Notice",
       summary:
-        "This policy explains how AIJurisdiction handles personal and case-related data in the platform.",
+        "This notice explains how Jurisdigta AI lawyer processes personal and case-related data in the platform.",
       sections: [
         {
-          heading: "Data We Collect",
+          heading: "Controller and privacy contact",
           body:
-            "We may collect account data, submitted case content, uploaded files, and usage logs needed to operate and secure the service."
+            "The controller is Esolutions SK s.r.o., Company ID (IČO) 46491261, Tax ID (DIČ) 2820020907, Partizánska 665/101, 059 18 Spišské Bystré, Slovakia. Privacy requests can be sent to info@jurisdigta.eu. No data protection officer has currently been appointed."
         },
         {
-          heading: "How We Use Data",
+          heading: "Data we collect",
           body:
-            "Data is used to provide platform features, improve system quality, detect misuse, and support legal and security obligations."
+            "We process account and contact details, authentication and subscription data, case content, prompts, AI outputs, uploaded and generated documents, user approvals, and security and operational logs. Case files may contain third-party data, special-category data, or information about criminal convictions and offences; submit only data that is necessary and that you are entitled to use."
         },
         {
-          heading: "Data Sharing",
+          heading: "Purposes and legal bases",
           body:
-            "We do not sell personal data. Data may be shared with service providers acting on our instructions or when required by law."
+            "We use data to create and administer accounts, provide cases and requested AI-assisted functions, secure and support the service, prevent misuse, meet Slovak and EU legal obligations, and establish or defend legal claims. The legal bases are performance of a contract (GDPR Article 6(1)(b)), legal obligations (Article 6(1)(c)), and legitimate interests in service security, reliability, misuse prevention, and legal-claim protection (Article 6(1)(f)). Consent (Article 6(1)(a)) applies when you approve optional external AI processing. Special-category or criminal-offence data is processed only where an applicable GDPR and Slovak-law condition permits it, including where necessary for legal claims."
         },
         {
-          heading: "Retention and Security",
+          heading: "AI models and user approval",
           body:
-            "We keep data only as long as needed for service and compliance purposes and apply reasonable technical and organizational safeguards."
+            "Local Ollama models are the default and process case content within Jurisdigta-controlled infrastructure. Microsoft Azure AI Foundry in an EU data region is used only after your explicit approval for the relevant external processing. You may refuse or withdraw that approval for future external processing without losing the local route. AI outputs are drafts and require human review."
         },
         {
-          heading: "Your Rights",
+          heading: "Recipients and transfers",
           body:
-            "Depending on your jurisdiction, you may request access, correction, deletion, or processing restrictions for your personal data."
+            "We do not sell personal data. Access is limited to authorized personnel and processors supporting hosting, communications, security, accounting, and service operation. Microsoft receives approved content only when the external Azure AI Foundry route is selected. Processing is configured for the EU data region and no transfer outside the EEA is intended. If that changes, we will identify the transfer and applicable GDPR safeguard before it begins."
+        },
+        {
+          heading: "Retention and deletion",
+          body:
+            "Retention follows the purpose of each category and applicable Slovak law. Account data is kept while the account is active and as needed to close it. Case content, uploads, prompts, and outputs are kept while the case or account requires them and longer only where a legal obligation or legal claim justifies it. Security logs and approval records are kept only for the period needed to secure the service and demonstrate compliance. Accounting documents are kept for the statutory period, generally ten years following the relevant accounting year under Act No. 431/2002 Coll. You may request deletion through the privacy contact; legal exceptions will be explained in the response."
+        },
+        {
+          heading: "Security and data minimization",
+          body:
+            "We use access controls, authentication, restricted administration, privacy-minimized logging, and technical and organizational safeguards appropriate to the risk. Users should avoid including unrelated personal data in case files. No internet or AI service can be guaranteed completely secure."
+        },
+        {
+          heading: "Your rights",
+          body:
+            "Subject to legal conditions, you may request access, rectification, erasure, restriction, portability, or object to processing based on legitimate interests. Where processing relies on consent, you may withdraw it at any time for future processing without affecting earlier lawful processing. Send requests to info@jurisdigta.eu; we may verify your identity before releasing or changing data.",
+          links: [{ label: "Email the privacy contact", href: "mailto:info@jurisdigta.eu" }]
+        },
+        {
+          heading: "Complaints",
+          body:
+            "If you believe your data has been processed unlawfully, you may contact us first or lodge a complaint with the Personal Data Protection Office of the Slovak Republic, Galvaniho 7/B, 821 04 Bratislava, Slovakia.",
+          links: [
+            { label: "Slovak Data Protection Office", href: "https://dataprotection.gov.sk/en/contact/" }
+          ]
+        },
+        {
+          heading: "Required data and consequences",
+          body:
+            "Account and case data marked as required is contractually necessary to register, authenticate, and provide the requested service. Without it, we may be unable to open an account, process a case, or provide the selected function. Optional external-AI approval is not required for the local model route."
+        },
+        {
+          heading: "Automated decisions and human oversight",
+          body:
+            "Jurisdigta does not make approvals or legal decisions based solely on automated processing and does not use profiling that produces legal or similarly significant effects. AI-generated legal-risk outputs remain drafts for human review; users retain responsibility for deciding whether and how to use them."
         }
       ],
       lastUpdatedLabel: "Last Updated",
-      lastUpdated: "February 18, 2026"
+      lastUpdated: "July 15, 2026"
     },
     disclaimer: {
       title: "Disclaimer",
@@ -179,38 +213,67 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
       terms: "Podmienky služby"
     },
     privacy: {
-      title: "Ochrana sukromia",
+      title: "Ochrana súkromia",
       summary:
-        "Tieto pravidla vysvetluju, ako AIJurisdiction spracuva osobne a pripadove udaje v platforme.",
+        "Tieto pravidlá vysvetľujú, ako Jurisdigta AI právnik spracúva osobné a prípadové údaje v platforme.",
       sections: [
         {
-          heading: "Ake udaje zbierame",
+          heading: "Prevádzkovateľ a kontakt pre ochranu súkromia",
           body:
-            "Mozeme zbierat udaje o ucte, obsah pripadu, nahrane subory a prevadzkove logy potrebne na bezpecnu prevadzku sluzby."
+            "Prevádzkovateľom je Esolutions SK s.r.o., IČO 46491261, DIČ 2820020907, Partizánska 665/101, 059 18 Spišské Bystré, Slovenská republika. Žiadosti týkajúce sa ochrany osobných údajov posielajte na info@jurisdigta.eu. Zodpovedná osoba zatiaľ nebola určená."
         },
         {
-          heading: "Ako udaje pouzivame",
+          heading: "Aké údaje zbierame",
           body:
-            "Udaje pouzivame na poskytovanie funkcii, zlepsovanie kvality systemu, detekciu zneuzitia a plnenie pravnych povinnosti."
+            "Spracúvame údaje o účte a kontaktné údaje, autentifikačné a predplatiteľské údaje, obsah prípadov, zadania, výstupy AI, nahrané a vytvorené dokumenty, súhlasy používateľa a bezpečnostné a prevádzkové záznamy. Prípadové spisy môžu obsahovať údaje tretích osôb, osobitné kategórie údajov alebo údaje o odsúdeniach a trestných činoch; uvádzajte len údaje, ktoré sú nevyhnutné a ktoré ste oprávnení použiť."
         },
         {
-          heading: "Zdielanie udajov",
+          heading: "Aké údaje používame",
           body:
-            "Osobne udaje nepredavame. Udaje mozeme zdielat s poskytovatelmi sluzieb alebo ak to vyzaduje zakon."
+            "Údaje používame na vytvorenie a správu účtu, poskytovanie prípadov a vyžiadaných funkcií podporovaných AI, zabezpečenie a podporu služby, predchádzanie zneužitiu, plnenie povinností podľa slovenského a európskeho práva a uplatňovanie alebo obhajovanie právnych nárokov. Právnym základom je plnenie zmluvy (čl. 6 ods. 1 písm. b) GDPR), zákonná povinnosť (písm. c)) a oprávnený záujem na bezpečnosti, spoľahlivosti, prevencii zneužitia a ochrane právnych nárokov (písm. f)). Súhlas (písm. a)) sa používa pri voliteľnom externom spracovaní AI. Osobitné kategórie údajov alebo údaje o trestných činoch spracúvame iba vtedy, keď to umožňuje GDPR a slovenské právo, najmä ak je to nevyhnutné na právne nároky."
         },
         {
-          heading: "Uchovavanie a bezpecnost",
+          heading: "Modely AI a súhlas používateľa",
           body:
-            "Udaje uchovavame len po nevyhnutny cas a pouzivame primerane technicke a organizacne ochrany."
+            "Predvolene používame lokálne modely Ollama, ktoré spracúvajú obsah prípadov v infraštruktúre kontrolovanej Jurisdigtou. Microsoft Azure AI Foundry v dátovej oblasti EÚ použijeme iba po vašom výslovnom súhlase s príslušným externým spracovaním. Súhlas môžete odmietnuť alebo odvolať pre budúce externé spracovanie bez straty lokálnej trasy. Výstupy AI sú návrhy a vyžadujú ľudskú kontrolu."
         },
         {
-          heading: "Vase prava",
+          heading: "Zdieľanie údajov",
           body:
-            "Podla jurisdikcie mozete poziadat o pristup, opravu, vymazanie alebo obmedzenie spracuvania osobnych udajov."
+            "Osobné údaje nepredávame. Prístup majú iba oprávnené osoby a sprostredkovatelia zabezpečujúci hosting, komunikáciu, bezpečnosť, účtovníctvo a prevádzku služby. Microsoft dostane schválený obsah iba pri výbere externej trasy Azure AI Foundry. Spracovanie je nastavené na dátovú oblasť EÚ a prenos mimo EHP sa neplánuje. Ak sa to zmení, pred prenosom uvedieme jeho rozsah a príslušnú záruku podľa GDPR."
+        },
+        {
+          heading: "Uchovávanie a bezpečnosť",
+          body:
+            "Dobu uchovávania určujeme podľa účelu každej kategórie a platného slovenského práva. Údaje o účte uchovávame počas aktívneho účtu a na jeho uzavretie. Obsah prípadov, nahrané súbory, zadania a výstupy uchovávame, kým ich vyžaduje prípad alebo účet, a dlhšie iba vtedy, ak to odôvodňuje zákonná povinnosť alebo právny nárok. Bezpečnostné záznamy a doklady o súhlase uchovávame len na zabezpečenie služby a preukázanie súladu. Účtovné doklady uchovávame počas zákonnej lehoty, spravidla desať rokov nasledujúcich po príslušnom účtovnom roku podľa zákona č. 431/2002 Z. z. O vymazanie môžete požiadať cez kontakt pre ochranu súkromia; prípadné zákonné výnimky vysvetlíme v odpovedi. Používame primerané technické a organizačné bezpečnostné opatrenia a minimalizované záznamy."
+        },
+        {
+          heading: "Vaše práva",
+          body:
+            "Za podmienok stanovených právnymi predpismi môžete požiadať o prístup, opravu, vymazanie, obmedzenie spracúvania a prenosnosť údajov alebo namietať proti spracúvaniu na základe oprávneného záujmu. Súhlas môžete kedykoľvek odvolať pre budúce spracovanie bez vplyvu na predchádzajúce zákonné spracovanie. Žiadosť pošlite na info@jurisdigta.eu; pred sprístupnením alebo zmenou údajov môžeme overiť vašu totožnosť.",
+          links: [{ label: "Napísať kontaktu pre ochranu súkromia", href: "mailto:info@jurisdigta.eu" }]
+        },
+        {
+          heading: "Sťažnosť dozornému orgánu",
+          body:
+            "Ak sa domnievate, že vaše údaje spracúvame nezákonne, môžete najprv kontaktovať nás alebo podať návrh na začatie konania na Úrad na ochranu osobných údajov Slovenskej republiky, Galvaniho 7/B, 821 04 Bratislava.",
+          links: [
+            { label: "Úrad na ochranu osobných údajov SR", href: "https://dataprotection.gov.sk/sk/kontakt/" }
+          ]
+        },
+        {
+          heading: "Povinné údaje a následky neposkytnutia",
+          body:
+            "Údaje o účte a prípade označené ako povinné sú zmluvne potrebné na registráciu, autentifikáciu a poskytnutie požadovanej služby. Bez nich nemusíme byť schopní vytvoriť účet, spracovať prípad alebo poskytnúť vybranú funkciu. Súhlas s externou AI nie je potrebný na použitie lokálneho modelu."
+        },
+        {
+          heading: "Automatizované rozhodovanie a ľudský dohľad",
+          body:
+            "Jurisdigta nevykonáva schválenia ani právne rozhodnutia založené výlučne na automatizovanom spracúvaní a nepoužíva profilovanie s právnymi alebo podobne významnými účinkami. Výstupy AI s právnym rizikom zostávajú návrhmi na ľudskú kontrolu; používateľ rozhoduje, či a ako ich použije."
         }
       ],
-      lastUpdatedLabel: "Posledna aktualizacia",
-      lastUpdated: "18. februar 2026"
+      lastUpdatedLabel: "Posledná aktualizácia",
+      lastUpdated: "15. júla 2026"
     },
     disclaimer: {
       title: "Upozornenie",
@@ -322,38 +385,67 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
       terms: "Nutzungsbedingungen"
     },
     privacy: {
-      title: "Datenschutz",
+      title: "Datenschutzhinweise",
       summary:
-        "Diese Hinweise erklaren, wie AIJurisdiction personenbezogene und fallbezogene Daten verarbeitet.",
+        "Diese Hinweise erklären, wie Jurisdigta AI Anwalt personenbezogene und fallbezogene Daten auf der Plattform verarbeitet.",
       sections: [
+        {
+          heading: "Verantwortlicher und Datenschutzkontakt",
+          body:
+            "Verantwortlicher ist Esolutions SK s.r.o., Unternehmens-ID (IČO) 46491261, Steuer-ID (DIČ) 2820020907, Partizánska 665/101, 059 18 Spišské Bystré, Slowakei. Datenschutzanfragen richten Sie an info@jurisdigta.eu. Ein Datenschutzbeauftragter wurde derzeit nicht benannt."
+        },
         {
           heading: "Welche Daten wir erfassen",
           body:
-            "Wir konnen Kontodaten, Fallinhalte, hochgeladene Dateien und Nutzungsprotokolle erfassen, soweit dies fur den Betrieb erforderlich ist."
+            "Wir verarbeiten Konto- und Kontaktdaten, Authentifizierungs- und Abonnementdaten, Fallinhalte, Eingaben, KI-Ausgaben, hochgeladene und erzeugte Dokumente, Nutzereinwilligungen sowie Sicherheits- und Betriebsprotokolle. Fallakten können Daten Dritter, besondere Datenkategorien oder Angaben zu strafrechtlichen Verurteilungen und Straftaten enthalten; übermitteln Sie nur erforderliche Daten, zu deren Verwendung Sie berechtigt sind."
         },
         {
-          heading: "Wie wir Daten verwenden",
+          heading: "Zwecke und Rechtsgrundlagen",
           body:
-            "Daten werden genutzt, um Funktionen bereitzustellen, die Systemqualitat zu verbessern, Missbrauch zu erkennen und Pflichten zu erfullen."
+            "Wir verwenden Daten zur Konto- und Fallverwaltung, für angeforderte KI-gestützte Funktionen, Sicherheit und Support, Missbrauchsprävention, gesetzliche Pflichten sowie zur Geltendmachung oder Verteidigung von Rechtsansprüchen. Rechtsgrundlagen sind Vertragserfüllung (Art. 6 Abs. 1 Buchst. b DSGVO), rechtliche Verpflichtungen (Buchst. c), berechtigte Interessen an Sicherheit, Zuverlässigkeit, Missbrauchsprävention und Rechtsschutz (Buchst. f) sowie Einwilligung (Buchst. a) für optionale externe KI-Verarbeitung. Besondere Datenkategorien oder Straftatendaten verarbeiten wir nur, wenn eine Bedingung der DSGVO und des slowakischen Rechts erfüllt ist, insbesondere soweit dies für Rechtsansprüche erforderlich ist."
         },
         {
-          heading: "Weitergabe von Daten",
+          heading: "KI-Modelle und Einwilligung",
           body:
-            "Wir verkaufen keine personenbezogenen Daten. Eine Weitergabe kann an Dienstleister oder bei gesetzlicher Verpflichtung erfolgen."
+            "Standardmäßig verwenden wir lokale Ollama-Modelle in einer von Jurisdigta kontrollierten Infrastruktur. Microsoft Azure AI Foundry in einer EU-Datenregion wird nur nach Ihrer ausdrücklichen Einwilligung in die jeweilige externe Verarbeitung genutzt. Sie können diese für künftige externe Verarbeitung verweigern oder widerrufen, ohne die lokale Route zu verlieren. KI-Ausgaben sind Entwürfe und erfordern menschliche Prüfung."
+        },
+        {
+          heading: "Empfänger und Übermittlungen",
+          body:
+            "Wir verkaufen keine personenbezogenen Daten. Zugriff erhalten nur befugte Personen und Auftragsverarbeiter für Hosting, Kommunikation, Sicherheit, Buchhaltung und Betrieb. Microsoft erhält genehmigte Inhalte nur bei Auswahl der externen Azure-AI-Foundry-Route. Die Verarbeitung ist für die EU-Datenregion konfiguriert; eine Übermittlung außerhalb des EWR ist nicht beabsichtigt. Sollte sich dies ändern, nennen wir vorab Umfang und DSGVO-Garantie."
         },
         {
           heading: "Speicherung und Sicherheit",
           body:
-            "Daten werden nur so lange gespeichert, wie es fur Service und Compliance notwendig ist, mit angemessenen Schutzmassnahmen."
+            "Die Speicherdauer richtet sich nach dem Zweck jeder Datenkategorie und dem anwendbaren slowakischen Recht. Kontodaten bleiben während des aktiven Kontos und seiner Abwicklung gespeichert. Fallinhalte, Uploads, Eingaben und Ausgaben bleiben erhalten, solange Fall oder Konto sie benötigen, und länger nur, wenn eine gesetzliche Pflicht oder ein Rechtsanspruch dies rechtfertigt. Sicherheitsprotokolle und Einwilligungsnachweise werden nur zur Absicherung und zum Compliance-Nachweis aufbewahrt. Buchungsunterlagen werden grundsätzlich zehn Jahre nach dem betreffenden Geschäftsjahr gemäß Gesetz Nr. 431/2002 Slg. aufbewahrt. Eine Löschung können Sie beim Datenschutzkontakt beantragen; gesetzliche Ausnahmen erläutern wir in der Antwort. Wir setzen angemessene technische und organisatorische Maßnahmen sowie minimierte Protokolle ein."
         },
         {
           heading: "Ihre Rechte",
           body:
-            "Je nach Rechtsraum konnen Sie Auskunft, Berichtigung, Loschung oder Einschrankung der Verarbeitung verlangen."
+            "Unter den gesetzlichen Voraussetzungen können Sie Auskunft, Berichtigung, Löschung, Einschränkung und Datenübertragbarkeit verlangen oder einer Verarbeitung aufgrund berechtigter Interessen widersprechen. Einwilligungen können Sie jederzeit für die Zukunft widerrufen, ohne die Rechtmäßigkeit früherer Verarbeitung zu berühren. Schreiben Sie an info@jurisdigta.eu; vor einer Datenfreigabe oder -änderung dürfen wir Ihre Identität prüfen.",
+          links: [{ label: "Datenschutzkontakt anschreiben", href: "mailto:info@jurisdigta.eu" }]
+        },
+        {
+          heading: "Beschwerde",
+          body:
+            "Wenn Sie eine rechtswidrige Verarbeitung vermuten, können Sie zunächst uns kontaktieren oder sich beim Amt für den Schutz personenbezogener Daten der Slowakischen Republik, Galvaniho 7/B, 821 04 Bratislava, beschweren.",
+          links: [
+            { label: "Slowakische Datenschutzbehörde", href: "https://dataprotection.gov.sk/en/contact/" }
+          ]
+        },
+        {
+          heading: "Erforderliche Daten und Folgen",
+          body:
+            "Als erforderlich gekennzeichnete Konto- und Falldaten werden vertraglich für Registrierung, Authentifizierung und die angeforderte Leistung benötigt. Ohne sie können wir möglicherweise kein Konto anlegen, keinen Fall bearbeiten oder die gewählte Funktion bereitstellen. Die Einwilligung in externe KI ist für die lokale Modellroute nicht erforderlich."
+        },
+        {
+          heading: "Automatisierte Entscheidungen und menschliche Aufsicht",
+          body:
+            "Jurisdigta trifft keine Genehmigungen oder Rechtsentscheidungen ausschließlich automatisiert und verwendet kein Profiling mit rechtlicher oder ähnlich erheblicher Wirkung. Rechtlich riskante KI-Ausgaben bleiben Entwürfe zur menschlichen Prüfung; Nutzer entscheiden selbst, ob und wie sie diese verwenden."
         }
       ],
       lastUpdatedLabel: "Letzte Aktualisierung",
-      lastUpdated: "18. Februar 2026"
+      lastUpdated: "15. Juli 2026"
     },
     disclaimer: {
       title: "Haftungsausschluss",

@@ -549,6 +549,85 @@ describe("AssistantWorkspace", () => {
     expect(lastResult?.content?.[0]?.text).toBe("Real answer from API");
   });
 
+  it("shows the JurisDigta MCP proof notice from backend processing events", async () => {
+    const prompt = "Daj mi sumar zo zakona 192/2026";
+    const proofNotice =
+      "JurisDigta MCP server bol kontaktovaný na získanie najnovších právnych informácií.";
+    vi.mocked(createChatSession).mockResolvedValue({
+      id: "session-1",
+      user_id: "user-1",
+      case_id: "case-1",
+      country: "SK",
+      language: "sk",
+      discussion_type: "advice",
+      state: "active",
+      created_at: "2026-07-14T00:00:00Z"
+    });
+    vi.mocked(streamSession).mockImplementation(async function* () {
+      yield {
+        event: "processing",
+        data: {
+          stage: "mcp_law_context",
+          message: proofNotice,
+          details: {
+            user_visible: true,
+            source_notice_i18n: {
+              sk: proofNotice,
+              de: "Der JurisDigta MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen.",
+              en: "JurisDigta MCP Server was contacted to retrieve the latest legal information."
+            }
+          }
+        }
+      };
+      yield {
+        event: "message",
+        data: {
+          id: "message-1",
+          session_id: "session-1",
+          role: "assistant",
+          content: "Sumar zakona 192/2026 z MCP kontextu.",
+          agent_name: "AI Lawyer",
+          created_at: "2026-07-14T00:00:01Z"
+        }
+      };
+      yield {
+        event: "done",
+        data: { session_id: "session-1", status: "completed" }
+      };
+    });
+
+    render(<AssistantWorkspace />);
+
+    const result = capturedAdapter?.run({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: prompt }]
+        }
+      ],
+      abortSignal: new AbortController().signal
+    });
+
+    const streamedTexts: string[] = [];
+    if (result && Symbol.asyncIterator in result) {
+      for await (const update of result) {
+        const text = update.content?.[0]?.text;
+        if (text) {
+          streamedTexts.push(text);
+        }
+      }
+    } else if (result) {
+      const update = await result;
+      const text = update.content?.[0]?.text;
+      if (text) {
+        streamedTexts.push(text);
+      }
+    }
+
+    expect(streamedTexts[0]).toBe(proofNotice);
+    expect(streamedTexts.at(-1)).toBe(`${proofNotice}\n\nSumar zakona 192/2026 z MCP kontextu.`);
+  });
+
   it("localizes expired free-plan write errors from the JurisDigta chat API", async () => {
     vi.mocked(createChatSession).mockResolvedValue({
       id: "session-1",

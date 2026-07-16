@@ -1,10 +1,12 @@
-﻿export type Language = "en" | "sk" | "de";
+﻿import { PRODUCT_NAMES, type BrandLanguage } from "../branding";
+
+export type Language = BrandLanguage;
 
 export type TranslationValues = Record<string, string | number>;
 
 export const translations = {
   en: {
-    appName: "AIJurisdiction",
+    appName: PRODUCT_NAMES.en,
     tagline: "Multi-agent legal intelligence with audit-ready outputs.",
     commonUser: "User",
     navHome: "Home",
@@ -695,7 +697,7 @@ export const translations = {
     footerCopy: "Design concept for AIJurisdiction."
   },
   sk: {
-    appName: "AIJurisdiction",
+    appName: PRODUCT_NAMES.sk,
     tagline: "Multiagentná právna inteligencia s auditovateľnými výstupmi.",
     commonUser: "Používateľ",
     navHome: "Domov",
@@ -1386,7 +1388,7 @@ export const translations = {
     footerCopy: "Dizajnový koncept pre AIJurisdiction."
   },
   de: {
-    appName: "AIJurisdiction",
+    appName: PRODUCT_NAMES.de,
     tagline: "Multi-Agenten-Rechtsintelligenz mit auditierbaren Ergebnissen.",
     commonUser: "Benutzer",
     navHome: "Start",

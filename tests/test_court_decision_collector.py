@@ -5,7 +5,11 @@ import httpx
 from services.court_decision_collector.config import CourtDecisionCollectorConfig
 from services.court_decision_collector.fixtures import FixtureCourtDecisionSource, sample_court_decision_records
 from services.court_decision_collector.infosud_source import InfoSudSourceClient, record_from_infosud_payload
-from services.court_decision_collector.postgres_store import CourtDecisionCollectorStatus
+from services.court_decision_collector.postgres_store import (
+    CourtDecisionCollectorStatus,
+    _parse_issue_date,
+    normalize_court_name,
+)
 from services.court_decision_collector.pseudonymization import pseudonymize_court_decision_text
 from services.court_decision_collector.service import CourtDecisionCollectorService
 
@@ -40,6 +44,18 @@ class FakeStore:
             CourtDecisionCollectorStatus(last_processed_at="", last_source_guid="", status="not_started"),
         )
 
+
+def test_issue_date_parser_supports_source_and_iso_dates_without_fabrication() -> None:
+    assert str(_parse_issue_date("31.12.2012")) == "2012-12-31"
+    assert str(_parse_issue_date("2026-06-29")) == "2026-06-29"
+    assert _parse_issue_date("31.02.2012") is None
+    assert _parse_issue_date("") is None
+
+
+def test_court_name_normalization_is_diacritic_insensitive_and_exact() -> None:
+    assert normalize_court_name("Okresny sud Poprad") == "okresny sud poprad"
+    assert normalize_court_name("Okresný súd Poprad") == "okresny sud poprad"
+    assert normalize_court_name("Okresný súd Kežmarok") != "okresny sud poprad"
 
 class FakeResponse:
     def __init__(self, payload):
@@ -169,6 +185,23 @@ def test_infosud_payload_maps_to_record_with_public_text() -> None:
     assert record.source_guid == "abc"
     assert record.court_name == "Okresny sud Zilina"
     assert "Jan Novak" not in record.public_text
+
+
+def test_infosud_payload_prefers_original_issuing_court_after_court_reorganization() -> None:
+    payload = {
+        "guid": "kezmarok-origin",
+        "sud": {"nazov": "Okresný súd Poprad", "registreGuid": "sud_160"},
+        "povodnySud": {"nazov": "Okresný súd Kežmarok", "registreGuid": "sud_159"},
+        "ecli": "ECLI:SK:OSKK:2013:8413010378.1",
+        "datumVydania": "14.11.2013",
+    }
+
+    record = record_from_infosud_payload(
+        payload,
+        source_base_url="https://obcan.justice.sk/pilot/api/ress-isu-service/v1",
+    )
+
+    assert record.court_name == "Okresný súd Kežmarok"
 
 
 def test_service_logs_current_processing_decision() -> None:

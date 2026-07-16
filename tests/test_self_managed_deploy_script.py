@@ -34,6 +34,14 @@ def test_deploy_installs_log_retention_and_configures_monitoring() -> None:
     assert 'python3 configure_monitoring.py --project-env "$ENV_FILE" --validate --start' in script
 
 
+def test_deploy_applies_court_decision_schema_migrations() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'court_decisions_db_cloud="$(postgres_url "postgres" "$COURT_DECISIONS_DATABASE_NAME")"' in script
+    assert '-e DB_CLOUD="$court_decisions_db_cloud"' in script
+    assert "python /workspace/scripts/databases/apply_db_migrations.py --project court-decision-collector" in script
+
+
 def test_deploy_installs_ollama_and_pulls_default_model() -> None:
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 

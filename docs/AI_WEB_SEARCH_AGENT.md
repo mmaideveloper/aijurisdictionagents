@@ -6,6 +6,7 @@
 ## Behavior
 
 - Requires user consent before searching (`build_screening_consent_prompt`).
+- Legal-source fallback for Slovak law/court-decision answer preparation is blocked unless the current turn has explicit user approval for external web search. MCP legal-source retrieval is attempted first, and the frontend/mobile stream shows the backend MCP proof notice before any answer is prepared.
 - Supports entity-level screening prompts (person, company, car, etc.).
 - Performs a web lookup and returns structured records (`title`, `url`, `snippet`).
 - Falls back to DuckDuckGo HTML results when the instant-answer JSON endpoint does not return search hits.

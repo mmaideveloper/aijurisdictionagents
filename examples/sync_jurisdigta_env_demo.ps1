@@ -1,13 +1,8 @@
-param(
-    [string]$EnvExamplePath = ".env.example",
-    [string]$EnvPath = ".env"
-)
+param([string]$Profile = "local-core", [string]$EnvPath = ".env")
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-& (Join-Path $repoRoot "scripts\sync_jurisdigta_env.ps1") `
-    -EnvExamplePath $EnvExamplePath `
-    -EnvPath $EnvPath `
-    -SkipSshKeySync `
-    -SkipTransfer `
-    -DryRun
+& (Join-Path $repoRoot "scripts\sync_env_profile.ps1") `
+    -Mode Audit `
+    -Profile $Profile `
+    -EnvFilePath $EnvPath

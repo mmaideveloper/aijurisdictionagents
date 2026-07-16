@@ -6,6 +6,11 @@ from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizer
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 
+print(
+    "env_profiles => run scripts/sync_env_profile.ps1 -Mode Audit -Profile codex-agent -Strict; "
+    "only key names/statuses are reported and secret values remain redacted."
+)
+
 agent = AIAudioToolRecognizerAgent()
 print("speechtype default => message (review STT transcript before send)")
 for text in [
@@ -46,12 +51,41 @@ print(
     "mcp_async_legal_search => broad newest-result queries can call "
     "startLegalSearch(tool_name='searchCourtDecisions', arguments={'query':'podnajom', "
     "'sort':'latest', 'limit':10}), then poll getLegalSearchStatus and fetch "
-    "getLegalSearchResult with the returned user-scoped search_id."
+    "getLegalSearchResult with the returned user-scoped search_id. Degraded search "
+    "payloads expose async_fallback retry metadata only, without assistant-facing "
+    "instruction fields."
+)
+print(
+    "mcp_court_decision_latest_search => sort aliases such as date_desc are canonicalized "
+    "to latest, and court-decision MCP search uses the scoped "
+    "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS budget, defaulting to 600000 ms."
+)
+print(
+    "mcp_named_court_latest_search => searchCourtDecisions(query='sudne rozhodnutia', "
+    "court_name='Okresny sud Poprad', sort='latest', limit=5) applies an exact normalized "
+    "court filter and calendar-date ordering; check data_quality.latest_label_safe before "
+    "describing the metadata-only results as newest."
+)
+print(
+    "court_decision_on_demand_enrichment => exact allowlisted InfoSud decisions are cached as "
+    "complete metadata + validated PDF + pseudonymized local summary/topics/chunks/embeddings."
 )
 print(
     "mcp_first_all_model_routes => Slovak legal, jurisdiction, and legal-document-by-law "
     "chat turns retrieve bounded JurisDigta MCP context before local Ollama or external "
     "models receive the prompt."
+)
+print(
+    "mcp_user_visible_proof_notice => frontend/mobile streams show the backend-localized "
+    "notice when JurisDigta MCP is contacted for latest legal information; SK='JurisDigta MCP "
+    "server bol kontaktovaný na získanie najnovších právnych informácií.', DE='Der JurisDigta "
+    "MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen.', EN='JurisDigta "
+    "MCP Server was contacted to retrieve the latest legal information.'"
+)
+print(
+    "legal_web_search_approval_gate => AIWebSearchAgent legal-source fallback is blocked until "
+    "the current turn has explicit user approval for external web search; missing MCP results do "
+    "not silently trigger internet search."
 )
 print(
     "mcp_status_for_free_ollama => free-plan local Ollama chat can still answer MCP status "
@@ -62,6 +96,11 @@ print(
     "mcp_endpoint_claude_compat => /MCP remains accepted for Claude web and existing clients; "
     "it now advertises OAuth protected-resource metadata and requires the same per-user "
     "OAuth or MCP API key authentication for protected legal tools as /mcp."
+)
+print(
+    "mcp_claude_desktop_bearer_config => MCP setup page shows Claude Desktop users how to "
+    "log in at /mcp/login, generate a short-lived bearer token, and add mcp-remote@latest "
+    "with Authorization: Bearer YOUR_BEARER_TOKEN in Claude > Settings > Development > Edit Config."
 )
 print(
     "mcp_endpoint_vscode_oauth => VS Code can use only type=http and "
@@ -88,6 +127,11 @@ print(
     "mcp_oauth_claude_dcr => Claude/SmartIdentity-style dynamic client registration may include "
     "client_credentials, but JurisDigta normalizes public clients to authorization_code plus refresh_token "
     "and keeps the token endpoint closed to client_credentials."
+)
+print(
+    "mcp_oauth_claude_metadata => JurisDigta validates Claude's hosted client_id metadata "
+    "for https://claude.ai/api/mcp/auth_callback without requiring local unit tests to fetch "
+    "the live Claude metadata URL."
 )
 print(
     "mcp_oauth_e2e_bypass => synthetic free/paid E2E users can skip MFA only for MCP OAuth when "
@@ -327,6 +371,12 @@ print(
     "service_healthchecks => HTTP services expose privacy-minimized /health; "
     "worker services report supervisor state, freshness, latest run result, "
     "and sanitized errors through protected operational status."
+)
+print(
+    "privacy_notice => /privacy identifies Esolutions SK s.r.o. as controller; "
+    "discloses local Ollama and consent-gated EU Azure AI Foundry processing; "
+    "uses Slovak-law retention criteria; and confirms human review without "
+    "solely automated legal approvals."
 )
 print(
     "court_decision_collector => imports Slovak court decisions into a separate "

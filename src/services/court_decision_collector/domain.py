@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha256
 import json
 
@@ -94,3 +95,13 @@ class CourtDecisionSearchResult:
     source_url: str
     snippet: str
     score: float
+
+    @property
+    def issue_date_status(self) -> str:
+        for pattern in ("%Y-%m-%d", "%d.%m.%Y"):
+            try:
+                datetime.strptime(self.issue_date.strip(), pattern)
+                return "valid"
+            except ValueError:
+                continue
+        return "invalid_or_missing"

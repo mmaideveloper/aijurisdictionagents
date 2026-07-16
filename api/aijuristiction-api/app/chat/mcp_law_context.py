@@ -54,6 +54,8 @@ _COURT_QUERY_MARKERS = (
     "case law",
     "court decision",
     "court decisions",
+    "okresneho sudu",
+    "okresny sud",
 )
 _LEGAL_DOCUMENT_QUERY_MARKERS = (
     "zmluv",
@@ -99,6 +101,7 @@ def build_mcp_law_context(
     search_limit: int = 3,
     text_limit: int = 2,
     max_chars_per_law: int = 3000,
+    web_search_approved: bool = False,
 ) -> McpLawContext | None:
     """Build law context through the same MCP law tools exposed to external assistants."""
 
@@ -111,12 +114,16 @@ def build_mcp_law_context(
             search_limit=max(search_limit, 5),
             text_limit=text_limit,
             max_chars_per_law=max_chars_per_law,
+            language=language,
+            web_search_approved=web_search_approved,
         )
     return _build_laws_only_context(
         query=query,
         search_limit=search_limit,
         text_limit=text_limit,
         max_chars_per_law=max_chars_per_law,
+        language=language,
+        web_search_approved=web_search_approved,
     )
 
 
@@ -126,6 +133,8 @@ def _build_laws_only_context(
     search_limit: int,
     text_limit: int,
     max_chars_per_law: int,
+    language: str | None,
+    web_search_approved: bool,
 ) -> McpLawContext:
     try:
         search_arguments = _search_arguments(query=query, limit=search_limit)
@@ -134,11 +143,16 @@ def _build_laws_only_context(
         law_texts = [_law_text_payload(result=result, max_chars=max_chars_per_law) for result in laws[:text_limit]]
     except Exception:  # noqa: BLE001
         _LOGGER.warning("Internal MCP law context lookup failed", exc_info=True)
-        return _unavailable_context(tool_calls=["searchLaws"])
+        return _unavailable_context(tool_calls=["searchLaws"], language=language)
 
     if not laws:
-        fallback = _official_web_fallback_context(query=query, reason="mcp_laws_empty")
-        return fallback or _empty_context(query=query, tool_calls=["searchLaws"])
+        fallback = _official_web_fallback_context(
+            query=query,
+            reason="mcp_laws_empty",
+            language=language,
+            web_search_approved=web_search_approved,
+        )
+        return fallback or _empty_context(query=query, tool_calls=["searchLaws"], language=language)
 
     prompt_note = _prompt_note(
         query=query,
@@ -158,13 +172,16 @@ def _build_laws_only_context(
         document=document,
         processing_event={
             "stage": "mcp_law_context",
-            "message": "JurisDigta MCP law tools searched current Slovak law context.",
+            "message": _mcp_contact_notice(language),
             "details": {
                 "tool_calls": ["searchLaws", *("getLawText" for _item in law_texts)],
                 "result_count": len(laws),
                 "document_ids": [str(result.get("document_id", "")) for result in laws],
                 "source_origin": "system_vector_db",
                 "citations": _law_citations(laws),
+                "source_notice_i18n": _mcp_contact_notice_messages(),
+                "user_visible": True,
+                "web_search_status": "not_requested",
             },
         },
     )
@@ -176,6 +193,8 @@ def _build_combined_legal_context(
     search_limit: int,
     text_limit: int,
     max_chars_per_law: int,
+    language: str | None,
+    web_search_approved: bool,
 ) -> McpLawContext:
     try:
         search_arguments = {
@@ -184,17 +203,31 @@ def _build_combined_legal_context(
             "source_types": ["laws", "court_decisions"],
             "limit_per_source": search_limit,
         }
+        court_name = _court_name_filter(query)
+        if court_name:
+            search_arguments["court_name"] = court_name
+        if _is_latest_court_query(query):
+            search_arguments["sort"] = "latest"
         search_payload = _call_mcp_tool("searchLegalSources", search_arguments)
         laws = _tool_results_from_key(search_payload, "laws")
         court_decisions = _tool_results_from_key(search_payload, "court_decisions")[:search_limit]
         law_texts = [_law_text_payload(result=result, max_chars=max_chars_per_law) for result in laws[:text_limit]]
     except Exception:  # noqa: BLE001
         _LOGGER.warning("Internal MCP combined legal source lookup failed", exc_info=True)
-        return _unavailable_context(tool_calls=["searchLegalSources"])
+        return _unavailable_context(tool_calls=["searchLegalSources"], language=language)
 
     if not laws and not court_decisions:
-        fallback = _official_web_fallback_context(query=query, reason="mcp_legal_sources_empty")
-        return fallback or _empty_context(query=query, tool_calls=["searchLegalSources"])
+        fallback = _official_web_fallback_context(
+            query=query,
+            reason="mcp_legal_sources_empty",
+            language=language,
+            web_search_approved=web_search_approved,
+        )
+        return fallback or _empty_context(
+            query=query,
+            tool_calls=["searchLegalSources"],
+            language=language,
+        )
 
     prompt_note = _prompt_note(
         query=query,
@@ -219,7 +252,7 @@ def _build_combined_legal_context(
         document=document,
         processing_event={
             "stage": "mcp_law_context",
-            "message": "JurisDigta MCP searched laws and court decisions for this legal turn.",
+            "message": _mcp_contact_notice(language),
             "details": {
                 "tool_calls": ["searchLegalSources", *("getLawText" for _item in law_texts)],
                 "result_count": len(laws) + len(court_decisions),
@@ -227,6 +260,9 @@ def _build_combined_legal_context(
                 "court_decision_count": len(court_decisions),
                 "source_origin": "system_vector_db",
                 "citations": [*_law_citations(laws), *_court_decision_citations(court_decisions)],
+                "source_notice_i18n": _mcp_contact_notice_messages(),
+                "user_visible": True,
+                "web_search_status": "not_requested",
             },
         },
     )
@@ -287,6 +323,20 @@ def _is_latest_law_query(query: str) -> bool:
         normalized,
     )
     return latest_then_law is not None or law_then_latest is not None
+
+
+def _is_latest_court_query(query: str) -> bool:
+    normalized = _canonical(query)
+    return bool(re.search(r"\b(posledn\w*|najnovs\w*|latest|newest)\b", normalized))
+
+
+def _court_name_filter(query: str) -> str | None:
+    normalized = _canonical(query)
+    match = re.search(r"\bokresn(?:y|eho)\s+sud(?:u)?\s+([a-z][a-z-]*)\b", normalized)
+    if match is None:
+        return None
+    city = match.group(1)
+    return f"Okresny sud {city.title()}"
 
 
 def _law_text_payload(*, result: dict[str, Any], max_chars: int) -> dict[str, Any]:
@@ -483,36 +533,53 @@ def _document_content(
     return "\n".join(lines).strip()
 
 
-def _empty_context(*, query: str, tool_calls: list[str]) -> McpLawContext:
+def _empty_context(*, query: str, tool_calls: list[str], language: str | None) -> McpLawContext:
     return McpLawContext(
         prompt_note=(
             "INTERNAL MCP LAW TOOL CONTEXT:\n"
             "- JurisDigta MCP legal-source search was called for this Slovak legal turn but returned no matching source.\n"
             f"- User query: {query.strip()}\n"
+            "- AIWebSearchAgent internet fallback was not used because this turn has no explicit user approval for external web search.\n"
             "- Tell the user that current-law lookup did not find a matching source and avoid exact legal citations."
         ),
         document=None,
         processing_event={
             "stage": "mcp_law_context",
-            "message": "JurisDigta MCP legal-source search returned no matching context.",
-            "details": {"tool_calls": tool_calls, "result_count": 0, "source_origin": "system_vector_db"},
+            "message": _mcp_contact_notice(language),
+            "details": {
+                "tool_calls": tool_calls,
+                "result_count": 0,
+                "source_origin": "system_vector_db",
+                "source_notice_i18n": _mcp_contact_notice_messages(),
+                "user_visible": True,
+                "web_search_status": "blocked_pending_user_approval",
+                "web_search_approval_required": True,
+            },
         },
     )
 
 
-def _unavailable_context(*, tool_calls: list[str]) -> McpLawContext:
+def _unavailable_context(*, tool_calls: list[str], language: str | None) -> McpLawContext:
     return McpLawContext(
         prompt_note=(
             "INTERNAL MCP LAW TOOL CONTEXT:\n"
             "- JurisDigta MCP law lookup was attempted but is temporarily unavailable.\n"
+            "- AIWebSearchAgent internet fallback was not used because this turn has no explicit user approval for external web search.\n"
             "- Be transparent that current-law verification could not be completed in this turn.\n"
             "- Avoid exact legal citations unless they are already present in uploaded documents or case history."
         ),
         document=None,
         processing_event={
             "stage": "mcp_law_context",
-            "message": "JurisDigta MCP law lookup is temporarily unavailable.",
-            "details": {"tool_calls": tool_calls, "status": "unavailable"},
+            "message": _mcp_contact_notice(language),
+            "details": {
+                "tool_calls": tool_calls,
+                "status": "unavailable",
+                "source_notice_i18n": _mcp_contact_notice_messages(),
+                "user_visible": True,
+                "web_search_status": "blocked_pending_user_approval",
+                "web_search_approval_required": True,
+            },
         },
     )
 
@@ -537,7 +604,15 @@ def _canonical(value: str) -> str:
     return re.sub(r"\s+", " ", ascii_only).strip()
 
 
-def _official_web_fallback_context(*, query: str, reason: str) -> McpLawContext | None:
+def _official_web_fallback_context(
+    *,
+    query: str,
+    reason: str,
+    language: str | None,
+    web_search_approved: bool,
+) -> McpLawContext | None:
+    if not web_search_approved:
+        return None
     records = _official_web_fallback_records(query=query)
     if not records:
         return None
@@ -564,6 +639,10 @@ def _official_web_fallback_context(*, query: str, reason: str) -> McpLawContext 
                 "result_count": len(records),
                 "fallback_reason": reason,
                 "source_origin": "official_web_fallback",
+                "mcp_contact_notice": _mcp_contact_notice(language),
+                "source_notice_i18n": _mcp_contact_notice_messages(),
+                "web_search_status": "approved",
+                "web_search_approved": True,
                 "warning_required": True,
                 "human_review_required": True,
                 "warning": (
@@ -598,6 +677,24 @@ def _official_web_fallback_records(*, query: str) -> list[dict[str, str]]:
             }
         )
     return fallback_records
+
+
+def _mcp_contact_notice(language: str | None) -> str:
+    normalized = (language or "").strip().lower()
+    messages = _mcp_contact_notice_messages()
+    if normalized.startswith("sk"):
+        return messages["sk"]
+    if normalized.startswith("de") or normalized.startswith("ge"):
+        return messages["de"]
+    return messages["en"]
+
+
+def _mcp_contact_notice_messages() -> dict[str, str]:
+    return {
+        "sk": "JurisDigta MCP server bol kontaktovaný na získanie najnovších právnych informácií.",
+        "de": "Der JurisDigta MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen.",
+        "en": "JurisDigta MCP Server was contacted to retrieve the latest legal information.",
+    }
 
 
 def _is_official_legal_source_url(url: str) -> bool:
