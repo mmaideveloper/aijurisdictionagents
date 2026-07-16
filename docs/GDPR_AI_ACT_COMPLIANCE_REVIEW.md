@@ -10,6 +10,17 @@ Scope reviewed: API (`api/aijuristiction-api`), core orchestrator (`src/aijurisd
 - Frontend includes privacy/legal pages and legal disclaimers.
 - Observability exists and can be centrally configured, which supports auditability.
 
+## Frontend terms-page wording review (issue #547)
+
+The Slovak, English, and German `/terms` copy was reviewed on 2026-07-15 for language quality, product naming, GDPR data-minimization guidance, and EU AI Act transparency/human-oversight messaging.
+
+- The terms use the localized product titles `Jurisdigta AI právnik`, `Jurisdigta AI Lawyer`, and `Jurisdigta AI Anwalt`, with corrected language-specific grammar.
+- The personal-data section directs users to the privacy page and asks them to submit only necessary data that they are authorized to provide.
+- The AI-output section warns that generated content may be inaccurate, incomplete, or outdated and calls for verification and appropriate human review before legally consequential actions.
+- The update deliberately does not state unverified controller identities, processors, lawful bases, transfer mechanisms, or retention periods.
+
+This content review improves user transparency but does not close the broader technical and governance gaps documented below. The terms page is not a substitute for a complete GDPR privacy notice, and substantive legal claims still require verified owner input and legal review.
+
 ## Main compliance gaps and suggested updates
 
 ## 1) GDPR lawful basis + consent records are not centrally auditable

@@ -256,6 +256,32 @@ Global footer links are available in all language modes (`en`, `sk`, `de`) and a
 
 The disclaimer page includes AI disclosure, no-legal-advice notice, no attorney-client relationship, limitation of liability, no warranty, jurisdiction scope, user responsibility, external resources clause, right-to-modify clause, and a `Last Updated` timestamp.
 
+The terms pages use language-specific product titles—`Jurisdigta AI právnik` in Slovak, `Jurisdigta AI Lawyer` in English, and `Jurisdigta AI Anwalt` in German. Each version links to the localized privacy page, asks users to minimize submitted personal data, and warns that AI-generated legal outputs require verification and appropriate human review. These terms do not replace the complete privacy notice and do not introduce unverified controller, processor, lawful-basis, transfer, or retention claims.
+
+Minimal local verification example:
+
+```bash
+cd frontend/aijurisdictionfronend
+npm ci
+npm run dev -- --host 127.0.0.1
+```
+
+Open `http://127.0.0.1:5173/terms`, select `SK`, and run the focused automated check in a second terminal:
+
+```bash
+cd frontend/aijurisdictionfronend
+npm run test -- src/__tests__/termsPage.test.tsx
+```
+
+Run the localized browser test to verify the actual language switcher and capture all three full-page variants:
+
+```bash
+cd frontend/aijurisdictionfronend
+npm run test:e2e -- e2e/terms-localization.spec.ts
+```
+
+The test writes `terms-sk.png`, `terms-en.png`, and `terms-de.png` to `runs/e2e/`.
+
 ## Callback Contract
 
 The frontend expects auth callback requests to hit:
