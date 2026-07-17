@@ -19,6 +19,14 @@ the selected profile are blocking; all other schema keys are optional for that
 profile. Optional inactive keys should be absent or commented, not active with
 `unknown-variable`. Secret-like keys never receive guessed defaults.
 
+## Web MFA reuse
+
+`MFA_REUSE_WINDOW_HOURS=12` keeps a successful web MFA verification valid for
+12 hours. Logging out still invalidates the active authenticated session, but a
+subsequent password sign-in during that window does not require another MFA
+code. Set `MFA_REUSE_WINDOW_HOURS=0` to require MFA on every sign-in. The API
+runtime fallback remains `0` when the variable is absent or invalid.
+
 ## Commands
 
 ```powershell

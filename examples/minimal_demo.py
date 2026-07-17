@@ -10,6 +10,10 @@ print(
     "env_profiles => run scripts/sync_env_profile.ps1 -Mode Audit -Profile codex-agent -Strict; "
     "only key names/statuses are reported and secret values remain redacted."
 )
+print(
+    "web_mfa_reuse => MFA_REUSE_WINDOW_HOURS=12 skips repeat MFA for 12 hours after successful "
+    "verification while logout still ends the session; set 0 to require MFA on every sign-in."
+)
 
 agent = AIAudioToolRecognizerAgent()
 print("speechtype default => message (review STT transcript before send)")
