@@ -13,7 +13,8 @@ import unicodedata
 import zipfile
 from mimetypes import guess_type
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import secrets
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -184,6 +185,7 @@ class SendCaseDocumentsEmailRequest(BaseModel):
     version: str = Field(default="v1")
     doc_ids: list[str] | None = None
     correlation_id: str | None = None
+    locale: str = Field(default="en", max_length=8)
 
 
 class SendCaseDocumentsEmailResponse(BaseModel):
@@ -192,6 +194,9 @@ class SendCaseDocumentsEmailResponse(BaseModel):
     case_subject: str
     attachment_count: int
     correlation_id: str
+    share_id: str
+    share_url: str
+    expires_at: str
 
 
 class CaseDocumentDebugStoredResponse(BaseModel):
@@ -623,56 +628,70 @@ def send_case_documents_email(
     documents = [
         item
         for item in store.list_case_documents(case_id=case_id)
-        if item.kind in {"uploaded", "chat_attachment", "session_history", "generated_document"}
+        if item.kind == "generated_document"
         and (not requested_doc_ids or item.doc_id in requested_doc_ids)
     ]
-    if not documents:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No case documents available to send.")
+    if len(documents) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Select exactly one generated document to share.",
+        )
     correlation_id = (payload.correlation_id or str(uuid4())).strip()
     subject = (payload.case_subject or case.title).strip() or f"Case {case.case_id}"
-    case_url = _build_case_deep_link(case_id=case_id)
-    plain = (
-        f"Dear client,\n\nPlease find attached generated documents for case '{subject}'.\n\n"
-        f"Open the case in JurisDigta: {case_url}\n\n"
-        "Review the generated legal documents before filing, signing, or relying on them.\n\n"
-        "Regards,\nJurisDigta Legal Team"
+    locale = _document_share_locale(payload.locale)
+    raw_token = secrets.token_urlsafe(32)
+    share_id = str(uuid4())
+    expires_at = datetime.now(timezone.utc) + timedelta(days=_document_share_lifetime_days())
+    store.create_document_share(
+        share_id=share_id,
+        token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+        case_id=case_id,
+        doc_id=documents[0].doc_id,
+        sender_user_id=payload.user_id,
+        recipient_email=payload.recipient,
+        locale=locale,
+        expires_at=expires_at.isoformat(),
     )
-    html = _build_lawyer_email_html(
-        case_subject=subject,
-        version=payload.version.strip() or "v1",
-        correlation_id=correlation_id,
-        case_url=case_url,
-    )
-    attachments: list[dict[str, str]] = []
-    for document in documents:
-        attachments.append(
-            _case_document_email_attachment(
-                case=case,
-                user_id=payload.user_id,
-                document=document,
-                store=store,
-            )
-        )
+    share_url = f"{_case_deep_link_base_url()}/shared-documents/{quote(raw_token, safe='')}"
+    email_content = _document_share_email_content(locale=locale, share_url=share_url, expires_at=expires_at)
     scheduler = EmailScheduler.from_env()
     email_id = scheduler.enqueue(
         recipient=payload.recipient.strip().lower(),
-        subject=f"Legal document package | {subject}",
-        body=plain,
+        subject=email_content["subject"],
+        body=email_content["plain"],
         metadata={
-            "event": "case_documents_email",
+            "event": "document_share_invitation",
             "case_id": case_id,
-            "case_url": case_url,
-            "html_body": html,
-            "attachments": attachments,
+            "share_id": share_id,
+            "html_body": email_content["html"],
+            "locale": locale,
         },
     )
+    store.record_document_share_audit(share_id=share_id, action="share.created", outcome="email_queued")
     return SendCaseDocumentsEmailResponse(
         email_id=email_id,
         recipient=payload.recipient.strip().lower(),
         case_subject=subject,
-        attachment_count=len(attachments),
+        attachment_count=0,
         correlation_id=correlation_id,
+        share_id=share_id,
+        share_url=share_url,
+        expires_at=expires_at.isoformat(),
     )
+
+
+@router.delete('/{case_id}/documents/shares/{share_id}', status_code=status.HTTP_204_NO_CONTENT)
+def revoke_case_document_share(
+    case_id: str,
+    share_id: str,
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_store),
+) -> Response:
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    if not store.revoke_document_share(share_id=share_id, sender_user_id=user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document share not found.")
+    store.record_document_share_audit(share_id=share_id, action="share.revoked", outcome="success")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def build_case_export_response(
@@ -1473,6 +1492,64 @@ def _case_deep_link_base_url() -> str:
 
 def _build_case_deep_link(*, case_id: str) -> str:
     return f"{_case_deep_link_base_url()}/case/{quote(case_id.strip(), safe='')}"
+
+
+def _document_share_lifetime_days() -> int:
+    raw = os.getenv("DOCUMENT_SHARE_LIFETIME_DAYS", "7").strip()
+    try:
+        return max(1, min(int(raw), 30))
+    except ValueError:
+        return 7
+
+
+def _document_share_locale(value: str) -> str:
+    normalized = value.strip().lower().split("-", 1)[0]
+    return normalized if normalized in {"en", "sk", "de"} else "en"
+
+
+def _document_share_email_content(
+    *, locale: str, share_url: str, expires_at: datetime
+) -> dict[str, str]:
+    copy = {
+        "en": {
+            "subject": "A legal document was shared with you | JurisDigta",
+            "greeting": "Hello,",
+            "body": "A JurisDigta user shared one legal document with you.",
+            "action": "Open the protected document",
+            "expiry": "The link expires on {date}. Registration is not required; email verification is required.",
+            "warning": "Review AI-assisted legal documents with a qualified person before filing, signing, or relying on them.",
+            "unexpected": "If you did not expect this message, do not open the link and contact JurisDigta support.",
+        },
+        "sk": {
+            "subject": "Bol vám zdieľaný právny dokument | JurisDigta",
+            "greeting": "Dobrý deň,",
+            "body": "Používateľ JurisDigta s vami zdieľal jeden právny dokument.",
+            "action": "Otvoriť chránený dokument",
+            "expiry": "Odkaz je platný do {date}. Registrácia nie je potrebná; vyžaduje sa overenie e-mailom.",
+            "warning": "Právne dokumenty vytvorené s podporou AI pred podaním, podpisom alebo použitím skontrolujte s kvalifikovanou osobou.",
+            "unexpected": "Ak ste túto správu neočakávali, odkaz neotvárajte a kontaktujte podporu JurisDigta.",
+        },
+        "de": {
+            "subject": "Ein Rechtsdokument wurde mit Ihnen geteilt | JurisDigta",
+            "greeting": "Guten Tag,",
+            "body": "Ein JurisDigta-Benutzer hat ein Rechtsdokument mit Ihnen geteilt.",
+            "action": "Geschütztes Dokument öffnen",
+            "expiry": "Der Link ist bis {date} gültig. Eine Registrierung ist nicht erforderlich; eine E-Mail-Verifizierung ist erforderlich.",
+            "warning": "Lassen Sie KI-unterstützte Rechtsdokumente vor Einreichung, Unterzeichnung oder Verwendung qualifiziert prüfen.",
+            "unexpected": "Wenn Sie diese Nachricht nicht erwartet haben, öffnen Sie den Link nicht und kontaktieren Sie den JurisDigta-Support.",
+        },
+    }[locale]
+    expiry = copy["expiry"].format(date=expires_at.strftime("%Y-%m-%d %H:%M UTC"))
+    plain = "\n\n".join((copy["greeting"], copy["body"], f"{copy['action']}: {share_url}", expiry, copy["warning"], copy["unexpected"]))
+    escaped_url = html.escape(share_url, quote=True)
+    html_body = (
+        "<html><body style='font-family:Arial,sans-serif;color:#1f2937'>"
+        f"<p>{html.escape(copy['greeting'])}</p><p>{html.escape(copy['body'])}</p>"
+        f"<p><a href='{escaped_url}'>{html.escape(copy['action'])}</a></p>"
+        f"<p>{html.escape(expiry)}</p><p>{html.escape(copy['warning'])}</p>"
+        f"<p>{html.escape(copy['unexpected'])}</p></body></html>"
+    )
+    return {"subject": copy["subject"], "plain": plain, "html": html_body}
 
 
 def _case_document_email_attachment(

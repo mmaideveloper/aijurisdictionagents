@@ -78,6 +78,7 @@ export type SendCaseDocumentEmailInput = {
   docIds: string[];
   recipient: string;
   caseSubject?: string;
+  locale: string;
 };
 
 export type FetchCaseDocumentInput = {
@@ -101,6 +102,9 @@ export type SendCaseDocumentEmailResult = {
   case_subject: string;
   attachment_count: number;
   correlation_id: string;
+  share_id: string;
+  share_url: string;
+  expires_at: string;
 };
 
 const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
@@ -394,7 +398,8 @@ export const sendCaseDocumentEmail = async (
         user_id: input.userId,
         recipient: input.recipient,
         case_subject: input.caseSubject || "",
-        doc_ids: input.docIds
+        doc_ids: input.docIds,
+        locale: input.locale
       })
     }
   );

@@ -163,6 +163,28 @@ class CaseDocument:
 
 
 @dataclass(frozen=True)
+class DocumentShare:
+    share_id: str
+    token_hash: str
+    case_id: str
+    doc_id: str
+    sender_user_id: str
+    recipient_email: str
+    locale: str
+    status: str
+    expires_at: str
+    code_hash: str
+    code_expires_at: str | None
+    code_attempts: int
+    last_code_sent_at: str | None
+    session_token_hash: str
+    session_expires_at: str | None
+    last_accessed_at: str | None
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
 class CaseCommunication:
     communication_id: str
     case_id: str
@@ -626,6 +648,42 @@ class ApiDatabaseStore:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE,
                     FOREIGN KEY(uploaded_by_user_id) REFERENCES users(user_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS document_shares (
+                    share_id TEXT PRIMARY KEY,
+                    token_hash TEXT UNIQUE NOT NULL,
+                    case_id TEXT NOT NULL,
+                    doc_id TEXT NOT NULL,
+                    sender_user_id TEXT NOT NULL,
+                    recipient_email_protected TEXT NOT NULL,
+                    locale TEXT NOT NULL DEFAULT 'en',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    expires_at TEXT NOT NULL,
+                    code_hash TEXT NOT NULL DEFAULT '',
+                    code_expires_at TEXT,
+                    code_attempts INTEGER NOT NULL DEFAULT 0,
+                    last_code_sent_at TEXT,
+                    session_token_hash TEXT NOT NULL DEFAULT '',
+                    session_expires_at TEXT,
+                    last_accessed_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE,
+                    FOREIGN KEY(doc_id) REFERENCES case_documents(doc_id) ON DELETE CASCADE,
+                    FOREIGN KEY(sender_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_document_shares_sender_document
+                ON document_shares(sender_user_id, case_id, doc_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS document_share_audit_events (
+                    audit_event_id TEXT PRIMARY KEY,
+                    share_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    outcome TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(share_id) REFERENCES document_shares(share_id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS case_document_contents (
@@ -1120,7 +1178,9 @@ class ApiDatabaseStore:
             raise RuntimeError(f"AI model profile was not soft-deleted: {normalized_id}")
         return _row_to_ai_model_profile(row)
 
-    def list_ai_model_profiles(self, *, provider_id: str | None = None, include_deleted: bool = False) -> list[AIModelProfile]:
+    def list_ai_model_profiles(
+        self, *, provider_id: str | None = None, include_deleted: bool = False
+    ) -> list[AIModelProfile]:
         filters: list[str] = []
         params: list[Any] = []
         if provider_id is not None:
@@ -1167,7 +1227,9 @@ class ApiDatabaseStore:
         now = _now_iso()
         normalized_task = _normalize_route_key(task_type, default="default")
         normalized_plan = _normalize_route_key(plan_code, default="")
-        resolved_id = policy_id or f"{normalized_task}:{normalized_plan}:{model_group_id or 'default'}"
+        resolved_id = (
+            policy_id or f"{normalized_task}:{normalized_plan}:{model_group_id or 'default'}"
+        )
         with self._connect() as conn:
             self._execute(
                 conn,
@@ -1299,7 +1361,9 @@ class ApiDatabaseStore:
             raise RuntimeError(f"AI task route policy was not soft-deleted: {normalized_id}")
         return _row_to_ai_task_route_policy(row)
 
-    def list_ai_task_route_policies(self, *, include_deleted: bool = False) -> list[AITaskRoutePolicy]:
+    def list_ai_task_route_policies(
+        self, *, include_deleted: bool = False
+    ) -> list[AITaskRoutePolicy]:
         where = "" if include_deleted else "WHERE deleted_at IS NULL"
         with self._connect() as conn:
             rows = self._execute(
@@ -1608,7 +1672,9 @@ class ApiDatabaseStore:
 
     def delete_ai_model_group(self, *, model_group_id: str) -> None:
         with self._connect() as conn:
-            self._execute(conn, "DELETE FROM ai_model_groups WHERE model_group_id = ?", (model_group_id,))
+            self._execute(
+                conn, "DELETE FROM ai_model_groups WHERE model_group_id = ?", (model_group_id,)
+            )
             conn.commit()
 
     def list_ai_model_groups(self, *, include_deleted: bool = False) -> list[AIModelGroup]:
@@ -1626,7 +1692,9 @@ class ApiDatabaseStore:
             ).fetchall()
         return [_row_to_ai_model_group(row) for row in rows]
 
-    def add_ai_model_group_user(self, *, model_group_id: str, user_id: str) -> AIModelGroupMembership:
+    def add_ai_model_group_user(
+        self, *, model_group_id: str, user_id: str
+    ) -> AIModelGroupMembership:
         now = _now_iso()
         with self._connect() as conn:
             self._execute(
@@ -2039,7 +2107,9 @@ class ApiDatabaseStore:
             if user_override is not None:
                 override, target = user_override
                 provider, profile = target
-                route_type = "user_override_external" if provider.is_external else "user_override_local"
+                route_type = (
+                    "user_override_external" if provider.is_external else "user_override_local"
+                )
                 return AIModelRouteSelection(
                     policy=None,
                     provider=provider,
@@ -2155,11 +2225,15 @@ class ApiDatabaseStore:
                 requires_external_ack=False,
                 reason="External model is not marked EU data zone capable.",
             )
-        if policy.max_cost_eur > 0 and self._ai_model_usage_cost_eur(
-            user_id=user_id,
-            plan_code=normalized_plan,
-            task_type=normalized_task,
-        ) >= policy.max_cost_eur:
+        if (
+            policy.max_cost_eur > 0
+            and self._ai_model_usage_cost_eur(
+                user_id=user_id,
+                plan_code=normalized_plan,
+                task_type=normalized_task,
+            )
+            >= policy.max_cost_eur
+        ):
             reason = (
                 "External model budget cap reached for this route policy; "
                 "using configured local fallback."
@@ -2322,7 +2396,11 @@ class ApiDatabaseStore:
         minutes: int = 60,
         case_id: str | None = None,
     ) -> list[AIModelUsageSummary]:
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max(minutes, 1))).isoformat().replace("+00:00", "Z")
+        cutoff = (
+            (datetime.now(timezone.utc) - timedelta(minutes=max(minutes, 1)))
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
         params: list[Any] = [cutoff]
         case_filter = ""
         if case_id is not None:
@@ -2354,8 +2432,10 @@ class ApiDatabaseStore:
         limit: int = 10,
     ) -> list[AIModelTopCaseUsage]:
         cutoff = (
-            datetime.now(timezone.utc) - timedelta(minutes=max(minutes, 1))
-        ).isoformat().replace("+00:00", "Z")
+            (datetime.now(timezone.utc) - timedelta(minutes=max(minutes, 1)))
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
         bounded_limit = min(max(limit, 1), 50)
         with self._connect() as conn:
             rows = self._execute(
@@ -2580,13 +2660,17 @@ class ApiDatabaseStore:
             stored_hash = str(row[0])
             expires_at = str(row[1])
             if not _is_future_iso_datetime(expires_at):
-                self._execute(conn, "DELETE FROM registration_codes WHERE email = ?", (normalized_email,))
+                self._execute(
+                    conn, "DELETE FROM registration_codes WHERE email = ?", (normalized_email,)
+                )
                 conn.commit()
                 return False
             provided_hash = _hash_one_time_code(code)
             if not hmac.compare_digest(stored_hash, provided_hash):
                 return False
-            self._execute(conn, "DELETE FROM registration_codes WHERE email = ?", (normalized_email,))
+            self._execute(
+                conn, "DELETE FROM registration_codes WHERE email = ?", (normalized_email,)
+            )
             conn.commit()
             return True
 
@@ -2640,10 +2724,14 @@ class ApiDatabaseStore:
             payload_json = str(row[0])
             expires_at = str(row[1])
             if not _is_future_iso_datetime(expires_at):
-                self._execute(conn, "DELETE FROM mcp_pending_signups WHERE pending_id = ?", (normalized_id,))
+                self._execute(
+                    conn, "DELETE FROM mcp_pending_signups WHERE pending_id = ?", (normalized_id,)
+                )
                 conn.commit()
                 return None
-            self._execute(conn, "DELETE FROM mcp_pending_signups WHERE pending_id = ?", (normalized_id,))
+            self._execute(
+                conn, "DELETE FROM mcp_pending_signups WHERE pending_id = ?", (normalized_id,)
+            )
             conn.commit()
             return payload_json
 
@@ -2699,7 +2787,9 @@ class ApiDatabaseStore:
             )
             if row is None:
                 return None
-            self._execute(conn, "DELETE FROM mcp_oauth_authorization_codes WHERE code = ?", (normalized_code,))
+            self._execute(
+                conn, "DELETE FROM mcp_oauth_authorization_codes WHERE code = ?", (normalized_code,)
+            )
             conn.commit()
         if not _is_future_iso_datetime(str(row[6])):
             return None
@@ -3487,7 +3577,6 @@ class ApiDatabaseStore:
             created_at=current_user.created_at,
         )
 
-
     def set_user_mcp_api_key(self, *, user_id: str, api_key: str, expires_at: str) -> User:
         with self._connect() as conn:
             self._execute(
@@ -3675,7 +3764,9 @@ class ApiDatabaseStore:
                 requires_external_ack=False,
                 reason="Selected model profile id is required.",
             )
-        if not normalized_user_id or not self.can_select_assistant_model(user_id=normalized_user_id):
+        if not normalized_user_id or not self.can_select_assistant_model(
+            user_id=normalized_user_id
+        ):
             return AIModelRouteSelection(
                 policy=None,
                 provider=None,
@@ -3811,6 +3902,202 @@ class ApiDatabaseStore:
         if row is None:
             raise KeyError(f"Document {doc_id} not found for case {case_id}")
         return _row_to_case_document(row)
+
+    def create_document_share(
+        self,
+        *,
+        share_id: str,
+        token_hash: str,
+        case_id: str,
+        doc_id: str,
+        sender_user_id: str,
+        recipient_email: str,
+        locale: str,
+        expires_at: str,
+    ) -> DocumentShare:
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO document_shares(
+                    share_id, token_hash, case_id, doc_id, sender_user_id,
+                    recipient_email_protected, locale, status, expires_at,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+                """,
+                (
+                    share_id,
+                    token_hash,
+                    case_id,
+                    doc_id,
+                    sender_user_id,
+                    _protect_document_share_email(recipient_email.strip().lower()),
+                    locale,
+                    expires_at,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        return self.get_document_share_by_id(share_id=share_id)
+
+    def get_document_share_by_id(self, *, share_id: str) -> DocumentShare:
+        return self._get_document_share("share_id", share_id)
+
+    def get_document_share_by_token_hash(self, *, token_hash: str) -> DocumentShare:
+        return self._get_document_share("token_hash", token_hash)
+
+    def get_document_share_by_session_hash(self, *, session_token_hash: str) -> DocumentShare:
+        return self._get_document_share("session_token_hash", session_token_hash)
+
+    def _get_document_share(self, column: str, value: str) -> DocumentShare:
+        if column not in {"share_id", "token_hash", "session_token_hash"}:
+            raise ValueError("Unsupported document share lookup")
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                f"""
+                SELECT share_id, token_hash, case_id, doc_id, sender_user_id,
+                       recipient_email_protected, locale, status, expires_at,
+                       code_hash, code_expires_at, code_attempts, last_code_sent_at,
+                       session_token_hash, session_expires_at, last_accessed_at,
+                       created_at, updated_at
+                FROM document_shares
+                WHERE {column} = ?
+                """,
+                (value,),
+            )
+        if row is None:
+            raise KeyError("Document share not found")
+        recipient = _reveal_document_share_email(str(row[5]))
+        if recipient is None:
+            raise ValueError("Document share recipient cannot be revealed")
+        return DocumentShare(
+            share_id=str(row[0]),
+            token_hash=str(row[1]),
+            case_id=str(row[2]),
+            doc_id=str(row[3]),
+            sender_user_id=str(row[4]),
+            recipient_email=recipient,
+            locale=str(row[6]),
+            status=str(row[7]),
+            expires_at=str(row[8]),
+            code_hash=str(row[9]),
+            code_expires_at=str(row[10]) if row[10] else None,
+            code_attempts=int(row[11]),
+            last_code_sent_at=str(row[12]) if row[12] else None,
+            session_token_hash=str(row[13]),
+            session_expires_at=str(row[14]) if row[14] else None,
+            last_accessed_at=str(row[15]) if row[15] else None,
+            created_at=str(row[16]),
+            updated_at=str(row[17]),
+        )
+
+    def set_document_share_code(
+        self, *, share_id: str, code_hash: str, code_expires_at: str, sent_at: str
+    ) -> None:
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE document_shares
+                SET code_hash = ?, code_expires_at = ?, code_attempts = 0,
+                    last_code_sent_at = ?, updated_at = ?
+                WHERE share_id = ? AND status = 'active'
+                """,
+                (code_hash, code_expires_at, sent_at, sent_at, share_id),
+            )
+            conn.commit()
+
+    def increment_document_share_code_attempts(self, *, share_id: str) -> int:
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                "UPDATE document_shares SET code_attempts = code_attempts + 1, updated_at = ? WHERE share_id = ?",
+                (now, share_id),
+            )
+            row = self._fetchone(
+                conn, "SELECT code_attempts FROM document_shares WHERE share_id = ?", (share_id,)
+            )
+            conn.commit()
+        return int(row[0]) if row else 0
+
+    def activate_document_share_session(
+        self, *, share_id: str, session_token_hash: str, session_expires_at: str
+    ) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE document_shares
+                SET code_hash = '', code_expires_at = NULL, code_attempts = 0,
+                    session_token_hash = ?, session_expires_at = ?, last_accessed_at = ?, updated_at = ?
+                WHERE share_id = ? AND status = 'active'
+                """,
+                (session_token_hash, session_expires_at, now, now, share_id),
+            )
+            conn.commit()
+
+    def touch_document_share_session(self, *, share_id: str, session_expires_at: str) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE document_shares
+                SET last_accessed_at = ?, session_expires_at = ?, updated_at = ?
+                WHERE share_id = ? AND status = 'active'
+                """,
+                (now, session_expires_at, now, share_id),
+            )
+            conn.commit()
+
+    def revoke_document_share(self, *, share_id: str, sender_user_id: str) -> bool:
+        now = _now_iso()
+        with self._connect() as conn:
+            result = self._execute(
+                conn,
+                """
+                UPDATE document_shares
+                SET status = 'revoked', code_hash = '', code_expires_at = NULL,
+                    session_token_hash = '', session_expires_at = NULL, updated_at = ?
+                WHERE share_id = ? AND sender_user_id = ? AND status = 'active'
+                """,
+                (now, share_id, sender_user_id),
+            )
+            conn.commit()
+        return result.rowcount > 0
+
+    def expire_document_share(self, *, share_id: str) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                UPDATE document_shares
+                SET status = 'expired', token_hash = share_id,
+                    recipient_email_protected = '', code_hash = '', code_expires_at = NULL,
+                    session_token_hash = '', session_expires_at = NULL, updated_at = ?
+                WHERE share_id = ? AND status = 'active'
+                """,
+                (now, share_id),
+            )
+            conn.commit()
+
+    def record_document_share_audit(self, *, share_id: str, action: str, outcome: str = "") -> None:
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO document_share_audit_events(audit_event_id, share_id, action, outcome, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (str(uuid.uuid4()), share_id, action, outcome, _now_iso()),
+            )
+            conn.commit()
 
     def list_case_communications(
         self, *, case_id: str, limit: int | None = None, offset: int = 0
@@ -4111,9 +4398,7 @@ class ApiDatabaseStore:
         communication_id = str(uuid.uuid4())
         transcript_uri: str | None = None
         if transcript_payload is not None:
-            relative_uri = (
-                Path(case_id) / "communications" / f"{communication_id}.{extension}"
-            )
+            relative_uri = Path(case_id) / "communications" / f"{communication_id}.{extension}"
             transcript_uri = self._store_payload(
                 relative_uri=relative_uri, payload=transcript_payload
             )
@@ -4201,7 +4486,7 @@ class ApiDatabaseStore:
                 (user_id, now, now),
             )
         if row is None:
-            return SubscriptionPlan('free', 'Free', 'none', 0, 1, 2, 1)
+            return SubscriptionPlan("free", "Free", "none", 0, 1, 2, 1)
         return _row_to_subscription_plan(row)
 
     def get_document_upload_limit(self, *, user_id: str) -> int:
@@ -4224,8 +4509,10 @@ class ApiDatabaseStore:
             ).fetchall()
         return [_row_to_case_document(row) for row in rows]
 
-    def mark_document_processing(self, *, doc_id: str, status: str, error: str | None = None) -> None:
-        processed_at = _now_iso() if status == 'processed' else None
+    def mark_document_processing(
+        self, *, doc_id: str, status: str, error: str | None = None
+    ) -> None:
+        processed_at = _now_iso() if status == "processed" else None
         with self._connect() as conn:
             self._execute(
                 conn,
@@ -4249,7 +4536,9 @@ class ApiDatabaseStore:
     ) -> None:
         now = _now_iso()
         with self._connect() as conn:
-            existing = self._fetchone(conn, 'SELECT content_id FROM case_document_contents WHERE doc_id = ?', (doc_id,))
+            existing = self._fetchone(
+                conn, "SELECT content_id FROM case_document_contents WHERE doc_id = ?", (doc_id,)
+            )
             if existing is None:
                 self._execute(
                     conn,
@@ -4750,7 +5039,12 @@ class ApiDatabaseStore:
     def _ensure_ai_model_soft_delete_columns(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
     ) -> None:
-        for table_name in ("ai_model_providers", "ai_model_profiles", "ai_model_groups", "ai_task_route_policies"):
+        for table_name in (
+            "ai_model_providers",
+            "ai_model_profiles",
+            "ai_model_groups",
+            "ai_task_route_policies",
+        ):
             self._ensure_soft_delete_columns(conn, table_name=table_name)
 
     def _ensure_soft_delete_columns(
@@ -4771,8 +5065,7 @@ class ApiDatabaseStore:
             }
         else:
             existing_columns = {
-                row[1]
-                for row in self._execute(conn, f"PRAGMA table_info({table_name})").fetchall()
+                row[1] for row in self._execute(conn, f"PRAGMA table_info({table_name})").fetchall()
             }
         missing_columns = {
             "deleted_at": "TEXT",
@@ -4830,7 +5123,9 @@ class ApiDatabaseStore:
         else:
             columns = {
                 row[1]
-                for row in self._execute(conn, "PRAGMA table_info(ai_model_usage_ledger)").fetchall()
+                for row in self._execute(
+                    conn, "PRAGMA table_info(ai_model_usage_ledger)"
+                ).fetchall()
             }
         missing_columns = {
             "session_id": "TEXT NOT NULL DEFAULT ''",
@@ -4854,9 +5149,7 @@ class ApiDatabaseStore:
             """,
         )
 
-    def _ensure_user_schema(
-        self, conn: sqlite3.Connection | PostgresConnection[Any]
-    ) -> None:
+    def _ensure_user_schema(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
         if self.uses_postgres:
             columns = {
                 row[0]
@@ -4870,10 +5163,7 @@ class ApiDatabaseStore:
                 ).fetchall()
             }
         else:
-            columns = {
-                row[1]
-                for row in self._execute(conn, "PRAGMA table_info(users)").fetchall()
-            }
+            columns = {row[1] for row in self._execute(conn, "PRAGMA table_info(users)").fetchall()}
 
         if "phone_number" not in columns:
             self._execute(conn, "ALTER TABLE users ADD COLUMN phone_number TEXT")
@@ -4908,7 +5198,9 @@ class ApiDatabaseStore:
         if "role" not in columns:
             self._execute(conn, "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
         if "is_enabled" not in columns:
-            self._execute(conn, "ALTER TABLE users ADD COLUMN is_enabled INTEGER NOT NULL DEFAULT 1")
+            self._execute(
+                conn, "ALTER TABLE users ADD COLUMN is_enabled INTEGER NOT NULL DEFAULT 1"
+            )
         self._execute(conn, "UPDATE users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''")
         self._execute(conn, "UPDATE users SET is_enabled = 1 WHERE is_enabled IS NULL")
         for admin_email in _configured_admin_emails():
@@ -4934,9 +5226,7 @@ class ApiDatabaseStore:
             """,
         )
 
-    def _ensure_mcp_oauth_schema(
-        self, conn: sqlite3.Connection | PostgresConnection[Any]
-    ) -> None:
+    def _ensure_mcp_oauth_schema(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
         if self.uses_postgres:
             columns = {
                 row[0]
@@ -5019,12 +5309,18 @@ class ApiDatabaseStore:
                 ).fetchall()
             }
         else:
-            columns = {row[1] for row in self._execute(conn, "PRAGMA table_info(case_documents)").fetchall()}
-        if 'processing_status' not in columns:
-            self._execute(conn, "ALTER TABLE case_documents ADD COLUMN processing_status TEXT NOT NULL DEFAULT 'uploaded'")
-        if 'processing_error' not in columns:
+            columns = {
+                row[1]
+                for row in self._execute(conn, "PRAGMA table_info(case_documents)").fetchall()
+            }
+        if "processing_status" not in columns:
+            self._execute(
+                conn,
+                "ALTER TABLE case_documents ADD COLUMN processing_status TEXT NOT NULL DEFAULT 'uploaded'",
+            )
+        if "processing_error" not in columns:
             self._execute(conn, "ALTER TABLE case_documents ADD COLUMN processing_error TEXT")
-        if 'processed_at' not in columns:
+        if "processed_at" not in columns:
             self._execute(conn, "ALTER TABLE case_documents ADD COLUMN processed_at TEXT")
         if self.uses_postgres:
             content_columns = {
@@ -5037,14 +5333,16 @@ class ApiDatabaseStore:
         else:
             content_columns = {
                 row[1]
-                for row in self._execute(conn, "PRAGMA table_info(case_document_contents)").fetchall()
+                for row in self._execute(
+                    conn, "PRAGMA table_info(case_document_contents)"
+                ).fetchall()
             }
-        if 'embedding_model' not in content_columns:
+        if "embedding_model" not in content_columns:
             self._execute(
                 conn,
                 "ALTER TABLE case_document_contents ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''",
             )
-        if 'embedding_dimensions' not in content_columns:
+        if "embedding_dimensions" not in content_columns:
             self._execute(
                 conn,
                 "ALTER TABLE case_document_contents ADD COLUMN embedding_dimensions INTEGER NOT NULL DEFAULT 0",
@@ -5130,9 +5428,15 @@ class ApiDatabaseStore:
                 ).fetchall()
             }
         else:
-            columns = {row[1] for row in self._execute(conn, "PRAGMA table_info(subscription_plans)").fetchall()}
-        if 'max_documents_per_case' not in columns:
-            self._execute(conn, "ALTER TABLE subscription_plans ADD COLUMN max_documents_per_case INTEGER NOT NULL DEFAULT 2")
+            columns = {
+                row[1]
+                for row in self._execute(conn, "PRAGMA table_info(subscription_plans)").fetchall()
+            }
+        if "max_documents_per_case" not in columns:
+            self._execute(
+                conn,
+                "ALTER TABLE subscription_plans ADD COLUMN max_documents_per_case INTEGER NOT NULL DEFAULT 2",
+            )
 
     def _ensure_permanent_memory_schema(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -5183,8 +5487,12 @@ class ApiDatabaseStore:
 
     def _seed_ai_model_routing(self, conn: sqlite3.Connection | PostgresConnection[Any]) -> None:
         now = _now_iso()
-        local_base_url = os.getenv("LOCAL_LLM_OPENAI_BASE_URL", "").strip() or "http://127.0.0.1:11434/v1"
-        local_health_url = os.getenv("LOCAL_LLM_HEALTH_URL", "").strip() or "http://127.0.0.1:11434/api/tags"
+        local_base_url = (
+            os.getenv("LOCAL_LLM_OPENAI_BASE_URL", "").strip() or "http://127.0.0.1:11434/v1"
+        )
+        local_health_url = (
+            os.getenv("LOCAL_LLM_HEALTH_URL", "").strip() or "http://127.0.0.1:11434/api/tags"
+        )
         local_model = "qwen3:1.7b"
         local_profile_id = "local_ollama_default"
         azure_profile_id = "azure_foundry_gpt_4o_mini"
@@ -5322,7 +5630,9 @@ class ApiDatabaseStore:
         )
         for plan_code in ("", "free", "case", "basic", "premium", "unlimited"):
             allow_external = 0 if plan_code in ("", "free") else 1
-            external_profile_id = azure_profile_id if plan_code in ("case", "basic", "premium", "unlimited") else None
+            external_profile_id = (
+                azure_profile_id if plan_code in ("case", "basic", "premium", "unlimited") else None
+            )
             self._execute(
                 conn,
                 """
@@ -5748,16 +6058,28 @@ def _configured_admin_emails() -> set[str]:
 
 
 def _default_role_for_email(email: str) -> str:
-    return USER_ROLE_ADMIN if email.strip().lower() in _configured_admin_emails() else USER_ROLE_USER
+    return (
+        USER_ROLE_ADMIN if email.strip().lower() in _configured_admin_emails() else USER_ROLE_USER
+    )
 
 
 def _protect_model_secret(secret: str) -> str:
     key = _model_credential_encryption_key()
     nonce = secrets.token_bytes(16)
     plaintext = secret.encode("utf-8")
-    ciphertext = _xor_bytes(plaintext, _model_keystream(key=key, nonce=nonce, length=len(plaintext)))
+    ciphertext = _xor_bytes(
+        plaintext, _model_keystream(key=key, nonce=nonce, length=len(plaintext))
+    )
     tag = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
     return "v1:" + base64.urlsafe_b64encode(nonce + tag + ciphertext).decode("ascii")
+
+
+def _protect_document_share_email(email: str) -> str:
+    return _protect_model_secret(email)
+
+
+def _reveal_document_share_email(protected_email: str) -> str | None:
+    return _reveal_model_secret(protected_email)
 
 
 def _reveal_model_secret(protected_secret: str) -> str | None:
@@ -5776,7 +6098,9 @@ def _reveal_model_secret(protected_secret: str) -> str | None:
     expected_tag = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
     if not hmac.compare_digest(tag, expected_tag):
         return None
-    plaintext = _xor_bytes(ciphertext, _model_keystream(key=key, nonce=nonce, length=len(ciphertext)))
+    plaintext = _xor_bytes(
+        ciphertext, _model_keystream(key=key, nonce=nonce, length=len(ciphertext))
+    )
     return plaintext.decode("utf-8")
 
 
@@ -5915,7 +6239,11 @@ def _row_to_user(row: tuple[object, ...]) -> User:
     values = list(row)
     if len(values) <= 8:
         values = [*values[:6], None, None, None, None, None, None, None, None, *values[6:]]
-    role = _normalize_user_role(str(values[18])) if len(values) > 20 and values[18] is not None else USER_ROLE_USER
+    role = (
+        _normalize_user_role(str(values[18]))
+        if len(values) > 20 and values[18] is not None
+        else USER_ROLE_USER
+    )
     is_enabled = _row_bool(values[19]) if len(values) > 20 and values[19] is not None else True
     created_at_index = 20 if len(values) > 20 else 18
     return User(
@@ -5933,11 +6261,19 @@ def _row_to_user(row: tuple[object, ...]) -> User:
         identity_card_number=str(values[11]) if values[11] is not None else None,
         date_of_birth=str(values[12]) if values[12] is not None else None,
         social_security_number=str(values[13]) if values[13] is not None else None,
-        data_processing_consent_at=str(values[14]) if len(values) > 14 and values[14] is not None else None,
-        data_processing_consent_version=str(values[15]) if len(values) > 15 and values[15] is not None else None,
+        data_processing_consent_at=str(values[14])
+        if len(values) > 14 and values[14] is not None
+        else None,
+        data_processing_consent_version=str(values[15])
+        if len(values) > 15 and values[15] is not None
+        else None,
         mcp_api_key_hash=str(values[16]) if len(values) > 16 and values[16] is not None else None,
-        mcp_api_key_expires_at=str(values[17]) if len(values) > 17 and values[17] is not None else None,
-        created_at=str(values[created_at_index]) if len(values) > created_at_index and values[created_at_index] is not None else None,
+        mcp_api_key_expires_at=str(values[17])
+        if len(values) > 17 and values[17] is not None
+        else None,
+        created_at=str(values[created_at_index])
+        if len(values) > created_at_index and values[created_at_index] is not None
+        else None,
         role=role,
         is_enabled=is_enabled,
     )

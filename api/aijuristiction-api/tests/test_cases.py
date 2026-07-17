@@ -1,6 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import base64
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
@@ -244,10 +243,7 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
             "doc_ids": [doc_id],
         },
     )
-    assert selected_email.status_code == 200
-    assert selected_email.json()["attachment_count"] == 1
-
-
+    assert selected_email.status_code == 409
 
     generated_doc_id = store.add_case_text_document(
         case_id=case_id,
@@ -309,28 +305,18 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
         },
     )
     assert generated_email.status_code == 200
-    assert generated_email.json()["attachment_count"] == 1
+    assert generated_email.json()["attachment_count"] == 0
 
     with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
         email_row = conn.execute(
-            """
-            SELECT body, metadata_json
-            FROM email_outbox
-            WHERE email_id = ?
-            """,
+            "SELECT body, metadata_json FROM email_outbox WHERE email_id = ?",
             (generated_email.json()["email_id"],),
         ).fetchone()
     assert email_row is not None
-    assert "https://agent.test/case/" in email_row[0]
+    assert "https://agent.test/shared-documents/" in email_row[0]
     metadata = json.loads(email_row[1])
-    assert metadata["case_url"] == f"https://agent.test/case/{case_id}"
-    assert metadata["html_body"].count(f"https://agent.test/case/{case_id}") == 2
-    attachments = metadata["attachments"]
-    assert len(attachments) == 1
-    attachment = attachments[0]
-    assert attachment["filename"].endswith(f"_{generated_document_id}_splnomocnenie.pdf")
-    assert attachment["mime_type"] == "application/pdf"
-    assert base64.b64decode(attachment["content_base64"]).startswith(b"%PDF")
+    assert metadata["event"] == "document_share_invitation"
+    assert "attachments" not in metadata
 
 
 def test_case_history_and_citations_endpoint_return_persisted_answer_citations(
@@ -737,7 +723,9 @@ def test_free_user_case_export_is_rejected(monkeypatch, tmp_path) -> None:
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Case export is available only for active paid subscriptions."
+    assert (
+        response.json()["detail"] == "Case export is available only for active paid subscriptions."
+    )
 
 
 def test_generated_case_document_pdf_uses_first_selected_document_block(
