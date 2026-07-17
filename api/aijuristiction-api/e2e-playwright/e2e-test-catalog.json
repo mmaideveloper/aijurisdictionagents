@@ -1,5 +1,14 @@
 [
   {
+    "id": "golden-case-model-validation-offline",
+    "file": "../../../examples/model_validation_runner_demo.py",
+    "title": "scenario 01 golden case fixture loads and passes deterministic comparison",
+    "name": "Golden-case model validation offline smoke",
+    "description": "Loads the synthetic private-loan confirmation seed and validates normalized text assertions without model calls.",
+    "area": "Model validation",
+    "scheduled": false
+  },
+  {
     "id": "api-health",
     "file": "tests/health.spec.ts",
     "title": "health endpoint is healthy",
