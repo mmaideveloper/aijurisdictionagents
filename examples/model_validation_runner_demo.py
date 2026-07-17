@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from aijurisdictionagents.golden_cases import compare_text, load_golden_case
+from aijurisdictionagents.golden_cases import compare_text, load_golden_case, validate_model_audit
 
 
 def main() -> None:
@@ -18,6 +18,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     golden = load_golden_case(args.fixture)
+    model_validation = validate_model_audit(golden)
     answer_result = compare_text(
         golden.expected_answer,
         golden.expected_answer,
@@ -30,6 +31,8 @@ def main() -> None:
         "prompt_count": len(golden.prompts),
         "document_count": len(golden.expected_documents),
         "model_audit_count": len(golden.model_audit),
+        "automation_ready": model_validation.automation_ready,
+        "model_audit_errors": model_validation.errors,
         "warnings": list(golden.warnings),
         "answer": {
             "passed": answer_result.passed,

@@ -31,6 +31,13 @@ actual `provider`, `model`, `route_type`, status, fallback reason, timing/token/
 ZIP/PDF text and comparison JSON. Authentication secrets and payment details must never be copied to
 fixtures or reports.
 
+The native export records the models used twice: `manifest.json.models_used` provides a compact
+summary and `ai-model-audit.json.entries` preserves the detailed trace. A fixture is automation-ready
+only when at least one audit entry exists and every entry contains non-empty `provider`, `model`,
+`route_type` and `status`. Whether the case facts were entered manually or generated synthetically
+does not change this requirement: the model identity must come from the persisted server audit, never
+from a manually typed fixture label.
+
 Passing deterministic checks means the output conforms to the reviewed fixture; it is not automatic
 approval of legal correctness. A qualified human must review material legal changes and any output
 intended for signing, filing or reliance.

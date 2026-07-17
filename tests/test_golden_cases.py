@@ -2,7 +2,12 @@ import json
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from aijurisdictionagents.golden_cases import canonical_text, compare_text, load_golden_case
+from aijurisdictionagents.golden_cases import (
+    canonical_text,
+    compare_text,
+    load_golden_case,
+    validate_model_audit,
+)
 
 
 def test_compare_text_normalizes_diacritics_and_reports_rules() -> None:
@@ -36,13 +41,28 @@ def test_loads_native_case_export(tmp_path: Path) -> None:
             ),
         )
         archive.writestr("documents/01.txt", "Potvrdenie o prijatí peňazí")
-        archive.writestr("ai-model-audit.json", json.dumps({"entries": [{"provider": "local_ollama"}]}))
+        archive.writestr(
+            "ai-model-audit.json",
+            json.dumps(
+                {
+                    "entries": [
+                        {
+                            "provider": "local_ollama",
+                            "model": "qwen3:1.7b",
+                            "route_type": "free_local",
+                            "status": "success",
+                        }
+                    ]
+                }
+            ),
+        )
         archive.writestr("warnings.json", json.dumps({"items": []}))
     loaded = load_golden_case(fixture)
     assert loaded.case_key == "case-01"
     assert loaded.prompts == ("Priprav potvrdenie.",)
     assert loaded.expected_documents == ("Potvrdenie o prijatí peňazí",)
     assert loaded.model_audit[0]["provider"] == "local_ollama"
+    assert validate_model_audit(loaded).automation_ready
 
 
 def test_scenario_01_seed_is_loadable() -> None:
@@ -52,3 +72,22 @@ def test_scenario_01_seed_is_loadable() -> None:
     assert loaded.prompts
     assert loaded.expected_documents
     assert loaded.warnings[0]["code"] == "legacy_fixture"
+    assert validate_model_audit(loaded).errors == ("missing_model_audit",)
+
+
+def test_model_audit_rejects_incomplete_identity(tmp_path: Path) -> None:
+    fixture = tmp_path / "case.zip"
+    with ZipFile(fixture, "w", ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "manifest.json",
+            json.dumps({"case_id": "case-02", "documents": []}),
+        )
+        archive.writestr("messages.jsonl", "")
+        archive.writestr(
+            "ai-model-audit.json",
+            json.dumps({"entries": [{"provider": "azurefoundry", "model": "gpt-4.1"}]}),
+        )
+    validation = validate_model_audit(load_golden_case(fixture))
+    assert not validation.automation_ready
+    assert "model_audit[0].route_type_missing" in validation.errors
+    assert "model_audit[0].status_missing" in validation.errors

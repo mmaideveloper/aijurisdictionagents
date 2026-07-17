@@ -53,7 +53,9 @@ created through JurisDigta using the process below before marking scenario 01 le
 4. A human reviewer verifies the document type, parties, amount, handover/payment date, signatures,
    repayment wording, legal citations and the AI/human-review disclosure.
 5. Export the case using the paid case-export endpoint/UI and verify that the ZIP contains the native
-   export manifest, transcript, model audit, warnings and generated PDF.
+   export manifest, transcript, model audit, warnings and generated PDF. Confirm
+   `manifest.json.models_used` and `ai-model-audit.json.entries` identify the actual provider, model,
+   route type and status used for the case. Do not enter these values manually.
 6. Store the reviewed ZIP under `cases/`, update its SHA-256 and rules in `index.json`, and set
    `fixture_status` to `native_reviewed`.
 

@@ -31,6 +31,12 @@ class GoldenCase:
     warnings: tuple[dict[str, object], ...]
 
 
+@dataclass(frozen=True)
+class ModelAuditValidation:
+    automation_ready: bool
+    errors: tuple[str, ...]
+
+
 def canonical_text(value: str) -> str:
     """Normalize text for stable semantic-ish comparison without byte-matching PDFs."""
     decomposed = unicodedata.normalize("NFKD", value)
@@ -65,6 +71,20 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest().upper()
+
+
+def validate_model_audit(golden: GoldenCase) -> ModelAuditValidation:
+    """Require traceable model identity before a fixture can be automated as golden evidence."""
+    if not golden.model_audit:
+        return ModelAuditValidation(False, ("missing_model_audit",))
+    required = ("provider", "model", "route_type", "status")
+    errors: list[str] = []
+    for index, entry in enumerate(golden.model_audit):
+        for field in required:
+            value = str(entry.get(field) or "").strip()
+            if not value or value == "unknown":
+                errors.append(f"model_audit[{index}].{field}_missing")
+    return ModelAuditValidation(not errors, tuple(errors))
 
 
 def load_golden_case(path: Path) -> GoldenCase:

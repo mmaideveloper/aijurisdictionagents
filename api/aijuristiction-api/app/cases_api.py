@@ -821,6 +821,7 @@ def _build_case_export_zip(
         "message_count": len(messages),
         "document_count": len(documents),
         "ai_model_audit_count": len(audit_entries),
+        "models_used": _case_export_models_used(audit_entries),
         "citation_count": len(citations),
         "documents": document_manifest,
     }
@@ -845,6 +846,31 @@ def _build_case_export_zip(
         for path in sorted(files):
             _writestr_deterministic(archive, path, files[path])
     return buffer.getvalue()
+
+
+def _case_export_models_used(
+    audit_entries: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Return a privacy-minimized model summary while detailed usage stays in the audit file."""
+    grouped: dict[tuple[str, str, str, str], int] = {}
+    for entry in audit_entries:
+        key = (
+            str(entry.get("provider") or "unknown"),
+            str(entry.get("model") or "unknown"),
+            str(entry.get("route_type") or "unknown"),
+            str(entry.get("status") or "unknown"),
+        )
+        grouped[key] = grouped.get(key, 0) + 1
+    return [
+        {
+            "provider": provider,
+            "model": model,
+            "route_type": route_type,
+            "status": status,
+            "usage_count": count,
+        }
+        for (provider, model, route_type, status), count in sorted(grouped.items())
+    ]
 
 
 def _render_generated_case_document_pdf_bytes(
