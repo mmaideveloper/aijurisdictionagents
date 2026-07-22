@@ -7,6 +7,7 @@ Checked-in automation:
 - `Deployment/server/setup_jurisdigta_server.sh` installs Ubuntu packages, Docker, deployment directories, firewall baseline, and the first repository checkout.
 - `Deployment/server/deploy_jurisdigta_prod.sh` updates the server checkout, deploys PostgreSQL/API/MCP/email scheduler/web/document processor/laws collector/status monitoring, and validates local health checks.
 - `.github/workflows/self_managed_prod_deploy.yml` runs the production deploy script over SSH from the protected GitHub `prod` Environment.
+- Successful deployments retain only the active `:local` image and one `:previous` image for each JurisDigta-built service. Cleanup runs after health validation and never removes volumes or running images.
 
 Current target verified from Codex on 2026-06-13:
 
@@ -22,7 +23,7 @@ Current target verified from Codex on 2026-06-13:
 
 - Use the non-root account `jurisdigta-admin` for SSH and deployment operations.
 - Keep application secrets in server-local environment files or runtime secret stores, never in Git.
-- Restrict environment files to the deployment user and root: `chmod 600`.
+- Keep the runtime environment file owned by `root:jurisdigta-admin` with mode `640`, so only root can write it and the deployment account can read it. Keep standalone backup/profile copies at mode `600`.
 - Keep PostgreSQL runtime data under `/srv/jurisdigta/runs/storage/...` to mirror the repository layout.
 - Keep SQL assets in the repository under `databases/`; do not place database runtime files there.
 - Enable logs for traceability, but avoid logging personal data, legal facts, document contents, access tokens, API keys, or full PostgreSQL connection strings.
@@ -260,7 +261,8 @@ Create a server-local environment file from the repository example and edit it m
 ```bash
 cd /srv/jurisdigta/app
 cp .env.example /srv/jurisdigta/secrets/jurisdigta.env
-chmod 600 /srv/jurisdigta/secrets/jurisdigta.env
+sudo chown root:jurisdigta-admin /srv/jurisdigta/secrets/jurisdigta.env
+sudo chmod 640 /srv/jurisdigta/secrets/jurisdigta.env
 nano /srv/jurisdigta/secrets/jurisdigta.env
 ```
 
@@ -774,6 +776,25 @@ python examples/minimal_demo.py
 
 ## 14. Rollback
 
+For an image-only rollback, promote the retained previous image before restarting the affected service:
+
+```bash
+docker image inspect jurisdigta-web:previous
+docker image tag jurisdigta-web:previous jurisdigta-web:local
+docker rm -f jurisdigta-web
+docker run -d --name jurisdigta-web --restart unless-stopped -p 127.0.0.1:8090:80 jurisdigta-web:local
+```
+
+Use the service's normal production `docker run` options from `deploy_jurisdigta_prod.sh`; the shortened web command above is only an operator example. Validate the relevant local health endpoint after rollback. The next successful deployment recreates `:previous` from the image that was active before that deployment.
+
+Image-retention behavior:
+
+- Before each build, the active `:local` image is tagged `:rollback-candidate`.
+- If an earlier deployment was interrupted, its existing candidate is preserved instead of overwritten.
+- After all service health checks pass, the candidate becomes `:previous`.
+- Images older than `:previous` and unused build cache are pruned.
+- Failed deployments do not finalize or prune retention state.
+
 Stop containers:
 
 ```bash
@@ -955,7 +976,8 @@ The local workstation `.env` was copied to:
 Permissions:
 
 ```bash
-chmod 600 /srv/jurisdigta/secrets/jurisdigta.env
+sudo chown root:jurisdigta-admin /srv/jurisdigta/secrets/jurisdigta.env
+sudo chmod 640 /srv/jurisdigta/secrets/jurisdigta.env
 ```
 
 ### Repository And Images
@@ -1229,7 +1251,7 @@ rm -f /srv/jurisdigta/ops/run_laws_collector_daily.sh
 
 ### Compliance Notes From Execution
 
-- Secrets were stored in `/srv/jurisdigta/secrets/jurisdigta.env` with `600` permissions.
+- Secrets were stored in `/srv/jurisdigta/secrets/jurisdigta.env` as `root:jurisdigta-admin` with `640` permissions, giving the deployment account read-only access.
 - Full secret values are not documented in this runbook.
 - The laws backup contains legal corpus data and embeddings; keep it under controlled storage and define retention/deletion policy.
 - The restore created a rollback backup before replacing `laws_sk`.
