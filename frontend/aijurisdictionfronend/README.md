@@ -200,6 +200,15 @@ The `/profile` page displays structured user information from the current API-au
 - Account Created Date (currently optional)
 - Includes subscription pricing controls (billing cadence + plan selector)
 - Includes an opened-cases panel with quick navigation back to active matters
+- Long case titles and document names stay inside the left panel. Text is truncated by default;
+  the adjacent ellipsis button expands wrapped text and collapses it again without hiding case
+  export or document metadata actions.
+
+Minimal runnable layout verification:
+
+```powershell
+python examples/frontend_profile_long_text_minimal_demo.py
+```
 
 ## Mock Case Creation Flow (Task #242)
 
