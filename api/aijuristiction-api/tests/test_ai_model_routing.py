@@ -8,6 +8,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 import pytest
 
+from app.effective_model_routing_api import get_store as get_effective_model_routing_store
 from app.main import app
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.llm import routing
@@ -284,6 +285,7 @@ def test_effective_model_route_endpoint_reports_default_free_route_without_user(
     monkeypatch.setenv("DB_LOCAL", str(db_path))
     monkeypatch.setenv("STORAGE_OPTION", "local")
     monkeypatch.setenv("STORE_LOCAL", str(blob_root))
+    ApiDatabaseStore(db_path=db_path, blob_root=blob_root).initialize()
 
     response = client.get(
         "/v1/model-routing/effective?task_type=chat_reply",
@@ -328,7 +330,10 @@ def test_selectable_model_profiles_endpoint_returns_safe_metadata_for_eligible_u
     user = store.create_user(email="selector@example.com", password="secret", full_name="Selector")
 
     response = client.get(
-        f"/v1/model-routing/selectable?user_id={user.user_id}",
+        (
+            f"/v1/model-routing/selectable?user_id={user.user_id}"
+            "&user_email=selector@example.com"
+        ),
         headers={"x-api-key": "aijuris"},
     )
 
@@ -342,6 +347,25 @@ def test_selectable_model_profiles_endpoint_returns_safe_metadata_for_eligible_u
     assert "base_url" not in first_profile
     assert "api_key" not in response.text
     assert "protected_secret" not in response.text
+
+
+def test_effective_model_routing_request_store_does_not_initialize(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    monkeypatch.setattr(
+        ApiDatabaseStore,
+        "from_env",
+        classmethod(lambda cls: store),
+    )
+
+    def fail_request_time_initialize(self: ApiDatabaseStore) -> None:
+        raise AssertionError("Request dependencies must not initialize database schemas.")
+
+    monkeypatch.setattr(ApiDatabaseStore, "initialize", fail_request_time_initialize)
+
+    assert get_effective_model_routing_store() is store
 
 
 def test_selectable_model_profiles_endpoint_accepts_email_fallback_for_eligible_user(

@@ -11,6 +11,10 @@ print(
     "only key names/statuses are reported and secret values remain redacted."
 )
 print(
+    "model_routing_request_store => database migrations and schema initialization run at API "
+    "startup; effective/selectable request dependencies are read-only to avoid PostgreSQL deadlocks."
+)
+print(
     "web_mfa_reuse => MFA_REUSE_WINDOW_HOURS=12 skips repeat MFA for 12 hours after successful "
     "verification while logout still ends the session; set 0 to require MFA on every sign-in."
 )
