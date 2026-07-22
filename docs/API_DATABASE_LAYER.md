@@ -231,6 +231,12 @@ credentials, prompts, documents, or case content. Regular users receive
 transient: they apply to the current chat session/reply/stream workflow and
 reset on page reload or new case.
 
+The API applies SQL migrations and initializes database schemas once during
+application startup. Model-routing request dependencies only open a configured
+store and perform normal reads; they must not call `ApiDatabaseStore.initialize()`
+per request. This avoids concurrent schema/seed writes and PostgreSQL deadlocks
+when the frontend loads effective and selectable routes in parallel.
+
 Seeded defaults:
 
 - Free/default users route to `local_ollama_default`, provider `local_ollama`, model `qwen3:1.7b`. Local developer runs default to `http://127.0.0.1:11434/v1`; self-managed Docker production seeds the private Docker gateway URL so API containers can reach the host-local Ollama service.
