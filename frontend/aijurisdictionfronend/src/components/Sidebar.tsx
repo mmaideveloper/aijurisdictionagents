@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useCases, type CaseDocumentRecord } from "../state/CaseProvider";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "./LanguageProvider";
-import { BsBoxArrowLeft, BsChevronDown, BsChevronRight, BsDownload } from "react-icons/bs";
+import { BsBoxArrowLeft, BsChevronDown, BsChevronRight } from "react-icons/bs";
+import { FaDownload } from "react-icons/fa";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
 import { fetchCaseExportBlob } from "../api/caseClient";
 
@@ -137,15 +138,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                       {isActive ? (
                         <button
                           type="button"
-                          className="case-export-button"
+                          className="button ghost icon-button profile-case-export-button case-export-button"
                           onClick={(event) => void exportActiveCase(event)}
                           disabled={exportingCaseId === caseItem.id}
                           aria-busy={exportingCaseId === caseItem.id}
                           aria-label={t("profileCaseExport")}
                           title={t("profileCaseExport")}
                         >
-                          <BsDownload aria-hidden="true" />
-                          <span>{t("adminCasesExport")}</span>
+                          <FaDownload aria-hidden="true" />
                         </button>
                       ) : null}
                     </li>
